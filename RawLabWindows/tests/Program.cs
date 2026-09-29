@@ -36,6 +36,14 @@ static class Program
         {
             var repo=Path.GetFullPath(args[0]); var output=Path.Combine(repo,"build","windows-verification");Directory.CreateDirectory(output);
             var settings=new Adjustments();
+            settings.Set(Parameter.Strength,250);
+            Check(settings[Parameter.Strength]==200 && settings.Request("test.arw","test.cube",2000,null).LutStrength==2,
+                "Film strength clamps at 200% and reaches the native renderer");
+            var strengthSpec=ParameterSpec.All[(int)Parameter.Strength];
+            Check(strengthSpec.Parse("150")==150 && strengthSpec.Parse("201")==200 && strengthSpec.Value(.5)==100,
+                "Film slider and numeric input support 0-200%");
+            settings.Reset(Parameter.Strength); Check(settings[Parameter.Strength]==100,"Film strength resets to 100%");
+            ExportMetadataChecks.Run(output,Check);
             var wb=(Temperature:4870.0,Tint:17.0);settings.ResolveWhiteBalance(wb);
             settings.Set(Parameter.Temperature,8000);settings.Set(Parameter.Highlights,30);settings.Set(Parameter.Contrast,-20);
             var mapped=settings.Request("test.arw","test.cube",2000,null);
@@ -65,6 +73,13 @@ static class Program
                 Check(rendered.Image.PixelWidth==800 && rendered.Image.PixelHeight>0,"Real ARW and UTF-8 LUT paths");
                 Check(rendered.Backend==3,"Actual Direct3D 11 hardware completes RAW rendering");
                 Check(!Pixels(neutral.Image).SequenceEqual(Pixels(rendered.Image)),"Film branch changes pixels");
+                settings.Set(Parameter.Strength,200);
+                var strong=engine.Render(unicodeRaw,settings,unicodeLut,800)!;
+                Check(!Pixels(strong.Image).SequenceEqual(Pixels(rendered.Image)),"200% film differs from 100% on Direct3D 11");
+                using (var cpuStrength=new RenderEngine(0))
+                    Check(Pixels(strong.Image).Zip(Pixels(cpuStrength.Render(unicodeRaw,settings,unicodeLut,800)!.Image),(x,y)=>Math.Abs(x-y)).Max()<=2,
+                        "200% film CPU/Direct3D 11 parity");
+                settings.Reset(Parameter.Strength);
                 Check(Math.Abs(rendered.Baseline-.7)<.001 && rendered.WhiteBalance!=null,"Scene baseline and calibrated as-shot WB");
                 Check(rendered.Histogram.Take(256).Sum(x=>(long)x)==rendered.Image.PixelWidth*rendered.Image.PixelHeight,"Native histogram counts each pixel");
                 settings.ResolveWhiteBalance(rendered.WhiteBalance);
@@ -109,7 +124,17 @@ static class Program
                     finally {Environment.SetEnvironmentVariable("RAWLAB_DISABLE_D3D11",previous);engine.SetGpuMode(1);}
                 }
                 var png=Path.Combine(unicodeDir,"原尺寸.png");var jpeg=Path.Combine(unicodeDir,"原尺寸.jpg");
+                settings.Set(Parameter.Strength,200);
                 engine.Render(unicodeRaw,settings,unicodeLut,0,true,png);engine.Render(unicodeRaw,settings,unicodeLut,0,false,jpeg);
+                var sourceTags=ExportMetadataChecks.Read(unicodeRaw);
+                foreach (var path in new[]{png,jpeg})
+                {
+                    var tags=ExportMetadataChecks.Read(path);
+                    Check(tags.GetProperty("Model").GetString()==sourceTags.GetProperty("Model").GetString() &&
+                        tags.GetProperty("DateTimeOriginal").GetString()==sourceTags.GetProperty("DateTimeOriginal").GetString() &&
+                        tags.GetProperty("ExposureTime").GetDouble()==sourceTags.GetProperty("ExposureTime").GetDouble(),
+                        "Real RAW capture EXIF survives full-resolution export: "+Path.GetExtension(path));
+                }
                 var pngBytes=File.ReadAllBytes(png);Check(pngBytes[24]==16,"PNG export contains actual 16-bit channels");
                 using var pngStream=File.OpenRead(png);var pngFrame=BitmapFrame.Create(pngStream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
                 using var jpegStream=File.OpenRead(jpeg);var jpegFrame=BitmapFrame.Create(jpegStream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
@@ -140,6 +165,14 @@ static class Program
             window.OpenFile(raw);Check(Math.Abs(window.ValueSlider.Value-.625)<.001,"Photo switch restores its own exposure");
             window.ValueSlider.Value=.5;PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             Check(window.BackendLabel.Text.Contains("Direct3D 11"),"WPF reports actual GPU backend");
+            var strengthButton=window.Tools.Children.OfType<Button>().Single(button=>
+                System.Windows.Automation.AutomationProperties.GetName(button)=="强度");
+            strengthButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(window.ValueText.Text=="100" && Math.Abs(window.ValueSlider.Value-.5)<.001,
+                "WPF film strength starts at 100% in the middle of its slider");
+            window.ValueSlider.Value=1;
+            Check(window.ValueText.Text=="200" && !window.ExportPng.IsEnabled,"WPF film slider reaches 200% and invalidates stale export");
+            PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             // Render the content independently of a hidden HWND; rendering the
             // unshown Window itself produces a transparent bitmap on Windows.
             var content=(FrameworkElement)window.Content;window.Content=null;

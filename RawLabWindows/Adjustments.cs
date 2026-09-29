@@ -16,7 +16,7 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
     public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) && double.IsFinite(value)
         ? Math.Clamp(value, Min, Max) : null;
     public static readonly ParameterSpec[] All = [
-        new(Parameter.Strength,"强度","胶片",0,100,1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.05,"EV",2),
+        new(Parameter.Strength,"强度","胶片",0,200,1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.05,"EV",2),
         new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,1,""),
         new(Parameter.Contrast,"对比度","明暗",-100,100,1,"%"), new(Parameter.Highlights,"高光","明暗",-100,100,1,"%"),
         new(Parameter.Shadows,"阴影","明暗",-100,100,1,"%"), new(Parameter.ToneCurve,"S 曲线","明暗",-100,100,1,"%"),

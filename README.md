@@ -14,7 +14,14 @@ RawLab Mac provides side-by-side neutral/film comparison, LUT selection, exposur
 
 ## 下载 / Download
 
-[下载 RawLab Windows v0.1.0 / Download Windows v0.1.0](https://github.com/dancancer/RawLab/releases/tag/windows-v0.1.0)
+[下载 RawLab v0.2 / Download v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2)
+
+v0.2 汇集 Windows / Mac / Android / iOS 的 200% 胶片强度与导出保留 EXIF 源码。
+当前提供 Windows x64 安装包，其他平台附件后续补充；旧版本下载见下方链接。
+
+v0.2 includes 200% film strength and EXIF-preserving export source for Windows,
+Mac, Android and iOS. The Windows x64 package is available first; other platform
+packages will follow. Earlier downloads remain linked below.
 
 支持 Windows 10/11 x64。解压后运行 `RawLab.exe`；独立运行包包含 .NET 运行时，默认 Direct3D 11 硬件加速，可自动回退 CPU。
 

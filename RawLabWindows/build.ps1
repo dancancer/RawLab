@@ -40,6 +40,7 @@ $iconPath=Join-Path $native 'RawLab.ico'
 & "$PSScriptRoot/build-icon.ps1" -Source "$repo/RawLabMac/Resources/AppIcon.png" -Output $iconPath
 $publish = @('publish',"$PSScriptRoot/RawLabWindows.csproj",'-c','Release','-r','win-x64','-o',$output,'--self-contained',([bool]$SelfContained).ToString().ToLowerInvariant(),"-p:ApplicationIcon=$iconPath")
 Invoke-Checked $DotNet $publish
+& "$PSScriptRoot/build-exiftool.ps1" -Output $output
 Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll" $output -Force
 # Package the compiler runtime app-locally; users do not need Visual Studio.
 $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
@@ -63,6 +64,7 @@ if ($Test) {
     Invoke-Checked $DotNet @('build',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release')
     $testOut = "$PSScriptRoot/tests/bin/Release/net8.0-windows"
     Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll" $testOut -Force
+    Copy-Item "$output/ExifTool" $testOut -Recurse -Force
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)
 }
 Write-Host "Built: $output/RawLab.exe"

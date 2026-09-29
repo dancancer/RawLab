@@ -21,7 +21,7 @@ internal sealed class RenderEngine : IDisposable
         try
         {
             Native.Check(Native.sony2fuji_process(session,ref request,out buffer));
-            if (output != null) return null;
+            if (output != null) { ExportMetadata.Preserve(path,output); return null; }
             var image = Bitmap(buffer);
             var bins = new uint[768];
             Native.Check(Native.sony2fuji_analyze_image(ref buffer,0,bins,out var shadows,out var highlights,out mask));
