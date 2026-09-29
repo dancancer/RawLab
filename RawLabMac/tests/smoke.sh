@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-APP="$ROOT/build/RawLab Mac.app/Contents/MacOS/RawLabMac"
+APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}/Contents/MacOS/RawLabMac"
 test -x "$APP" || { echo 'FAIL: RawLab Mac executable missing'; exit 1; }
 OUT="$(mktemp -d /tmp/rawlab-mac-smoke.XXXXXX)"
 RAW="${1:-${RAWLAB_TEST_RAW:-}}"

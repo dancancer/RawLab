@@ -1,8 +1,8 @@
 # RawLab Mac
 
-原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。当前构建产物针对本机 Apple Silicon 和 macOS 26+，没有宣称在其他 macOS 版本验证通过。
+原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。支持独立构建最低 macOS 15 的 Apple Silicon 和 Intel 版本；macOS 15 真机运行仍需验证。默认本机构建继续使用现有 Homebrew 依赖和 macOS 26 目标。
 
-A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ pipeline with the CLI and iOS client. The current build targets Apple Silicon and macOS 26+; other macOS versions have not been validated.
+A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ pipeline with the CLI and iOS client. Separate Apple Silicon and Intel builds can target macOS 15; runtime verification on macOS 15 hardware is still pending. The default local build retains the existing Homebrew dependencies and macOS 26 target.
 
 ## 功能预览 / Preview
 
@@ -42,6 +42,27 @@ Each build refreshes the embedded libraries, rewrites transitive dependencies to
 应用图标采用深灰底上的黄色/青色交叠画幅，表达 RAW 与显影结果之间的色彩转换。无相机、光圈或品牌文字，使用扁平几何图形。源图位于 `Resources/AppIcon.png`；构建时由 `build-icon.sh` 生成覆盖 16–1024 像素的原生 `.icns`，并通过 `CFBundleIconFile` 注册。图像生成说明见 `Resources/AppIcon.md`。
 
 The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the RAW-to-render color transformation, without camera, aperture or brand lettering. The source is `Resources/AppIcon.png`; `build-icon.sh` generates a native 16-1024px `.icns`, registered through `CFBundleIconFile`. Generation provenance is in `Resources/AppIcon.md`.
+
+## macOS 15 双架构构建 / macOS 15 Builds
+
+从固定版本的上游源码重建所有第三方动态库，分别输出两个应用，避免覆盖默认产物。需要 CMake、pkg-config、make 和 Apple Command Line Tools；依赖下载使用 curl。Intel 的 libjpeg SIMD 优化需要可选的 NASM，缺失时仍可正常解码。OpenMP、JPEG、JPEG2000、DNG deflate 和 LCMS 支持均保留。
+
+Rebuild all third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, JPEG2000, DNG deflate, and LCMS support are retained.
+
+```bash
+for arch in arm64 x86_64; do
+    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 bash RawLabMac/build-dependencies.sh
+    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 \
+      PKG_CONFIG_PATH="$PWD/build/macos15-deps/$arch/install/lib/pkgconfig" \
+      RAWLAB_BUILD_DIR="$PWD/lutools/build-macos15-$arch" \
+      RAWLAB_APP_PATH="$PWD/build/macos15-$arch/RawLab Mac.app" \
+      bash RawLabMac/build.sh
+done
+```
+
+打包校验会检查主程序及所有内嵌动态库的架构、最低系统版本、签名和依赖完整性。新包仍为 ad-hoc 签名，不是已公证发行版。
+
+Packaging checks verify the architecture, minimum OS, signature, and dependency closure of the executable and every embedded library. These builds remain ad-hoc signed, not notarized releases.
 
 ## 使用 / Usage
 
