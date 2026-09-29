@@ -1,0 +1,421 @@
+{
+  "parameters": {
+    "scene_gamut_softness": 0.12,
+    "tone_contrast": 1.62,
+    "middle_gray": 0.1845,
+    "overall_chroma": 1.055,
+    "green_chroma_extra": 0.065,
+    "blue_chroma_extra": 0.075,
+    "skin_chroma_reduction": 0.075,
+    "green_hue_degrees": -3.0,
+    "blue_hue_degrees": -5.0,
+    "skin_hue_degrees": 1.5,
+    "green_lightness": -0.009,
+    "blue_lightness": -0.008
+  },
+  "raw_count": 10,
+  "raws": [
+    {
+      "raw": "lutools/examples/DSC06251.ARW",
+      "development": "Sony ILCE-7CM2\nfull=4672x7008 preview=933x1400\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.00173006 max=2.74786\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 2.384185791015625e-07,
+          "pixels_any_channel_le_0": 6.277752258459654e-05,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999887943267822
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0003514010105649977,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999996423721313
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0011148456251248717,
+            0.9769687652587891
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/examples/DSC06271.ARW",
+      "development": "Sony ILCE-7CM2\nfull=7008x4672 preview=1400x933\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=-0.00551011 max=2.60978\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 2.384185791015625e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            3.1014627893455327e-05,
+            0.9999902248382568
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 3.2919920379727456e-05,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999926090240479
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0018974716076627374,
+            0.9743886590003967
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/examples/DSC06377.ARW",
+      "development": "Sony ILCE-7CM2\nfull=7008x4672 preview=1400x933\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.00263293 max=2.39831\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            2.741152027585514e-10,
+            0.9999998211860657
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0008490277139794824,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999944567680359
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.003366815159097314,
+            0.9782600402832031
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/examples/DSC06395.ARW",
+      "development": "Sony ILCE-7CM2\nfull=4672x7008 preview=933x1400\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.00263019 max=2.73359\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            5.710497248401225e-07,
+            0.9999732375144958
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 3.062318174858368e-06,
+          "pixels_any_channel_ge_1": 7.65579543714592e-07,
+          "range": [
+            0.0,
+            1.0
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.001071337261237204,
+            0.9761677980422974
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/examples/DSC06667.ARW",
+      "development": "Sony ILCE-7CM2\nfull=4672x7008 preview=933x1400\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.000559624 max=1.61282\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            4.165719019511016e-06,
+            0.9179381132125854
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 8.421374980860511e-05,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9649966359138489
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0007713955128565431,
+            0.9473747611045837
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/examples/DSC06765.ARW",
+      "development": "Sony ILCE-7CM2\nfull=7008x4672 preview=1400x933\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=-0.024732 max=2.86887\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 3.215434083601286e-05,
+          "pixels_any_channel_ge_1": 1.531159087429184e-06,
+          "range": [
+            0.0,
+            1.0
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.007879344663910581,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999938607215881
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0006294158520177007,
+            0.9835888743400574
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/test-assets/DSC00316.ARW",
+      "development": "Sony ILCE-7CM2\nfull=4672x7008 preview=933x1400\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.00538942 max=2.71829\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 1.2249272699433472e-05,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999997615814209
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0007801255550451692,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9999988079071045
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.009591979905962944,
+            0.9783310294151306
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/test-assets/DSC00340.ARW",
+      "development": "Sony ILCE-7CM2\nfull=7008x4672 preview=1400x933\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.0159571 max=2.74459\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            4.556751264317427e-06,
+            0.9335997700691223
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 7.65579543714592e-05,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.969865083694458
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.03816613182425499,
+            0.9763021469116211
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/test-assets/DSC09067.ARW",
+      "development": "Sony ILCE-7CM2\nfull=7008x4672 preview=1400x933\nbaseline_ev=0.7 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.00194711 max=0.504766\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0001653694489505142,
+            0.7577815055847168
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            1.3321403002919396e-07,
+            0.7886948585510254
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0012245705584064126,
+            0.7694765329360962
+          ]
+        }
+      }
+    },
+    {
+      "raw": "lutools/examples/DJI_20250602164503_0444_D.DNG",
+      "development": "DJI PP-101\nfull=3072x3072 preview=1400x1400\nbaseline_ev=1.05 user_ev=0 camera_wb=true full_demosaic=true\nfgamut_linear_min=0.000134397 max=2.31\n",
+      "renders": {
+        "PROVIA": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 5.10204081632653e-07,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9791231751441956
+          ]
+        },
+        "Velvia": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 2.8061224489795918e-05,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.0,
+            0.9998884797096252
+          ]
+        },
+        "EKTAR-v1": {
+          "cpp_python_max_abs_error": 1.7881393432617188e-07,
+          "pixels_any_channel_le_0": 0.0,
+          "pixels_any_channel_ge_1": 0.0,
+          "range": [
+            0.00015641518984921277,
+            0.9700804352760315
+          ]
+        }
+      }
+    }
+  ],
+  "lut_size": 65,
+  "points": 274625,
+  "gray_ramp_min_step": -8.049273781611088e-07,
+  "gray_ramp_monotonicity_tolerance": 1e-06,
+  "gray_ramp_max_channel_spread": 0.00238204339965864,
+  "interpolation_direct_error_p99_max": [
+    0.008642374311516678,
+    0.02304967600291119
+  ],
+  "gray_curve_stops_relative_to_18_percent": [
+    -6,
+    -5,
+    -4,
+    -3,
+    -2,
+    -1,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "gray_curve_display_encoded_reference": {
+    "PROVIA": [
+      0.00901484522748555,
+      0.018915055299737034,
+      0.03813963678445592,
+      0.07638666497961555,
+      0.14882744439616646,
+      0.2806979518119313,
+      0.4579346185519803,
+      0.6360827136483779,
+      0.7878609982541901,
+      0.863410304874516,
+      0.9088075962996172,
+      0.9506152077267148,
+      0.9892442844372984
+    ],
+    "Velvia": [
+      0.00041331377180766683,
+      0.0013447471666365124,
+      0.005432058580887436,
+      0.028457049505289548,
+      0.10250651771000845,
+      0.26976127891465124,
+      0.46567518246094974,
+      0.6249468394014782,
+      0.7723997236822001,
+      0.8683916222705053,
+      0.9274072150840977,
+      0.9680075997989256,
+      0.9952134118094791
+    ],
+    "EKTAR-v1": [
+      0.003860191778248312,
+      0.01080098936393086,
+      0.032207138557939136,
+      0.08166245404285229,
+      0.16183475096299543,
+      0.2844243279853839,
+      0.4594347963218826,
+      0.6638641980508958,
+      0.8384992139539827,
+      0.9367959776041892,
+      0.9777923499518333,
+      0.9926321981708607,
+      0.9976038282200478
+    ]
+  },
+  "claims": "Technical validity and unrelated RAW stress tests only; no paired film matching accuracy measurement."
+}

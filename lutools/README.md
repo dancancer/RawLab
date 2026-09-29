@@ -105,9 +105,9 @@ RAW 格式支持取决于 LibRaw。现有回归覆盖 Sony ARW 和本地可选 D
 
 RAW format support depends on LibRaw. Current regressions cover Sony ARW and an optional local DJI DNG fixture; this does not establish color calibration for every brand, model or illuminant.
 
-照片 API 只接受声明兼容 F-Gamut / F-Log2 输入和已识别显示输出的 LUT。包括 PROVIA、Velvia、ASTIA、CLASSIC CHROME、CLASSIC Neg.、REALA ACE、PRO Neg.Std、ETERNA、ETERNA-BB、ACROS 和 WDR；桌面胶片选择器排除技术转换 LUT 和 WDR。
+照片 API 接受声明兼容 F-Gamut / F-Log2 输入、BT.709 输出色域的 LUT，不再限制胶片输出名称。`Gamma` 必须为 `F-Log2 to <非空外观名称>`；纯 `F-Log2 to F-Log2` 技术转换仍被拒绝。自定义 LUT 应提供符合应用 sRGB 约定的显示输出；校验不分析表格的实际传递函数。桌面胶片选择器排除技术转换 LUT 和 WDR。
 
-The photo API accepts LUTs declaring compatible F-Gamut / F-Log2 input and recognized display output: PROVIA, Velvia, ASTIA, CLASSIC CHROME, CLASSIC Neg., REALA ACE, PRO Neg.Std, ETERNA, ETERNA-BB, ACROS and WDR. The desktop film picker excludes technical conversion LUTs and WDR.
+The photo API accepts LUTs declaring F-Gamut / F-Log2 input and BT.709 output gamut without a film-name allowlist. Gamma must declare `F-Log2 to <nonempty look name>`; the technical `F-Log2 to F-Log2` conversion is still rejected. Custom LUTs must provide display output matching the application's sRGB convention; validation does not analyze the table's actual transfer behavior. The desktop film picker excludes technical conversion LUTs and WDR.
 
 `FLog2 -> FLog2 BT.709` 是技术色域转换，不是照片胶片外观。F-Gamut C、Log 输出或未声明输入约定的 LUT 不能直接当成兼容照片 LUT。
 

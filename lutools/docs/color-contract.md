@@ -34,7 +34,7 @@ The PHOTO API is narrower. Supported files declare comments such as:
 #Gamut:F-Gamut to ITU-R BT.709
 ```
 
-Recognized outputs are PROVIA, Velvia, ASTIA, CLASSIC CHROME, CLASSIC Neg., REALA ACE, PRO Neg.Std, ETERNA, ETERNA BLEACH BYPASS, ACROS and Wide Dynamic Range curve. Missing/unknown contracts, F-Gamut C, arbitrary sRGB creative LUTs and Log-output LUTs are rejected by the photo API rather than silently adapted. Generic mathematical CUBE application remains available through LUTApplicator.
+The output look name is not allowlisted: custom names such as EKTAR 100 Phuket are accepted. Gamma must still declare `F-Log2 to <nonempty look name>`, and Gamut must declare `F-Gamut to ITU-R BT.709`. Missing/incompatible declarations, F-Gamut C and sRGB-input creative LUTs are rejected. The known `F-Log2 to F-Log2` technical conversion remains rejected because it does not produce display RGB. This validates declarations, not the table's actual transfer behavior; `OutputTransfer` comments are not interpreted. Custom LUT authors must provide display output matching the application's sRGB convention. Generic mathematical CUBE application remains available through LUTApplicator.
 
 `FLog2 -> FLog2 BT.709` is a technical color-gamut conversion, not a display film look. It is excluded from client film pickers. The experimental `SONY2FUJI_ACES_MODE` switch is superseded by the single float camera-matrix path; it no longer changes rendering.
 

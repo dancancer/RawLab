@@ -232,13 +232,12 @@ extension RawEditorViewModel {
                         previewLongEdge: nil,
                         lutURL: lutURL
                     )
-                    guard let output = self.processor.makeJPEGData(
+                    let output = try self.processor.makeJPEGData(
                         from: result.buffer,
+                        sourceURL: sourceURL,
                         orientation: result.orientation,
                         quality: 0.92
-                    ) else {
-                        throw EditorError.renderFailed
-                    }
+                    )
                     data = output
                 } else {
                     let raster = try self.processor.loadRasterBuffer(url: sourceURL)
@@ -248,13 +247,12 @@ extension RawEditorViewModel {
                         previewLongEdge: nil,
                         lutURL: lutURL
                     )
-                    guard let output = self.processor.makeJPEGData(
+                    let output = try self.processor.makeJPEGData(
                         from: outputBuffer,
+                        sourceURL: sourceURL,
                         orientation: raster.orientation,
                         quality: 0.92
-                    ) else {
-                        throw EditorError.renderFailed
-                    }
+                    )
                     data = output
                 }
 
@@ -305,13 +303,12 @@ extension RawEditorViewModel {
                     previewLongEdge: nil,
                     lutURL: lutURL
                 )
-                guard let data = self.processor.makeJPEGData(
+                let data = try self.processor.makeJPEGData(
                     from: fullResult.buffer,
+                    sourceURL: url,
                     orientation: fullResult.orientation,
                     quality: 0.92
-                ) else {
-                    throw EditorError.renderFailed
-                }
+                )
 
                 DispatchQueue.main.async {
                     self.sourceURL = url

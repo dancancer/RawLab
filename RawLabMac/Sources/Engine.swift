@@ -96,7 +96,10 @@ final class RenderEngine {
             }
             throw RenderError.failed("处理失败：\(message)")
         }
-        if output != nil { return nil }
+        if let output {
+            try ExportMetadata.preserve(from: url, in: output)
+            return nil
+        }
         var baseline: Float = 0, metadata: Float = 0
         guard sony2fuji_session_get_raw_exposure(session, &baseline, &metadata) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed("无法读取基础曝光")

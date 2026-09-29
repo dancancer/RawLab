@@ -1,10 +1,11 @@
 import Foundation
 
 enum AdjustmentKind: String, CaseIterable, Identifiable {
+    case strength
     case exposure
-    case contrast
     case highlights
     case shadows
+    case contrast
     case toneCurve
     case saturation
     case temperature
@@ -16,56 +17,62 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .strength:
+            return "强度"
         case .exposure:
-            return "Exposure"
+            return "曝光"
         case .contrast:
-            return "Contrast"
+            return "对比度"
         case .highlights:
-            return "Highlights"
+            return "高光"
         case .shadows:
-            return "Shadows"
+            return "阴影"
         case .toneCurve:
-            return "Tone Curve"
+            return "S 曲线"
         case .saturation:
-            return "Saturation"
+            return "饱和度"
         case .temperature:
-            return "Temperature"
+            return "色温"
         case .tint:
-            return "Tint"
+            return "色调"
         case .noiseReduction:
-            return "Noise Reduction"
+            return "降噪"
         case .sharpening:
-            return "Sharpening"
+            return "锐化"
         }
     }
 
     var iconName: String {
         switch self {
+        case .strength:
+            return "camera.aperture"
         case .exposure:
-            return "sun.max"
+            return "plusminus.circle"
         case .contrast:
             return "circle.lefthalf.filled"
         case .highlights:
             return "sun.max.fill"
         case .shadows:
-            return "sun.min.fill"
+            return "moon"
         case .toneCurve:
             return "waveform.path.ecg"
         case .saturation:
-            return "paintpalette"
+            return "drop"
         case .temperature:
             return "thermometer"
         case .tint:
-            return "eyedropper"
+            return "circle.hexagongrid"
         case .noiseReduction:
             return "sparkles"
         case .sharpening:
-            return "wand.and.stars"
+            return "triangle"
         }
     }
 
     var range: ClosedRange<Double> {
         switch self {
+        case .strength:
+            return RawSettings.lutStrengthRange
         case .exposure:
             return -2...2
         case .contrast:
@@ -91,6 +98,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     var step: Double {
         switch self {
+        case .strength:
+            return 0.01
         case .exposure:
             return 0.1
         case .contrast:
@@ -114,6 +123,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     func value(from settings: RawSettings) -> Double {
         switch self {
+        case .strength:
+            return settings.lutStrength
         case .exposure:
             return settings.exposure
         case .contrast:
@@ -139,6 +150,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     func setValue(_ value: Double, in settings: inout RawSettings) {
         switch self {
+        case .strength:
+            settings.lutStrength = value
         case .exposure:
             settings.exposure = value
         case .contrast:
@@ -164,8 +177,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     func valueLabel(for value: Double) -> String {
         switch self {
+        case .strength:
+            return String(format: "%.0f%%", value * 100)
         case .exposure:
-            return String(format: "%.1f", value)
+            return String(format: "%+.1f EV", value)
         case .contrast, .saturation, .noiseReduction, .sharpening:
             return String(format: "%.2f", value)
         case .highlights, .shadows, .toneCurve:
@@ -175,5 +190,17 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .tint:
             return String(format: "%.0f", value)
         }
+    }
+
+    func progress(in settings: RawSettings) -> Double {
+        let baseline = value(from: .default)
+        let delta = value(from: settings) - baseline
+        let span = delta >= 0 ? range.upperBound - baseline : baseline - range.lowerBound
+        guard span > 0 else { return 0 }
+        return min(max(delta / span, -1), 1)
+    }
+
+    func reset(in settings: inout RawSettings) {
+        setValue(value(from: .default), in: &settings)
     }
 }

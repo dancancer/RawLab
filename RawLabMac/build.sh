@@ -20,7 +20,7 @@ fi
 RAW_LIB="$(pkg-config --variable=libdir libraw)"
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx$DEPLOYMENT_TARGET" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT"/RawLabMac/Sources/*.swift "$BUILD/libsony2fuji_core.a" \
+    "$ROOT"/RawLabMac/Sources/*.swift "$ROOT/Shared/ExportMetadata.swift" "$BUILD/libsony2fuji_core.a" \
     -L "$RAW_LIB" -lraw -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"

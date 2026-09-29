@@ -164,7 +164,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     }
     var spec: AdjustmentSpec {
         switch self {
-        case .strength: return AdjustmentSpec(title: "强度", keyPath: \.strength, range: 0...1, defaultValue: 1, step: 0.01, unit: "%", multiplier: 100)
+        case .strength: return AdjustmentSpec(title: "强度", keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.01, unit: "%", multiplier: 100)
         case .exposure: return AdjustmentSpec(title: "曝光", keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.05, unit: "EV", decimals: 2)
         case .temperature: return AdjustmentSpec(title: "色温", keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
         case .tint: return AdjustmentSpec(title: "色调", keyPath: \.tint, range: -150...150, defaultValue: 0, step: 1, unit: "")

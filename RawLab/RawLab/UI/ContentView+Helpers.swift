@@ -6,37 +6,10 @@ import UIKit
 import UniformTypeIdentifiers
 
 extension ContentView {
-    func circleIconButton(
-        systemName: String,
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            circleIconLabel(systemName: systemName)
-        }
-        .opacity(isEnabled ? 1 : 0.35)
-        .disabled(!isEnabled)
-    }
-
-    func circleIconLabel(systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.primary)
-            .frame(width: 32, height: 32)
-            .background(Color.primary.opacity(0.12))
-            .clipShape(Circle())
-    }
-
-    func lutButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.footnote)
-                .foregroundStyle(isSelected ? Color(.systemBackground) : .primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.primary : Color.primary.opacity(0.12))
-                .clipShape(Capsule())
-        }
+    var editingLocked: Bool { isImporting || isSaving }
+    var editorBusy: Bool { viewModel.isBusy || editingLocked }
+    var selectedFilmName: String {
+        viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? "中性"
     }
 
     var currentPreviewImage: UIImage? {
@@ -44,20 +17,6 @@ extension ContentView {
             return viewModel.basePreviewImage ?? viewModel.previewImage
         }
         return viewModel.previewImage ?? viewModel.basePreviewImage
-    }
-
-    var previewMaxHeight: CGFloat { 460 }
-
-    var previewIsLandscape: Bool {
-        guard let image = currentPreviewImage else {
-            return true
-        }
-        let width = image.cgImage?.width ?? Int(image.size.width)
-        let height = image.cgImage?.height ?? Int(image.size.height)
-        let isRotated = viewModel.sourceOrientation?.isQuarterTurn ?? false
-        let displayWidth = isRotated ? height : width
-        let displayHeight = isRotated ? width : height
-        return displayWidth >= displayHeight
     }
 
     var currentHistogram: [CGFloat] {
@@ -68,11 +27,13 @@ extension ContentView {
     }
 
     func exportJPEG() {
+        isSaving = true
         viewModel.exportJPEG(settings: settings) { result in
             switch result {
             case .success(let data):
                 saveToPhotoLibrary(data)
             case .failure(let error):
+                isSaving = false
                 viewModel.statusMessage = error.localizedDescription
             }
         }
@@ -82,15 +43,43 @@ extension ContentView {
         settings = newSettings
     }
 
+    func adjustmentBinding(_ adjustment: AdjustmentKind) -> Binding<Double> {
+        Binding(
+            get: { adjustment.value(from: settings) },
+            set: { value in
+                var updated = settings
+                adjustment.setValue(value, in: &updated)
+                applySettingsChange(updated)
+            }
+        )
+    }
+
+    func reset(_ adjustment: AdjustmentKind) {
+        var updated = settings
+        adjustment.reset(in: &updated)
+        applySettingsChange(updated)
+    }
+
+    func setSliderEditing(_ editing: Bool) {
+        isAdjustingSlider = editing
+        if !editing {
+            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
+        }
+    }
+
     func photoImportButton(isEnabled: Bool) -> some View {
         PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-            circleIconLabel(systemName: "square.and.arrow.down")
+            Image(systemName: "photo.badge.plus")
         }
-        .opacity(isEnabled ? 1 : 0.35)
+        .accessibilityLabel("导入照片")
+        .help("从照片图库导入")
+        .accessibilityIdentifier("editor.import")
         .disabled(!isEnabled)
     }
 
     func importFromPhotoItem(_ item: PhotosPickerItem) async {
+        isImporting = true
+        showingBefore = false
         do {
             let source = try await loadPhotoSource(from: item)
             await MainActor.run {
@@ -99,6 +88,7 @@ extension ContentView {
             }
         } catch {
             await MainActor.run {
+                isImporting = false
                 viewModel.statusMessage = error.localizedDescription
                 selectedPhotoItem = nil
             }
@@ -122,7 +112,8 @@ extension ContentView {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 DispatchQueue.main.async {
-                    viewModel.statusMessage = "Photo library access denied."
+                    isSaving = false
+                    viewModel.statusMessage = "无法保存照片，请在系统设置中允许添加照片。"
                 }
                 return
             }
@@ -132,26 +123,16 @@ extension ContentView {
                 request.addResource(with: .photo, data: data, options: nil)
             }, completionHandler: { success, error in
                 DispatchQueue.main.async {
+                    isSaving = false
                     if let error = error {
                         viewModel.statusMessage = error.localizedDescription
                     } else if success {
-                        viewModel.statusMessage = "Saved to Photos."
+                        viewModel.statusMessage = "已保存到照片。"
                     } else {
-                        viewModel.statusMessage = "Failed to save to Photos."
+                        viewModel.statusMessage = "保存失败，请重试。"
                     }
                 }
             })
-        }
-    }
-}
-
-private extension CGImagePropertyOrientation {
-    var isQuarterTurn: Bool {
-        switch self {
-        case .left, .leftMirrored, .right, .rightMirrored:
-            return true
-        default:
-            return false
         }
     }
 }

@@ -101,7 +101,7 @@ struct Sony2FujiProcessor {
         var request = makeBaseRequest(settings: settings)
         request.input_type = SONY2FUJI_INPUT_RAW
         applySize(&request, width: targetWidth, height: targetHeight, previewLongEdge: previewLongEdge)
-        let lutStrength = lutURL == nil ? 0 : Float(min(max(settings.lutStrength, 0), 1))
+        let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
         request.lut_strength = lutStrength
 
         var buffer = sony2fuji_buffer()
@@ -139,7 +139,7 @@ struct Sony2FujiProcessor {
         request.input_color_space = SONY2FUJI_COLOR_SRGB
         request.input_is_linear = 0
         applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height), previewLongEdge: previewLongEdge)
-        let lutStrength = lutURL == nil ? 0 : Float(min(max(settings.lutStrength, 0), 1))
+        let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
         request.lut_strength = lutStrength
 
         var outBuffer = sony2fuji_buffer()
@@ -215,29 +215,15 @@ struct Sony2FujiProcessor {
 
     func makeJPEGData(
         from buffer: Buffer,
+        sourceURL: URL,
         orientation: CGImagePropertyOrientation?,
         quality: CGFloat
-    ) -> Data? {
+    ) throws -> Data {
         guard let cgImage = makeCGImage(from: buffer) else {
-            return nil
+            throw ProcessorError.rasterDecodeFailed
         }
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            data,
-            UTType.jpeg.identifier as CFString,
-            1,
-            nil
-        ) else {
-            return nil
-        }
-        var properties: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: quality
-        ]
-        if let orientation {
-            properties[kCGImagePropertyOrientation] = orientation.rawValue
-        }
-        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
-        return CGImageDestinationFinalize(destination) ? (data as Data) : nil
+        return try ExportMetadata.jpegData(image: cgImage, sourceURL: sourceURL,
+                                          orientation: orientation ?? .up, quality: quality)
     }
 
     func computeHistogram(from buffer: Buffer, bins: Int) -> [CGFloat] {

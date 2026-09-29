@@ -96,6 +96,9 @@ The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the
 - JPEG/16-bit PNG 导出使用原始 RAW 重新全分辨率渲染，不放大 8-bit 预览。导出不会覆盖原始 RAW 路径。
 
   JPEG and 16-bit PNG exports render at full RAW resolution rather than enlarging an 8-bit preview. Export cannot overwrite the input RAW path.
+- 导出保留 ImageIO 能读取的拍摄时间、相机/镜头、曝光、ISO、GPS 等拍摄元数据。方向和尺寸按成片更新，色彩空间标记为 sRGB；不复制旧缩略图、RAW 传感器布局或不透明 MakerNotes。JPEG 无需再次压缩；PNG 通过无损编码写入标准 eXIf，仍为 16-bit。该行为由 Mac/iOS 共用的 `Shared/ExportMetadata.swift` 实现，不改变 CLI/C API 文件编码。
+
+  App exports retain ImageIO-readable capture time, camera/lens, exposure, ISO and GPS metadata. Orientation, dimensions and color space describe the rendered sRGB image; old thumbnails, RAW sensor layout and opaque MakerNotes are excluded. JPEG metadata is attached without recompression; PNG is losslessly encoded with standard eXIf while retaining 16-bit samples. The Mac/iOS shared Swift helper implements this behavior; CLI/C API file encoding is unchanged.
 - 渲染串行执行，最多保留一个在途请求和一个最新待处理请求。拖动滑杆时使用 1000 像素交互预览，松手后自动替换成 2000 像素或原尺寸的精确结果；精确结果完成前禁止导出。数字输入直接触发精确渲染。
 
   Rendering is serial, with at most one in-flight and one latest pending request. Dragging uses a 1000px interactive preview; release replaces it with an exact 2000px or native-resolution result. Export stays disabled until exact work completes. Numeric input requests exact rendering directly.
@@ -123,6 +126,7 @@ bash lutools/test.sh
 SONY2FUJI_TEST_GPU=1 ctest --test-dir lutools/build-verify -R color_contracts --output-on-failure
 bash RawLabMac/tests/smoke.sh
 bash RawLabMac/tests/adjustments.sh
+bash RawLabMac/tests/export-metadata.sh
 bash RawLabMac/tests/presentation.sh
 bash RawLabMac/tests/app-icon.sh
 bash RawLabMac/tests/histogram.sh

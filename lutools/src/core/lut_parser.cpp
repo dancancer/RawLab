@@ -78,10 +78,9 @@ ErrorCode LUT3D::parseCubeFile(const std::string& path) {
     data_ = std::move(values);
     const std::string prefix = "flog2to";
     const std::string output = gamma.compare(0, prefix.size(), prefix) == 0 ? gamma.substr(prefix.size()) : "";
-    const std::vector<std::string> photoOutputs = {"eterna", "eternabb", "eternableachbypass", "widedynamicrangecurve", "provia", "velvia", "astia",
-        "classicchrome", "classicneg", "pronegstd", "realaace", "acros", "wdr"};
+    // The gamut-only F-Log2 conversion is not a display look.
     photoLUT_ = gamut == "fgamuttoiturbt709" &&
-        std::find(photoOutputs.begin(), photoOutputs.end(), output) != photoOutputs.end();
+        !output.empty() && output != "flog2";
     return ErrorCode::Success;
 }
 

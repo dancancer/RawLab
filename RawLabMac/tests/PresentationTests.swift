@@ -7,6 +7,18 @@ struct PresentationTests {
         print("PASS: \(message)")
     }
     static func main() throws {
+        let strength = AdjustmentParameter.strength.spec
+        check(strength.parse("200") == 2 && strength.parse("250") == 2,
+              "Film strength accepts 200 percent and clamps larger input")
+        check(strength.value(at: 0) == 0 && strength.value(at: 0.5) == 1 && strength.value(at: 1) == 2,
+              "Film strength slider spans zero to 200 percent with 100 at the midpoint")
+        check(Adjustments().strength == 1 && strength.defaultValue == 1 && strength.text(1) == "100",
+              "Film strength still defaults to 100 percent")
+        var filmSettings = Adjustments()
+        filmSettings.strength = 2; filmSettings.exposure = 1.25
+        filmSettings.reset(.film)
+        check(filmSettings.strength == 1 && filmSettings.exposure == 1.25,
+              "Film reset restores 100 percent without changing exposure")
         var wb = Adjustments()
         wb.resolveWhiteBalance(WhiteBalance(temperature: 5274, tint: 12))
         check(wb.temperature == 5274 && wb.tint == 12 && wb.whiteBalanceMode == .asShot,

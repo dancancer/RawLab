@@ -26,6 +26,9 @@
       selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv="YES">
       <Testables>
+         <TestableReference skipped="NO">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="AB1300000000000000000004" BuildableName="RawLabUITests.xctest" BlueprintName="RawLabUITests" ReferencedContainer="container:RawLab.xcodeproj"/>
+         </TestableReference>
       </Testables>
       <MacroExpansion>
          <BuildableReference

@@ -179,6 +179,40 @@ int main() {
     r.lut_path=log.c_str(); r.lut_strength=1;
     check(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_UNSUPPORTED, "Photo pipeline rejects Log output");
     sony2fuji_release_buffer(&out);
+    const struct { const char* gamma; const char* gamut; bool accepted; } contracts[] = {
+        {"F-Log2 to EKTAR 100 Phuket", "F-Gamut to ITU-R BT.709", true},
+        {"F-Log2 to My Custom Look", "F-Gamut to ITU-R BT.709", true},
+        {"f-log2 TO independently-named-look", "f-gamut TO itu-r bt.709", true},
+        {"F-Log2 to F-Log2", "F-Gamut to ITU-R BT.709", false},
+        {"F-Log2 to", "F-Gamut to ITU-R BT.709", false},
+        {"", "F-Gamut to ITU-R BT.709", false},
+        {"sRGB to My Custom Look", "F-Gamut to ITU-R BT.709", false},
+        {"F-Log2 to My Custom Look", "F-Gamut C to ITU-R BT.709", false},
+        {"F-Log2 to My Custom Look", "F-Gamut to Adobe RGB", false},
+        {"F-Log2 to My Custom Look", "", false}
+    };
+    for (size_t i=0; i<std::size(contracts); ++i) {
+        const auto& contract = contracts[i];
+        const auto path = (dir / ("contract-" + std::to_string(i) + ".cube")).string();
+        {
+            std::ofstream file(path);
+            file << "#Gamma:" << contract.gamma << "\n#Gamut:" << contract.gamut << "\nLUT_3D_SIZE 2\n";
+            for (int point=0; point<8; ++point) file << "0.25 0.5 0.75\n";
+        }
+        const auto custom = LUTParser::loadLUT(path);
+        check(custom && custom->isPhotoLUT()==contract.accepted,
+              ("Photo contract without film-name allowlist: " + std::to_string(i)).c_str());
+        r=request(black); r.lut_path=path.c_str(); r.lut_strength=1;
+        const auto code = sony2fuji_process(session,&r,&out);
+        if (contract.accepted) {
+            const auto* pixels = static_cast<const unsigned char*>(out.data);
+            check(code==SONY2FUJI_STATUS_OK && pixels && pixels[0]==64 && pixels[1]==128 && pixels[2]==191,
+                  "Arbitrary display look renders through the photo API");
+        } else {
+            check(code==SONY2FUJI_STATUS_UNSUPPORTED, "Incompatible color contract remains unsupported");
+        }
+        sony2fuji_release_buffer(&out);
+    }
     auto render = [&](const unsigned char* pixel, float strength, float exposure) {
         auto input=request(pixel); input.lut_path=provia.c_str(); input.lut_strength=strength; input.exposure_ev=exposure;
         sony2fuji_buffer result{};
