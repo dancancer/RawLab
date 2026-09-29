@@ -1,5 +1,29 @@
 # App Strength and EXIF Verification
 
+## Combined Branch Integration
+
+The Apple/editor/LUT changes and Android strength/EXIF changes are combined on
+`codex/all-platform-strength-exif`, based on `origin/main` at `d8aed76`.
+Android details are recorded in `RawLabAndroid/verification.md`.
+
+Two integration failures were reproduced and fixed: libc++ file-clock counts
+are not directly accepted by `std::to_string` on macOS/Android, so the cache
+key now explicitly uses nanoseconds; Android test-asset generation now also
+precedes its lint consumers, avoiding Gradle's implicit-dependency failure.
+The Android export test retains main's configurable RAW fixture and dimensions.
+
+On the combined tree: CTest 8/8, Mac build/signature checks, Mac EXIF tests,
+iOS simulator Debug build, Android JVM 12/12, Android emulator 10/10, Android
+debug build/lint, host JNI contract, and APK/native 16 KB alignment passed.
+The iOS/Mac presentation checks passed before integration; no iOS device or
+Windows runtime test was repeated. The existing iOS AccentColor warning remains.
+Android used an external Sony fixture via `RAWLAB_TEST_RAW`, not a committed photo.
+
+Personal RAW files, scan thumbnails, rendered comparison images, and temporary
+UI screenshots are excluded from this branch's new commits. The EKTAR generator,
+tests, validation report, and approved cover are included; the previously moved
+CUBE is not restored. Its documented generator command recreates it locally.
+
 ## Changes
 
 - iOS uses `RawSettings.lutStrengthRange` (0...2) in its slider and clamps both RAW and raster processing to that same range. Defaults and reset remain 1 (100%). The Mac client already uses this range.

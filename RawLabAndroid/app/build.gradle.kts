@@ -70,7 +70,10 @@ android {
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareAssets, prepareIcon) }
-tasks.matching { it.name.endsWith("AndroidTestAssets") }.configureEach { dependsOn(prepareTestAssets) }
+tasks.matching {
+    it.name.endsWith("AndroidTestAssets") || it.name.endsWith("AndroidTestLintModel") ||
+        (it.name.startsWith("lintAnalyze") && it.name.endsWith("AndroidTest"))
+}.configureEach { dependsOn(prepareTestAssets) }
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))

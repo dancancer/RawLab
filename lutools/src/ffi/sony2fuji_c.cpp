@@ -14,6 +14,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -691,8 +692,10 @@ sony2fuji_status loadRawImage(
     if (fileError) return SONY2FUJI_STATUS_IO_ERROR;
     const auto fileSize = std::filesystem::file_size(inputPath, fileError);
     if (fileError) return SONY2FUJI_STATUS_IO_ERROR;
+    const auto modifiedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        modified.time_since_epoch()).count();
     const std::string fileKey = std::string(request.input_path) + ":" +
-        std::to_string(modified.time_since_epoch().count()) + ":" + std::to_string(fileSize);
+        std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
     const bool interactive = session->interactive_preview && request.intent == SONY2FUJI_INTENT_PREVIEW &&
         request.output_target == SONY2FUJI_TARGET_BUFFER &&
         !(session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW && request.wb_mode == SONY2FUJI_WB_CAMERA);
