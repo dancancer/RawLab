@@ -33,6 +33,7 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
         require(input.canonicalPath != output.canonicalPath)
         nativeProcess(handle, input.path, lut?.path, output.path, settings.strength,
             settings.exposure, settings.customWb, settings.temperature, settings.tint, 0, false, png)
+        ExportMetadata.preserve(input, output)
     }
 
     @Synchronized

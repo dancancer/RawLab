@@ -7,6 +7,15 @@ import java.util.concurrent.TimeUnit
 import java.util.Collections
 
 class EditorContractsTest {
+    @Test fun filmStrengthSupportsTwoHundredPercentWithNeutralDefault() {
+        assertEquals(1f, EditSettings().strength)
+        assertEquals(2f, EditSettings(strength = 2f).strength)
+        assertEquals(1f, EditSettings(strength = 2f).reset().strength)
+        for (bad in listOf(-.01f, 2.01f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            assertThrows(IllegalArgumentException::class.java) { EditSettings(strength = bad) }
+        }
+    }
+
     @Test fun resetRetainsFilmButRestoresCameraGains() {
         val edits = EditSettings(film = "velvia", exposure = 2f, customWb = true, temperature = 4200f, tint = 20f)
         assertEquals("velvia", edits.reset().film)

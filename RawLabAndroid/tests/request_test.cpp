@@ -1,6 +1,7 @@
 #include "render_request.h"
 #include <cassert>
 #include <cmath>
+#include <initializer_list>
 
 // Only status text is linked here; these tests exercise adapter validation.
 extern "C" const char* sony2fuji_status_message(sony2fuji_status) { return "test status"; }
@@ -26,6 +27,16 @@ int main() {
     assert(exported.wb_mode == SONY2FUJI_WB_TEMPERATURE);
     assert(exported.temperature == 4800 && exported.tint == -10);
     assert(exported.lut_strength == 0);
+    for (const char* output : {static_cast<const char*>(nullptr), "out.jpg"}) {
+        auto strong = rawlab::makeRequest("in", "film.cube", output, 2, 0, false, 6500, 0, 400, false);
+        assert(strong.lut_strength == 2);
+    }
+    for (float strength : {-0.01f, 2.01f, NAN}) {
+        bool invalidStrength = false;
+        try { rawlab::makeRequest("in", "film.cube", nullptr, strength, 0, false, 6500, 0, 400, false); }
+        catch (const std::invalid_argument&) { invalidStrength = true; }
+        assert(invalidStrength);
+    }
     bool rejected = false;
     try { rawlab::makeRequest("in", nullptr, nullptr, 1, NAN, false, 6500, 0, 1600, false); }
     catch (const std::invalid_argument&) { rejected = true; }

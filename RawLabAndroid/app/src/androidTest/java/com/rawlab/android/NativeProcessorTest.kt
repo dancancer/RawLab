@@ -8,6 +8,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import android.os.SystemClock
 import android.os.Bundle
+import androidx.exifinterface.media.ExifInterface
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
@@ -76,6 +77,8 @@ class NativeProcessorTest {
                 assertEquals(neutral.width * neutral.height * 4, neutral.pixels.size)
                 val film = processor.preview(input, storage.filmPath("velvia"), EditSettings(film = "velvia"), 400, false)
                 assertFalse(neutral.pixels.contentEquals(film.pixels))
+                val strong = processor.preview(input, storage.filmPath("velvia"), EditSettings(film = "velvia", strength = 2f), 400, false)
+                assertFalse(film.pixels.contentEquals(strong.pixels))
                 val bright = processor.preview(input, null, EditSettings(exposure = 1f), 400, false)
                 assertFalse(neutral.pixels.contentEquals(bright.pixels))
                 if (neutral.temperature.isFinite()) {
@@ -90,13 +93,15 @@ class NativeProcessorTest {
                 fun intAt(i: Int) = java.nio.ByteBuffer.wrap(header, i, 4).int
                 assertEquals(7008, intAt(16))
                 assertEquals(4672, intAt(20))
+                assertCaptureMetadata(input, out)
                 out.delete()
                 val jpeg = File(context.cacheDir, "native-export.jpg")
-                processor.export(input, null, EditSettings(), jpeg, false)
+                processor.export(input, storage.filmPath("velvia"), EditSettings(film = "velvia", strength = 2f), jpeg, false)
                 val dimensions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 android.graphics.BitmapFactory.decodeFile(jpeg.path, dimensions)
                 assertEquals(7008, dimensions.outWidth)
                 assertEquals(4672, dimensions.outHeight)
+                assertCaptureMetadata(input, jpeg)
                 jpeg.delete()
                 assertThrows(Exception::class.java) { processor.preview(File(context.cacheDir, "missing.dng"), null, EditSettings(), 400, false) }
             }
@@ -108,5 +113,22 @@ class NativeProcessorTest {
         processor.close()
         processor.close()
         assertThrows(IllegalStateException::class.java) { processor.preview(File("missing.dng"), null, EditSettings(), 400, false) }
+    }
+
+    private fun assertCaptureMetadata(input: File, output: File) {
+        val source = ExifInterface(input)
+        val result = ExifInterface(output)
+        for (tag in listOf(ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL,
+            ExifInterface.TAG_DATETIME_ORIGINAL, ExifInterface.TAG_LENS_MODEL)) {
+            assertNotNull("Fixture must contain $tag", source.getAttribute(tag))
+            assertEquals(tag, source.getAttribute(tag), result.getAttribute(tag))
+        }
+        for (tag in listOf(ExifInterface.TAG_F_NUMBER, ExifInterface.TAG_EXPOSURE_TIME)) {
+            assertTrue(source.getAttributeDouble(tag, 0.0) > 0)
+            assertEquals(tag, source.getAttributeDouble(tag, 0.0), result.getAttributeDouble(tag, 0.0), .000001)
+        }
+        assertEquals(1, result.getAttributeInt(ExifInterface.TAG_ORIENTATION, 0))
+        assertEquals(7008, result.getAttributeInt(ExifInterface.TAG_PIXEL_X_DIMENSION, 0))
+        assertEquals(4672, result.getAttributeInt(ExifInterface.TAG_PIXEL_Y_DIMENSION, 0))
     }
 }
