@@ -51,6 +51,11 @@ class EditorScreenTest {
         compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         assertNull(model.state.value.error)
         assertEquals("velvia", model.state.value.edits.film)
+        compose.onNodeWithText("强度").performClick()
+        compose.onNodeWithTag("adjustment-slider").performSemanticsAction(SemanticsActions.SetProgress) { it(200f) }
+        compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
+        assertEquals(2f, model.state.value.edits.strength)
+        assertNull(model.state.value.error)
         compose.onNodeWithContentDescription("对比").performClick()
         compose.onNodeWithTag("comparison-wipe").assertExists().performSemanticsAction(SemanticsActions.SetProgress) { it(.3f) }
         compose.onNodeWithContentDescription("收起调整").performClick()

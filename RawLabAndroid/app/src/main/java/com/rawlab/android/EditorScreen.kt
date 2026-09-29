@@ -235,7 +235,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                     }
                 }
             }
-            1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..100f, "%", state.controlsEnabled,
+            1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
             2 -> NumericControl(R.string.exposure, edits.exposure, -5f..5f, "EV", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(exposure = value), dragging) }, { onEdit(edits.copy(exposure = 0f), false) })
@@ -270,6 +270,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
 private fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
     enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false) {
     var editing by remember { mutableStateOf(false) }
+    var latestValue by remember(value) { mutableStateOf(value) }
     val formatted = if (unit == "EV") String.format(Locale.ROOT, "%.2f", value) else value.roundToInt().toString()
     var input by remember { mutableStateOf("") }
     val parsed = input.toFloatOrNull()?.takeIf { it.isFinite() && it in range }
@@ -282,8 +283,9 @@ private fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointR
         val sliderRange = if (reciprocal) (-1f / range.start)..(-1f / range.endInclusive) else range
         Slider(modifier = Modifier.testTag("adjustment-slider").semantics { stateDescription = "$formatted $unit" },
             value = if (reciprocal) -1f / value else value, onValueChange = {
-            onValue(if (reciprocal) (-1f / it).coerceIn(range) else it, true)
-        }, onValueChangeFinished = { onValue(value, false) }, valueRange = sliderRange, enabled = enabled)
+            latestValue = if (reciprocal) (-1f / it).coerceIn(range) else it
+            onValue(latestValue, true)
+        }, onValueChangeFinished = { onValue(latestValue, false) }, valueRange = sliderRange, enabled = enabled)
     }
     if (editing) AlertDialog(onDismissRequest = { editing = false }, title = { Text(stringResource(label)) },
         text = {

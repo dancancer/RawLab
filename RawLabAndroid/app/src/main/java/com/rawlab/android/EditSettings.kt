@@ -9,7 +9,7 @@ data class EditSettings(
     val tint: Float = 0f,
 ) {
     init {
-        require(strength.isFinite() && strength in 0f..1f)
+        require(strength.isFinite() && strength in 0f..2f)
         require(exposure.isFinite() && exposure in -5f..5f)
         require(temperature.isFinite() && temperature in 2000f..50000f)
         require(tint.isFinite() && tint in -150f..150f)
