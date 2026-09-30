@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ImageIO
+import Combine
 
 struct DirectoryContents {
     let folders: [URL]
@@ -30,11 +31,18 @@ final class PhotoFolder: ObservableObject, Identifiable {
     let url: URL
     var id: URL { url }
     @Published var expanded = false
-    @Published private(set) var folders: [PhotoFolder] = []
+    @Published private(set) var folders: [PhotoFolder] = [] {
+        didSet {
+            folderSubscriptions = folders.map { child in
+                child.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+            }
+        }
+    }
     @Published private(set) var photos: [URL] = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
     private var loaded = false
+    private var folderSubscriptions: [AnyCancellable] = []
     init(_ url: URL) { self.url = url }
 
     func toggle() { expanded.toggle(); if expanded { load() } }
@@ -59,10 +67,19 @@ final class PhotoFolder: ObservableObject, Identifiable {
 }
 
 final class PhotoLibrary: ObservableObject {
-    @Published private(set) var roots: [PhotoFolder]
+    @Published private(set) var roots: [PhotoFolder] {
+        didSet { observeRoots() }
+    }
+    private var rootSubscriptions: [AnyCancellable] = []
     init() {
         roots = (UserDefaults.standard.stringArray(forKey: "photoFolders") ?? [])
             .map { PhotoFolder(URL(fileURLWithPath: $0)) }
+        observeRoots()
+    }
+    private func observeRoots() {
+        rootSubscriptions = roots.map { root in
+            root.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        }
     }
     func addDirectories() {
         let panel = NSOpenPanel()

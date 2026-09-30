@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +51,7 @@ private fun RawLabApp(model: EditorViewModel) {
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var png by rememberSaveable { mutableStateOf(false) }
     var licenses by rememberSaveable { mutableStateOf(false) }
+    val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { album = false; model.importPhoto(uri) }
     }
@@ -60,8 +62,10 @@ private fun RawLabApp(model: EditorViewModel) {
         if (it == null) model.cancelExport() else model.export(it, true)
     }
     if (album) {
-        AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
-            onPhoto = { album = false; model.importPhoto(it) })
+        screenState.SaveableStateProvider("album") {
+            AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
+                onPhoto = { album = false; model.importPhoto(it) })
+        }
     } else {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
             onEdit = model::edit, onReset = model::reset, onRetry = model::retry,

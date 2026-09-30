@@ -19,59 +19,101 @@ struct FileBrowser: View {
                     Button("添加目录…", action: library.addDirectories)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(library.roots) { root in
-                            FolderBranch(folder: root, selected: selected, open: open)
-                                .contextMenu {
-                                    Button("从侧栏移除此目录") { library.remove(root) }
-                                }
-                        }
-                    }.padding(10)
-                }
+                // 目录和照片行共用原生列表，避免嵌套网格重新估算高度时改变滚动位置。
+                List {
+                    ForEach(FileBrowserRow.rows(in: library.roots)) { row in
+                        browserRow(row)
+                            .padding(.leading, CGFloat(row.depth) * 8)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
+                            .listRowSeparator(.hidden)
+                            .contextMenu {
+                                Button("从侧栏移除此目录") { library.remove(row.root) }
+                            }
+                    }
+                }.listStyle(.plain).scrollContentBackground(.hidden)
             }
         }.background(Color(nsColor: .windowBackgroundColor))
     }
+
+    @ViewBuilder private func browserRow(_ row: FileBrowserRow) -> some View {
+        switch row.content {
+        case .folder(let folder):
+            FolderHeading(folder: folder)
+        case .photos(let first, let second):
+            HStack(spacing: 8) {
+                PhotoThumbnail(url: first, selected: selected == first) { open(first) }
+                if let second {
+                    PhotoThumbnail(url: second, selected: selected == second) { open(second) }
+                } else {
+                    Color.clear.frame(maxWidth: .infinity)
+                }
+            }.frame(height: 101)
+        case .error(let folder, let message):
+            HStack(alignment: .top) {
+                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button(action: folder.load) { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless).help("重新读取目录").accessibilityLabel("重新读取目录")
+            }
+        case .empty:
+            Text("无 RAW 照片").font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
+        }
+    }
 }
 
-private struct FolderBranch: View {
-    @ObservedObject var folder: PhotoFolder
-    let selected: URL?
-    let open: (URL) -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: folder.toggle) {
-                HStack(spacing: 7) {
-                    Image(systemName: folder.expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold)).frame(width: 10)
-                    Image(systemName: folder.expanded ? "folder.fill" : "folder").foregroundStyle(.secondary)
-                    Text(folder.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    if folder.loading { ProgressView().controlSize(.mini) }
-                }.font(.system(size: 12, weight: .medium)).frame(height: 26).contentShape(Rectangle())
-            }.buttonStyle(.plain).help(folder.url.path)
-                .accessibilityValue(folder.expanded ? "已展开" : "已收起")
-            if folder.expanded {
-                if let error = folder.error {
-                    HStack(alignment: .top) {
-                        Text(error).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button(action: folder.load) { Image(systemName: "arrow.clockwise") }
-                            .buttonStyle(.borderless).help("重新读取目录").accessibilityLabel("重新读取目录")
-                    }
-                }
-                ForEach(folder.folders) { child in
-                    AnyView(FolderBranch(folder: child, selected: selected, open: open)).padding(.leading, 8)
-                }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(folder.photos, id: \.self) { url in
-                        PhotoThumbnail(url: url, selected: selected == url) { open(url) }
-                    }
-                }
-                if !folder.loading && folder.error == nil && folder.photos.isEmpty && folder.folders.isEmpty {
-                    Text("无 RAW 照片").font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
-                }
+struct FileBrowserRow: Identifiable {
+    enum Content {
+        case folder(PhotoFolder)
+        case photos(URL, URL?)
+        case error(PhotoFolder, String)
+        case empty
+    }
+    enum ID: Hashable {
+        case folder(URL, URL)
+        case photos(URL, URL)
+        case message(URL, URL)
+    }
+    let id: ID
+    let root: PhotoFolder
+    let depth: Int
+    let content: Content
+
+    static func rows(in roots: [PhotoFolder]) -> [Self] {
+        var rows: [Self] = []
+        func append(_ folder: PhotoFolder, root: PhotoFolder, depth: Int) {
+            rows.append(Self(id: .folder(root.url, folder.url), root: root, depth: depth, content: .folder(folder)))
+            guard folder.expanded else { return }
+            if let error = folder.error {
+                rows.append(Self(id: .message(root.url, folder.url), root: root, depth: depth, content: .error(folder, error)))
+            }
+            for child in folder.folders { append(child, root: root, depth: depth + 1) }
+            for index in stride(from: 0, to: folder.photos.count, by: 2) {
+                let first = folder.photos[index]
+                let second = index + 1 < folder.photos.count ? folder.photos[index + 1] : nil
+                rows.append(Self(id: .photos(root.url, first), root: root, depth: depth, content: .photos(first, second)))
+            }
+            if !folder.loading && folder.error == nil && folder.photos.isEmpty && folder.folders.isEmpty {
+                rows.append(Self(id: .message(root.url, folder.url), root: root, depth: depth, content: .empty))
             }
         }
+        for root in roots { append(root, root: root, depth: 0) }
+        return rows
+    }
+}
+
+private struct FolderHeading: View {
+    @ObservedObject var folder: PhotoFolder
+    var body: some View {
+        Button(action: folder.toggle) {
+            HStack(spacing: 7) {
+                Image(systemName: folder.expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold)).frame(width: 10)
+                Image(systemName: folder.expanded ? "folder.fill" : "folder").foregroundStyle(.secondary)
+                Text(folder.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+                if folder.loading { ProgressView().controlSize(.mini) }
+            }.font(.system(size: 12, weight: .medium)).frame(height: 26).contentShape(Rectangle())
+        }.buttonStyle(.plain).help(folder.url.path)
+            .accessibilityValue(folder.expanded ? "已展开" : "已收起")
     }
 }
 
@@ -94,7 +136,8 @@ private struct PhotoThumbnail: View {
                     .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(selected ? Color.yellow : .clear, lineWidth: 2) }
                 Text(url.deletingPathExtension().lastPathComponent).font(.system(size: 11))
                     .foregroundStyle(selected ? Color.yellow : Color.primary).lineLimit(1).truncationMode(.middle)
-            }.frame(maxWidth: .infinity).contentShape(Rectangle())
+                    .frame(height: 14)
+            }.frame(minWidth: 0, maxWidth: .infinity).contentShape(Rectangle())
         }.buttonStyle(.plain).help(url.lastPathComponent).accessibilityLabel(url.lastPathComponent)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .task(id: url) {

@@ -16,11 +16,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -46,7 +48,8 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
     var photos by remember { mutableStateOf<List<AlbumPhoto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
-    var bucket by remember { mutableStateOf<String?>(null) }
+    var bucket by rememberSaveable { mutableStateOf<String?>(null) }
+    val gridState = rememberLazyGridState()
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh++ }
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refresh++ }
@@ -63,11 +66,11 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
         access = AlbumAccess.level(Build.VERSION.SDK_INT, granted)
         try {
             photos = if (access == AlbumAccess.Level.NONE) emptyList() else withContext(Dispatchers.IO) { storage.album() }
+            if (bucket != null && photos.none { it.album == bucket }) bucket = null
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             failed = true
         } finally { loading = false }
-        if (bucket != null && photos.none { it.album == bucket }) bucket = null
     }
     Scaffold(topBar = {
         TopAppBar(title = { Text(stringResource(R.string.open_album)) }, navigationIcon = {
@@ -112,7 +115,9 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                         TextButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
                     }
                 }
-                LazyVerticalGrid(columns = GridCells.Adaptive(112.dp), contentPadding = PaddingValues(8.dp),
+                // 查询期间不让空网格重测，将保存的位置保留到照片列表恢复。
+                if (photos.isNotEmpty()) LazyVerticalGrid(state = gridState,
+                    columns = GridCells.Adaptive(112.dp), contentPadding = PaddingValues(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(photos.filter { bucket == null || it.album == bucket }, key = { it.uri.toString() }) { photo ->
                         val thumbnail by produceState<android.graphics.Bitmap?>(null, photo.uri, refresh) {
