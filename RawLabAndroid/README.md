@@ -18,6 +18,8 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
   Ten film looks, neutral/result comparison, strength, exposure and calibrated RAW white balance.
 - 1000px 交互预览、1600px 精确预览；串行渲染只保留最新待处理调整。旋转屏幕保留当前编辑。
   Bounded interactive/exact previews with serialized latest-request scheduling and rotation-safe state.
+- 双指缩放、放大后平移；双击在适应画面与 100% 精确预览像素显示之间切换。缩放不触发全分辨率 RAW 显影。参数调整和对比切换保留视口，导入新图复位；对比模式下单指拖分割线、双指缩放和平移。
+  Pinch to zoom, pan, and double-tap between fit and exact-preview pixels, without full-resolution RAW rendering. Edits/comparison preserve the viewport; a new photo resets it. In comparison mode, one finger moves the wipe and two fingers zoom/pan.
 - 默认启用 GLES 像素加速，失败自动回退 CPU；更多菜单可关闭。画布只显示处理进度，不显示后端和耗时角标。
   GLES pixel acceleration defaults to Auto with CPU fallback; the menu can disable it. The canvas shows processing progress without backend/timing badges.
 - 竖屏采用单画面滑动对比、可收起底栏、固定底部工具行；色温与色调分别调整，无需滚动整个工具栏。

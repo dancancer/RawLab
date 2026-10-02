@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
+		AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000012 /* ZoomablePhoto.swift */; };
 		AB1700000000000000000001 /* ExportMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1700000000000000000002 /* ExportMetadata.swift */; };
 		AB1400000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */; };
 		AB1400000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */; };
@@ -53,6 +55,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AB1800000000000000000011 /* PhotoZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoZoomGeometry.swift; sourceTree = "<group>"; };
+		AB1800000000000000000012 /* ZoomablePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomablePhoto.swift; sourceTree = "<group>"; };
 		AB1700000000000000000002 /* ExportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExportMetadata.swift; path = "../Shared/ExportMetadata.swift"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ACROS_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ASTIA_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ASTIA_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
@@ -170,6 +174,8 @@
 			isa = PBXGroup;
 			children = (
 				AB1200000000000000000011 /* EditorComponents.swift */,
+				AB1800000000000000000011 /* PhotoZoomGeometry.swift */,
+				AB1800000000000000000012 /* ZoomablePhoto.swift */,
 				7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */,
 				7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */,
 				6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */,
@@ -389,6 +395,8 @@
 			files = (
 				AB1700000000000000000001 /* ExportMetadata.swift in Sources */,
 				AB1200000000000000000001 /* EditorComponents.swift in Sources */,
+				AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */,
+				AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */,
 				AB1200000000000000000002 /* FilmPresentation.swift in Sources */,
 				474AC2ED2640F238B875DFBA /* App/RawLabApp.swift in Sources */,
 				54CCF4B9CD4492224FC36730 /* UI/ContentView.swift in Sources */,

@@ -86,6 +86,53 @@ final class EditorUITests: XCTestCase {
         capture("complete-film-list")
     }
 
+    func testPreviewZoomGestures() {
+        let app = XCUIApplication()
+        app.launch()
+        importPhoto(in: app)
+        let canvas = app.descendants(matching: .any)["editor.photo"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 5))
+        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        canvas.doubleTap()
+        XCTAssertEqual(canvas.value as? String, "100%")
+        capture("photo-actual-pixels")
+        app.buttons["editor.compare"].tap()
+        XCTAssertEqual(canvas.value as? String, "100%")
+        canvas.doubleTap()
+        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        canvas.pinch(withScale: 3, velocity: 1)
+        XCTAssertFalse((canvas.value as? String)?.hasPrefix("Fit") == true)
+        canvas.swipeLeft()
+        capture("photo-pinched-and-panned")
+        canvas.doubleTap()
+        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        app.buttons["editor.adjustments"].tap()
+        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        canvas.doubleTap()
+        XCTAssertEqual(canvas.value as? String, "100%")
+        app.buttons["editor.adjustments"].tap()
+        XCTAssertEqual(canvas.value as? String, "100%")
+        capture("photo-actual-pixels-resized")
+        importPhoto(in: app)
+        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+    }
+
+    private func importPhoto(in app: XCUIApplication) {
+        app.buttons["editor.import"].tap()
+        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15), app.debugDescription)
+        if photo.frame.midY > app.frame.maxY - 100 {
+            app.scrollViews["photosView_content_scroll_view"].swipeUp()
+        }
+        // The system Photos grid can report no AX hit point for a visible image.
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        expectation(for: NSPredicate { _, _ in
+            app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists
+        }, evaluatedWith: app)
+        waitForExpectations(timeout: 90)
+        XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.alerts.debugDescription)
+    }
+
     private func revealFilm(_ name: String, in app: XCUIApplication) {
         let choices = app.scrollViews["film.choices"]
         for _ in 0..<12 {

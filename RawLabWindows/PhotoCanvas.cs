@@ -15,6 +15,7 @@ public sealed class Viewport
     public event Action? ResolutionChanged;
     public void Fit() { var wasActual=ActualPixels;ActualPixels=false; Zoom=1; Pan=default; Changed?.Invoke();if(wasActual)ResolutionChanged?.Invoke(); }
     public void Actual() { var wasActual=ActualPixels;ActualPixels=true; Zoom=1; Pan=default; Changed?.Invoke();if(!wasActual)ResolutionChanged?.Invoke(); }
+    public void ToggleActualPixels() { if(ActualPixels || Zoom!=1)Fit();else Actual(); }
     public void Magnify(double factor) { Zoom=Math.Clamp(Zoom*factor,.1,16); Changed?.Invoke(); }
     public void Move(Vector delta) { Pan+=delta; Changed?.Invoke(); }
 }
@@ -38,8 +39,12 @@ public sealed class PhotoCanvas : FrameworkElement
         MouseLeftButtonDown+=(_,e)=> {
             Focus();var point=e.GetPosition(this);
             draggingDivider=ComparisonEnabled && Math.Abs(point.X-ActualWidth*Divider)<=18;
+            if(e.ClickCount==2 && !draggingDivider && image!=null)
+            {
+                drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;
+            }
             if(!draggingDivider)drag=point;CaptureMouse();
-            if(e.ClickCount==2 && !draggingDivider)Viewport?.Fit();e.Handled=true;
+            e.Handled=true;
         };
         MouseMove+=(_,e)=> {
             var next=e.GetPosition(this);

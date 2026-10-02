@@ -75,6 +75,8 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 中性与结果并排对比，共享缩放和平移。适合模式使用 2000 像素预览；100% 模式重新渲染完整分辨率。
 
   Neutral and film panes share zoom and pan. Fit mode uses a 2000px preview; 100% mode renders the original resolution.
+  双击任一照片画布可在适合窗口与 100% 实际像素之间切换，同时复位平移；手动缩放后双击回到适合窗口。
+  Double-click either photo canvas to toggle fit and 100% actual pixels and reset pan; after manual zoom, double-click returns to fit.
 - 曝光在线性域处理。RAW 白平衡默认“拍摄时设置”：通过相机原始白平衡增益和校准矩阵推算 Kelvin/色调，绝非固定 6500 K。色温范围 2000–50000 K，调高偏暖；色调范围 -150–150，负值偏绿、正值偏洋红。选择“拍摄时设置”恢复相机原始增益，分组/全部重置保留每张照片自己的基准。
 
   Exposure runs in linear space. RAW white balance starts at As Shot, with Kelvin/tint estimated from camera gains and calibration rather than fixed at 6500 K. Temperature spans 2000-50000 K and higher values warm the image; tint spans -150 to +150, from green to magenta. As Shot restores the original gains; group and global resets retain each photo's baseline.

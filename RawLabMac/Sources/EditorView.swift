@@ -211,8 +211,14 @@ struct EditorView: View {
         viewport.zoom(by: multiplier)
         if viewport.magnification > 1 && !model.fullResolution { model.fullResolution = true }
     }
+    private func toggleActualPixels() {
+        viewport.toggleActualPixels()
+        pan = .zero
+        if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
+    }
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
         PhotoCanvas(frame: frame, viewport: viewport, pixelReady: frame.isFullResolution, pan: $pan, clipping: showMask)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() })
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {
                 if compare {

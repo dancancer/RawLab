@@ -183,6 +183,9 @@ struct PhotoViewport: Equatable {
     private(set) var pixelMode = false
     mutating func fit() { self = PhotoViewport() }
     mutating func actualPixels() { magnification = 1; pixelMode = true }
+    mutating func toggleActualPixels() {
+        if pixelMode || magnification != 1 { fit() } else { actualPixels() }
+    }
     mutating func zoom(by multiplier: CGFloat) {
         magnification = min(16, max(0.1, magnification * multiplier))
     }

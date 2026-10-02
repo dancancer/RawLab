@@ -41,11 +41,10 @@ extension ContentView {
             ZStack {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
+                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
+                                  label: showingBefore ? "调整前的照片" : "调整后的照片")
+                        .id(viewModel.basePreviewImage)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .accessibilityLabel(showingBefore ? "调整前的照片" : "调整后的照片")
                 } else {
                     VStack(spacing: 16) {
                         Image(systemName: "photo.on.rectangle.angled")

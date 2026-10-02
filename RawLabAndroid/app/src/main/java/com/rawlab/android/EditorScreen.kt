@@ -6,9 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -24,20 +22,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -62,6 +54,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
+    val photoCanvas = rememberSaveable(state.photo?.file?.absolutePath, saver = PhotoCanvasState.Saver) { PhotoCanvasState() }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); onMessageDismiss() }
@@ -97,7 +90,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 if (wide && state.photo != null) {
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
-                            EditorCanvas(state, compare, Modifier.weight(1f), onAlbum, onFile, onLicenses)
+                            EditorCanvas(state, compare, photoCanvas, Modifier.weight(1f), onAlbum, onFile, onLicenses)
                             RenderError(state, onRetry)
                         }
                         VerticalDivider()
@@ -105,7 +98,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset)
                     }
                 } else {
-                    EditorCanvas(state, compare, Modifier.weight(1f), onAlbum, onFile, onLicenses)
+                    EditorCanvas(state, compare, photoCanvas, Modifier.weight(1f), onAlbum, onFile, onLicenses)
                     RenderError(state, onRetry)
                     if (state.photo != null) {
                         HorizontalDivider()
@@ -119,10 +112,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
 }
 
 @Composable
-private fun EditorCanvas(state: EditorState, compare: Boolean, modifier: Modifier,
+private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, modifier: Modifier,
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit) {
     Box(modifier.fillMaxWidth().background(Color(0xFF18191A)), contentAlignment = Alignment.Center) {
-        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty()) }
+        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas) }
             ?: if (!state.rendering) EmptyEditor(onAlbum, onFile, onLicenses) else Unit
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
@@ -157,39 +150,6 @@ private fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () 
         Button(onClick = onAlbum) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.open_album)) }
         TextButton(onClick = onFile) { Text(stringResource(R.string.open_file), color = Color(0xFFE9CE55)) }
         TextButton(onClick = onLicenses) { Text(stringResource(R.string.licenses), color = Color(0xFFB8BABC)) }
-    }
-}
-
-@Composable
-private fun PhotoCanvas(pair: PreviewPair, compare: Boolean, filename: String) {
-    var split by rememberSaveable { mutableFloatStateOf(.5f) }
-    val description = stringResource(R.string.comparison_wipe)
-    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-        Image(pair.result.asImageBitmap(), filename, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        if (compare) {
-            val wipe = Modifier.fillMaxSize().testTag("comparison-wipe").semantics {
-                contentDescription = description
-                stateDescription = "${(split * 100).roundToInt()}%"
-                progressBarRangeInfo = ProgressBarRangeInfo(split, 0f..1f)
-                setProgress { split = it.coerceIn(0f, 1f); true }
-            }.pointerInput(Unit) {
-                detectDragGestures(onDragStart = { split = (it.x / size.width).coerceIn(0f, 1f) }) { change, _ ->
-                    split = (change.position.x / size.width).coerceIn(0f, 1f)
-                    change.consume()
-                }
-            }.drawWithContent {
-                clipRect(right = size.width * split) { this@drawWithContent.drawContent() }
-                drawLine(Color.White, Offset(size.width * split, 0f), Offset(size.width * split, size.height), 1.dp.toPx())
-            }
-            Image(pair.neutral.asImageBitmap(), null, wipe, contentScale = ContentScale.Fit)
-            Icon(Icons.Outlined.SwapHoriz, null, Modifier.align(Alignment.CenterStart)
-                .offset { IntOffset((maxWidth.toPx() * split - 16.dp.toPx()).roundToInt(), 0) }
-                .size(32.dp).background(Color.White, CircleShape).padding(5.dp), tint = Color.Black)
-            Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                for (label in listOf(R.string.neutral, R.string.result)) Text(stringResource(label),
-                    Modifier.background(Color.Black.copy(alpha = .65f)).padding(6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
-            }
-        }
     }
 }
 

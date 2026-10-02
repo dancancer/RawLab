@@ -8,6 +8,17 @@ static class ComparisonChecks
 {
     internal static void Run(Action<bool,string> check)
     {
+        var viewport=new Viewport();var resolutionChanges=0;
+        viewport.ResolutionChanged+=()=>resolutionChanges++;
+        viewport.Move(new Vector(30,-20));viewport.ToggleActualPixels();
+        check(viewport.ActualPixels && viewport.Zoom==1 && viewport.Pan==default && resolutionChanges==1,
+            "Double click switches fit to native pixels, clears pan and requests native resolution");
+        viewport.Magnify(1.25);viewport.Move(new Vector(10,40));viewport.ToggleActualPixels();
+        check(!viewport.ActualPixels && viewport.Zoom==1 && viewport.Pan==default && resolutionChanges==2,
+            "Double click returns pixel mode to fit, clears pan and requests preview resolution");
+        viewport.Magnify(2);viewport.ToggleActualPixels();
+        check(!viewport.ActualPixels && viewport.Zoom==1 && resolutionChanges==2,
+            "Double click resets manual fit magnification without redundant rendering");
         BitmapSource Solid(byte b,byte g,byte r)=>BitmapSource.Create(1,1,96,96,PixelFormats.Bgra32,null,new byte[]{b,g,r,255},4);
         var canvas=new PhotoCanvas{Viewport=new Viewport(),ComparisonEnabled=true};
         canvas.SetImage(Solid(255,0,0),null);canvas.SetComparison(Solid(0,0,255),null);

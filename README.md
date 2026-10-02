@@ -12,6 +12,10 @@ RawLab Mac 支持中性与胶片效果并排对比、胶片 LUT 切换、曝光�
 
 RawLab Mac provides side-by-side neutral/film comparison, LUT selection, exposure and white-balance adjustments, and full-resolution export. The screenshot shows the neutral render on the left and Velvia on the right.
 
+当前源码中的 iOS / Android 编辑器支持双指缩放、放大后平移，以及双击切换适应画面与 100% 显示。100% 以精确预览图的像素为基准（一个预览像素对应一个屏幕物理像素），不是原始 RAW 全分辨率查看；调整期间的低分辨率预览保持同一视口。Android 对比模式下，单指拖动分割线，双指缩放和平移。
+
+The current iOS / Android sources support pinch-to-zoom, panning, and double-tap to toggle fit and 100%. Actual-pixel scale uses the exact preview, not the full-resolution RAW; interactive previews retain the same viewport. Android comparison mode uses one finger for the wipe and two fingers for zoom/pan.
+
 ## 下载 / Download
 
 [下载 RawLab v0.2 / Download v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2)
