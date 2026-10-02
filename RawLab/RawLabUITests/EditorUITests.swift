@@ -12,10 +12,9 @@ final class EditorUITests: XCTestCase {
         XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["editor.export"].isEnabled)
         capture("empty-portrait")
-        app.buttons["editor.adjustments"].tap()
         XCTAssertFalse(app.buttons["tool.film"].exists)
-        app.buttons["editor.adjustments"].tap()
-        XCTAssertTrue(app.buttons["tool.film"].exists)
+        XCTAssertFalse(app.buttons["editor.adjustments"].isEnabled)
+        XCTAssertTrue(app.buttons["editor.import.empty"].isHittable)
         XCUIDevice.shared.orientation = .landscapeLeft
         capture("empty-landscape")
     }
@@ -24,14 +23,8 @@ final class EditorUITests: XCTestCase {
     func testPhotoEditingWorkflow() {
         let app = XCUIApplication()
         app.launch()
-        app.buttons["editor.import"].tap()
-        let photo = app.images.matching(NSPredicate(format: "label CONTAINS[c] 'Photo'")).firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 15), app.debugDescription)
-        photo.tap()
+        importPhoto(in: app)
         let compare = app.buttons["editor.compare"]
-        let ready = NSPredicate(format: "enabled == true")
-        expectation(for: ready, evaluatedWith: compare)
-        waitForExpectations(timeout: 90)
 
         let slider = app.sliders["adjustment.slider"]
         XCTAssertTrue(slider.isEnabled)
@@ -61,6 +54,12 @@ final class EditorUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         app.buttons["tool.exposure"].tap()
         capture("photo-adjustment-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(slider.isHittable)
+        XCTAssertGreaterThan(slider.frame.minX, app.frame.width * 0.5,
+                             "Landscape adjustments leave room for the photo")
+        capture("photo-adjustment-landscape")
+        XCUIDevice.shared.orientation = .portrait
         app.buttons["editor.export"].tap()
         XCTAssertTrue(app.alerts.staticTexts["已保存到照片。"].waitForExistence(timeout: 60))
         app.alerts.buttons["关闭"].tap()
@@ -70,13 +69,25 @@ final class EditorUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
+        XCTAssertTrue(app.buttons["editor.import.empty"].waitForExistence(timeout: 10))
+        capture("large-text-empty")
+        importPhoto(in: app)
         XCTAssertTrue(app.buttons["tool.film"].waitForExistence(timeout: 10))
         capture("large-text-portrait")
+        app.scrollViews["editor.panel"].swipeUp()
+        XCTAssertTrue(app.sliders["adjustment.slider"].isHittable)
+        XCTAssertLessThan(app.staticTexts["adjustment.value"].frame.maxX, app.frame.maxX)
+        capture("large-text-slider")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        app.scrollViews["editor.panel"].swipeUp()
+        XCTAssertTrue(app.sliders["adjustment.slider"].isHittable)
+        capture("large-text-landscape")
     }
 
     func testAllBuiltInFilmsAreAvailable() {
         let app = XCUIApplication()
         app.launch()
+        importPhoto(in: app)
         app.buttons["tool.film"].tap()
         for name in ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
                      "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia", "WDR"] {

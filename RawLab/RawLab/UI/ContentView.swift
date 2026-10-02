@@ -5,6 +5,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject var viewModel = RawEditorViewModel()
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
@@ -19,20 +20,25 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
     @ScaledMetric(relativeTo: .caption) var toolHeight = 82.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
-    @ScaledMetric(relativeTo: .body) var panelHeight = 264.0
+    @ScaledMetric(relativeTo: .body) var panelHeight = 256.0
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                VStack(spacing: 0) {
+                let landscape = geometry.size.width > geometry.size.height && !dynamicTypeSize.isAccessibilitySize
+                let layout = landscape ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                layout {
                     previewSection
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if adjustmentsExpanded {
+                    if viewModel.hasImage && adjustmentsExpanded {
                         Divider()
                         ScrollView(.vertical) {
-                            adjustmentPanel(compact: geometry.size.height < 400)
+                            adjustmentPanel
                         }
-                        .frame(height: min(panelHeight, geometry.size.height * 0.48))
+                        .accessibilityIdentifier("editor.panel")
+                        .frame(width: landscape ? min(360, geometry.size.width * 0.44) : nil,
+                               height: landscape ? nil : min(panelHeight + (selectedAdjustment == nil ? 32 : 0),
+                                                            geometry.size.height * 0.6))
                         .background(Color(.secondarySystemBackground))
                     }
                 }
@@ -75,6 +81,9 @@ struct ContentView: View {
         }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy { isImporting = false }
+        }
+        .onChange(of: viewModel.hasImage) { _, hasImage in
+            if hasImage { adjustmentsExpanded = true }
         }
         .onChange(of: adjustmentsExpanded) { _, expanded in
             if !expanded && isAdjustingSlider { setSliderEditing(false) }

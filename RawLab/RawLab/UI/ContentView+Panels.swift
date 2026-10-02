@@ -10,7 +10,7 @@ extension ContentView {
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button { showingBefore.toggle() } label: {
                 Image(systemName: "circle.lefthalf.filled")
-                    .foregroundStyle(showingBefore ? Color.yellow : Color.primary)
+                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
             }
             .accessibilityLabel("前后对比")
             .accessibilityValue(showingBefore ? "调整前" : "调整后")
@@ -20,10 +20,11 @@ extension ContentView {
 
             Button { adjustmentsExpanded.toggle() } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(adjustmentsExpanded ? Color.yellow : Color.primary)
+                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : adjustmentsExpanded ? .yellow : .primary)
             }
-            .accessibilityLabel(adjustmentsExpanded ? "收起调整栏" : "展开调整栏")
+            .accessibilityLabel(!viewModel.hasImage ? "调整" : adjustmentsExpanded ? "收起调整栏" : "展开调整栏")
             .help("显示或收起调整栏")
+            .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.adjustments")
 
             Button(action: exportJPEG) {
@@ -46,23 +47,41 @@ extension ContentView {
                         .id(viewModel.basePreviewImage)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 } else {
-                    VStack(spacing: 16) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
-                        Text("RAW 照片").font(.headline)
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                            Label("导入照片", systemImage: "photo.badge.plus")
-                                .padding(.vertical, 8)
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            Text("RAW 照片").font(.title2.weight(.semibold))
+                            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                Label {
+                                    Text("导入照片")
+                                } icon: {
+                                    Image(systemName: "photo.badge.plus").accessibilityHidden(true)
+                                }
+                                    .font(.headline)
+                                    .padding(.horizontal, 16)
+                                    .frame(minHeight: 44)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .foregroundStyle(.black)
+                            .disabled(editorBusy)
+                            .accessibilityLabel("导入照片")
+                            .accessibilityIdentifier("editor.import.empty")
                         }
-                        .disabled(editorBusy)
+                        .padding(24)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: geometry.size.height)
                     }
+                    .opacity(editorBusy ? 0 : 1)
+                    .accessibilityHidden(editorBusy)
                 }
             }
             .overlay(alignment: .topTrailing) {
                 if viewModel.hasImage {
                     FloatingHistogram(values: currentHistogram, expanded: $histogramExpanded)
-                        .frame(maxWidth: min(220, geometry.size.width - 24), alignment: .trailing)
+                        .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
                 }
             }
@@ -75,11 +94,13 @@ extension ContentView {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay {
+            .overlay(alignment: viewModel.hasImage ? .topLeading : .center) {
                 if editorBusy {
                     ProgressView(isImporting ? "正在导入" : isSaving ? "正在保存" : "正在处理")
-                        .padding(16)
+                        .font(.caption)
+                        .padding(12)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(12)
                         .allowsHitTesting(false)
                 }
             }
@@ -87,12 +108,13 @@ extension ContentView {
         }
     }
 
-    func adjustmentPanel(compact: Bool) -> some View {
-        VStack(spacing: compact ? 0 : 8) {
+    var adjustmentPanel: some View {
+        VStack(spacing: 8) {
             HStack {
                 Text(selectedFilmName)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Menu {
                     Button("重置全部调整", role: .destructive) {
@@ -110,15 +132,8 @@ extension ContentView {
             }
             .padding(.horizontal, 16)
 
-            if compact {
-                HStack(alignment: .top, spacing: 0) {
-                    toolStrip.frame(maxWidth: .infinity)
-                    valuePanel(compact: true).frame(maxWidth: .infinity)
-                }
-            } else {
-                toolStrip
-                valuePanel(compact: false)
-            }
+            toolStrip
+            valuePanel
         }
         .padding(.bottom, 12)
     }
@@ -164,15 +179,17 @@ extension ContentView {
     }
 
     @ViewBuilder
-    func valuePanel(compact: Bool) -> some View {
+    var valuePanel: some View {
         if let adjustment = selectedAdjustment {
             VStack(spacing: 4) {
                 HStack {
                     Text(adjustment.title).font(.subheadline)
                     Spacer()
                     Text(adjustment.valueLabel(for: adjustment.value(from: settings)))
-                        .font(.subheadline).monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(adjustment.progress(in: settings) == 0 ? Color.secondary : .yellow)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityIdentifier("adjustment.value")
                     Button { reset(adjustment) } label: {
                         Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                     }
@@ -181,6 +198,7 @@ extension ContentView {
                 }
                 Slider(value: adjustmentBinding(adjustment), in: adjustment.range, step: adjustment.step,
                        onEditingChanged: setSliderEditing)
+                    .frame(minHeight: 44)
                     .accessibilityLabel(adjustment.title)
                     .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
                     .accessibilityIdentifier("adjustment.slider")
@@ -193,7 +211,7 @@ extension ContentView {
             .padding(.bottom, 12)
             .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && settings.lutID == nil))
         } else {
-            filmPanel(imageSize: compact ? filmSize * 0.6 : filmSize)
+            filmPanel(imageSize: filmSize)
         }
     }
 
@@ -217,6 +235,7 @@ extension ContentView {
                 ProgressView("正在加载胶片").padding(8).background(.regularMaterial)
             } else if viewModel.availableLUTs.isEmpty {
                 Text("未找到胶片 LUT").font(.caption).foregroundStyle(.secondary)
+                    .padding(8).background(.regularMaterial)
             }
         }
         .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs)

@@ -14,9 +14,9 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 
 ## 构建和启动 / Build and Launch
 
-预编译版本：[GitHub Release v0.1](https://github.com/dancancer/RawLab/releases/tag/v0.1)。下载 `RawLab-Mac-0.1-macOS-arm64.zip` 后解压，可将 `RawLab Mac.app` 放入 Applications。此产物仅支持 Apple Silicon 和 macOS 26+；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。
+预编译版本：[GitHub Release v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
 
-Prebuilt app: [GitHub Release v0.1](https://github.com/dancancer/RawLab/releases/tag/v0.1). Extract `RawLab-Mac-0.1-macOS-arm64.zip` and move `RawLab Mac.app` to Applications. It requires Apple Silicon and macOS 26+. It is ad-hoc signed, without Developer ID signing or Apple notarization, so macOS may block opening it by default.
+Prebuilt apps: [GitHub Release v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
 
 在仓库根目录执行：
 
@@ -66,6 +66,9 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 
 ## 使用 / Usage
 
+- 胶片强度支持 0–200%，默认及重置均为 100%。
+
+  Film strength supports 0-200%, with 100% as the default and reset value.
 - 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入声明了兼容输入/输出的 CUBE。
 
   Open or drag in a RAW file. Ten Fuji film LUTs are bundled; you can also import CUBE files declaring compatible input/output contracts.

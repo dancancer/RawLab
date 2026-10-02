@@ -1,8 +1,8 @@
 # RawLab
 
-跨品牌 RAW 显影与富士胶片 LUT 工具，包含共享 C++ 处理核心、命令行工具和原生 Windows / Mac / Android 客户端。
+跨品牌 RAW 显影与富士胶片 LUT 工具，包含共享 C++ 处理核心、命令行工具和原生 Windows / Mac / Android / iOS 客户端。
 
-Cross-brand RAW development and Fujifilm film LUT tools, with a shared C++ processing core, command-line tools and native Windows / Mac / Android editors.
+Cross-brand RAW development and Fujifilm film LUT tools, with a shared C++ processing core, command-line tools and native Windows / Mac / Android / iOS editors.
 
 ## 功能预览 / Preview
 
@@ -20,34 +20,50 @@ The current iOS / Android sources support pinch-to-zoom, panning, and double-tap
 
 [下载 RawLab v0.2 / Download v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2)
 
-v0.2 汇集 Windows / Mac / Android / iOS 的 200% 胶片强度与导出保留 EXIF 源码。
-当前提供 Windows x64 安装包，其他平台附件后续补充；旧版本下载见下方链接。
+v0.2 已提供所有平台的编译产物，包括 macOS 15 双架构包、Android 正式签名 APK 和 iOS 未签名 IPA。
 
-v0.2 includes 200% film strength and EXIF-preserving export source for Windows,
-Mac, Android and iOS. The Windows x64 package is available first; other platform
-packages will follow. Earlier downloads remain linked below.
+v0.2 includes builds for every platform: separate macOS 15 packages for Apple Silicon and Intel, a release-signed Android APK, and an unsigned iOS IPA.
 
-支持 Windows 10/11 x64。解压后运行 `RawLab.exe`；独立运行包包含 .NET 运行时，默认 Direct3D 11 硬件加速，可自动回退 CPU。
+| 平台 / Platform | 下载 / Download | 系统要求 / Requirements |
+| --- | --- | --- |
+| Windows x64 | [ZIP](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Windows-0.2-win-x64.zip) | Windows 10/11 x64 |
+| Mac Apple Silicon | [arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-arm64.zip) | macOS 15+，M 系列 / M-series |
+| Mac Intel | [x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-x86_64.zip) | macOS 15+，Intel |
+| Android | [签名 APK / Signed APK](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Android-0.2.apk) | Android 8.0+，ARM64 / x86_64 |
+| iOS | [未签名 IPA / Unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-iOS-0.2-unsigned.ipa) | iPhone，iOS 18+，须自行签名 / Re-signing required |
 
-Requires Windows 10/11 x64. Extract the ZIP and run `RawLab.exe`. The package includes the .NET runtime and supports Direct3D 11 acceleration with CPU fallback.
+[SHA-256 校验文件 / Checksums](https://github.com/dancancer/RawLab/releases/download/v0.2/SHA256SUMS.txt)
 
-[下载 RawLab Mac v0.1 / Download v0.1](https://github.com/dancancer/RawLab/releases/tag/v0.1)
+### 安装说明 / Installation Notes
 
-支持 Apple Silicon（arm64）和 macOS 26 或更高版本。应用采用 ad-hoc 签名，未经过 Apple 公证。
+- **Windows**：解压后运行 `RawLab.exe`，保留完整目录；已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，程序未签名。
+  Extract and run `RawLab.exe`, keeping the entire directory. Includes .NET 8, Visual C++ runtime, LUTs and ExifTool; the app is unsigned.
+- **Mac**：按芯片选择对应版本，将 `RawLab Mac.app` 放入 Applications。采用 ad-hoc 签名、未经过 Apple 公证，系统可能阻止默认打开。主程序及依赖的最低版本均为 macOS 15；尚未在 macOS 15 真机验证，Intel 版在 Rosetta 下测试。
+  Choose the matching architecture and move `RawLab Mac.app` to Applications. Ad-hoc signed and not notarized; macOS may block opening it. The app and dependencies target macOS 15, but macOS 15 hardware testing is pending; Intel testing used Rosetta.
+- **Android**：v0.2 使用与 v0.1.0 相同的发布密钥，支持覆盖升级旧正式版；无法覆盖不同签名的 debug 版。卸载 debug 版前先导出未保存的编辑。
+  v0.2 uses the same release key as v0.1.0 and can update that release. It cannot replace a differently signed debug build; export unsaved edits before uninstalling a debug build.
+- **iOS**：**未签名 IPA 不能直接安装**。需使用自己的有效证书和 provisioning profile 对应用及内嵌 framework 重新签名；不是 App Store 或 TestFlight 发行版，尚未进行真机安装验证。
+  **The unsigned IPA cannot be installed directly.** Re-sign the app and embedded framework with your own valid certificate and provisioning profile. This is not an App Store or TestFlight release and has not been installation-tested on physical devices.
 
-Requires Apple Silicon (arm64) and macOS 26 or later. The app is ad-hoc signed and has not been notarized by Apple.
+## v0.2 更新 / What's New
 
-[下载 RawLab Android v0.1.0 / Download Android v0.1.0](https://github.com/dancancer/RawLab/releases/tag/android-v0.1.0)
+- 四个平台的胶片强度范围统一为 **0–200%**，默认及重置仍为 **100%**。
+  All four editors support **0–200%** film strength, with **100%** as the default and reset value.
+- 应用导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等 EXIF，更新成片方向和尺寸，不改写原始照片。Mac / Windows / Android 支持 JPEG 和 16-bit PNG；iOS 导出 JPEG。
+  App exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, while updating output orientation and dimensions without modifying originals. Mac / Windows / Android support JPEG and 16-bit PNG; iOS exports JPEG.
+- Mac 增加 macOS 15 的 arm64 / x86_64 包；iOS 更新编辑界面和内置 LUT；共享 LUT 校验允许自定义效果名称，仍要求兼容的输入和输出声明。
+  Adds macOS 15 arm64 / x86_64 packages, an updated iOS editor and LUT set, and custom display-look names in shared LUT validation while retaining compatible input/output requirements.
 
-支持 Android 8.0+，提供 ARM64 / x86_64 通用签名 APK；GLES 不可用时自动回退 CPU。
+Windows 默认使用 Direct3D 11，Mac 使用 Metal，Android 使用 GLES；支持自动回退 CPU。RAW 解码与文件编码仍在 CPU，不代表全流程 GPU 显影。
 
-Requires Android 8.0+. The signed APK includes ARM64 / x86_64 and falls back to CPU when GLES is unavailable.
+Windows uses Direct3D 11, Mac uses Metal, and Android uses GLES, with automatic CPU fallback. RAW decoding and file encoding remain on the CPU; this is not an all-GPU pipeline.
 
 ## 文档 / Documentation
 
 - [Windows 客户端：原生 WPF、Direct3D 11 加速、构建与验证 / Windows editor](RawLabWindows/README.md)
 - [Android 客户端：相册权限、构建与验证 / Android editor: album access, build and verification](RawLabAndroid/README.md)
 - [Mac 客户端：构建、使用与验证 / Mac editor: build, use and verification](RawLabMac/README.md)
+- [iOS 核心构建与集成 / iOS core build and integration](lutools/platform/ios/README.md)
 - [处理核心与命令行工具 / Processing core and CLI](lutools/README.md)
 - [RAW、色彩空间与 LUT 处理约定 / RAW, color-space and LUT contract](lutools/docs/color-contract.md)
 

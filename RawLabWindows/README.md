@@ -3,6 +3,14 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
+## 下载 v0.2
+
+[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Windows-0.2-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.2) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.2/SHA256SUMS.txt)
+
+解压后运行 `RawLab.exe`，保留完整目录。发布包已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，无需另行安装 .NET。程序未签名。
+
+v0.2 支持 0–200% 胶片强度（默认及重置为 100%），JPEG / 16-bit PNG 导出保留拍摄 EXIF。
+
 ## 构建
 
 需要 .NET 8 SDK、Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”组件

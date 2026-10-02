@@ -58,6 +58,8 @@ struct FilmLabel: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
             Text(name).font(.caption)
                 .lineLimit(2).multilineTextAlignment(.center)
+                .frame(width: max(minimumWidth, imageSize + 18) - 12)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(height: labelHeight)
         }
         .padding(6)
@@ -107,6 +109,7 @@ struct FloatingHistogram: View {
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                 }
                 .font(.caption)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .padding(.horizontal, 12)
                 .frame(height: 44)
                 .contentShape(Rectangle())
@@ -123,6 +126,7 @@ struct FloatingHistogram: View {
             }
         }
         .frame(width: expanded ? nil : 76)
+        .foregroundStyle(.white)
         .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.12), lineWidth: 1) }
     }
