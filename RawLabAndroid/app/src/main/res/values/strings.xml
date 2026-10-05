@@ -40,6 +40,10 @@
     <string name="album_empty">没有可访问的 RAW 照片</string>
     <string name="album_error">无法读取相册，请检查照片权限。</string>
     <string name="all_albums">全部相册</string>
+    <string name="album_view_options">视图选项</string>
+    <string name="album_square">方形缩略图</string>
+    <string name="album_original_ratio">原始比例</string>
+    <string name="album_columns">每行 %1$d 张</string>
     <string name="confirm">确定</string>
     <string name="invalid_value">请输入范围内的有效数字</string>
     <string name="reset_value">重置此项</string>

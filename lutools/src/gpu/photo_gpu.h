@@ -3,6 +3,7 @@
 #include "sony2fuji/common.h"
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/lut_parser.h"
+#include "sony2fuji/dcp_look.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 #include <cstdint>
@@ -18,7 +19,8 @@ bool renderPhotoMetal(
     const RGB& relativeWB,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output
+    ImageData& output,
+    const std::shared_ptr<const DcpLook>& dcp = {}
 );
 
 } // namespace sony2fuji

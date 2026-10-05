@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "input": {"space": "slog3-sgamut3-cine", "reference": "scene", "range": "full"},
+  "output": {"space": "slog3-sgamut3-cine", "reference": "scene", "range": "full"},
+  "interpolation": "tetrahedral"
+}

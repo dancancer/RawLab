@@ -32,7 +32,7 @@ internal static class Native
     internal static void Check(int status)
     {
         if (status != 0) throw new InvalidOperationException(status switch {
-            1 => "参数或输出路径无效，不能覆盖原始 RAW。", 2 => "不支持此 RAW 或 LUT。CUBE 需声明 F-Gamut / F-Log2 输入和兼容胶片输出。",
+            1 => "参数或输出路径无效，不能覆盖原始 RAW。", 2 => "不支持此 RAW 或外观文件。请选择兼容的 F-Gamut / F-Log2 CUBE 或有效的 .rlook 文件。",
             3 => "无法读取或写入文件，请检查路径与权限。", 5 => "内存不足，请关闭其他大型应用或使用适合窗口预览。", _ => "RAW 显影失败。" });
     }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_create(out IntPtr session);

@@ -1,4 +1,5 @@
 #include "gpu/photo_gpu.h"
+#include "gpu/metal_dcp_shader.h"
 
 #include <algorithm>
 #include <array>
@@ -23,6 +24,7 @@ using sony2fuji::ColorSpace;
 using sony2fuji::ImageData;
 using sony2fuji::LUT3D;
 using sony2fuji::RGB;
+using sony2fuji::DcpLook;
 
 static_assert(sizeof(RGB) == sizeof(float) * 3, "RGB must remain packed for Metal buffers");
 
@@ -60,6 +62,7 @@ struct MetalContext {
     id<MTLComputePipelineState> resizePipeline = nil;
     id<MTLComputePipelineState> matrixExposurePipeline = nil;
     id<MTLComputePipelineState> baseLutPipeline = nil;
+    id<MTLComputePipelineState> baseDcpPipeline = nil;
     id<MTLComputePipelineState> tonePipeline = nil;
     id<MTLComputePipelineState> noisePipeline = nil;
     id<MTLComputePipelineState> sharpenPipeline = nil;
@@ -80,6 +83,18 @@ constexpr size_t kMaxCachedLUTs = 8;
 std::mutex gLUTCacheMutex;
 std::vector<CachedLUT> gLUTCache;
 uint64_t gLUTClock = 0;
+
+struct DcpParams {
+    float input[9], output[9], exposure;
+    uint32_t calibration[4], look[4], lookOffset, toneOffset;
+};
+static_assert(sizeof(DcpParams) == 116, "DCP Metal parameter layout");
+struct CachedDcp {
+    std::shared_ptr<const DcpLook> owner;
+    id<MTLBuffer> params = nil, data = nil;
+};
+std::mutex gDcpCacheMutex;
+CachedDcp gDcpCache;
 
 static const char* kShaderSource = R"metal(
 #include <metal_stdlib>
@@ -492,6 +507,15 @@ MetalContext& metalContext() {
             context.ready = context.resizePipeline && context.matrixExposurePipeline &&
                 context.baseLutPipeline && context.tonePipeline && context.noisePipeline &&
                 context.sharpenPipeline;
+            if (@available(macOS 15.0, iOS 18.0, *)) {
+                MTLCompileOptions* options = [MTLCompileOptions new];
+                options.mathMode = MTLMathModeSafe;
+                NSString* dcpSource = [source stringByAppendingString:[NSString stringWithUTF8String:kDcpShaderSource]];
+                error = nil;
+                id<MTLLibrary> dcpLibrary = [context.device newLibraryWithSource:dcpSource options:options error:&error];
+                if (dcpLibrary && !error) context.baseDcpPipeline = makePipeline(context.device, dcpLibrary, @"baseAndDcp");
+                else NSLog(@"RawLab DCP Metal compilation failed: %@", error);
+            }
         }
     });
     return context;
@@ -522,6 +546,37 @@ id<MTLBuffer> makeParamsBuffer(id<MTLDevice> device, const PhotoParams& params) 
         std::memcpy(buffer.contents, &params, sizeof(params));
     }
     return buffer;
+}
+
+bool getCachedDcp(MetalContext& context, const std::shared_ptr<const DcpLook>& look, CachedDcp& result) {
+    std::lock_guard<std::mutex> lock(gDcpCacheMutex);
+    if (gDcpCache.owner == look && gDcpCache.params && gDcpCache.data) { result = gDcpCache; return true; }
+    const auto& stages = look->stages();
+    DcpParams params{};
+    for (size_t i = 0; i < 9; ++i) { params.input[i] = stages.input[i]; params.output[i] = stages.output[i]; }
+    params.exposure = stages.exposure;
+    std::vector<float> data;
+    data.reserve((stages.calibration.entries.size() + stages.look.entries.size()) * 3 + stages.tone.size());
+    auto append = [&](const sony2fuji::DcpTable& table, uint32_t* dimensions) {
+        dimensions[0] = table.hues; dimensions[1] = table.saturations;
+        dimensions[2] = table.values; dimensions[3] = table.encoding;
+        for (const auto& entry : table.entries) { data.push_back(entry.r); data.push_back(entry.g); data.push_back(entry.b); }
+    };
+    append(stages.calibration, params.calibration);
+    params.lookOffset = static_cast<uint32_t>(data.size());
+    append(stages.look, params.look);
+    params.toneOffset = static_cast<uint32_t>(data.size());
+    for (double value : stages.tone) data.push_back(static_cast<float>(value));
+    CachedDcp cached;
+    cached.owner = look;
+    cached.params = makeBuffer(context.device, sizeof(params));
+    cached.data = makeBuffer(context.device, data.size() * sizeof(float));
+    if (!cached.params || !cached.data) return false;
+    std::memcpy(cached.params.contents, &params, sizeof(params));
+    std::memcpy(cached.data.contents, data.data(), data.size() * sizeof(float));
+    gDcpCache = cached;
+    result = cached;
+    return true;
 }
 
 id<MTLTexture> makeLUTTexture(id<MTLDevice> device, const LUT3D& lut) {
@@ -690,7 +745,9 @@ id<MTLComputeCommandEncoder> beginKernel(
     id<MTLBuffer> source,
     id<MTLBuffer> destination,
     id<MTLTexture> lut,
-    size_t count
+    size_t count,
+    const CachedDcp* dcp = nullptr,
+    id<MTLBuffer> invalid = nil
 ) {
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     if (!encoder || !pipeline || !params || !source || !destination || count == 0) {
@@ -701,6 +758,11 @@ id<MTLComputeCommandEncoder> beginKernel(
     [encoder setBuffer:source offset:0 atIndex:1];
     [encoder setBuffer:destination offset:0 atIndex:2];
     [encoder setTexture:lut atIndex:0];
+    if (dcp) {
+        [encoder setBuffer:dcp->params offset:0 atIndex:3];
+        [encoder setBuffer:dcp->data offset:0 atIndex:4];
+        [encoder setBuffer:invalid offset:0 atIndex:5];
+    }
     const NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
     if (maxThreads == 0) {
         [encoder endEncoding];
@@ -727,10 +789,12 @@ bool encodeKernel(
     id<MTLBuffer> source,
     id<MTLBuffer> destination,
     id<MTLTexture> lut,
-    size_t count
+    size_t count,
+    const CachedDcp* dcp = nullptr,
+    id<MTLBuffer> invalid = nil
 ) {
     return finishKernel(beginKernel(
-        commandBuffer, pipeline, params, source, destination, lut, count
+        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid
     ));
 }
 
@@ -742,7 +806,8 @@ bool renderPhotoMetalImpl(
     const RGB& relativeWB,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output
+    ImageData& output,
+    const std::shared_ptr<const DcpLook>& dcp
 ) {
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
@@ -770,6 +835,16 @@ bool renderPhotoMetalImpl(
 
     const float lutStrength = std::max(0.0f, std::min(2.0f, request.lut_strength));
     const bool useLUT = lut && lutStrength > 0.0f;
+    const bool useDcp = dcp && lutStrength > 0.0f;
+    if (useDcp && (useLUT || !context.baseDcpPipeline)) return false;
+    CachedDcp cachedDcp;
+    id<MTLBuffer> invalid = nil;
+    if (useDcp) {
+        if (!getCachedDcp(context, dcp, cachedDcp)) return false;
+        invalid = makeBuffer(context.device, sizeof(uint32_t));
+        if (!invalid) return false;
+        *static_cast<uint32_t*>(invalid.contents) = 0;
+    }
     CachedLUT cachedLUT;
     if (useLUT && !getCachedLUT(context, lut, &cachedLUT)) {
         return false;
@@ -847,9 +922,9 @@ bool renderPhotoMetalImpl(
         return false;
     }
 
-    auto runProcessingKernel = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture) {
+    auto runProcessingKernel = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture, const CachedDcp* stages = nullptr) {
         if (!encodeKernel(commandBuffer, pipeline, paramsBuffer, currentBuffer, nextBuffer,
-            texture, processingCount)) {
+            texture, processingCount, stages, stages ? invalid : nil)) {
             return false;
         }
         id<MTLBuffer> completed = currentBuffer;
@@ -858,7 +933,8 @@ bool renderPhotoMetalImpl(
         return true;
     };
     if (!runProcessingKernel(context.matrixExposurePipeline, nil) ||
-        !runProcessingKernel(context.baseLutPipeline, useLUT ? cachedLUT.texture : nil) ||
+        !runProcessingKernel(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
+            useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
         !runProcessingKernel(context.tonePipeline, nil)) {
         return false;
     }
@@ -888,6 +964,7 @@ bool renderPhotoMetalImpl(
     if (commandBuffer.status != MTLCommandBufferStatusCompleted) {
         return false;
     }
+    if (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0) return false;
     ImageData result(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
     std::memcpy(result.pixels.data(), finalBuffer.contents, targetCount * sizeof(RGB));
     output = std::move(result);
@@ -906,7 +983,8 @@ bool renderPhotoMetal(
     const RGB& relativeWB,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output
+    ImageData& output,
+    const std::shared_ptr<const DcpLook>& dcp
 ) {
     bool result = false;
     @try {
@@ -914,7 +992,7 @@ bool renderPhotoMetal(
             try {
                 result = renderPhotoMetalImpl(
                     input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output
+                    targetWidth, targetHeight, output, dcp
                 );
             } catch (...) {
                 result = false;

@@ -89,7 +89,7 @@ final class RenderEngine {
                 throw RenderError.failed("无法读取或写入文件，请检查路径和访问权限。")
             }
             if status == SONY2FUJI_STATUS_UNSUPPORTED {
-                throw RenderError.failed("不支持此 RAW 或 LUT。LUT 需声明 F-Gamut / F-Log2 输入和胶片模拟输出。")
+                throw RenderError.failed("不支持此 RAW 或外观文件。请选择兼容的 F-Gamut / F-Log2 CUBE 或有效的 .rlook 文件。")
             }
             if status == SONY2FUJI_STATUS_INVALID_ARGUMENT {
                 throw RenderError.failed("参数或输出路径无效，不能覆盖原始 RAW。")

@@ -14,9 +14,9 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 
 ## 构建和启动 / Build and Launch
 
-预编译版本：[GitHub Release v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
+预编译版本：[GitHub Release v0.3.0](https://github.com/dancancer/RawLab/releases/tag/v0.3.0)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Mac-0.3.0-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Mac-0.3.0-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
 
-Prebuilt apps: [GitHub Release v0.2](https://github.com/dancancer/RawLab/releases/tag/v0.2). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Mac-0.2-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
+Prebuilt apps: [GitHub Release v0.3.0](https://github.com/dancancer/RawLab/releases/tag/v0.3.0). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Mac-0.3.0-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Mac-0.3.0-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
 
 在仓库根目录执行：
 

@@ -12,6 +12,8 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 
 - 应用内 RAW 相册、按相册筛选、系统文件导入。相册权限被拒绝时仍可使用文件入口。
   In-app RAW albums with album filtering and a system document-picker fallback.
+- 相册右上角的视图菜单可切换方形缩略图和原始比例，并选择每行 1-6 张，默认原始比例、3 列。返回编辑页再打开相册或旋转屏幕时保留视图选择。
+  The album view menu switches between square thumbnails and original aspect ratios, with 1-6 columns; defaults are original ratios and 3 columns. View choices survive editor navigation and activity recreation.
 - Android 14+ 支持部分照片授权和重新选择；打开相册时才申请权限，不申请所有文件访问权限。
   Android 14+ partial photo access and reselection; no all-files permission.
 - 十种内置胶片、中性/结果对比、胶片强度、曝光、拍摄时/自定义色温与色调、单项/全部重置。
@@ -72,11 +74,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.2 APK / Download Android v0.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Android-0.2.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.2/SHA256SUMS.txt)
+[下载 Android v0.3.0 APK / Download Android v0.3.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Android-0.3.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.3.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.3.0/SHA256SUMS.txt)
 
-已发布 APK 的 `versionName` 为 `0.2`、`versionCode` 为 `2`，使用与 v0.1.0 相同的发布密钥，可覆盖升级旧正式版。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
+已发布 APK 的 `versionName` 为 `0.3.0`、`versionCode` 为 `4`，沿用正式发布密钥，已验证从 v0.2.1 覆盖升级。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
 
-The published APK uses `versionName=0.2` and `versionCode=2`, signed with the same key as v0.1.0 for in-place upgrades. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The published APK uses `versionName=0.3.0` and `versionCode=4`, retains the release key, and was tested upgrading from v0.2.1. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -136,6 +138,8 @@ Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestR
   Optional LibRaw codecs/integrations are disabled; lossy JPEG DNG and JPEG2000-dependent inputs are not guaranteed.
 - 相册仅显示被系统媒体库收录且已授权的 RAW。未收录文件可通过系统文件入口导入。
   Albums show authorized, indexed RAW media; unindexed files use the document picker.
+- 相册缩略图由系统媒体库提供；Android 10+ 根据显示尺寸请求有界缩略图，Android 8-9 使用系统 `MINI_KIND` 缩略图。尺寸元数据缺失时，原始比例在缩略图加载后确定。
+  Album thumbnails come from MediaStore. Android 10+ requests bounded thumbnails for the display size; Android 8-9 uses system `MINI_KIND` previews. Missing dimension metadata falls back to the loaded thumbnail's ratio.
 - 进程被系统终止后，不恢复未保存的编辑或进行中的导出。长时间导出需保持应用前台。
   Process death does not resume edits or exports; keep the app foreground during export.
 - 通过 GitHub Release 提供签名 APK，尚未发布到应用商店；不承诺所有设备的性能。

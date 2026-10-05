@@ -110,6 +110,7 @@ typedef struct sony2fuji_request {
     sony2fuji_color_space input_color_space;
     int32_t input_is_linear;
 
+    // Canonical display CUBE or compiled DCP .rlook (CPU/Metal; other GPUs use Auto fallback).
     const char* lut_path;
     float lut_strength;
 

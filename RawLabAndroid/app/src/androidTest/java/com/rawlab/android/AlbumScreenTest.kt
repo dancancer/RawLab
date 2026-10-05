@@ -1,12 +1,17 @@
 package com.rawlab.android
 
 import android.content.ContentValues
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.filters.SdkSuppress
@@ -62,6 +67,153 @@ class AlbumScreenTest {
         val name = photos[90].name
         compose.onNodeWithText(name).assertIsDisplayed()
         return name
+    }
+
+    private fun selectColumns(count: Int) {
+        compose.onNodeWithContentDescription("视图选项").performClick()
+        compose.onNodeWithText("每行 $count 张").performClick()
+    }
+
+    private fun selectMode(name: String) {
+        compose.onNodeWithContentDescription("视图选项").performClick()
+        compose.onNodeWithText(name).performClick()
+    }
+
+    private fun writePreview(index: Int, width: Int, height: Int) {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.CYAN)
+        try {
+            resolver.openOutputStream(media[index], "wt")!!.use { output ->
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output))
+            }
+        } finally { bitmap.recycle() }
+        resolver.update(media[index], ContentValues().apply {
+            put(MediaStore.Images.Media.WIDTH, width)
+            put(MediaStore.Images.Media.HEIGHT, height)
+            put(MediaStore.Images.Media.ORIENTATION, 0)
+        }, null, null)
+    }
+
+    private fun assertPreviewRatio(index: Int, ratio: Float) {
+        val photos = compose.activity.model.storage.album().filter { it.album == bucket }
+        val position = photos.indexOfFirst { it.uri == media[index] }
+        assertTrue("Preview fixture remains an album photo", position >= 0)
+        grid.performScrollToIndex(position)
+        val name = photos[position].name
+        val node = compose.onNodeWithContentDescription(name, useUnmergedTree = true)
+        compose.waitUntil(10_000) {
+            val bounds = compose.onAllNodesWithContentDescription(name, useUnmergedTree = true)
+                .fetchSemanticsNodes().singleOrNull()?.boundsInRoot
+            bounds != null && bounds.width > with(compose.density) { 40.dp.toPx() }
+        }
+        val bounds = node.fetchSemanticsNode().boundsInRoot
+        assertEquals("Photo $index has the selected aspect ratio", ratio, bounds.width / bounds.height, .02f)
+    }
+
+    @Test fun previewsKeepLandscapeAndPortraitRatiosByDefault() {
+        writePreview(159, 600, 300)
+        writePreview(158, 300, 600)
+        openAlbum()
+        compose.onNodeWithText(bucket).performClick()
+        assertPreviewRatio(159, 2f)
+        assertPreviewRatio(158, .5f)
+    }
+
+    @Test fun previewModeSwitchesBetweenSquareAndOriginal() {
+        writePreview(159, 600, 300)
+        writePreview(158, 300, 600)
+        openAlbum()
+        compose.onNodeWithText(bucket).performClick()
+        selectMode("方形缩略图")
+        assertPreviewRatio(159, 1f)
+        assertPreviewRatio(158, 1f)
+        selectMode("原始比例")
+        assertPreviewRatio(159, 2f)
+        assertPreviewRatio(158, .5f)
+    }
+
+    @Test fun rotatedPreviewUsesDisplayOrientation() {
+        writePreview(159, 600, 300)
+        resolver.openFileDescriptor(media[159], "rw")!!.use { descriptor ->
+            ExifInterface(descriptor.fileDescriptor).apply {
+                setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
+                saveAttributes()
+            }
+        }
+        resolver.update(media[159], ContentValues().apply {
+            put(MediaStore.Images.Media.WIDTH, 600)
+            put(MediaStore.Images.Media.HEIGHT, 300)
+            put(MediaStore.Images.Media.ORIENTATION, 90)
+        }, null, null)
+        openAlbum()
+        compose.onNodeWithText(bucket).performClick()
+        assertPreviewRatio(159, .5f)
+    }
+
+    @Test fun gridOffersOneThroughSixColumns() {
+        openAlbum()
+        compose.onNodeWithText(bucket).performClick()
+        val photos = compose.activity.model.storage.album().filter { it.album == bucket }
+        grid.performScrollToIndex(0)
+        selectMode("方形缩略图")
+        compose.onNodeWithContentDescription("视图选项").performClick()
+        for (count in 1..6) compose.onNodeWithText("每行 $count 张").assertIsDisplayed()
+        compose.onNodeWithText("每行 7 张").assertDoesNotExist()
+        compose.onNodeWithText("每行 1 张").performClick()
+        val width = grid.fetchSemanticsNode().boundsInRoot.width
+        val single = compose.onNodeWithText(photos.first().name).fetchSemanticsNode().boundsInRoot
+        assertTrue("One column fills the grid width", single.width > width * .9f)
+
+        selectColumns(6)
+        val firstRow = photos.take(6).map { compose.onNodeWithText(it.name).fetchSemanticsNode().boundsInRoot }
+        assertTrue("Six photos share the row", firstRow.all { kotlin.math.abs(it.top - firstRow.first().top) < 1f })
+        assertTrue(firstRow.zipWithNext().all { (left, right) -> left.right < right.left })
+        assertTrue(firstRow.all { it.width < width / 5f })
+        val next = compose.onNodeWithText(photos[6].name).fetchSemanticsNode().boundsInRoot
+        assertTrue("The seventh photo starts the next row", next.top > firstRow.first().top)
+        assertEquals(firstRow.first().left, next.left, 1f)
+    }
+
+    @Test fun changingViewKeepsCurrentPhotoVisible() {
+        val name = scrollInBucket()
+        selectColumns(1)
+        compose.onNodeWithText(name).assertIsDisplayed()
+        selectColumns(6)
+        compose.onNodeWithText(name).assertIsDisplayed()
+        selectMode("方形缩略图")
+        compose.onNodeWithText(name).assertIsDisplayed()
+    }
+
+    @Test fun shrinkingTilesKeepsPartlyVisiblePhotoInView() {
+        openAlbum()
+        compose.onNodeWithText(bucket).performClick()
+        selectColumns(1)
+        grid.performScrollToIndex(90)
+        val name = compose.activity.model.storage.album().filter { it.album == bucket }[90].name
+        grid.performSemanticsAction(SemanticsActions.ScrollBy) { scroll ->
+            scroll(0f, with(compose.density) { 160.dp.toPx() })
+        }
+        compose.onNodeWithText(name).assertIsDisplayed()
+        selectColumns(6)
+        compose.onNodeWithText(name).assertIsDisplayed()
+    }
+
+    @Test fun viewOptionsSurviveEditorReturnAndRecreation() {
+        openAlbum()
+        compose.onNodeWithText(bucket).performClick()
+        selectColumns(6)
+        selectMode("方形缩略图")
+        grid.performScrollToIndex(90)
+        val name = compose.activity.model.storage.album().filter { it.album == bucket }[90].name
+        compose.onNodeWithText(name).performClick()
+        compose.waitUntil(10_000) { compose.activity.model.state.value.operation == Operation.NONE }
+        compose.activityRule.scenario.recreate()
+        openAlbum()
+        compose.onNodeWithText(bucket).assertIsSelected()
+        compose.onNodeWithText(name).assertIsDisplayed()
+        compose.onNodeWithContentDescription("视图选项").performClick()
+        compose.onNodeWithText("每行 6 张").assertIsSelected()
+        compose.onNodeWithText("方形缩略图").assertIsSelected()
     }
 
     @Test fun selectedPhotoAndBucketSurviveReturningFromEditor() {

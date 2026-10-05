@@ -14,6 +14,9 @@ See [RawLab Mac](../RawLabMac/README.md) for the native desktop editor. The [pho
   LibRaw decoding, floating-point camera matrices, and linear exposure/white balance preserve negative and super-white working values.
 - F-Gamut 转换、F-Log2 编码和 CUBE 三线性插值，支持中性与胶片结果混合。
   F-Gamut conversion, F-Log2 encoding and trilinear CUBE interpolation, with neutral/film blending.
+- 可选[通用 LUT 准备工具](docs/lut-preparation.md)：按明确的输入输出色彩约定适配外部 LUT，适配 DCP 外观，并检查烘焙误差。
+  Optional offline LUT preparation supports explicit color contracts, DCP appearance adaptation and measured baking error without changing native dependencies.
+- DCP 可编译为 `.rlook`，由共享核心在 CPU / Metal 上直接计算，避免整张 RGB CUBE 的烘焙误差；支持 D65 HueSatMap 校准阶段，桌面导入同时支持 `.cube` 和 `.rlook`。
 - 输出 JPEG 与真正的 16-bit PNG；共享 C API 供 Mac、iOS 和 Android 集成。
   JPEG and genuine 16-bit PNG output, with a shared C API for Mac, iOS and Android integration.
 - Apple 平台提供 Metal 照片处理；Android 提供 OpenGL ES LUT 后端。RAW 解包和去马赛克仍由 CPU 执行。
@@ -38,6 +41,7 @@ Mac / iOS / Android / CLI
 | `include/sony2fuji/` | 公共 C/C++ 头文件 / Public C/C++ headers |
 | `platform/` | 移动端集成 / Mobile integration |
 | `tests/` | 数值、RAW 和 GPU 回归 / Numerical, RAW and GPU regressions |
+| `lutprep/` | 可选的桌面 LUT 色彩适配工具 / Optional desktop LUT preparation |
 | `F-Log2/`, `flog-2-new/` | LUT 文件和说明 / LUT assets and documentation |
 | `examples/`, `docs/` | 示例与文档 / Examples and documentation |
 
@@ -112,6 +116,10 @@ The photo API accepts LUTs declaring F-Gamut / F-Log2 input and BT.709 output ga
 `FLog2 -> FLog2 BT.709` 是技术色域转换，不是照片胶片外观。F-Gamut C、Log 输出或未声明输入约定的 LUT 不能直接当成兼容照片 LUT。
 
 `FLog2 -> FLog2 BT.709` is a technical gamut conversion, not a display film look. F-Gamut C, Log-output LUTs and LUTs without a declared input contract are not interchangeable with compatible photo LUTs.
+
+其他约定的 LUT 先通过[准备工具](docs/lut-preparation.md)转换为兼容 CUBE；未知输入输出不能自动猜测。macOS/Windows 可从现有入口导入生成文件；iOS/Android 本轮未新增自定义 LUT 文件选择界面。
+
+Prepare other explicitly described LUTs with the offline adapter before import. Unknown color conventions are never guessed. macOS/Windows have existing custom-file pickers; mobile custom-LUT import UI is not added by this tool.
 
 ## 渲染流程 / Rendering Pipeline
 

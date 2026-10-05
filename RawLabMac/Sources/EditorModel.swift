@@ -62,7 +62,7 @@ final class EditorModel: ObservableObject {
     }
     func importLUT() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "cube") ?? .data]
+        panel.allowedContentTypes = ["cube", "rlook"].map { UTType(filenameExtension: $0) ?? .data }
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             if !films.contains(where: { $0.url == url }) { films.append(Film(name: url.deletingPathExtension().lastPathComponent, url: url)) }

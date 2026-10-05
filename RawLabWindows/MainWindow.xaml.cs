@@ -253,7 +253,7 @@ public partial class MainWindow : Window
     }
     private void ImportClicked(object sender,RoutedEventArgs e)
     {
-        var dialog=new OpenFileDialog{Title="导入 F-Gamut / F-Log2 胶片 LUT",Filter="CUBE LUT|*.cube"};
+        var dialog=new OpenFileDialog{Title="导入胶片外观",Filter="胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"};
         if(dialog.ShowDialog(this)!=true)return;
         if(!films.Any(f=>f.Path==dialog.FileName))films.Add(new(Path.GetFileNameWithoutExtension(dialog.FileName),dialog.FileName,null));
         lut=dialog.FileName;BuildFilms();RefreshControls();Schedule();

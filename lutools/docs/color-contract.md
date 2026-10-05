@@ -15,7 +15,7 @@ Optional `preview` mode retains the earlier median matching approximation: it sa
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
-4. For a film LUT: start from the un-tonemapped linear input, transform to F-Gamut, encode with the published F-Log2 curve, then interpolate the CUBE. The neutral display curve is NOT applied before or after the film LUT. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
+4. For a film CUBE: start from the un-tonemapped linear input, transform to F-Gamut, encode with the published F-Log2 curve, then interpolate the CUBE. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2 or an RGB CUBE. The neutral display curve is NOT applied before or after either look. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation, curves and detail adjustments follow.
 6. Write RGB/RGBA preview, JPEG or actual 16-bit PNG. PNG includes an sRGB chunk. Photo outputs use an sRGB display interpretation; the film-simulation names alone do not establish camera-to-camera colorimetric equivalence or a measured display EOTF. JPEG consumers must use this sRGB interpretation.
 
@@ -37,6 +37,50 @@ The PHOTO API is narrower. Supported files declare comments such as:
 The output look name is not allowlisted: custom names such as EKTAR 100 Phuket are accepted. Gamma must still declare `F-Log2 to <nonempty look name>`, and Gamut must declare `F-Gamut to ITU-R BT.709`. Missing/incompatible declarations, F-Gamut C and sRGB-input creative LUTs are rejected. The known `F-Log2 to F-Log2` technical conversion remains rejected because it does not produce display RGB. This validates declarations, not the table's actual transfer behavior; `OutputTransfer` comments are not interpreted. Custom LUT authors must provide display output matching the application's sRGB convention. Generic mathematical CUBE application remains available through LUTApplicator.
 
 `FLog2 -> FLog2 BT.709` is a technical color-gamut conversion, not a display film look. It is excluded from client film pickers. The experimental `SONY2FUJI_ACES_MODE` switch is superseded by the single float camera-matrix path; it no longer changes rendering.
+
+### Prepared External Looks
+
+The optional [offline LUT preparer](lut-preparation.md) composes explicitly
+declared source transforms into this same native contract. Scene-to-display LUTs
+receive no additional neutral curve; display-input creative LUTs receive neutral
+rendering before the source transform, and scene-output looks receive it after
+output decoding. Signals declare gamut/transfer, scene/display reference and
+numeric range separately. Unknown contracts fail rather than weakening the PHOTO
+API checks. Prepared output is clipped SDR display-sRGB, with serialized-cube
+trilinear sampling error recorded and gated. Legacy canonical CUBEs can pass
+through without resampling. The native CUBE contract and C ABI are unchanged.
+
+DCP adaptation is separate from generic RGB LUT composition. Version 1.1 uses an
+explicit D65 ColorMatrix/ForwardMatrix pair to reconstruct a white-relative virtual
+source-camera input from already developed common RGB, then applies the profile
+look/tone in ProPhoto RGB. The donor matrices never replace the target RAW's own
+sensor calibration or WB. Missing/invalid D65 matrices are rejected. Version 1.0 omitted this input adapter and could
+produce purple skies; its DCP-derived CUBEs must be regenerated from source.
+Profile exposure remains an explicit, recorded linear EV adaptation that can be
+disabled. DCP rendering, finite-grid baking and cross-camera accuracy are separate
+verification questions; successful CPU/GPU parity alone does not establish color
+accuracy or Lightroom equivalence.
+
+Preparer 1.2 adds `.rlook` compilation for the supported DCP subset. The core reads
+a bounded versioned package containing the original normalized HSV table, tone
+samples and matrices. Double intermediate arithmetic avoids the full-transform
+RGB-CUBE approximation; output remains float display-sRGB for the same strength
+blend and adjustments. The PHOTO v2 `lut_path` accepts either format, and zero
+strength bypasses file loading. Existing CUBE GPU execution is unchanged.
+
+Preparer 1.3 adds single/dual-illuminant D65 HueSatMap calibration before profile
+EV and LookTable; LookTable may be absent. `.rlook` v2 stores both tables and v1
+remains readable. Missing profile tone requires an explicitly supplied external
+curve, not an inferred identity/Adobe curve. New HSM/external-tone profiles that
+default to Auto black require an explicit omission policy. Triple-illuminant HSM,
+HDR/spatial/RGB stages and full Adobe rendering remain unsupported.
+
+Native DCP now has a dedicated Metal kernel on macOS 15+/iOS 18+, using the same
+immutable decoded stages and float32 arithmetic. CPU double evaluation remains
+the reference. Stage nonfiniteness or Metal failure returns to CPU in Auto and
+fails in Force; successful Metal execution reports the actual backend. The old
+CUBE shader/parameter layout is unchanged. Windows/GLES still use CPU Auto
+fallback and reject Force for native DCP looks.
 
 ## Verification Boundaries
 
