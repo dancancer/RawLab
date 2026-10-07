@@ -61,8 +61,8 @@ def srgb_encode(linear):
                     1.055 * np.maximum(linear, 0) ** (1 / 2.4) - .055)
 
 
-def tone_curve(linear, contrast=1.5):
-    gray = PARAMETERS["middle_gray"]
+def tone_curve(linear, contrast=1.5, middle_gray=None):
+    gray = PARAMETERS["middle_gray"] if middle_gray is None else middle_gray
     positive = np.maximum(linear, 0)
     power = positive ** contrast
     return power / (power + (1 - gray) / gray * gray ** contrast)
@@ -107,13 +107,14 @@ def neutral(log_rgb):
     return srgb_encode(tone_curve(scene))
 
 
-def ektar(log_rgb):
+def ektar(log_rgb, parameters=None):
+    parameters = PARAMETERS if parameters is None else parameters
     scene = flog2_decode(log_rgb) @ FGAMUT_TO_SRGB.T
     # Smooth negative-channel handling in wide-gamut colors, with gray kept invariant.
-    radius = PARAMETERS["scene_gamut_softness"]
+    radius = parameters["scene_gamut_softness"]
     luma = np.maximum(scene @ np.array([.2126, .7152, .0722]), 0)[..., None]
     scene = (scene + np.sqrt(scene ** 2 + (radius * luma) ** 2)) / (1 + np.sqrt(1 + radius ** 2))
-    display = tone_curve(scene, PARAMETERS["tone_contrast"])
+    display = tone_curve(scene, parameters["tone_contrast"], parameters["middle_gray"])
     lab = linear_to_oklab(display)
     lightness, a, b = np.moveaxis(lab, -1, 0)
     chroma = np.hypot(a, b)
@@ -123,15 +124,15 @@ def ektar(log_rgb):
     skin = hue_weight(hue, 55, 25)
     colored = chroma ** 2 / (chroma ** 2 + .035 ** 2)
     midtones = np.sin(np.pi * np.clip(lightness, 0, 1)) ** 2
-    saturation = (PARAMETERS["overall_chroma"] + PARAMETERS["green_chroma_extra"] * green
-                  + PARAMETERS["blue_chroma_extra"] * blue
-                  - PARAMETERS["skin_chroma_reduction"] * skin)
+    saturation = (parameters["overall_chroma"] + parameters["green_chroma_extra"] * green
+                  + parameters["blue_chroma_extra"] * blue
+                  - parameters["skin_chroma_reduction"] * skin)
     chroma *= 1 + (saturation - 1) * midtones
-    shift = (PARAMETERS["green_hue_degrees"] * green + PARAMETERS["blue_hue_degrees"] * blue
-             + PARAMETERS["skin_hue_degrees"] * skin)
+    shift = (parameters["green_hue_degrees"] * green + parameters["blue_hue_degrees"] * blue
+             + parameters["skin_hue_degrees"] * skin)
     hue += np.deg2rad(shift) * colored * midtones
-    lightness = lightness + (PARAMETERS["green_lightness"] * green
-                             + PARAMETERS["blue_lightness"] * blue) * colored * midtones
+    lightness = lightness + (parameters["green_lightness"] * green
+                             + parameters["blue_lightness"] * blue) * colored * midtones
     graded = np.stack([lightness, chroma * np.cos(hue), chroma * np.sin(hue)], axis=-1)
     return srgb_encode(compress_gamut(graded))
 
