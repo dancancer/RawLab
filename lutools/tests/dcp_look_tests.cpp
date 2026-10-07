@@ -81,6 +81,13 @@ void mathTests(const fs::path& root) {
     auto look = DcpLook::loadCached(path.u8string());
     check(look != nullptr, "load native profile");
     if (!look) return;
+    sony2fuji_look_format format = SONY2FUJI_LOOK_UNKNOWN;
+    uint32_t version = 0;
+    check(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
+          format == SONY2FUJI_LOOK_RLOOK && version == 1,
+          "native look import reports v1 without a RAW or GPU");
+    check(sony2fuji_validate_look(path.u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_OK,
+          "native look validation allows optional information outputs");
     check(look == DcpLook::loadCached(path.u8string()), "immutable native profile cache hit");
     const auto identity = look->apply(RGB(.18f, .3f, .6f));
     check(near(identity.r, encode(.18f)) && near(identity.g, encode(.3f)) && near(identity.b, encode(.6f)),
@@ -118,6 +125,9 @@ void mathTests(const fs::path& root) {
         save(v2path, fixtureV2(withLook));
         auto v2 = DcpLook::loadCached(v2path.u8string());
         check(v2 != nullptr, "load native v2 calibration stages");
+        check(sony2fuji_validate_look(v2path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
+              format == SONY2FUJI_LOOK_RLOOK && version == 2,
+              "native look import preserves v2 with either table layout");
         if (v2) {
             const auto result = v2->apply(RGB(.5f, 0, 0));
             check(near(result.r, 0) && near(withLook ? result.b : result.g, encode(.5)),
@@ -157,6 +167,11 @@ void malformedTests(const fs::path& root) {
         const auto path = root / ("invalid-" + std::to_string(i) + ".rlook");
         save(path, cases[i]);
         check(!DcpLook::loadCached(path.u8string()), "reject malformed native profile");
+        sony2fuji_look_format format = SONY2FUJI_LOOK_RLOOK;
+        uint32_t version = 1;
+        check(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_UNSUPPORTED &&
+              format == SONY2FUJI_LOOK_UNKNOWN && version == 0,
+              "native look import fully validates all profile stages before accepting");
     }
 }
 

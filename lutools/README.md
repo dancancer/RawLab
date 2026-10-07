@@ -109,17 +109,17 @@ RAW 格式支持取决于 LibRaw。现有回归覆盖 Sony ARW 和本地可选 D
 
 RAW format support depends on LibRaw. Current regressions cover Sony ARW and an optional local DJI DNG fixture; this does not establish color calibration for every brand, model or illuminant.
 
-照片 API 接受声明兼容 F-Gamut / F-Log2 输入、BT.709 输出色域的 LUT，不再限制胶片输出名称。`Gamma` 必须为 `F-Log2 to <非空外观名称>`；纯 `F-Log2 to F-Log2` 技术转换仍被拒绝。自定义 LUT 应提供符合应用 sRGB 约定的显示输出；校验不分析表格的实际传递函数。桌面胶片选择器排除技术转换 LUT 和 WDR。
+照片 API 接受 F-Gamut / F-Log、F-Gamut / F-Log2，以及 F-Gamut C / F-Log2C 输入，要求声明 BT.709 输出色域。普通外观名称不设白名单，按应用 sRGB 显示约定解释；明确的 F-Log/F-Log2/F-Log2C 输出会先解码，再经过中性显示转换。校验依据声明，不分析表格的实际传递函数。内置胶片列表仍排除技术转换和 WDR，但可以自定义导入。
 
-The photo API accepts LUTs declaring F-Gamut / F-Log2 input and BT.709 output gamut without a film-name allowlist. Gamma must declare `F-Log2 to <nonempty look name>`; the technical `F-Log2 to F-Log2` conversion is still rejected. Custom LUTs must provide display output matching the application's sRGB convention; validation does not analyze the table's actual transfer behavior. The desktop film picker excludes technical conversion LUTs and WDR.
+The photo API accepts F-Gamut / F-Log, F-Gamut / F-Log2 and F-Gamut C / F-Log2C inputs with declared BT.709 output gamut. Nonempty named looks use the application's display-sRGB convention without a film-name allowlist. Explicit F-Log/F-Log2/F-Log2C outputs are decoded and neutrally display-rendered. Validation checks declarations, not table behavior. Technical transforms and WDR remain absent from built-in film lists but can be imported as custom looks.
 
-`FLog2 -> FLog2 BT.709` 是技术色域转换，不是照片胶片外观。F-Gamut C、Log 输出或未声明输入约定的 LUT 不能直接当成兼容照片 LUT。
+F-Log/F-Log2/F-Log2C 输入和 Log 输出均已接入 GPU。Auto 在后端失败时回退 CPU，Force 要求实际 GPU 执行。Metal 与 Android GLES 已运行验证，D3D11 对应改动尚待 Windows 验证。未知输入输出不能猜测，缺少兼容声明的 LUT 仍会拒绝。
 
-`FLog2 -> FLog2 BT.709` is a technical gamut conversion, not a display film look. F-Gamut C, Log-output LUTs and LUTs without a declared input contract are not interchangeable with compatible photo LUTs.
+F-Log/F-Log2/F-Log2C inputs and Log outputs have GPU implementations. Auto falls back on backend failure; Force requires actual GPU execution. Metal and Android GLES were exercised; the matching D3D11 changes await Windows verification. Missing or incompatible input declarations remain unsupported.
 
-其他约定的 LUT 先通过[准备工具](docs/lut-preparation.md)转换为兼容 CUBE；未知输入输出不能自动猜测。macOS/Windows 可从现有入口导入生成文件；iOS/Android 本轮未新增自定义 LUT 文件选择界面。
+其他约定的 LUT 先通过[准备工具](docs/lut-preparation.md)转换为兼容 CUBE。macOS/Android/Windows 可导入兼容文件；iOS 仍使用内置资源，本轮没有新增文件导入界面。
 
-Prepare other explicitly described LUTs with the offline adapter before import. Unknown color conventions are never guessed. macOS/Windows have existing custom-file pickers; mobile custom-LUT import UI is not added by this tool.
+Prepare other explicitly described LUTs with the offline adapter before import. macOS/Android/Windows accept compatible custom files; iOS still uses bundled resources and has no new custom-file picker in this change.
 
 ## 渲染流程 / Rendering Pipeline
 

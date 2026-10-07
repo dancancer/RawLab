@@ -9,6 +9,7 @@ from .bake import BakingError, inspect_source, prepare
 from .color import ColorSpaces
 from .contract import Contract
 from .native import compile_dcp
+from .audit import audit_sources, invalid_report
 
 
 def main(argv=None):
@@ -17,6 +18,10 @@ def main(argv=None):
     commands.add_parser("spaces", help="List built-in input/output color spaces")
     inspect = commands.add_parser("inspect", help="Read format and declared metadata without modifying a file")
     inspect.add_argument("source", type=Path)
+    audit = commands.add_parser("audit", help="Inventory preset sources without modifying them")
+    audit.add_argument("paths", nargs="+", type=Path)
+    audit.add_argument("--verify-compile", action="store_true",
+                       help="Compile supported DCP sources in a temporary directory and read them back")
     bake = commands.add_parser("prepare", help="Compose a source LUT into the native photo CUBE contract")
     bake.add_argument("source", type=Path)
     bake.add_argument("destination", type=Path)
@@ -39,6 +44,8 @@ def main(argv=None):
             result = {"spaces": ColorSpaces().names, "ocio_version": ocio.__version__}
         elif args.command == "inspect":
             result = inspect_source(args.source)
+        elif args.command == "audit":
+            result = audit_sources(args.paths, verify_compile=args.verify_compile)
         elif args.command == "compile-dcp":
             result = compile_dcp(args.source, args.destination, force=args.force,
                                  dcp_exposure=not args.ignore_dcp_exposure,
@@ -56,12 +63,17 @@ def main(argv=None):
                              max_error=args.max_error, allow_approximation=args.allow_approximation,
                              force=args.force, dcp_exposure=not args.ignore_dcp_exposure)
         print(json.dumps(result, indent=2, ensure_ascii=True))
+        if args.command == "audit" and result.get("summary", {}).get("scan", {}).get("status") == "failed":
+            return 2
         return 0
     except BakingError as error:
         print(json.dumps(error.report, indent=2, ensure_ascii=True))
         print(f"lutprep: {error}", file=sys.stderr)
         return 2
     except (OSError, ValueError, ocio.Exception) as error:
+        if args.command == "audit":
+            print(json.dumps(invalid_report(error), indent=2, ensure_ascii=True))
+            return 2
         print(f"lutprep: {error}", file=sys.stderr)
         return 2
 

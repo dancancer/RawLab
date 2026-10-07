@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
+BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d /tmp/rawlab-progressive-render.XXXXXX)"
 RAW="${1:-${RAWLAB_TEST_RAW:-}}"
 test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an external RAW path'; exit 1; }
@@ -15,9 +16,10 @@ swiftc -swift-version 5 -O -sdk "$SDK" \
     "$ROOT/Shared/ExportMetadata.swift" \
     "$ROOT/RawLabMac/Sources/Adjustments.swift" \
     "$ROOT/RawLabMac/Sources/RenderScheduling.swift" \
+    "$ROOT/RawLabMac/Sources/LookLibrary.swift" \
     "$ROOT/RawLabMac/Sources/EditorModel.swift" \
     "$ROOT/RawLabMac/tests/ProgressiveRenderTests.swift" \
-    "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
+    "$BUILD/libsony2fuji_core.a" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -o "$OUT/progressive-render"

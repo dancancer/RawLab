@@ -49,7 +49,9 @@ fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, onClick: ()
 @Composable
 fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit, onRetry: () -> Unit,
-    onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit) {
+    onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
+    onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
+    onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {}) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
@@ -58,6 +60,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); onMessageDismiss() }
+    }
+    state.lookImportReport?.let { report ->
+        AlertDialog(onDismissRequest = onLookImportReportDismiss,
+            title = { Text(stringResource(R.string.look_import_result)) },
+            text = { Text(report, Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },
+            confirmButton = { TextButton(onClick = onLookImportReportDismiss) { Text(stringResource(R.string.confirm)) } })
     }
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         TopAppBar(title = {
@@ -95,7 +103,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         }
                         VerticalDivider()
                         AdjustmentDock(state, Modifier.width(320.dp).fillMaxHeight(), tool, { tool = it }, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset)
+                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
+                            onImportLook, onRenameLook, onDeleteLook)
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, Modifier.weight(1f), onAlbum, onFile, onLicenses)
@@ -103,7 +112,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     if (state.photo != null) {
                         HorizontalDivider()
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, { tool = it }, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset)
+                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
+                            onImportLook, onRenameLook, onDeleteLook)
                     }
                 }
             }
@@ -120,6 +130,7 @@ private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Phot
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
             state.operation == Operation.IMPORT -> stringResource(R.string.importing)
+            state.operation == Operation.IMPORT_LOOK -> stringResource(R.string.look_importing)
             state.rendering -> stringResource(R.string.rendering)
             else -> null
         }
@@ -156,11 +167,16 @@ private fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () 
 @Composable
 private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, selectTool: (Int) -> Unit,
     expanded: Boolean, toggleExpanded: () -> Unit, compare: Boolean, toggleCompare: () -> Unit,
-    onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit) {
+    onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit,
+    onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit) {
     val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.temperature, R.string.tint)
     val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.Thermostat, Icons.Outlined.Palette)
     val edits = state.edits
     val calibrated = state.preview?.temperature?.isFinite() == true
+    var menuLookId by remember { mutableStateOf<String?>(null) }
+    var renameLookId by remember { mutableStateOf<String?>(null) }
+    var deleteLookId by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
             IconToggleButton(checked = compare, onCheckedChange = { toggleCompare() }, enabled = state.preview != null) {
@@ -170,7 +186,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 TextButton(onClick = { onEdit(edits.copy(customWb = false), false) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
             } else {
-                Text(Film.all.first { it.id == edits.film }.name, Modifier.weight(1f),
+                Text(state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film, Modifier.weight(1f),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
             }
             ToolIcon(Icons.Outlined.RestartAlt, R.string.reset, state.controlsEnabled, onReset)
@@ -181,17 +197,43 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
         Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
         when (tool) {
             0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(Film.all, key = { it.id }) { film ->
-                    val artwork = if (film.file != null) assetBitmap("artwork/${film.id}.png") else null
-                    Column(Modifier.width(76.dp).selectable(selected = edits.film == film.id, enabled = state.controlsEnabled,
-                        role = Role.RadioButton, onClick = { onEdit(edits.copy(film = film.id), false) }),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(64.dp).border(if (edits.film == film.id) 2.dp else 0.dp,
-                            if (edits.film == film.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
-                            if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize())
-                            else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                item(key = "import-look") {
+                    Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        ToolIcon(Icons.Outlined.Add, R.string.import_look, state.operation == Operation.NONE, onImportLook)
+                        Text(stringResource(R.string.import_look), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
+                            maxLines = 3, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                items(state.looks, key = { it.id }) { look ->
+                    val builtIn = Film.all.firstOrNull { it.id == look.id }
+                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${look.id}.png") else null
+                    Box(Modifier.width(76.dp)) {
+                        Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id, enabled = state.controlsEnabled,
+                            role = Role.RadioButton, onClick = { onEdit(edits.copy(film = look.id), false) }),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.size(64.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
+                                if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
+                                if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize())
+                                else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                            }
+                            Text(look.name, Modifier.heightIn(min = 42.dp).padding(top = 4.dp), maxLines = 3,
+                                overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
                         }
-                        Text(film.name, Modifier.heightIn(min = 42.dp).padding(top = 4.dp), maxLines = 3, style = MaterialTheme.typography.labelSmall)
+                        if (look.managed) {
+                            Box(Modifier.align(Alignment.TopEnd)) {
+                                ToolIcon(Icons.Outlined.MoreVert, R.string.more, state.operation == Operation.NONE) { menuLookId = look.id }
+                                DropdownMenu(expanded = menuLookId == look.id, onDismissRequest = { menuLookId = null }) {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.rename_look)) },
+                                        leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = {
+                                            menuLookId = null; renameLookId = look.id; renameText = look.name
+                                        })
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.delete_look)) },
+                                        leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = {
+                                            menuLookId = null; deleteLookId = look.id
+                                        })
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -223,6 +265,21 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 }
             }
         }
+    }
+    renameLookId?.let { id ->
+        AlertDialog(onDismissRequest = { renameLookId = null }, title = { Text(stringResource(R.string.rename_look)) },
+            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true,
+                label = { Text(stringResource(R.string.look_name)) }) },
+            confirmButton = { TextButton(onClick = { onRenameLook(id, renameText); renameLookId = null },
+                enabled = renameText.trim().isNotEmpty()) { Text(stringResource(R.string.confirm)) } },
+            dismissButton = { TextButton(onClick = { renameLookId = null }) { Text(stringResource(R.string.cancel)) } })
+    }
+    deleteLookId?.let { id ->
+        val look = state.looks.firstOrNull { it.id == id }
+        AlertDialog(onDismissRequest = { deleteLookId = null }, title = { Text(stringResource(R.string.delete_look)) },
+            text = { Text(look?.name.orEmpty()) },
+            confirmButton = { TextButton(onClick = { onDeleteLook(id); deleteLookId = null }) { Text(stringResource(R.string.confirm)) } },
+            dismissButton = { TextButton(onClick = { deleteLookId = null }) { Text(stringResource(R.string.cancel)) } })
     }
 }
 

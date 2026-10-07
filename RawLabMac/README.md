@@ -69,9 +69,18 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 胶片强度支持 0–200%，默认及重置均为 100%。
 
   Film strength supports 0-200%, with 100% as the default and reset value.
-- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入声明了兼容输入/输出的 CUBE。
+- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入兼容 CUBE 或准备好的 RLOOK v1/v2。
 
-  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; you can also import CUBE files declaring compatible input/output contracts.
+  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; import compatible CUBE or prepared RLOOK v1/v2 files.
+- 支持声明 BT.709 输出色域的 F-Log、F-Log2、F-Log2C 富士 CUBE。F-Log2C 使用独立色域转换；技术 Log 输出会解码后正常显示。这些类型均支持 Metal，Auto 只在后端失败时回退。原厂文件无需重新制备。
+
+  Declared Fuji F-Log/F-Log2/F-Log2C CUBEs with BT.709 output can be imported directly. F-Log2C uses its own gamut conversion; technical Log outputs are decoded and display-rendered. All these contracts support Metal, with Auto fallback on backend failure.
+- 外观选择器支持一次多选 CUBE/RLOOK，按顺序导入。单个失败不影响其余文件；批次结束后选中最后成功项，并汇总失败文件。全部失败或取消选择时保留原选择。
+
+  The look picker accepts multiple CUBE/RLOOK files. Imports run sequentially, retain partial success, select the last successful look and report failed filenames. All-failed or cancelled batches preserve the existing selection.
+- 当前源码将导入外观复制到 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。删除外部原文件不影响外观，重启后会恢复。外观右键菜单支持重命名和删除；删除仅影响托管副本，内置外观不受影响。导入先走共享 native 校验，失败保留原选择，不接受源 DCP/XMP。制备步骤见 [LUT Preparation](../lutools/docs/lut-preparation.md)。此改动尚未包含在已发布的 v0.3.0 中。
+
+  Current source manages imported looks in Application Support with a persistent registry. Imported copies survive source removal and app restart; context menus rename or remove only managed copies. Native validation rejects incompatible files without changing selection. Compile supported source DCPs on the desktop first; XMP execution is not implemented. The published v0.3.0 does not include this new library workflow.
 - 左侧文件树支持添加多个本地目录、按需展开子目录和点击 RAW 缩略图选片，可从工具栏收起。目录列表会保留；从侧栏移除目录不会删除原文件。缩略图只读取内嵌预览，不自动触发完整显影。
 
   Add multiple local directories, expand subdirectories on demand and select RAW thumbnails in the collapsible left file tree. The directory list persists; removing an entry never deletes files. Thumbnails use embedded previews rather than full RAW development.

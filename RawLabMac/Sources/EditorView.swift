@@ -59,11 +59,27 @@ struct EditorView: View {
                 model.open(URL(fileURLWithPath: args[index + 1]))
             }
         }
-        .alert("无法导出", isPresented: Binding(
-            get: { model.result != nil && model.error != nil },
+        .alert("操作失败", isPresented: Binding(
+            get: { model.result != nil && model.error != nil && model.lookImportReport == nil },
             set: { if !$0 { model.error = nil } }
         )) { Button("关闭", role: .cancel) { model.error = nil } }
         message: { Text(model.error ?? "") }
+        .sheet(isPresented: Binding(
+            get: { model.lookImportReport != nil },
+            set: { if !$0 { model.lookImportReport = nil } }
+        )) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("导入结果").font(.headline)
+                ScrollView {
+                    Text(model.lookImportReport ?? "").font(.callout).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                HStack {
+                    Spacer()
+                    Button("关闭") { model.lookImportReport = nil }.keyboardShortcut(.defaultAction)
+                }
+            }.padding(24).frame(width: 520, height: 380)
+        }
     }
 
     private var bottomControls: some View {
@@ -132,7 +148,7 @@ struct EditorView: View {
                     Text(model.file?.lastPathComponent ?? "RAW 照片").font(.headline).lineLimit(1)
                 } else if let error = model.error {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.yellow)
-                    Text("无法打开照片").font(.headline)
+                    Text("操作失败").font(.headline)
                     Text(error).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .frame(maxWidth: 340)
                     HStack {
@@ -195,7 +211,7 @@ struct EditorView: View {
                 Button("JPEG…") { model.export(png: false) }
                 Button("PNG · 16-bit…") { model.export(png: true) }
             } label: { Label("导出", systemImage: "square.and.arrow.up") }
-            .disabled(model.result == nil || model.busy || model.exporting)
+            .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy)
         }
     }
 

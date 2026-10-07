@@ -117,6 +117,34 @@ int main(int argc, char** argv) {
             "Force rejects a source halo exceeding the tile budget");
         compare(render(cpu, wide, false), render(automatic, wide, false), "oversized source halo Auto fallback");
     }
+    for (const std::string input : {"FLog", "FLog2", "FLog2C"}) {
+        for (const std::string transfer : {"Display", "FLog", "FLog2", "FLog2C"}) {
+            const auto path = cube + "-" + input + "-" + transfer + ".cube";
+            {
+                std::ofstream file(path);
+                file << "#Gamma:" << input << " to " << transfer << "\n#Gamut:"
+                     << (input == "FLog2C" ? "F-GamutC" : "F-Gamut") << " to ITU-R BT.709\n"
+                     << "LUT_3D_SIZE 3\nDOMAIN_MIN -0.1 0.1 0.2\nDOMAIN_MAX 0.8 0.9 1.1\n";
+                for (int b=0; b<3; ++b) for (int g=0; g<3; ++g) for (int r=0; r<3; ++r)
+                    file << r/2.f << ' ' << g/2.f << ' ' << b/2.f << '\n';
+            }
+            auto contract = request; contract.lut_path = path.c_str();
+            for (auto intent : {SONY2FUJI_INTENT_PREVIEW, SONY2FUJI_INTENT_FINAL}) {
+                contract.intent = intent;
+                for (float strength : {0.f, .5f, 1.f, 2.f}) {
+                    contract.lut_strength = strength;
+                    contract.exposure_ev = strength == .5f ? -6.f : 2.f;
+                    compare(render(cpu, contract, false), render(forced, contract, true),
+                            input + " to " + transfer + " strength " + std::to_string(strength) + " intent " + std::to_string(intent));
+                }
+            }
+            contract.sharpening = .5f;
+            compare(render(cpu, contract, false), render(automatic, contract, false), "Fuji detail Auto fallback");
+            require(sony2fuji_process(forced.value, &contract, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR,
+                    "Fuji Force does not hide unsupported detail");
+            std::remove(path.c_str());
+        }
+    }
     std::remove(cube.c_str());
 
     if (argc < 3) return 0;

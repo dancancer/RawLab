@@ -29,3 +29,11 @@ data class Film(val id: String, val name: String, val file: String?) {
         )
     }
 }
+
+data class LookChoice(val id: String, val name: String, val managed: Boolean, val available: Boolean = true) {
+    companion object {
+        val builtIns = Film.all.map { Film(it.id, it.name, it.file).toChoice() }
+
+        private fun Film.toChoice() = LookChoice(id, name, managed = false)
+    }
+}

@@ -11,6 +11,7 @@ cbuffer Params : register(b0) {
     float4 detail; // curve, noise, sharpening, unused
     float4 domainLow;
     float4 domainHigh;
+    uint4 logTransfer; // input is F-Log, output is Log, output is F-Log, unused
 };
 StructuredBuffer<float3> source : register(t0);
 StructuredBuffer<float3> film : register(t1);
@@ -23,6 +24,16 @@ float neutral(float x) {
 }
 float flog2(float x) {
     return saturate(x<0.00088899597 ? 8.799461*x+0.092864 : log10(x*5.555556+0.064829)*0.245281+0.384316);
+}
+float encodeLog(float x) {
+    if(logTransfer.x==0)return flog2(x);
+    return saturate(x<0.00089 ? 8.735631*x+0.092864 : 0.344676*log10(0.555556*x+0.009468)+0.790453);
+}
+float decodeLog(float x) {
+    if(logTransfer.z!=0)return x<0.100537775223865 ? (x-0.092864)/8.735631
+        : (pow(10.0,(x-0.790453)/0.344676)-0.009468)/0.555556;
+    return x<0.100686685370811 ? (x-0.092864)/8.799461
+        : (pow(10.0,(x-0.384316)/0.245281)-0.064829)/5.555556;
 }
 float3 sampleLut(uint3 p) { return film[(p.z*control.w+p.y)*control.w+p.x]; }
 float3 lookup(float3 x) {
@@ -47,7 +58,9 @@ float3 evaluate(float3 inputColor) {
     float3 pixel=float3(neutral(scene.r),neutral(scene.g),neutral(scene.b));
     if(control.z!=0) {
         float3 fg=float3(dot(toFilm[0].xyz,scene),dot(toFilm[1].xyz,scene),dot(toFilm[2].xyz,scene));
-        pixel=lerp(pixel,lookup(float3(flog2(fg.r),flog2(fg.g),flog2(fg.b))),exposureStrength.w);
+        float3 look=lookup(float3(encodeLog(fg.r),encodeLog(fg.g),encodeLog(fg.b)));
+        if(logTransfer.y!=0)look=float3(neutral(decodeLog(look.r)),neutral(decodeLog(look.g)),neutral(decodeLog(look.b)));
+        pixel=lerp(pixel,look,exposureStrength.w);
     }
     if(tone.z!=0 || tone.w!=0) {
         float light=dot(pixel,float3(.2126,.7152,.0722)),adjusted=light;

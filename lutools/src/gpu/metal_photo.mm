@@ -1,5 +1,6 @@
 #include "gpu/photo_gpu.h"
 #include "gpu/metal_dcp_shader.h"
+#include "core/photo_lut.h"
 
 #include <algorithm>
 #include <array>
@@ -54,7 +55,11 @@ struct PhotoParams {
     float sharpening;
     float domainMin[3];
     float domainMax[3];
+    uint32_t inputIsFLog;
+    uint32_t outputIsLog;
+    uint32_t outputIsFLog;
 };
+static_assert(sizeof(PhotoParams) == 184, "Photo Metal parameter layout");
 
 struct MetalContext {
     id<MTLDevice> device = nil;
@@ -124,6 +129,9 @@ struct Params {
     float sharpening;
     float domainMin[3];
     float domainMax[3];
+    uint inputIsFLog;
+    uint outputIsLog;
+    uint outputIsFLog;
 };
 
 inline float3 lerp3(float3 a, float3 b, float t) {
@@ -206,8 +214,17 @@ inline float flog2(float linear) {
     return clamp(log10(linear * a + b) * c + d, 0.0f, 1.0f);
 }
 
-inline float3 flog2RGB(float3 value) {
-    return float3(flog2(value.r), flog2(value.g), flog2(value.b));
+inline float encodeLog(float linear, bool isFLog) {
+    if (!isFLog) return flog2(linear);
+    return clamp(linear < 0.00089f ? 8.735631f * linear + 0.092864f
+        : 0.344676f * log10(0.555556f * linear + 0.009468f) + 0.790453f, 0.0f, 1.0f);
+}
+
+inline float decodeLog(float encoded, bool isFLog) {
+    if (isFLog) return encoded < 0.100537775223865f ? (encoded - 0.092864f) / 8.735631f
+        : (pow(10.0f, (encoded - 0.790453f) / 0.344676f) - 0.009468f) / 0.555556f;
+    return encoded < 0.100686685370811f ? (encoded - 0.092864f) / 8.799461f
+        : (pow(10.0f, (encoded - 0.384316f) / 0.245281f) - 0.064829f) / 5.555556f;
 }
 
 inline float3 readLUT(
@@ -371,8 +388,15 @@ kernel void baseAndLUT(
         destination[gid] = packed_float3(base);
         return;
     }
-    float3 filmInput = flog2RGB(lutMatrixRGB(value, params));
+    float3 gamut = lutMatrixRGB(value, params);
+    float3 filmInput = float3(encodeLog(gamut.r, params.inputIsFLog != 0u),
+        encodeLog(gamut.g, params.inputIsFLog != 0u), encodeLog(gamut.b, params.inputIsFLog != 0u));
     float3 film = applyLUT(lut, filmInput, params);
+    if (params.outputIsLog != 0u) {
+        film = float3(neutralDisplay(decodeLog(film.r, params.outputIsFLog != 0u)),
+            neutralDisplay(decodeLog(film.g, params.outputIsFLog != 0u)),
+            neutralDisplay(decodeLog(film.b, params.outputIsFLog != 0u)));
+    }
     destination[gid] = packed_float3(lerp3(base, film, params.lutStrength));
 }
 
@@ -728,6 +752,9 @@ PhotoParams makeParams(
     params.noiseReduction = request.noise_reduction;
     params.sharpening = request.sharpening;
     if (cachedLUT) {
+        params.inputIsFLog = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::FLog;
+        params.outputIsLog = cachedLUT->owner->outputTransfer() != sony2fuji::LUTTransfer::Display;
+        params.outputIsFLog = cachedLUT->owner->outputTransfer() == sony2fuji::LUTTransfer::FLog;
         params.domainMin[0] = cachedLUT->domainMin.r;
         params.domainMin[1] = cachedLUT->domainMin.g;
         params.domainMin[2] = cachedLUT->domainMin.b;
@@ -862,7 +889,7 @@ bool renderPhotoMetalImpl(
         } else {
             toSRGB = ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB);
         }
-        toFGamut = ColorConverter::getConversionMatrix(ColorSpace::sRGB, ColorSpace::FujiFilm_FGamut);
+        toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
     } catch (...) {
         return false;
     }

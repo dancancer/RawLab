@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
         Session forced(SONY2FUJI_GPU_FORCE);
         sony2fuji_buffer buffer{};
         check(sony2fuji_process(forced.value, &request, &buffer) == SONY2FUJI_STATUS_PROCESSING_ERROR,
-              "native DCP explicitly rejects forced GPU");
+              "CPU-only look explicitly rejects forced GPU");
         sony2fuji_release_buffer(&buffer);
     }
     for (float temperature : {0.f, 4000.f, 8500.f}) {
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
                 (nativeCpuOnly ? "RAW CPU/Auto WB " : "RAW CPU/GPU WB ") + std::to_string(temperature));
         if (nativeCpuOnly) {
             check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_CPU,
-                  "native DCP reports actual CPU backend");
+                  "CPU-only look reports actual CPU backend");
         } else {
 #ifdef SONY2FUJI_ENABLE_D3D11
         check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "actual Direct3D 11 hardware backend");

@@ -27,6 +27,7 @@ public:
     static std::shared_ptr<const DcpLook> loadCached(const std::string& path);
     RGB apply(const RGB& linearSrgb) const;
     const DcpStages& stages() const { return stages_; }
+    uint32_t formatVersion() const { return version_; }
 
 private:
     DcpLook() = default;
@@ -34,6 +35,7 @@ private:
     double tone(double value) const;
 
     DcpStages stages_;
+    uint32_t version_ = 0;
 };
 
 } // namespace sony2fuji

@@ -1,5 +1,6 @@
 #include "gpu/d3d11_photo.h"
 #include "gpu/d3d11_photo_shader.h"
+#include "core/photo_lut.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
@@ -22,8 +23,9 @@ struct alignas(16) Parameters {
     uint32_t dimensions[4], control[4];
     float toSrgb[3][4], toFilm[3][4];
     float exposureStrength[4], tone[4], detail[4], domainLow[4], domainHigh[4];
+    uint32_t logTransfer[4];
 };
-static_assert(sizeof(Parameters) == 208);
+static_assert(sizeof(Parameters) == 224);
 static_assert(sizeof(RGB) == 12);
 struct Buffer {
     ComPtr<ID3D11Buffer> data;
@@ -148,7 +150,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         auto& c=*impl_;
         Parameters p{};
         const auto toSrgb=ColorConverter::getConversionMatrix(inputSpace,ColorSpace::sRGB);
-        const auto toFilm=ColorConverter::getConversionMatrix(ColorSpace::sRGB,ColorSpace::FujiFilm_FGamut);
+        const auto toFilm=photoLUTInputMatrix(lut ? lut->inputTransfer() : LUTTransfer::FLog2);
         for (int row=0;row<3;++row) for (int col=0;col<3;++col) {
             p.toSrgb[row][col]=toSrgb[row][col];p.toFilm[row][col]=toFilm[row][col];
         }
@@ -160,6 +162,9 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         p.detail[0]=request.tone_curve;p.detail[1]=request.noise_reduction;p.detail[2]=request.sharpening;
         if (lut && request.lut_strength>0) {
             c.setLut(lut);p.control[2]=1;p.control[3]=lut->getSize();
+            p.logTransfer[0]=lut->inputTransfer()==LUTTransfer::FLog;
+            p.logTransfer[1]=lut->outputTransfer()!=LUTTransfer::Display;
+            p.logTransfer[2]=lut->outputTransfer()==LUTTransfer::FLog;
             auto low=lut->domainMin(),high=lut->domainMax();
             p.domainLow[0]=low.r;p.domainLow[1]=low.g;p.domainLow[2]=low.b;
             p.domainHigh[0]=high.r;p.domainHigh[1]=high.g;p.domainHigh[2]=high.b;

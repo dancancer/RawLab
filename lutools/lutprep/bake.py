@@ -60,12 +60,22 @@ def _cube_info(path):
                     all(np.isfinite(minimum + maximum)) and
                     all(a < b for a, b in zip(minimum, maximum)))
     gamma = comments.get("gamma", "")
-    output = gamma[len("flog2to"):] if gamma.startswith("flog2to") else ""
-    canonical = (native_safe and 2 <= size <= 256 and rows == size ** 3 and valid_domain
-                 and output not in ("", "flog2") and comments.get("gamut") == "fgamuttoiturbt709"
+    input_transfer, _, output = gamma.partition("to")
+    log_transfers = ("flog", "flog2", "flog2c")
+    expected_gamut = "fgamutc" if input_transfer == "flog2c" else "fgamut"
+    native = (native_safe and 2 <= size <= 256 and rows == size ** 3 and valid_domain
+              and input_transfer in log_transfers and bool(output)
+              and comments.get("gamut") == expected_gamut + "toiturbt709")
+    output_transfer = output if output in log_transfers else "display-srgb"
+    contract = ({"input_transfer": input_transfer, "input_gamut": expected_gamut,
+                 "output_transfer": output_transfer, "output_gamut": "bt709",
+                 "cpu_only": False}
+                if native else None)
+    canonical = (native and input_transfer == "flog2" and output_transfer == "display-srgb"
                  and comments.get("outputtransfer", "srgb") == "srgb")
     return {"canonical": bool(canonical), "size": size or None, "domain_min": minimum,
-            "domain_max": maximum, "metadata": metadata}
+            "domain_max": maximum, "metadata": metadata,
+            "native_photo_compatible": bool(native), "photo_contract": contract}
 
 
 def inspect_source(source):
@@ -150,6 +160,8 @@ def prepare(source, destination, contract=None, *, size=65, max_error=.02,
         raise ValueError("DCP uses its own D65 profile input adapter, not a generic RGB LUT contract")
     passthrough = contract is None and info["canonical"]
     if not passthrough and not is_dcp and contract is None:
+        if info.get("native_photo_compatible"):
+            raise ValueError("Source supports direct native import; canonical display preparation still requires --contract")
         raise ValueError("Source has no canonical color contract; supply --contract with explicit input/output")
     if is_dcp:
         profile = DCPProfile.read(source)

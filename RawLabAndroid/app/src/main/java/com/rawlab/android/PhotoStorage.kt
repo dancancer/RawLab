@@ -25,9 +25,14 @@ internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float?
     return if (orientation == 90 || orientation == 270) height.toFloat() / width else width.toFloat() / height
 }
 
-class PhotoStorage(private val context: Context) : AutoCloseable {
+class PhotoStorage(
+    private val context: Context,
+    looksDirectory: File = File(context.filesDir, "looks"),
+    lookValidator: LookValidator = NativeLookValidator,
+) : AutoCloseable {
     private val resolver = context.contentResolver
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
+    private val lookLibrary = LookLibrary(looksDirectory, lookValidator)
 
     fun album(): List<AlbumPhoto> {
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -63,15 +68,37 @@ class PhotoStorage(private val context: Context) : AutoCloseable {
     } catch (_: Exception) { null }
 
     fun import(uri: Uri): ImportedPhoto {
-        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+        val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
-        } ?: "RAW"
+        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
         return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream))
     }
 
+    fun looks(): List<LookChoice> = LookChoice.builtIns + lookLibrary.list().map {
+        LookChoice(it.id, it.name, managed = true, available = it.available)
+    }
+
+    fun importLook(uri: Uri): ManagedLook {
+        val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Look"
+        try {
+            val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
+            return stream.use { lookLibrary.importLook(it, name) }
+        } catch (error: Exception) {
+            throw IOException("$name: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+    }
+
+    fun renameLook(id: String, name: String): ManagedLook = lookLibrary.rename(id, name)
+
+    fun deleteLook(id: String) = lookLibrary.remove(id)
+
     fun filmPath(id: String): File? {
-        val film = Film.all.single { it.id == id }
+        val film = Film.all.firstOrNull { it.id == id }
+        if (film == null) return lookLibrary.fileFor(id)
+            ?: throw IllegalArgumentException("Unknown look: $id")
         val name = film.file?.let { "FLog2_to_${it}_65grid_V.1.00.cube" } ?: return null
         val destination = File(directory, name)
         if (!destination.exists()) {

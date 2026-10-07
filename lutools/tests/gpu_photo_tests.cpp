@@ -117,12 +117,12 @@ bool withinTwoDN(
     return maximum <= 2;
 }
 
-std::filesystem::path makePhotoLUT() {
+std::filesystem::path makePhotoLUT(const std::string& input = "FLog2", const std::string& output = "ETERNA") {
     const auto path = std::filesystem::temp_directory_path() /
-        ("rawtools-gpu-photo-" + std::to_string(static_cast<long long>(::getpid())) + ".cube");
+        ("rawtools-gpu-photo-" + std::to_string(static_cast<long long>(::getpid())) + "-" + input + "-" + output + ".cube");
     std::ofstream file(path);
-    file << "# Gamma: FLog2toETERNA\n"
-         << "# Gamut: FGamuttoITUR BT709\n"
+    file << "# Gamma: " << input << " to " << output << '\n'
+         << "# Gamut: " << (input == "FLog2C" ? "FGamutC" : "FGamut") << " to ITUR BT709\n"
          << "TITLE \"GPU photo parity\"\n"
          << "LUT_3D_SIZE 2\n"
          << "DOMAIN_MIN 0.15 0.20 0.10\n"
@@ -189,6 +189,29 @@ bool compareCase(
     check(result, name + " (max DN " + std::to_string(maximum) + ")");
     sony2fuji_release_buffer(&cpu);
     return result;
+}
+
+void compareForcedCase(sony2fuji_session* cpuSession, sony2fuji_session* gpuSession,
+                      const sony2fuji_request& request, const std::string& name) {
+    sony2fuji_buffer cpu{}, gpu{};
+    const auto cpuStatus = sony2fuji_process(cpuSession, &request, &cpu);
+    const auto gpuStatus = sony2fuji_process(gpuSession, &request, &gpu);
+#ifdef SONY2FUJI_ENABLE_D3D11
+    const auto expectedBackend = SONY2FUJI_BACKEND_D3D11;
+#else
+    const auto expectedBackend = SONY2FUJI_BACKEND_METAL;
+#endif
+    check(gpuStatus == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(gpuSession) == expectedBackend,
+          name + " Force completes on the actual photo GPU backend");
+    size_t maximum = 0;
+    bool matched = false;
+    if (cpuStatus == SONY2FUJI_STATUS_OK && gpuStatus == SONY2FUJI_STATUS_OK && gpu.data) {
+        const auto* bytes = static_cast<const unsigned char*>(gpu.data);
+        matched = withinTwoDN(std::vector<unsigned char>(bytes, bytes + gpu.size_bytes), cpu, &maximum);
+    }
+    check(matched, name + " forced CPU/GPU parity (max DN " + std::to_string(maximum) + ")");
+    sony2fuji_release_buffer(&cpu);
+    sony2fuji_release_buffer(&gpu);
 }
 
 } // namespace
@@ -285,6 +308,33 @@ int main() {
     finalRequest.intent = SONY2FUJI_INTENT_FINAL;
     finalRequest.preview_long_edge = 0;
     compareCase(session, pixels, 4, 2, finalRequest, lut, 2, 1, "final resize follows effects");
+
+    sony2fuji_session* forced = nullptr;
+    check(sony2fuji_session_create(&forced) == SONY2FUJI_STATUS_OK, "Force comparison session creates");
+    sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(config), SONY2FUJI_GPU_FORCE};
+    sony2fuji_session_set_gpu_config(forced, &config);
+    std::vector<unsigned char> ramp(17 * 13 * 3);
+    for (size_t i=0; i<ramp.size(); ++i) ramp[i] = static_cast<unsigned char>((i*73+i/7)%256);
+    for (const auto& inputName : {"FLog", "FLog2", "FLog2C"}) {
+        for (const auto& outputName : {"ETERNA", "FLog", "FLog2", "FLog2C"}) {
+            const auto path = makePhotoLUT(inputName, outputName);
+            const auto utf8 = path.u8string();
+            const auto film = sony2fuji::LUTParser::loadLUTCached(utf8);
+            auto request = baseRequest(ramp, 17, 13);
+            request.lut_path = utf8.c_str();
+            for (float strength : strengths) {
+                request.lut_strength = strength;
+                request.exposure_ev = strength == 0.5f ? -6.0f : 2.0f;
+                request.contrast = 1.1f; request.saturation = .9f;
+                request.shadows = -.2f; request.highlights = .3f; request.tone_curve = .1f;
+                const auto name = std::string(inputName) + " to " + outputName + " strength " + std::to_string(strength);
+                compareCase(session, ramp, 17, 13, request, film, 17, 13, name + " shader");
+                compareForcedCase(session, forced, request, name);
+            }
+            std::filesystem::remove(path);
+        }
+    }
+    sony2fuji_session_destroy(forced);
 
     sony2fuji_session_destroy(session);
     std::error_code error;

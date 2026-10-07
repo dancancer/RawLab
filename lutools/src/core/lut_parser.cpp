@@ -19,6 +19,12 @@ bool readRGB(std::istringstream& line, RGB& p) {
     return static_cast<bool>(line >> p.r >> p.g >> p.b) &&
         std::isfinite(p.r) && std::isfinite(p.g) && std::isfinite(p.b);
 }
+LUTTransfer logTransfer(const std::string& name) {
+    if (name == "flog") return LUTTransfer::FLog;
+    if (name == "flog2") return LUTTransfer::FLog2;
+    if (name == "flog2c") return LUTTransfer::FLog2C;
+    return LUTTransfer::Unknown;
+}
 }
 
 ErrorCode LUT3D::loadFromFile(const std::string& path) { return parseCubeFile(path); }
@@ -76,11 +82,17 @@ ErrorCode LUT3D::parseCubeFile(const std::string& path) {
         return ErrorCode::ParseError;
     // CUBE specifies R-fast order, independent of the output color variation.
     data_ = std::move(values);
-    const std::string prefix = "flog2to";
-    const std::string output = gamma.compare(0, prefix.size(), prefix) == 0 ? gamma.substr(prefix.size()) : "";
-    // The gamut-only F-Log2 conversion is not a display look.
-    photoLUT_ = gamut == "fgamuttoiturbt709" &&
-        !output.empty() && output != "flog2";
+    const auto separator = gamma.find("to");
+    if (separator != std::string::npos && separator + 2 < gamma.size()) {
+        const auto input = logTransfer(gamma.substr(0, separator));
+        const auto expectedGamut = input == LUTTransfer::FLog2C
+            ? "fgamutctoiturbt709" : "fgamuttoiturbt709";
+        if (input != LUTTransfer::Unknown && gamut == expectedGamut) {
+            inputTransfer_ = input;
+            outputTransfer_ = logTransfer(gamma.substr(separator + 2));
+            if (outputTransfer_ == LUTTransfer::Unknown) outputTransfer_ = LUTTransfer::Display;
+        }
+    }
     return ErrorCode::Success;
 }
 

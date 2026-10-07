@@ -223,7 +223,7 @@ A: 可以,但色彩转换需要调整:
 - 其他品牌需要修改色彩矩阵
 
 ### Q: 输出的 JPEG 是什么色彩空间?
-A: 照片输出按 sRGB 显示约定解释；不能把保留 F-Log2 曲线的技术 LUT 当作最终照片 LUT。
+A: 照片输出按 sRGB 显示约定解释。明确声明 Log 输出的富士技术 LUT 会先解码，再经过中性显示转换；导出结果不是 Log 中间文件。
 
 ### Q: 为什么结果和富士相机不完全一样?
 A: 因为:
@@ -232,7 +232,7 @@ A: 因为:
 - 本工具尽力模拟,但不可能完全相同
 
 ### Q: 可以自定义 LUT 吗?
-A: 通用 CUBE 库支持 R-fast、DOMAIN_MIN/MAX 和浮点输出。CLI/App 只接受声明兼容 F-Gamut/F-Log2 输入及已知胶片输出的 LUT，详见 [色彩契约](color-contract.md)。
+A: 通用 CUBE 库支持 R-fast、DOMAIN_MIN/MAX 和浮点输出。CLI/App 接受 F-Gamut/F-Log、F-Gamut/F-Log2 或 F-Gamut C/F-Log2C 输入及 BT.709 输出色域；普通显示外观名称不设白名单，技术 Log 输出另做解码与显示转换。CPU 和 GPU 均实现这些转换，GPU Auto 在后端失败时回退，详见 [色彩契约](color-contract.md)。
 
 ### Q: 处理 RAW 时保留 EXIF 数据吗?
 A: 当前版本不保留,可以使用 exiftool 后期添加

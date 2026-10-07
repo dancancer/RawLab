@@ -18,6 +18,12 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
   Android 14+ partial photo access and reselection; no all-files permission.
 - 十种内置胶片、中性/结果对比、胶片强度、曝光、拍摄时/自定义色温与色调、单项/全部重置。
   Ten film looks, neutral/result comparison, strength, exposure and calibrated RAW white balance.
+- 当前源码支持从胶片栏的加号导入兼容 CUBE/RLOOK v1/v2，复制到 `filesDir/looks`，不依赖外部 URI 或 RAW 缓存。导入后自动选中，可重命名、删除并在重启后恢复；原文件删除不影响托管副本，同名导入不会覆盖。缺失外观记录保留可删除，损坏索引不会被静默清空。此能力尚未包含在已发布的 v0.3.0 中。
+  Current source imports prepared CUBE/RLOOK looks into a persistent managed library. Copies survive original removal and restart, support rename/delete, and never overwrite same-name imports. This workflow is not in the published v0.3.0.
+- 富士 F-Log/F-Log2/F-Log2C CUBE 在声明匹配的输入色域和 BT.709 输出后可直接导入。技术 Log 输出会解码并转换为显示图像，均支持 GLES；Auto 在后端失败时回退 CPU，Force 要求实际 GPU 执行。
+  Declared Fuji F-Log/F-Log2/F-Log2C CUBEs can be imported directly. Technical Log outputs are decoded and display-rendered on GLES. Auto falls back on backend failure; Force requires successful GPU execution.
+- 外观选择器可一次选择多个文件，作为单个顺序任务导入。部分失败不回滚成功项，完成后选中最后成功外观；失败文件集中显示在可滚动的结果对话框中，不会被随后完成的预览清除。全部失败保留原选择，取消选择不启动任务。
+  Multiple look files import sequentially in one task, preserving partial success and selecting the last successful look. A scrollable result dialog identifies failures and survives preview completion. All-failed batches preserve selection; cancelling the picker starts no task.
 - 胶片强度支持 0–200%，默认及重置均为 100%。
   Film strength supports 0-200%, with 100% as the default and reset value.
 - 1000px 交互预览、1600px 精确预览；串行渲染只保留最新待处理调整。旋转屏幕保留当前编辑。
@@ -36,6 +42,10 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数不跨进程退出保存。
 
 RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits are session-only.
+
+外观导入只接受已制备成品，不直接执行源 DCP/XMP。先在桌面按 [LUT Preparation](../lutools/docs/lut-preparation.md) 制备，再传给手机；Android 不安装 Python/OCIO。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
+
+Prepare source assets on a desktop, then transfer the finished look; Python/OCIO is not required on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
 
 ## 构建 / Build
 

@@ -3,6 +3,7 @@
 #include "sony2fuji/gpu/lut_gpu.h"
 #include "core/preview_exposure.h"
 #include "core/photo_rendering.h"
+#include "core/photo_lut.h"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -50,6 +51,93 @@ sony2fuji_request request(const unsigned char* pixels) {
     r.temperature = 6500;
     r.wb_mode = SONY2FUJI_WB_CAMERA;
     return r;
+}
+
+void testFujiLUTs(const std::filesystem::path& dir, sony2fuji_session* session) {
+    check(near(encodePhotoLog(0, LUTTransfer::FLog) * 1023, 95, .001f) &&
+          near(encodePhotoLog(.18f, LUTTransfer::FLog) * 1023, 469.88278f, .002f) &&
+          near(encodePhotoLog(.9f, LUTTransfer::FLog) * 1023, 705.36192f, .002f),
+          "F-Log published black/gray/white anchors use its own curve");
+    for (auto transfer : {LUTTransfer::FLog, LUTTransfer::FLog2, LUTTransfer::FLog2C}) {
+        for (float value : {-.005f, 0.0f, .0005f, .001f, .18f, .9f, 2.0f})
+            check(near(decodePhotoLog(encodePhotoLog(value, transfer), transfer), value, 1e-5f),
+                  "Fuji curves round-trip low branch, pedestal, gray and super-white");
+    }
+    const auto redC = ColorConverter::applyMatrix(RGB(1,0,0), photoLUTInputMatrix(LUTTransfer::FLog2C));
+    check(near(redC.r,.51715127f) && near(redC.g,.08863135f) && near(redC.b,.01775287f),
+          "F-Gamut C matrix matches independently derived sRGB-red coordinates");
+    const struct { const char* gamma; const char* gamut; LUTTransfer transfer; } inputs[] = {
+        {"F-Log", "F-Gamut", LUTTransfer::FLog},
+        {"F-Log2", "F-Gamut", LUTTransfer::FLog2},
+        {"f-log2 C", "F-Gamut C", LUTTransfer::FLog2C}
+    };
+    const unsigned char gray[3] = {46,46,46};
+    for (const auto& input : inputs) {
+        const auto identityPath = (dir / (std::string(input.gamma) + "-identity.cube")).string();
+        {
+            std::ofstream file(identityPath);
+            file << "#Gamma:" << input.gamma << " to Encoded Test\n#Gamut:" << input.gamut
+                 << " to ITU-R BT.709\nLUT_3D_SIZE 2\n";
+            for (int i=0; i<8; ++i) file << (i&1) << ' ' << ((i>>1)&1) << ' ' << ((i>>2)&1) << '\n';
+        }
+        const unsigned char red[3] = {255,0,0};
+        const bool gamutC = input.transfer == LUTTransfer::FLog2C;
+        auto identityRequest = request(gamutC ? red : gray);
+        identityRequest.lut_path = identityPath.c_str(); identityRequest.lut_strength = 1;
+        sony2fuji_buffer encoded{};
+        check(sony2fuji_process(session, &identityRequest, &encoded) == SONY2FUJI_STATUS_OK,
+              "Photo input adapter renders an identity diagnostic LUT");
+        const std::array<int,3> expected = gamutC ? std::array<int,3>{127,82,49} :
+            (input.transfer == LUTTransfer::FLog ? std::array<int,3>{117,117,117} : std::array<int,3>{100,100,100});
+        if (encoded.data) for (int c=0; c<3; ++c)
+            check(std::abs(static_cast<unsigned char*>(encoded.data)[c] - expected[c]) <= 1,
+                  "Photo API uses the declared input curve and F-Gamut C matrix");
+        sony2fuji_release_buffer(&encoded);
+        for (const auto& output : inputs) {
+            const auto path = (dir / (std::string(input.gamma) + "-" + output.gamma + ".cube")).string();
+            // 表内常量取自原厂公式的独立锚点，不能由被测编码函数生成。
+            const bool flog = output.transfer == LUTTransfer::FLog;
+            {
+                std::ofstream file(path);
+                file << "#Gamma:" << input.gamma << " to " << output.gamma << "\n#Gamut:"
+                     << input.gamut << " to ITU-R BT.709\nLUT_3D_SIZE 2\n";
+                for (int i=0; i<8; ++i) file << (flog ? "0.459318459 0.689799217 0.092864\n"
+                                                                     : "0.391007241 0.557245291 0.092864\n");
+            }
+            const auto lut = LUTParser::loadLUT(path);
+            check(lut && lut->inputTransfer() == input.transfer && lut->outputTransfer() == output.transfer,
+                  "Technical contract preserves input/output transfer independently");
+            auto r = request(gray); r.lut_path = path.c_str(); r.lut_strength = 1;
+            sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(sony2fuji_gpu_config), SONY2FUJI_GPU_OFF};
+            std::array<int,3> cpu{};
+            for (auto mode : {SONY2FUJI_GPU_OFF, SONY2FUJI_GPU_AUTO}) {
+                config.mode = mode; sony2fuji_session_set_gpu_config(session, &config);
+                sony2fuji_buffer out{};
+                const auto status = sony2fuji_process(session, &r, &out);
+                const auto* pixels = static_cast<const unsigned char*>(out.data);
+                check(status == SONY2FUJI_STATUS_OK && pixels &&
+                      std::abs(pixels[0] - std::round(neutralDisplay(.18f)*255)) <= 1 &&
+                      std::abs(pixels[1] - std::round(neutralDisplay(.9f)*255)) <= 1 && pixels[2] == 0,
+                      "Technical output is decoded and displayed, not treated as display RGB");
+                if (pixels) for (int c=0; c<3; ++c) {
+                    if (mode == SONY2FUJI_GPU_OFF) cpu[c] = pixels[c];
+                    else check(std::abs(cpu[c] - pixels[c]) <= 1, "Technical Auto agrees with CPU");
+                }
+                if (mode == SONY2FUJI_GPU_OFF)
+                    check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+                          "Technical Off reports the CPU backend");
+                sony2fuji_release_buffer(&out);
+            }
+            config.mode = SONY2FUJI_GPU_OFF; sony2fuji_session_set_gpu_config(session, &config);
+            r.lut_strength = .5f;
+            sony2fuji_buffer blended{};
+            check(sony2fuji_process(session, &r, &blended) == SONY2FUJI_STATUS_OK, "Technical half-strength renders");
+            if (blended.data) for (int c=0; c<3; ++c)
+                check(std::abs(static_cast<unsigned char*>(blended.data)[c] -
+                    (neutralDisplay(46.0f/255)*255 + cpu[c])*.5f) <= 1, "Technical blend uses display endpoints");
+            sony2fuji_release_buffer(&blended);
+        }
+    }
 }
 
 int main() {
@@ -104,6 +192,17 @@ int main() {
     }
     auto lut = LUTParser::loadLUTCached(cube.string());
     check(lut && lut->isValid(), "CUBE loads");
+    sony2fuji_look_format importedFormat = SONY2FUJI_LOOK_RLOOK;
+    uint32_t importedVersion = 99;
+    check(sony2fuji_validate_look(cube.u8string().c_str(), &importedFormat, &importedVersion) == SONY2FUJI_STATUS_UNSUPPORTED &&
+          importedFormat == SONY2FUJI_LOOK_UNKNOWN && importedVersion == 0,
+          "look import rejects an untagged CUBE and clears output information");
+    check(sony2fuji_validate_look(nullptr, &importedFormat, &importedVersion) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+          sony2fuji_validate_look("", nullptr, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "look import rejects an absent path without creating a session");
+    check(sony2fuji_validate_look((dir / "missing.cube").u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_IO_ERROR &&
+          sony2fuji_validate_look(dir.u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_IO_ERROR,
+          "look import distinguishes missing files and directories");
     if (lut) {
         LUTApplicator apply(lut);
         auto red = apply.apply(RGB(.75f,.25f,.25f));
@@ -161,6 +260,7 @@ int main() {
 
     sony2fuji_session* session=nullptr;
     sony2fuji_session_create(&session);
+    testFujiLUTs(dir, session);
     const unsigned char black[3]={0,0,0};
     auto r=request(black);
     std::string provia = std::string(TEST_SOURCE_DIR)+"/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube";
@@ -172,18 +272,20 @@ int main() {
     for (const auto& file : std::filesystem::directory_iterator(std::string(TEST_SOURCE_DIR)+"/flog-2-new")) {
         if (file.path().extension()!=".cube") continue;
         const auto film=LUTParser::loadLUT(file.path().string());
-        const bool isLog=file.path().string().find("to_FLog2-709")!=std::string::npos;
-        check(film && film->isPhotoLUT()!=isLog, file.path().filename().string().c_str());
+        check(film && film->isPhotoLUT(), file.path().filename().string().c_str());
     }
     std::string log = std::string(TEST_SOURCE_DIR)+"/flog-2-new/FLog2_to_FLog2-709_65grid_V.1.00.cube";
     r.lut_path=log.c_str(); r.lut_strength=1;
-    check(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_UNSUPPORTED, "Photo pipeline rejects Log output");
+    check(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_OK, "Photo pipeline displays technical Log output");
     sony2fuji_release_buffer(&out);
     const struct { const char* gamma; const char* gamut; bool accepted; } contracts[] = {
         {"F-Log2 to EKTAR 100 Phuket", "F-Gamut to ITU-R BT.709", true},
         {"F-Log2 to My Custom Look", "F-Gamut to ITU-R BT.709", true},
         {"f-log2 TO independently-named-look", "f-gamut TO itu-r bt.709", true},
-        {"F-Log2 to F-Log2", "F-Gamut to ITU-R BT.709", false},
+        {"F-Log to ETERNA", "F-Gamut to ITU-R BT.709", true},
+        {"F-Log2C to ETERNA", "F-Gamut C to ITU-R BT.709", true},
+        {"F-Log2C to ETERNA", "F-Gamut to ITU-R BT.709", false},
+        {"F-Log to ETERNA", "F-Gamut C to ITU-R BT.709", false},
         {"F-Log2 to", "F-Gamut to ITU-R BT.709", false},
         {"", "F-Gamut to ITU-R BT.709", false},
         {"sRGB to My Custom Look", "F-Gamut to ITU-R BT.709", false},
@@ -202,6 +304,17 @@ int main() {
         const auto custom = LUTParser::loadLUT(path);
         check(custom && custom->isPhotoLUT()==contract.accepted,
               ("Photo contract without film-name allowlist: " + std::to_string(i)).c_str());
+        std::ifstream beforeStream(path, std::ios::binary);
+        const std::string before((std::istreambuf_iterator<char>(beforeStream)), {});
+        beforeStream.close();
+        importedFormat = SONY2FUJI_LOOK_UNKNOWN; importedVersion = 99;
+        const auto validated = sony2fuji_validate_look(path.c_str(), &importedFormat, &importedVersion);
+        check(validated == (contract.accepted ? SONY2FUJI_STATUS_OK : SONY2FUJI_STATUS_UNSUPPORTED) &&
+              importedFormat == (contract.accepted ? SONY2FUJI_LOOK_CUBE : SONY2FUJI_LOOK_UNKNOWN) && importedVersion == 0,
+              "look import uses the real PHOTO contract and reports unversioned CUBE");
+        std::ifstream afterStream(path, std::ios::binary);
+        const std::string after((std::istreambuf_iterator<char>(afterStream)), {});
+        check(after == before, "look validation preserves source bytes");
         r=request(black); r.lut_path=path.c_str(); r.lut_strength=1;
         const auto code = sony2fuji_process(session,&r,&out);
         if (contract.accepted) {

@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
     sony2fuji_session_destroy(session);
     if (status != SONY2FUJI_STATUS_OK) {
         std::cerr << "Processing failed: " << sony2fuji_status_message(status)
-                  << ". Use a supported F-Gamut/F-Log2 display CUBE or compiled DCP .rlook.\n";
+                  << ". Use a declared Fuji F-Log/F-Log2/F-Log2C CUBE with BT.709 output or compiled DCP .rlook.\n";
         return 1;
     }
     std::cout << "Saved: " << options.outputFile << '\n';

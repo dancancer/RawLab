@@ -29,6 +29,43 @@ Dependencies are optional, isolated from native builds, and listed in
 3D/1D CUBE, SPI1D and CLF. A source format may contain its own shaper or domain;
 OCIO interprets those, not a second handwritten format parser.
 
+## Batch Audit
+
+```bash
+lutools/.venv-lutprep/bin/python -m lutools.lutprep audit /path/to/presets
+lutools/.venv-lutprep/bin/python -m lutools.lutprep audit /path/to/presets --verify-compile
+```
+
+The read-only inventory visits known formats in deterministic order without
+following directory symlinks. Each entry records its input root, relative path,
+metadata, diagnostics, and separate `read`, `compile` and `appearance` states.
+One malformed file does not hide the rest. `--verify-compile` actually compiles
+supported DCPs to temporary RLOOK files and reads them back; normal inspection
+leaves compilation `not_run`. Compatible CUBE/RLOOK files are already prepared,
+not newly compiled. Generic LUTs still need an explicit color contract.
+
+`native_photo_compatible` is independent of `canonical`. Declared F-Log/F-Log2
+with F-Gamut, or F-Log2C with F-Gamut C, can be imported directly when output is
+BT.709. Explicit Log output receives native decoding and display rendering.
+These contracts have native CPU and GPU implementations (`cpu_only=false`).
+Auto falls back on backend failure; Force requires successful GPU execution.
+`canonical` continues to mean F-Log2/F-Gamut to display-sRGB, so preparation
+cannot silently pass through technical Log output as a canonical display LUT.
+Use direct import for the supplied Fuji files; no resampling is needed.
+
+XMP inspection records CRS fields, profile dependencies and table identifiers;
+embedded payload bodies are omitted. It does not execute XMP or infer unknown
+namespace semantics. XMP compilation remains blocked.
+
+`summary.status=completed` means the inventory finished, not that every file
+passed. Inspect the separate read/compile counters. An incomplete directory scan
+sets `complete=false`, reports diagnostics and exits 2. A complete scan exits 0
+even when individual presets fail. Appearance remains `unverified` until a
+separate, appropriate reference check exists.
+
+The [named-sample reference protocol](look-reference.md) distinguishes native
+runtime agreement from source-renderer and controlled cross-camera evidence.
+
 ## Explicit Contracts
 
 Use the LUT author's documentation, not the filename, to choose a contract.

@@ -202,6 +202,27 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "contract"):
             prepare(self.source, self.dest)
 
+    def test_native_fuji_contracts_do_not_become_canonical_passthrough(self):
+        for source, gamut in [("F-Log", "F-Gamut"), ("f-log2 C", "F-Gamut C"), ("F-Log2", "F-Gamut")]:
+            for output in ["ETERNA", "F-Log", "F-Log2", "F-Log2C"]:
+                with self.subTest(source=source, output=output):
+                    write_cube(self.source, header=f"#Gamma:{source} to {output}\n#Gamut:{gamut} to ITU-R BT.709")
+                    info = inspect_source(self.source)
+                    self.assertTrue(info["native_photo_compatible"])
+                    self.assertFalse(info["photo_contract"]["cpu_only"])
+                    expected = source == "F-Log2" and output == "ETERNA"
+                    self.assertEqual(info["canonical"], expected)
+                    self.assertEqual(info["photo_contract"]["output_transfer"],
+                                     "display-srgb" if output == "ETERNA" else output.lower().replace("-", ""))
+                    if not expected:
+                        with self.assertRaisesRegex(ValueError, "native import"):
+                            prepare(self.source, self.dest)
+                        self.assertFalse(self.dest.exists())
+
+    def test_native_fuji_contract_requires_matching_input_gamut(self):
+        write_cube(self.source, header="#Gamma:F-Log2C to ETERNA\n#Gamut:F-Gamut to ITU-R BT.709")
+        self.assertFalse(inspect_source(self.source)["native_photo_compatible"])
+
     def test_contradictory_output_transfer_is_not_passthrough(self):
         write_cube(self.source, header="#Gamma:F-Log2 to TEST\n#Gamut:F-Gamut to ITU-R BT.709\n"
                                       "#OutputTransfer: PQ")

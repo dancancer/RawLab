@@ -7,6 +7,8 @@
 
 namespace sony2fuji {
 
+enum class LUTTransfer { Unknown, Display, FLog, FLog2, FLog2C };
+
 /**
  * @brief 3D LUT 数据结构
  *
@@ -36,7 +38,9 @@ public:
     const std::string& getTitle() const { return title_; }
     const RGB& domainMin() const { return domainMin_; }
     const RGB& domainMax() const { return domainMax_; }
-    bool isPhotoLUT() const { return photoLUT_; }
+    bool isPhotoLUT() const { return inputTransfer_ != LUTTransfer::Unknown; }
+    LUTTransfer inputTransfer() const { return inputTransfer_; }
+    LUTTransfer outputTransfer() const { return outputTransfer_; }
 
     /**
      * @brief 获取指定索引的 RGB 值
@@ -59,7 +63,8 @@ private:
     std::string description_;   // LUT 描述
     RGB domainMin_{0, 0, 0};
     RGB domainMax_{1, 1, 1};
-    bool photoLUT_ = false;
+    LUTTransfer inputTransfer_ = LUTTransfer::Unknown;
+    LUTTransfer outputTransfer_ = LUTTransfer::Unknown;
 
     // 解析 .cube 文件
     ErrorCode parseCubeFile(const std::string& filepath);

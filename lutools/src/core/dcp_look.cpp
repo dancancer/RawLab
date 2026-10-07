@@ -126,6 +126,7 @@ bool DcpLook::load(const std::string& path, uintmax_t size) {
     };
     if (!readTable(stages_.calibration, calibrationCells) || !readTable(stages_.look, lookCells)) return false;
     for (auto& value : stages_.tone) { value = floating<double>(cursor); if (!bounded(value)) return false; }
+    version_ = static_cast<uint32_t>(version);
     return true;
 }
 

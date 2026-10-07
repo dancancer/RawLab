@@ -100,9 +100,9 @@ public partial class MainWindow : Window
         }
         var importContent=new StackPanel();
         importContent.Children.Add(new EditorIcon{Kind="Add",Width=26,Height=64});
-        importContent.Children.Add(new TextBlock{Text="导入 CUBE",FontSize=11,Height=30,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
-        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip="导入兼容 F-Gamut / F-Log2 的 CUBE"};
-        AutomationProperties.SetName(importButton,"导入 CUBE");importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
+        importContent.Children.Add(new TextBlock{Text="导入外观",FontSize=11,Height=30,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
+        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip="导入兼容 CUBE 或 RLOOK，可选择多个文件"};
+        AutomationProperties.SetName(importButton,"导入外观");importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
     }
     private void RefreshControls()
     {
@@ -253,10 +253,14 @@ public partial class MainWindow : Window
     }
     private void ImportClicked(object sender,RoutedEventArgs e)
     {
-        var dialog=new OpenFileDialog{Title="导入胶片外观",Filter="胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"};
+        var dialog=new OpenFileDialog{Title="导入胶片外观",Multiselect=true,Filter="胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"};
         if(dialog.ShowDialog(this)!=true)return;
-        if(!films.Any(f=>f.Path==dialog.FileName))films.Add(new(Path.GetFileNameWithoutExtension(dialog.FileName),dialog.FileName,null));
-        lut=dialog.FileName;BuildFilms();RefreshControls();Schedule();
+        foreach(var path in dialog.FileNames)
+        {
+            if(!films.Any(f=>f.Path==path))films.Add(new(Path.GetFileNameWithoutExtension(path),path,null));
+            lut=path;
+        }
+        BuildFilms();RefreshControls();Schedule();
     }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
     {

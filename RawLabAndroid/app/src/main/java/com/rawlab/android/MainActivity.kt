@@ -55,6 +55,9 @@ private fun RawLabApp(model: EditorViewModel) {
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { album = false; model.importPhoto(uri) }
     }
+    val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        model.importLooks(uris)
+    }
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
         if (it == null) model.cancelExport() else model.export(it, false)
     }
@@ -70,7 +73,9 @@ private fun RawLabApp(model: EditorViewModel) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
             onEdit = model::edit, onReset = model::reset, onRetry = model::retry,
             onExport = { if (model.beginExport()) exportDialog = true },
-            onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled)
+            onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
+            onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
+            onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport)
     }
     if (exportDialog) AlertDialog(
         onDismissRequest = { exportDialog = false; model.cancelExport() },

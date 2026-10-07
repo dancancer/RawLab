@@ -116,8 +116,19 @@ struct PresentationTests {
             guard let url = FilmArtwork.url(for: name, in: artworkFolder),
                   let image = NSImage(contentsOf: url) else { fatalError("Missing or invalid artwork: \(name)") }
             check(image.size.width >= 128 && image.size.height >= 128, "Packaging image decodes: \(name)")
+            check(url.deletingPathExtension().lastPathComponent == FilmArtwork.resourceNames[name],
+                  "Built-in film retains its own package: \(name)")
         }
-        check(FilmArtwork.url(for: "Custom Film", in: artworkFolder) == nil,
-              "Custom LUTs do not impersonate a built-in film package")
+        let customArtwork = FilmArtwork.url(for: "Panasonic-Vivid", in: artworkFolder)
+        check(customArtwork?.lastPathComponent == "custom-look.png",
+              "Imported looks receive the default package instead of an empty icon")
+        if let customArtwork, let image = NSImage(contentsOf: customArtwork) {
+            check(image.size.width >= 128 && image.size.width == image.size.height,
+                  "Default imported-look artwork is a decodable square")
+        } else {
+            check(false, "Default imported-look artwork must decode")
+        }
+        check(FilmArtwork.url(for: "PROVIA", isCustom: true, in: artworkFolder) == customArtwork,
+              "An imported look named after a built-in still uses the custom package")
     }
 }
