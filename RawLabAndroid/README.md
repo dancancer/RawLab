@@ -86,9 +86,9 @@ Assets are generated from existing repository resources rather than duplicated i
 
 [下载 Android v0.4.0 APK / Download Android v0.4.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Android-0.4.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.4.0`、`versionCode` 为 `5`，沿用正式发布密钥，支持从同签名的旧正式版覆盖升级。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
+发布 APK 的 `versionName` 为 `0.4.0`、`versionCode` 为 `6`，沿用正式发布密钥，支持从构建 5 及同签名的旧正式版覆盖升级。构建 6 新增“更多 → 关于 RawLab”，包含项目/作者链接、自动检测开关和手动检查更新；只打开官方下载页面，不自动安装。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
 
-The release APK uses `versionName=0.4.0` and `versionCode=5` and retains the release key for updates from earlier release-signed versions. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses `versionName=0.4.0` and `versionCode=6` and retains the release key for upgrades from build 5 and earlier release-signed versions. More > About RawLab contains project/author links and automatic/manual update checks; it opens the official release page without installing. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

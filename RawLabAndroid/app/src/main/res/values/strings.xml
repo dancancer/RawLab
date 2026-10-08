@@ -1,5 +1,20 @@
 <resources>
     <string name="app_name">RawLab</string>
+    <string name="about_rawlab">关于 RawLab</string>
+    <string name="app_version">版本 %1$s</string>
+    <string name="project_author">项目与作者</string>
+    <string name="github_repository">GitHub 仓库</string>
+    <string name="author_xiaohongshu">作者的小红书主页</string>
+    <string name="browser_unavailable">无法打开链接，请安装或启用浏览器。</string>
+    <string name="auto_update_check">自动检查更新</string>
+    <string name="check_updates">检查更新</string>
+    <string name="view_update">查看更新</string>
+    <string name="update_unchecked">尚未检查更新</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_current">未发现适用于 Android 的新版本</string>
+    <string name="update_available">发现新版本 %1$s</string>
+    <string name="update_failed">检查失败，请稍后重试或访问 GitHub 仓库</string>
+    <string name="update_download">前往下载 %1$s</string>
     <string name="open_album">相册</string>
     <string name="open_file">从文件导入</string>
     <string name="import_look">导入外观</string>

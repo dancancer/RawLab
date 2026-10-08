@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="updates/**/*.cs" />
     <ProjectReference Include="../RawLabWindows.csproj"/>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
   </ItemGroup>

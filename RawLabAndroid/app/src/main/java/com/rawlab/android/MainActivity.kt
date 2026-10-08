@@ -27,10 +27,11 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     val model: EditorViewModel by lazy { ViewModelProvider(this)[EditorViewModel::class.java] }
+    val updates: UpdateViewModel by lazy { ViewModelProvider(this)[UpdateViewModel::class.java] }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { RawLabTheme { RawLabApp(model) } }
+        setContent { RawLabTheme { RawLabApp(model, updates) } }
     }
 }
 
@@ -45,8 +46,11 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun RawLabApp(model: EditorViewModel) {
+private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
+    val updateState by updates.state.collectAsStateWithLifecycle()
+    var about by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(updates) { updates.check(manual = false) }
     var album by rememberSaveable { mutableStateOf(false) }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var png by rememberSaveable { mutableStateOf(false) }
@@ -75,7 +79,8 @@ private fun RawLabApp(model: EditorViewModel) {
             onExport = { if (model.beginExport()) exportDialog = true },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
-            onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport)
+            onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
+            onAbout = { about = true }, updateVersion = updateState.available?.version)
     }
     if (exportDialog) AlertDialog(
         onDismissRequest = { exportDialog = false; model.cancelExport() },
@@ -101,6 +106,7 @@ private fun RawLabApp(model: EditorViewModel) {
         dismissButton = { TextButton(onClick = { exportDialog = false; model.cancelExport() }) { Text(stringResource(R.string.cancel)) } },
     )
     if (licenses) LicenseDialog { licenses = false }
+    if (about) AboutDialog(updateState, updates::setAutomatic, { updates.check(manual = true) }) { about = false }
 }
 
 @Composable
