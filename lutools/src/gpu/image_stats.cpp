@@ -72,7 +72,7 @@ bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
 
 namespace sony2fuji {
 
-bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output) {
+bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output, bool includeClipping) {
     ImageLayout layout;
     if (!validateBuffer(buffer, layout)) {
         return false;
@@ -80,7 +80,7 @@ bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output) {
 
     try {
         ImageStats result;
-        result.clipping.assign(layout.maskBytes, 0);
+        if (includeClipping) result.clipping.assign(layout.maskBytes, 0);
 
         for (uint32_t y = 0; y < buffer.height; ++y) {
             const uint8_t* row = layout.data +
@@ -96,16 +96,13 @@ bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output) {
 
                 const size_t maskOffset =
                     (static_cast<size_t>(y) * buffer.width + x) * 4;
-                uint8_t* mask = result.clipping.data() + maskOffset;
+                uint8_t* mask = includeClipping ? result.clipping.data() + maskOffset : nullptr;
                 if (r == 255 || g == 255 || b == 255) {
                     ++result.highlights;
-                    mask[0] = 255;
-                    mask[3] = 160;
+                    if (mask) { mask[0] = 255; mask[3] = 160; }
                 } else if (r == 0 && g == 0 && b == 0) {
                     ++result.shadows;
-                    mask[1] = 130;
-                    mask[2] = 255;
-                    mask[3] = 160;
+                    if (mask) { mask[1] = 130; mask[2] = 255; mask[3] = 160; }
                 }
             }
         }

@@ -16,7 +16,7 @@ struct ImageStats {
     std::vector<uint8_t> clipping;
 };
 
-bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output);
+bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output, bool includeClipping = true);
 bool computeImageStatsMetal(const sony2fuji_buffer& buffer, ImageStats& output);
 
 } // namespace sony2fuji

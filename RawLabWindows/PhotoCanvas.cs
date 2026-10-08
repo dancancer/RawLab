@@ -11,6 +11,8 @@ public sealed class Viewport
     public bool ActualPixels { get; private set; }
     public double Zoom { get; private set; } = 1;
     public Vector Pan { get; private set; }
+    public Size SourceSize { get; private set; }
+    public void SetSourceSize(int width,int height) { SourceSize=width>0 && height>0 ? new(width,height) : default;Changed?.Invoke(); }
     public event Action? Changed;
     public event Action? ResolutionChanged;
     public void Fit() { var wasActual=ActualPixels;ActualPixels=false; Zoom=1; Pan=default; Changed?.Invoke();if(wasActual)ResolutionChanged?.Invoke(); }
@@ -25,15 +27,27 @@ public sealed class PhotoCanvas : FrameworkElement
     private Viewport? viewport;
     private Point? drag;
     private bool draggingDivider,comparisonEnabled;
+    private bool showClipping;
+    private readonly VisualCollection layers;
+    private readonly ContainerVisual referenceLayer=new(),editedLayer=new();
+    private readonly DrawingVisual referenceDrawing=new(),editedDrawing=new(),overlay=new();
+    private readonly MatrixTransform imageTransform=new();
+    private readonly RectangleGeometry wipeClip=new();
+    internal int ContentVersion { get; private set; }
+    internal Rect ImageBounds { get; private set; }
     private double divider=.5;
-    public bool ComparisonEnabled { get=>comparisonEnabled; set { comparisonEnabled=value;InvalidateVisual(); } }
-    public double Divider { get=>divider; set { if(!double.IsFinite(value))throw new ArgumentOutOfRangeException(nameof(value));divider=Math.Clamp(value,0,1);InvalidateVisual(); } }
-    public bool ShowClipping { get; set; }
-    public Viewport? Viewport { get => viewport; set { if(viewport!=null) viewport.Changed-=InvalidateVisual; viewport=value; if(value!=null)value.Changed+=InvalidateVisual; } }
-    public void SetImage(BitmapSource? source,BitmapSource? clipping) { image=source; mask=clipping; InvalidateVisual(); }
-    public void SetComparison(BitmapSource? source,BitmapSource? clipping) { comparison=source;comparisonMask=clipping;InvalidateVisual(); }
+    public bool ComparisonEnabled { get=>comparisonEnabled; set { comparisonEnabled=value;UpdateComparison(); } }
+    public double Divider { get=>divider; set { if(!double.IsFinite(value))throw new ArgumentOutOfRangeException(nameof(value));divider=Math.Clamp(value,0,1);UpdateComparison(); } }
+    public bool ShowClipping { get=>showClipping; set {if(showClipping==value)return;showClipping=value;DrawImages();} }
+    public Viewport? Viewport { get => viewport; set { if(viewport!=null) viewport.Changed-=UpdateTransform; viewport=value; if(value!=null)value.Changed+=UpdateTransform;UpdateTransform(); } }
+    public void SetImage(BitmapSource? source,BitmapSource? clipping) { image=source; mask=clipping;DrawImages();UpdateTransform(); }
+    public void SetComparison(BitmapSource? source,BitmapSource? clipping) { comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
     public PhotoCanvas()
     {
+        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay};
+        referenceLayer.Children.Add(referenceDrawing);editedLayer.Children.Add(editedDrawing);
+        referenceDrawing.Transform=editedDrawing.Transform=imageTransform;
+        RenderOptions.SetBitmapScalingMode(this,BitmapScalingMode.LowQuality);
         ClipToBounds=true; Focusable=true; Cursor=Cursors.Hand;
         MouseWheel+=(_,e)=> { Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=true; };
         MouseLeftButtonDown+=(_,e)=> {
@@ -55,28 +69,51 @@ public sealed class PhotoCanvas : FrameworkElement
         MouseLeftButtonUp+=(_,_)=> { drag=null;draggingDivider=false;ReleaseMouseCapture(); };
         LostMouseCapture+=(_,_)=>{drag=null;draggingDivider=false;};
         KeyDown+=(_,e)=> { if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
-        SizeChanged+=(_,_)=>InvalidateVisual();
+        SizeChanged+=(_,_)=>{UpdateTransform();UpdateComparison();};
+        IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
+    protected override int VisualChildrenCount=>layers.Count;
+    protected override Visual GetVisualChild(int index)=>layers[index];
+    protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi) {base.OnDpiChanged(oldDpi,newDpi);UpdateTransform();}
     protected override void OnRender(DrawingContext dc)
     {
         dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(20,21,24)),null,new Rect(RenderSize));
-        if(image==null || Viewport==null)return;
-        double scale=Viewport.ActualPixels ? 1/VisualTreeHelper.GetDpi(this).DpiScaleX : Math.Min(ActualWidth/image.PixelWidth,ActualHeight/image.PixelHeight);
-        scale*=Viewport.Zoom;
-        var w=image.PixelWidth*scale; var h=image.PixelHeight*scale;
-        var rect=new Rect((ActualWidth-w)/2+Viewport.Pan.X,(ActualHeight-h)/2+Viewport.Pan.Y,w,h);
-        var wipe=ComparisonEnabled && comparison!=null;
-        if(wipe)
+    }
+    private void DrawImages()
+    {
+        ContentVersion++;
+        static void Draw(DrawingVisual visual,BitmapSource? bitmap,BitmapSource? clipping,bool show)
         {
-            dc.DrawImage(comparison!,rect);
-            if(ShowClipping && comparisonMask!=null)dc.DrawImage(comparisonMask,rect);
-            dc.PushClip(new RectangleGeometry(new Rect(ActualWidth*Divider,0,ActualWidth*(1-Divider),ActualHeight)));
+            using var dc=visual.RenderOpen();
+            if(bitmap==null)return;
+            var unit=new Rect(0,0,1,1);dc.DrawImage(bitmap,unit);
+            if(show && clipping!=null)dc.DrawImage(clipping,unit);
         }
-        dc.DrawImage(image,rect);
-        if(ShowClipping && mask!=null)dc.DrawImage(mask,rect);
+        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping);
+        Draw(editedDrawing,image,mask,ShowClipping);
+    }
+    private void UpdateTransform()
+    {
+        if(image==null || Viewport==null)return;
+        var size=Viewport.SourceSize.Width>0 ? Viewport.SourceSize : new Size(image.PixelWidth,image.PixelHeight);
+        var dpi=VisualTreeHelper.GetDpi(this);
+        var fit=Math.Min(ActualWidth/size.Width,ActualHeight/size.Height);
+        var w=size.Width*(Viewport.ActualPixels ? 1/dpi.DpiScaleX : fit)*Viewport.Zoom;
+        var h=size.Height*(Viewport.ActualPixels ? 1/dpi.DpiScaleY : fit)*Viewport.Zoom;
+        ImageBounds=new Rect((ActualWidth-w)/2+Viewport.Pan.X,(ActualHeight-h)/2+Viewport.Pan.Y,w,h);
+        // Keep image drawing commands and bitmap resources resident while panning.
+        imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
+    }
+    private void UpdateComparison()
+    {
+        var wipe=ComparisonEnabled && comparison!=null;
+        referenceLayer.Opacity=wipe ? 1 : 0;
+        wipeClip.Rect=new Rect(ActualWidth*Divider,0,ActualWidth*(1-Divider),ActualHeight);
+        editedLayer.Clip=wipe ? wipeClip : null;
+        using var dc=overlay.RenderOpen();
         if(wipe)
         {
-            dc.Pop();var x=ActualWidth*Divider;var y=ActualHeight/2;
+            var x=ActualWidth*Divider;var y=ActualHeight/2;
             var pen=new Pen(Brushes.White,1.5);
             dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(120,0,0,0)),4),new Point(x,0),new Point(x,ActualHeight));
             dc.DrawLine(pen,new Point(x,0),new Point(x,ActualHeight));

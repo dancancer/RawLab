@@ -18,6 +18,10 @@ The current iOS / Android sources support pinch-to-zoom, panning, and double-tap
 
 ## 下载 / Download
 
+当前 Windows 源码已加入快速内嵌预览、原尺寸缩放缓存、多核 RAW 处理及远程桌面下的 WPF 画布硬件加速：选中照片先显示预览，双击立即放大并后台补齐细节，拖动时复用图像图层。构建方法见 [Windows 文档](RawLabWindows/README.md)，测量条件与结果见 [性能记录](RawLabWindows/performance.md)。这些改动尚未包含在下方 v0.2 下载包中。
+
+The current Windows source adds fast embedded previews, cached full-resolution zoom, multicore RAW processing and hardware-accelerated WPF composition in supported remote desktop sessions. Selection shows a preview first; double-click zoom responds immediately while detail loads, and panning reuses image layers. See the [Windows build instructions](RawLabWindows/README.md) and [performance measurements](RawLabWindows/performance.md). These changes are not included in the v0.2 download below.
+
 [下载 RawLab v0.3.0 / Download v0.3.0](https://github.com/dancancer/RawLab/releases/tag/v0.3.0)
 
 v0.3.0 更新 macOS 15 双架构包和 Android 正式签名 APK。Windows 和 iOS 安装包暂沿用 v0.2；本次源码更新不代表这些旧安装包已包含新功能。

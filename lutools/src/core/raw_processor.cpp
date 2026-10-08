@@ -174,6 +174,9 @@ public:
             (options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
         const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB, target);
         outputSpace_ = options.outputLinear ? target : ColorSpace::sRGB;
+#ifdef _OPENMP
+#pragma omp parallel for if (static_cast<int64_t>(output.width)*output.height >= kParallelThreshold)
+#endif
         for (int y=0;y<output.height;++y) for (int x=0;x<output.width;++x) {
             int row=y, col=x;
             if (flip & 4) std::swap(row,col);

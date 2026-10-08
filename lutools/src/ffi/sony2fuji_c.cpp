@@ -1284,7 +1284,7 @@ sony2fuji_status sony2fuji_analyze_image(
 #endif
         if (!complete) {
             if (mode == SONY2FUJI_GPU_FORCE) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-            if (!sony2fuji::computeImageStatsCPU(*image, stats)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            if (!sony2fuji::computeImageStatsCPU(*image, stats, clipping_mask != nullptr)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
         if (clipping_mask) {
             void* data = std::malloc(stats.clipping.size());

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -34,6 +35,9 @@ static class Program
     {
         try
         {
+            if(args.Length==3 && args[0]=="--interactions") { InteractionChecks.Run(args[1],args[2]);return 0; }
+            if(args.Length==3 && args[0]=="--benchmark") { PerformanceChecks.Run(args[1],args[2]);return 0; }
+            if(args.Length==3 && args[0]=="--benchmark-ui") { PerformanceChecks.Run(args[1],args[2],true);return 0; }
             var repo=Path.GetFullPath(args[0]); var output=Path.Combine(repo,"build","windows-verification");Directory.CreateDirectory(output);
             var settings=new Adjustments();
             settings.Set(Parameter.Strength,250);
@@ -82,6 +86,15 @@ static class Program
                 settings.Reset(Parameter.Strength);
                 Check(Math.Abs(rendered.Baseline-.7)<.001 && rendered.WhiteBalance!=null,"Scene baseline and calibrated as-shot WB");
                 Check(rendered.Histogram.Take(256).Sum(x=>(long)x)==rendered.Image.PixelWidth*rendered.Image.PixelHeight,"Native histogram counts each pixel");
+                var lean=engine.Render(unicodeRaw,settings,unicodeLut,800,clipping:false)!;
+                Check(lean.Clipping==null && lean.Histogram.SequenceEqual(rendered.Histogram) && lean.Shadows==rendered.Shadows && lean.Highlights==rendered.Highlights && Pixels(lean.Image).SequenceEqual(Pixels(rendered.Image)),"Optional clipping mask preserves pixels and exact statistics");
+                var referenceOnly=engine.Render(unicodeRaw,settings,null,800,statistics:false,clipping:false)!;
+                Check(referenceOnly.Histogram.Length==0 && referenceOnly.Clipping==null && Pixels(referenceOnly.Image).SequenceEqual(Pixels(neutral.Image)),"Neutral comparison skips unused statistics without changing pixels");
+                var single=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,false,false);
+                Check(ReferenceEquals(single.Neutral,single.Result) && Pixels(single.Result.Image).SequenceEqual(Pixels(rendered.Image)),"Comparison off renders only the edited image without changing pixels");
+                var masked=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,true,true);
+                Check(masked.Neutral.Clipping!=null && masked.Result.Clipping!=null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(rendered.Clipping!)),"Clipping on retains both comparison masks");
+                PreviewChecks.Run(engine,unicodeRaw,unicodeLut,Check);
                 settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 foreach(var parameter in new[]{Parameter.Exposure,Parameter.Contrast,Parameter.Highlights,Parameter.Shadows,Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
                 {
@@ -156,7 +169,14 @@ static class Program
             var loading=folder.Load();PumpUntil(()=>loading.IsCompleted,TimeSpan.FromSeconds(30));loading.GetAwaiter().GetResult();
             Check(folder.Children.Any(p=>!p.IsFolder) && folder.Children.Where(p=>!p.IsFolder).All(p=>LibraryEntry.IsRaw(p.Path)),"Lazy file library lists RAW files and filters JPEGs");
             window.Measure(new Size(1440,920));window.Arrange(new Rect(0,0,1440,920));window.UpdateLayout();
+            var proxyPublished=false;var proxyAllowedExport=false;var openClock=Stopwatch.StartNew();double proxyMs=0;
+            var statusText=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
+            EventHandler previewChanged=(_,_)=>{if(window.Status.Text.StartsWith("交互预览 ")){proxyPublished=true;proxyMs=openClock.Elapsed.TotalMilliseconds;proxyAllowedExport|=window.ExportPng.IsEnabled;}};
+            statusText.AddValueChanged(window.Status,previewChanged);
             window.OpenFile(raw);PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
+            statusText.RemoveValueChanged(window.Status,previewChanged);
+            Check(proxyPublished && !proxyAllowedExport,"Opening publishes a fast RAW proxy before exact work and never exports the proxy");
+            Console.WriteLine($"WPF open: first proxy {proxyMs:F1} ms; exact {openClock.Elapsed.TotalMilliseconds:F1} ms");
             Check(window.Status.Text.Contains("2000"),"WPF exact render completes and enables export");
             window.ValueSlider.Value=.625;Check(!window.ExportPng.IsEnabled,"Editing immediately blocks stale export");
             window.ValueSlider.Value=.75;window.ValueSlider.Value=.625;
