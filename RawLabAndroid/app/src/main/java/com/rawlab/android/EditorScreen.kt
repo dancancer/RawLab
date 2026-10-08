@@ -51,7 +51,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
-    onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {}) {
+    onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
+    onAbout: () -> Unit = {}, updateVersion: String? = null) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
@@ -74,6 +75,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 state.photo?.let { Text(it.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall) }
             }
         }, actions = {
+            if (updateVersion != null) ToolIcon(Icons.Outlined.SystemUpdate, R.string.view_update, onClick = onAbout)
             ToolIcon(Icons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE, onAlbum)
             ToolIcon(Icons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
             Box {
@@ -84,6 +86,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.gpu_auto)) }, enabled = state.operation == Operation.NONE,
                         trailingIcon = { Checkbox(state.gpuEnabled, null) }, onClick = { menu = false; onGpuChange(!state.gpuEnabled) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) }, onClick = { menu = false; onLicenses() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.about_rawlab)) },
+                        leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; onAbout() })
                 }
             }
         })

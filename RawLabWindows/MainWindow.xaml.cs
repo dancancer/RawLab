@@ -39,9 +39,17 @@ public partial class MainWindow : Window
     private readonly HashSet<LibraryEntry> visibleThumbnails=[];
     private readonly DispatcherTimer thumbnailRefresh=new(){Interval=TimeSpan.FromMilliseconds(80)};
     private LibraryEntry? selectedThumbnail;
+    private readonly UpdateChecker updates = new(typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown");
+    private AboutWindow? aboutWindow;
+    private readonly CancellationTokenSource updateCancellation = new();
     public MainWindow()
     {
         InitializeComponent();
+        UpdateNotice.DataContext = updates;
+        void RefreshUpdateNotice() => UpdateNotice.Visibility = updates.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
+        updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
+        RefreshUpdateNotice();
+        Closed += (_, _) => updateCancellation.Cancel();
         Files.ItemsSource=library.Roots;
         thumbnailRefresh.Tick+=(_,_)=>{thumbnailRefresh.Stop();RefreshVisibleThumbnails();};
         Files.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,_)=>QueueThumbnailRefresh()));
@@ -68,10 +76,21 @@ public partial class MainWindow : Window
         ValueSlider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{interacting=false; Schedule();}));
         ready=true; RefreshControls();
         Closing+=WindowClosing;
-        Loaded+=(_,_)=> {
+        Loaded+=async (_,_)=> {
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsRaw);
             if(input!=null)OpenFile(input);
+            await updates.CheckAsync(false, updateCancellation.Token);
         };
+    }
+    private void AboutClicked(object sender, RoutedEventArgs e)
+    {
+        if (aboutWindow == null)
+        {
+            aboutWindow = new AboutWindow(updates) { Owner = this };
+            aboutWindow.Closed += (_, _) => aboutWindow = null;
+            aboutWindow.Show();
+        }
+        else aboutWindow.Activate();
     }
     private void BuildTools()
     {

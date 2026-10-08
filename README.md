@@ -16,6 +16,14 @@ RawLab Mac provides side-by-side neutral/film comparison, LUT selection, exposur
 
 The current iOS / Android sources support pinch-to-zoom, panning, and double-tap to toggle fit and 100%. Actual-pixel scale uses the exact preview, not the full-resolution RAW; interactive previews retain the same viewport. Android comparison mode uses one finger for the wipe and two fingers for zoom/pan.
 
+### 关于与更新检测 / About and Updates
+
+v0.4.0 构建 6 的 Mac、Windows、Android 新增“关于 RawLab”，包含 [GitHub 仓库](https://github.com/dancancer/RawLab) 和 [作者的小红书主页](https://www.xiaohongshu.com/user/profile/6474b1560000000010037c8e)。Mac 从应用菜单进入，Windows 从工具栏信息按钮进入，Android 从“更多”菜单进入。
+
+启动后默认在后台检查 GitHub 正式发布，每 24 小时最多自动请求一次；可在“关于”关闭，手动检查不受间隔限制。只提示具有本平台安装包的新版本，并打开官方发布页面供下载，不自动安装、不上传照片。离线失败不会弹窗打断编辑。
+
+The v0.4.0 build 6 Mac, Windows and Android apps add About with repository and author links, optional startup update checks at most once per 24 hours, and an unrestricted manual check. Checks read public GitHub release metadata, require an asset for the current platform, and open the official release page without installing updates or uploading photos. Background failures do not interrupt editing.
+
 ## 下载 / Download
 
 Windows 新包已加入快速内嵌预览、原尺寸缩放缓存、多核 RAW 处理及远程桌面下的 WPF 画布硬件加速：选中照片先显示预览，双击立即放大并后台补齐细节，拖动时复用图像图层。构建方法见 [Windows 文档](RawLabWindows/README.md)，测量条件与结果见 [性能记录](RawLabWindows/performance.md)。
@@ -24,9 +32,9 @@ The new Windows package adds fast embedded previews, cached full-resolution zoom
 
 [下载 RawLab v0.4.0 / Download v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0)
 
-v0.4.0 提供新的 Windows 日期标识包、macOS 15 双架构包和 Android 正式签名 APK。Windows 原包来自 `a24d840`，程序集版本仍为 `0.2.0`，不是旧版 v0.2 安装包；保留原始构建信息和文件名。iOS 暂沿用 v0.2，不包含后续源码更新。
+v0.4.0 构建 6 覆盖更新 Windows 日期标识包、macOS 15 双架构包和 Android 正式签名 APK，下载文件名不变。Windows 托管应用重新构建为 `0.4.0`（文件版本 `0.4.0.6`），复用 `a24d840` 已验证且源码未改动的 native 库；Mac/Android 构建号为 `6`。iOS 暂沿用 v0.2，不包含后续源码更新。
 
-v0.4.0 includes a new date-labelled Windows package, macOS 15 Apple Silicon/Intel apps and a release-signed Android APK. The Windows archive comes from `a24d840`, retains assembly version `0.2.0` and its original filename/provenance, and is not the old v0.2 binary. iOS remains at v0.2 without subsequent source changes.
+v0.4.0 build 6 replaces the Windows, macOS 15 Apple Silicon/Intel and release-signed Android installers without changing their download filenames. The Windows managed app is rebuilt as `0.4.0` (file version `0.4.0.6`), reusing verified native libraries from unchanged `a24d840` sources. Mac/Android use build number `6`. iOS remains at v0.2 without subsequent source changes.
 
 | 平台 / Platform | 下载 / Download | 系统要求 / Requirements |
 | --- | --- | --- |
@@ -51,6 +59,8 @@ v0.4.0 includes a new date-labelled Windows package, macOS 15 Apple Silicon/Inte
 
 ## v0.4.0 更新 / What's New
 
+- 构建 6 增加三端“关于”、作者主页和自动/手动更新检测，并沿用原下载链接覆盖安装包。
+  Build 6 adds About, author links and automatic/manual update checks on Mac, Windows and Android, replacing installers at the existing download URLs.
 - Windows 加快选片首帧、重复原尺寸缩放和平移绘制，保留精确显影后才能导出的约束。
   Windows speeds up first previews, repeated full-resolution zoom and panning while requiring exact rendering before export.
 - Mac 和 Android 增加持久化自定义外观库，支持批量导入 CUBE/RLOOK、重命名和删除；失败逐文件汇总，成功项保留。Windows 支持多选导入，仍使用本次会话的外部文件引用。

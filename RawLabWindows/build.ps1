@@ -25,6 +25,7 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
 }
 $fixture = ''
 if ($Test) {
+    Invoke-Checked $DotNet @('run','--project',"$PSScriptRoot/tests/updates/UpdateChecks.csproj",'-c','Release')
     if (!$RawPath) { $RawPath = (Get-ChildItem -LiteralPath $RawDirectory -File -Filter '*.ARW' | Sort-Object Name | Select-Object -First 1).FullName }
     if (!$RawPath -or !(Test-Path -LiteralPath $RawPath)) { throw 'Supply -RawPath pointing to an external RAW fixture.' }
     # Test only a local copy; the external photo directory is read-only input.

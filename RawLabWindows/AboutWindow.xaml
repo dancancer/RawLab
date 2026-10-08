@@ -1,0 +1,31 @@
+<Window x:Class="RawLab.Windows.AboutWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:RawLab.Windows"
+        Title="关于 RawLab" Width="500" SizeToContent="Height" MaxHeight="720" ResizeMode="NoResize" WindowStartupLocation="CenterOwner" Icon="AppIcon.png">
+  <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24" TextElement.Foreground="{StaticResource Foreground}">
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+        <Image Source="AppIcon.png" Width="64" Height="64" Margin="0,0,16,0"/>
+        <StackPanel VerticalAlignment="Center"><TextBlock Text="RawLab" FontSize="22" FontWeight="Bold"/>
+          <TextBlock Text="{Binding CurrentVersion, StringFormat=版本 {0}}" Foreground="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel>
+      </StackPanel>
+      <Separator/>
+      <TextBlock Text="项目与作者" FontWeight="SemiBold" Margin="0,16,0,8"/>
+      <TextBlock Margin="0,4"><Hyperlink Click="RepositoryClicked" Foreground="{StaticResource Accent}">GitHub 仓库</Hyperlink></TextBlock>
+      <TextBlock Margin="0,8,0,16"><Hyperlink Click="AuthorClicked" Foreground="{StaticResource Accent}">作者的小红书主页</Hyperlink></TextBlock>
+      <Separator/>
+      <CheckBox Content="自动检查更新" IsChecked="{Binding Automatic, Mode=TwoWay}" Foreground="{StaticResource Foreground}" Margin="0,16,0,12"/>
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock Text="{Binding StorageWarning}" TextWrapping="Wrap" Foreground="{StaticResource Accent}" Margin="0,6"/>
+      <StackPanel Orientation="Horizontal" Margin="0,8">
+        <Button Click="CheckClicked" IsEnabled="{Binding CanCheck}" AutomationProperties.Name="检查更新">
+          <StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Reset" Width="16" Height="16" Margin="0,0,8,0"/><TextBlock Text="检查更新"/></StackPanel>
+        </Button>
+        <Button Content="前往下载" Click="DownloadClicked" Visibility="{Binding HasUpdate, Converter={StaticResource BoolVisibility}}"/>
+      </StackPanel>
+      <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,8" Visibility="{Binding HasUpdate, Converter={StaticResource BoolVisibility}}">
+        <TextBlock Text="{Binding Available.Notes}" TextWrapping="Wrap"/>
+      </ScrollViewer>
+      <Button Content="关闭" IsCancel="True" Click="CloseClicked" HorizontalAlignment="Right" Margin="0,8,0,0"/>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

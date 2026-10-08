@@ -18,6 +18,10 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 
 Prebuilt apps: [GitHub Release v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
 
+构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
+
+Build 6 adds About RawLab and Check for Updates to the app menu. About includes repository/author links and an automatic-check toggle. Startup checks run at most once per 24 hours; manual checks bypass the interval. Updates open the official release page without replacing the app automatically.
+
 在仓库根目录执行：
 
 Run from the repository root:

@@ -6,6 +6,8 @@
     <Border Background="#222429" BorderBrush="#35373B" BorderThickness="0,0,0,1">
       <DockPanel Margin="12,5">
         <TextBlock Text="RAWLAB" FontWeight="Bold" FontSize="18" Foreground="{StaticResource Foreground}" VerticalAlignment="Center" Margin="6,0,22,0"/>
+        <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="关于 RawLab / 检查更新" AutomationProperties.Name="关于 RawLab"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
+        <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="查看更新"/>
         <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="导出原始分辨率照片" AutomationProperties.Name="导出">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
           <Button.ContextMenu><ContextMenu><MenuItem x:Name="ExportJpeg" Header="导出 JPEG" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" Header="导出 16-bit PNG" Click="ExportPngClicked" IsEnabled="False"/></ContextMenu></Button.ContextMenu>

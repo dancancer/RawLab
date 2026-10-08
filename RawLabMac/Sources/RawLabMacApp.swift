@@ -4,6 +4,8 @@ import AppKit
 @main
 struct RawLabMacApp: App {
     @StateObject private var model = EditorModel()
+    @StateObject private var updates = UpdateChecker()
+    @Environment(\.openWindow) private var openWindow
     init() {
         let args = CommandLine.arguments
         if args.count == 4 && args[1] == "--smoke" {
@@ -47,9 +49,27 @@ struct RawLabMacApp: App {
         NSApplication.shared.setActivationPolicy(.regular)
     }
     var body: some Scene {
-        Window("RawLab Mac", id: "editor") { EditorView(model: model) }
+        Window("RawLab Mac", id: "editor") {
+            VStack(spacing: 0) {
+                if let release = updates.available {
+                    HStack {
+                        Text("RawLab \(release.version) 已发布")
+                        Spacer()
+                        Button("查看更新") { openWindow(id: "about") }
+                    }.padding(8)
+                }
+                EditorView(model: model)
+            }.task { await updates.check(manual: false) }
+        }
             .defaultSize(width: 1320, height: 850)
             .commands {
+                CommandGroup(replacing: .appInfo) {
+                    Button("关于 RawLab…") { openWindow(id: "about") }
+                    Button("检查更新…") {
+                        openWindow(id: "about")
+                        Task { await updates.check(manual: true) }
+                    }.disabled(updates.checking)
+                }
                 CommandGroup(replacing: .newItem) {
                     Button("打开 RAW…", action: model.openPanel).keyboardShortcut("o")
                     Button("导入外观…", action: model.importLUT)
@@ -60,5 +80,7 @@ struct RawLabMacApp: App {
                         .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy)
                 }
             }
+        Window("关于 RawLab", id: "about") { AboutView(updates: updates) }
+            .windowResizability(.contentSize)
     }
 }
