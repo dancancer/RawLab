@@ -93,12 +93,20 @@ int main(int argc, char** argv) {
         reference.adjust_to_raw_inset_crop(3);
         if (reference.dcraw_process()) return 1;
         const auto& ref=reference.imgdata;
+        std::cout << "Reference " << ref.sizes.iwidth << 'x' << ref.sizes.iheight
+                  << "; flip=" << ref.sizes.flip << "; output=" << base.width << 'x' << base.height << '\n';
         const float scale=std::exp2(baselineEV)/(65535*ref.color.pre_mul[1]);
         double error=0; size_t count=0;
         for (size_t i=0;i<base.pixels.size();i+=127) {
+            // Output is oriented; LibRaw image storage remains in sensor order.
+            int row=static_cast<int>(i/base.width), col=static_cast<int>(i%base.width);
+            if (ref.sizes.flip & 4) std::swap(row,col);
+            if (ref.sizes.flip & 2) row=ref.sizes.iheight-1-row;
+            if (ref.sizes.flip & 1) col=ref.sizes.iwidth-1-col;
+            const size_t sourceIndex=static_cast<size_t>(row)*ref.sizes.iwidth+col;
             float rgb[3]={};
             for (int d=0;d<3;++d) for (int c=0;c<ref.idata.colors;++c)
-                rgb[d]+=ref.color.rgb_cam[d][c]*ref.image[i][c]*scale;
+                rgb[d]+=ref.color.rgb_cam[d][c]*ref.image[sourceIndex][c]*scale;
             error+=std::abs(base.pixels[i].r-rgb[0])+std::abs(base.pixels[i].g-rgb[1])+std::abs(base.pixels[i].b-rgb[2]);
             count+=3;
         }

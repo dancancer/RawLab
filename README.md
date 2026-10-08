@@ -18,25 +18,25 @@ The current iOS / Android sources support pinch-to-zoom, panning, and double-tap
 
 ## 下载 / Download
 
-当前 Windows 源码已加入快速内嵌预览、原尺寸缩放缓存、多核 RAW 处理及远程桌面下的 WPF 画布硬件加速：选中照片先显示预览，双击立即放大并后台补齐细节，拖动时复用图像图层。构建方法见 [Windows 文档](RawLabWindows/README.md)，测量条件与结果见 [性能记录](RawLabWindows/performance.md)。这些改动尚未包含在下方 v0.2 下载包中。
+Windows 新包已加入快速内嵌预览、原尺寸缩放缓存、多核 RAW 处理及远程桌面下的 WPF 画布硬件加速：选中照片先显示预览，双击立即放大并后台补齐细节，拖动时复用图像图层。构建方法见 [Windows 文档](RawLabWindows/README.md)，测量条件与结果见 [性能记录](RawLabWindows/performance.md)。
 
-The current Windows source adds fast embedded previews, cached full-resolution zoom, multicore RAW processing and hardware-accelerated WPF composition in supported remote desktop sessions. Selection shows a preview first; double-click zoom responds immediately while detail loads, and panning reuses image layers. See the [Windows build instructions](RawLabWindows/README.md) and [performance measurements](RawLabWindows/performance.md). These changes are not included in the v0.2 download below.
+The new Windows package adds fast embedded previews, cached full-resolution zoom, multicore RAW processing and hardware-accelerated WPF composition in supported remote desktop sessions. Selection shows a preview first; double-click zoom responds immediately while detail loads, and panning reuses image layers. See the [Windows build instructions](RawLabWindows/README.md) and [performance measurements](RawLabWindows/performance.md).
 
-[下载 RawLab v0.3.0 / Download v0.3.0](https://github.com/dancancer/RawLab/releases/tag/v0.3.0)
+[下载 RawLab v0.4.0 / Download v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0)
 
-v0.3.0 更新 macOS 15 双架构包和 Android 正式签名 APK。Windows 和 iOS 安装包暂沿用 v0.2；本次源码更新不代表这些旧安装包已包含新功能。
+v0.4.0 提供新的 Windows 日期标识包、macOS 15 双架构包和 Android 正式签名 APK。Windows 原包来自 `a24d840`，程序集版本仍为 `0.2.0`，不是旧版 v0.2 安装包；保留原始构建信息和文件名。iOS 暂沿用 v0.2，不包含后续源码更新。
 
-v0.3.0 updates the macOS 15 Apple Silicon/Intel packages and the release-signed Android APK. Windows and iOS downloads remain at v0.2; new source features are not included in those older binaries.
+v0.4.0 includes a new date-labelled Windows package, macOS 15 Apple Silicon/Intel apps and a release-signed Android APK. The Windows archive comes from `a24d840`, retains assembly version `0.2.0` and its original filename/provenance, and is not the old v0.2 binary. iOS remains at v0.2 without subsequent source changes.
 
 | 平台 / Platform | 下载 / Download | 系统要求 / Requirements |
 | --- | --- | --- |
-| Windows x64 | [ZIP](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-Windows-0.2-win-x64.zip) | Windows 10/11 x64 |
-| Mac Apple Silicon | [arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Mac-0.3.0-macOS15-arm64.zip) | macOS 15+，M 系列 / M-series |
-| Mac Intel | [x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Mac-0.3.0-macOS15-x86_64.zip) | macOS 15+，Intel |
-| Android | [签名 APK / Signed APK](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Android-0.3.0.apk) | Android 8.0+，ARM64 / x86_64 |
+| Windows x64 | [ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Windows-interaction-20261008-win-x64.zip) | Windows 10/11 x64 |
+| Mac Apple Silicon | [arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) | macOS 15+，M 系列 / M-series |
+| Mac Intel | [x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip) | macOS 15+，Intel |
+| Android | [签名 APK / Signed APK](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Android-0.4.0.apk) | Android 8.0+，ARM64 / x86_64 |
 | iOS | [未签名 IPA / Unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-iOS-0.2-unsigned.ipa) | iPhone，iOS 18+，须自行签名 / Re-signing required |
 
-[v0.3.0 校验文件 / Checksums](https://github.com/dancancer/RawLab/releases/download/v0.3.0/SHA256SUMS.txt) · [旧版 Windows/iOS 校验文件 / Previous Windows/iOS checksums](https://github.com/dancancer/RawLab/releases/download/v0.2/SHA256SUMS.txt)
+[v0.4.0 校验文件 / Checksums](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt) · [旧版 iOS 校验文件 / Previous iOS checksums](https://github.com/dancancer/RawLab/releases/download/v0.2/SHA256SUMS.txt)
 
 ### 安装说明 / Installation Notes
 
@@ -44,21 +44,34 @@ v0.3.0 updates the macOS 15 Apple Silicon/Intel packages and the release-signed 
   Extract and run `RawLab.exe`, keeping the entire directory. Includes .NET 8, Visual C++ runtime, LUTs and ExifTool; the app is unsigned.
 - **Mac**：按芯片选择对应版本，将 `RawLab Mac.app` 放入 Applications。采用 ad-hoc 签名、未经过 Apple 公证，系统可能阻止默认打开。主程序及依赖的最低版本均为 macOS 15；尚未在 macOS 15 真机验证，Intel 版在 Rosetta 下测试。
   Choose the matching architecture and move `RawLab Mac.app` to Applications. Ad-hoc signed and not notarized; macOS may block opening it. The app and dependencies target macOS 15, but macOS 15 hardware testing is pending; Intel testing used Rosetta.
-- **Android**：v0.3.0 沿用正式发布密钥，已验证从 v0.2.1 覆盖升级；无法覆盖不同签名的 debug 版。卸载 debug 版前先导出未保存的编辑。
-  v0.3.0 retains the release key and was tested upgrading from v0.2.1. It cannot replace a differently signed debug build; export unsaved edits before uninstalling a debug build.
+- **Android**：v0.4.0 沿用正式发布密钥，支持从同签名的旧正式版覆盖升级；无法覆盖不同签名的 debug 版。卸载 debug 版前先导出未保存的编辑。
+  v0.4.0 retains the release key for updates from earlier release-signed versions. It cannot replace a differently signed debug build; export unsaved edits before uninstalling a debug build.
 - **iOS**：**未签名 IPA 不能直接安装**。需使用自己的有效证书和 provisioning profile 对应用及内嵌 framework 重新签名；不是 App Store 或 TestFlight 发行版，尚未进行真机安装验证。
   **The unsigned IPA cannot be installed directly.** Re-sign the app and embedded framework with your own valid certificate and provisioning profile. This is not an App Store or TestFlight release and has not been installation-tested on physical devices.
 
-## v0.3.0 更新 / What's New
+## v0.4.0 更新 / What's New
+
+- Windows 加快选片首帧、重复原尺寸缩放和平移绘制，保留精确显影后才能导出的约束。
+  Windows speeds up first previews, repeated full-resolution zoom and panning while requiring exact rendering before export.
+- Mac 和 Android 增加持久化自定义外观库，支持批量导入 CUBE/RLOOK、重命名和删除；失败逐文件汇总，成功项保留。Windows 支持多选导入，仍使用本次会话的外部文件引用。
+  Mac and Android add persistent custom-look libraries with batch CUBE/RLOOK import, rename/delete and per-file failure reports. Windows supports multiple selection while retaining session-only external file references.
+- 支持声明正确色彩约定的 Fuji F-Log/F-Log2/F-Log2C CUBE，包括技术 Log 输出；共享核心为 Metal、GLES 和 Direct3D 11 提供对应 GPU 路径，Auto 在后端失败时回退 CPU。
+  Fuji F-Log/F-Log2/F-Log2C CUBEs with valid color contracts, including technical Log outputs, have shared-core GPU paths for Metal, GLES and Direct3D 11, with Auto fallback on backend failure.
+
+详见 [v0.4.0 发布说明](docs/releases/v0.4.0.md)。可导入外观不等于完整复刻原厂或 Adobe 显影。
+
+See the [v0.4.0 release notes](docs/releases/v0.4.0.md). Import support does not certify identical manufacturer or Adobe rendering.
+
+## v0.3.0 更新 / Previous Features
 
 - Android 相册可切换方形缩略图和原始比例，支持每行 1-6 张，保留视图选择和浏览位置。
   Android albums offer square/original-ratio thumbnails, 1-6 columns, and retained view choices and browsing position.
 - 新增桌面 LUT 准备工具，要求显式声明色彩约定；DCP 可编译为 `.rlook`，由共享核心直接计算矩阵、HSV 表和曲线，Mac 支持原生 Metal 加速。
   The desktop LUT preparer uses explicit color contracts. Supported DCPs compile to `.rlook` for direct matrix/HSV/tone evaluation, with native Metal acceleration on Mac.
-- Mac 自定义外观导入支持 `.cube` 和 `.rlook`。移动端自定义外观导入、完整 Lightroom 渲染及全部 DCP 阶段不在本次支持范围。
-  Mac imports `.cube` and `.rlook`. Mobile custom-look import, full Lightroom rendering and complete DCP-stage coverage are not included.
+- v0.3.0 的 Mac 自定义外观导入支持 `.cube` 和 `.rlook`；该版本不包含移动端自定义外观导入、完整 Lightroom 渲染或全部 DCP 阶段。
+  In v0.3.0, Mac imports `.cube` and `.rlook`; that release does not include mobile custom-look import, full Lightroom rendering or complete DCP-stage coverage.
 
-详见 [发布说明](docs/releases/v0.3.0.md)和 [LUT 准备工具文档](lutools/docs/lut-preparation.md)。
+详见 [v0.3.0 发布说明](docs/releases/v0.3.0.md)和 [LUT 准备工具文档](lutools/docs/lut-preparation.md)。
 
 ## v0.2 更新 / Previous Features
 

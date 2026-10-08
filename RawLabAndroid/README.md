@@ -18,8 +18,8 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
   Android 14+ partial photo access and reselection; no all-files permission.
 - 十种内置胶片、中性/结果对比、胶片强度、曝光、拍摄时/自定义色温与色调、单项/全部重置。
   Ten film looks, neutral/result comparison, strength, exposure and calibrated RAW white balance.
-- 当前源码支持从胶片栏的加号导入兼容 CUBE/RLOOK v1/v2，复制到 `filesDir/looks`，不依赖外部 URI 或 RAW 缓存。导入后自动选中，可重命名、删除并在重启后恢复；原文件删除不影响托管副本，同名导入不会覆盖。缺失外观记录保留可删除，损坏索引不会被静默清空。此能力尚未包含在已发布的 v0.3.0 中。
-  Current source imports prepared CUBE/RLOOK looks into a persistent managed library. Copies survive original removal and restart, support rename/delete, and never overwrite same-name imports. This workflow is not in the published v0.3.0.
+- v0.4.0 支持从胶片栏的加号导入兼容 CUBE/RLOOK v1/v2，复制到 `filesDir/looks`，不依赖外部 URI 或 RAW 缓存。导入后自动选中，可重命名、删除并在重启后恢复；原文件删除不影响托管副本，同名导入不会覆盖。缺失外观记录保留可删除，损坏索引不会被静默清空。
+  v0.4.0 imports prepared CUBE/RLOOK looks into a persistent managed library. Copies survive original removal and restart, support rename/delete, and never overwrite same-name imports.
 - 富士 F-Log/F-Log2/F-Log2C CUBE 在声明匹配的输入色域和 BT.709 输出后可直接导入。技术 Log 输出会解码并转换为显示图像，均支持 GLES；Auto 在后端失败时回退 CPU，Force 要求实际 GPU 执行。
   Declared Fuji F-Log/F-Log2/F-Log2C CUBEs can be imported directly. Technical Log outputs are decoded and display-rendered on GLES. Auto falls back on backend failure; Force requires successful GPU execution.
 - 外观选择器可一次选择多个文件，作为单个顺序任务导入。部分失败不回滚成功项，完成后选中最后成功外观；失败文件集中显示在可滚动的结果对话框中，不会被随后完成的预览清除。全部失败保留原选择，取消选择不启动任务。
@@ -84,11 +84,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.3.0 APK / Download Android v0.3.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.3.0/RawLab-Android-0.3.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.3.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.3.0/SHA256SUMS.txt)
+[下载 Android v0.4.0 APK / Download Android v0.4.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Android-0.4.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt)
 
-已发布 APK 的 `versionName` 为 `0.3.0`、`versionCode` 为 `4`，沿用正式发布密钥，已验证从 v0.2.1 覆盖升级。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
+发布 APK 的 `versionName` 为 `0.4.0`、`versionCode` 为 `5`，沿用正式发布密钥，支持从同签名的旧正式版覆盖升级。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
 
-The published APK uses `versionName=0.3.0` and `versionCode=4`, retains the release key, and was tested upgrading from v0.2.1. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses `versionName=0.4.0` and `versionCode=5` and retains the release key for updates from earlier release-signed versions. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
