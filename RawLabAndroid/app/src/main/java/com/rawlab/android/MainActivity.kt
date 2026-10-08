@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -50,8 +51,12 @@ private fun RawLabApp(model: EditorViewModel) {
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var png by rememberSaveable { mutableStateOf(false) }
     var licenses by rememberSaveable { mutableStateOf(false) }
+    val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { album = false; model.importPhoto(uri) }
+    }
+    val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        model.importLooks(uris)
     }
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
         if (it == null) model.cancelExport() else model.export(it, false)
@@ -60,13 +65,17 @@ private fun RawLabApp(model: EditorViewModel) {
         if (it == null) model.cancelExport() else model.export(it, true)
     }
     if (album) {
-        AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
-            onPhoto = { album = false; model.importPhoto(it) })
+        screenState.SaveableStateProvider("album") {
+            AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
+                onPhoto = { album = false; model.importPhoto(it) })
+        }
     } else {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
             onEdit = model::edit, onReset = model::reset, onRetry = model::retry,
             onExport = { if (model.beginExport()) exportDialog = true },
-            onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled)
+            onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
+            onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
+            onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport)
     }
     if (exportDialog) AlertDialog(
         onDismissRequest = { exportDialog = false; model.cancelExport() },

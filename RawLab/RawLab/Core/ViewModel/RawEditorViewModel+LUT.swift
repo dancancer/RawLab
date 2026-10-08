@@ -81,10 +81,6 @@ extension RawEditorViewModel {
     }
 
     func prettifyLUTName(_ name: String) -> String {
-        var result = name.replacingOccurrences(of: "X100VI_", with: "")
-        result = result.replacingOccurrences(of: "_", with: " ")
-        result = result.replacingOccurrences(of: "FLog2", with: "F-Log2")
-        result = result.replacingOccurrences(of: "FLog", with: "F-Log")
-        return result
+        FilmPresentation(fileName: name).name
     }
 }

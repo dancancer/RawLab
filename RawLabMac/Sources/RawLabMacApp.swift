@@ -52,11 +52,12 @@ struct RawLabMacApp: App {
             .commands {
                 CommandGroup(replacing: .newItem) {
                     Button("打开 RAW…", action: model.openPanel).keyboardShortcut("o")
-                    Button("导入 LUT…", action: model.importLUT)
+                    Button("导入外观…", action: model.importLUT)
+                        .disabled(model.lookLibraryBusy || model.exporting)
                     Divider()
                     Button("导出 JPEG…") { model.export(png: false) }
                         .keyboardShortcut("e", modifiers: [.command, .shift])
-                        .disabled(model.result == nil || model.busy || model.exporting)
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy)
                 }
             }
     }

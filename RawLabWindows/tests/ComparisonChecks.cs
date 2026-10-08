@@ -8,6 +8,17 @@ static class ComparisonChecks
 {
     internal static void Run(Action<bool,string> check)
     {
+        var viewport=new Viewport();var resolutionChanges=0;
+        viewport.ResolutionChanged+=()=>resolutionChanges++;
+        viewport.Move(new Vector(30,-20));viewport.ToggleActualPixels();
+        check(viewport.ActualPixels && viewport.Zoom==1 && viewport.Pan==default && resolutionChanges==1,
+            "Double click switches fit to native pixels, clears pan and requests native resolution");
+        viewport.Magnify(1.25);viewport.Move(new Vector(10,40));viewport.ToggleActualPixels();
+        check(!viewport.ActualPixels && viewport.Zoom==1 && viewport.Pan==default && resolutionChanges==2,
+            "Double click returns pixel mode to fit, clears pan and requests preview resolution");
+        viewport.Magnify(2);viewport.ToggleActualPixels();
+        check(!viewport.ActualPixels && viewport.Zoom==1 && resolutionChanges==2,
+            "Double click resets manual fit magnification without redundant rendering");
         BitmapSource Solid(byte b,byte g,byte r)=>BitmapSource.Create(1,1,96,96,PixelFormats.Bgra32,null,new byte[]{b,g,r,255},4);
         var canvas=new PhotoCanvas{Viewport=new Viewport(),ComparisonEnabled=true};
         canvas.SetImage(Solid(255,0,0),null);canvas.SetComparison(Solid(0,0,255),null);
@@ -23,6 +34,18 @@ static class ComparisonChecks
         canvas.Divider=0;check(Render()[left]==255,"Wipe left endpoint reveals the full edit");
         canvas.Divider=1;check(Render()[right+2]==255,"Wipe right endpoint reveals the full neutral image");
         canvas.ComparisonEnabled=false;check(Render()[left]==255,"Disabling wipe restores the edited image");
+        var view=canvas.Viewport!;view.SetSourceSize(6000,4000);view.Actual();
+        var dpi=VisualTreeHelper.GetDpi(canvas);
+        check(Math.Abs(canvas.ImageBounds.Width-6000/dpi.DpiScaleX)<.01 && Math.Abs(canvas.ImageBounds.Height-4000/dpi.DpiScaleY)<.01,
+            "Native zoom immediately scales the existing preview using source pixels and DPI");
+        var contentVersion=canvas.ContentVersion;var bounds=canvas.ImageBounds;
+        view.Move(new Vector(21,-13));
+        check(canvas.ContentVersion==contentVersion && canvas.ImageBounds.X==bounds.X+21 && canvas.ImageBounds.Y==bounds.Y-13,
+            "Panning changes retained transforms without rebuilding image drawings");
+        canvas.SetImage(Solid(255,0,0),null);
+        check(view.ActualPixels && view.Pan==new Vector(21,-13) && canvas.ImageBounds.Width==bounds.Width,
+            "Replacing a preview with detail preserves native zoom and pan geometry");
+        view.Fit();
         var grid=new PhotoGridPanel();for(var i=0;i<3;i++)grid.Children.Add(new Border());
         grid.Measure(new Size(220,double.PositiveInfinity));grid.Arrange(new Rect(0,0,220,grid.DesiredSize.Height));
         check(grid.Children[1].TranslatePoint(new Point(),grid).X==0 && grid.DesiredSize.Height==420,"Narrow file tree uses one thumbnail column");

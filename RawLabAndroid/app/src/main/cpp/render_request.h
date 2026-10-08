@@ -26,7 +26,7 @@ inline size_t previewByteCount(const sony2fuji_buffer& buffer) {
 inline sony2fuji_request makeRequest(const char* input, const char* lut, const char* output,
     float strength, float exposure, bool customWb, float temperature, float tint,
     int edge, bool png) {
-    if (!input || !*input || !std::isfinite(strength) || strength < 0 || strength > 1 ||
+    if (!input || !*input || !std::isfinite(strength) || strength < 0 || strength > 2 ||
         !std::isfinite(exposure) || exposure < -5 || exposure > 5 ||
         !std::isfinite(temperature) || temperature < 2000 || temperature > 50000 ||
         !std::isfinite(tint) || tint < -150 || tint > 150 || (!output && (edge < 1 || edge > 1600))) {

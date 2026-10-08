@@ -41,6 +41,12 @@ typedef enum sony2fuji_pixel_format {
     SONY2FUJI_PIXEL_RGBA8 = 1
 } sony2fuji_pixel_format;
 
+typedef enum sony2fuji_look_format {
+    SONY2FUJI_LOOK_UNKNOWN = 0,
+    SONY2FUJI_LOOK_CUBE = 1,
+    SONY2FUJI_LOOK_RLOOK = 2
+} sony2fuji_look_format;
+
 typedef enum sony2fuji_output_format {
     SONY2FUJI_OUTPUT_JPEG = 0,
     SONY2FUJI_OUTPUT_PNG = 1,
@@ -110,6 +116,7 @@ typedef struct sony2fuji_request {
     sony2fuji_color_space input_color_space;
     int32_t input_is_linear;
 
+    // Canonical display CUBE or compiled DCP .rlook (CPU/Metal; other GPUs use Auto fallback).
     const char* lut_path;
     float lut_strength;
 
@@ -177,6 +184,12 @@ typedef enum sony2fuji_render_backend {
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
+
+// Validates a PHOTO look without a RAW, session or GPU. Optional outputs are
+// cleared on failure; CUBE is unversioned (0), RLOOK reports its header version.
+sony2fuji_status sony2fuji_validate_look(
+    const char* path, sony2fuji_look_format* format, uint32_t* format_version
+);
 
 // Reduced RAW processing is allowed only for PREVIEW + BUFFER requests.
 // FINAL requests and every file export ignore this flag.

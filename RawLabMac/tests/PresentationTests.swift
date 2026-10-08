@@ -7,6 +7,18 @@ struct PresentationTests {
         print("PASS: \(message)")
     }
     static func main() throws {
+        let strength = AdjustmentParameter.strength.spec
+        check(strength.parse("200") == 2 && strength.parse("250") == 2,
+              "Film strength accepts 200 percent and clamps larger input")
+        check(strength.value(at: 0) == 0 && strength.value(at: 0.5) == 1 && strength.value(at: 1) == 2,
+              "Film strength slider spans zero to 200 percent with 100 at the midpoint")
+        check(Adjustments().strength == 1 && strength.defaultValue == 1 && strength.text(1) == "100",
+              "Film strength still defaults to 100 percent")
+        var filmSettings = Adjustments()
+        filmSettings.strength = 2; filmSettings.exposure = 1.25
+        filmSettings.reset(.film)
+        check(filmSettings.strength == 1 && filmSettings.exposure == 1.25,
+              "Film reset restores 100 percent without changing exposure")
         var wb = Adjustments()
         wb.resolveWhiteBalance(WhiteBalance(temperature: 5274, tint: 12))
         check(wb.temperature == 5274 && wb.tint == 12 && wb.whiteBalanceMode == .asShot,
@@ -64,6 +76,15 @@ struct PresentationTests {
         check(viewport.factor(fit: 0.2, displayScale: 2) == 0.5, "100 percent matches physical pixels on Retina")
         viewport.fit()
         check(viewport == PhotoViewport(), "Fit clears manual zoom and pixel mode")
+        viewport.toggleActualPixels()
+        check(viewport.pixelMode && viewport.magnification == 1 && viewport.factor(fit: 0.1, displayScale: 2) == 0.5,
+              "Double click enters 100 percent physical pixels, not a fixed multiple of fit")
+        viewport.zoom(by: 1.25)
+        viewport.toggleActualPixels()
+        check(viewport == PhotoViewport(), "Double click leaves pixel mode and clears manual zoom")
+        viewport.zoom(by: 2)
+        viewport.toggleActualPixels()
+        check(viewport == PhotoViewport(), "Double click returns a manually magnified fit view to fit")
         viewport.zoom(by: 1000)
         check(viewport.magnification == 16, "Zoom has a stable upper bound")
         viewport.zoom(by: 0.00001)
@@ -95,8 +116,19 @@ struct PresentationTests {
             guard let url = FilmArtwork.url(for: name, in: artworkFolder),
                   let image = NSImage(contentsOf: url) else { fatalError("Missing or invalid artwork: \(name)") }
             check(image.size.width >= 128 && image.size.height >= 128, "Packaging image decodes: \(name)")
+            check(url.deletingPathExtension().lastPathComponent == FilmArtwork.resourceNames[name],
+                  "Built-in film retains its own package: \(name)")
         }
-        check(FilmArtwork.url(for: "Custom Film", in: artworkFolder) == nil,
-              "Custom LUTs do not impersonate a built-in film package")
+        let customArtwork = FilmArtwork.url(for: "Panasonic-Vivid", in: artworkFolder)
+        check(customArtwork?.lastPathComponent == "custom-look.png",
+              "Imported looks receive the default package instead of an empty icon")
+        if let customArtwork, let image = NSImage(contentsOf: customArtwork) {
+            check(image.size.width >= 128 && image.size.width == image.size.height,
+                  "Default imported-look artwork is a decodable square")
+        } else {
+            check(false, "Default imported-look artwork must decode")
+        }
+        check(FilmArtwork.url(for: "PROVIA", isCustom: true, in: artworkFolder) == customArtwork,
+              "An imported look named after a built-in still uses the custom package")
     }
 }

@@ -1,311 +1,258 @@
+import PhotosUI
 import SwiftUI
-import UIKit
 
 extension ContentView {
-    var topBar: some View {
-        HStack {
-            HStack(spacing: 14) {
-                photoImportButton(isEnabled: !viewModel.isBusy)
-                circleIconButton(systemName: "arrow.counterclockwise", isEnabled: !viewModel.isBusy) {
-                    applySettingsChange(.default)
-                }
+    @ToolbarContentBuilder
+    var editorToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            photoImportButton(isEnabled: !editorBusy)
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button { showingBefore.toggle() } label: {
+                Image(systemName: "circle.lefthalf.filled")
+                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
             }
+            .accessibilityLabel("前后对比")
+            .accessibilityValue(showingBefore ? "调整前" : "调整后")
+            .help("切换调整前后")
+            .disabled(!viewModel.hasImage)
+            .accessibilityIdentifier("editor.compare")
 
-            Spacer()
-
-            Text("Adjust")
-                .font(.headline)
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            HStack(spacing: 14) {
-                circleIconButton(systemName: "circle.lefthalf.filled", isEnabled: viewModel.hasImage) {
-                    showingBefore.toggle()
-                }
-                circleIconButton(systemName: "square.and.arrow.up", isEnabled: viewModel.hasImage && !viewModel.isBusy) {
-                    exportJPEG()
-                }
-#if DEBUG
-                Menu {
-                    Button("Decode Sample") {
-                        viewModel.runBundledSampleSmokeTest(settings: settings)
-                    }
-                } label: {
-                    circleIconLabel(systemName: "ellipsis.circle")
-                }
-                .opacity(viewModel.isBusy ? 0.35 : 1)
-                .disabled(viewModel.isBusy)
-#endif
+            Button { adjustmentsExpanded.toggle() } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : adjustmentsExpanded ? .yellow : .primary)
             }
+            .accessibilityLabel(!viewModel.hasImage ? "调整" : adjustmentsExpanded ? "收起调整栏" : "展开调整栏")
+            .help("显示或收起调整栏")
+            .disabled(!viewModel.hasImage)
+            .accessibilityIdentifier("editor.adjustments")
+
+            Button(action: exportJPEG) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("保存到照片")
+            .help("保存到照片")
+            .disabled(!viewModel.hasImage || editorBusy)
+            .accessibilityIdentifier("editor.export")
         }
     }
 
     var previewSection: some View {
-        ZStack(alignment: .bottom) {
-            if let image = currentPreviewImage {
-                GeometryReader { geometry in
-                    let isLandscape = previewIsLandscape
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(
-                            width: isLandscape ? geometry.size.width : nil,
-                            height: isLandscape ? nil : geometry.size.height
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(.secondarySystemBackground))
+        GeometryReader { geometry in
+            ZStack {
+                Color(white: 0.12)
+                if let image = currentPreviewImage {
+                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
+                                  label: showingBefore ? "调整前的照片" : "调整后的照片")
+                        .id(viewModel.basePreviewImage)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            Text("RAW 照片").font(.title2.weight(.semibold))
+                            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                Label {
+                                    Text("导入照片")
+                                } icon: {
+                                    Image(systemName: "photo.badge.plus").accessibilityHidden(true)
+                                }
+                                    .font(.headline)
+                                    .padding(.horizontal, 16)
+                                    .frame(minHeight: 44)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .foregroundStyle(.black)
+                            .disabled(editorBusy)
+                            .accessibilityLabel("导入照片")
+                            .accessibilityIdentifier("editor.import.empty")
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: geometry.size.height)
+                    }
+                    .opacity(editorBusy ? 0 : 1)
+                    .accessibilityHidden(editorBusy)
                 }
-                .frame(height: previewMaxHeight)
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.secondary)
-                    Text("Import a photo to preview.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            }
+            .overlay(alignment: .topTrailing) {
+                if viewModel.hasImage {
+                    FloatingHistogram(values: currentHistogram, expanded: $histogramExpanded)
+                        .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
+                        .padding(12)
                 }
-                .frame(maxWidth: .infinity, minHeight: 220)
-                .background(Color(.secondarySystemBackground))
             }
-
-            Button(showingBefore ? "Before" : "After") {
-                showingBefore.toggle()
+            .overlay(alignment: .bottomLeading) {
+                if showingBefore && viewModel.hasImage {
+                    Text("调整前").font(.caption)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                }
             }
-            .font(.footnote)
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(.systemBackground).opacity(0.85))
-            .clipShape(Capsule())
-            .padding(.bottom, 8)
-            .disabled(!viewModel.hasImage)
-        }
-        .overlay {
-            if viewModel.isBusy {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .tint(.primary)
+            .overlay(alignment: viewModel.hasImage ? .topLeading : .center) {
+                if editorBusy {
+                    ProgressView(isImporting ? "正在导入" : isSaving ? "正在保存" : "正在处理")
+                        .font(.caption)
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                }
             }
+            .clipped()
         }
     }
 
-    var modeBar: some View {
-        HStack(spacing: 20) {
-            ForEach(EditorMode.allCases) { mode in
-                Button {
-                    selectedMode = mode
+    var adjustmentPanel: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(selectedFilmName)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Menu {
+                    Button("重置全部调整", role: .destructive) {
+                        applySettingsChange(.default)
+                    }
+                    if let adjustment = selectedAdjustment {
+                        Button("重置\(adjustment.title)") { reset(adjustment) }
+                    }
                 } label: {
-                    Image(systemName: mode.iconName)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(selectedMode == mode ? .primary : .secondary)
+                    Image(systemName: "arrow.counterclockwise")
                         .frame(width: 44, height: 44)
-                        .background(selectedMode == mode ? Color.primary.opacity(0.18) : Color.primary.opacity(0.08))
-                        .clipShape(Circle())
                 }
+                .accessibilityLabel("重置调整")
+                .disabled(!viewModel.hasImage || editingLocked || settings == .default)
+            }
+            .padding(.horizontal, 16)
+
+            toolStrip
+            valuePanel
+        }
+        .padding(.bottom, 12)
+    }
+
+    var toolStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    Button { selectedAdjustment = nil } label: {
+                        AdjustmentToolLabel(title: "胶片", symbol: "film", selected: selectedAdjustment == nil,
+                                            progress: 0, width: toolWidth, height: toolHeight)
+                    }
+                    .accessibilityValue(selectedFilmName)
+                    .accessibilityAddTraits(selectedAdjustment == nil ? .isSelected : [])
+                    .accessibilityIdentifier("tool.film")
+                    .id("film")
+                    ForEach(AdjustmentKind.allCases) { adjustment in
+                        Button { selectedAdjustment = adjustment } label: {
+                            AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
+                                                selected: selectedAdjustment == adjustment,
+                                                progress: adjustment.progress(in: settings),
+                                                width: toolWidth, height: toolHeight)
+                        }
+                        .disabled(adjustment == .strength && settings.lutID == nil)
+                        .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
+                        .accessibilityAddTraits(selectedAdjustment == adjustment ? .isSelected : [])
+                        .accessibilityIdentifier("tool.\(adjustment.rawValue)")
+                        .contextMenu {
+                            Button("重置\(adjustment.title)") { reset(adjustment) }
+                                .disabled(!viewModel.hasImage || adjustment.progress(in: settings) == 0 || editingLocked)
+                        }
+                        .id(adjustment.rawValue)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .frame(height: toolHeight)
+            .onChange(of: selectedAdjustment) { _, adjustment in
+                proxy.scrollTo(adjustment?.rawValue ?? "film", anchor: .center)
             }
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
-    var toolPanel: some View {
-        switch selectedMode {
-        case .adjust:
-            adjustmentsPanel
-        case .lut:
-            lutPanel
-        case .crop:
-            cropPanel
-        }
-    }
-
-    var adjustmentsPanel: some View {
-        VStack(spacing: 12) {
-            if !currentHistogram.isEmpty {
-                HistogramView(values: currentHistogram)
-            }
-
-            HStack {
-                Text(selectedAdjustment.title)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(selectedAdjustment.valueLabel(for: selectedAdjustment.value(from: settings)))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-
-            TickMarksView(
-                range: selectedAdjustment.range,
-                step: selectedAdjustment.step,
-                value: selectedAdjustmentBinding,
-                originalValue: selectedAdjustment.value(from: .default),
-                onEditingChanged: { editing in
-                    isAdjustingSlider = editing
-                    if !editing {
-                        viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
-                    }
-                }
-            )
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 18) {
-                    ForEach(AdjustmentKind.allCases) { adjustment in
-                        Button {
-                            selectedAdjustment = adjustment
-                        } label: {
-                            VStack(spacing: 6) {
-                                Image(systemName: adjustment.iconName)
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text(adjustment.title)
-                                    .font(.caption2)
-                            }
-                            .foregroundStyle(selectedAdjustment == adjustment ? .primary : .secondary)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 6)
-                        }
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-        }
-    }
-
-    var lutPanel: some View {
-        let isStrengthEnabled = settings.lutID != nil && !viewModel.isLoadingLUTs
-        return VStack(spacing: 12) {
-            Text("Fuji LUTs (F-Log2)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    lutButton(title: "None", isSelected: settings.lutID == nil) {
-                        var updated = settings
-                        updated.lutID = nil
-                        applySettingsChange(updated)
-                    }
-
-                    ForEach(viewModel.availableLUTs) { lut in
-                        lutButton(title: lut.name, isSelected: settings.lutID == lut.id) {
-                            var updated = settings
-                            updated.lutID = lut.id
-                            applySettingsChange(updated)
-                        }
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-            .opacity(viewModel.isLoadingLUTs ? 0.4 : 1)
-            .disabled(viewModel.isLoadingLUTs)
-
-            VStack(spacing: 8) {
+    var valuePanel: some View {
+        if let adjustment = selectedAdjustment {
+            VStack(spacing: 4) {
                 HStack {
-                    Text("LUT Strength")
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
+                    Text(adjustment.title).font(.subheadline)
                     Spacer()
-                    Text(String(format: "%.0f%%", settings.lutStrength * 100))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-
-                Slider(
-                    value: lutStrengthBinding,
-                    in: 0...1,
-                    step: 0.01,
-                    onEditingChanged: { editing in
-                        isAdjustingSlider = editing
-                        if !editing {
-                            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
-                        }
+                    Text(adjustment.valueLabel(for: adjustment.value(from: settings)))
+                        .font(.subheadline.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(adjustment.progress(in: settings) == 0 ? Color.secondary : .yellow)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityIdentifier("adjustment.value")
+                    Button { reset(adjustment) } label: {
+                        Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                     }
-                )
-                .tint(.primary)
-            }
-            .opacity(isStrengthEnabled ? 1 : 0.4)
-            .disabled(!isStrengthEnabled)
-
-            if viewModel.isLoadingLUTs {
-                Text("Loading LUTs...")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else if viewModel.availableLUTs.isEmpty {
-                Text("No F-Log2 LUTs found in bundle.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    var cropPanel: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "crop")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text("Crop tools coming soon.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-    }
-
-    var selectedAdjustmentBinding: Binding<Double> {
-        Binding(
-            get: {
-                selectedAdjustment.value(from: settings)
-            },
-            set: { newValue in
-                var updated = settings
-                selectedAdjustment.setValue(newValue, in: &updated)
-                applySettingsChange(updated)
-            }
-        )
-    }
-
-    var lutStrengthBinding: Binding<Double> {
-        Binding(
-            get: {
-                settings.lutStrength
-            },
-            set: { newValue in
-                var updated = settings
-                updated.lutStrength = newValue
-                applySettingsChange(updated)
-            }
-        )
-    }
-}
-
-struct HistogramView: View {
-    let values: [CGFloat]
-
-    var body: some View {
-        GeometryReader { geometry in
-            Canvas { context, size in
-                guard !values.isEmpty else { return }
-
-                let maxValue = values.max() ?? 1
-                let barWidth = max(size.width / CGFloat(values.count), 1)
-                var path = Path()
-
-                for (index, value) in values.enumerated() {
-                    let height = maxValue > 0 ? (value / maxValue) * size.height : 0
-                    let x = CGFloat(index) * barWidth
-                    let y = size.height - height
-                    path.addRect(CGRect(x: x, y: y, width: barWidth, height: height))
+                    .accessibilityLabel("重置\(adjustment.title)")
+                    .disabled(adjustment.progress(in: settings) == 0)
                 }
+                Slider(value: adjustmentBinding(adjustment), in: adjustment.range, step: adjustment.step,
+                       onEditingChanged: setSliderEditing)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel(adjustment.title)
+                    .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
+                    .accessibilityIdentifier("adjustment.slider")
+                    .overlay(alignment: .bottom) {
+                        DefaultValueMarker(range: adjustment.range, value: adjustment.value(from: .default))
+                            .frame(height: 4).offset(y: 5).allowsHitTesting(false)
+                    }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+            .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && settings.lutID == nil))
+        } else {
+            filmPanel(imageSize: filmSize)
+        }
+    }
 
-                context.fill(path, with: .color(.primary.opacity(0.7)))
+    func filmPanel(imageSize: CGFloat) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    filmButton(name: "中性", id: nil, imageSize: imageSize)
+                    ForEach(viewModel.availableLUTs) { lut in
+                        filmButton(name: lut.name, id: lut.id, imageSize: imageSize)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .accessibilityIdentifier("film.choices")
+            .onAppear { proxy.scrollTo(settings.lutID ?? "neutral", anchor: .center) }
+            .onChange(of: settings.lutID) { _, id in proxy.scrollTo(id ?? "neutral", anchor: .center) }
+        }
+        .overlay {
+            if viewModel.isLoadingLUTs {
+                ProgressView("正在加载胶片").padding(8).background(.regularMaterial)
+            } else if viewModel.availableLUTs.isEmpty {
+                Text("未找到胶片 LUT").font(.caption).foregroundStyle(.secondary)
+                    .padding(8).background(.regularMaterial)
             }
         }
-        .frame(height: 60)
-        .background(Color.primary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs)
+    }
+
+    func filmButton(name: String, id: String?, imageSize: CGFloat) -> some View {
+        Button {
+            var updated = settings
+            updated.lutID = id
+            applySettingsChange(updated)
+        } label: {
+            FilmLabel(name: name, artworkName: id.flatMap { FilmPresentation(fileName: $0).artworkName },
+                      neutral: id == nil, selected: settings.lutID == id, imageSize: imageSize)
+        }
+        .buttonStyle(.plain)
+        .id(id ?? "neutral")
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(settings.lutID == id ? .isSelected : [])
     }
 }

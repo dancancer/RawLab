@@ -16,6 +16,9 @@ uniform uint pixelCount;
 uniform uint outputOffset;
 uniform int stage;
 uniform bool useLut;
+uniform bool inputIsFLog;
+uniform bool outputIsLog;
+uniform bool outputIsFLog;
 uniform int lutSize;
 uniform mat3 toSrgb;
 uniform mat3 toFGamut;
@@ -39,6 +42,17 @@ float neutral(float x) {
 float flog2(float x) {
     return clamp(x < 0.00088899597 ? 8.799461 * x + 0.092864 :
         log(x * 5.555556 + 0.064829) / log(10.0) * 0.245281 + 0.384316, 0.0, 1.0);
+}
+float encodeLog(float x) {
+    if (!inputIsFLog) return flog2(x);
+    return clamp(x < 0.00089 ? 8.735631 * x + 0.092864 :
+        0.344676 * log(0.555556 * x + 0.009468) / log(10.0) + 0.790453, 0.0, 1.0);
+}
+float decodeLog(float x) {
+    if (outputIsFLog) return x < 0.100537775223865 ? (x - 0.092864) / 8.735631 :
+        (pow(10.0, (x - 0.790453) / 0.344676) - 0.009468) / 0.555556;
+    return x < 0.100686685370811 ? (x - 0.092864) / 8.799461 :
+        (pow(10.0, (x - 0.384316) / 0.245281) - 0.064829) / 5.555556;
 }
 vec3 lookup(vec3 x) {
     vec3 p = clamp((x - domainMin) / (domainMax - domainMin), 0.0, 1.0) * float(lutSize - 1);
@@ -69,7 +83,9 @@ vec3 evaluate(vec3 inputColor) {
     vec3 pixel = vec3(neutral(linear.r), neutral(linear.g), neutral(linear.b));
     if (useLut) {
         vec3 fgamut = toFGamut * linear;
-        pixel = mix(pixel, lookup(vec3(flog2(fgamut.r), flog2(fgamut.g), flog2(fgamut.b))), strength);
+        vec3 look = lookup(vec3(encodeLog(fgamut.r), encodeLog(fgamut.g), encodeLog(fgamut.b)));
+        if (outputIsLog) look = vec3(neutral(decodeLog(look.r)), neutral(decodeLog(look.g)), neutral(decodeLog(look.b)));
+        pixel = mix(pixel, look, strength);
     }
     if (tone.z != 0.0 || tone.w != 0.0) {
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));

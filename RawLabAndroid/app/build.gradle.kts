@@ -49,8 +49,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 5
+        versionName = "0.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
@@ -70,11 +70,15 @@ android {
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareAssets, prepareIcon) }
-tasks.matching { it.name.endsWith("AndroidTestAssets") }.configureEach { dependsOn(prepareTestAssets) }
+tasks.matching {
+    it.name.endsWith("AndroidTestAssets") || it.name.endsWith("AndroidTestLintModel") ||
+        (it.name.startsWith("lintAnalyze") && it.name.endsWith("AndroidTest"))
+}.configureEach { dependsOn(prepareTestAssets) }
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.compose.material3:material3")

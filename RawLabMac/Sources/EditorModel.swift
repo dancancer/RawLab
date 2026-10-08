@@ -21,7 +21,9 @@ final class EditorModel: ObservableObject {
     @Published private(set) var result: RenderedImage?
     @Published private(set) var busy = false
     @Published private(set) var exporting = false
+    @Published private(set) var lookLibraryBusy = false
     @Published var error: String?
+    @Published var lookImportReport: String?
     @Published private(set) var status = ""
     private let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     private let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
@@ -30,9 +32,17 @@ final class EditorModel: ObservableObject {
     private var workerActive = false
     private var engine: RenderEngine?
     private var editSession = PhotoEditSession()
+    private var lookLibrary: LookLibrary?
     var selectedFilm: Film? { films.first { $0.id == selectedFilmID } }
 
-    init() {
+    init(lookDirectory: URL = LookLibrary.defaultDirectory) {
+        do {
+            let library = try LookLibrary(directory: lookDirectory)
+            lookLibrary = library
+            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+        } catch {
+            self.error = error.localizedDescription
+        }
         selectedFilmID = films.first(where: { $0.name == "PROVIA" })?.id ?? films.first?.id ?? ""
         let timer = DispatchSource.makeTimerSource(queue: debounceQueue)
         timer.setEventHandler { [weak self] in
@@ -57,16 +67,104 @@ final class EditorModel: ObservableObject {
         let restored = editSession.state(for: url,
             defaultFilmID: films.first(where: { $0.name == "PROVIA" })?.id ?? "")
         file = url; neutral = nil; result = nil; error = nil; status = ""
-        settings = restored.settings; selectedFilmID = restored.filmID
+        settings = restored.settings
+        selectedFilmID = films.contains(where: { $0.id == restored.filmID }) ? restored.filmID : ""
         schedule()
     }
     func importLUT() {
+        guard !lookLibraryBusy, !exporting else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "cube") ?? .data]
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            if !films.contains(where: { $0.url == url }) { films.append(Film(name: url.deletingPathExtension().lastPathComponent, url: url)) }
-            selectedFilmID = url.path
+        panel.title = "导入外观"
+        panel.allowedContentTypes = ["cube", "rlook"].map { UTType(filenameExtension: $0) ?? .data }
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK {
+            importLooks(panel.urls)
+        }
+    }
+
+    func importLook(_ url: URL) {
+        importLooks([url])
+    }
+
+    func importLooks(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        changeLookLibrary { library in
+            var selectedID: String?
+            var imported = 0
+            var failures: [String] = []
+            for url in urls {
+                do {
+                    selectedID = try library.importLook(from: url).id
+                    imported += 1
+                } catch {
+                    failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
+                }
+            }
+            let report = failures.isEmpty ? nil :
+                "已导入 \(imported) 个外观，\(failures.count) 个文件导入失败：\n" + failures.joined(separator: "\n")
+            return (selectedID, report)
+        }
+    }
+
+    func renameLook(id: String, name: String) {
+        changeLookLibrary { try $0.rename(id: id, to: name); return (nil, nil) }
+    }
+
+    func removeLook(id: String) {
+        changeLookLibrary { try $0.remove(id: id); return (nil, nil) }
+    }
+
+    func renameLookPanel(_ film: Film) {
+        guard let id = film.managedID, !lookLibraryBusy, !exporting else { return }
+        let alert = NSAlert()
+        alert.messageText = "重命名外观"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let field = NSTextField(string: film.name)
+        field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn { renameLook(id: id, name: field.stringValue) }
+    }
+
+    func removeLookPanel(_ film: Film) {
+        guard let id = film.managedID, !lookLibraryBusy, !exporting else { return }
+        let alert = NSAlert()
+        alert.messageText = "移除“\(film.name)”？"
+        alert.informativeText = "将移除 RawLab 保存的外观副本，原始文件不会被删除。"
+        alert.addButton(withTitle: "移除")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn { removeLook(id: id) }
+    }
+
+    private func changeLookLibrary(_ operation: @escaping (LookLibrary) throws -> (selectedID: String?, report: String?)) {
+        guard !lookLibraryBusy, !exporting else { return }
+        guard let library = lookLibrary else { error = LookLibraryError.invalidRegistry.localizedDescription; return }
+        lookLibraryBusy = true
+        lookImportReport = nil
+        // 与渲染共用串行队列，移除外观时不会删除正在读取的文件。
+        queue.async { [weak self] in
+            do {
+                let change = try operation(library)
+                let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.films = self.films.filter { $0.managedID == nil } + updated
+                    self.lookLibraryBusy = false
+                    if let selectedID = change.selectedID { self.selectedFilmID = selectedID }
+                    else if !self.selectedFilmID.isEmpty && !self.films.contains(where: { $0.id == self.selectedFilmID }) {
+                        self.selectedFilmID = ""
+                    }
+                    self.error = nil
+                    self.lookImportReport = change.report
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.lookLibraryBusy = false
+                    self?.error = error.localizedDescription
+                }
+            }
         }
     }
     func setInteracting(_ value: Bool) {
@@ -160,7 +258,7 @@ final class EditorModel: ObservableObject {
         busy = workerActive || scheduler.isBusy
     }
     func export(png: Bool) {
-        guard !busy, !exporting, result != nil, let file else { return }
+        guard !busy, !exporting, !lookLibraryBusy, result != nil, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [png ? .png : .jpeg]
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-" +

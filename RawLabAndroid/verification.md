@@ -1,5 +1,31 @@
 # Android Verification
 
+## Strength and EXIF Update (2026-09-29)
+
+- Film strength is 0-200% in the UI, Kotlin settings, and JNI adapter;
+  default and reset remain 100%. Slider completion retains the latest value.
+- JPEG and PNG exports copy readable capture EXIF through AndroidX
+  ExifInterface 1.4.2 before either MediaStore or document publication.
+  Orientation, dimensions, and sRGB metadata describe the rendered output;
+  RAW layout, MakerNotes, and source thumbnails are not copied.
+- FNumber is rounded to one decimal. Standard reciprocal exposure times use
+  rational values such as 1/60; other exposures retain their duration.
+  External viewers control their own textual presentation.
+- JVM tests: 12/12. Host C++ request contract: passed. Android 15/API 35 ARM64
+  emulator `rawlab-exif-test`: 10/10 instrumentation tests, none skipped.
+- Real Sony RAW exports remain 7008x4672; PNG remains 16-bit. Tests verify
+  capture tags, GPS, missing tags, corrected orientation/dimensions, unchanged
+  source bytes and decoded pixels, and unchanged PNG IHDR/IDAT payloads.
+- Debug APKs build for arm64-v8a and x86_64. Lint: 0 errors, 12 advisory
+  warnings. APK/ELF 16 KB alignment: passed for all eight packaged libraries.
+- Regression evidence before fixes: 200% rejected by Kotlin/JNI; RAW PNG
+  export missing `Make`; slider 200% selection reverted to 100%.
+- No physical device was modified or tested for this update. No all-camera
+  metadata compatibility claim: only tags the source provider supplies and
+  ExifInterface can read are retained; stripped GPS cannot be recovered.
+
+## Initial Client Verification
+
 This records the initial CPU-only client. Current hardware acceleration and
 portrait-first UI evidence is in [gpu-verification.md](gpu-verification.md).
 

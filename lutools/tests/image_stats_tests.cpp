@@ -175,6 +175,12 @@ void testSynthetic(uint32_t channels, const std::string& label) {
           label + " ordinary pixels remain transparent");
     check(fixture.bytes == before, label + " leaves source colors unchanged");
 
+    sony2fuji::ImageStats withoutMask;
+    check(sony2fuji::computeImageStatsCPU(fixture.buffer, withoutMask, false) &&
+          withoutMask.clipping.empty() && withoutMask.histogram == actual.histogram &&
+          withoutMask.shadows == actual.shadows && withoutMask.highlights == actual.highlights,
+          label + " optional mask preserves exact counts without allocating pixels");
+
     sony2fuji::ImageStats gpu;
     if (sony2fuji::computeImageStatsMetal(fixture.buffer, gpu)) {
         check(sameStats(gpu, actual), label + " Metal/CPU exact parity");

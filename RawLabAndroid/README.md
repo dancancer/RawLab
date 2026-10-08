@@ -12,22 +12,40 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 
 - 应用内 RAW 相册、按相册筛选、系统文件导入。相册权限被拒绝时仍可使用文件入口。
   In-app RAW albums with album filtering and a system document-picker fallback.
+- 相册右上角的视图菜单可切换方形缩略图和原始比例，并选择每行 1-6 张，默认原始比例、3 列。返回编辑页再打开相册或旋转屏幕时保留视图选择。
+  The album view menu switches between square thumbnails and original aspect ratios, with 1-6 columns; defaults are original ratios and 3 columns. View choices survive editor navigation and activity recreation.
 - Android 14+ 支持部分照片授权和重新选择；打开相册时才申请权限，不申请所有文件访问权限。
   Android 14+ partial photo access and reselection; no all-files permission.
 - 十种内置胶片、中性/结果对比、胶片强度、曝光、拍摄时/自定义色温与色调、单项/全部重置。
   Ten film looks, neutral/result comparison, strength, exposure and calibrated RAW white balance.
+- v0.4.0 支持从胶片栏的加号导入兼容 CUBE/RLOOK v1/v2，复制到 `filesDir/looks`，不依赖外部 URI 或 RAW 缓存。导入后自动选中，可重命名、删除并在重启后恢复；原文件删除不影响托管副本，同名导入不会覆盖。缺失外观记录保留可删除，损坏索引不会被静默清空。
+  v0.4.0 imports prepared CUBE/RLOOK looks into a persistent managed library. Copies survive original removal and restart, support rename/delete, and never overwrite same-name imports.
+- 富士 F-Log/F-Log2/F-Log2C CUBE 在声明匹配的输入色域和 BT.709 输出后可直接导入。技术 Log 输出会解码并转换为显示图像，均支持 GLES；Auto 在后端失败时回退 CPU，Force 要求实际 GPU 执行。
+  Declared Fuji F-Log/F-Log2/F-Log2C CUBEs can be imported directly. Technical Log outputs are decoded and display-rendered on GLES. Auto falls back on backend failure; Force requires successful GPU execution.
+- 外观选择器可一次选择多个文件，作为单个顺序任务导入。部分失败不回滚成功项，完成后选中最后成功外观；失败文件集中显示在可滚动的结果对话框中，不会被随后完成的预览清除。全部失败保留原选择，取消选择不启动任务。
+  Multiple look files import sequentially in one task, preserving partial success and selecting the last successful look. A scrollable result dialog identifies failures and survives preview completion. All-failed batches preserve selection; cancelling the picker starts no task.
+- 胶片强度支持 0–200%，默认及重置均为 100%。
+  Film strength supports 0-200%, with 100% as the default and reset value.
 - 1000px 交互预览、1600px 精确预览；串行渲染只保留最新待处理调整。旋转屏幕保留当前编辑。
   Bounded interactive/exact previews with serialized latest-request scheduling and rotation-safe state.
+- 双指缩放、放大后平移；双击在适应画面与 100% 精确预览像素显示之间切换。缩放不触发全分辨率 RAW 显影。参数调整和对比切换保留视口，导入新图复位；对比模式下单指拖分割线、双指缩放和平移。
+  Pinch to zoom, pan, and double-tap between fit and exact-preview pixels, without full-resolution RAW rendering. Edits/comparison preserve the viewport; a new photo resets it. In comparison mode, one finger moves the wipe and two fingers zoom/pan.
 - 默认启用 GLES 像素加速，失败自动回退 CPU；更多菜单可关闭。画布只显示处理进度，不显示后端和耗时角标。
   GLES pixel acceleration defaults to Auto with CPU fallback; the menu can disable it. The canvas shows processing progress without backend/timing badges.
 - 竖屏采用单画面滑动对比、可收起底栏、固定底部工具行；色温与色调分别调整，无需滚动整个工具栏。
   Portrait uses a full-size before/after wipe, collapsible controls, a fixed bottom tool row, and separate temperature/tint tools.
 - 原尺寸 JPEG (quality 95) / 16-bit PNG。Android 10+ 可直接保存到相册；所有支持版本均可保存到文件。
   Native-resolution JPEG/16-bit PNG, saved to albums on Android 10+ or to a document on every supported version.
+- 导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等拍摄 EXIF，更新成片方向、尺寸及 sRGB 标记，不复制旧缩略图或 RAW 专有 MakerNotes。
+  Exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, and update output orientation, dimensions and sRGB tags without copying old thumbnails or opaque RAW MakerNotes.
 
 只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数不跨进程退出保存。
 
 RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits are session-only.
+
+外观导入只接受已制备成品，不直接执行源 DCP/XMP。先在桌面按 [LUT Preparation](../lutools/docs/lut-preparation.md) 制备，再传给手机；Android 不安装 Python/OCIO。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
+
+Prepare source assets on a desktop, then transfer the finished look; Python/OCIO is not required on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
 
 ## 构建 / Build
 
@@ -66,7 +84,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.1.0 / Download Android v0.1.0](https://github.com/dancancer/RawLab/releases/tag/android-v0.1.0)
+[下载 Android v0.4.0 APK / Download Android v0.4.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Android-0.4.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt)
+
+发布 APK 的 `versionName` 为 `0.4.0`、`versionCode` 为 `5`，沿用正式发布密钥，支持从同签名的旧正式版覆盖升级。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
+
+The release APK uses `versionName=0.4.0` and `versionCode=5` and retains the release key for updates from earlier release-signed versions. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -108,12 +130,11 @@ c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
 /tmp/rawlab-android-request-test
 ```
 
-设备测试使用仓库 Sony ARW 样片，验证 7008x4672 原尺寸 16-bit PNG，不把样片放进正式应用 APK。
+设备测试通过 `RAWLAB_TEST_RAW` 或 `-PrawlabTestRaw=/path/to/photo.ARW` 使用外部样片，只将其放入测试 APK，不放入正式应用 APK。v0.2 使用 Sony 样片验证了 7008x4672 原尺寸 JPEG / 16-bit PNG 和 EXIF，并在正式签名 APK 上通过了 10 项模拟器测试。
 测试报告位于 `app/build/reports/`，APK 位于 `app/build/outputs/apk/debug/`。
 实际验证记录见 [verification.md](verification.md)。
 
-Device tests use the repository Sony fixture, including a 7008x4672 16-bit PNG check.
-The fixture is packaged only into the test APK. See [verification.md](verification.md) for actual coverage.
+Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestRaw=/path/to/photo.ARW`, packaged only into the test APK. v0.2 verified native 7008x4672 JPEG/16-bit PNG and EXIF with a Sony fixture, and passed 10 emulator tests against the release-signed APK. See [verification.md](verification.md) for coverage details.
 
 ## 边界 / Limitations
 
@@ -127,6 +148,8 @@ The fixture is packaged only into the test APK. See [verification.md](verificati
   Optional LibRaw codecs/integrations are disabled; lossy JPEG DNG and JPEG2000-dependent inputs are not guaranteed.
 - 相册仅显示被系统媒体库收录且已授权的 RAW。未收录文件可通过系统文件入口导入。
   Albums show authorized, indexed RAW media; unindexed files use the document picker.
+- 相册缩略图由系统媒体库提供；Android 10+ 根据显示尺寸请求有界缩略图，Android 8-9 使用系统 `MINI_KIND` 缩略图。尺寸元数据缺失时，原始比例在缩略图加载后确定。
+  Album thumbnails come from MediaStore. Android 10+ requests bounded thumbnails for the display size; Android 8-9 uses system `MINI_KIND` previews. Missing dimension metadata falls back to the loaded thumbnail's ratio.
 - 进程被系统终止后，不恢复未保存的编辑或进行中的导出。长时间导出需保持应用前台。
   Process death does not resume edits or exports; keep the app foreground during export.
 - 通过 GitHub Release 提供签名 APK，尚未发布到应用商店；不承诺所有设备的性能。

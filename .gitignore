@@ -28,6 +28,7 @@ xcuserdata/
 .claude/
 
 .venv/
+.venv-lutprep/
 .uv-cache/
 __pycache__/
 *.py[cod]

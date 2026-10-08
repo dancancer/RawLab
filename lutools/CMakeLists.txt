@@ -59,6 +59,7 @@ include_directories(
 set(CORE_SOURCES
     src/core/lut_parser.cpp
     src/core/lut_applicator.cpp
+    src/core/dcp_look.cpp
     src/core/color_converter.cpp
     src/core/raw_processor.cpp
     src/core/white_balance.cpp
@@ -169,6 +170,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_link_libraries(core_tests sony2fuji_core Threads::Threads)
     target_compile_definitions(core_tests PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}" TEST_RAW_PATH="${SONY2FUJI_TEST_RAW}")
     add_test(NAME color_contracts COMMAND core_tests)
+    add_executable(dcp_look_tests tests/dcp_look_tests.cpp)
+    target_link_libraries(dcp_look_tests sony2fuji_core)
+    add_test(NAME native_dcp_look COMMAND dcp_look_tests)
+    if(SONY2FUJI_ENABLE_GPU AND APPLE)
+        add_test(NAME native_dcp_metal COMMAND dcp_look_tests --metal)
+    endif()
     add_executable(image_stats_tests tests/image_stats_tests.cpp)
     target_link_libraries(image_stats_tests sony2fuji_core)
     add_test(NAME image_stats COMMAND image_stats_tests)

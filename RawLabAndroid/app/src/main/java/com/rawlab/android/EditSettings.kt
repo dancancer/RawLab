@@ -9,7 +9,7 @@ data class EditSettings(
     val tint: Float = 0f,
 ) {
     init {
-        require(strength.isFinite() && strength in 0f..1f)
+        require(strength.isFinite() && strength in 0f..2f)
         require(exposure.isFinite() && exposure in -5f..5f)
         require(temperature.isFinite() && temperature in 2000f..50000f)
         require(tint.isFinite() && tint in -150f..150f)
@@ -27,5 +27,13 @@ data class Film(val id: String, val name: String, val file: String?) {
             Film("pro-neg-std", "PRO Neg. Std", "PRO-Neg.Std"), Film("eterna", "ETERNA", "ETERNA"),
             Film("eterna-bb", "ETERNA BLEACH BYPASS", "ETERNA-BB"), Film("acros", "ACROS", "ACROS"),
         )
+    }
+}
+
+data class LookChoice(val id: String, val name: String, val managed: Boolean, val available: Boolean = true) {
+    companion object {
+        val builtIns = Film.all.map { Film(it.id, it.name, it.file).toChoice() }
+
+        private fun Film.toChoice() = LookChoice(id, name, managed = false)
     }
 }

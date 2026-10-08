@@ -37,6 +37,37 @@ struct Buffer {
 };
 }
 
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_rawlab_android_NativeLookBridge_validate(JNIEnv* env, jclass, jstring path) {
+    try {
+        UtfChars value(env, path);
+        sony2fuji_look_format format = SONY2FUJI_LOOK_UNKNOWN;
+        uint32_t version = 0;
+        const auto status = sony2fuji_validate_look(value.chars, &format, &version);
+        if (status != SONY2FUJI_STATUS_OK) {
+            const char* type = status == SONY2FUJI_STATUS_INVALID_ARGUMENT
+                ? "java/lang/IllegalArgumentException"
+                : status == SONY2FUJI_STATUS_UNSUPPORTED
+                    ? "java/lang/UnsupportedOperationException"
+                    : status == SONY2FUJI_STATUS_OUT_OF_MEMORY
+                        ? "java/lang/OutOfMemoryError"
+                        : "java/io/IOException";
+            throwJava(env, type, sony2fuji_status_message(status));
+            return nullptr;
+        }
+        auto result = env->NewIntArray(2);
+        if (!result) return nullptr;
+        const jint values[] = {static_cast<jint>(format), static_cast<jint>(version)};
+        env->SetIntArrayRegion(result, 0, 2, values);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to validate look");
+    } catch (const std::exception& error) {
+        throwJava(env, "java/io/IOException", error.what());
+    }
+    return nullptr;
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_NativeProcessor_nativeCreate(JNIEnv* env, jobject, jint mode) {
     try {

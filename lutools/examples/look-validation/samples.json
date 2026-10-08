@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "input_space": "scene-linear-srgb-d65",
+  "description": "Synthetic named probes, not measured chart patches or camera calibration data.",
+  "samples": [
+    {"id": "black", "category": "gray", "rgb": [0, 0, 0]},
+    {"id": "shadow", "category": "gray", "rgb": [0.01, 0.01, 0.01]},
+    {"id": "middle-gray", "category": "gray", "rgb": [0.18, 0.18, 0.18]},
+    {"id": "light-gray", "category": "gray", "rgb": [0.75, 0.75, 0.75]},
+    {"id": "white", "category": "gray", "rgb": [1, 1, 1]},
+    {"id": "warm-skin-like", "category": "skin-like", "rgb": [0.55, 0.29, 0.18]},
+    {"id": "dark-skin-like", "category": "skin-like", "rgb": [0.16, 0.075, 0.045]},
+    {"id": "blue-sky", "category": "sky", "rgb": [0.08, 0.28, 0.65]},
+    {"id": "pale-sky", "category": "sky", "rgb": [0.4, 0.65, 0.9]},
+    {"id": "green-foliage", "category": "foliage", "rgb": [0.08, 0.25, 0.035]},
+    {"id": "red", "category": "saturated", "rgb": [1, 0, 0]},
+    {"id": "green", "category": "saturated", "rgb": [0, 1, 0]},
+    {"id": "blue", "category": "saturated", "rgb": [0, 0, 1]},
+    {"id": "cyan", "category": "saturated", "rgb": [0, 1, 1]},
+    {"id": "magenta", "category": "saturated", "rgb": [1, 0, 1]},
+    {"id": "yellow", "category": "saturated", "rgb": [1, 1, 0]},
+    {"id": "negative-neutral", "category": "negative", "rgb": [-0.02, -0.02, -0.02]},
+    {"id": "negative-red", "category": "negative", "rgb": [-0.1, 0.2, 0.4]},
+    {"id": "superwhite", "category": "highlight", "rgb": [2, 2, 2]},
+    {"id": "warm-highlight", "category": "highlight", "rgb": [4, 1.5, 0.7]}
+  ]
+}

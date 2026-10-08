@@ -1,4 +1,33 @@
-# Windows verification — 2026-09-28
+# Windows verification
+
+## v0.2 — 2026-09-29
+
+Built from `codex/all-platform-strength-exif` using .NET 8 and MSVC on Windows
+x64 with the NVIDIA Direct3D 11 backend. The external Sony ILCE-7M2 ARW was
+copied into ignored `build/` for testing; no original photo was modified.
+
+- Core CTest: **7/7 passed**.
+- Full Windows integration run: **95 checks passed**, including 200% film CPU /
+  Direct3D 11 parity and 6024 × 4024 JPEG / 16-bit PNG exports retaining real RAW
+  camera, capture date and exposure metadata.
+- Follow-up UI/metadata run: **68 checks passed**, including the added real WPF
+  slider checks: default 100% at midpoint, 200% at the upper endpoint, stale
+  exports blocked until the new render completes. The generated 200% editor
+  screenshot was visually inspected.
+- Synthetic metadata fixtures verify camera/lens/date, shutter, aperture, ISO
+  and GPS preservation, normalized orientation/dimensions/sRGB, omitted old
+  thumbnails, Unicode paths, missing shooting metadata and source protection.
+- JPEG scan data and PNG IDAT data are byte-identical before/after metadata
+  attachment. PNG retains 16-bit channels and contains a standard `eXIf` chunk.
+- ExifTool 13.59 is packaged locally with its complete runtime, sources and
+  licenses; its Windows archive is pinned by SHA-256. No separate installation
+  is required.
+
+Other platforms were not built or retested on this Windows host for v0.2.
+Their source changes are already on the release branch; installation packages
+will be added separately. Previous results below describe the earlier build.
+
+## Previous verification — 2026-09-28
 
 ## Environment and fixtures
 

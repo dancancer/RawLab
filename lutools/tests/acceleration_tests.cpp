@@ -52,7 +52,12 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path) {
 
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
-    Session cpu(SONY2FUJI_GPU_OFF), gpu(SONY2FUJI_GPU_FORCE);
+#ifdef SONY2FUJI_ENABLE_METAL
+    const bool nativeCpuOnly = false;
+#else
+    const bool nativeCpuOnly = std::filesystem::u8path(argv[2]).extension() == ".rlook";
+#endif
+    Session cpu(SONY2FUJI_GPU_OFF), gpu(nativeCpuOnly ? SONY2FUJI_GPU_AUTO : SONY2FUJI_GPU_FORCE);
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
     request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = argv[1];
@@ -61,15 +66,28 @@ int main(int argc, char** argv) {
     request.intent = SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge = 600;
     request.size_mode = SONY2FUJI_SIZE_NATIVE;
     request.output_target = SONY2FUJI_TARGET_BUFFER; request.output_format = SONY2FUJI_OUTPUT_RGBA8;
+    if (nativeCpuOnly) {
+        Session forced(SONY2FUJI_GPU_FORCE);
+        sony2fuji_buffer buffer{};
+        check(sony2fuji_process(forced.value, &request, &buffer) == SONY2FUJI_STATUS_PROCESSING_ERROR,
+              "CPU-only look explicitly rejects forced GPU");
+        sony2fuji_release_buffer(&buffer);
+    }
     for (float temperature : {0.f, 4000.f, 8500.f}) {
         request.wb_mode = temperature ? SONY2FUJI_WB_TEMPERATURE : SONY2FUJI_WB_CAMERA;
         request.temperature = temperature ? temperature : 6500;
-        compare(render(cpu, request), render(gpu, request), 2, "RAW CPU/GPU WB " + std::to_string(temperature));
+        compare(render(cpu, request), render(gpu, request), nativeCpuOnly ? 0 : 2,
+                (nativeCpuOnly ? "RAW CPU/Auto WB " : "RAW CPU/GPU WB ") + std::to_string(temperature));
+        if (nativeCpuOnly) {
+            check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_CPU,
+                  "CPU-only look reports actual CPU backend");
+        } else {
 #ifdef SONY2FUJI_ENABLE_D3D11
         check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "actual Direct3D 11 hardware backend");
 #else
         check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_METAL, "actual Metal backend");
 #endif
+        }
     }
     request.exposure_ev = .4f; request.contrast = 1.2f; request.saturation = .7f;
     request.highlights = .3f; request.shadows = -.2f; request.tone_curve = .2f;

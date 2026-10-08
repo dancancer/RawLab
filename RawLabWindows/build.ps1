@@ -40,6 +40,7 @@ $iconPath=Join-Path $native 'RawLab.ico'
 & "$PSScriptRoot/build-icon.ps1" -Source "$repo/RawLabMac/Resources/AppIcon.png" -Output $iconPath
 $publish = @('publish',"$PSScriptRoot/RawLabWindows.csproj",'-c','Release','-r','win-x64','-o',$output,'--self-contained',([bool]$SelfContained).ToString().ToLowerInvariant(),"-p:ApplicationIcon=$iconPath")
 Invoke-Checked $DotNet $publish
+& "$PSScriptRoot/build-exiftool.ps1" -Output $output
 Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll" $output -Force
 # Package the compiler runtime app-locally; users do not need Visual Studio.
 $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
@@ -48,21 +49,25 @@ $redist = Get-ChildItem "$vs/VC/Redist/MSVC" -Directory | Where-Object Name -Mat
 $crt = Get-ChildItem "$($redist.FullName)/x64" -Directory -Filter '*.CRT' | Select-Object -First 1
 if (!$crt) { throw 'Cannot locate the Visual C++ redistributable runtime.' }
 Copy-Item "$($crt.FullName)/*.dll" $output -Force
+$openmp = Get-ChildItem "$($redist.FullName)/x64" -Directory -Filter '*.OpenMP' | Select-Object -First 1
+if (!$openmp) { throw 'Cannot locate the Visual C++ OpenMP runtime.' }
+Copy-Item "$($openmp.FullName)/*.dll" $output -Force
 $licenses = Join-Path $output 'Licenses'
 New-Item -ItemType Directory -Force $licenses | Out-Null
 Copy-Item "$native/licenses/*", "$repo/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt", "$repo/RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" $licenses -Force
 Copy-Item "$PSScriptRoot/Licenses/*" $licenses -Force
-Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md" $output -Force
+Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md", "$PSScriptRoot/performance.md" $output -Force
 Copy-Item "$repo/LICENSE" $output -Force
 Copy-Item "$repo/lutools/flog-2-new/F-Log2_LUT_overview_Ver.2.0E.pdf" "$output/LUTs" -Force
 if ($Test) {
-    Copy-Item "$native/Release/raw.dll" "$native/core/Release" -Force
+    Copy-Item "$native/Release/raw.dll", "$($openmp.FullName)/*.dll" "$native/core/Release" -Force
     $env:PATH = "$output;$env:PATH"
     $ctest = Join-Path (Split-Path $CMake) 'ctest.exe'
     Invoke-Checked $ctest @('--test-dir',$native,'-C','Release','--output-on-failure','--no-tests=error')
     Invoke-Checked $DotNet @('build',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release')
     $testOut = "$PSScriptRoot/tests/bin/Release/net8.0-windows"
-    Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll" $testOut -Force
+    Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll", "$($openmp.FullName)/*.dll" $testOut -Force
+    Copy-Item "$output/ExifTool" $testOut -Recurse -Force
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)
 }
 Write-Host "Built: $output/RawLab.exe"

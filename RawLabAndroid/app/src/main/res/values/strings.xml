@@ -2,6 +2,17 @@
     <string name="app_name">RawLab</string>
     <string name="open_album">相册</string>
     <string name="open_file">从文件导入</string>
+    <string name="import_look">导入外观</string>
+    <string name="look_importing">正在导入外观</string>
+    <string name="look_imported">外观已导入</string>
+    <string name="look_import_result">导入结果</string>
+    <string name="look_import_summary">已导入 %1$d 个外观，%2$d 个文件导入失败</string>
+    <string name="look_error">外观操作失败，请选择有效的 .cube 或 .rlook 文件。</string>
+    <string name="look_storage_error">外观库读取失败，请稍后重试或删除损坏的外观记录。</string>
+    <string name="look_unavailable">此外观文件不可用，请删除后重新导入。</string>
+    <string name="rename_look">重命名外观</string>
+    <string name="delete_look">删除外观</string>
+    <string name="look_name">外观名称</string>
     <string name="export">导出</string>
     <string name="compare">对比</string>
     <string name="reset">重置调整</string>
@@ -40,6 +51,10 @@
     <string name="album_empty">没有可访问的 RAW 照片</string>
     <string name="album_error">无法读取相册，请检查照片权限。</string>
     <string name="all_albums">全部相册</string>
+    <string name="album_view_options">视图选项</string>
+    <string name="album_square">方形缩略图</string>
+    <string name="album_original_ratio">原始比例</string>
+    <string name="album_columns">每行 %1$d 张</string>
     <string name="confirm">确定</string>
     <string name="invalid_value">请输入范围内的有效数字</string>
     <string name="reset_value">重置此项</string>
@@ -49,4 +64,5 @@
     <string name="collapse_adjustments">收起调整</string>
     <string name="expand_adjustments">展开调整</string>
     <string name="comparison_wipe">中性与胶片效果分界</string>
+    <string name="zoom_fit">适应画面</string>
 </resources>

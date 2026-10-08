@@ -1,6 +1,7 @@
 #include "gpu/gles_photo.h"
 #include "gpu/gles_photo_shader.h"
 #include "gpu/lut_gpu_internal.h"
+#include "core/photo_lut.h"
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <android/log.h>
@@ -200,6 +201,9 @@ struct GlesPhotoRenderer::Impl {
         glBindTexture(GL_TEXTURE_3D, texture);
         glUniform1i(uniform("useLut"), lut ? 1 : 0);
         if (lut) {
+            glUniform1i(uniform("inputIsFLog"), lut->inputTransfer() == LUTTransfer::FLog);
+            glUniform1i(uniform("outputIsLog"), lut->outputTransfer() != LUTTransfer::Display);
+            glUniform1i(uniform("outputIsFLog"), lut->outputTransfer() == LUTTransfer::FLog);
             glUniform1i(uniform("lutSize"), lut->getSize());
             auto low = lut->domainMin(), high = lut->domainMax();
             glUniform3f(uniform("domainMin"), low.r, low.g, low.b);
@@ -255,7 +259,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         if (!binding.bound) throw std::runtime_error("EGL context lost or owned by another thread");
         glUseProgram(context.program);
         context.matrixUniform("toSrgb", ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB));
-        context.matrixUniform("toFGamut", ColorConverter::getConversionMatrix(ColorSpace::sRGB, ColorSpace::FujiFilm_FGamut));
+        context.matrixUniform("toFGamut", photoLUTInputMatrix(lut ? lut->inputTransfer() : LUTTransfer::FLog2));
         const float exposure = std::exp2(request.exposure_ev) * request.brightness;
         glUniform3f(context.uniform("exposureWB"), exposure * relativeWB.r, exposure * relativeWB.g, exposure * relativeWB.b);
         glUniform1f(context.uniform("strength"), request.lut_strength);

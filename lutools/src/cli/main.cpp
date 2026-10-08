@@ -19,7 +19,7 @@ void printUsage(const char* programName) {
     std::cout << "  <输入RAW文件>        Sony RAW 文件路径 (.ARW)\n";
     std::cout << "  -o, --output <file>  输出文件路径 (.jpg 或 .png)\n\n";
     std::cout << "可选参数:\n";
-    std::cout << "  -l, --lut <file>       富士 LUT 文件路径 (.cube, 可选)\n";
+    std::cout << "  -l, --lut <file>       胶片外观文件路径 (.cube 或 .rlook)\n";
     std::cout << "  --no-lut               不应用 LUT,输出 sRGB 参考图像\n";
     std::cout << "  -q, --quality <1-100>  JPEG 质量 (默认: 95)\n";
     std::cout << "  --auto-wb              使用自动白平衡\n";
@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
     sony2fuji_session_destroy(session);
     if (status != SONY2FUJI_STATUS_OK) {
         std::cerr << "Processing failed: " << sony2fuji_status_message(status)
-                  << ". Use a supported F-Gamut/F-Log2 film LUT, not a Log-output LUT.\n";
+                  << ". Use a declared Fuji F-Log/F-Log2/F-Log2C CUBE with BT.709 output or compiled DCP .rlook.\n";
         return 1;
     }
     std::cout << "Saved: " << options.outputFile << '\n';

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "input": {"space": "srgb", "reference": "display", "range": "full"},
+  "output": {"space": "srgb", "reference": "display", "range": "full"},
+  "interpolation": "linear"
+}

@@ -9,6 +9,14 @@
   Corresponding source: https://github.com/LibRaw/LibRaw/archive/refs/tags/0.21.5.tar.gz
   The exact source archive and SHA-256 are pinned in `native/CMakeLists.txt`.
 - zlib 1.3.1: https://github.com/madler/zlib/tree/v1.3.1, zlib license.
+- ExifTool 13.59: https://exiftool.org/, copyright Phil Harvey, distributed under
+  the same terms as Perl (Artistic License or GNU GPL). The Windows x64 package
+  is from the Windows packager linked by ExifTool:
+  https://oliverbetz.de/pages/Artikel/ExifTool-for-Windows.
+  The complete distribution, sources and Perl runtime notices are retained under
+  `ExifTool/exiftool_files/`, including `LICENSE` and `Licenses_Strawberry_Perl.zip`.
+  The Windows launcher is CC0; see `readme_windows.txt` in that directory.
+  Archive URL and SHA-256 are pinned in `build-exiftool.ps1`.
 - stb image and image write: MIT option; license in `Licenses/stb-MIT-LICENSE.txt`.
 - Adobe DNG SDK temperature conversion: retained notice in
   `Licenses/Adobe-DNG-SDK-LICENSE.txt`.
@@ -25,3 +33,4 @@
 
 No binaries are checked into source control. The build downloads version-pinned
 LibRaw and zlib source archives and verifies their hashes before compilation.
+The ExifTool runtime archive is also version-pinned and hash-verified.

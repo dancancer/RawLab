@@ -1,7 +1,9 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 #include "sony2fuji/sony2fuji.h"
+#include "sony2fuji/dcp_look.h"
 #include "core/photo_rendering.h"
+#include "core/photo_lut.h"
 #include "gpu/image_stats.h"
 #if defined(SONY2FUJI_ENABLE_D3D11)
 #include "gpu/d3d11_photo.h"
@@ -14,6 +16,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -23,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <fstream>
 #include <sys/stat.h>
 
 struct sony2fuji_session {
@@ -691,8 +695,10 @@ sony2fuji_status loadRawImage(
     if (fileError) return SONY2FUJI_STATUS_IO_ERROR;
     const auto fileSize = std::filesystem::file_size(inputPath, fileError);
     if (fileError) return SONY2FUJI_STATUS_IO_ERROR;
+    const auto modifiedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        modified.time_since_epoch()).count();
     const std::string fileKey = std::string(request.input_path) + ":" +
-        std::to_string(modified.time_since_epoch().count()) + ":" + std::to_string(fileSize);
+        std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
     const bool interactive = session->interactive_preview && request.intent == SONY2FUJI_INTENT_PREVIEW &&
         request.output_target == SONY2FUJI_TARGET_BUFFER &&
         !(session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW && request.wb_mode == SONY2FUJI_WB_CAMERA);
@@ -873,6 +879,45 @@ sony2fuji_status writeOutputBuffer(
 
 } // namespace
 
+sony2fuji_status sony2fuji_validate_look(
+    const char* path, sony2fuji_look_format* format, uint32_t* format_version
+) {
+    if (format) *format = SONY2FUJI_LOOK_UNKNOWN;
+    if (format_version) *format_version = 0;
+    if (isEmptyString(path)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    try {
+        const auto file = std::filesystem::u8path(path);
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(file, error) || error)
+            return SONY2FUJI_STATUS_IO_ERROR;
+        std::ifstream readable(file, std::ios::binary);
+        if (!readable) return SONY2FUJI_STATUS_IO_ERROR;
+        readable.close();
+        const auto kind = sony2fuji::LUTParser::detectFormat(path);
+        if (kind == "rlook") {
+            const auto look = sony2fuji::DcpLook::loadCached(path);
+            if (!look) return SONY2FUJI_STATUS_UNSUPPORTED;
+            if (format_version) *format_version = look->formatVersion();
+            if (format) *format = SONY2FUJI_LOOK_RLOOK;
+        } else if (kind == "cube") {
+            std::shared_ptr<sony2fuji::LUT3D> lut;
+            const auto status = loadLUT(path, &lut);
+            if (status != SONY2FUJI_STATUS_OK) return status;
+            if (!lut->isPhotoLUT()) return SONY2FUJI_STATUS_UNSUPPORTED;
+            if (format) *format = SONY2FUJI_LOOK_CUBE;
+        } else {
+            return SONY2FUJI_STATUS_UNSUPPORTED;
+        }
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::filesystem::filesystem_error&) {
+        return SONY2FUJI_STATUS_IO_ERROR;
+    } catch (const std::exception&) {
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
+}
+
 // ============================================================================
 // C API
 // ============================================================================
@@ -978,8 +1023,26 @@ static sony2fuji_status processImpl(
     sony2fuji_request local = *request;
     local.lut_strength = clampFloat(local.lut_strength, 0.0f, 2.0f);
     session->last_backend = SONY2FUJI_BACKEND_CPU;
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+    const bool use_lut = !isEmptyString(local.lut_path) && local.lut_strength > 0;
+    std::shared_ptr<sony2fuji::LUT3D> lut;
+    std::shared_ptr<const sony2fuji::DcpLook> dcp;
+    if (use_lut) {
+        if (sony2fuji::LUTParser::detectFormat(local.lut_path) == "rlook") {
+            dcp = sony2fuji::DcpLook::loadCached(local.lut_path);
+            if (!dcp) return SONY2FUJI_STATUS_UNSUPPORTED;
+#if !defined(SONY2FUJI_ENABLE_METAL)
+            if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
+#endif
+        } else {
+            status = loadLUT(local.lut_path, &lut);
+            if (status != SONY2FUJI_STATUS_OK) return status;
+            if (!lut->isPhotoLUT()) return SONY2FUJI_STATUS_UNSUPPORTED;
+        }
+    }
+#if defined(SONY2FUJI_ENABLE_METAL)
     const bool gpuPipeline = session->gpu_config.mode != sony2fuji::GpuMode::Off;
+#elif defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+    const bool gpuPipeline = !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #else
     const bool gpuPipeline = false;
 #endif
@@ -1012,13 +1075,6 @@ static sony2fuji_status processImpl(
         wb.r *= local.wb_mul[0]/local.wb_mul[1];
         wb.b *= local.wb_mul[2]/local.wb_mul[1];
     }
-    const bool use_lut = !isEmptyString(local.lut_path) && local.lut_strength > 0;
-    std::shared_ptr<sony2fuji::LUT3D> lut;
-    if (use_lut) {
-        status = loadLUT(local.lut_path, &lut);
-        if (status != SONY2FUJI_STATUS_OK) return status;
-        if (!lut->isPhotoLUT()) return SONY2FUJI_STATUS_UNSUPPORTED;
-    }
 #if defined(SONY2FUJI_ENABLE_METAL)
     if (gpuPipeline) {
         uint32_t width, height;
@@ -1026,7 +1082,7 @@ static sony2fuji_status processImpl(
         if (status != SONY2FUJI_STATUS_OK) return status;
         const auto& source = local.input_type == SONY2FUJI_INPUT_RAW ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
-        if (sony2fuji::renderPhotoMetal(source, toCoreColorSpace(color_space), local, lut, wb, width, height, rendered)) {
+        if (sony2fuji::renderPhotoMetal(source, toCoreColorSpace(color_space), local, lut, wb, width, height, rendered, dcp)) {
             session->last_backend = SONY2FUJI_BACKEND_METAL;
             if (local.output_target == SONY2FUJI_TARGET_FILE) return writeOutputFile(local, rendered);
             return writeOutputBuffer(local, rendered, out_buffer);
@@ -1093,12 +1149,25 @@ static sony2fuji_status processImpl(
         p.b = sony2fuji::neutralDisplay(p.b);
     }
     if (use_lut) {
-        converter.convertImage(image, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);
-        applyFLog2Encoding(image, false);
-        auto config = session->gpu_config;
-        if (gpuPipeline) config.mode = sony2fuji::GpuMode::Off;
-        auto result = sony2fuji::applyLUTWithConfig(lut, image, config);
-        if (result != sony2fuji::ErrorCode::Success) return mapError(result);
+        if (dcp) {
+            const size_t count = image.pixels.size();
+#ifdef _OPENMP
+#pragma omp parallel for if (count >= (1u << 16))
+#endif
+            for (size_t i = 0; i < count; ++i) image.pixels[i] = dcp->apply(image.pixels[i]);
+        } else {
+            if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2) {
+                sony2fuji::encodePhotoLUTInput(image, lut->inputTransfer());
+            } else {
+                converter.convertImage(image, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);
+                applyFLog2Encoding(image, false);
+            }
+            auto config = session->gpu_config;
+            if (gpuPipeline) config.mode = sony2fuji::GpuMode::Off;
+            auto result = sony2fuji::applyLUTWithConfig(lut, image, config);
+            if (result != sony2fuji::ErrorCode::Success) return mapError(result);
+            sony2fuji::renderPhotoLUTOutput(image, lut->outputTransfer());
+        }
         for (size_t i=0; i<image.pixels.size(); ++i)
             image.pixels[i] = lerpRGB(base.pixels[i], image.pixels[i], local.lut_strength);
     } else {
@@ -1215,7 +1284,7 @@ sony2fuji_status sony2fuji_analyze_image(
 #endif
         if (!complete) {
             if (mode == SONY2FUJI_GPU_FORCE) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-            if (!sony2fuji::computeImageStatsCPU(*image, stats)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            if (!sony2fuji::computeImageStatsCPU(*image, stats, clipping_mask != nullptr)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
         if (clipping_mask) {
             void* data = std::malloc(stats.clipping.size());

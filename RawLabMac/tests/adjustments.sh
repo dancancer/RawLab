@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-adjustments.XXXXXX)"
-SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift")
+SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swift")
 if [ -f "$ROOT/RawLabMac/Sources/Adjustments.swift" ]; then
     SOURCES+=("$ROOT/RawLabMac/Sources/Adjustments.swift")
 fi

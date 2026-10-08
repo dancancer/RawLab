@@ -15,12 +15,15 @@ public partial class MainWindow : Window
 {
     private record Film(string Name,string? Path,string? Artwork);
     private record Edit(Adjustments Settings,string? Lut);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine);
     private readonly Library library=new();
     private readonly Viewport viewport=new();
     private readonly List<Film> films=[];
     private readonly Dictionary<string,Edit> edits=new(StringComparer.OrdinalIgnoreCase);
     private readonly LatestWork<Work> scheduler=new();
+    private record EmbeddedWork(string Path,long Revision);
+    private readonly LatestWork<EmbeddedWork> embeddedScheduler=new();
+    private long openRevision;
     private readonly Dictionary<Parameter,(Button Button,AdjustmentRing Ring)> toolButtons=[];
     private readonly Dictionary<string,Button> filmButtons=new(StringComparer.OrdinalIgnoreCase);
     private Adjustments settings=new();
@@ -100,9 +103,9 @@ public partial class MainWindow : Window
         }
         var importContent=new StackPanel();
         importContent.Children.Add(new EditorIcon{Kind="Add",Width=26,Height=64});
-        importContent.Children.Add(new TextBlock{Text="导入 CUBE",FontSize=11,Height=30,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
-        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip="导入兼容 F-Gamut / F-Log2 的 CUBE"};
-        AutomationProperties.SetName(importButton,"导入 CUBE");importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
+        importContent.Children.Add(new TextBlock{Text="导入外观",FontSize=11,Height=30,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
+        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip="导入兼容 CUBE 或 RLOOK，可选择多个文件"};
+        AutomationProperties.SetName(importButton,"导入外观");importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
     }
     private void RefreshControls()
     {
@@ -137,7 +140,7 @@ public partial class MainWindow : Window
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
             var filmName=films.FirstOrDefault(f=>f.Path==lut)?.Name ?? "中性";
             ActiveFilm.Text=FilmLabelText.Text=filmName;ActiveFilm.ToolTip=filmName;
-            NeutralLabel.Visibility=FilmLabel.Visibility=compare && file!=null ? Visibility.Visible : Visibility.Collapsed;
+            NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             CompareButton.Tag=compare ? "selected" : null;
             ClippingButton.Tag=clipping ? "selected" : null;
             LibraryToggleButton.Tag=LibraryPanel.Visibility==Visibility.Visible ? "selected" : null;
@@ -161,7 +164,7 @@ public partial class MainWindow : Window
     private void RetryClicked(object sender,RoutedEventArgs e)=>Schedule();
     private void Report(Exception error)=>SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
         ? "无法加载显影组件。请通过 build.ps1 构建，并保留程序目录内的 DLL。" : error.Message,true);
-    internal void OpenFile(string path)
+    internal void OpenFile(string path,BitmapSource? placeholder=null)
     {
         if(exporting || closing)return;
         try
@@ -171,17 +174,40 @@ public partial class MainWindow : Window
             if(file!=null)edits[file]=new(settings.Clone(),lut);
             var edit=edits.GetValueOrDefault(path); settings=edit?.Settings.Clone() ?? new(); lut=edit!=null ? edit.Lut : films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
             file=path; interacting=false; exactReady=false; result=null;syncing=true;viewport.Fit();syncing=false;
-            NeutralCanvas.SetImage(null,null); ResultCanvas.SetImage(null,null);ResultCanvas.SetComparison(null,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
+            viewport.SetSourceSize(0,0);
+            NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(placeholder,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
+            BackendLabel.Text="相机预览 · 正在显影";BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
-            RefreshControls(); Schedule();QueueThumbnailRefresh();
+            embeddedScheduler.Submit(new(path,++openRevision));PumpEmbedded();
+            RefreshControls(); Schedule(initialPreview:true);QueueThumbnailRefresh();
         }
         catch(Exception ex) { Report(ex); }
     }
-    private void Schedule()
+    private async void PumpEmbedded()
+    {
+        var ticket=embeddedScheduler.Start();if(ticket==null)return;
+        EmbeddedPreview? preview=null;
+        try{preview=await Task.Run(()=>RenderEngine.ReadEmbeddedPreview(ticket.Value.Path));}
+        catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
+        var current=embeddedScheduler.Finish(ticket);
+        if(closing)return;
+        if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null)
+        {
+            if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
+            if(result==null && !renderFailed && preview.Image!=null)
+            {
+                NeutralCanvas.SetImage(preview.Image,null);ResultCanvas.SetImage(preview.Image,null);ResultCanvas.SetComparison(preview.Image,null);
+                SetStatus("相机内嵌预览 · 正在显影…");
+            }
+        }
+        PumpEmbedded();
+    }
+    private void Schedule(bool initialPreview=false)
     {
         if(!ready || file==null || exporting || closing)return;
         renderFailed=false;
-        scheduler.Submit(new(file,settings.Clone(),lut,interacting ? 1000 : viewport.ActualPixels ? 0 : 2000,interacting,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2));
+        var proxy=interacting || initialPreview;
+        scheduler.Submit(new(file,settings.Clone(),lut,proxy ? 1000 : viewport.ActualPixels ? 0 : 2000,proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,compare,clipping,initialPreview));
         exactReady=false; SetStatus(interacting ? "正在生成交互预览…" : "正在显影…"); UpdateBusy();
         Pump();
     }
@@ -193,9 +219,8 @@ public partial class MainWindow : Window
         {
             (neutral,rendered)=await Task.Run(()=> {
                 engine ??= new(); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);
-                var n=engine.Render(w.File,w.Settings,null,w.Edge,w.Interactive)!;
-                var r=w.Lut==null ? n : engine.Render(w.File,w.Settings,w.Lut,w.Edge,w.Interactive)!;
-                return(n,r);
+                var frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,w.Clipping);
+                return(frame.Neutral,frame.Result);
             });
         }
         catch(Exception ex) { failure=ex; }
@@ -203,12 +228,13 @@ public partial class MainWindow : Window
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         // A current-file proxy may publish while dragging; stale exact work never publishes.
-        if(work.File==file && (current || (work.Interactive && interacting)))
+        if(work.File==file && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting)))
         {
             if(failure!=null) { if(current){result=null;exactReady=false;renderFailed=true;Report(failure);} }
             else if(rendered!=null && neutral!=null)
             {
                 result=rendered; settings.ResolveWhiteBalance(rendered.WhiteBalance);
+                if(work.Edge==0)viewport.SetSourceSize(rendered.Image.PixelWidth,rendered.Image.PixelHeight);
                 BackendLabel.Text=$"{(rendered.Backend==3 ? "Direct3D 11 · GPU" : work.GpuMode==0 ? "CPU" : "CPU · GPU 已回退")} · sRGB";
                 NeutralCanvas.SetImage(neutral.Image,neutral.Clipping); ResultCanvas.SetImage(rendered.Image,rendered.Clipping);
                 ResultCanvas.SetComparison(neutral.Image,neutral.Clipping);
@@ -221,12 +247,16 @@ public partial class MainWindow : Window
                 RefreshControls();
             }
         }
+        // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
+        if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
         UpdateBusy(); Pump();
     }
     private void SliderChanged(object sender,RoutedPropertyChangedEventArgs<double> e)
     {
         if(!ready || syncing || exporting)return;
-        settings.Set(selectedParameter,ParameterSpec.All[(int)selectedParameter].Value(e.NewValue));
+        var value=ParameterSpec.All[(int)selectedParameter].Value(e.NewValue);
+        if(settings[selectedParameter]==value)return;
+        settings.Set(selectedParameter,value);
         RefreshControls(); Schedule();
     }
     private void CommitValue()
@@ -253,10 +283,14 @@ public partial class MainWindow : Window
     }
     private void ImportClicked(object sender,RoutedEventArgs e)
     {
-        var dialog=new OpenFileDialog{Title="导入 F-Gamut / F-Log2 胶片 LUT",Filter="CUBE LUT|*.cube"};
+        var dialog=new OpenFileDialog{Title="导入胶片外观",Multiselect=true,Filter="胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"};
         if(dialog.ShowDialog(this)!=true)return;
-        if(!films.Any(f=>f.Path==dialog.FileName))films.Add(new(Path.GetFileNameWithoutExtension(dialog.FileName),dialog.FileName,null));
-        lut=dialog.FileName;BuildFilms();RefreshControls();Schedule();
+        foreach(var path in dialog.FileNames)
+        {
+            if(!films.Any(f=>f.Path==path))films.Add(new(Path.GetFileNameWithoutExtension(path),path,null));
+            lut=path;
+        }
+        BuildFilms();RefreshControls();Schedule();
     }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
     {
@@ -290,9 +324,9 @@ public partial class MainWindow : Window
     {
         if(sender is not Button {DataContext:LibraryEntry entry} || exporting)return;
         if(selectedThumbnail!=null)selectedThumbnail.IsSelected=false;
-        selectedThumbnail=entry;entry.IsSelected=true;OpenFile(entry.Path);QueueThumbnailRefresh();
+        selectedThumbnail=entry;entry.IsSelected=true;OpenFile(entry.Path,entry.Thumbnail);QueueThumbnailRefresh();
     }
-    private void FileSelected(object sender,RoutedPropertyChangedEventArgs<object> e) { if(e.NewValue is LibraryEntry{IsFolder:false} entry && entry.Path!="")OpenFile(entry.Path); }
+    private void FileSelected(object sender,RoutedPropertyChangedEventArgs<object> e) { if(e.NewValue is LibraryEntry{IsFolder:false} entry && entry.Path!="")OpenFile(entry.Path,entry.Thumbnail); }
     private void RemoveFolderClicked(object sender,RoutedEventArgs e) { if(Files.SelectedItem is LibraryEntry entry && library.Roots.Contains(entry))try{library.Remove(entry);}catch(Exception ex){Report(ex);} }
     private void RefreshFolderClicked(object sender,RoutedEventArgs e)
     {
@@ -322,6 +356,7 @@ public partial class MainWindow : Window
     private void CompareSwipeClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,true);
     internal void SetComparisonMode(bool enabled,bool sliding)
     {
+        var changed=compare!=enabled;
         compare=enabled;swipe=enabled && sliding;
         NeutralCanvas.Visibility=compare && !swipe ? Visibility.Visible : Visibility.Collapsed;
         NeutralColumn.Width=compare && !swipe ? new(1,GridUnitType.Star) : new(0);
@@ -331,6 +366,7 @@ public partial class MainWindow : Window
         FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
         CompareOff.IsChecked=!enabled;CompareSide.IsChecked=enabled && !sliding;CompareSwipe.IsChecked=swipe;
         RefreshControls();
+        if(changed)Schedule();
     }
     private void DockToggle(object sender,RoutedEventArgs e)
     {
@@ -347,7 +383,7 @@ public partial class MainWindow : Window
             DockRow.MinHeight=Math.Max(216,DockHeader.ActualHeight+ToolsScroller.ActualHeight+130);
     }
     private void HistogramClicked(object sender,RoutedEventArgs e)=>HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
-    private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls(); }
+    private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.IsOpen=true;} }
     private void FitClicked(object sender,RoutedEventArgs e)=>viewport.Fit();
     private void ActualClicked(object sender,RoutedEventArgs e)=>viewport.Actual();
@@ -379,6 +415,7 @@ public partial class MainWindow : Window
     }
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
+        closing=true;
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus("正在完成当前任务后关闭…");return;}
         engine?.Dispose();engine=null;

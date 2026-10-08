@@ -1,8 +1,8 @@
 # RawLab Mac
 
-原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。当前构建产物针对本机 Apple Silicon 和 macOS 26+，没有宣称在其他 macOS 版本验证通过。
+原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。支持独立构建最低 macOS 15 的 Apple Silicon 和 Intel 版本；macOS 15 真机运行仍需验证。默认本机构建继续使用现有 Homebrew 依赖和 macOS 26 目标。
 
-A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ pipeline with the CLI and iOS client. The current build targets Apple Silicon and macOS 26+; other macOS versions have not been validated.
+A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ pipeline with the CLI and iOS client. Separate Apple Silicon and Intel builds can target macOS 15; runtime verification on macOS 15 hardware is still pending. The default local build retains the existing Homebrew dependencies and macOS 26 target.
 
 ## 功能预览 / Preview
 
@@ -14,9 +14,9 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 
 ## 构建和启动 / Build and Launch
 
-预编译版本：[GitHub Release v0.1](https://github.com/dancancer/RawLab/releases/tag/v0.1)。下载 `RawLab-Mac-0.1-macOS-arm64.zip` 后解压，可将 `RawLab Mac.app` 放入 Applications。此产物仅支持 Apple Silicon 和 macOS 26+；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。
+预编译版本：[GitHub Release v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
 
-Prebuilt app: [GitHub Release v0.1](https://github.com/dancancer/RawLab/releases/tag/v0.1). Extract `RawLab-Mac-0.1-macOS-arm64.zip` and move `RawLab Mac.app` to Applications. It requires Apple Silicon and macOS 26+. It is ad-hoc signed, without Developer ID signing or Apple notarization, so macOS may block opening it by default.
+Prebuilt apps: [GitHub Release v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
 
 在仓库根目录执行：
 
@@ -43,17 +43,52 @@ Each build refreshes the embedded libraries, rewrites transitive dependencies to
 
 The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the RAW-to-render color transformation, without camera, aperture or brand lettering. The source is `Resources/AppIcon.png`; `build-icon.sh` generates a native 16-1024px `.icns`, registered through `CFBundleIconFile`. Generation provenance is in `Resources/AppIcon.md`.
 
+## macOS 15 双架构构建 / macOS 15 Builds
+
+从固定版本的上游源码重建所有第三方动态库，分别输出两个应用，避免覆盖默认产物。需要 CMake、pkg-config、make 和 Apple Command Line Tools；依赖下载使用 curl。Intel 的 libjpeg SIMD 优化需要可选的 NASM，缺失时仍可正常解码。OpenMP、JPEG、JPEG2000、DNG deflate 和 LCMS 支持均保留。
+
+Rebuild all third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, JPEG2000, DNG deflate, and LCMS support are retained.
+
+```bash
+for arch in arm64 x86_64; do
+    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 bash RawLabMac/build-dependencies.sh
+    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 \
+      PKG_CONFIG_PATH="$PWD/build/macos15-deps/$arch/install/lib/pkgconfig" \
+      RAWLAB_BUILD_DIR="$PWD/lutools/build-macos15-$arch" \
+      RAWLAB_APP_PATH="$PWD/build/macos15-$arch/RawLab Mac.app" \
+      bash RawLabMac/build.sh
+done
+```
+
+打包校验会检查主程序及所有内嵌动态库的架构、最低系统版本、签名和依赖完整性。新包仍为 ad-hoc 签名，不是已公证发行版。
+
+Packaging checks verify the architecture, minimum OS, signature, and dependency closure of the executable and every embedded library. These builds remain ad-hoc signed, not notarized releases.
+
 ## 使用 / Usage
 
-- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入声明了兼容输入/输出的 CUBE。
+- 胶片强度支持 0–200%，默认及重置均为 100%。
 
-  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; you can also import CUBE files declaring compatible input/output contracts.
+  Film strength supports 0-200%, with 100% as the default and reset value.
+- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入兼容 CUBE 或准备好的 RLOOK v1/v2。
+
+  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; import compatible CUBE or prepared RLOOK v1/v2 files.
+- 支持声明 BT.709 输出色域的 F-Log、F-Log2、F-Log2C 富士 CUBE。F-Log2C 使用独立色域转换；技术 Log 输出会解码后正常显示。这些类型均支持 Metal，Auto 只在后端失败时回退。原厂文件无需重新制备。
+
+  Declared Fuji F-Log/F-Log2/F-Log2C CUBEs with BT.709 output can be imported directly. F-Log2C uses its own gamut conversion; technical Log outputs are decoded and display-rendered. All these contracts support Metal, with Auto fallback on backend failure.
+- 外观选择器支持一次多选 CUBE/RLOOK，按顺序导入。单个失败不影响其余文件；批次结束后选中最后成功项，并汇总失败文件。全部失败或取消选择时保留原选择。
+
+  The look picker accepts multiple CUBE/RLOOK files. Imports run sequentially, retain partial success, select the last successful look and report failed filenames. All-failed or cancelled batches preserve the existing selection.
+- v0.4.0 将导入外观复制到 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。删除外部原文件不影响外观，重启后会恢复。外观右键菜单支持重命名和删除；删除仅影响托管副本，内置外观不受影响。导入先走共享 native 校验，失败保留原选择，不接受源 DCP/XMP。制备步骤见 [LUT Preparation](../lutools/docs/lut-preparation.md)。
+
+  v0.4.0 manages imported looks in Application Support with a persistent registry. Imported copies survive source removal and app restart; context menus rename or remove only managed copies. Native validation rejects incompatible files without changing selection. Compile supported source DCPs on the desktop first; XMP execution is not implemented.
 - 左侧文件树支持添加多个本地目录、按需展开子目录和点击 RAW 缩略图选片，可从工具栏收起。目录列表会保留；从侧栏移除目录不会删除原文件。缩略图只读取内嵌预览，不自动触发完整显影。
 
   Add multiple local directories, expand subdirectories on demand and select RAW thumbnails in the collapsible left file tree. The directory list persists; removing an entry never deletes files. Thumbnails use embedded previews rather than full RAW development.
 - 中性与结果并排对比，共享缩放和平移。适合模式使用 2000 像素预览；100% 模式重新渲染完整分辨率。
 
   Neutral and film panes share zoom and pan. Fit mode uses a 2000px preview; 100% mode renders the original resolution.
+  双击任一照片画布可在适合窗口与 100% 实际像素之间切换，同时复位平移；手动缩放后双击回到适合窗口。
+  Double-click either photo canvas to toggle fit and 100% actual pixels and reset pan; after manual zoom, double-click returns to fit.
 - 曝光在线性域处理。RAW 白平衡默认“拍摄时设置”：通过相机原始白平衡增益和校准矩阵推算 Kelvin/色调，绝非固定 6500 K。色温范围 2000–50000 K，调高偏暖；色调范围 -150–150，负值偏绿、正值偏洋红。选择“拍摄时设置”恢复相机原始增益，分组/全部重置保留每张照片自己的基准。
 
   Exposure runs in linear space. RAW white balance starts at As Shot, with Kelvin/tint estimated from camera gains and calibration rather than fixed at 6500 K. Temperature spans 2000-50000 K and higher values warm the image; tint spans -150 to +150, from green to magenta. As Shot restores the original gains; group and global resets retain each photo's baseline.
@@ -96,6 +131,9 @@ The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the
 - JPEG/16-bit PNG 导出使用原始 RAW 重新全分辨率渲染，不放大 8-bit 预览。导出不会覆盖原始 RAW 路径。
 
   JPEG and 16-bit PNG exports render at full RAW resolution rather than enlarging an 8-bit preview. Export cannot overwrite the input RAW path.
+- 导出保留 ImageIO 能读取的拍摄时间、相机/镜头、曝光、ISO、GPS 等拍摄元数据。方向和尺寸按成片更新，色彩空间标记为 sRGB；不复制旧缩略图、RAW 传感器布局或不透明 MakerNotes。JPEG 无需再次压缩；PNG 通过无损编码写入标准 eXIf，仍为 16-bit。该行为由 Mac/iOS 共用的 `Shared/ExportMetadata.swift` 实现，不改变 CLI/C API 文件编码。
+
+  App exports retain ImageIO-readable capture time, camera/lens, exposure, ISO and GPS metadata. Orientation, dimensions and color space describe the rendered sRGB image; old thumbnails, RAW sensor layout and opaque MakerNotes are excluded. JPEG metadata is attached without recompression; PNG is losslessly encoded with standard eXIf while retaining 16-bit samples. The Mac/iOS shared Swift helper implements this behavior; CLI/C API file encoding is unchanged.
 - 渲染串行执行，最多保留一个在途请求和一个最新待处理请求。拖动滑杆时使用 1000 像素交互预览，松手后自动替换成 2000 像素或原尺寸的精确结果；精确结果完成前禁止导出。数字输入直接触发精确渲染。
 
   Rendering is serial, with at most one in-flight and one latest pending request. Dragging uses a 1000px interactive preview; release replaces it with an exact 2000px or native-resolution result. Export stays disabled until exact work completes. Numeric input requests exact rendering directly.
@@ -123,6 +161,7 @@ bash lutools/test.sh
 SONY2FUJI_TEST_GPU=1 ctest --test-dir lutools/build-verify -R color_contracts --output-on-failure
 bash RawLabMac/tests/smoke.sh
 bash RawLabMac/tests/adjustments.sh
+bash RawLabMac/tests/export-metadata.sh
 bash RawLabMac/tests/presentation.sh
 bash RawLabMac/tests/app-icon.sh
 bash RawLabMac/tests/histogram.sh

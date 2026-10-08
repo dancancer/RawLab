@@ -14,6 +14,9 @@ See [RawLab Mac](../RawLabMac/README.md) for the native desktop editor. The [pho
   LibRaw decoding, floating-point camera matrices, and linear exposure/white balance preserve negative and super-white working values.
 - F-Gamut 转换、F-Log2 编码和 CUBE 三线性插值，支持中性与胶片结果混合。
   F-Gamut conversion, F-Log2 encoding and trilinear CUBE interpolation, with neutral/film blending.
+- 可选[通用 LUT 准备工具](docs/lut-preparation.md)：按明确的输入输出色彩约定适配外部 LUT，适配 DCP 外观，并检查烘焙误差。
+  Optional offline LUT preparation supports explicit color contracts, DCP appearance adaptation and measured baking error without changing native dependencies.
+- DCP 可编译为 `.rlook`，由共享核心在 CPU / Metal 上直接计算，避免整张 RGB CUBE 的烘焙误差；支持 D65 HueSatMap 校准阶段，桌面导入同时支持 `.cube` 和 `.rlook`。
 - 输出 JPEG 与真正的 16-bit PNG；共享 C API 供 Mac、iOS 和 Android 集成。
   JPEG and genuine 16-bit PNG output, with a shared C API for Mac, iOS and Android integration.
 - Apple 平台提供 Metal 照片处理；Android 提供 OpenGL ES LUT 后端。RAW 解包和去马赛克仍由 CPU 执行。
@@ -38,6 +41,7 @@ Mac / iOS / Android / CLI
 | `include/sony2fuji/` | 公共 C/C++ 头文件 / Public C/C++ headers |
 | `platform/` | 移动端集成 / Mobile integration |
 | `tests/` | 数值、RAW 和 GPU 回归 / Numerical, RAW and GPU regressions |
+| `lutprep/` | 可选的桌面 LUT 色彩适配工具 / Optional desktop LUT preparation |
 | `F-Log2/`, `flog-2-new/` | LUT 文件和说明 / LUT assets and documentation |
 | `examples/`, `docs/` | 示例与文档 / Examples and documentation |
 
@@ -105,13 +109,17 @@ RAW 格式支持取决于 LibRaw。现有回归覆盖 Sony ARW 和本地可选 D
 
 RAW format support depends on LibRaw. Current regressions cover Sony ARW and an optional local DJI DNG fixture; this does not establish color calibration for every brand, model or illuminant.
 
-照片 API 只接受声明兼容 F-Gamut / F-Log2 输入和已识别显示输出的 LUT。包括 PROVIA、Velvia、ASTIA、CLASSIC CHROME、CLASSIC Neg.、REALA ACE、PRO Neg.Std、ETERNA、ETERNA-BB、ACROS 和 WDR；桌面胶片选择器排除技术转换 LUT 和 WDR。
+照片 API 接受 F-Gamut / F-Log、F-Gamut / F-Log2，以及 F-Gamut C / F-Log2C 输入，要求声明 BT.709 输出色域。普通外观名称不设白名单，按应用 sRGB 显示约定解释；明确的 F-Log/F-Log2/F-Log2C 输出会先解码，再经过中性显示转换。校验依据声明，不分析表格的实际传递函数。内置胶片列表仍排除技术转换和 WDR，但可以自定义导入。
 
-The photo API accepts LUTs declaring compatible F-Gamut / F-Log2 input and recognized display output: PROVIA, Velvia, ASTIA, CLASSIC CHROME, CLASSIC Neg., REALA ACE, PRO Neg.Std, ETERNA, ETERNA-BB, ACROS and WDR. The desktop film picker excludes technical conversion LUTs and WDR.
+The photo API accepts F-Gamut / F-Log, F-Gamut / F-Log2 and F-Gamut C / F-Log2C inputs with declared BT.709 output gamut. Nonempty named looks use the application's display-sRGB convention without a film-name allowlist. Explicit F-Log/F-Log2/F-Log2C outputs are decoded and neutrally display-rendered. Validation checks declarations, not table behavior. Technical transforms and WDR remain absent from built-in film lists but can be imported as custom looks.
 
-`FLog2 -> FLog2 BT.709` 是技术色域转换，不是照片胶片外观。F-Gamut C、Log 输出或未声明输入约定的 LUT 不能直接当成兼容照片 LUT。
+F-Log/F-Log2/F-Log2C 输入和 Log 输出均已接入 GPU。Auto 在后端失败时回退 CPU，Force 要求实际 GPU 执行。Metal 与 Android GLES 已运行验证，D3D11 对应改动尚待 Windows 验证。未知输入输出不能猜测，缺少兼容声明的 LUT 仍会拒绝。
 
-`FLog2 -> FLog2 BT.709` is a technical gamut conversion, not a display film look. F-Gamut C, Log-output LUTs and LUTs without a declared input contract are not interchangeable with compatible photo LUTs.
+F-Log/F-Log2/F-Log2C inputs and Log outputs have GPU implementations. Auto falls back on backend failure; Force requires actual GPU execution. Metal and Android GLES were exercised; the matching D3D11 changes await Windows verification. Missing or incompatible input declarations remain unsupported.
+
+其他约定的 LUT 先通过[准备工具](docs/lut-preparation.md)转换为兼容 CUBE。macOS/Android/Windows 可导入兼容文件；iOS 仍使用内置资源，本轮没有新增文件导入界面。
+
+Prepare other explicitly described LUTs with the offline adapter before import. macOS/Android/Windows accept compatible custom files; iOS still uses bundled resources and has no new custom-file picker in this change.
 
 ## 渲染流程 / Rendering Pipeline
 

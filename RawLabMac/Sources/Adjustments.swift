@@ -164,7 +164,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     }
     var spec: AdjustmentSpec {
         switch self {
-        case .strength: return AdjustmentSpec(title: "强度", keyPath: \.strength, range: 0...1, defaultValue: 1, step: 0.01, unit: "%", multiplier: 100)
+        case .strength: return AdjustmentSpec(title: "强度", keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.01, unit: "%", multiplier: 100)
         case .exposure: return AdjustmentSpec(title: "曝光", keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.05, unit: "EV", decimals: 2)
         case .temperature: return AdjustmentSpec(title: "色温", keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
         case .tint: return AdjustmentSpec(title: "色调", keyPath: \.tint, range: -150...150, defaultValue: 0, step: 1, unit: "")
@@ -183,6 +183,9 @@ struct PhotoViewport: Equatable {
     private(set) var pixelMode = false
     mutating func fit() { self = PhotoViewport() }
     mutating func actualPixels() { magnification = 1; pixelMode = true }
+    mutating func toggleActualPixels() {
+        if pixelMode || magnification != 1 { fit() } else { actualPixels() }
+    }
     mutating func zoom(by multiplier: CGFloat) {
         magnification = min(16, max(0.1, magnification * multiplier))
     }
