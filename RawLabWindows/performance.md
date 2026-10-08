@@ -1,7 +1,7 @@
 # Windows RAW performance — 2026-10-08
 
 Based on `origin/codex/cross-platform-photo-zoom` at `2f49d7b` (Windows 0.2.0).
-Implementation is on `codex/windows-raw-decode-performance`. Earlier uncommitted
+Implementation is on `codex/cross-platform-photo-zoom`. Earlier uncommitted
 work in the original checkout was preserved; selected parallelism and preview
 changes were adapted to this newer branch, retaining zoom and EXIF export.
 

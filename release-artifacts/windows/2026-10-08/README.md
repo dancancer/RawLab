@@ -1,6 +1,6 @@
 # Windows 发布交接 · 2026-10-08
 
-已验证的 Windows 10/11 x64 独立运行包，供 Mac 端统一发布。源码提交为 `a24d84036bc17e9b4a7c3ea3e795037d8ebe6e01`，分支为 `codex/windows-raw-decode-performance`。此目录只提供发布附件，没有创建 GitHub Release 或 tag。
+已验证的 Windows 10/11 x64 独立运行包，供 Mac 端统一发布。源码提交为 `a24d84036bc17e9b4a7c3ea3e795037d8ebe6e01`，代码与产物均已并入 `codex/cross-platform-photo-zoom` 分支。此目录只提供发布附件，没有创建 GitHub Release 或 tag。
 
 包名为 `RawLab-Windows-interaction-20261008-win-x64.zip`，包含 .NET 8 Desktop Runtime、Visual C++ / OpenMP 运行库、LibRaw、LUT、ExifTool 及许可证。程序未签名，程序集版本仍为 `0.2.0`；日期标识用于本次交接，不代表已经发布新的正式版本。
 
@@ -26,6 +26,6 @@ unzip -t RawLab-Windows-interaction-20261008-win-x64.zip
 - 已通过 119 项 Windows 检查，38 组 Sony/DJI 输出像素哈希保持一致；共享核心此前 11 项 CTest 通过。实际窗口已检查双击放大和两侧同步拖动。
 - 使用上一轮已验证的程序二进制，更新随包 README 和构建来源；没有改变运行代码。打包后校验分片重组 SHA-256，并逐个校验 ZIP 内文件与待打包目录一致。
 - 不含用户 RAW 样片、测试截图或本地测试日志；ExifTool 官方发行目录自带的小型测试资源保持完整。
-- `manifest.json` 记录源码提交、完整包与分片的长度和 SHA-256；包内 `build-info.json` 记录来源及验证摘要。
+- `manifest.json` 记录源码提交、完整包与分片的长度和 SHA-256；包内 `build-info.json` 记录来源及验证摘要。构建时的分支名称作为历史来源保留，拉取和发布请使用 `codex/cross-platform-photo-zoom`；迁移分支未改变包内容或校验值。
 
 详细行为和测试边界见 [Windows README](../../../RawLabWindows/README.md) 与 [性能记录](../../../RawLabWindows/performance.md)。
