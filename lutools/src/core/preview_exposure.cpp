@@ -45,7 +45,23 @@ std::vector<float> loadPreviewLuminance(const std::string& path) {
     // Keep thumbnail failures/recycle separate from the active RAW decoder.
     // LibRaw is larger than a macOS dispatch worker's default stack.
     auto raw=std::make_unique<LibRaw>();
-    if (openRawFile(*raw,path)!=LIBRAW_SUCCESS || raw->unpack_thumb()!=LIBRAW_SUCCESS) return {};
+    if (openRawFile(*raw,path)!=LIBRAW_SUCCESS) return {};
+    int thumbnail=-1;
+    const auto& defaultThumb=raw->imgdata.thumbnail;
+    if (static_cast<size_t>(defaultThumb.twidth)*defaultThumb.theight>64000000) {
+        // High-resolution cameras may select a full-size JPEG as the default preview.
+        size_t largest=0;
+        const auto& list=raw->imgdata.thumbs_list;
+        for (int i=0;i<list.thumbcount;++i) {
+            const auto& candidate=list.thumblist[i];
+            const size_t pixels=static_cast<size_t>(candidate.twidth)*candidate.theight;
+            if (pixels>largest && pixels<=64000000) {
+                thumbnail=i;
+                largest=pixels;
+            }
+        }
+    }
+    if ((thumbnail<0 ? raw->unpack_thumb() : raw->unpack_thumb_ex(thumbnail))!=LIBRAW_SUCCESS) return {};
     // DNG: 0 unspecified, 1 gray gamma 2.2, 2 sRGB. Do not reinterpret a
     // declared Adobe RGB/ProPhoto preview as sRGB for exposure metering.
     const unsigned previewSpace=raw->imgdata.color.dng_levels.preview_colorspace;

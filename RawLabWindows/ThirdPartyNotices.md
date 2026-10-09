@@ -3,11 +3,22 @@
 - Lucide Film icon: https://lucide.dev/icons/film, ISC license. Converted from
   the upstream SVG to WPF vector geometry; notice in `Licenses/Lucide-LICENSE.txt`.
 
-- LibRaw 0.21.5: https://github.com/LibRaw/LibRaw/tree/0.21.5
+- LibRaw 0.22.2: https://github.com/LibRaw/LibRaw/tree/0.22.2
   Built as a replaceable `raw.dll`; redistribution here uses the CDDL 1.0 option.
   Copyright and both upstream license options are in `Licenses/LibRaw-*`.
-  Corresponding source: https://github.com/LibRaw/LibRaw/archive/refs/tags/0.21.5.tar.gz
+  Corresponding source: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
   The exact source archive and SHA-256 are pinned in `native/CMakeLists.txt`.
+  Local crop, X-Trans concurrency and Nikon recognition changes are applied by
+  `lutools/cmake/patch-libraw.cmake` in the RawLab source repository.
+  R6 III layout/matrix evidence is from ErikCJohansson's contribution at
+  https://github.com/LibRaw/LibRaw/issues/821; the parser reuses LibRaw v12 offsets.
+  This local correction does not imply upstream R6 III support.
+- Additional camera matrix data: adapted from RawSpeed contributors' cameras.xml,
+  https://github.com/darktable-org/rawspeed/blob/c835b05aecfacb7343f7c424abd620aa12116c3f/data/cameras.xml
+  CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/.
+  The adapted data remains under that license in
+  `lutools/third_party/rawspeed-camera-calibration.inc`. Changes: four exact-model
+  matrices extracted into LibRaw table syntax; black/white levels remain metadata-driven.
 - zlib 1.3.1: https://github.com/madler/zlib/tree/v1.3.1, zlib license.
 - ExifTool 13.59: https://exiftool.org/, copyright Phil Harvey, distributed under
   the same terms as Perl (Artistic License or GNU GPL). The Windows x64 package

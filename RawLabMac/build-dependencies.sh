@@ -32,11 +32,12 @@ fetch openmp-21.1.8.src.tar.xz 856b023748b41ac7b2c83fd8e9f765ff48a4df2fe6777d281
     https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/openmp-21.1.8.src.tar.xz openmp-21.1.8.src
 fetch cmake-21.1.8.src.tar.xz 85735f20fd8c81ecb0a09abb0c267018475420e93b65050cc5b7634eab744de9 \
     https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/cmake-21.1.8.src.tar.xz cmake-21.1.8.src
-fetch LibRaw-0.21.5.tar.gz a74a2e68303d3b9219f82318f935b28c5c4abd7f2c9f7dbf8faa4997c9038305 \
-    https://www.libraw.org/data/LibRaw-0.21.5.tar.gz LibRaw-0.21.5
+fetch LibRaw-0.22.2.tar.gz de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa \
+    https://www.libraw.org/data/LibRaw-0.22.2.tar.gz LibRaw-0.22.2
 fetch LibRaw-cmake-eb98e43.tar.gz 3cd218bf6d1254de86e27269541277fbfc5bae57a9002ce0b46fbe2a97088b43 \
     https://github.com/LibRaw/LibRaw-cmake/archive/eb98e4325aef2ce85d2eb031c2ff18640ca616d3.tar.gz LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3
 if [ ! -e "$SOURCES/cmake" ]; then ln -s cmake-21.1.8.src "$SOURCES/cmake"; fi
+cmake -DLIBRAW_SOURCE_DIR="$SOURCES/LibRaw-0.22.2" -P "$ROOT/lutools/cmake/patch-libraw.cmake"
 
 COMMON=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH"
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" -DCMAKE_OSX_SYSROOT="$SDK"
@@ -79,12 +80,13 @@ if [ "$ARCH" = arm64 ]; then HOST=aarch64-apple-darwin; fi
     make install
 )
 cmake -S "$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3" \
-    -B "$BUILD/libraw-cmake" "${COMMON[@]}" -DLIBRAW_PATH="$SOURCES/LibRaw-0.21.5" \
+    -B "$BUILD/libraw-cmake" "${COMMON[@]}" -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2" \
     -DBUILD_SHARED_LIBS=ON -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=ON \
     -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" -DOpenMP_CXX_LIB_NAMES=omp \
     -DOpenMP_omp_LIBRARY="$PREFIX/lib/libomp.dylib" \
     -DZLIB_LIBRARY="$SDK/usr/lib/libz.tbd" -DZLIB_INCLUDE_DIR="$SDK/usr/include"
-for feature in LCMS DNGDEFLATECODEC DNGLOSSYCODEC OPENMP REDCINECODEC; do
+# LibRaw 0.22 removed the legacy RedCine decoder.
+for feature in LCMS DNGDEFLATECODEC DNGLOSSYCODEC OPENMP; do
     grep -q "^#define LIBRAW_USE_$feature 1" "$BUILD/libraw-cmake/libraw_config.h" || {
         echo "Missing LibRaw feature: $feature" >&2; exit 1;
     }

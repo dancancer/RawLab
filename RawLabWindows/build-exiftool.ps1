@@ -15,6 +15,18 @@ if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $sha256) { throw 'ExifToo
 $destination = Join-Path $Output 'ExifTool'
 New-Item -ItemType Directory -Force $destination | Out-Null
 Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
-$version = & (Join-Path $destination 'ExifTool.exe') -config '' -ver
-if ($LASTEXITCODE -ne 0 -or $version.Trim() -ne '13.59') { throw 'Unexpected ExifTool version.' }
+# Preserve -config "": Windows PowerShell 5.1 drops empty native arguments.
+$process = New-Object System.Diagnostics.Process
+$process.StartInfo.FileName = Join-Path $destination 'ExifTool.exe'
+$process.StartInfo.Arguments = '-config "" -ver'
+$process.StartInfo.UseShellExecute = $false
+$process.StartInfo.RedirectStandardOutput = $true
+try {
+    $process.Start() | Out-Null
+    $version = $process.StandardOutput.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0 -or $version.Trim() -ne '13.59') { throw 'Unexpected ExifTool version.' }
+} finally {
+    $process.Dispose()
+}
 # Keep the complete distribution, including Perl, licenses and source files.

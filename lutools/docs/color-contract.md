@@ -10,6 +10,20 @@ Optional `preview` mode retains the earlier median matching approximation: it sa
 
 `RAWProcessor` returns float working data. `outputBitsPerSample=8/16` only quantizes the non-linear display path; the linear path always retains float precision. The legacy `getNativeColorSpace()` name returns the last processed working space. Unspecified camera-native matrix transforms now fail instead of substituting sRGB primaries.
 
+Embedded camera color data is selected independently of white-balance mode
+(`use_camera_matrix=3`). Changing from camera WB to Kelvin/tint must not also
+switch from an embedded matrix to LibRaw's fallback matrix. Unpack error counts
+are fatal even when LibRaw returns success, so damaged decoder output cannot be
+exported as a valid image. Preview exposure retains its 64-million-pixel decode
+limit and uses a smaller embedded thumbnail when the default preview exceeds it.
+
+Source dependency builds apply `cmake/patch-libraw.cmake` to LibRaw 0.22.2.
+X-Trans demosaic tiles read an immutable source copy before parallel processing;
+their output must never feed adjacent tiles' overlapping source halos. This
+keeps OpenMP enabled but adds eight bytes per active sensor pixel during X-Trans
+demosaic (about 304 MiB for a 40 MP image). Camera-specific corrections and their
+sample-limited validation are documented in the RAW compatibility report.
+
 ## Rendering Order
 
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.

@@ -90,8 +90,13 @@ int main(int argc,char** argv) {
           std::abs(t-temperature)<1 && std::abs(g-tint)<.1,"Decode preserves as-shot metadata");
     request.wb_mode=SONY2FUJI_WB_TEMPERATURE; request.temperature=temperature; request.tint=tint;
     const auto matched=render();
-    for (int c=0;c<3;++c) check(std::abs(matched[c]-original[c])/std::max(1.0,original[c])<0.005,
-        "Absolute as-shot WB preserves the camera output and exposure within 0.5 percent");
+    for (int c=0;c<3;++c) {
+        const double error=std::abs(matched[c]-original[c])/std::max(1.0,original[c]);
+        const auto label =
+            "Absolute as-shot WB preserves the camera output and exposure within 0.5 percent; channel " +
+            std::to_string(c) + " error=" + std::to_string(error*100) + " percent";
+        check(error<0.005,label.c_str());
+    }
     request.wb_mode=SONY2FUJI_WB_TEMPERATURE; request.temperature=4000; request.tint=0;
     const auto cool=render(); request.temperature=8500; const auto warm=render();
     check(warm[0]/warm[2]>cool[0]/cool[2],"Absolute Kelvin increases RAW warmth");
