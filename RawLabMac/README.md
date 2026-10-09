@@ -14,9 +14,9 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 
 ## 构建和启动 / Build and Launch
 
-预编译版本：[GitHub Release v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
+预编译版本：[GitHub Release v0.4.1](https://github.com/dancancer/RawLab/releases/tag/v0.4.1)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
 
-Prebuilt apps: [GitHub Release v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
+Prebuilt apps: [GitHub Release v0.4.1](https://github.com/dancancer/RawLab/releases/tag/v0.4.1). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 
@@ -31,9 +31,9 @@ bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
 
-依赖 CMake、pkg-config、LibRaw 和 Apple Command Line Tools。当前 Homebrew LibRaw 的最低系统版本是 26，所以脚本默认以 26.0 为 deployment target；具备更低版本依赖时可显式设置 `MACOSX_DEPLOYMENT_TARGET`。CLT 27 的 SwiftUI 宏插件不完整时，脚本使用本机已有的 26.5 SDK，也可用 `SDKROOT` 指定。
+依赖 CMake、pkg-config、LibRaw 0.22.2+ 和 Apple Command Line Tools。Panasonic S5 II 的 RW2 使用 encoding 8，旧版 LibRaw 0.21.x 会错误解码为噪点。若 Homebrew 版本不足，使用下方源码依赖构建，不要只替换应用内动态库，因为 LibRaw 0.22 改变了 ABI。脚本默认以 26.0 为 deployment target；具备更低版本依赖时可显式设置 `MACOSX_DEPLOYMENT_TARGET`。CLT 27 的 SwiftUI 宏插件不完整时，脚本使用本机已有的 26.5 SDK，也可用 `SDKROOT` 指定。
 
-Requires CMake, pkg-config, LibRaw and Apple Command Line Tools. The current Homebrew LibRaw requires macOS 26, so the default deployment target is 26.0. Set `MACOSX_DEPLOYMENT_TARGET` only when the dependencies also support the lower target. When the CLT 27 SwiftUI macro plugin is unavailable, the script uses the locally installed 26.5 SDK; `SDKROOT` can override it.
+Requires CMake, pkg-config, LibRaw 0.22.2+ and Apple Command Line Tools. Panasonic S5 II RW2 uses encoding 8, which LibRaw 0.21.x incorrectly decodes as noise. If Homebrew is older, use the source dependency build below; do not replace only the bundled dylib because LibRaw 0.22 changes its ABI. The default deployment target is 26.0. Set `MACOSX_DEPLOYMENT_TARGET` only when the dependencies also support the lower target. When the CLT 27 SwiftUI macro plugin is unavailable, the script uses the locally installed 26.5 SDK; `SDKROOT` can override it.
 
 构建脚本打包所需 Homebrew 动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
 
@@ -49,9 +49,13 @@ The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the
 
 ## macOS 15 双架构构建 / macOS 15 Builds
 
-从固定版本的上游源码重建所有第三方动态库，分别输出两个应用，避免覆盖默认产物。需要 CMake、pkg-config、make 和 Apple Command Line Tools；依赖下载使用 curl。Intel 的 libjpeg SIMD 优化需要可选的 NASM，缺失时仍可正常解码。OpenMP、JPEG、JPEG2000、DNG deflate 和 LCMS 支持均保留。
+从固定版本的上游源码重建第三方动态库，分别输出两个应用，避免覆盖默认产物。需要 CMake、pkg-config、make 和 Apple Command Line Tools；依赖下载使用 curl。Intel 的 libjpeg SIMD 优化需要可选的 NASM，缺失时仍可正常解码。保留 OpenMP、JPEG、DNG deflate 和 LCMS；LibRaw 0.22 不再启用旧 RedCine/JasPer 路径，不承诺原有 JPEG2000 覆盖。
 
-Rebuild all third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, JPEG2000, DNG deflate, and LCMS support are retained.
+Rebuild third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, DNG deflate and LCMS are retained. LibRaw 0.22 no longer enables the legacy RedCine/JasPer path; prior JPEG2000 coverage is not promised.
+
+新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/verification-raw-compatibility-2026-10-09.md)。
+
+Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
 
 ```bash
 for arch in arm64 x86_64; do

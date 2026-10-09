@@ -1,12 +1,25 @@
 RawLab Android uses the repository's shared Sony2Fuji C++ core.
 
-LibRaw 0.21.5: https://github.com/LibRaw/LibRaw/tree/0.21.5
-Source archive: https://github.com/LibRaw/LibRaw/archive/refs/tags/0.21.5.tar.gz
-SHA-256: 4b7f183a68f6e46e579e80ba32ab121687e75bd30a2e5566f34c36a6bcba1679
-Built from unmodified source as libraw.so; Android CMake build configuration
+LibRaw 0.22.2: https://github.com/LibRaw/LibRaw/tree/0.22.2
+Source archive: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+SHA-256: de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
+Built from patched source as libraw.so; Android CMake build configuration
 is supplied in app/src/main/cpp/CMakeLists.txt. LGPL/CDDL license choices and
 copyright notices are included in this directory. Optional LCMS, JPEG/JasPer,
 RawSpeed and Adobe DNG SDK integrations are not compiled into LibRaw here.
+
+Local crop, X-Trans concurrency and Nikon recognition changes are applied by
+lutools/cmake/patch-libraw.cmake. Four exact-model camera matrices are adapted
+from RawSpeed contributors' cameras.xml at:
+https://github.com/darktable-org/rawspeed/blob/c835b05aecfacb7343f7c424abd620aa12116c3f/data/cameras.xml
+The adapted data remains under CC BY-SA 3.0:
+https://creativecommons.org/licenses/by-sa/3.0/
+Source: lutools/third_party/rawspeed-camera-calibration.inc in the RawLab repository.
+Changes: extraction into LibRaw table syntax; black/white levels remain metadata-driven.
+No RawSpeed decoder code is included.
+R6 III layout/matrix evidence is from ErikCJohansson's contribution at
+https://github.com/LibRaw/LibRaw/issues/821; the parser reuses LibRaw v12 offsets.
+This local correction does not imply upstream R6 III support.
 
 The core's temperature/xy calculation includes Adobe DNG SDK-derived code;
 its notice is provided as Adobe-DNG-SDK-LICENSE.txt. Embedded JPEG reading and

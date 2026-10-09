@@ -84,39 +84,7 @@ build_ios() {
         exit 1
     fi
 
-    ROOT_DIR="$(pwd)"
-    local configs=(
-        "iphoneos-arm64:arm64:iphoneos:$ROOT_DIR/build-ios-libraw/install/iphoneos-arm64/lib/pkgconfig"
-        "iphonesimulator-arm64:arm64:iphonesimulator:$ROOT_DIR/build-ios-libraw/install/iphonesimulator-arm64/lib/pkgconfig"
-        "iphonesimulator-x86_64:x86_64:iphonesimulator:$ROOT_DIR/build-ios-libraw/install/iphonesimulator-x86_64/lib/pkgconfig"
-    )
-
-    for config in "${configs[@]}"; do
-        IFS=":" read -r name arch sdk pkg_path <<< "$config"
-        print_info "构建架构: $name"
-
-        BUILD_DIR="build-ios-$name"
-        rm -rf "$BUILD_DIR"
-        mkdir -p "$BUILD_DIR"
-        cd "$BUILD_DIR"
-
-        PKG_CONFIG_PATH="$pkg_path" cmake .. \
-            -GXcode \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-            -DCMAKE_OSX_ARCHITECTURES="$arch" \
-            -DCMAKE_OSX_SYSROOT=$(xcrun --sdk $sdk --show-sdk-path) \
-            -DBUILD_SHARED_LIB=ON \
-            -DBUILD_CLI=OFF \
-            -DIOS=ON
-
-        cmake --build . --config Release
-
-        cd ..
-    done
-
-    print_info "iOS Framework 构建完成"
-    print_info "位置: build-ios-*/Release/"
+    bash platform/ios/build-framework.sh
 }
 
 # 构建 Android
@@ -217,7 +185,6 @@ main() {
             build_desktop
             ;;
         ios)
-            check_dependencies
             build_ios
             ;;
         android)

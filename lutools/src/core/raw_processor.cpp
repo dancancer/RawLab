@@ -42,7 +42,7 @@ public:
 
         filepath_ = filepath;
         auto& params = rawProcessor_->imgdata.params;
-        params.use_camera_matrix = 1;
+        params.use_camera_matrix = 3;
         params.use_camera_wb = 1;
         params.use_auto_wb = 0;
         params.half_size = 0;
@@ -79,7 +79,7 @@ public:
         params.half_size = options.halfSize ? 1 : 0;
         if (ensureIdentificationMode(cameraWB, autoWB) != ErrorCode::Success)
             return ErrorCode::ProcessingError;
-        params.use_camera_matrix = 1;
+        params.use_camera_matrix = 3;
         params.use_camera_wb = cameraWB ? 1 : 0;
         params.use_auto_wb = autoWB ? 1 : 0;
         for (int c=0;c<4;++c) {
@@ -261,13 +261,16 @@ private:
         // file handle on camera/custom WB mode switches).
         rawProcessor_->recycle();
         auto& params = rawProcessor_->imgdata.params;
-        params.use_camera_matrix = 1;
+        // 切换白平衡不能同时切换相机色矩阵，3 表示始终使用内嵌色彩数据。
+        params.use_camera_matrix = 3;
         params.use_camera_wb = cameraWB ? 1 : 0;
         params.use_auto_wb = autoWB ? 1 : 0;
         const int openResult = openRawFile(*rawProcessor_, filepath_);
         if (openResult != LIBRAW_SUCCESS) return openResult;
         const int unpackResult = rawProcessor_->unpack();
         if (unpackResult != LIBRAW_SUCCESS) return unpackResult;
+        // 部分解码器只记录损坏计数却返回成功，不能继续导出损坏的像素。
+        if (rawProcessor_->error_count()!=0) return LIBRAW_DATA_ERROR;
         rawProcessor_->adjust_to_raw_inset_crop(3);
         return LIBRAW_SUCCESS;
     }

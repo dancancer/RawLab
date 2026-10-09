@@ -4,10 +4,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
 FetchContent_Declare(libraw
-    URL https://github.com/LibRaw/LibRaw/archive/refs/tags/0.21.5.tar.gz
-    URL_HASH SHA256=4b7f183a68f6e46e579e80ba32ab121687e75bd30a2e5566f34c36a6bcba1679
+    # CMake 3.22 preserves archive timestamps; isolate ABI versions from old objects.
+    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/_deps/libraw-0.22.2-src"
+    URL https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+    URL_HASH SHA256=de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
 )
 FetchContent_MakeAvailable(libraw)
+get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
+set(LIBRAW_SOURCE_DIR "${libraw_SOURCE_DIR}")
+include("${REPO}/lutools/cmake/patch-libraw.cmake")
 # Exclude upstream placeholder implementations, as in its Makefile.am.
 file(GLOB_RECURSE LIBRAW_SOURCES CONFIGURE_DEPENDS "${libraw_SOURCE_DIR}/src/*.cpp")
 list(FILTER LIBRAW_SOURCES EXCLUDE REGEX "_ph\\.cpp$")
@@ -19,7 +24,6 @@ target_compile_options(raw PRIVATE $<$<CONFIG:Debug>:-O3>)
 target_link_libraries(raw PRIVATE z)
 target_link_options(raw PRIVATE "-Wl,-z,max-page-size=16384")
 
-get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
 set(SONY2FUJI_LIBRAW_TARGET raw)
 set(BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)

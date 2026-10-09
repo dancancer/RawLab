@@ -1,5 +1,11 @@
 # iOS 集成指南 / iOS Integration
 
+[下载 v0.4.1 未签名 IPA / Download unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-iOS-0.4.1-unsigned.ipa) · [发布说明 / Release notes](../../../docs/releases/v0.4.1.md)
+
+IPA 需要自行给应用及内嵌 Framework 重新签名，不能直接安装；不是 App Store 或 TestFlight 发行版。最低 iOS 18.0，物理设备安装和峰值内存尚未验证。
+
+Re-sign both the app and embedded framework before installation. This is not an App Store or TestFlight release. Requires iOS 18.0; physical-device installation and peak memory remain unverified.
+
 通过共享 C API 将 Sony2Fuji 核心接入 Swift/Objective-C 应用。此目录是集成文档，不包含可直接运行的独立 iOS 示例项目。
 
 Integrate the Sony2Fuji core into a Swift/Objective-C app through the shared C API. This directory contains integration documentation, not a standalone runnable iOS sample.
@@ -10,52 +16,36 @@ The former direct-C++ bridge examples omitted parts of F-Log2 and display-output
 
 ## 1. 构建准备 / Build Prerequisites
 
-需要 macOS、完整 Xcode/iOS SDK、CMake、pkg-config，以及为目标平台和架构编译的 LibRaw 和依赖。不可把 macOS Homebrew LibRaw 链接到 iOS。
+需要 macOS、完整 Xcode/iOS SDK、CMake、pkg-config 和 curl。从仓库根目录运行以下入口，自动下载并校验 LibRaw 0.22.2、应用共享相机补丁、编译三个架构并生成应用使用的 XCFramework：
 
-Requires macOS, full Xcode with the iOS SDK, CMake, pkg-config, and LibRaw/dependencies built for the target platform and architecture. Do not link macOS Homebrew LibRaw into iOS.
+Requires macOS, full Xcode/iOS SDK, CMake, pkg-config and curl. From the repository root, this entry point downloads and verifies LibRaw 0.22.2, applies the shared camera patches, builds three architectures and packages the application's XCFramework:
 
-仓库脚本预期以下 LibRaw pkg-config 目录，详见 [build.sh](../../build.sh)：
+```bash
+bash lutools/build.sh ios
+bash lutools/platform/ios/verify-framework.sh
+```
 
-The repository script expects these LibRaw pkg-config directories; see [build.sh](../../build.sh):
+脚本见 [build-framework.sh](build-framework.sh)。默认最低 iOS 18.0，与 RawLab 应用一致；可通过 `IOS_DEPLOYMENT_TARGET` 覆盖，但必须受所选 SDK 支持。`DEVELOPER_DIR` 可选择完整 Xcode，`JOBS` 默认 6。不再要求宿主机 Homebrew LibRaw，也不会混用旧版 0.21.5 依赖。
+
+See [build-framework.sh](build-framework.sh). The default minimum is iOS 18.0, matching RawLab; `IOS_DEPLOYMENT_TARGET` may override it within the selected SDK's supported range. `DEVELOPER_DIR` selects full Xcode, and `JOBS` defaults to 6. Host Homebrew LibRaw is not required, and old 0.21.5 dependencies are not reused.
+
+X-Trans 去马赛克新增每像素 8 字节的只读副本，40 MP 约增加 304 MiB 峰值内存；尚未完成移动设备内存验证，不能把 Mac 实测通过等同于 iOS 大图可用。
+
+X-Trans demosaic adds an eight-byte-per-pixel immutable copy, about 304 MiB for 40 MP. Mobile memory behavior is not yet validated; Mac test success does not establish large-image usability on iOS.
+
+各架构依赖和编译缓存独立存放，旧目录不删除：
+
+Architecture-specific dependencies and build caches are isolated; old directories are retained:
 
 ```text
-lutools/build-ios-libraw/install/iphoneos-arm64/lib/pkgconfig
-lutools/build-ios-libraw/install/iphonesimulator-arm64/lib/pkgconfig
-lutools/build-ios-libraw/install/iphonesimulator-x86_64/lib/pkgconfig
+lutools/build-ios-libraw/0.22.2/install/iphoneos-arm64/lib/pkgconfig
+lutools/build-ios-libraw/0.22.2/install/iphonesimulator-arm64/lib/pkgconfig
+lutools/build-ios-libraw/0.22.2/install/iphonesimulator-x86_64/lib/pkgconfig
 ```
 
-准备好依赖后，从仓库根目录运行：
+框架静态链接目标平台 LibRaw，仅动态依赖 iOS 系统库。许可证随 Framework 的 `Licenses` 目录打包。生成物通过版本、架构及动态依赖检查后才替换 `build-ios/sony2fuji.xcframework`；上一份保存在 `build-ios/previous.*/`。
 
-Once dependencies are ready, run from the repository root:
-
-```bash
-cd lutools
-bash build.sh ios
-```
-
-该脚本在选择 iOS 目标前还会运行默认环境的 `pkg-config --exists libraw` 检查。因此默认 pkg-config 搜索路径也需要可发现 LibRaw；宿主机安装只能满足此预检，不能替代上面的 iOS 依赖。只准备了目标平台依赖时，可使用下面的手动 CMake 命令绕过该宿主预检。
-
-Before selecting an iOS target, the script also runs `pkg-config --exists libraw` in the default environment. LibRaw metadata must therefore be discoverable on the default pkg-config search path. A host installation can satisfy this preflight but cannot replace the iOS dependencies above. If only target-platform dependencies are available, use the manual CMake command below to bypass that host preflight.
-
-该脚本会重建自己的 `build-ios-*` 输出目录。手动构建单个设备目标时，可从仓库根目录运行以下命令；`DEVELOPER_DIR` 必须指向可用且已配置的完整 Xcode。
-
-The script recreates its own `build-ios-*` output directories. To build one device target manually, run the following from the repository root. `DEVELOPER_DIR` must point to an available, configured full Xcode installation.
-
-```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-PKG_CONFIG_PATH="$PWD/lutools/build-ios-libraw/install/iphoneos-arm64/lib/pkgconfig" \
-cmake -S lutools -B lutools/build-ios-iphoneos-arm64 -GXcode \
-  -DCMAKE_SYSTEM_NAME=iOS \
-  -DCMAKE_OSX_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)" \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-  -DBUILD_SHARED_LIB=ON -DBUILD_CLI=OFF -DIOS=ON
-cmake --build lutools/build-ios-iphoneos-arm64 --config Release
-```
-
-`13.0` 是当前核心构建脚本的目标值，不是已验证的应用兼容性承诺。应检查生成物、依赖和实际目标设备。
-
-`13.0` is the current core script's deployment setting, not a verified app compatibility claim. Check the resulting binaries, dependencies and actual target devices.
+The framework statically links target-platform LibRaw and dynamically depends only on iOS system libraries. License notices are included in its `Licenses` directory. Version, architecture and dependency checks run before replacing `build-ios/sony2fuji.xcframework`; the previous artifact is retained under `build-ios/previous.*/`.
 
 ## 2. Framework 与 Xcode / Frameworks and Xcode
 
@@ -63,20 +53,9 @@ cmake --build lutools/build-ios-iphoneos-arm64 --config Release
 
 The current iOS shared CMake target produces `sony2fuji.framework`. Device and simulator builds require their corresponding SDK and LibRaw.
 
-已有设备和 arm64 模拟器 Framework 后，从仓库根目录打包：
+构建入口已自动将 arm64/x86_64 模拟器二进制合并为一个切片，并与 arm64 设备切片组成 XCFramework；不需要手动重复打包。Xcode 项目继续使用同一路径，无需修改 Framework 引用。
 
-After building device and arm64-simulator frameworks, package them from the repository root:
-
-```bash
-xcodebuild -create-xcframework \
-  -framework lutools/build-ios-iphoneos-arm64/Release-iphoneos/sony2fuji.framework \
-  -framework lutools/build-ios-iphonesimulator-arm64/Release-iphonesimulator/sony2fuji.framework \
-  -output lutools/build-ios/sony2fuji.xcframework
-```
-
-以上示例提供 arm64 模拟器切片；需要 Intel 模拟器时，应先准备包含所需模拟器架构的 Framework，再打包。不要把两个同平台的单架构模拟器 Framework 当成独立平台重复加入。
-
-This example includes an arm64 simulator slice. For Intel simulators, first prepare a simulator framework containing the required simulator architectures. Do not add two single-architecture simulator frameworks as if they were distinct platforms.
+The build entry point combines arm64/x86_64 simulator binaries into one slice and packages it with the arm64 device slice. No manual repackaging or Xcode framework-reference change is needed.
 
 1. 将 Framework/XCFramework 加入目标的 `Frameworks, Libraries, and Embedded Content`，动态 Framework 使用 `Embed & Sign`。
    Add the framework/XCFramework to the target's `Frameworks, Libraries, and Embedded Content`; use `Embed & Sign` for the dynamic framework.
@@ -175,6 +154,12 @@ Use `SONY2FUJI_INTENT_PREVIEW` and `preview_long_edge` for previews. Select BUFF
 
 The [public header](../../include/sony2fuji/ffi/sony2fuji_c.h) is the current interface reference. Cross-check historical examples in the [C API notes](../../docs/ios-api.md) against the header and this page. The [color contract](../../docs/color-contract.md) defines LUT input and white-balance behavior.
 
-构建和设备兼容性需要在你的 Xcode、iOS SDK 和目标设备上验证；本次文档更新未执行 iOS 构建。
+2026-10-09 已完成三个架构的 XCFramework、模拟器 Debug 应用和未签名设备 Release 应用构建；iOS 模拟器上 9 款相机通过 RAW/白平衡回归，其中 3 款通过 Metal 回归，并通过真实 Sony RAW 的应用导出测试。Nikon HE* 样片按预期返回不支持错误。详见[相机兼容性验证记录](../../../docs/verification-raw-compatibility-2026-10-09.md)。设备构建通过不等于真机运行或内存验证。
 
-Validate builds and compatibility with your Xcode, iOS SDK and target devices. No iOS build was run for this documentation update.
+On 2026-10-09, all three XCFramework architectures, the simulator Debug app and the unsigned device Release app built successfully. On the iOS simulator, nine cameras passed RAW/white-balance regressions, three passed Metal regressions, and the app export test passed with a real Sony RAW. A Nikon HE* fixture returned the expected unsupported error. See the [compatibility report](../../../docs/verification-raw-compatibility-2026-10-09.md). Device build success does not establish physical-device runtime or memory coverage.
+
+```bash
+# Use the UUID of a booted simulator and external RAW fixtures.
+bash lutools/platform/ios/raw-compatibility.sh <simulator-uuid> /path/to/sample.RW2
+RAWLAB_TEST_GPU=1 bash lutools/platform/ios/raw-compatibility.sh <simulator-uuid> /path/to/sample.CR3
+```

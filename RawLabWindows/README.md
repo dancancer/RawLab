@@ -3,23 +3,20 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
-## 下载 v0.4.0 Windows 日期标识包
+## 下载 v0.4.1 Windows 包
 
-[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Windows-interaction-20261008-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.4.0) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt)
+[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Windows-0.4.1-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.4.1) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
 
 解压后运行 `RawLab.exe`，保留完整目录。发布包已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，无需另行安装 .NET。程序未签名。
 
-此包包含下文的快速预览、缩放缓存和远程桌面画布加速，以及 0–200% 胶片强度和保留 EXIF 的 JPEG / 16-bit PNG 导出。
-构建 6 沿用原下载文件名，重新构建当前 WPF 托管应用，程序集版本为 `0.4.0`、文件版本为 `0.4.0.6`。工具栏信息按钮打开“关于 RawLab”，包含项目/作者链接、自动检测开关和手动检查更新。仅打开官方发布页面，不自动安装。
+v0.4.1 构建 7 在专用 Windows x64 虚拟机上重新构建 WPF 与 native DLL，程序集版本为 `0.4.1`、文件版本为 `0.4.1.7`，不复用旧版 native 包。共享 LibRaw 0.22.2 修复 Panasonic RW2、新机型元数据/校准、X-Trans 并发与裁切问题；Nikon HE* 仍明确返回不支持。
 
-本次使用 .NET 8 的 win-x64 自包含交叉发布，复用 `a24d840` 交接包中源码未改动且已验证的 native DLL、Visual C++/OpenMP 运行库及 ExifTool。包内 `build-info.json` 分别记录托管应用与 native 来源；历史交接包的 119 项 Windows 检查不等于本次新界面的运行验证。
-
-本次已验证的 Windows x64 独立运行包随仓库提交，供 Mac 端统一发布，见 [发布交接与校验说明](../release-artifacts/windows/2026-10-08/README.md)。
+保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出。“关于 RawLab”仍只打开官方更新页面，不自动安装。本轮 CPU/RAW 验证与真实 GPU、UI 验证的边界见[兼容性记录](../docs/verification-raw-compatibility-2026-10-09.md)，不沿用历史交接包的 119 项检查作为新版证明。
 
 ## 构建
 
 需要 .NET 8 SDK、Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”组件
-（含 Windows SDK 与 CMake），首次构建需要联网下载校验过的 LibRaw 0.21.5 / zlib 1.3.1 源码。
+（含 Windows SDK 与 CMake），首次构建需要联网下载校验过的 LibRaw 0.22.2 / zlib 1.3.1 源码。
 
 ```powershell
 ./RawLabWindows/build.ps1 -Test
@@ -35,6 +32,31 @@
 支持 `-DotNet <dotnet.exe>` / `-CMake <cmake.exe>` 指定工具。
 脚本也会使用仓库 `build/tools/dotnet` 下的本地 SDK（若存在）。
 未签名，不自动安装、不修改系统文件关联。第三方许可证与说明随程序复制。
+
+### 从 Mac 远程编译
+
+已准备好的 Windows x64 OpenSSH 编译机可直接构建当前工作区，不需要先提交或切换到 Windows 真机：
+
+```bash
+python3 RawLabWindows/build-remote.py \
+  --host <user>@<windows-host> \
+  --identity ~/.ssh/rawlab_vm100 \
+  --known-hosts ~/.ssh/rawlab_vm100_known_hosts
+```
+
+首次连接前，通过可信控制台核对 SSH 主机公钥并保存到 `known-hosts` 文件。脚本强制校验主机密钥，只使用指定私钥；不要提交私钥或关闭校验。
+
+脚本发送当前已跟踪及未忽略的新源文件，包含尚未提交的改动，排除 RAW 样片和忽略的构建产物。Windows 工作目录为 `C:/RawLabBuild/workspace`，保留依赖和编译缓存，只清理上次清单中已从本次源码删除的文件。请勿让多个任务同时使用这个工作目录。远程编译自包含 x64 包并取回 `build/windows-remote/<timestamp>/RawLab-Windows.zip`，同目录保留完整 `build.log`。
+
+`--test --raw /path/to/sample.ARW` 会另外上传指定样片并执行原有完整测试。编译不要求 GPU，但完整测试要求真实 Direct3D 11 硬件；普通虚拟显示适配器只能验证编译、CPU 解码和自动回退，不能据此声明 GPU 通过。未使用 `--test` 时不运行完整测试。
+
+新建专用 Windows 编译机时，管理员可使用 [provision-build-tools.ps1](scripts/provision-build-tools.ps1) 安装校验过的 .NET 8.0.425 SDK 和 VS 2022 Build Tools 17.14.41。脚本需要预先下载的官方安装包，检查固定摘要和 Microsoft Authenticode 签名，安装 C++、Windows SDK、CMake 与托管桌面构建组件；不负责 Windows 授权或 SSH 配置。
+
+```powershell
+./RawLabWindows/scripts/provision-build-tools.ps1 -InstallerDirectory 'D:\'
+```
+
+平台实测范围见 [RAW 兼容性验证记录](../docs/verification-raw-compatibility-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
 
 ## 功能与 Mac 对齐
 

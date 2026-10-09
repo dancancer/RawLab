@@ -90,6 +90,10 @@ int main(int argc, char** argv) {
         p.no_auto_bright=1; p.no_auto_scale=0; p.adjust_maximum_thr=0; p.highlight=2;
         p.gamm[0]=p.gamm[1]=1;
         if (reference.open_file(argv[1]) || reference.unpack()) return 1;
+        if (reference.error_count() != 0) {
+            std::cerr << "RAW decoder reported corrupt data despite successful unpack\n";
+            return 1;
+        }
         reference.adjust_to_raw_inset_crop(3);
         if (reference.dcraw_process()) return 1;
         const auto& ref=reference.imgdata;
@@ -140,13 +144,23 @@ int main(int argc, char** argv) {
     if (std::abs(raw.getBaselineExposureEV()-baselineEV)>1e-6) {
         std::cerr << "User exposure changed the scene baseline\n"; return 1;
     }
-    if (base.pixels.size() != eight.pixels.size() || base.pixels.size() != exposed.pixels.size()) return 1;
+    if (base.pixels.size() != eight.pixels.size() || base.pixels.size() != exposed.pixels.size()) {
+        std::cerr << "Repeated RAW processing changed image dimensions\n"; return 1;
+    }
     float maximum = 0;
     for (size_t i=0; i<base.pixels.size(); ++i) {
         const auto a=base.pixels[i], b=eight.pixels[i], c=exposed.pixels[i];
-        for (auto v : {a.r,a.g,a.b,c.r,c.g,c.b}) if (!std::isfinite(v)) return 1;
-        if (std::abs(a.r-b.r)>1e-6 || std::abs(a.g-b.g)>1e-6 || std::abs(a.b-b.b)>1e-6) return 1;
-        if (std::abs(2*a.r-c.r)>1e-5 || std::abs(2*a.g-c.g)>1e-5 || std::abs(2*a.b-c.b)>1e-5) return 1;
+        for (auto v : {a.r,a.g,a.b,c.r,c.g,c.b}) if (!std::isfinite(v)) {
+            std::cerr << "Non-finite RAW pixel at " << i << '\n'; return 1;
+        }
+        if (std::abs(a.r-b.r)>1e-6 || std::abs(a.g-b.g)>1e-6 || std::abs(a.b-b.b)>1e-6) {
+            std::cerr << "Repeated 8/16-bit RAW mismatch at " << i << ": "
+                      << a.r-b.r << ',' << a.g-b.g << ',' << a.b-b.b << '\n'; return 1;
+        }
+        if (std::abs(2*a.r-c.r)>1e-5 || std::abs(2*a.g-c.g)>1e-5 || std::abs(2*a.b-c.b)>1e-5) {
+            std::cerr << "RAW exposure linearity mismatch at " << i << ": "
+                      << 2*a.r-c.r << ',' << 2*a.g-c.g << ',' << 2*a.b-c.b << '\n'; return 1;
+        }
         maximum=std::max(maximum,std::max(c.r,std::max(c.g,c.b)));
     }
     if (maximum <= 0) { std::cerr << "Empty RAW signal\n"; return 1; }

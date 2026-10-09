@@ -13,6 +13,7 @@ cmake_install.cmake
 cmake-build-*/
 *.cmake
 !CMakeLists.txt
+!cmake/patch-libraw.cmake
 
 # Compiled Object files
 *.o
@@ -87,3 +88,4 @@ deps/
 third_party/*
 !third_party/stb_image_write.h
 !third_party/Adobe-DNG-SDK-LICENSE.txt
+!third_party/rawspeed-camera-calibration.inc

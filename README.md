@@ -30,21 +30,21 @@ Windows 新包已加入快速内嵌预览、原尺寸缩放缓存、多核 RAW �
 
 The new Windows package adds fast embedded previews, cached full-resolution zoom, multicore RAW processing and hardware-accelerated WPF composition in supported remote desktop sessions. Selection shows a preview first; double-click zoom responds immediately while detail loads, and panning reuses image layers. See the [Windows build instructions](RawLabWindows/README.md) and [performance measurements](RawLabWindows/performance.md).
 
-[下载 RawLab v0.4.0 / Download v0.4.0](https://github.com/dancancer/RawLab/releases/tag/v0.4.0)
+[下载 RawLab v0.4.1 / Download v0.4.1](https://github.com/dancancer/RawLab/releases/tag/v0.4.1)
 
-v0.4.0 构建 6 覆盖更新 Windows 日期标识包、macOS 15 双架构包和 Android 正式签名 APK，下载文件名不变。Windows 托管应用重新构建为 `0.4.0`（文件版本 `0.4.0.6`），复用 `a24d840` 已验证且源码未改动的 native 库；Mac/Android 构建号为 `6`。iOS 暂沿用 v0.2，不包含后续源码更新。
+v0.4.1 构建 7 是 RAW 兼容性修复版，Windows、macOS 双架构、Android 和 iOS 均从本次源码重新构建，使用带共享补丁的 LibRaw 0.22.2。Windows 不再复用旧 native 库；iOS 同步提供新的未签名 IPA。此版本不包含开发中的批量导出、编辑记忆或新增 RAW 降噪功能。
 
-v0.4.0 build 6 replaces the Windows, macOS 15 Apple Silicon/Intel and release-signed Android installers without changing their download filenames. The Windows managed app is rebuilt as `0.4.0` (file version `0.4.0.6`), reusing verified native libraries from unchanged `a24d840` sources. Mac/Android use build number `6`. iOS remains at v0.2 without subsequent source changes.
+v0.4.1 build 7 rebuilds Windows, both Mac architectures, Android and iOS with the shared LibRaw 0.22.2 compatibility patches. Windows includes newly built native libraries, and iOS has a refreshed unsigned IPA. In-progress batch export, edit persistence and new RAW noise-reduction work are not part of this release.
 
 | 平台 / Platform | 下载 / Download | 系统要求 / Requirements |
 | --- | --- | --- |
-| Windows x64 | [ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Windows-interaction-20261008-win-x64.zip) | Windows 10/11 x64 |
-| Mac Apple Silicon | [arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-arm64.zip) | macOS 15+，M 系列 / M-series |
-| Mac Intel | [x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Mac-0.4.0-macOS15-x86_64.zip) | macOS 15+，Intel |
-| Android | [签名 APK / Signed APK](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Android-0.4.0.apk) | Android 8.0+，ARM64 / x86_64 |
-| iOS | [未签名 IPA / Unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.2/RawLab-iOS-0.2-unsigned.ipa) | iPhone，iOS 18+，须自行签名 / Re-signing required |
+| Windows x64 | [ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Windows-0.4.1-win-x64.zip) | Windows 10/11 x64 |
+| Mac Apple Silicon | [arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-arm64.zip) | macOS 15+，M 系列 / M-series |
+| Mac Intel | [x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-x86_64.zip) | macOS 15+，Intel |
+| Android | [签名 APK / Signed APK](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Android-0.4.1.apk) | Android 8.0+，ARM64 / x86_64 |
+| iOS | [未签名 IPA / Unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-iOS-0.4.1-unsigned.ipa) | iPhone，iOS 18+，须自行签名 / Re-signing required |
 
-[v0.4.0 校验文件 / Checksums](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt) · [旧版 iOS 校验文件 / Previous iOS checksums](https://github.com/dancancer/RawLab/releases/download/v0.2/SHA256SUMS.txt)
+[v0.4.1 校验文件 / Checksums](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
 
 ### 安装说明 / Installation Notes
 
@@ -52,12 +52,25 @@ v0.4.0 build 6 replaces the Windows, macOS 15 Apple Silicon/Intel and release-si
   Extract and run `RawLab.exe`, keeping the entire directory. Includes .NET 8, Visual C++ runtime, LUTs and ExifTool; the app is unsigned.
 - **Mac**：按芯片选择对应版本，将 `RawLab Mac.app` 放入 Applications。采用 ad-hoc 签名、未经过 Apple 公证，系统可能阻止默认打开。主程序及依赖的最低版本均为 macOS 15；尚未在 macOS 15 真机验证，Intel 版在 Rosetta 下测试。
   Choose the matching architecture and move `RawLab Mac.app` to Applications. Ad-hoc signed and not notarized; macOS may block opening it. The app and dependencies target macOS 15, but macOS 15 hardware testing is pending; Intel testing used Rosetta.
-- **Android**：v0.4.0 沿用正式发布密钥，支持从同签名的旧正式版覆盖升级；无法覆盖不同签名的 debug 版。卸载 debug 版前先导出未保存的编辑。
-  v0.4.0 retains the release key for updates from earlier release-signed versions. It cannot replace a differently signed debug build; export unsaved edits before uninstalling a debug build.
+- **Android**：v0.4.1 沿用正式发布密钥，支持从同签名的旧正式版覆盖升级；无法覆盖不同签名的 debug 版。卸载 debug 版前先导出未保存的编辑。
+  v0.4.1 retains the release key for updates from earlier release-signed versions. It cannot replace a differently signed debug build; export unsaved edits before uninstalling a debug build.
 - **iOS**：**未签名 IPA 不能直接安装**。需使用自己的有效证书和 provisioning profile 对应用及内嵌 framework 重新签名；不是 App Store 或 TestFlight 发行版，尚未进行真机安装验证。
   **The unsigned IPA cannot be installed directly.** Re-sign the app and embedded framework with your own valid certificate and provisioning profile. This is not an App Store or TestFlight release and has not been installation-tested on physical devices.
 
-## v0.4.0 更新 / What's New
+## v0.4.1 更新 / What's New
+
+- 修复 Panasonic S5 II 等 encoding 8 RW2 解码、Canon R6 III 偏色、Sony a7R VI 超大内嵌预览、OM-1 白平衡切换、X-Trans 并行显影不一致和 Hasselblad X2D II 裁切，并补充精确机型色彩矩阵。
+  Fixes encoding 8 RW2 decoding, R6 III metadata/color, oversized a7R VI previews, OM-1 white-balance matrix switching, X-Trans parallel demosaic consistency and X2D II active crop, with additional exact-model matrices.
+- Mac 的 26 款公开样片中 24 款通过修复后验证；Nikon Z6III / Z50II 的 HE* 样片仍不支持，现明确拒绝而不输出坏图。样片结果不代表所有拍摄模式均已验证。
+  Of 26 public camera samples tested on Mac, 24 pass. Nikon Z6III/Z50II HE* samples remain unsupported and are explicitly rejected. These results do not certify every shooting mode.
+- Windows 新增 Mac 发起的远程编译入口；iOS 新增可复现的三架构 XCFramework 构建。移动设备峰值内存及 Windows 真显卡验证的边界见发布说明。
+  Adds remote Windows builds from Mac and reproducible three-architecture iOS frameworks. See release notes for mobile memory and Windows hardware-GPU validation limits.
+
+详见 [v0.4.1 发布说明](docs/releases/v0.4.1.md)和[逐机型兼容性记录](docs/verification-raw-compatibility-2026-10-09.md)。
+
+See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibility report](docs/verification-raw-compatibility-2026-10-09.md).
+
+## v0.4.0 更新 / Previous Features
 
 - 构建 6 增加三端“关于”、作者主页和自动/手动更新检测，并沿用原下载链接覆盖安装包。
   Build 6 adds About, author links and automatic/manual update checks on Mac, Windows and Android, replacing installers at the existing download URLs.

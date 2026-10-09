@@ -74,21 +74,21 @@ SDK 安装按官方工具提示确认许可。也可通过本地、不提交的 
 Review SDK licenses through the official installer. `local.properties` can set `sdk.dir` locally.
 First build requires Google Maven, Maven Central, Gradle and GitHub access.
 
-Gradle wrapper 带下载校验；LibRaw 0.21.5 固定源版本和 SHA-256，由 NDK 为每个 ABI 编译。
+Gradle wrapper 带下载校验；LibRaw 0.22.2 固定源版本和 SHA-256，由 NDK 为每个 ABI 编译，支持 Panasonic S5 II RW2 的 encoding 8。
 无需 Homebrew LibRaw，也不使用旧的 `lutools/build.sh android`。构建时从现有仓库资源生成 LUT、
 胶片图标、应用图标和许可 assets，不提交重复图片或预编译库。
 
-The wrapper verifies its download. LibRaw 0.21.5 is source-pinned and checksum-verified,
-then built per ABI with the NDK. No host LibRaw or prebuilt `.so` is required.
+The wrapper verifies its download. LibRaw 0.22.2 is source-pinned and checksum-verified,
+then built per ABI with the NDK, including Panasonic S5 II encoding 8 support. No host LibRaw or prebuilt `.so` is required.
 Assets are generated from existing repository resources rather than duplicated in Git.
 
 ## Release
 
-[下载 Android v0.4.0 APK / Download Android v0.4.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.0/RawLab-Android-0.4.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.0/SHA256SUMS.txt)
+[下载 Android v0.4.1 APK / Download Android v0.4.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Android-0.4.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.4.0`、`versionCode` 为 `6`，沿用正式发布密钥，支持从构建 5 及同签名的旧正式版覆盖升级。构建 6 新增“更多 → 关于 RawLab”，包含项目/作者链接、自动检测开关和手动检查更新；只打开官方下载页面，不自动安装。构建脚本不会按 Git 标签自动更新版本号；自行发布前需核对 `app/build.gradle.kts` 中的版本配置并递增 `versionCode`。
+发布 APK 的 `versionName` 为 `0.4.1`、`versionCode` 为 `7`，沿用正式发布密钥，支持从构建 6 及同签名的旧正式版覆盖升级。新版从带相机补丁的 LibRaw 0.22.2 重新构建两个 ABI；不包含开发中的批量导出或编辑记忆。“更多 → 关于 RawLab”包含项目/作者链接和更新检测，只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
 
-The release APK uses `versionName=0.4.0` and `versionCode=6` and retains the release key for upgrades from build 5 and earlier release-signed versions. More > About RawLab contains project/author links and automatic/manual update checks; it opens the official release page without installing. The build script does not derive version numbers from Git tags; check the version configuration in `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses `versionName=0.4.1` and `versionCode=7`, retaining the release key for upgrades from build 6 and earlier release-signed versions. Both ABIs are rebuilt with patched LibRaw 0.22.2; in-progress batch export and edit persistence are excluded. More > About RawLab opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -144,6 +144,8 @@ Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestR
   Neighborhood sharpening/denoise are not accelerated by GLES: C API Auto falls back, Force fails. See [GPU verification](gpu-verification.md).
 - 全尺寸 RAW 显影需要较多 native 内存。低内存设备可能失败或被系统终止；没有验证所有相机和像素尺寸。
   Full-resolution RAW development is memory-intensive; low-memory devices may fail or be killed by the OS.
+  X-Trans 并发修复新增每像素 8 字节的只读输入副本，40 MP 约增加 304 MiB 峰值内存；本轮仅验证 Android 构建，未验证这些机型在设备上的内存表现。
+  The X-Trans concurrency fix adds an eight-byte-per-pixel immutable input copy, about 304 MiB for 40 MP. This camera sweep validates Android compilation only, not device memory behavior for these models.
 - LibRaw 启用 zlib，不编译可选 LCMS/JPEG/JasPer/RawSpeed/DNG SDK 集成；有损 JPEG DNG、JPEG2000 等依赖这些可选组件的格式不保证支持。
   Optional LibRaw codecs/integrations are disabled; lossy JPEG DNG and JPEG2000-dependent inputs are not guaranteed.
 - 相册仅显示被系统媒体库收录且已授权的 RAW。未收录文件可通过系统文件入口导入。
