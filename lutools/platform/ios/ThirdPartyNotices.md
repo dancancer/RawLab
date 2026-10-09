@@ -1,5 +1,14 @@
 # RawLab iOS Native Framework
 
+OpenCV 4.12.0 (core/imgproc) and wavelib are statically linked for linear-light
+wavelet denoising. OpenCV uses Apache 2.0; wavelib uses BSD 3-Clause. See the
+included `OpenCV-LICENSE` and `wavelib-COPYRIGHT`.
+Sources: https://github.com/opencv/opencv/tree/4.12.0 and
+https://github.com/rafat/wavelib. Exact revisions and archive hashes are pinned
+in `lutools/cmake/denoise-dependencies.cmake`. Local stationary-wavelet column
+and inverse-transform optimizations are in `lutools/cmake/wavelib-swt-columns.c.inc`
+and `wavelib-iswt2.c.inc`.
+
 LibRaw 0.22.2 is statically linked into sony2fuji.framework under its CDDL 1.0
 option. Copyright and both upstream license texts accompany the framework.
 Base source: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz

@@ -37,12 +37,24 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
-    func configureSession(_ session: OpaquePointer) {
+    func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool) throws {
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
         config.mode = SONY2FUJI_GPU_OFF
         _ = sony2fuji_session_set_gpu_config(session, &config)
+        guard settings.denoise.isValid else { throw ProcessorError.processFailed("Invalid denoise strengths.") }
+        var denoise = sony2fuji_wavelet_denoise_config()
+        denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
+        denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
+        denoise.enabled = settings.denoise.enabled ? 1 : 0
+        denoise.luma = Float(settings.denoise.luma)
+        denoise.chroma = Float(settings.denoise.chroma)
+        denoise.coarse = Float(settings.denoise.coarse)
+        let status = sony2fuji_session_set_wavelet_denoise(session, &denoise)
+        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
+        let previewStatus = sony2fuji_session_set_interactive_preview(session, interactive ? 1 : 0)
+        guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
     }
 
     func makeBaseRequest(settings: RawSettings) -> sony2fuji_request {
@@ -63,7 +75,7 @@ extension Sony2FujiProcessor {
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
         request.tone_curve = Float(settings.toneCurve)
-        request.noise_reduction = Float(settings.noiseReduction)
+        request.noise_reduction = settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request
     }

@@ -27,6 +27,7 @@ public sealed class Adjustments
 {
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
     public int ExposureMode { get; set; }
+    public DenoiseSettings Denoise { get; set; } = new();
     public bool CameraWhiteBalance { get; private set; } = true;
     public (double Temperature, double Tint)? AsShot { get; private set; }
     public double this[Parameter id] => values[(int)id];
@@ -47,8 +48,9 @@ public sealed class Adjustments
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 0; ResetWhiteBalance(); }
+        if (group == "细节") Denoise = new();
     }
-    public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); }
+    public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); Denoise = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output)
     {
         return new Native.Request {

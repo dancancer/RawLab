@@ -1,0 +1,29 @@
+<UserControl x:Class="RawLab.Windows.DenoisePanel"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="620">
+ <Grid Margin="4">
+  <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="62"/></Grid.RowDefinitions>
+  <DockPanel>
+   <CheckBox x:Name="EnabledBox" Content="降噪" VerticalAlignment="Center" Checked="EnabledChanged" Unchecked="EnabledChanged" AutomationProperties.Name="降噪"/>
+   <Button DockPanel.Dock="Right" Click="ResetClicked" ToolTip="重置降噪" AutomationProperties.Name="重置降噪" Padding="6,2" HorizontalAlignment="Right"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
+   <ComboBox x:Name="PresetBox" Width="116" HorizontalAlignment="Right" SelectedIndex="0" SelectionChanged="PresetChanged" AutomationProperties.Name="降噪预设" Margin="12,0">
+    <ComboBoxItem Content="细节优先"/><ComboBoxItem Content="去噪优先"/><ComboBoxItem Content="自定义" IsEnabled="False"/>
+   </ComboBox>
+  </DockPanel>
+  <UniformGrid x:Name="Parameters" Grid.Row="1" Columns="3">
+   <StackPanel Margin="0,4,8,0">
+    <DockPanel><Button Tag="Luma" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置亮度降噪" AutomationProperties.Name="重置亮度降噪" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="LumaText" Tag="Luma" DockPanel.Dock="Right" Width="38" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="亮度降噪数值"/><TextBlock Text="亮度降噪" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="LumaSlider" Tag="Luma" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="亮度降噪"/>
+   </StackPanel>
+   <StackPanel Margin="4,4,8,0">
+    <DockPanel><Button Tag="Chroma" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置色彩降噪" AutomationProperties.Name="重置色彩降噪" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="ChromaText" Tag="Chroma" DockPanel.Dock="Right" Width="38" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="色彩降噪数值"/><TextBlock Text="色彩降噪" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="ChromaSlider" Tag="Chroma" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="色彩降噪"/>
+   </StackPanel>
+   <StackPanel Margin="4,4,0,0">
+    <DockPanel><Button Tag="Coarse" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置粗色斑抑制" AutomationProperties.Name="重置粗色斑抑制" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="CoarseText" Tag="Coarse" DockPanel.Dock="Right" Width="38" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="粗色斑抑制数值"/><TextBlock Text="粗色斑抑制" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="CoarseSlider" Tag="Coarse" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="粗色斑抑制"/>
+   </StackPanel>
+  </UniformGrid>
+ </Grid>
+</UserControl>

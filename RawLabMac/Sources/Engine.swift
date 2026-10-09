@@ -2,7 +2,7 @@ import AppKit
 import ImageIO
 import Foundation
 
-enum ExposureMode: String, CaseIterable, Identifiable {
+enum ExposureMode: String, CaseIterable, Identifiable, Codable {
     case scene = "标准显影"
     case preview = "匹配内嵌预览"
     case sensor = "传感器基准"
@@ -26,11 +26,18 @@ struct RenderedImage {
     let baselineEV: Double
     let metadataEV: Double
     let asShotWhiteBalance: WhiteBalance?
+    let supportsRawNoiseReduction: Bool
 }
 
 enum RenderError: LocalizedError {
     case failed(String)
-    var errorDescription: String? { if case .failed(let text) = self { return text }; return nil }
+    case outputIO
+    var errorDescription: String? {
+        switch self {
+        case .failed(let text): return text
+        case .outputIO: return "无法写入成片，请检查输出位置和剩余空间。"
+        }
+    }
 }
 
 final class RenderEngine {
@@ -49,12 +56,35 @@ final class RenderEngine {
     }
     deinit { sony2fuji_session_destroy(session) }
 
+    var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
+
     func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false) throws -> RenderedImage? {
         guard sony2fuji_session_set_interactive_preview(session, interactive && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed("无效的预览模式")
         }
         guard sony2fuji_session_set_raw_exposure_mode(session, settings.exposureMode.core) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed("无效的曝光基准")
+        }
+        let wavelet = settings.waveletNoiseReduction
+        var waveletConfig = sony2fuji_wavelet_denoise_config()
+        waveletConfig.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
+        waveletConfig.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
+        waveletConfig.enabled = wavelet?.enabled == true ? 1 : 0
+        waveletConfig.luma = Float(wavelet?.luma ?? 0)
+        waveletConfig.chroma = Float(wavelet?.chroma ?? 0)
+        waveletConfig.coarse = Float(wavelet?.coarse ?? 0)
+        guard sony2fuji_session_set_wavelet_denoise(session, &waveletConfig) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed("无效或不可用的降噪参数")
+        }
+        let chromaMode = wavelet == nil ? (settings.chromaNoiseReduction ?? 0) : 0
+        guard let chroma = Int32(exactly: chromaMode),
+              sony2fuji_session_set_chroma_denoise(session, chroma) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed("无效或不可用的色度降噪模式")
+        }
+        let legacyLevel = wavelet == nil && chromaMode == 0 ? settings.rawNoiseReduction : 0
+        guard let noiseReduction = Int32(exactly: legacyLevel),
+              sony2fuji_session_set_raw_noise_reduction(session, noiseReduction) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed("无效的 RAW 降噪档位")
         }
         var request = sony2fuji_request()
         request.version = SONY2FUJI_REQUEST_VERSION
@@ -86,6 +116,7 @@ final class RenderEngine {
         guard status == SONY2FUJI_STATUS_OK else {
             let message = String(cString: sony2fuji_status_message(status))
             if status == SONY2FUJI_STATUS_IO_ERROR {
+                if output != nil { throw RenderError.outputIO }
                 throw RenderError.failed("无法读取或写入文件，请检查路径和访问权限。")
             }
             if status == SONY2FUJI_STATUS_UNSUPPORTED {
@@ -107,6 +138,8 @@ final class RenderEngine {
         guard let pointer = buffer.data else { throw RenderError.failed("处理结果为空") }
         var temperature: Float = 0, tint: Float = 0
         let calibrated = sony2fuji_session_get_raw_white_balance(session, &temperature, &tint) == SONY2FUJI_STATUS_OK
+        var noiseReductionSupported: Int32 = 0
+        _ = sony2fuji_session_get_raw_noise_reduction_support(session, &noiseReductionSupported)
         let cameraWhiteBalance = calibrated ? WhiteBalance(temperature: Double(temperature).rounded(), tint: Double(tint).rounded()) : nil
         let width = Int(buffer.width), height = Int(buffer.height)
         let data = Data(bytes: pointer, count: buffer.size_bytes)
@@ -130,7 +163,8 @@ final class RenderEngine {
             provider: CGDataProvider(data: overlay as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
         return RenderedImage(image: image, isFullResolution: edge == nil, clipping: mask, histogram: histogram,
             shadows: Double(black)/Double(width*height), highlights: Double(white)/Double(width*height),
-            baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance)
+            baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance,
+            supportsRawNoiseReduction: noiseReductionSupported == 1)
     }
 }
 

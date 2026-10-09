@@ -15,6 +15,49 @@ import java.nio.ByteOrder
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun waveletDenoisePreviewAndExportShareTheSameSettings() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File(context.cacheDir, "wavelet-test.dng")
+        val output = File(context.cacheDir, "wavelet-test.png")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val off = processor.preview(input, null, EditSettings(), 200, false)
+                val settings = EditSettings(denoise = DenoiseSettings().withPreset(DenoisePreset.CLEAN))
+                val clean = processor.preview(input, null, settings, 200, false)
+                assertFalse(off.pixels.contentEquals(clean.pixels))
+                assertEquals(0, clean.backend)
+                processor.preview(input, null, settings, 128, true)
+                assertArrayEquals(clean.pixels, processor.preview(input, null, settings, 200, false).pixels)
+                assertArrayEquals(off.pixels, processor.preview(input, null,
+                    settings.copy(denoise = settings.denoise.copy(enabled = false)), 200, false).pixels)
+                processor.setGpuMode(NativeProcessor.FORCE)
+                assertThrows(Exception::class.java) { processor.preview(input, null, settings, 200, false) }
+                processor.setGpuMode(NativeProcessor.CPU)
+                processor.export(input, null, settings, output, true)
+                val header = ByteArray(26)
+                java.io.DataInputStream(output.inputStream()).use { it.readFully(header) }
+                assertEquals(16, header[24].toInt())
+                assertTrue(ByteBuffer.wrap(header, 16, 4).int > 200)
+                assertTrue(ByteBuffer.wrap(header, 20, 4).int > 200)
+                val saved = android.graphics.BitmapFactory.decodeFile(output.path)
+                NativeProcessor(NativeProcessor.CPU).use { fresh ->
+                    val full = fresh.preview(input, null, settings, maxOf(saved.width, saved.height), false)
+                    assertEquals(full.width, saved.width)
+                    assertEquals(full.height, saved.height)
+                    for (y in 0 until full.height step 17) for (x in 0 until full.width step 19) {
+                        val pixel = saved.getPixel(x, y)
+                        val channels = intArrayOf(android.graphics.Color.red(pixel), android.graphics.Color.green(pixel), android.graphics.Color.blue(pixel))
+                        for (c in 0..2) assertTrue("PNG and exact preview channel mismatch",
+                            kotlin.math.abs(channels[c] - (full.pixels[(y * full.width + x) * 4 + c].toInt() and 255)) <= 1)
+                    }
+                }
+                saved.recycle()
+            }
+        } finally { input.delete(); output.delete() }
+    }
+
     @Test fun whiteBalancePreviewLatency() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val input = File(instrumentation.targetContext.cacheDir, "wb-latency-test.arw")

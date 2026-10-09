@@ -11,7 +11,7 @@ final class EditorModel: ObservableObject {
         let pass: RenderPass
     }
 
-    @Published var settings = Adjustments() { didSet { if !updatingMetadata { schedule() } } }
+    @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { schedule() } } }
     private var updatingMetadata = false
     @Published var films = Film.bundled()
     @Published var selectedFilmID = "" { didSet { schedule() } }
@@ -31,6 +31,7 @@ final class EditorModel: ObservableObject {
     private var debounceTimer: DispatchSourceTimer?
     private var workerActive = false
     private var engine: RenderEngine?
+    private var originalCache: (file: URL, frame: RenderedImage)?
     private var editSession = PhotoEditSession()
     private var lookLibrary: LookLibrary?
     var selectedFilm: Film? { films.first { $0.id == selectedFilmID } }
@@ -205,9 +206,13 @@ final class EditorModel: ObservableObject {
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
-                let neutral = try self.engine!.render(work.file, settings: work.settings, lut: nil,
-                                                       edge: work.edge, output: nil,
-                                                       interactive: work.pass == .interactive)
+                if self.originalCache?.file != work.file {
+                    self.originalCache = nil
+                    if let original = try self.engine!.render(work.file, settings: Adjustments(), lut: nil, edge: nil) {
+                        self.originalCache = (work.file, original)
+                    }
+                }
+                let neutral = self.originalCache?.frame
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
                                                      edge: work.edge, output: nil,
                                                      interactive: work.pass == .interactive)
@@ -240,6 +245,7 @@ final class EditorModel: ObservableObject {
                 self.result = result
                 updatingMetadata = true
                 settings.resolveWhiteBalance(result.asShotWhiteBalance)
+                settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
                 updatingMetadata = false
                 if completion == .publishInteractive {
                     status = "交互预览… \(result.image.width) × \(result.image.height) · sRGB"

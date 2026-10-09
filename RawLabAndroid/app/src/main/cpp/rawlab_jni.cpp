@@ -110,7 +110,8 @@ Java_com_rawlab_android_NativeProcessor_nativeSetGpuMode(JNIEnv* env, jobject, j
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
     jstring input, jstring lut, jstring output, jfloat strength, jfloat exposure,
-    jboolean customWb, jfloat temperature, jfloat tint, jint edge, jboolean interactive, jboolean png) {
+    jboolean customWb, jfloat temperature, jfloat tint, jint edge, jboolean interactive, jboolean png,
+    jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
@@ -120,6 +121,9 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         auto request = rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
             exposure, customWb, temperature, tint, edge, png);
         check(sony2fuji_session_set_interactive_preview(session, interactive && !out.chars));
+        sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
+            sizeof(sony2fuji_wavelet_denoise_config), denoiseEnabled ? 1 : 0, luma, chroma, coarse};
+        check(sony2fuji_session_set_wavelet_denoise(session, &denoise));
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
         if (output) return nullptr;

@@ -164,6 +164,16 @@ typedef struct sony2fuji_gpu_config {
     sony2fuji_gpu_mode mode;
 } sony2fuji_gpu_config;
 
+#define SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION 1
+typedef struct sony2fuji_wavelet_denoise_config {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t enabled;
+    float luma;   // 0..100, independent normalized-luminance strength.
+    float chroma; // 0..100, normalized-color strength.
+    float coarse; // 0..100, coarse color-band fraction of chroma strength.
+} sony2fuji_wavelet_denoise_config;
+
 // ============================================================================
 // Opaque Session
 // ============================================================================
@@ -207,6 +217,32 @@ sony2fuji_status sony2fuji_analyze_image(
 // Does not change request v2 layout. The mode participates in the RAW cache key.
 sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
     sony2fuji_session* session, sony2fuji_raw_exposure_mode mode
+);
+
+// FBDD before demosaic: 0 off (default), 1 light, 2 full. Keeps request v2 ABI.
+// Enabled FBDD requires a three-color Bayer RAW and disables half-size decoding.
+// Unsupported inputs return UNSUPPORTED at processing time, never a silent no-op.
+sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* session, int32_t level);
+
+// Display-sRGB chroma denoising after tone/LUT, before sharpening and resizing.
+// 0 off (default), 1 detail priority, 2 noise priority. Does not change request v2.
+// Requires a core built with SONY2FUJI_ENABLE_CHROMA_DENOISE; otherwise nonzero
+// modes return UNSUPPORTED. Uses full-resolution CPU rendering in Auto/Off;
+// Force GPU rejects this CPU-only stage rather than silently falling back.
+sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session, int32_t mode);
+
+// Linear-sRGB wavelets before user exposure, tone/LUT and sharpening. Additive ABI.
+// Exact previews and exports filter at source resolution. Explicit interactive
+// buffer previews may use a reduced image; final/file output is never downgraded.
+// Auto uses CPU; Force GPU returns an error when this CPU-only stage is active.
+// Old FBDD/display-chroma settings are independent; clients choose whether to stack.
+sony2fuji_status sony2fuji_session_set_wavelet_denoise(
+    sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config
+);
+
+// Capability of the last successfully decoded RAW: 0 unsupported, 1 supported.
+sony2fuji_status sony2fuji_session_get_raw_noise_reduction_support(
+    const sony2fuji_session* session, int32_t* supported
 );
 
 // Offsets of the last successfully decoded RAW, excluding user exposure.

@@ -180,7 +180,14 @@ extension ContentView {
 
     @ViewBuilder
     var valuePanel: some View {
-        if let adjustment = selectedAdjustment {
+        if selectedAdjustment == .noiseReduction {
+            IOSDenoiseControls(settings: Binding(
+                get: { settings.denoise },
+                set: { settings.denoise = $0; settings.noiseReduction = 0 }
+            ), onEditingChanged: setSliderEditing)
+                .padding(.horizontal, 16)
+                .disabled(!viewModel.hasImage || editingLocked)
+        } else if let adjustment = selectedAdjustment {
             VStack(spacing: 4) {
                 HStack {
                     Text(adjustment.title).font(.subheadline)
@@ -254,5 +261,49 @@ extension ContentView {
         .id(id ?? "neutral")
         .accessibilityLabel(name)
         .accessibilityAddTraits(settings.lutID == id ? .isSelected : [])
+    }
+}
+
+private struct IOSDenoiseControls: View {
+    @Binding var settings: RawDenoiseSettings
+    let onEditingChanged: (Bool) -> Void
+    private let parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] = [
+        ("亮度降噪", \.luma, 0), ("色彩降噪", \.chroma, 46), ("粗色斑抑制", \.coarse, 50)
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Toggle("降噪", isOn: $settings.enabled).fixedSize()
+                    .accessibilityIdentifier("denoise.enabled")
+                Spacer(minLength: 4)
+                Picker("预设", selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
+                    Text(RawDenoisePreset.detail.rawValue).tag(RawDenoisePreset.detail)
+                    Text(RawDenoisePreset.clean.rawValue).tag(RawDenoisePreset.clean)
+                    if settings.preset == .custom { Text("自定义").tag(RawDenoisePreset.custom) }
+                }.pickerStyle(.menu).accessibilityIdentifier("denoise.preset")
+                Button { settings = RawDenoiseSettings() } label: {
+                    Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 44)
+                }.accessibilityLabel("重置降噪")
+            }
+            ForEach(parameters.indices, id: \.self) { index in
+                let parameter = parameters[index]
+                let value = Binding(get: { settings[keyPath: parameter.1] }, set: { number in
+                    if number.isFinite { settings[keyPath: parameter.1] = min(100, max(0, number.rounded())) }
+                })
+                HStack(spacing: 6) {
+                    Text(parameter.0).font(.caption).frame(width: 78, alignment: .leading)
+                    Slider(value: value, in: 0...100, step: 1, onEditingChanged: onEditingChanged)
+                        .accessibilityLabel(parameter.0).accessibilityIdentifier("denoise.slider.\(index)")
+                    TextField(parameter.0, value: value, format: .number.precision(.fractionLength(0)))
+                        .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder).frame(width: 42)
+                        .accessibilityLabel("\(parameter.0)数值").accessibilityIdentifier("denoise.value.\(index)")
+                    Button { value.wrappedValue = parameter.2 } label: {
+                        Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 44)
+                    }.accessibilityLabel("重置\(parameter.0)").disabled(value.wrappedValue == parameter.2)
+                }.disabled(!settings.enabled).frame(minHeight: 44)
+            }
+        }
     }
 }

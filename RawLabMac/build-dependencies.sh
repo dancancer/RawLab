@@ -93,4 +93,6 @@ for feature in LCMS DNGDEFLATECODEC DNGLOSSYCODEC OPENMP; do
 done
 cmake --build "$BUILD/libraw-cmake" -j "$JOBS"
 cmake --install "$BUILD/libraw-cmake"
+RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-chroma-dependency.sh"
+RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
 echo "Dependencies installed: $PREFIX"

@@ -1,5 +1,13 @@
 RawLab Android uses the repository's shared Sony2Fuji C++ core.
 
+OpenCV 4.12.0 (core/imgproc): https://github.com/opencv/opencv/tree/4.12.0
+Apache 2.0; see OpenCV-LICENSE.txt.
+wavelib: https://github.com/rafat/wavelib, BSD 3-Clause; see wavelib-LICENSE.txt.
+Both are statically linked for linear-light wavelet denoising. Exact revisions
+and archive hashes are pinned in lutools/cmake/denoise-dependencies.cmake.
+Local stationary-wavelet column and inverse-transform optimizations are in
+lutools/cmake/wavelib-swt-columns.c.inc and wavelib-iswt2.c.inc.
+
 LibRaw 0.22.2: https://github.com/LibRaw/LibRaw/tree/0.22.2
 Source archive: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
 SHA-256: de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa

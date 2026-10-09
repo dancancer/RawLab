@@ -29,7 +29,12 @@ struct AdjustmentDock: View {
                 }.scrollIndicators(.hidden)
             }.frame(height: 76)
             Group {
-                if let parameter = selected {
+                if selected == .denoiseMode {
+                    DenoiseControls(model: model)
+                        .id(resetVersion)
+                        .frame(maxWidth: 560).padding(.horizontal, 16)
+                        .disabled(model.result == nil)
+                } else if let parameter = selected {
                     AdjustmentRow(parameter: parameter, value: Binding(
                         get: { model.settings[keyPath: parameter.spec.keyPath] },
                         set: { model.settings.set(parameter, to: $0) }
@@ -57,9 +62,11 @@ struct AdjustmentDock: View {
     private func tool(_ parameter: AdjustmentParameter) -> some View {
         let spec = parameter.spec(for: model.settings)
         let value = model.settings[keyPath: spec.keyPath]
-        let changed = value != spec.defaultValue
+        let changed = parameter == .denoiseMode ? model.settings.isDenoiseEnabled : value != spec.defaultValue
         let active = selected == parameter
-        let progress = spec.progress(for: value)
+        let progress = parameter == .denoiseMode ? (changed ? 1.0 : 0.0) : spec.progress(for: value)
+        let valueText = parameter == .denoiseMode ?
+            model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
         return Button { selected = parameter } label: {
             VStack(spacing: 5) {
                 ZStack {
@@ -80,12 +87,18 @@ struct AdjustmentDock: View {
         }
         .buttonStyle(.plain)
         .disabled(parameter.isWhiteBalance && model.settings.asShotWhiteBalance == nil)
-        .accessibilityLabel(spec.title).accessibilityValue("\(spec.text(value)) \(spec.unit)")
+        .disabled(parameter == .denoiseMode && model.result == nil)
+        .accessibilityLabel(spec.title).accessibilityValue(valueText)
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("tool.\(parameter.rawValue)")
-        .help("\(spec.title)：\(spec.text(value)) \(spec.unit)")
+        .help(parameter == .denoiseMode ? noiseReductionHelp : "\(spec.title)：\(valueText)")
         .contextMenu {
             Button("重置\(spec.title)") { model.settings.set(parameter, to: spec.defaultValue) }.disabled(!changed)
         }
+    }
+
+    private var noiseReductionHelp: String {
+        model.result == nil ? "载入照片后可用" :
+            (model.settings.hasLegacyDenoise ? "保留旧编辑记录的降噪算法" : "调整亮度、色彩和粗色斑降噪")
     }
 }

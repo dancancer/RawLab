@@ -7,13 +7,23 @@ case "$ARCH" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture: $ARCH" >
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
 DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}"
-cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON
+CHROMA_PREFIX="$ROOT/build/macos15-deps/$ARCH/install"
+export PKG_CONFIG_PATH="$CHROMA_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
+    RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-chroma-dependency.sh"
+fi
+RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
+cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON
 cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resources/Licenses/"
 cp -R "$ROOT/RawLabMac/Resources/Licenses/." "$APP/Contents/Resources/Licenses/"
 cp "$ROOT/RawLabMac/Resources/ThirdPartyNotices.md" "$APP/Contents/Resources/Licenses/"
+OPENCV_PREFIX="$(pkg-config --variable=prefix opencv4)"
+mkdir -p "$APP/Contents/Resources/Licenses/OpenCV"
+cp -R "$OPENCV_PREFIX/share/licenses/opencv4/." "$APP/Contents/Resources/Licenses/OpenCV/"
+cp "$CHROMA_PREFIX/share/licenses/wavelib/COPYRIGHT" "$APP/Contents/Resources/Licenses/wavelib-COPYRIGHT"
 SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
 # The CLT 27 SDK exposes SwiftUI macros without shipping their compiler plugin.
 if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
@@ -23,7 +33,7 @@ RAW_LIB="$(pkg-config --variable=libdir libraw)"
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT"/RawLabMac/Sources/*.swift "$ROOT/Shared/ExportMetadata.swift" "$BUILD/libsony2fuji_core.a" \
-    -L "$RAW_LIB" -lraw -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
+    -L "$RAW_LIB" -lraw $(pkg-config --libs opencv4 wavelib) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"
 cp "$ROOT/RawLabMac/Info.plist" "$APP/Contents/Info.plist"
@@ -47,7 +57,10 @@ embed_dependency() {
     while IFS= read -r dependency; do
         case "$dependency" in
             /System/*|/usr/lib/*) continue ;;
-            @rpath/*) source="$RAW_LIB/${dependency#@rpath/}" ;;
+            @rpath/*)
+                source="$RAW_LIB/${dependency#@rpath/}"
+                if [ ! -f "$source" ]; then source="$OPENCV_PREFIX/lib/${dependency#@rpath/}"; fi
+                ;;
             /*) source="$dependency" ;;
             *) echo "Unsupported dependency path: $dependency" >&2; exit 1 ;;
         esac

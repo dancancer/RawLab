@@ -31,7 +31,7 @@ public partial class MainWindow : Window
     private string? file,lut;
     private RenderEngine? engine;
     private bool ready,syncing,interacting,exporting,closing,exactReady;
-    private bool compare=true,clipping,choosingFilm,swipe;
+    private bool compare=true,clipping,choosingFilm,choosingDenoise,swipe;
     private bool renderFailed;
     private double dockHeight=264;
     private double libraryWidth=260;
@@ -72,6 +72,10 @@ public partial class MainWindow : Window
         }
         lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
         BuildTools(); BuildFilms();
+        DenoiseEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting)return;
+            settings.Denoise=value;interacting=dragging;RefreshControls();Schedule();
+        };
         ValueSlider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{interacting=true;}));
         ValueSlider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{interacting=false; Schedule();}));
         ready=true; RefreshControls();
@@ -101,11 +105,12 @@ public partial class MainWindow : Window
             var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=spec.Title,FontSize=11,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=spec.Title};
             AutomationProperties.SetName(button,spec.Title);
-            button.Click+=(_,_)=>{choosingFilm=false;selectedParameter=spec.Id;RefreshControls();};
+            button.Click+=(_,_)=>{choosingFilm=false;choosingDenoise=false;selectedParameter=spec.Id;RefreshControls();};
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
     }
-    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { choosingFilm=true;RefreshControls(); }
+    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { choosingFilm=true;choosingDenoise=false;RefreshControls(); }
+    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { choosingDenoise=true;choosingFilm=false;RefreshControls(); }
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear();
@@ -141,7 +146,12 @@ public partial class MainWindow : Window
             var canAdjust=file!=null && !exporting && !choosingFilm && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
-            ParameterPanel.Visibility=choosingFilm ? Visibility.Collapsed : Visibility.Visible;
+            ParameterPanel.Visibility=choosingFilm || choosingDenoise ? Visibility.Collapsed : Visibility.Visible;
+            DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
+            DenoiseEditor.IsEnabled=file!=null && !exporting;DenoiseEditor.Refresh(settings.Denoise);
+            DenoiseCategory.Tag=choosingDenoise ? "selected" : null;
+            DenoiseCategoryRing.Selected=choosingDenoise;
+            DenoiseCategoryRing.Progress=settings.Denoise.Enabled ? 1 : 0;DenoiseCategoryRing.InvalidateVisual();
             FilmCategory.Tag=choosingFilm ? "selected" : null;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
             ExposureMode.SelectedIndex=settings.ExposureMode;
@@ -150,7 +160,7 @@ public partial class MainWindow : Window
             AsShotButton.IsEnabled=file!=null && !exporting && settings.AsShot!=null;
             foreach(var (id,controls) in toolButtons)
             {
-                var selected=!choosingFilm && id==selectedParameter;
+                var selected=!choosingFilm && !choosingDenoise && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
@@ -158,7 +168,7 @@ public partial class MainWindow : Window
             }
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
             var filmName=films.FirstOrDefault(f=>f.Path==lut)?.Name ?? "中性";
-            ActiveFilm.Text=FilmLabelText.Text=filmName;ActiveFilm.ToolTip=filmName;
+            ActiveFilm.Text=filmName;FilmLabelText.Text=lut==null ? "调整后" : filmName;ActiveFilm.ToolTip=filmName;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             CompareButton.Tag=compare ? "selected" : null;
             ClippingButton.Tag=clipping ? "selected" : null;

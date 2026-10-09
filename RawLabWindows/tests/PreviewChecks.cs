@@ -28,7 +28,7 @@ internal static class PreviewChecks
         var single=Frame(compare:false);
         check(ReferenceEquals(single.Neutral,single.Result),"Comparison changes invalidate the cached frame");
         var masked=Frame(clipping:true);
-        check(masked.Neutral.Clipping!=null && masked.Result.Clipping!=null,"Clipping changes invalidate the cached frame");
+        check(masked.Neutral.Clipping==null && masked.Result.Clipping!=null,"Clipping affects only the edited frame");
         engine.SetGpuMode(0);var cpu=Frame();
         check(cpu.Result.Backend!=3,"CPU mode cannot reuse a GPU-labelled cached frame");engine.SetGpuMode(1);
         var originalTime=File.GetLastWriteTimeUtc(raw);

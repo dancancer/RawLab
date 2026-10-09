@@ -138,8 +138,8 @@ struct EditorView: View {
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
             HStack(spacing: 1) {
-                if compare, let base = model.neutral { imagePane(base, title: "中性", showMask: false) }
-                imagePane(result, title: model.selectedFilm?.name ?? "中性", showMask: clipping)
+                if compare, let base = model.neutral { imagePane(base, title: "原图", showMask: false) }
+                imagePane(result, title: model.selectedFilm?.name ?? "调整后", showMask: clipping)
             }
         } else {
             VStack(spacing: 16) {
@@ -189,7 +189,7 @@ struct EditorView: View {
         ToolbarItemGroup {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
-                .help("中性与胶片对比").accessibilityLabel("对比")
+                .help("原图与调整后对比").accessibilityLabel("对比")
                 .accessibilityValue(compare ? "已开启" : "已关闭").disabled(model.result == nil)
             Menu {
                 Button("适合窗口", action: fit).keyboardShortcut("0")
@@ -233,7 +233,7 @@ struct EditorView: View {
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
-        PhotoCanvas(frame: frame, viewport: viewport, pixelReady: frame.isFullResolution, pan: $pan, clipping: showMask)
+        PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.neutral?.image.width ?? frame.image.width, pan: $pan, clipping: showMask)
             .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() })
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {

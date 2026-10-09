@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-adjustments.XXXXXX)"
@@ -12,7 +13,7 @@ swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT/RawLabMac/tests/AdjustmentTests.swift" \
     "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
-    -L "$(pkg-config --variable=libdir libraw)" -lraw -lc++ -lz \
+    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/adjustments"
 SAMPLES=()
 if [ -n "${RAWLAB_TEST_RAW:-}" ]; then SAMPLES+=("$RAWLAB_TEST_RAW"); fi
