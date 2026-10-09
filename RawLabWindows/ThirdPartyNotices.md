@@ -20,6 +20,14 @@
   `lutools/third_party/rawspeed-camera-calibration.inc`. Changes: four exact-model
   matrices extracted into LibRaw table syntax; black/white levels remain metadata-driven.
 - zlib 1.3.1: https://github.com/madler/zlib/tree/v1.3.1, zlib license.
+- OpenCV 4.12.0: https://github.com/opencv/opencv/tree/4.12.0, Apache 2.0.
+  Static core/imgproc libraries support linear-light wavelet denoising.
+  See `Licenses/OpenCV-LICENSE`.
+- wavelib: https://github.com/rafat/wavelib/tree/7f61bf592f3c470b2a7d8199431fde821d7253ac, BSD 3-Clause.
+  The exact revision and source hash are pinned in `lutools/cmake/denoise-dependencies.cmake`.
+  Local stationary-wavelet column and inverse-transform optimizations are in
+  `lutools/cmake/wavelib-swt-columns.c.inc` and `wavelib-iswt2.c.inc`.
+  See `Licenses/wavelib-COPYRIGHT`.
 - ExifTool 13.59: https://exiftool.org/, copyright Phil Harvey, distributed under
   the same terms as Perl (Artistic License or GNU GPL). The Windows x64 package
   is from the Windows packager linked by ExifTool:
@@ -43,5 +51,5 @@
   installed Visual Studio Build Tools, under Microsoft's distribution terms.
 
 No binaries are checked into source control. The build downloads version-pinned
-LibRaw and zlib source archives and verifies their hashes before compilation.
+LibRaw, zlib, OpenCV and wavelib source archives and verifies their hashes before compilation.
 The ExifTool runtime archive is also version-pinned and hash-verified.

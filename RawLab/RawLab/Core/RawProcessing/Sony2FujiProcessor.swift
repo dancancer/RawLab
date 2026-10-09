@@ -81,7 +81,8 @@ struct Sony2FujiProcessor {
         url: URL,
         settings: RawSettings,
         previewLongEdge: CGFloat?,
-        lutURL: URL?
+        lutURL: URL?,
+        interactive: Bool = false
     ) throws -> ProcessResult {
         let metadata = try loadMetadata(from: url)
         let targetWidth: UInt32
@@ -96,7 +97,7 @@ struct Sony2FujiProcessor {
         }
         let session = try createSession()
         defer { destroySession(session) }
-        configureSession(session)
+        try configureSession(session, settings: settings, interactive: interactive && previewLongEdge != nil)
 
         var request = makeBaseRequest(settings: settings)
         request.input_type = SONY2FUJI_INPUT_RAW
@@ -125,11 +126,12 @@ struct Sony2FujiProcessor {
         buffer: Buffer,
         settings: RawSettings,
         previewLongEdge: CGFloat?,
-        lutURL: URL?
+        lutURL: URL?,
+        interactive: Bool = false
     ) throws -> Buffer {
         let session = try createSession()
         defer { destroySession(session) }
-        configureSession(session)
+        try configureSession(session, settings: settings, interactive: interactive && previewLongEdge != nil)
 
         var request = makeBaseRequest(settings: settings)
         request.input_type = SONY2FUJI_INPUT_BUFFER

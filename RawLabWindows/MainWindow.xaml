@@ -79,7 +79,7 @@
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Margin="0,0,2,0"/>
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Column="1"/>
-          <Border x:Name="NeutralLabel" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock Text="中性" FontSize="12"/></Border>
+          <Border x:Name="NeutralLabel" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock Text="原图" FontSize="12"/></Border>
           <Border x:Name="FilmLabel" Grid.Column="1" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock x:Name="FilmLabelText" FontSize="12"/></Border>
           <StackPanel x:Name="Welcome" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center">
             <TextBlock Text="打开一张 RAW 照片" FontSize="24" Foreground="#D2D3D7" HorizontalAlignment="Center"/>
@@ -111,6 +111,9 @@
                   <TextBlock Text="胶片" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                 </StackPanel>
               </Button>
+              <Button x:Name="DenoiseCategory" Click="DenoiseCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="降噪" AutomationProperties.Name="降噪">
+                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="DenoiseCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="降噪" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+              </Button>
             </StackPanel></ScrollViewer>
             <WrapPanel x:Name="ParameterPanel" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,5">
               <TextBlock x:Name="ParameterTitle" Width="65" VerticalAlignment="Center" FontWeight="SemiBold"/>
@@ -123,6 +126,7 @@
             <DockPanel x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,3,0,0">
               <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" VerticalContentAlignment="Center"><StackPanel x:Name="FilmStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
             </DockPanel>
+            <local:DenoisePanel x:Name="DenoiseEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
           </Grid>
         </Border>
       </Grid>

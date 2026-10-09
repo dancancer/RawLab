@@ -173,8 +173,8 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     expanded: Boolean, toggleExpanded: () -> Unit, compare: Boolean, toggleCompare: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit,
     onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit) {
-    val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.temperature, R.string.tint)
-    val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.Thermostat, Icons.Outlined.Palette)
+    val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.temperature, R.string.tint, R.string.denoise)
+    val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Grain)
     val edits = state.edits
     val calibrated = state.preview?.temperature?.isFinite() == true
     var menuLookId by remember { mutableStateOf<String?>(null) }
@@ -186,7 +186,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             IconToggleButton(checked = compare, onCheckedChange = { toggleCompare() }, enabled = state.preview != null) {
                 Icon(Icons.Outlined.Compare, stringResource(R.string.compare))
             }
-            if (expanded && tool >= 3) {
+            if (expanded && tool in 3..4) {
                 TextButton(onClick = { onEdit(edits.copy(customWb = false), false) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
             } else {
@@ -256,6 +256,9 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                         { onEdit(edits.copy(customWb = false), false) })
                 }
             }
+            5 -> DenoiseControls(edits.denoise, state.controlsEnabled) { value, dragging ->
+                onEdit(edits.copy(denoise = value), dragging)
+            }
         }
         }
         Row(Modifier.fillMaxWidth().height(64.dp)) {
@@ -288,7 +291,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
 }
 
 @Composable
-private fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
+internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
     enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false) {
     var editing by remember { mutableStateOf(false) }
     var latestValue by remember(value) { mutableStateOf(value) }

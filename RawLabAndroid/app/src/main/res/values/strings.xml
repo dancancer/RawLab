@@ -32,8 +32,8 @@
     <string name="compare">对比</string>
     <string name="reset">重置调整</string>
     <string name="empty_title">打开 RAW 照片</string>
-    <string name="neutral">中性</string>
-    <string name="result">胶片效果</string>
+    <string name="neutral">原图</string>
+    <string name="result">调整后</string>
     <string name="film">胶片</string>
     <string name="strength">强度</string>
     <string name="exposure">曝光</string>
@@ -78,6 +78,13 @@
     <string name="gpu_auto">硬件加速（自动回退）</string>
     <string name="collapse_adjustments">收起调整</string>
     <string name="expand_adjustments">展开调整</string>
-    <string name="comparison_wipe">中性与胶片效果分界</string>
+    <string name="comparison_wipe">原图与调整后分界</string>
     <string name="zoom_fit">适应画面</string>
+    <string name="denoise">降噪</string>
+    <string name="denoise_detail">细节优先</string>
+    <string name="denoise_clean">去噪优先</string>
+    <string name="denoise_custom">自定义</string>
+    <string name="denoise_luma">亮度降噪</string>
+    <string name="denoise_chroma">色彩降噪</string>
+    <string name="denoise_coarse">粗色斑抑制</string>
 </resources>

@@ -1,16 +1,80 @@
 import Foundation
 
-struct WhiteBalance: Equatable {
+struct WhiteBalance: Equatable, Codable {
     let temperature: Double
     let tint: Double
 }
 
-enum WhiteBalanceMode: String, CaseIterable, Identifiable {
+enum WhiteBalanceMode: String, CaseIterable, Identifiable, Codable {
     case asShot = "拍摄时设置", custom = "自定义"
     var id: String { rawValue }
 }
 
-struct Adjustments: Equatable {
+enum RawNoiseReductionLevel: Double, CaseIterable, Identifiable {
+    case off = 0, light = 1, full = 2
+    var id: Double { rawValue }
+    var title: String {
+        switch self {
+        case .off: return "关闭"
+        case .light: return "轻度"
+        case .full: return "强度"
+        }
+    }
+}
+
+enum ChromaNoiseReductionMode: Double, CaseIterable, Identifiable {
+    case off = 0, detail = 1, clean = 2
+    var id: Double { rawValue }
+    var title: String {
+        switch self {
+        case .off: return "关闭"
+        case .detail: return "细节优先"
+        case .clean: return "去噪优先"
+        }
+    }
+}
+
+enum DenoisePreset: String, Codable, CaseIterable, Identifiable {
+    case detail, clean, custom
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .detail: return "细节优先"
+        case .clean: return "去噪优先"
+        case .custom: return "自定义"
+        }
+    }
+}
+
+struct WaveletDenoiseSettings: Equatable, Codable {
+    var enabled = false
+    var luma = 0.0
+    var chroma = 46.0
+    var coarse = 50.0
+    var preset = DenoisePreset.detail
+}
+
+enum DenoiseParameter: String, CaseIterable, Identifiable {
+    case luma, chroma, coarse
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .luma: return "亮度降噪"
+        case .chroma: return "色彩降噪"
+        case .coarse: return "粗色斑抑制"
+        }
+    }
+    var keyPath: WritableKeyPath<WaveletDenoiseSettings, Double> {
+        switch self {
+        case .luma: return \.luma
+        case .chroma: return \.chroma
+        case .coarse: return \.coarse
+        }
+    }
+    var defaultValue: Double { WaveletDenoiseSettings()[keyPath: keyPath] }
+}
+
+struct Adjustments: Equatable, Codable {
     var exposureMode = ExposureMode.scene
     var exposure = 0.0
     var temperature = 6500.0
@@ -24,6 +88,63 @@ struct Adjustments: Equatable {
     var toneCurve = 0.0
     var saturation = 0.0
     var sharpening = 0.0
+    var rawNoiseReduction = 0.0
+    // 缺少此字段的旧记录继续按 FBDD 解释，不静默切换算法。
+    var chromaNoiseReduction: Double?
+    // nil 保留旧算法语义，显式启用或选择预设后才迁移。
+    var waveletNoiseReduction: WaveletDenoiseSettings?
+    private(set) var supportsRawNoiseReduction = false
+
+    var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
+    var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
+    var isDenoiseEnabled: Bool { waveletNoiseReduction?.enabled ?? (denoiseMode > 0) }
+    var denoiseSummary: String {
+        if let settings = waveletNoiseReduction {
+            return settings.enabled ? settings.preset.title : "关闭"
+        }
+        if denoiseMode == 0 { return "关闭" }
+        if denoiseMode == 3 { return "旧版 FBDD" }
+        return "旧版：\(ChromaNoiseReductionMode(rawValue: denoiseMode)?.title ?? "色度降噪")"
+    }
+
+    mutating func setDenoiseEnabled(_ enabled: Bool) {
+        var state = waveletSettings
+        state.enabled = enabled
+        waveletNoiseReduction = state
+        rawNoiseReduction = 0
+        chromaNoiseReduction = nil
+    }
+
+    mutating func applyDenoisePreset(_ preset: DenoisePreset) {
+        guard preset != .custom else { return }
+        var state = WaveletDenoiseSettings()
+        state.enabled = true
+        state.preset = preset
+        if preset == .clean { state.luma = 10; state.chroma = 72; state.coarse = 100 }
+        waveletNoiseReduction = state
+        rawNoiseReduction = 0
+        chromaNoiseReduction = nil
+    }
+
+    mutating func setDenoiseParameter(_ parameter: DenoiseParameter, to value: Double) {
+        guard value.isFinite else { return }
+        var state = waveletSettings
+        let value = min(100, max(0, value.rounded()))
+        guard state[keyPath: parameter.keyPath] != value else { return }
+        state[keyPath: parameter.keyPath] = value
+        state.preset = .custom
+        waveletNoiseReduction = state
+    }
+
+    var denoiseMode: Double {
+        get { chromaNoiseReduction ?? (rawNoiseReduction > 0 ? 3 : 0) }
+        set {
+            guard ChromaNoiseReductionMode(rawValue: newValue) != nil else { return }
+            waveletNoiseReduction = nil
+            chromaNoiseReduction = newValue == 0 ? nil : newValue
+            rawNoiseReduction = 0
+        }
+    }
 
     func apply(to request: inout sony2fuji_request) {
         request.exposure_ev = Float(exposure)
@@ -52,6 +173,7 @@ struct Adjustments: Equatable {
     func isDefault(_ group: AdjustmentGroup) -> Bool {
         group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
             && (group != .input || exposureMode == .scene)
+            && (group != .detail || !isDenoiseEnabled)
     }
 
     mutating func resolveWhiteBalance(_ camera: WhiteBalance?) {
@@ -65,6 +187,11 @@ struct Adjustments: Equatable {
         whiteBalanceMode = .asShot
     }
 
+    mutating func resolveRawNoiseReductionSupport(_ supported: Bool) {
+        supportsRawNoiseReduction = supported
+        if !supported { rawNoiseReduction = 0 }
+    }
+
     mutating func set(_ parameter: AdjustmentParameter, to value: Double) {
         self[keyPath: parameter.spec.keyPath] = value
         if parameter.isWhiteBalance {
@@ -74,8 +201,10 @@ struct Adjustments: Equatable {
 
     mutating func resetAll() {
         let camera = asShotWhiteBalance
+        let noiseReductionSupport = supportsRawNoiseReduction
         self = Adjustments()
         resolveWhiteBalance(camera)
+        resolveRawNoiseReductionSupport(noiseReductionSupport)
     }
 
     var isDefault: Bool { AdjustmentGroup.allCases.allSatisfy { isDefault($0) } }
@@ -90,7 +219,7 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
         case .input: return [.exposure, .temperature, .tint]
         case .tone: return [.contrast, .highlights, .shadows, .toneCurve]
         case .color: return [.saturation]
-        case .detail: return [.sharpening]
+        case .detail: return [.denoiseMode, .sharpening]
         }
     }
 }
@@ -137,7 +266,7 @@ struct AdjustmentSpec {
 }
 
 enum AdjustmentParameter: String, CaseIterable, Identifiable {
-    case strength, exposure, temperature, tint, contrast, highlights, shadows, toneCurve, saturation, sharpening
+    case strength, exposure, temperature, tint, contrast, highlights, shadows, toneCurve, saturation, sharpening, rawNoiseReduction, denoiseMode
     var id: String { rawValue }
     var isWhiteBalance: Bool { self == .temperature || self == .tint }
     func spec(for settings: Adjustments) -> AdjustmentSpec {
@@ -147,7 +276,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         return value
     }
     static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .tint, .sharpening]
+                                    .saturation, .temperature, .tint, .denoiseMode, .sharpening]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"
@@ -160,6 +289,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .temperature: return "thermometer.medium"
         case .tint: return "camera.filters"
         case .sharpening: return "triangle"
+        case .rawNoiseReduction, .denoiseMode: return "circle.dotted"
         }
     }
     var spec: AdjustmentSpec {
@@ -174,6 +304,8 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .toneCurve: return AdjustmentSpec(title: "S 曲线", keyPath: \.toneCurve, range: -100...100, defaultValue: 0, step: 1, unit: "%")
         case .saturation: return AdjustmentSpec(title: "饱和度", keyPath: \.saturation, range: -100...100, defaultValue: 0, step: 1, unit: "%")
         case .sharpening: return AdjustmentSpec(title: "锐化", keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 1, unit: "%")
+        case .rawNoiseReduction: return AdjustmentSpec(title: "RAW 降噪", keyPath: \.rawNoiseReduction, range: 0...2, defaultValue: 0, step: 1, unit: "")
+        case .denoiseMode: return AdjustmentSpec(title: "降噪", keyPath: \.denoiseMode, range: 0...2, defaultValue: 0, step: 1, unit: "")
         }
     }
 }
@@ -189,12 +321,13 @@ struct PhotoViewport: Equatable {
     mutating func zoom(by multiplier: CGFloat) {
         magnification = min(16, max(0.1, magnification * multiplier))
     }
-    func factor(fit: CGFloat, displayScale: CGFloat) -> CGFloat {
-        (pixelMode ? 1 / max(1, displayScale) : fit) * magnification
+    func factor(fit: CGFloat, displayScale: CGFloat, sourceWidth: CGFloat = 1, renderedWidth: CGFloat = 1) -> CGFloat {
+        let pixelFactor = sourceWidth / max(1, renderedWidth) / max(1, displayScale)
+        return (pixelMode ? pixelFactor : fit) * magnification
     }
 }
 
-struct PhotoEditState {
+struct PhotoEditState: Codable, Equatable {
     var settings: Adjustments
     var filmID: String
 }

@@ -14,6 +14,7 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TAR
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
+    "$ROOT/RawLab/RawLab/UI/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/ZoomablePhoto.swift" \
     "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/ProcessorExportTests.swift" "$OUT/bridge.o" \
     -F "$APP/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker "$APP/Frameworks" -o "$OUT/processor-export"

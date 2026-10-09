@@ -51,9 +51,10 @@ struct PresentationTests {
         panel.resize(to: 1000, available: 620)
         check(panel.height(available: 620) <= 310, "Panel resizing preserves half the small window for the canvas")
         let tools = AdjustmentParameter.photoTools
-        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength }),
+        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction }),
               "Photo tools expose every image adjustment exactly once")
-        check(tools.count == 9, "Nine tonal and color tools, alongside film strength")
+        check(tools.count == 10 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
+              "Photo tools replace legacy FBDD with chroma denoising")
         for tool in tools {
             check(NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) != nil,
                   "Native symbol exists for \(tool.rawValue)")
@@ -74,6 +75,11 @@ struct PresentationTests {
               "Loading a full-resolution image preserves the displayed size")
         viewport.actualPixels()
         check(viewport.factor(fit: 0.2, displayScale: 2) == 0.5, "100 percent matches physical pixels on Retina")
+        let proxyFactor = viewport.factor(fit: 0.4, displayScale: 2, sourceWidth: 6000, renderedWidth: 1000)
+        check(proxyFactor * 1000 == 3000, "Interactive proxy preserves the native 100 percent canvas width")
+        viewport.zoom(by: 1.25)
+        check(viewport.factor(fit: 0.4, displayScale: 2, sourceWidth: 6000, renderedWidth: 1000) * 1000 == 3750,
+              "Interactive proxy preserves manual magnification within pixel mode")
         viewport.fit()
         check(viewport == PhotoViewport(), "Fit clears manual zoom and pixel mode")
         viewport.toggleActualPixels()

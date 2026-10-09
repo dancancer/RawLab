@@ -47,7 +47,8 @@ extension RawEditorViewModel {
                         url: sourceURL,
                         settings: settings,
                         previewLongEdge: maxDimension,
-                        lutURL: lutURL
+                        lutURL: lutURL,
+                        interactive: quality == .interactive
                     )
                     let previewImage = self.processor.makeUIImage(
                         from: result.buffer,
@@ -93,7 +94,8 @@ extension RawEditorViewModel {
                     buffer: inputBuffer,
                     settings: settings,
                     previewLongEdge: maxDimension,
-                    lutURL: lutURL
+                    lutURL: lutURL,
+                    interactive: quality == .interactive
                 )
             } catch {
                 DispatchQueue.main.async {

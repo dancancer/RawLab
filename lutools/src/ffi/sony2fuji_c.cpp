@@ -3,6 +3,8 @@
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/dcp_look.h"
 #include "core/photo_rendering.h"
+#include "core/chroma_denoise.h"
+#include "core/wavelet_denoise.h"
 #include "core/photo_lut.h"
 #include "gpu/image_stats.h"
 #if defined(SONY2FUJI_ENABLE_D3D11)
@@ -34,6 +36,13 @@ struct sony2fuji_session {
     sony2fuji::ImageData raw_cache;
     std::string raw_key;
     sony2fuji_raw_exposure_mode raw_exposure_mode = SONY2FUJI_EXPOSURE_SCENE;
+    int32_t raw_noise_reduction = 0;
+    int32_t chroma_denoise = 0;
+    sony2fuji::WaveletDenoiseOptions wavelet_denoise;
+    sony2fuji::ImageData wavelet_cache;
+    std::string wavelet_key;
+    sony2fuji::WaveletDenoiseOptions wavelet_cache_options;
+    bool raw_noise_reduction_supported = false;
     float baseline_ev = 0;
     float metadata_ev = 0;
     float as_shot_temperature = 6500, as_shot_tint = 0;
@@ -699,11 +708,12 @@ sony2fuji_status loadRawImage(
         modified.time_since_epoch()).count();
     const std::string fileKey = std::string(request.input_path) + ":" +
         std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
-    const bool interactive = session->interactive_preview && request.intent == SONY2FUJI_INTENT_PREVIEW &&
+    const bool interactive = session->interactive_preview && session->raw_noise_reduction == 0 && session->chroma_denoise == 0 &&
+        request.intent == SONY2FUJI_INTENT_PREVIEW &&
         request.output_target == SONY2FUJI_TARGET_BUFFER &&
         !(session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW && request.wb_mode == SONY2FUJI_WB_CAMERA);
     std::string key = fileKey + ":" + std::to_string(request.wb_mode) +
-        ":" + std::to_string(session->raw_exposure_mode);
+        ":" + std::to_string(session->raw_exposure_mode) + ":" + std::to_string(session->raw_noise_reduction);
     for (float multiplier : request.wb_mul) key += ":" + std::to_string(multiplier);
     if (request.wb_mode == SONY2FUJI_WB_TEMPERATURE)
         key += ":" + std::to_string(request.temperature) + ":" + std::to_string(request.tint);
@@ -712,6 +722,8 @@ sony2fuji_status loadRawImage(
     const std::string exactKey = key + ":exact";
     key += interactive && session->raw_key != exactKey ? ":interactive" : ":exact";
     if (session->raw_key != key || session->raw_cache.pixels.empty()) {
+        session->wavelet_cache = {};
+        session->wavelet_key.clear();
         const bool anchoredPreview = session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW &&
             request.wb_mode == SONY2FUJI_WB_TEMPERATURE;
         if (anchoredPreview && session->preview_exposure_key != fileKey) {
@@ -731,6 +743,7 @@ sony2fuji_status loadRawImage(
         auto& processor = *session->raw_processor;
         sony2fuji::RAWProcessOptions options;
         options.halfSize = interactive;
+        options.rawNoiseReduction = session->raw_noise_reduction;
         options.outputLinear = true;
         options.outputAdobe = true;
         options.matchEmbeddedPreviewExposure = session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW && !anchoredPreview;
@@ -753,6 +766,7 @@ sony2fuji_status loadRawImage(
         ++session->raw_revision;
 #endif
         session->raw_key = key;
+        session->raw_noise_reduction_supported = processor.supportsNoiseReduction();
         session->baseline_ev = anchoredPreview ? session->preview_camera_ev : processor.getBaselineExposureEV();
         session->metadata_ev = processor.getMetadataExposureEV();
         session->calibrated_wb = processor.getAsShotWhiteBalance(session->as_shot_temperature,session->as_shot_tint);
@@ -981,6 +995,45 @@ sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* session, int32_t level) {
+    if (!session || level < 0 || level > 2) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    session->raw_noise_reduction = level;
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session, int32_t mode) {
+    if (!session || mode < 0 || mode > 2) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (mode != 0 && !sony2fuji::chromaDenoiseAvailable()) return SONY2FUJI_STATUS_UNSUPPORTED;
+    session->chroma_denoise = mode;
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_set_wavelet_denoise(
+    sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config
+) {
+    if (!session || !config || config->version != SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION ||
+        config->struct_size < sizeof(*config) || (config->enabled != 0 && config->enabled != 1))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const sony2fuji::WaveletDenoiseOptions options{config->enabled != 0,config->luma,config->chroma,config->coarse};
+    if (!sony2fuji::validWaveletDenoiseOptions(options)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (options.active() && !sony2fuji::waveletDenoiseAvailable()) return SONY2FUJI_STATUS_UNSUPPORTED;
+    if (!(options == session->wavelet_denoise)) {
+        session->wavelet_cache = {};
+        session->wavelet_key.clear();
+    }
+    session->wavelet_denoise = options;
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_get_raw_noise_reduction_support(
+    const sony2fuji_session* session, int32_t* supported
+) {
+    if (!session || !supported || session->raw_cache.pixels.empty())
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    *supported = session->raw_noise_reduction_supported ? 1 : 0;
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status sony2fuji_session_get_raw_exposure(
     const sony2fuji_session* session, float* baseline_ev, float* metadata_ev
 ) {
@@ -1023,6 +1076,11 @@ static sony2fuji_status processImpl(
     sony2fuji_request local = *request;
     local.lut_strength = clampFloat(local.lut_strength, 0.0f, 2.0f);
     session->last_backend = SONY2FUJI_BACKEND_CPU;
+    const bool waveletActive = session->wavelet_denoise.active();
+    const bool fastWavelet = waveletActive && session->interactive_preview &&
+        local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
+    if ((session->chroma_denoise != 0 || waveletActive) && session->gpu_config.mode == sony2fuji::GpuMode::Force)
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const bool use_lut = !isEmptyString(local.lut_path) && local.lut_strength > 0;
     std::shared_ptr<sony2fuji::LUT3D> lut;
     std::shared_ptr<const sony2fuji::DcpLook> dcp;
@@ -1040,9 +1098,9 @@ static sony2fuji_status processImpl(
         }
     }
 #if defined(SONY2FUJI_ENABLE_METAL)
-    const bool gpuPipeline = session->gpu_config.mode != sony2fuji::GpuMode::Off;
+    const bool gpuPipeline = session->chroma_denoise == 0 && !waveletActive && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #elif defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    const bool gpuPipeline = !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
+    const bool gpuPipeline = session->chroma_denoise == 0 && !waveletActive && !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #else
     const bool gpuPipeline = false;
 #endif
@@ -1130,7 +1188,8 @@ static sony2fuji_status processImpl(
     }
 #endif
     // A pixel-radius filter must run at source resolution for preview/export parity.
-    if (local.intent == SONY2FUJI_INTENT_PREVIEW && local.sharpening <= 0) {
+    if (local.intent == SONY2FUJI_INTENT_PREVIEW && local.sharpening <= 0 && session->chroma_denoise == 0 &&
+        (!waveletActive || fastWavelet)) {
         uint32_t width, height;
         status = computeTargetSize(local, image.width, image.height, &width, &height);
         if (status != SONY2FUJI_STATUS_OK) return status;
@@ -1140,6 +1199,21 @@ static sony2fuji_status processImpl(
     sony2fuji::ColorConverter converter;
     converter.convertImage(image, toCoreColorSpace(color_space), sony2fuji::ColorSpace::sRGB);
     color_space = SONY2FUJI_COLOR_SRGB;
+    if (waveletActive) {
+        const bool cacheable = local.input_type == SONY2FUJI_INPUT_RAW && !fastWavelet;
+        if (cacheable && session->wavelet_key == session->raw_key &&
+            session->wavelet_cache_options == session->wavelet_denoise && !session->wavelet_cache.pixels.empty()) {
+            image = session->wavelet_cache;
+        } else {
+            const auto result = sony2fuji::applyWaveletDenoise(image,session->wavelet_denoise);
+            if (result != sony2fuji::ErrorCode::Success) return mapError(result);
+            if (cacheable) {
+                session->wavelet_cache = image;
+                session->wavelet_key = session->raw_key;
+                session->wavelet_cache_options = session->wavelet_denoise;
+            }
+        }
+    }
     for (auto& pixel : image.pixels) applyExposureAndWhiteBalance(pixel, exposure, wb);
 
     sony2fuji::ImageData base = image;
@@ -1163,7 +1237,7 @@ static sony2fuji_status processImpl(
                 applyFLog2Encoding(image, false);
             }
             auto config = session->gpu_config;
-            if (gpuPipeline) config.mode = sony2fuji::GpuMode::Off;
+            if (gpuPipeline || session->chroma_denoise != 0 || waveletActive) config.mode = sony2fuji::GpuMode::Off;
             auto result = sony2fuji::applyLUTWithConfig(lut, image, config);
             if (result != sony2fuji::ErrorCode::Success) return mapError(result);
             sony2fuji::renderPhotoLUTOutput(image, lut->outputTransfer());
@@ -1174,6 +1248,8 @@ static sony2fuji_status processImpl(
         image = std::move(base);
     }
     applyToneAdjustments(image, local);
+    const auto chromaResult = sony2fuji::applyChromaDenoise(image, session->chroma_denoise);
+    if (chromaResult != sony2fuji::ErrorCode::Success) return mapError(chromaResult);
     applyDetailAdjustments(image, local);
 
     uint32_t target_width = static_cast<uint32_t>(image.width);

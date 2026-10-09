@@ -63,6 +63,9 @@ public:
     ErrorCode process(const RAWProcessOptions& options, ImageData& output) {
         output = {};
         if (filepath_.empty() || !sourceReady_) return ErrorCode::FileNotFound;
+        if (options.rawNoiseReduction < 0 || options.rawNoiseReduction > 2 ||
+            (options.rawNoiseReduction > 0 && !supportsNoiseReduction()))
+            return ErrorCode::InvalidFormat;
         if (options.outputBitsPerSample != 8 && options.outputBitsPerSample != 16)
             return ErrorCode::InvalidFormat;
         if (!std::isfinite(options.exposure) || !std::isfinite(options.brightness) ||
@@ -76,7 +79,9 @@ public:
         const bool cameraWB = options.useCameraWhiteBalance && !customWB && !options.useAutoWhiteBalance;
         const bool autoWB = options.useAutoWhiteBalance && !customWB;
         auto& params = rawProcessor_->imgdata.params;
-        params.half_size = options.halfSize ? 1 : 0;
+        // half_size skips the LibRaw interpolation stage that runs FBDD.
+        params.half_size = options.halfSize && options.rawNoiseReduction == 0 ? 1 : 0;
+        params.fbdd_noiserd = options.rawNoiseReduction;
         if (ensureIdentificationMode(cameraWB, autoWB) != ErrorCode::Success)
             return ErrorCode::ProcessingError;
         params.use_camera_matrix = 3;
@@ -229,6 +234,8 @@ public:
         return true;
     }
 
+    bool supportsNoiseReduction() const { return sourceReady_ && noiseReductionSupported_; }
+
     bool getCameraColorMatrix(float matrix[3][3]) const {
         if (!cameraColorMatrixValid_) return false;
         for (int row=0; row<3; ++row) for (int col=0; col<3; ++col)
@@ -248,6 +255,7 @@ private:
         cameraModel_.clear();
         whiteBalance_.reset();
         cameraColorMatrixValid_ = false;
+        noiseReductionSupported_ = false;
         previewExposureEV_ = 0;
         baselineExposureEV_ = 0;
         metadataExposureEV_ = 0;
@@ -277,6 +285,7 @@ private:
 
     void snapshotCalibration() {
         const auto& data = rawProcessor_->imgdata;
+        noiseReductionSupported_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
         width_ = data.sizes.width;
         height_ = data.sizes.height;
         cameraMake_ = data.idata.make;
@@ -320,6 +329,7 @@ private:
     std::unique_ptr<CameraWhiteBalance> whiteBalance_;
     std::array<std::array<float,3>,3> cameraColorMatrix_{};
     bool cameraColorMatrixValid_ = false;
+    bool noiseReductionSupported_ = false;
     bool sourceReady_ = false;
     bool identificationCameraWB_ = false;
     bool identificationAutoWB_ = false;
@@ -378,6 +388,10 @@ float RAWProcessor::getBaselineExposureEV() const { return pImpl_->getBaselineEx
 float RAWProcessor::getMetadataExposureEV() const { return pImpl_->getMetadataExposureEV(); }
 bool RAWProcessor::getAsShotWhiteBalance(float& temperature, float& tint) const {
     return pImpl_->getAsShotWhiteBalance(temperature,tint);
+}
+
+bool RAWProcessor::supportsNoiseReduction() const {
+    return pImpl_->supportsNoiseReduction();
 }
 
 bool RAWProcessor::getCameraColorMatrix(float matrix[3][3]) const {

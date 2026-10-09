@@ -7,6 +7,7 @@ data class EditSettings(
     val customWb: Boolean = false,
     val temperature: Float = 6500f,
     val tint: Float = 0f,
+    val denoise: DenoiseSettings = DenoiseSettings(),
 ) {
     init {
         require(strength.isFinite() && strength in 0f..2f)
@@ -15,6 +16,23 @@ data class EditSettings(
         require(tint.isFinite() && tint in -150f..150f)
     }
     fun reset() = EditSettings(film = film)
+}
+
+enum class DenoisePreset { DETAIL, CLEAN, CUSTOM }
+
+data class DenoiseSettings(val enabled: Boolean = false, val luma: Float = 0f,
+    val chroma: Float = 46f, val coarse: Float = 50f) {
+    init { require(listOf(luma, chroma, coarse).all { it.isFinite() && it in 0f..100f }) }
+    val preset: DenoisePreset get() = when {
+        luma == 0f && chroma == 46f && coarse == 50f -> DenoisePreset.DETAIL
+        luma == 10f && chroma == 72f && coarse == 100f -> DenoisePreset.CLEAN
+        else -> DenoisePreset.CUSTOM
+    }
+    fun withPreset(value: DenoisePreset) = when (value) {
+        DenoisePreset.DETAIL -> DenoiseSettings(enabled = true)
+        DenoisePreset.CLEAN -> DenoiseSettings(true, 10f, 72f, 100f)
+        DenoisePreset.CUSTOM -> this
+    }
 }
 
 data class Film(val id: String, val name: String, val file: String?) {

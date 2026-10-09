@@ -3,7 +3,7 @@ import SwiftUI
 struct PhotoCanvas: View {
     let frame: RenderedImage
     let viewport: PhotoViewport
-    let pixelReady: Bool
+    let sourceWidth: Int
     @Binding var pan: CGSize
     let clipping: Bool
     @Environment(\.displayScale) private var displayScale
@@ -13,7 +13,8 @@ struct PhotoCanvas: View {
         GeometryReader { geometry in
             let fit = max(0.001, min((geometry.size.width - 24) / CGFloat(frame.image.width),
                                      (geometry.size.height - 24) / CGFloat(frame.image.height)))
-            let factor = viewport.pixelMode && !pixelReady ? fit : viewport.factor(fit: fit, displayScale: displayScale)
+            let factor = viewport.factor(fit: fit, displayScale: displayScale,
+                                         sourceWidth: CGFloat(sourceWidth), renderedWidth: CGFloat(frame.image.width))
             ZStack {
                 Color.clear
                 Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)

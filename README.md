@@ -16,6 +16,24 @@ RawLab Mac provides side-by-side neutral/film comparison, LUT selection, exposur
 
 The current iOS / Android sources support pinch-to-zoom, panning, and double-tap to toggle fit and 100%. Actual-pixel scale uses the exact preview, not the full-resolution RAW; interactive previews retain the same viewport. Android comparison mode uses one finger for the wipe and two fingers for zoom/pan.
 
+### 开发版降噪 / Development Denoising
+
+当前源码的 macOS、Windows、iOS 和 Android 均提供线性光域小波降噪，默认关闭。
+支持亮度、色度、粗层色斑三个 0-100 参数、保留细节 (0/46/50) 和干净优先
+(10/72/100) 预设。关闭保留数值，重置恢复默认关闭状态。对比左侧固定为未调整原图，
+调整或代理预览替换不会重置缩放和平移；精确预览和导出使用完整算法，不复用交互近似。
+降噪在 CPU 执行，GPU Auto 自动回退，Force 不会把 CPU 结果标成 GPU。
+此功能尚未包含在下方的 v0.4.1 安装包中。
+
+The current macOS, Windows, iOS and Android sources include linear-light wavelet
+denoising, disabled by default. Luma, chroma and coarse-chroma controls range from
+0 to 100, with Detail (0/46/50) and Clean (10/72/100) presets. Disabling preserves
+values; reset restores the disabled default. The original comparison stays fixed,
+and preview replacement preserves zoom/pan. Exact previews and exports use the
+full algorithm, never the interactive approximation. Denoising runs on CPU:
+GPU Auto falls back and Force rejects unsupported execution. This feature is not
+included in the v0.4.1 downloads below.
+
 ### 关于与更新检测 / About and Updates
 
 v0.4.0 构建 6 的 Mac、Windows、Android 新增“关于 RawLab”，包含 [GitHub 仓库](https://github.com/dancancer/RawLab) 和 [作者的小红书主页](https://www.xiaohongshu.com/user/profile/6474b1560000000010037c8e)。Mac 从应用菜单进入，Windows 从工具栏信息按钮进入，Android 从“更多”菜单进入。

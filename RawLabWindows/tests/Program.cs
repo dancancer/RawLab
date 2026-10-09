@@ -35,6 +35,7 @@ static class Program
     {
         try
         {
+            if(args.Length==3 && args[0]=="--denoise") { DenoiseChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--interactions") { InteractionChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark") { PerformanceChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark-ui") { PerformanceChecks.Run(args[1],args[2],true);return 0; }
@@ -93,7 +94,7 @@ static class Program
                 var single=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,false,false);
                 Check(ReferenceEquals(single.Neutral,single.Result) && Pixels(single.Result.Image).SequenceEqual(Pixels(rendered.Image)),"Comparison off renders only the edited image without changing pixels");
                 var masked=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,true,true);
-                Check(masked.Neutral.Clipping!=null && masked.Result.Clipping!=null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(rendered.Clipping!)),"Clipping on retains both comparison masks");
+                Check(masked.Neutral.Clipping==null && masked.Result.Clipping!=null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(rendered.Clipping!)),"Clipping applies only to the edited result, never the original");
                 PreviewChecks.Run(engine,unicodeRaw,unicodeLut,Check);
                 settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 foreach(var parameter in new[]{Parameter.Exposure,Parameter.Contrast,Parameter.Highlights,Parameter.Shadows,Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})

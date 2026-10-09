@@ -37,7 +37,7 @@ struct ContentView: View {
                         }
                         .accessibilityIdentifier("editor.panel")
                         .frame(width: landscape ? min(360, geometry.size.width * 0.44) : nil,
-                               height: landscape ? nil : min(panelHeight + (selectedAdjustment == nil ? 32 : 0),
+                               height: landscape ? nil : min(panelHeight + (selectedAdjustment == nil ? 32 : selectedAdjustment == .noiseReduction ? 80 : 0),
                                                             geometry.size.height * 0.6))
                         .background(Color(.secondarySystemBackground))
                     }

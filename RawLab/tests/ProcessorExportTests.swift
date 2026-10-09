@@ -18,6 +18,44 @@ struct ProcessorExportTests {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         let processor = Sony2FujiProcessor()
+        var random: UInt32 = 8171
+        var noisy = Data(count: 256 * 256 * 4)
+        for i in 0..<(256 * 256) {
+            for c in 0..<3 {
+                random = random &* 1664525 &+ 1013904223
+                noisy[i * 4 + c] = UInt8(108 + Int(random >> 24) % 40)
+            }
+            noisy[i * 4 + 3] = 255
+        }
+        let noiseBuffer = Sony2FujiProcessor.Buffer(data: noisy, width: 256, height: 256, stride: 1024,
+                                                   pixelFormat: SONY2FUJI_PIXEL_RGBA8)
+        let noiseOff = try processor.processBuffer(buffer: noiseBuffer, settings: .default, previewLongEdge: 128, lutURL: nil)
+        var denoised = RawSettings.default
+        denoised.denoise.apply(.clean)
+        let noiseOn = try processor.processBuffer(buffer: noiseBuffer, settings: denoised, previewLongEdge: 128, lutURL: nil)
+        check(noiseOff.data != noiseOn.data, "iOS settings reach native wavelet processing")
+        let noiseProxy = try processor.processBuffer(buffer: noiseBuffer, settings: denoised, previewLongEdge: 96, lutURL: nil, interactive: true)
+        let noiseExact = try processor.processBuffer(buffer: noiseBuffer, settings: denoised, previewLongEdge: 128, lutURL: nil)
+        check(noiseExact.data == noiseOn.data, "iOS interactive approximation never changes exact output")
+        denoised.denoise.enabled = false
+        check(try processor.processBuffer(buffer: noiseBuffer, settings: denoised, previewLongEdge: 128, lutURL: nil).data == noiseOff.data,
+              "iOS disabling denoise restores the original output")
+        let scroll = PhotoScrollView()
+        scroll.frame = CGRect(x: 0, y: 0, width: 390, height: 500)
+        scroll.pixels = CGSize(width: 2400, height: 1600)
+        scroll.displayScale = 2
+        scroll.imageView.image = UIImage(cgImage: processor.makeCGImage(from: noiseOff)!)
+        scroll.layoutIfNeeded()
+        scroll.setZoomScale(1, animated: false)
+        scroll.setContentOffset(CGPoint(x: 100, y: 80), animated: false)
+        let originalOffset = scroll.contentOffset
+        for frame in [noiseProxy, noiseExact] {
+            scroll.imageView.image = UIImage(cgImage: processor.makeCGImage(from: frame)!)
+            scroll.setNeedsLayout()
+            scroll.layoutIfNeeded()
+            check(scroll.zoomScale == 1 && scroll.contentOffset == originalOffset,
+                  "iOS denoise frame replacement preserves native zoom and pan")
+        }
         let bytes = Data([45, 110, 180, 255, 170, 110, 60, 255, 85, 145, 75, 255,
                           80, 70, 65, 255, 180, 185, 190, 255, 210, 65, 115, 255])
         let buffer = Sony2FujiProcessor.Buffer(data: bytes, width: 3, height: 2, stride: 12,

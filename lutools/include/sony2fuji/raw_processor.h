@@ -23,6 +23,7 @@ struct RAWProcessOptions {
     bool outputAdobe;
     int outputBitsPerSample;    // 8/16 display precision; linear working data stays float
     bool halfSize;              // LibRaw half-resolution demosaic for interactive previews
+    int rawNoiseReduction;      // FBDD: 0 off, 1 light, 2 full; requires Bayer RAW
     bool matchEmbeddedPreviewExposure; // Optional JPEG-based approximation, not the default
     bool applyBaselineExposure; // Scene default + DNG BaselineExposure; ignored by preview match
 
@@ -40,6 +41,7 @@ struct RAWProcessOptions {
         , outputAdobe(false)
         , outputBitsPerSample(16)
         , halfSize(false)
+        , rawNoiseReduction(0)
         , matchEmbeddedPreviewExposure(false)
         , applyBaselineExposure(true)
     {}
@@ -87,6 +89,7 @@ public:
     float getBaselineExposureEV() const;
     float getMetadataExposureEV() const;
     bool getAsShotWhiteBalance(float& temperature, float& tint) const;
+    bool supportsNoiseReduction() const;
 
     /**
      * @brief 获取相机色彩矩阵 (Camera RGB -> XYZ)

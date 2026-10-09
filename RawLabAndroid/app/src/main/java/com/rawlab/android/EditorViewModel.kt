@@ -55,6 +55,7 @@ private sealed interface LookResult {
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
     private var processor: NativeProcessor? = null
+    private var original: Pair<java.io.File, Bitmap>? = null
     private var currentRevision = 0L
     private var lookRevision = 0L
     private var releases = 0
@@ -89,13 +90,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val edge = if (work.interactive) 1000 else 1600
             val native = engine()
             native.setGpuMode(work.gpuMode)
-            val neutral = native.preview(work.photo.file, null, work.edits, edge, work.interactive)
+            if (original?.first != work.photo.file) {
+                original = null
+                original = work.photo.file to native.preview(work.photo.file, null, EditSettings(), 1600, false).bitmap()
+            }
             val lut = storage.filmPath(work.edits.film)
-            val film = if (lut == null || work.edits.strength == 0f) neutral
-                else native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
-            val neutralBitmap = neutral.bitmap()
-            WorkResult.Preview(work, PreviewPair(neutralBitmap,
-                if (neutral === film) neutralBitmap else film.bitmap(), neutral.temperature, neutral.tint))
+            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
+            WorkResult.Preview(work, PreviewPair(original!!.second, film.bitmap(), film.temperature, film.tint))
         }
         is Work.Export -> {
             val output = storage.temporaryOutput(work.png)

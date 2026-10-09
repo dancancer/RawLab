@@ -25,7 +25,8 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean): NativeFrame {
         check(handle != 0L) { "Processor is closed" }
         return checkNotNull(nativeProcess(handle, input.path, lut?.path, null, settings.strength,
-            settings.exposure, settings.customWb, settings.temperature, settings.tint, edge, interactive, false))
+            settings.exposure, settings.customWb, settings.temperature, settings.tint, edge, interactive, false,
+            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse))
     }
 
     @Synchronized
@@ -33,7 +34,8 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
         check(handle != 0L) { "Processor is closed" }
         require(input.canonicalPath != output.canonicalPath)
         nativeProcess(handle, input.path, lut?.path, output.path, settings.strength,
-            settings.exposure, settings.customWb, settings.temperature, settings.tint, 0, false, png)
+            settings.exposure, settings.customWb, settings.temperature, settings.tint, 0, false, png,
+            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse)
         ExportMetadata.preserve(input, output)
     }
 
@@ -47,7 +49,8 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
     private external fun nativeDestroy(handle: Long)
     private external fun nativeProcess(handle: Long, input: String, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
-        edge: Int, interactive: Boolean, png: Boolean): NativeFrame?
+        edge: Int, interactive: Boolean, png: Boolean,
+        denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float): NativeFrame?
 
     companion object {
         const val CPU = 0
