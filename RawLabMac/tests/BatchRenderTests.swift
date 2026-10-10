@@ -11,6 +11,10 @@ import ImageIO
         let journal = BatchJournal(directory: root.appendingPathComponent("journal"))
         var settings = Adjustments()
         settings.exposure = 0.5; settings.highlights = 25; settings.contrast = 20
+        settings.setEffect(.vignetteAmount, to: -40)
+        settings.setEffect(.vignetteMidpoint, to: 65)
+        settings.setEffect(.grainAmount, to: 50)
+        settings.setEffect(.grainSize, to: 60)
         if CommandLine.arguments.contains("--legacy") { settings.denoiseMode = 2 }
         else { settings.applyDenoisePreset(.clean); settings.setDenoiseParameter(.luma, to: 53) }
         let engine = try RenderEngine()

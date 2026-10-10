@@ -73,4 +73,19 @@ cleanup. A local scoped archive was retained before removing those hunks.
 Independent read-only review found no actionable defect in GPU buffer layout,
 filter dispatch, failure handling, cache integration or feature-flag guards.
 No Intel Mac, iOS, Android or Windows runtime validation was performed for the
-new Metal denoise implementation. No commits, push or pull request were made.
+new Metal denoise implementation.
+
+## Delivery Revalidation
+
+Before publication, the complete configured CTest suite passed in one run:
+19/19 tests, zero failures. The branch was then rebased onto `development` at
+`24f717e`, incorporating its newly merged edit-memory and batch-export feature;
+the core rendering code was unchanged by this base update.
+
+The Mac app build/signing, presentation, edit-memory and batch-export checks
+passed on the updated base. The real Sony RAW batch-render test also passed
+with wavelet denoising, vignette and grain enabled: single and batch JPEG/16-bit
+PNG pixels matched at 4672x7008, and the original RAW identity was unchanged.
+The edit-memory regression now explicitly saves/restores vignette and grain
+parameters. An initial edit-memory compile overlapped a library rebuild and
+was rerun successfully after that build completed.
