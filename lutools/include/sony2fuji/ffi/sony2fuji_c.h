@@ -190,7 +190,6 @@ typedef struct sony2fuji_photo_effects_config {
     float grain_size;          // 0..100; default 25.
     float grain_roughness;     // 0..100; default 50.
 } sony2fuji_photo_effects_config;
-
 // ============================================================================
 // Opaque Session
 // ============================================================================
@@ -217,6 +216,30 @@ sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 sony2fuji_status sony2fuji_validate_look(
     const char* path, sony2fuji_look_format* format, uint32_t* format_version
 );
+
+typedef struct sony2fuji_color_look_report {
+    uint32_t grid_size;
+    float max_error;
+    float mean_error;
+    float p99_error;
+} sony2fuji_color_look_report;
+
+// Recipe v1: tone[9], chroma, 8*(hue degrees, chroma scale, lightness),
+// 3*(Oklab a,b) for shadows/midtones/highlights. Exactly 40 finite floats.
+// Compile v2 appends shadowStart, shadowEnd, highlightStart, highlightEnd (44 floats).
+// Boundaries use post-curve/hue-lift Oklab L, are in [0,1], with widths >= .05
+// (1e-7 float tolerance), shadowStart <= highlightStart, shadowEnd <= highlightEnd.
+// v1 retains fixed boundaries .2, .6, .4, .8 and its existing behavior.
+// Writes an explicit display-sRGB CUBE without replacing an existing file.
+// Tries 65 then 129, requiring sampled max channel error <= 0.02.
+sony2fuji_status sony2fuji_compile_color_look(
+    uint32_t version, const float* parameters, size_t count, const char* destination,
+    sony2fuji_color_look_report* report
+);
+
+// Rewrites a display-sRGB CUBE with only public contract metadata, preserving
+// grid/domain/table values. Never replaces an existing destination.
+sony2fuji_status sony2fuji_export_color_look(const char* source, const char* destination);
 
 // Reduced RAW processing is allowed only for PREVIEW + BUFFER requests.
 // FINAL requests and every file export ignore this flag.
@@ -266,7 +289,6 @@ sony2fuji_status sony2fuji_session_set_wavelet_denoise(
 sony2fuji_status sony2fuji_session_set_photo_effects(
     sony2fuji_session* session, const sony2fuji_photo_effects_config* config
 );
-
 // Capability of the last successfully decoded RAW: 0 unsupported, 1 supported.
 sony2fuji_status sony2fuji_session_get_raw_noise_reduction_support(
     const sony2fuji_session* session, int32_t* supported

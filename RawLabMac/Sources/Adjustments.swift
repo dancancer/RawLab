@@ -183,6 +183,14 @@ struct Adjustments: Equatable, Codable {
             grain_size: Float(state.grainSize), grain_roughness: Float(state.grainRoughness))
     }
 
+    var aiBaseline: Self {
+        var value = self
+        value.strength = 1
+        value.contrast = 0; value.highlights = 0; value.shadows = 0
+        value.toneCurve = 0; value.saturation = 0
+        return value
+    }
+
     var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
     var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
     var isDenoiseEnabled: Bool { waveletNoiseReduction?.enabled ?? (denoiseMode > 0) }

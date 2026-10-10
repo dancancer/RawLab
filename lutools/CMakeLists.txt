@@ -88,6 +88,8 @@ set(CORE_SOURCES
     src/core/lut_applicator.cpp
     src/core/dcp_look.cpp
     src/core/color_converter.cpp
+    src/core/color_recipe.cpp
+    src/ffi/color_look_c.cpp
     src/core/raw_processor.cpp
     src/core/chroma_denoise.cpp
     src/core/wavelet_denoise.cpp
@@ -206,6 +208,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_link_libraries(core_tests sony2fuji_core Threads::Threads)
     target_compile_definitions(core_tests PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}" TEST_RAW_PATH="${SONY2FUJI_TEST_RAW}")
     add_test(NAME color_contracts COMMAND core_tests)
+    add_executable(srgb_look_tests tests/srgb_look_tests.cpp)
+    target_link_libraries(srgb_look_tests sony2fuji_core)
+    add_test(NAME srgb_look COMMAND srgb_look_tests)
+    add_executable(color_recipe_tests tests/color_recipe_tests.cpp)
+    target_link_libraries(color_recipe_tests sony2fuji_core)
+    add_test(NAME color_recipe COMMAND color_recipe_tests)
     add_executable(dcp_look_tests tests/dcp_look_tests.cpp)
     target_link_libraries(dcp_look_tests sony2fuji_core)
     add_test(NAME native_dcp_look COMMAND dcp_look_tests)

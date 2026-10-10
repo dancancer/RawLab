@@ -82,6 +82,11 @@ ErrorCode LUT3D::parseCubeFile(const std::string& path) {
         return ErrorCode::ParseError;
     // CUBE specifies R-fast order, independent of the output color variation.
     data_ = std::move(values);
+    if (gamma == "srgbtosrgb" && gamut == "iturbt709toiturbt709") {
+        inputTransfer_ = LUTTransfer::SRGB;
+        outputTransfer_ = LUTTransfer::Display;
+        return ErrorCode::Success;
+    }
     const auto separator = gamma.find("to");
     if (separator != std::string::npos && separator + 2 < gamma.size()) {
         const auto input = logTransfer(gamma.substr(0, separator));

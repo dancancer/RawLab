@@ -15,7 +15,7 @@ Photographers and this repository's developer inspecting Fuji film LUT rendering
 Load a RAW, compare a neutral rendering with a selected film simulation, adjust input exposure/white balance, and export a reproducible result.
 
 ## Capabilities and Constraints
-Local files only. Preserve RAW originals. Desktop verification, not a photo catalog. Numerical correctness and explicit color contracts precede visual polish. Do not claim Fuji in-camera JPEG equivalence or unmeasured camera calibration.
+Local rendering and file management. Optional macOS AI color matching sends bounded, metadata-free sRGB previews to a user-configured HTTPS service only on explicit generation; API keys stay in Keychain and RAW originals are never uploaded or modified. Desktop verification, not a photo catalog. Numerical correctness and explicit color contracts precede visual polish. Do not claim Fuji in-camera JPEG equivalence or unmeasured camera calibration.
 
 ## Evidence on Hand
 Bundled Sony ARW, user-provided DJI DNG and Fuji 33/65-grid LUTs. Review report under reviews/.

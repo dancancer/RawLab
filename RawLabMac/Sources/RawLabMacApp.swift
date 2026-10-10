@@ -5,6 +5,7 @@ import AppKit
 struct RawLabMacApp: App {
     @StateObject private var model = EditorModel()
     @StateObject private var updates = UpdateChecker()
+    @StateObject private var aiSettings = AISettings()
     @Environment(\.openWindow) private var openWindow
     init() {
         let args = CommandLine.arguments
@@ -58,7 +59,7 @@ struct RawLabMacApp: App {
                         Button("查看更新") { openWindow(id: "about") }
                     }.padding(8)
                 }
-                EditorView(model: model)
+                EditorView(model: model, aiSettings: aiSettings)
             }.task { await updates.check(manual: false) }
         }
             .defaultSize(width: 1320, height: 850)
@@ -74,6 +75,11 @@ struct RawLabMacApp: App {
                     Button("打开 RAW…", action: model.openPanel).keyboardShortcut("o")
                     Button("导入外观…", action: model.importLUT)
                         .disabled(model.lookLibraryBusy || model.exporting)
+                    Button("AI 仿色…") { NotificationCenter.default.post(name: .rawLabAIColorMatch, object: nil) }
+                        .disabled(!model.canStartAI)
+                    Button("AI 服务设置…") { openWindow(id: "ai-settings") }
+                    Button("恢复 AI 仿色前的调整…") { model.restoreAIEditPanel() }
+                        .disabled(!model.canRestoreAI || model.busy || model.exporting || model.lookLibraryBusy)
                     Divider()
                     Button("导出 JPEG…") { model.export(png: false) }
                         .keyboardShortcut("e", modifiers: [.command, .shift])
@@ -85,6 +91,8 @@ struct RawLabMacApp: App {
                 }
             }
         Window("关于 RawLab", id: "about") { AboutView(updates: updates) }
+            .windowResizability(.contentSize)
+        Window("AI 服务设置", id: "ai-settings") { AISettingsView(settings: aiSettings) }
             .windowResizability(.contentSize)
         Window("批量导出", id: "batch-export") {
             if let batch = model.batch { BatchExportView(model: batch) }

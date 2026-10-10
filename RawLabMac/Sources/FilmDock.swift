@@ -16,6 +16,14 @@ struct FilmDock: View {
                                 .contextMenu {
                                     if film.managedID != nil {
                                         Text("用户外观 · \(film.url.pathExtension.uppercased())")
+                                        if film.isAI {
+                                            Button("导出 CUBE…", systemImage: "square.and.arrow.down") {
+                                                AICubeActions.export(source: film.url, name: film.name,
+                                                    protecting: model.films.map(\.url) + [model.file].compactMap { $0 },
+                                                    onError: { model.error = $0 })
+                                            }.disabled(model.lookLibraryBusy || model.exporting)
+                                            Divider()
+                                        }
                                         Button("重命名…", systemImage: "pencil") { model.renameLookPanel(film) }
                                             .disabled(model.lookLibraryBusy || model.exporting)
                                         Button("移除外观…", systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }

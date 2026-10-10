@@ -3,6 +3,7 @@ import AppKit
 
 struct EditorView: View {
     @ObservedObject var model: EditorModel
+    @ObservedObject var aiSettings = AISettings()
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
     @State private var compare = true
@@ -18,6 +19,7 @@ struct EditorView: View {
     @State private var resizeStart: CGFloat?
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
+    @State private var aiMatch: AIColorMatchModel?
 
     var body: some View {
         GeometryReader { geometry in
@@ -69,16 +71,18 @@ struct EditorView: View {
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
-        .onChange(of: model.file) { _, _ in fit() }
+        .onChange(of: model.file) { _, _ in fit(); aiMatch?.close(); aiMatch = nil }
         .task(id: model.file) {
             photoInformation = nil
             guard let file = model.file else { return }
             let info = await Task.detached(priority: .utility) { PhotoInformation.read(file) }.value
             if !Task.isCancelled && model.file == file { photoInformation = info }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .rawLabAIColorMatch)) { _ in startAI() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
+        .sheet(item: $aiMatch) { match in AIColorMatchView(model: match, settings: aiSettings) }
         .onAppear {
             let args = CommandLine.arguments
             if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
@@ -222,6 +226,17 @@ struct EditorView: View {
                 .help("打开 RAW").accessibilityLabel("打开 RAW").disabled(model.exporting)
         }
         ToolbarItemGroup {
+            Button(action: startAI) { Image(systemName: "paintpalette") }
+                .help("AI 仿色").accessibilityLabel("AI 仿色").disabled(!model.canStartAI || aiMatch != nil)
+            if model.canRestoreAI {
+                Button { model.restoreAIEditPanel() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .help("恢复 AI 仿色前的调整").accessibilityLabel("恢复 AI 仿色前的调整")
+                    .disabled(model.busy || model.exporting || model.lookLibraryBusy)
+            }
+            if let film = model.selectedFilm, film.isAI {
+                AIShareButton(source: film.url, name: film.name, enabled: !model.lookLibraryBusy && !model.exporting,
+                              onError: { model.error = $0 }).frame(width: 32, height: 26)
+            }
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
                 .help("原图与调整后对比").accessibilityLabel("对比")
@@ -250,6 +265,13 @@ struct EditorView: View {
                 .accessibilityLabel("调整栏").accessibilityValue(adjustmentPanel.collapsed ? "已收起" : "已展开")
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
+                if let film = model.selectedFilm, film.isAI {
+                    Button("AI 外观 CUBE…") {
+                        AICubeActions.export(source: film.url, name: film.name,
+                            protecting: model.films.map(\.url) + [model.file].compactMap { $0 }, onError: { model.error = $0 })
+                    }.disabled(model.lookLibraryBusy || model.exporting)
+                    Divider()
+                }
                 Button("JPEG…") { model.export(png: false) }
                     .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
                 Button("PNG · 16-bit…") { model.export(png: true) }
@@ -269,6 +291,11 @@ struct EditorView: View {
     private func reset(_ group: AdjustmentGroup? = nil) {
         if let group { model.settings.reset(group) } else { model.settings.resetAll() }
         resetVersion += 1
+    }
+    private func startAI() {
+        guard aiMatch == nil else { return }
+        do { aiMatch = try AIColorMatchModel(editor: model) }
+        catch { model.error = error.localizedDescription }
     }
     private func fit() {
         viewport.fit(); pan = .zero

@@ -13,6 +13,12 @@ JPEG engine, or establish cross-camera calibration. An sRGB creative LUT also
 depends on its author's starting image; RawLab explicitly uses its own neutral
 rendering, which need not match that author's tone mapping.
 
+The newer macOS AI recipe compiler uses a separate, explicitly declared
+display-sRGB CUBE path after precise neutral rendering. It does not use this
+tool's F-Log2 canonical bake or its Python/OCIO dependencies. See the
+[photo color contract](color-contract.md) for the required declarations and
+CPU/Metal support. The preparation commands below retain their existing meaning.
+
 ## Setup
 
 Run from the repository root with Python 3.10 or newer:

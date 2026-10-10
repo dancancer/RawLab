@@ -1274,7 +1274,9 @@ static sony2fuji_status processImpl(
 #endif
             for (size_t i = 0; i < count; ++i) image.pixels[i] = dcp->apply(image.pixels[i]);
         } else {
-            if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2) {
+            if (lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
+                image = base;
+            } else if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2) {
                 sony2fuji::encodePhotoLUTInput(image, lut->inputTransfer());
             } else {
                 converter.convertImage(image, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);

@@ -1,0 +1,7 @@
+[
+  {"name":"foliage", "raw":"/Volumes/boom-data/Photo/2025/2025-06-30/DSC08882.ARW", "regions":{"shadowStart":0.08,"shadowEnd":0.40,"highlightStart":0.65,"highlightEnd":0.95}},
+  {"name":"white-building", "raw":"/Volumes/boom-data/Photo/2017/2017-06-08/_DSC9078.ARW", "regions":{"shadowStart":0.10,"shadowEnd":0.45,"highlightStart":0.65,"highlightEnd":0.95}},
+  {"name":"sea", "raw":"/Volumes/boom-data/Photo/2017/2017-06-08/_DSC9094.ARW", "regions":{"shadowStart":0.12,"shadowEnd":0.45,"highlightStart":0.60,"highlightEnd":0.90}},
+  {"name":"portrait", "raw":"/Volumes/boom-data/Photo/2017/2017-06-09/_DSC9334.ARW", "regions":{"shadowStart":0.08,"shadowEnd":0.40,"highlightStart":0.65,"highlightEnd":0.95}},
+  {"name":"snow", "raw":"/Volumes/boom-data/2025云南之旅/pocket3/DCIM/DJI_001/DJI_20250220115702_0068_D.DNG", "regions":{"shadowStart":0.08,"shadowEnd":0.40,"highlightStart":0.75,"highlightEnd":1.0}}
+]

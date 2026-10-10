@@ -7,7 +7,7 @@
 
 namespace sony2fuji {
 
-enum class LUTTransfer { Unknown, Display, FLog, FLog2, FLog2C };
+enum class LUTTransfer { Unknown, Display, FLog, FLog2, FLog2C, SRGB };
 
 /**
  * @brief 3D LUT 数据结构

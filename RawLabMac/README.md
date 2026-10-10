@@ -14,6 +14,24 @@ v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”�
 
 The left pane is the neutral render and the right pane is Velvia. Film selection and exposure, tone, color, white balance and sharpening controls are grouped at the bottom.
 
+## AI 仿色（未发布） / AI Color Match (Unreleased)
+
+打开 RAW 并等待精确预览后，从文件菜单或顶部调色板按钮进入“AI 仿色”。支持 1–6 张 JPEG/PNG/TIFF/HEIC 参考图、文字要求、继续调整、原编辑/中性基线对比和 0–200% 强度。候选确认前不改变当前编辑；应用后加入本机外观库并保存逐图设置，可使用“恢复 AI 仿色前的调整”返回应用前状态。
+
+在“AI 服务设置”填写兼容的 HTTPS API 地址、模型和自己的 Key。默认 DeepSeek；密钥按服务地址隔离保存在 Keychain。连接测试只读取模型列表，不代表模型支持图片。正式应用不读取仓库 `.env`，该文件仅供显式开发联调。
+
+生成时上传当前照片的中性预览和参考图，继续调整还会上传上一候选预览；不会上传 RAW、路径或拍摄元数据。图像按方向处理、转 sRGB、限制长边 1600 像素与每张 2 MiB，再重新编码。停止会取消网络请求及尚未执行的本地阶段；已进入 LibRaw/ImageIO 的同步调用须等待返回，结果不会应用。
+
+模型返回结构化配方，由本机生成和校验 CUBE，不下载模型提供的 LUT。新外观应用在精确中性显影后的显示 sRGB 域；不改动原有 Log CUBE/DCP 路径。默认 65-grid，必要时尝试 129-grid，采样最大通道误差必须不超过 0.02，否则拒绝候选。此数值不是仿色质量评分。
+
+候选的“明暗分区”提供四个可编辑边界，固定 40 项风格参数，只在本地调整暗部、中间调、亮部的染色覆盖范围；不再次请求 AI，不改变曝光或白平衡。“固定分区”对照使用相同风格和强度。边界坐标是风格曲线及色相明度调整后的 Oklab L，不是 RAW 曝光值；没有分区染色的配方不会因此改变颜色。预览完成且通过误差门槛后才能应用或导出。停止会恢复上一版有效候选；继续请求 AI 会生成新风格并恢复默认分区。
+
+这仍是手动对照实验，未训练 KNN，也未自动预测分区。私有 CUBE 元数据记录风格和四个边界；公共导出只保留最终表值，不是可继续编辑或自动适配新照片的配方。复现实验见 [分区实验报告](../docs/verification-adaptive-tone-regions-2026-10-10.md)。
+
+候选面板和已保存 AI 外观的右键菜单均提供“导出 CUBE”和系统分享。导出是原始 100% 外观，移除配方/模型信息，保留 sRGB 输入输出声明与表值；不包含曝光、白平衡、细节或强度。第三方软件必须把它应用于显示 sRGB 图像，不能直接当作 RAW/Log 输入 LUT。
+
+The unreleased macOS workflow uses a user-supplied API key, bounded metadata-free previews and a locally validated recipe-to-CUBE compiler. Candidate preview, apply/restore, managed looks, sanitized CUBE export and native file sharing are implemented. These are display-sRGB creative LUTs, not RAW/Log input transforms. See the [verification report](../docs/verification-macos-ai-color-match-2026-10-09.md) for tested scope and remaining GUI/subjective-quality checks.
+
 ## 构建和启动 / Build and Launch
 
 预编译版本：[GitHub Release v0.5.0](https://github.com/dancancer/RawLab/releases/tag/v0.5.0)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Mac-0.5.0-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Mac-0.5.0-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。

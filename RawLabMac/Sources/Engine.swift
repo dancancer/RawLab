@@ -132,7 +132,7 @@ final class RenderEngine {
                 throw RenderError.failed("无法读取或写入文件，请检查路径和访问权限。")
             }
             if status == SONY2FUJI_STATUS_UNSUPPORTED {
-                throw RenderError.failed("不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。")
+                throw RenderError.failed("不支持此 RAW 或外观文件。请选择兼容的富士 Log CUBE、显式 sRGB 输入/输出 CUBE，或有效的 .rlook 文件。")
             }
             if status == SONY2FUJI_STATUS_INVALID_ARGUMENT {
                 throw RenderError.failed("参数或输出路径无效，不能覆盖原始 RAW。")
@@ -185,6 +185,7 @@ struct Film: Identifiable, Hashable {
     let name: String
     let url: URL
     var managedID: String? = nil
+    var isAI = false
     static func bundled() -> [Film] {
         let root = Bundle.main.resourceURL!.appendingPathComponent("LUTs")
         return ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [])

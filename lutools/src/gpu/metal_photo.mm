@@ -60,8 +60,9 @@ struct PhotoParams {
     uint32_t inputIsFLog;
     uint32_t outputIsLog;
     uint32_t outputIsFLog;
+    uint32_t inputIsSRGB;
 };
-static_assert(sizeof(PhotoParams) == 184, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 188, "Photo Metal parameter layout");
 
 struct PhotoEffectsParams {
     uint32_t width, height;
@@ -142,6 +143,7 @@ struct Params {
     uint inputIsFLog;
     uint outputIsLog;
     uint outputIsFLog;
+    uint inputIsSRGB;
 };
 
 inline float3 lerp3(float3 a, float3 b, float t) {
@@ -398,9 +400,12 @@ kernel void baseAndLUT(
         destination[gid] = packed_float3(base);
         return;
     }
-    float3 gamut = lutMatrixRGB(value, params);
-    float3 filmInput = float3(encodeLog(gamut.r, params.inputIsFLog != 0u),
-        encodeLog(gamut.g, params.inputIsFLog != 0u), encodeLog(gamut.b, params.inputIsFLog != 0u));
+    float3 filmInput = base;
+    if (params.inputIsSRGB == 0u) {
+        float3 gamut = lutMatrixRGB(value, params);
+        filmInput = float3(encodeLog(gamut.r, params.inputIsFLog != 0u),
+            encodeLog(gamut.g, params.inputIsFLog != 0u), encodeLog(gamut.b, params.inputIsFLog != 0u));
+    }
     float3 film = applyLUT(lut, filmInput, params);
     if (params.outputIsLog != 0u) {
         film = float3(neutralDisplay(decodeLog(film.r, params.outputIsFLog != 0u)),
@@ -767,6 +772,7 @@ PhotoParams makeParams(
     params.noiseReduction = request.noise_reduction;
     params.sharpening = request.sharpening;
     if (cachedLUT) {
+        params.inputIsSRGB = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::SRGB;
         params.inputIsFLog = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::FLog;
         params.outputIsLog = cachedLUT->owner->outputTransfer() != sony2fuji::LUTTransfer::Display;
         params.outputIsFLog = cachedLUT->owner->outputTransfer() == sony2fuji::LUTTransfer::FLog;
@@ -907,7 +913,11 @@ bool renderPhotoMetalImpl(
         } else {
             toSRGB = ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB);
         }
-        toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
+        if (useLUT && lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
+            toFGamut = ColorConverter::Matrix3x3{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
+        } else {
+            toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
+        }
     } catch (...) {
         return false;
     }

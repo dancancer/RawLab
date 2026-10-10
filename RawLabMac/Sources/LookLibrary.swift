@@ -7,6 +7,7 @@ struct UserLook: Codable, Equatable, Identifiable {
     let sourceName: String
     let format: String
     let formatVersion: UInt32
+    var aiGenerated: Bool? = nil
 }
 
 enum LookLibraryError: LocalizedError {
@@ -61,7 +62,7 @@ final class LookLibrary {
 
     func url(for look: UserLook) -> URL { directory.appendingPathComponent(look.fileName) }
 
-    func importLook(from source: URL) throws -> UserLook {
+    func importLook(from source: URL, name: String? = nil) throws -> UserLook {
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         let suffix = source.pathExtension.lowercased()
@@ -80,9 +81,19 @@ final class LookLibrary {
         guard status == SONY2FUJI_STATUS_OK else {
             throw status == SONY2FUJI_STATUS_IO_ERROR ? LookLibraryError.unreadableSource : LookLibraryError.invalidLook
         }
-        let look = UserLook(id: id, name: source.deletingPathExtension().lastPathComponent,
+        let displayName = (name ?? source.deletingPathExtension().lastPathComponent).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayName.isEmpty, displayName.rangeOfCharacter(from: .controlCharacters) == nil else { throw LookLibraryError.invalidName }
+        var generated = false
+        if format == SONY2FUJI_LOOK_CUBE {
+            let handle = try FileHandle(forReadingFrom: staging)
+            defer { try? handle.close() }
+            let prefix = try handle.read(upToCount: 2048) ?? Data()
+            generated = String(data: prefix, encoding: .utf8)?.contains("#RawLabAI:1\n") == true
+        }
+        let look = UserLook(id: id, name: displayName,
                             fileName: "\(id).\(suffix)", sourceName: source.lastPathComponent,
-                            format: format == SONY2FUJI_LOOK_RLOOK ? "rlook" : "cube", formatVersion: version)
+                            format: format == SONY2FUJI_LOOK_RLOOK ? "rlook" : "cube", formatVersion: version,
+                            aiGenerated: generated ? true : nil)
         let installed = url(for: look)
         try manager.moveItem(at: staging, to: installed)
         do {

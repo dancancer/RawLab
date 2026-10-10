@@ -3,6 +3,30 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 final class EditorModel: ObservableObject {
+    struct AISnapshot {
+        let file: URL
+        let identity: OriginalFileIdentity
+        let state: PhotoEditState
+        let look: URL?
+        let lookName: String
+        let lookIdentity: OriginalFileIdentity?
+        let revision: UInt64
+
+        init(file: URL, state: PhotoEditState, look: URL?, lookName: String, revision: UInt64) throws {
+            self.file = file.standardizedFileURL
+            identity = try OriginalFileIdentity(file)
+            self.state = state; self.look = look; self.lookName = lookName; self.revision = revision
+            lookIdentity = try look.map { try OriginalFileIdentity($0) }
+        }
+
+        func matches(file: URL?, state: PhotoEditState, revision: UInt64) -> Bool {
+            guard file?.standardizedFileURL == self.file, state == self.state, revision == self.revision,
+                  (try? OriginalFileIdentity(self.file)) == identity else { return false }
+            if let look { return (try? OriginalFileIdentity(look)) == lookIdentity }
+            return true
+        }
+    }
+
     private struct RenderWork: Equatable {
         let file: URL
         let settings: Adjustments
@@ -29,12 +53,16 @@ final class EditorModel: ObservableObject {
     @Published private(set) var saveError: String?
     @Published private(set) var batch: BatchExportModel?
     @Published var exportLongEdge: Int?
+    @Published private(set) var canRestoreAI = false
+    private var aiRestorePoint: AISnapshot?
+    private var editRevision: UInt64 = 0
     private let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     private let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
     private var scheduler = RenderScheduler<RenderWork>()
     private var debounceTimer: DispatchSourceTimer?
     private var workerActive = false
     private var engine: RenderEngine?
+    // 仅在串行渲染队列读写；原图不随编辑参数或预览尺寸重新生成。
     private var originalCache: (file: URL, frame: RenderedImage)?
     private var editStore: EditPersistence?
     private let editDirectory: URL
@@ -54,7 +82,7 @@ final class EditorModel: ObservableObject {
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
-            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, isAI: $0.aiGenerated == true) }
         } catch {
             self.error = error.localizedDescription
         }
@@ -75,6 +103,7 @@ final class EditorModel: ObservableObject {
 
     private func edited() {
         guard file != nil else { return }
+        editRevision &+= 1
         dirty = true
         saveStatus = ""
         saveWork?.cancel()
@@ -174,6 +203,8 @@ final class EditorModel: ObservableObject {
         guard !exporting else { return }
         if file == url && result != nil { return }
         guard saveEdits() else { return }
+        editRevision &+= 1
+        aiRestorePoint = nil; canRestoreAI = false
         scheduler.setInteracting(false)
         var restored: PhotoEditState?
         do { restored = try editStore?.state(for: url) }
@@ -265,7 +296,7 @@ final class EditorModel: ObservableObject {
         queue.async { [weak self] in
             do {
                 let change = try operation(library)
-                let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+                let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, isAI: $0.aiGenerated == true) }
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.films = self.films.filter { $0.managedID == nil } + updated
@@ -285,6 +316,101 @@ final class EditorModel: ObservableObject {
             }
         }
     }
+    var canStartAI: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm }
+
+    @MainActor func freezeAIEdit() throws -> AISnapshot {
+        guard canStartAI, let file else { throw RenderError.failed("请等待照片完成精确预览后再仿色。") }
+        guard saveEdits() else { throw RenderError.failed("请先保存当前调整，再开始 AI 仿色。") }
+        return try AISnapshot(file: file, state: PhotoEditState(settings: settings, filmID: selectedFilmID),
+                              look: selectedFilm?.url, lookName: selectedFilm?.name ?? "中性", revision: editRevision)
+    }
+
+    @MainActor func isCurrentAIEdit(_ snapshot: AISnapshot) -> Bool {
+        snapshot.matches(file: file, state: PhotoEditState(settings: settings, filmID: selectedFilmID), revision: editRevision)
+    }
+
+    @MainActor func applyAILook(_ source: URL, name: String, strength: Double, snapshot: AISnapshot) async throws {
+        guard !exporting, !lookLibraryBusy, isCurrentAIEdit(snapshot), strength.isFinite, (0...2).contains(strength),
+              let library = lookLibrary else { throw RenderError.failed("照片或调整已变化，请关闭面板后重新生成。") }
+        let builtinFilms = films.filter { $0.managedID == nil }
+        lookLibraryBusy = true
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async(execute: DispatchWorkItem {
+                do {
+                    let look = try library.importLook(from: source, name: name)
+                    let updated = builtinFilms + library.looks.map {
+                        Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, isAI: $0.aiGenerated == true)
+                    }
+                    DispatchQueue.main.async {
+                        do {
+                            guard self.isCurrentAIEdit(snapshot), !self.exporting else {
+                                throw RenderError.failed("照片或调整已变化，AI 外观没有应用。")
+                            }
+                            var settings = snapshot.state.settings.aiBaseline; settings.strength = strength
+                            try self.commitAIState(PhotoEditState(settings: settings, filmID: look.id), films: updated)
+                            self.aiRestorePoint = snapshot; self.canRestoreAI = true
+                            self.lookLibraryBusy = false
+                            continuation.resume()
+                        } catch {
+                            self.queue.async(execute: DispatchWorkItem {
+                                try? library.remove(id: look.id)
+                                DispatchQueue.main.async {
+                                    self.lookLibraryBusy = false
+                                    continuation.resume(throwing: error)
+                                }
+                            })
+                        }
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.lookLibraryBusy = false
+                        continuation.resume(throwing: error)
+                    }
+                }
+            })
+        }
+    }
+
+    @MainActor private func commitAIState(_ state: PhotoEditState, films updated: [Film]) throws {
+        guard let file else { throw RenderError.failed("当前照片不可用。") }
+        if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+        let film = updated.first { $0.id == state.filmID }
+        let persistedID = film.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? state.filmID
+        try editStore!.save(file, state: PhotoEditState(settings: state.settings, filmID: persistedID))
+        saveWork?.cancel(); dirty = false
+        updatingMetadata = true
+        films = updated; settings = state.settings; selectedFilmID = state.filmID
+        updatingMetadata = false
+        editRevision &+= 1
+        saveError = nil; saveStatus = "调整已保存"; clearSaveStatusLater()
+        schedule()
+    }
+
+    @MainActor func restoreAIEdit() throws {
+        guard let snapshot = aiRestorePoint, file?.standardizedFileURL == snapshot.file,
+              !busy, !exporting, !lookLibraryBusy,
+              (try? OriginalFileIdentity(snapshot.file)) == snapshot.identity else {
+            throw RenderError.failed("当前无法恢复 AI 仿色前的调整。")
+        }
+        if let look = snapshot.look {
+            guard (try? OriginalFileIdentity(look)) == snapshot.lookIdentity,
+                  films.contains(where: { $0.id == snapshot.state.filmID }) else {
+                throw RenderError.failed("仿色前的外观已被移除或更改，无法恢复。")
+            }
+        }
+        try commitAIState(snapshot.state, films: films)
+        aiRestorePoint = nil; canRestoreAI = false
+    }
+
+    @MainActor func restoreAIEditPanel() {
+        let alert = NSAlert()
+        alert.messageText = "恢复 AI 仿色前的调整？"
+        alert.informativeText = "本次 AI 应用后的手动调整也会被替换，原始照片不会改变。"
+        alert.addButton(withTitle: "恢复调整"); alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do { try restoreAIEdit() } catch { self.error = error.localizedDescription }
+    }
+
     func setInteracting(_ value: Bool) {
         guard scheduler.interacting != value else { return }
         scheduler.setInteracting(value)

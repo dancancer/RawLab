@@ -248,6 +248,7 @@ GlesPhotoRenderer::~GlesPhotoRenderer() = default;
 bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
     const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||

@@ -29,8 +29,8 @@ sample-limited validation are documented in the RAW compatibility report.
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
-4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
-5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then optional display-chroma denoising, detail adjustments, vignette and grain, and final resizing.
+4. For a Log-input film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
+5. For an explicitly declared display-sRGB CUBE, interpolate the neutral display result from step 3 instead of the scene/Log input. Blend neutral and look outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then optional display-chroma denoising, detail adjustments, vignette and grain, and final resizing.
 6. Write RGB/RGBA preview, JPEG or actual 16-bit PNG. PNG includes an sRGB chunk. Photo outputs use an sRGB display interpretation; the film-simulation names alone do not establish camera-to-camera colorimetric equivalence or a measured display EOTF. JPEG consumers must use this sRGB interpretation.
 
 When sharpening is enabled, the early preview downsample is skipped. The fixed pixel-radius filter runs at source resolution before the final preview resize, matching its export footprint. At zero sharpening the existing fast preview path remains unchanged. Mac's contrast/saturation controls use percent offsets from the core's identity value 1; highlight signs are reversed at the UI boundary so positive values consistently brighten. All six output adjustments default to an identity result.
@@ -124,7 +124,7 @@ The PHOTO API is narrower. Supported files declare comments such as:
 #Gamut:F-Gamut to ITU-R BT.709
 ```
 
-Inputs are `F-Log`/`F-Log2` with `F-Gamut`, or `F-Log2C` with `F-Gamut C`.
+Log inputs are `F-Log`/`F-Log2` with `F-Gamut`, or `F-Log2C` with `F-Gamut C`.
 Output gamut must be `ITU-R BT.709`. Whitespace, case and punctuation in these
 declarations are normalized. F-Log2C uses F-Log2's curve but not its gamut matrix.
 The F-Gamut C matrix is derived from the primaries and white in the
@@ -136,11 +136,45 @@ Phuket are accepted as display output. Explicit `F-Log`, `F-Log2` or `F-Log2C`
 outputs instead receive Log decoding and neutral display rendering. This makes
 technical gamut conversions usable in PHOTO without mistaking Log values for
 display RGB. JPEG/PNG outputs are still display-sRGB, never Log intermediates.
-Missing/incompatible declarations and sRGB-input creative LUTs remain rejected.
+Missing/incompatible declarations remain rejected. Display-sRGB creative LUTs
+are accepted only with both `#Gamma:sRGB to sRGB` and
+`#Gamut:ITU-R BT.709 to ITU-R BT.709`. Their input is the precise neutral display
+render, not scene-linear RAW or F-Log2. CPU and Metal implement this path;
+GLES/D3D11 reject it so Auto falls back to CPU and Force fails explicitly.
 This validates declarations, not the table's actual transfer behavior;
 `OutputTransfer` comments are not interpreted. Custom named display LUTs must
 match the application's sRGB convention. Generic mathematical CUBE application
 remains available through LUTApplicator.
+
+The macOS AI workflow compiles a validated version-1 Oklab recipe locally into
+this display-sRGB contract. It starts at 65-grid and retries at 129-grid only
+when native-parser round-trip samples exceed a maximum channel error of 0.02.
+Failure at both sizes produces no installed look. The error report measures
+recipe-to-CUBE approximation on fixed domain, gray and hue samples; it is not
+a perceptual reference-match score or a proof over every RGB input. Exported
+CUBEs retain the input/output contract and table but omit recipe/model metadata.
+They require a display-sRGB input in other applications and do not reproduce
+RAW exposure, white balance, detail settings or the current strength slider.
+
+The AI JSON schema remains version 1 with 40 style parameters. The native
+compiler additionally accepts compile version 2: those same 40 floats followed
+by `shadowStart`, `shadowEnd`, `highlightStart`, `highlightEnd`. These boundaries
+use Oklab L after the style curve and hue-band lightness lift, before toning.
+Version 1 retains the original double-precision boundaries `.2, .6, .4, .8`.
+Each version-2 boundary must be finite and in `[0,1]`; each transition must be
+at least `.05` wide (a `1e-7` tolerance covers float conversion), and both shadow
+boundaries must precede or equal the corresponding highlight boundaries.
+The ordered smoothsteps form nonnegative shadow/midtone/highlight weights that
+sum to one, including overlap or a middle plateau. Black/white endpoint
+protection, gamut mapping and the existing serialized bake gate are unchanged.
+Zero or identical three-region tints cannot gain scene adaptation from moving
+these boundaries. They are global color-domain controls, not spatial masks.
+
+The macOS candidate keeps the default-region look as an immutable comparison,
+renders both arms at the same strength, and compiles manual edits locally with
+no AI request. Private metadata records the style and region values; sanitized
+export strips both. The resulting CUBE is a static resolved transform, not a
+model that re-estimates boundaries for another photograph.
 
 F-Log/F-Log2/F-Log2C inputs and named display or explicit Log outputs are implemented
 in the CPU, Metal, GLES and D3D11 photo paths. The GPU receives the same input
