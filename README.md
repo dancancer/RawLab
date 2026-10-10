@@ -21,7 +21,8 @@ film looks do not promise an exact match to in-camera JPEGs.
 - Built-in film looks with 0-200% strength, compatible CUBE/RLOOK imports and
   neutral-versus-edited comparison.
 - Linear-light wavelet denoising with separate luma, chroma and coarse-chroma
-  controls. macOS also provides vignette, grain and Metal-accelerated denoising.
+  controls, plus matching vignette and deterministic grain on all four clients.
+  Metal, GLES 3.1 and D3D11 accelerate the shared denoising and effects kernels.
 - Per-photo local edit memory and resumable batch export with frozen settings,
   cancellation and failed-item retry, without modifying RAW files.
 - Photo information overlays, zoom/pan and original-size or long-edge exports.

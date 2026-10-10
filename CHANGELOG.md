@@ -3,6 +3,30 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.5.1] - 2026-10-10
+
+### Added
+
+- Matching vignette and deterministic grain controls on iOS, Android and Windows,
+  using the same eight parameters, defaults and render order as macOS.
+- GLES 3.1 and D3D11 compute kernels for wavelet and display-chroma filtering,
+  alongside the existing Metal implementation. Auto retains CPU fallback;
+  Force requires actual native-backend execution and reports failures.
+- Full effects state in edit memory, batch snapshots, preview invalidation,
+  reset and final export. Older saved records default to effects off.
+- Repository Gitflow guidance: feature PRs target `development`; versioned
+  release branches merge to `main` and back to `development`.
+
+### Fixed
+
+- Reflow Windows effects controls at narrow editor widths so all vignette labels
+  fit, with scrolling for the remaining adjustment rows.
+- Preserve the previous EGL context and correctly order GLES filter teardown.
+
+See [v0.5.1 release notes](docs/releases/v0.5.1.md),
+[release verification](docs/verification-v0.5.1.md) and
+[the cross-platform implementation evidence](docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
+
 ## [0.5.0] - 2026-10-10
 
 ### Added
