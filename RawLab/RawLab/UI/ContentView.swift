@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
@@ -17,6 +18,9 @@ struct ContentView: View {
     @State var isSaving = false
     @State var isAdjustingSlider = false
     @State var selectedPhotoItem: PhotosPickerItem?
+    @State private var checkedBatchRecovery = false
+    @State var showingBatchExport = false
+    @State var batchModel: BatchExportModel?
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
     @ScaledMetric(relativeTo: .caption) var toolHeight = 82.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
@@ -44,6 +48,18 @@ struct ContentView: View {
                 }
                 .background(Color(.systemBackground))
             }
+            .safeAreaInset(edge: .top) {
+                if let batchModel, !showingBatchExport {
+                    Button { showingBatchExport = true } label: {
+                        HStack {
+                            Image(systemName: "square.stack.3d.up")
+                            Text("查看批量任务 · \(batchModel.job.targets.count) 张")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }.font(.subheadline).padding(12)
+                    }.background(Color(.secondarySystemBackground)).accessibilityIdentifier("batch.resume")
+                }
+            }
             .navigationTitle("RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
@@ -61,7 +77,9 @@ struct ContentView: View {
             Text(viewModel.statusMessage ?? "")
         }
         .onChange(of: settings) { _, newValue in
+            if viewModel.consumeRestoredSettings(newValue) { return }
             showingBefore = false
+            viewModel.queueSettingsSave(newValue)
             if isAdjustingSlider {
                 viewModel.schedulePreviewUpdate(
                     settings: newValue,
@@ -79,6 +97,12 @@ struct ContentView: View {
                 await importFromPhotoItem(newItem)
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background || phase == .inactive {
+                viewModel.saveCurrentSettings(settings)
+            }
+            if phase == .background { batchModel?.cancel(forBackground: true) }
+        }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy { isImporting = false }
         }
@@ -93,10 +117,16 @@ struct ContentView: View {
         }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
+            if !checkedBatchRecovery { checkedBatchRecovery = true; recoverBatchExport() }
             guard !didAutoLoadSample else { return }
             if ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] == "1" {
                 didAutoLoadSample = true
                 viewModel.runBundledSampleSmokeTest(settings: settings)
+            }
+        }
+        .sheet(isPresented: $showingBatchExport) {
+            if let batchModel {
+                BatchExportView(model: batchModel)
             }
         }
     }

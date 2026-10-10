@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Remove="denoise/**/*.cs" />
     <Compile Remove="updates/**/*.cs" />
+    <Compile Remove="editing/**/*.cs" />
     <ProjectReference Include="../RawLabWindows.csproj"/>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
   </ItemGroup>

@@ -34,12 +34,19 @@ struct EditorPresentationTests {
         check(settings.lutStrength == 1, "Default and reset film strength remain 100 percent")
         check(AdjustmentKind.temperature.progress(in: settings) == 0,
               "Unchanged white balance has no progress ring")
+        check(AdjustmentKind.temperature.range == 2000...50000,
+              "RAW temperature range reaches 50000 K")
+        check(abs(RawSettings.reciprocalSliderValue(for: 2000)) < 0.0001 &&
+              abs(RawSettings.reciprocalSliderValue(for: 50000) - 1) < 0.0001 &&
+              RawSettings.temperature(forReciprocalSliderValue: 0.5) > 2000,
+              "Temperature slider uses reciprocal Kelvin while the field stays Kelvin")
         settings.temperature = 4250
         check(AdjustmentKind.temperature.progress(in: settings) == -0.5,
               "Negative progress uses the lower half of an asymmetric range")
         settings.temperature = 8250
-        check(AdjustmentKind.temperature.progress(in: settings) == 0.5,
-              "Positive progress uses the upper half of an asymmetric range")
+        check(AdjustmentKind.temperature.progress(in: settings) > 0 &&
+              AdjustmentKind.temperature.progress(in: settings) < 0.1,
+              "Positive progress uses the upper half of the expanded temperature range")
         settings.exposure = -1
         check(AdjustmentKind.exposure.progress(in: settings) == -0.5,
               "Negative exposure travels counterclockwise")
@@ -53,6 +60,10 @@ struct EditorPresentationTests {
         AdjustmentKind.strength.reset(in: &settings)
         check(settings.lutStrength == 1 && settings.lutID == "existing-film",
               "Resetting strength does not deselect the film")
+        settings.whiteBalanceMode = .custom
+        let encoded = try! JSONEncoder().encode(settings)
+        let decoded = try! JSONDecoder().decode(RawSettings.self, from: encoded)
+        check(decoded.whiteBalanceMode == .custom, "White balance mode round-trips in the edit record")
         for kind in AdjustmentKind.allCases {
             kind.setValue(kind.range.upperBound, in: &settings)
             kind.reset(in: &settings)

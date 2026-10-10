@@ -40,6 +40,12 @@ extension RawEditorViewModel {
         }
         return lutMap[lutID]?.sourceURL
     }
+
+    func isLookAvailable(for settings: RawSettings) -> Bool {
+        guard settings.lutID != nil else { return true }
+        guard let url = lutURL(for: settings) else { return false }
+        return FileManager.default.isReadableFile(atPath: url.path)
+    }
 }
 
 extension RawEditorViewModel {

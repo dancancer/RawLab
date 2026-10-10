@@ -14,12 +14,10 @@ namespace RawLab.Windows;
 public partial class MainWindow : Window
 {
     private record Film(string Name,string? Path,string? Artwork);
-    private record Edit(Adjustments Settings,string? Lut);
     private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine);
     private readonly Library library=new();
     private readonly Viewport viewport=new();
     private readonly List<Film> films=[];
-    private readonly Dictionary<string,Edit> edits=new(StringComparer.OrdinalIgnoreCase);
     private readonly LatestWork<Work> scheduler=new();
     private record EmbeddedWork(string Path,long Revision);
     private readonly LatestWork<EmbeddedWork> embeddedScheduler=new();
@@ -74,11 +72,12 @@ public partial class MainWindow : Window
         BuildTools(); BuildFilms();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting)return;
-            settings.Denoise=value;interacting=dragging;RefreshControls();Schedule();
+            settings.Denoise=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         ValueSlider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{interacting=true;}));
         ValueSlider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{interacting=false; Schedule();}));
         ready=true; RefreshControls();
+        InitializeEditWorkflow();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsRaw);
@@ -122,7 +121,7 @@ public partial class MainWindow : Window
             stack.Children.Add(new TextBlock{Text=film.Name,FontSize=11,Width=80,Height=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? "中性显影"};
             AutomationProperties.SetName(button,film.Name);
-            button.Click+=(_,_)=>{if(exporting)return;lut=film.Path;RefreshControls();Schedule();};
+            button.Click+=(_,_)=>{if(exporting)return;lut=film.Path;MarkEdited();RefreshControls();Schedule();};
             FilmStrip.Children.Add(button); filmButtons[film.Path ?? ""]=button;
         }
         var importContent=new StackPanel();
@@ -181,7 +180,9 @@ public partial class MainWindow : Window
     private static SolidColorBrush Brush(string color)=>(SolidColorBrush)new BrushConverter().ConvertFromString(color)!;
     private void UpdateBusy()
     {
-        ExportButton.IsEnabled=ExportJpeg.IsEnabled=ExportPng.IsEnabled=exactReady && !scheduler.Busy && !exporting && result!=null;
+        ExportJpeg.IsEnabled=ExportPng.IsEnabled=BatchExportMenu.IsEnabled=exactReady && !scheduler.Busy && !exporting && result!=null && LookAvailable;
+        ViewBatchMenu.IsEnabled=CurrentBatch!=null;
+        ExportButton.IsEnabled=ExportJpeg.IsEnabled || ViewBatchMenu.IsEnabled;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting;
         BusyIndicator.Visibility=scheduler.Busy || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
@@ -200,8 +201,8 @@ public partial class MainWindow : Window
         {
             path=Path.GetFullPath(path);
             if(!LibraryEntry.IsRaw(path))throw new InvalidOperationException("请选择支持的 RAW 文件。");
-            if(file!=null)edits[file]=new(settings.Clone(),lut);
-            var edit=edits.GetValueOrDefault(path); settings=edit?.Settings.Clone() ?? new(); lut=edit!=null ? edit.Lut : films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
+            if(!SaveEdits())return;
+            RestoreEdits(path);
             file=path; interacting=false; exactReady=false; result=null;syncing=true;viewport.Fit();syncing=false;
             viewport.SetSourceSize(0,0);
             NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(placeholder,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
@@ -234,6 +235,7 @@ public partial class MainWindow : Window
     private void Schedule(bool initialPreview=false)
     {
         if(!ready || file==null || exporting || closing)return;
+        if(!LookAvailable){exactReady=false;result=null;renderFailed=true;SetStatus("上次使用的外观不可用，请重新导入或选择外观。",true);UpdateBusy();return;}
         renderFailed=false;
         var proxy=interacting || initialPreview;
         scheduler.Submit(new(file,settings.Clone(),lut,proxy ? 1000 : viewport.ActualPixels ? 0 : 2000,proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,compare,clipping,initialPreview));
@@ -257,7 +259,7 @@ public partial class MainWindow : Window
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         // A current-file proxy may publish while dragging; stale exact work never publishes.
-        if(work.File==file && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting)))
+        if(work.File==file && work.Lut==lut && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting)))
         {
             if(failure!=null) { if(current){result=null;exactReady=false;renderFailed=true;Report(failure);} }
             else if(rendered!=null && neutral!=null)
@@ -286,24 +288,25 @@ public partial class MainWindow : Window
         var value=ParameterSpec.All[(int)selectedParameter].Value(e.NewValue);
         if(settings[selectedParameter]==value)return;
         settings.Set(selectedParameter,value);
+        MarkEdited();
         RefreshControls(); Schedule();
     }
     private void CommitValue()
     {
         if(!ready || syncing || exporting || !ValueText.IsEnabled)return;
         var spec=ParameterSpec.All[(int)selectedParameter];
-        if(spec.Parse(ValueText.Text) is {} value) { if(settings[selectedParameter]!=value){settings.Set(selectedParameter,value);interacting=false;Schedule();} }
+        if(spec.Parse(ValueText.Text) is {} value) { if(settings[selectedParameter]!=value){settings.Set(selectedParameter,value);MarkEdited();interacting=false;Schedule();} }
         else SetStatus("请输入有限数值。",true);
         RefreshControls();
     }
     private void ValueCommitted(object sender,KeyboardFocusChangedEventArgs e)=>CommitValue();
     private void ValueKeyDown(object sender,KeyEventArgs e) { if(e.Key==Key.Enter){CommitValue();e.Handled=true;} if(e.Key==Key.Escape){RefreshControls();e.Handled=true;} }
-    private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting)return;settings.ExposureMode=ExposureMode.SelectedIndex;Schedule(); }
+    private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
     private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !exporting)Schedule(); }
-    private void ResetParameterClicked(object sender,RoutedEventArgs e) { settings.Reset(selectedParameter);RefreshControls();Schedule(); }
-    private void ResetGroupClicked(object sender,RoutedEventArgs e) { settings.ResetGroup(ParameterSpec.All[(int)selectedParameter].Group);RefreshControls();Schedule(); }
-    private void ResetAllClicked(object sender,RoutedEventArgs e) { settings.ResetAll();RefreshControls();Schedule(); }
-    private void AsShotClicked(object sender,RoutedEventArgs e) { settings.ResetWhiteBalance();RefreshControls();Schedule(); }
+    private void ResetParameterClicked(object sender,RoutedEventArgs e) { settings.Reset(selectedParameter);MarkEdited();RefreshControls();Schedule(); }
+    private void ResetGroupClicked(object sender,RoutedEventArgs e) { settings.ResetGroup(ParameterSpec.All[(int)selectedParameter].Group);MarkEdited();RefreshControls();Schedule(); }
+    private void ResetAllClicked(object sender,RoutedEventArgs e) { settings.ResetAll();MarkEdited();RefreshControls();Schedule(); }
+    private void AsShotClicked(object sender,RoutedEventArgs e) { settings.ResetWhiteBalance();MarkEdited();RefreshControls();Schedule(); }
     private void OpenClicked(object sender,RoutedEventArgs e)
     {
         if(exporting)return;
@@ -312,6 +315,7 @@ public partial class MainWindow : Window
     }
     private void ImportClicked(object sender,RoutedEventArgs e)
     {
+        if(exporting)return;
         var dialog=new OpenFileDialog{Title="导入胶片外观",Multiselect=true,Filter="胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"};
         if(dialog.ShowDialog(this)!=true)return;
         foreach(var path in dialog.FileNames)
@@ -319,7 +323,7 @@ public partial class MainWindow : Window
             if(!films.Any(f=>f.Path==path))films.Add(new(Path.GetFileNameWithoutExtension(path),path,null));
             lut=path;
         }
-        BuildFilms();RefreshControls();Schedule();
+        MarkEdited();BuildFilms();RefreshControls();Schedule();
     }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
     {
@@ -444,7 +448,9 @@ public partial class MainWindow : Window
     }
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
+        if(!SaveEdits()){e.Cancel=true;return;}
         closing=true;
+        if(batchWindow?.Running==true)batchWindow.CancelExecution();
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus("正在完成当前任务后关闭…");return;}
         engine?.Dispose();engine=null;

@@ -42,6 +42,13 @@ struct Sony2FujiProcessor {
     struct ProcessResult {
         let buffer: Buffer
         let orientation: CGImagePropertyOrientation?
+        let rawWhiteBalance: RawWhiteBalance?
+    }
+
+    struct RawWhiteBalance: Codable, Equatable {
+        let temperature: Double
+        let tint: Double
+        let isCalibrated: Bool
     }
 
     enum ProcessorError: LocalizedError {
@@ -99,7 +106,7 @@ struct Sony2FujiProcessor {
         defer { destroySession(session) }
         try configureSession(session, settings: settings, interactive: interactive && previewLongEdge != nil)
 
-        var request = makeBaseRequest(settings: settings)
+        var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
         request.input_type = SONY2FUJI_INPUT_RAW
         applySize(&request, width: targetWidth, height: targetHeight, previewLongEdge: previewLongEdge)
         let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
@@ -118,8 +125,9 @@ struct Sony2FujiProcessor {
         }
 
         let output = try copyBuffer(buffer)
+        let rawWhiteBalance = readRawWhiteBalance(from: session)
         sony2fuji_release_buffer(&buffer)
-        return ProcessResult(buffer: output, orientation: .up)
+        return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance)
     }
 
     func processBuffer(
@@ -133,7 +141,7 @@ struct Sony2FujiProcessor {
         defer { destroySession(session) }
         try configureSession(session, settings: settings, interactive: interactive && previewLongEdge != nil)
 
-        var request = makeBaseRequest(settings: settings)
+        var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_BUFFER)
         request.input_type = SONY2FUJI_INPUT_BUFFER
         request.input_width = UInt32(buffer.width)
         request.input_height = UInt32(buffer.height)
@@ -204,7 +212,7 @@ struct Sony2FujiProcessor {
             stride: bytesPerRow,
             pixelFormat: SONY2FUJI_PIXEL_RGBA8
         )
-        return ProcessResult(buffer: buffer, orientation: metadata.orientation)
+        return ProcessResult(buffer: buffer, orientation: metadata.orientation, rawWhiteBalance: nil)
     }
 
     func makeUIImage(from buffer: Buffer, orientation: CGImagePropertyOrientation?) -> UIImage? {

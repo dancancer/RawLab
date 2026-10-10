@@ -48,7 +48,8 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, onPhoto: (Uri) -> Unit) {
+fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, onPhoto: (Uri) -> Unit,
+    selectedPhotos: Set<String>? = null, onDone: (() -> Unit)? = null) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -58,8 +59,9 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
     var bucket by rememberSaveable { mutableStateOf<String?>(null) }
-    var columns by rememberSaveable { mutableIntStateOf(3) }
-    var squareThumbnails by rememberSaveable { mutableStateOf(false) }
+    val preferences = remember { context.getSharedPreferences("album_layout", android.content.Context.MODE_PRIVATE) }
+    var columns by rememberSaveable { mutableIntStateOf(preferences.getInt("columns", 3).coerceIn(1, 6)) }
+    var squareThumbnails by rememberSaveable { mutableStateOf(preferences.getBoolean("square", false)) }
     var viewMenu by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
     val staggeredState = rememberLazyStaggeredGridState()
@@ -94,6 +96,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
         TopAppBar(title = { Text(stringResource(R.string.open_album)) }, navigationIcon = {
             ToolIcon(Icons.AutoMirrored.Outlined.ArrowBack, R.string.back, onClick = onBack)
         }, actions = {
+            if (onDone != null) TextButton(onClick = onDone) { Text("确认 ${selectedPhotos?.size ?: 0} 张") }
             Box {
                 ToolIcon(Icons.Outlined.GridView, R.string.album_view_options) { viewMenu = true }
                 DropdownMenu(expanded = viewMenu, onDismissRequest = { viewMenu = false }) {
@@ -106,6 +109,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                             onClick = {
                                 if (squareThumbnails != square) anchorVisiblePhoto(square)
                                 squareThumbnails = square
+                                preferences.edit().putBoolean("square", square).apply()
                                 viewMenu = false
                             },
                         )
@@ -119,6 +123,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                             onClick = {
                                 if (columns != count) anchorVisiblePhoto(squareThumbnails)
                                 columns = count
+                                preferences.edit().putInt("columns", count).apply()
                                 viewMenu = false
                             },
                         )
@@ -172,7 +177,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                         LazyVerticalGrid(state = gridState, columns = GridCells.Fixed(columns), contentPadding = PaddingValues(spacing),
                             horizontalArrangement = Arrangement.spacedBy(spacing), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(visiblePhotos, key = { it.uri.toString() }) { photo ->
-                                AlbumPhotoItem(storage, photo, true, refresh, onPhoto)
+                                AlbumPhotoItem(storage, photo, true, refresh, onPhoto, selectedPhotos?.contains(photo.uri.toString()))
                             }
                         }
                     } else {
@@ -180,7 +185,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                             columns = StaggeredGridCells.Fixed(columns), contentPadding = PaddingValues(spacing),
                             horizontalArrangement = Arrangement.spacedBy(spacing), verticalItemSpacing = 12.dp) {
                             items(visiblePhotos, key = { it.uri.toString() }) { photo ->
-                                AlbumPhotoItem(storage, photo, false, refresh, onPhoto)
+                                AlbumPhotoItem(storage, photo, false, refresh, onPhoto, selectedPhotos?.contains(photo.uri.toString()))
                             }
                         }
                     }
@@ -191,9 +196,12 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
 }
 
 @Composable
-private fun AlbumPhotoItem(storage: PhotoStorage, photo: AlbumPhoto, square: Boolean, refresh: Int, onPhoto: (Uri) -> Unit) {
+private fun AlbumPhotoItem(storage: PhotoStorage, photo: AlbumPhoto, square: Boolean, refresh: Int, onPhoto: (Uri) -> Unit, checked: Boolean? = null) {
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPhoto(photo.uri) }) {
-        AlbumThumbnail(storage, photo, square, refresh)
+        Box {
+            AlbumThumbnail(storage, photo, square, refresh)
+            if (checked != null) Checkbox(checked, onCheckedChange = { onPhoto(photo.uri) }, modifier = Modifier.align(Alignment.TopEnd))
+        }
         Text(photo.name, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(top = 4.dp))
     }

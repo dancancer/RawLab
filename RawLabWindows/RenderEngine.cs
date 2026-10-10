@@ -74,8 +74,14 @@ internal sealed class RenderEngine : IDisposable
         Native.Buffer buffer = default, mask = default;
         try
         {
-            Native.Check(Native.sony2fuji_process(session,ref request,out buffer));
-            if (output != null) { ExportMetadata.Preserve(path,output); return null; }
+            var status = Native.sony2fuji_process(session,ref request,out buffer);
+            if (output != null && status == 3) throw new OutputWriteException("无法写入成片，请检查输出位置和剩余空间。");
+            Native.Check(status);
+            if (output != null) {
+                try { ExportMetadata.Preserve(path,output); }
+                catch (IOException error) { throw new OutputWriteException("无法完成成片元数据写入：" + error.Message, error); }
+                return null;
+            }
             var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>();
             uint shadows=0,highlights=0;
             if(clipping) Native.Check(Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask));

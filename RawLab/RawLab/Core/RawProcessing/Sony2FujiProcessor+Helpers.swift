@@ -57,21 +57,29 @@ extension Sony2FujiProcessor {
         guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
     }
 
-    func makeBaseRequest(settings: RawSettings) -> sony2fuji_request {
+    func makeBaseRequest(settings: RawSettings, inputType: sony2fuji_input_type) -> sony2fuji_request {
         var request = sony2fuji_request()
         request.version = SONY2FUJI_REQUEST_VERSION
         request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
         request.output_target = SONY2FUJI_TARGET_BUFFER
         request.output_format = SONY2FUJI_OUTPUT_RGBA8
         request.jpeg_quality = 95
-        request.wb_mode = SONY2FUJI_WB_CAMERA
+        request.wb_mode = inputType == SONY2FUJI_INPUT_RAW && settings.whiteBalanceMode == .custom
+            ? SONY2FUJI_WB_TEMPERATURE
+            : SONY2FUJI_WB_CAMERA
         request.wb_mul = (1, 1, 1, 1)
         request.exposure_ev = Float(settings.exposure)
         request.brightness = 1
         request.contrast = Float(settings.contrast)
         request.saturation = Float(settings.saturation)
-        request.temperature = Float(settings.temperature)
-        request.tint = Float(settings.tint)
+        // Camera RAW WB is already applied before demosaic. Raster inputs keep
+        // the old post-RGB temperature/tint path and therefore remain separate.
+        request.temperature = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+            ? 6500
+            : Float(settings.temperature)
+        request.tint = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+            ? 0
+            : Float(settings.tint)
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
         request.tone_curve = Float(settings.toneCurve)
@@ -201,6 +209,16 @@ extension Sony2FujiProcessor {
             return "unknown"
         }
         return String(cString: message)
+    }
+
+    func readRawWhiteBalance(from session: OpaquePointer) -> Sony2FujiProcessor.RawWhiteBalance? {
+        var temperature: Float = 6500
+        var tint: Float = 0
+        let status = sony2fuji_session_get_raw_white_balance(session, &temperature, &tint)
+        guard status == SONY2FUJI_STATUS_OK else { return nil }
+        return Sony2FujiProcessor.RawWhiteBalance(
+            temperature: Double(temperature), tint: Double(tint), isCalibrated: true
+        )
     }
 }
 

@@ -97,6 +97,20 @@ struct ProcessorExportTests {
         let standardRaw = try processor.processRaw(url: raw, settings: .default, previewLongEdge: 128, lutURL: lut)
         let strongRaw = try processor.processRaw(url: raw, settings: stronger, previewLongEdge: 128, lutURL: lut)
         check(standardRaw.buffer.data != strongRaw.buffer.data, "iOS RAW processing also passes through 200 percent")
+        var cameraTemperature = RawSettings.default
+        cameraTemperature.temperature = 3000
+        cameraTemperature.tint = 80
+        let camera = try processor.processRaw(url: raw, settings: cameraTemperature, previewLongEdge: 128, lutURL: lut)
+        var customTemperature = cameraTemperature
+        customTemperature.whiteBalanceMode = .custom
+        let custom = try processor.processRaw(url: raw, settings: customTemperature, previewLongEdge: 128, lutURL: lut)
+        let cameraNeutral = try processor.processRaw(url: raw, settings: .default, previewLongEdge: 128, lutURL: lut)
+        check(camera.buffer.data == cameraNeutral.buffer.data,
+              "Camera RAW keeps neutral post-demosaic WB values")
+        check(custom.buffer.data != cameraNeutral.buffer.data,
+              "Custom RAW temperature uses the pre-demosaic Kelvin request")
+        check(camera.rawWhiteBalance?.isCalibrated == true && (camera.rawWhiteBalance?.temperature ?? 0) > 0,
+              "iOS RAW processing returns calibrated as-shot WB metadata")
         let rawJPEG = try processor.makeJPEGData(from: strongRaw.buffer, sourceURL: raw,
                                                 orientation: strongRaw.orientation, quality: 0.92)
         let rawFields = properties(rawJPEG)

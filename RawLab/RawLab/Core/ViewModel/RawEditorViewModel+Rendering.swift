@@ -11,6 +11,12 @@ extension RawEditorViewModel {
     ) {
         previewWorkItem?.cancel()
         previewWorkItem = nil
+        guard isLookAvailable(for: settings) else {
+            setLatestRenderID(UUID())
+            isBusy = false
+            statusMessage = "所选外观不可用，请重新选择外观。"
+            return
+        }
 
         let request = PreviewRequest(settings: settings, quality: quality, includeHistogram: includeHistogram)
         if request == lastPreviewRequest {
