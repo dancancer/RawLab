@@ -11,6 +11,12 @@ extension RawEditorViewModel {
     ) {
         previewWorkItem?.cancel()
         previewWorkItem = nil
+        guard isLookAvailable(for: settings) else {
+            setLatestRenderID(UUID())
+            isBusy = false
+            statusMessage = "所选外观不可用，请重新选择外观。"
+            return
+        }
 
         let request = PreviewRequest(settings: settings, quality: quality, includeHistogram: includeHistogram)
         if request == lastPreviewRequest {
@@ -47,7 +53,8 @@ extension RawEditorViewModel {
                         url: sourceURL,
                         settings: settings,
                         previewLongEdge: maxDimension,
-                        lutURL: lutURL
+                        lutURL: lutURL,
+                        interactive: quality == .interactive
                     )
                     let previewImage = self.processor.makeUIImage(
                         from: result.buffer,
@@ -93,7 +100,8 @@ extension RawEditorViewModel {
                     buffer: inputBuffer,
                     settings: settings,
                     previewLongEdge: maxDimension,
-                    lutURL: lutURL
+                    lutURL: lutURL,
+                    interactive: quality == .interactive
                 )
             } catch {
                 DispatchQueue.main.async {

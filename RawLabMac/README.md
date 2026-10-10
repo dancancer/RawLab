@@ -6,6 +6,8 @@ A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ 
 
 ## 功能预览 / Preview
 
+v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+
 ![RawLab Mac：中性与 Velvia 效果对比 / Neutral and Velvia comparison](../docs/images/rawlab-mac-velvia.png)
 
 左侧为中性渲染，右侧为 Velvia 胶片效果；底部集中提供胶片选择及曝光、明暗、色彩、白平衡和锐化调整。
@@ -14,9 +16,9 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 
 ## 构建和启动 / Build and Launch
 
-预编译版本：[GitHub Release v0.4.1](https://github.com/dancancer/RawLab/releases/tag/v0.4.1)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
+预编译版本：[GitHub Release v0.5.0](https://github.com/dancancer/RawLab/releases/tag/v0.5.0)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Mac-0.5.0-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Mac-0.5.0-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
 
-Prebuilt apps: [GitHub Release v0.4.1](https://github.com/dancancer/RawLab/releases/tag/v0.4.1). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Mac-0.4.1-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
+Prebuilt apps: [GitHub Release v0.5.0](https://github.com/dancancer/RawLab/releases/tag/v0.5.0). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Mac-0.5.0-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Mac-0.5.0-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 
@@ -127,9 +129,9 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 每项支持滑杆、直接输入数字、单项重置；另有分组和全部调整重置。黄色进度环以默认值为起点，正向顺时针、负向逆时针，两侧按各自可调范围归一化。重置不会更换当前 RAW 或选中的 LUT。
 
   Each adjustment has a slider, numeric input and individual reset, alongside group/global resets. Yellow rings start at the default: positive values fill clockwise, negative values counterclockwise, normalized separately for each side of the range. Resets do not change the RAW or selected LUT.
-- 切换照片会在本次应用会话中保留各自的参数和胶片选择，新照片使用默认调整；这些编辑不写回 RAW，也尚未保存为跨会话的编辑档案。
+- 每张照片的参数和胶片选择在本机自动保存，重开同一原始文件可恢复；新照片使用默认调整。保存失败可重试，不写回 RAW，也不创建 sidecar。
 
-  Each photo retains its adjustments and film selection during the app session; new photos start with defaults. Edits never modify RAW files and are not yet persisted as cross-session edit records.
+  Per-photo adjustments and look identities persist locally across launches. New photos start with defaults; failed saves are retryable. No RAW modifications or sidecars are created.
 - 明暗组提供对比度、高光、阴影、S 曲线强度；色彩组提供饱和度；细节组提供锐化。六项 UI 默认均为 0，对比度/饱和度映射到核心的恒等系数 1，其他项映射为 0。高光/阴影正值提亮、负值压暗。这些是 LUT 后成片微调，不是 RAW 高光重建，也不是 darktable 完整模块的移植。
 
   Tone includes contrast, highlights, shadows and S-curve strength; color includes saturation; detail includes sharpening. All six controls default to 0 in the UI, with contrast/saturation mapped to identity factor 1 in the core. Positive highlight/shadow values brighten and negative values darken. These are post-LUT finishing controls, not RAW highlight reconstruction or a full port of darktable modules.
@@ -155,6 +157,26 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 
   Histogram and clipping-mask generation now run in C++, with a Metal implementation also available. CPU was faster on this machine for pixels already read back, so Auto uses optimized CPU statistics rather than adding unnecessary GPU transfers.
 
+### 暗角、颗粒与 GPU 降噪 / Effects and GPU Denoising
+
+底部工具栏新增“暗角”和“颗粒”。暗角强度为 -100 至 100，负值压暗、正值提亮，
+同时提供中点、圆度、羽化和高光保护；高光保护只在负强度下可用。颗粒提供 0 至 100 的
+强度、大小和粗糙度，相同参数重复渲染保持一致。两项默认关闭，支持单参数、整项及效果组
+重置；新参数跟随逐照片调整状态，缺少新字段的旧序列化记录按关闭处理。
+
+暗角和颗粒在 Metal 上按原图分辨率执行，然后缩放预览。小波降噪的 SWT 分解、阈值和重建，
+以及色度降噪的引导滤波也支持 Metal，可与暗角和颗粒同时启用。GPU 失败时 Auto 回退 CPU；
+Force 不隐藏失败。噪声估计/校准、OpenCV 色彩转换及部分辅助处理仍在 CPU，旧 FBDD、RAW
+解码和文件编码也仍在 CPU。结果不是 Lightroom 像素级复刻或实测胶片模型。
+
+The dock adds Vignette (Amount, Midpoint, Roundness, Feather, Highlights) and
+Grain (Amount, Size, Roughness), both defaulting off. Effects run at source
+resolution on Metal before resizing. Metal also accelerates wavelet SWT filtering
+and display-chroma guided filtering, retaining CPU estimation/calibration and
+OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
+failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
+See the [shared contract](../lutools/docs/color-contract.md#metal-denoising).
+
 ## 验证 / Verification
 
 RAW 样片不再随仓库分发。运行真实 RAW 测试前设置 `RAWLAB_TEST_RAW=/path/to/sample.ARW`；
@@ -171,6 +193,9 @@ bash RawLabMac/tests/smoke.sh
 bash RawLabMac/tests/adjustments.sh
 bash RawLabMac/tests/export-metadata.sh
 bash RawLabMac/tests/presentation.sh
+bash RawLabMac/tests/photo-effects-presentation.sh "$RAWLAB_TEST_RAW" .impeccable/review
+bash RawLabMac/tests/photo-effects-render.sh "$RAWLAB_TEST_RAW" /path/to/film.cube wavelet
+bash RawLabMac/tests/photo-effects-render.sh "$RAWLAB_TEST_RAW" /path/to/film.cube chroma
 bash RawLabMac/tests/app-icon.sh
 bash RawLabMac/tests/histogram.sh
 bash RawLabMac/tests/render-scheduling.sh

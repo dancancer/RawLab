@@ -3,6 +3,7 @@ import AppKit
 
 struct EditorView: View {
     @ObservedObject var model: EditorModel
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
     @State private var compare = true
     @State private var clipping = false
@@ -15,12 +16,15 @@ struct EditorView: View {
     @State private var resetVersion = 0
     @State private var adjustmentPanel = AdjustmentPanelLayout()
     @State private var resizeStart: CGFloat?
+    @State private var infoMode = PhotoInfoMode.hidden
+    @State private var photoInformation: PhotoInformation?
 
     var body: some View {
         GeometryReader { geometry in
             HSplitView {
                 if showFiles {
-                    FileBrowser(library: library, selected: model.file, open: model.open)
+                    FileBrowser(library: library, selected: model.file, open: model.open,
+                                canApplySettings: model.canApplySettings, applySettings: model.confirmApplySettings)
                         .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
                         .disabled(model.exporting)
                 }
@@ -29,6 +33,20 @@ struct EditorView: View {
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
                     .overlay(alignment: .topTrailing) {
                         FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if infoMode != .hidden, let photoInformation {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(Array(photoInformation.lines(for: infoMode).enumerated()), id: \.offset) { index, line in
+                                    Text(line).font(.system(size: index == 0 ? 14 : 12, weight: index == 0 ? .semibold : .regular))
+                                        .lineLimit(2).truncationMode(.middle)
+                                }
+                            }.foregroundStyle(.white).shadow(color: .black, radius: 2, y: 1)
+                                .padding(10).background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 4))
+                                .frame(maxWidth: min(380, max(130, geometry.size.width - (showFiles ? 300 : 0) - 300)), alignment: .leading)
+                                .padding(12).allowsHitTesting(false)
+                                .accessibilityElement(children: .combine)
+                        }
                     }
                     .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3) } }
                     .onDrop(of: [.fileURL], isTargeted: $dropTarget) { providers in
@@ -52,6 +70,14 @@ struct EditorView: View {
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
         .onChange(of: model.file) { _, _ in fit() }
+        .task(id: model.file) {
+            photoInformation = nil
+            guard let file = model.file else { return }
+            let info = await Task.detached(priority: .utility) { PhotoInformation.read(file) }.value
+            if !Task.isCancelled && model.file == file { photoInformation = info }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
         .onAppear {
             let args = CommandLine.arguments
@@ -138,8 +164,8 @@ struct EditorView: View {
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
             HStack(spacing: 1) {
-                if compare, let base = model.neutral { imagePane(base, title: "中性", showMask: false) }
-                imagePane(result, title: model.selectedFilm?.name ?? "中性", showMask: clipping)
+                if compare, let base = model.neutral { imagePane(base, title: "原图", showMask: false) }
+                imagePane(result, title: model.selectedFilm?.name ?? "调整后", showMask: clipping)
             }
         } else {
             VStack(spacing: 16) {
@@ -169,6 +195,15 @@ struct EditorView: View {
             Text(model.file?.lastPathComponent ?? "未打开照片").lineLimit(1).truncationMode(.middle)
                 .help(model.file?.path ?? "未打开照片")
             Spacer(minLength: 8)
+            if let failure = model.saveError {
+                Button { model.saveEdits() } label: { Label("调整未保存 · 重试", systemImage: "exclamationmark.triangle") }
+                    .buttonStyle(.plain).foregroundStyle(.yellow).help(failure)
+            } else if !model.saveStatus.isEmpty {
+                Label(model.saveStatus, systemImage: "checkmark").foregroundStyle(.secondary)
+            }
+            if model.batch?.job.interrupted == true {
+                Button("继续上次批量任务") { openWindow(id: "batch-export") }
+            }
             if model.busy || model.exporting {
                 ProgressView().controlSize(.mini)
                 Text(model.exporting ? "正在导出…" : "正在显影…")
@@ -189,8 +224,15 @@ struct EditorView: View {
         ToolbarItemGroup {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
-                .help("中性与胶片对比").accessibilityLabel("对比")
+                .help("原图与调整后对比").accessibilityLabel("对比")
                 .accessibilityValue(compare ? "已开启" : "已关闭").disabled(model.result == nil)
+            Button {
+                if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
+                infoMode = infoMode.next
+            } label: { Image(systemName: "info.circle") }
+                .tint(infoMode == .hidden ? nil : .yellow)
+                .help("照片信息").accessibilityLabel("照片信息").accessibilityValue(infoMode.title)
+                .keyboardShortcut("i", modifiers: []).disabled(model.file == nil)
             Menu {
                 Button("适合窗口", action: fit).keyboardShortcut("0")
                 Button("实际像素 · 100%") {
@@ -209,9 +251,18 @@ struct EditorView: View {
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
                 Button("JPEG…") { model.export(png: false) }
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
                 Button("PNG · 16-bit…") { model.export(png: true) }
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                Divider()
+                Button("使用当前调整批量导出…") {
+                    if model.prepareBatch() { openWindow(id: "batch-export") }
+                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                if model.batch != nil {
+                    Button("查看批量任务…") { openWindow(id: "batch-export") }
+                }
             } label: { Label("导出", systemImage: "square.and.arrow.up") }
-            .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy)
+            .disabled(model.file == nil && model.batch == nil)
         }
     }
 
@@ -233,7 +284,7 @@ struct EditorView: View {
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
-        PhotoCanvas(frame: frame, viewport: viewport, pixelReady: frame.isFullResolution, pan: $pan, clipping: showMask)
+        PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.neutral?.image.width ?? frame.image.width, pan: $pan, clipping: showMask)
             .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() })
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {

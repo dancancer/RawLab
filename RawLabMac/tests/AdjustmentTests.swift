@@ -71,7 +71,7 @@ struct AdjustmentTests {
                   "Reset all retains per-photo camera white balance metadata")
         }
         check(!original.isFullResolution, "Bounded previews do not claim native pixel size")
-        let controls: [AdjustmentParameter]=[.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening]
+        let controls: [AdjustmentParameter]=[.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening,.vignetteAmount,.grainAmount]
         for parameter in controls {
             var changed=Adjustments()
             changed[keyPath: parameter.spec.keyPath]=parameter == .sharpening ? 100 : 60
@@ -91,6 +91,10 @@ struct AdjustmentTests {
         // the full-resolution display buffer, not just the existence of an output file.
         settings.contrast=12; settings.highlights = -25; settings.shadows=15
         settings.toneCurve=10; settings.saturation=8; settings.sharpening=40
+        settings.setEffect(.vignetteAmount, to: -40)
+        settings.setEffect(.vignetteHighlights, to: 65)
+        settings.setEffect(.grainAmount, to: 45)
+        settings.setEffect(.grainSize, to: 60)
         let full=try engine.render(raw,settings: settings,lut: lut,edge: nil)!
         check(full.isFullResolution, "Native renders carry actual-pixel display metadata")
         let pngURL=output.appendingPathComponent("adjusted.png")

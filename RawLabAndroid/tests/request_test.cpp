@@ -18,6 +18,12 @@ int main() {
     assert(preview.preview_long_edge == 1600);
     assert(preview.output_format == SONY2FUJI_OUTPUT_RGBA8);
     assert(preview.exposure_ev == 1.5f);
+    auto highlights = rawlab::makeRequest("input.dng", nullptr, nullptr, 1, 0, false, 6500, 0,
+        0.25f, 0, 0, 0, 0, 0, 400, false);
+    assert(highlights.highlights == -0.25f);
+    auto tone = rawlab::makeRequest("input.dng", nullptr, nullptr, 1, 0, false, 6500, 0,
+        0, 0, 0.2f, -0.3f, 0.4f, 1.5f, 400, false);
+    assert(tone.contrast == 1.2f && tone.tone_curve == -0.3f && tone.saturation == 1.4f && tone.sharpening == 1.5f);
     auto exported = rawlab::makeRequest("input.dng", nullptr, "out.png", 1, 0, true, 4800, -10, 1000, true);
     assert(exported.intent == SONY2FUJI_INTENT_FINAL);
     assert(exported.size_mode == SONY2FUJI_SIZE_NATIVE);
@@ -27,6 +33,11 @@ int main() {
     assert(exported.wb_mode == SONY2FUJI_WB_TEMPERATURE);
     assert(exported.temperature == 4800 && exported.tint == -10);
     assert(exported.lut_strength == 0);
+    auto limited = rawlab::makeRequest("input.dng", nullptr, "out.jpg", 1, 0, false, 6500, 0,
+        0, 0, 0, 0, 0, 0, 1600, false, 3000);
+    assert(limited.intent == SONY2FUJI_INTENT_FINAL);
+    assert(limited.size_mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE);
+    assert(limited.long_edge == 3000 && limited.preview_long_edge == 0);
     for (const char* output : {static_cast<const char*>(nullptr), "out.jpg"}) {
         auto strong = rawlab::makeRequest("in", "film.cube", output, 2, 0, false, 6500, 0, 400, false);
         assert(strong.lut_strength == 2);

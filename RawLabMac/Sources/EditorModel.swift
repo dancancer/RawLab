@@ -11,10 +11,10 @@ final class EditorModel: ObservableObject {
         let pass: RenderPass
     }
 
-    @Published var settings = Adjustments() { didSet { if !updatingMetadata { schedule() } } }
+    @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { edited() } } }
     private var updatingMetadata = false
     @Published var films = Film.bundled()
-    @Published var selectedFilmID = "" { didSet { schedule() } }
+    @Published var selectedFilmID = "" { didSet { if !updatingMetadata { edited() } } }
     @Published var fullResolution = false { didSet { schedule() } }
     @Published private(set) var file: URL?
     @Published private(set) var neutral: RenderedImage?
@@ -25,17 +25,32 @@ final class EditorModel: ObservableObject {
     @Published var error: String?
     @Published var lookImportReport: String?
     @Published private(set) var status = ""
+    @Published private(set) var saveStatus = ""
+    @Published private(set) var saveError: String?
+    @Published private(set) var batch: BatchExportModel?
+    @Published var exportLongEdge: Int?
     private let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     private let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
     private var scheduler = RenderScheduler<RenderWork>()
     private var debounceTimer: DispatchSourceTimer?
     private var workerActive = false
     private var engine: RenderEngine?
-    private var editSession = PhotoEditSession()
+    private var originalCache: (file: URL, frame: RenderedImage)?
+    private var editStore: EditPersistence?
+    private let editDirectory: URL
+    private let batchJournal: BatchJournal
+    private var saveWork: DispatchWorkItem?
+    private var dirty = false
     private var lookLibrary: LookLibrary?
     var selectedFilm: Film? { films.first { $0.id == selectedFilmID } }
+    var missingFilm: Bool { !selectedFilmID.isEmpty && (selectedFilm == nil || !FileManager.default.isReadableFile(atPath: selectedFilm!.url.path)) }
+    var canApplySettings: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm }
 
-    init(lookDirectory: URL = LookLibrary.defaultDirectory) {
+    init(lookDirectory: URL = LookLibrary.defaultDirectory,
+         editDirectory: URL = EditPersistence.defaultDirectory,
+         batchDirectory: URL = BatchJournal.defaultDirectory) {
+        self.editDirectory = editDirectory
+        batchJournal = BatchJournal(directory: batchDirectory)
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
@@ -44,6 +59,11 @@ final class EditorModel: ObservableObject {
             self.error = error.localizedDescription
         }
         selectedFilmID = films.first(where: { $0.name == "PROVIA" })?.id ?? films.first?.id ?? ""
+        do { editStore = try EditPersistence(directory: editDirectory) }
+        catch { saveError = "无法读取调整记录：\(error.localizedDescription)" }
+        do {
+            if let job = try batchJournal.load() { attachBatch(job) }
+        } catch { self.error = "无法读取上次批量任务：\(error.localizedDescription)" }
         let timer = DispatchSource.makeTimerSource(queue: debounceQueue)
         timer.setEventHandler { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.launchNextRender() }
@@ -51,7 +71,98 @@ final class EditorModel: ObservableObject {
         timer.resume()
         debounceTimer = timer
     }
-    deinit { debounceTimer?.cancel() }
+    deinit { debounceTimer?.cancel(); saveWork?.cancel() }
+
+    private func edited() {
+        guard file != nil else { return }
+        dirty = true
+        saveStatus = ""
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        schedule()
+    }
+
+    @discardableResult func saveEdits() -> Bool {
+        saveWork?.cancel()
+        guard let file, dirty else { return true }
+        do {
+            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+            let filmID = selectedFilm.map { film in
+                film.managedID ?? "builtin:\(film.url.lastPathComponent)"
+            } ?? selectedFilmID
+            try editStore!.save(file, state: PhotoEditState(settings: settings, filmID: filmID))
+            dirty = false; saveError = nil; saveStatus = "调整已保存"
+            clearSaveStatusLater()
+            return true
+        } catch {
+            saveError = "调整未保存：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func clearSaveStatusLater() {
+        let message = saveStatus
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            if self?.saveStatus == message { self?.saveStatus = "" }
+        }
+    }
+
+    @discardableResult func applyCurrentSettings(to urls: [URL]) throws -> Int {
+        guard file != nil, !exporting, !lookLibraryBusy, !missingFilm else {
+            throw RenderError.failed("当前照片的设置尚不可用。")
+        }
+        let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL }))
+        guard !targets.isEmpty else { return 0 }
+        let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
+        if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+        try editStore!.save(targets, state: PhotoEditState(settings: settings, filmID: filmID))
+        status = "已将当前设置应用到 \(targets.count) 张照片"
+        return targets.count
+    }
+
+    func confirmApplySettings(to url: URL, directory: Bool) {
+        guard canApplySettings else { return }
+        do {
+            let targets = directory ? try DirectoryContents.read(url).photos : [url]
+            guard !targets.isEmpty else { throw RenderError.failed("此目录没有 RAW 照片。") }
+            let alert = NSAlert()
+            alert.messageText = "应用当前设置到 \(targets.count) 张照片？"
+            alert.informativeText = "将替换目标照片的本机调整记录，不改写原始 RAW。" +
+                (directory ? "仅包含此目录中的 RAW，不包含子目录。" : "")
+            alert.addButton(withTitle: "应用当前设置"); alert.addButton(withTitle: "取消")
+            if alert.runModal() == .alertFirstButtonReturn { try applyCurrentSettings(to: targets) }
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func prepareBatch() -> Bool {
+        guard !busy, !exporting, !lookLibraryBusy, result != nil, !missingFilm, let file else { return false }
+        if batch?.validating == true || batch?.previewing == true { return true }
+        if let batch, batch.job.started && batch.job.succeededCount < batch.job.selectedCount {
+            let alert = NSAlert()
+            alert.messageText = "上次批量任务尚未完成"
+            alert.informativeText = "继续查看上次任务，或保留已导出文件并新建任务。"
+            alert.addButton(withTitle: "查看任务"); alert.addButton(withTitle: "新建任务")
+            if alert.runModal() == .alertFirstButtonReturn { return true }
+        }
+        do {
+            if let batch { try batchJournal.discard(batch.job) }
+            var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: selectedFilm?.name ?? "中性")
+            job.longEdge = exportLongEdge
+            job.look = try batchJournal.snapshotLook(selectedFilm?.url, for: job.id)
+            try batchJournal.save(job)
+            attachBatch(job)
+            return true
+        } catch { self.error = error.localizedDescription; return false }
+    }
+
+    private func attachBatch(_ job: BatchExportJob) {
+        let model = BatchExportModel(job: job, journal: batchJournal)
+        model.onActivity = { [weak self] active in self?.exporting = active }
+        model.onDiscard = { [weak self] in self?.batch = nil }
+        batch = model
+    }
 
     func openPanel() {
         let panel = NSOpenPanel()
@@ -62,13 +173,20 @@ final class EditorModel: ObservableObject {
     func open(_ url: URL) {
         guard !exporting else { return }
         if file == url && result != nil { return }
+        guard saveEdits() else { return }
         scheduler.setInteracting(false)
-        if let file { editSession.save(file, settings: settings, filmID: selectedFilmID) }
-        let restored = editSession.state(for: url,
-            defaultFilmID: films.first(where: { $0.name == "PROVIA" })?.id ?? "")
+        var restored: PhotoEditState?
+        do { restored = try editStore?.state(for: url) }
+        catch { saveError = "无法恢复调整：\(error.localizedDescription)" }
         file = url; neutral = nil; result = nil; error = nil; status = ""
-        settings = restored.settings
-        selectedFilmID = films.contains(where: { $0.id == restored.filmID }) ? restored.filmID : ""
+        updatingMetadata = true
+        settings = restored?.settings ?? Adjustments()
+        let filmID = restored?.filmID ?? films.first(where: { $0.name == "PROVIA" })?.id ?? ""
+        selectedFilmID = films.first(where: { $0.id == filmID || "builtin:\($0.url.lastPathComponent)" == filmID })?.id ?? filmID
+        updatingMetadata = false
+        dirty = false
+        saveStatus = restored == nil ? "" : "已恢复上次调整"
+        clearSaveStatusLater()
         schedule()
     }
     func importLUT() {
@@ -152,11 +270,11 @@ final class EditorModel: ObservableObject {
                     guard let self else { return }
                     self.films = self.films.filter { $0.managedID == nil } + updated
                     self.lookLibraryBusy = false
+                    self.error = nil
                     if let selectedID = change.selectedID { self.selectedFilmID = selectedID }
                     else if !self.selectedFilmID.isEmpty && !self.films.contains(where: { $0.id == self.selectedFilmID }) {
-                        self.selectedFilmID = ""
+                        self.schedule()
                     }
-                    self.error = nil
                     self.lookImportReport = change.report
                 }
             } catch {
@@ -178,6 +296,11 @@ final class EditorModel: ObservableObject {
     }
     private func schedule(forceExact: Bool) {
         guard let file else { return }
+        guard !missingFilm else {
+            result = nil
+            error = "上次使用的外观不可用，请重新选择或导入外观。"
+            return
+        }
         let interactive = scheduler.interacting && !forceExact
         let work = RenderWork(file: file, settings: settings, lut: selectedFilm?.url,
                               edge: interactive ? 1000 : (fullResolution ? nil : 2000),
@@ -205,9 +328,13 @@ final class EditorModel: ObservableObject {
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
-                let neutral = try self.engine!.render(work.file, settings: work.settings, lut: nil,
-                                                       edge: work.edge, output: nil,
-                                                       interactive: work.pass == .interactive)
+                if self.originalCache?.file != work.file {
+                    self.originalCache = nil
+                    if let original = try self.engine!.render(work.file, settings: Adjustments(), lut: nil, edge: nil) {
+                        self.originalCache = (work.file, original)
+                    }
+                }
+                let neutral = self.originalCache?.frame
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
                                                      edge: work.edge, output: nil,
                                                      interactive: work.pass == .interactive)
@@ -229,7 +356,7 @@ final class EditorModel: ObservableObject {
         let sameFile = request.value.file.standardizedFileURL == file?.standardizedFileURL
         switch completion {
         case .publishInteractive, .publishExact:
-            guard sameFile else { break }
+            guard sameFile, !missingFilm else { break }
             if let failure {
                 if completion == .publishExact || scheduler.latest?.id == request.id {
                     self.result = nil
@@ -240,6 +367,7 @@ final class EditorModel: ObservableObject {
                 self.result = result
                 updatingMetadata = true
                 settings.resolveWhiteBalance(result.asShotWhiteBalance)
+                settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
                 updatingMetadata = false
                 if completion == .publishInteractive {
                     status = "交互预览… \(result.image.width) × \(result.image.height) · sRGB"
@@ -258,20 +386,23 @@ final class EditorModel: ObservableObject {
         busy = workerActive || scheduler.isBusy
     }
     func export(png: Bool) {
-        guard !busy, !exporting, !lookLibraryBusy, result != nil, let file else { return }
+        guard !busy, !exporting, !lookLibraryBusy, !missingFilm, result != nil, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [png ? .png : .jpeg]
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-" +
             (selectedFilm?.name ?? "neutral") + (png ? ".png" : ".jpg")
+        let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self).padding(12).frame(width: 360))
+        sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
+        panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
         exporting = true
-        let settings = settings, lut = selectedFilm?.url
+        let settings = settings, lut = selectedFilm?.url, longEdge = exportLongEdge
         queue.async { [weak self] in
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
-                                             interactive: false)
+                                             interactive: false, exportLongEdge: longEdge)
                 DispatchQueue.main.async { self.exporting = false; self.status = "已导出：\(output.lastPathComponent)" }
             } catch {
                 DispatchQueue.main.async { self.exporting = false; self.error = error.localizedDescription }

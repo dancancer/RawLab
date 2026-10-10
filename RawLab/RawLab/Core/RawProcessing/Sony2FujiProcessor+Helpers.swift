@@ -37,33 +37,53 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
-    func configureSession(_ session: OpaquePointer) {
+    func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool) throws {
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
         config.mode = SONY2FUJI_GPU_OFF
         _ = sony2fuji_session_set_gpu_config(session, &config)
+        guard settings.denoise.isValid else { throw ProcessorError.processFailed("Invalid denoise strengths.") }
+        var denoise = sony2fuji_wavelet_denoise_config()
+        denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
+        denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
+        denoise.enabled = settings.denoise.enabled ? 1 : 0
+        denoise.luma = Float(settings.denoise.luma)
+        denoise.chroma = Float(settings.denoise.chroma)
+        denoise.coarse = Float(settings.denoise.coarse)
+        let status = sony2fuji_session_set_wavelet_denoise(session, &denoise)
+        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
+        let previewStatus = sony2fuji_session_set_interactive_preview(session, interactive ? 1 : 0)
+        guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
     }
 
-    func makeBaseRequest(settings: RawSettings) -> sony2fuji_request {
+    func makeBaseRequest(settings: RawSettings, inputType: sony2fuji_input_type) -> sony2fuji_request {
         var request = sony2fuji_request()
         request.version = SONY2FUJI_REQUEST_VERSION
         request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
         request.output_target = SONY2FUJI_TARGET_BUFFER
         request.output_format = SONY2FUJI_OUTPUT_RGBA8
         request.jpeg_quality = 95
-        request.wb_mode = SONY2FUJI_WB_CAMERA
+        request.wb_mode = inputType == SONY2FUJI_INPUT_RAW && settings.whiteBalanceMode == .custom
+            ? SONY2FUJI_WB_TEMPERATURE
+            : SONY2FUJI_WB_CAMERA
         request.wb_mul = (1, 1, 1, 1)
         request.exposure_ev = Float(settings.exposure)
         request.brightness = 1
         request.contrast = Float(settings.contrast)
         request.saturation = Float(settings.saturation)
-        request.temperature = Float(settings.temperature)
-        request.tint = Float(settings.tint)
+        // Camera RAW WB is already applied before demosaic. Raster inputs keep
+        // the old post-RGB temperature/tint path and therefore remain separate.
+        request.temperature = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+            ? 6500
+            : Float(settings.temperature)
+        request.tint = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+            ? 0
+            : Float(settings.tint)
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
         request.tone_curve = Float(settings.toneCurve)
-        request.noise_reduction = Float(settings.noiseReduction)
+        request.noise_reduction = settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request
     }
@@ -72,9 +92,15 @@ extension Sony2FujiProcessor {
         _ request: inout sony2fuji_request,
         width: UInt32,
         height: UInt32,
-        previewLongEdge: CGFloat?
+        previewLongEdge: CGFloat?,
+        exportLongEdge: Int?
     ) {
-        if let edge = previewLongEdge, edge > 0 {
+        if let edge = exportLongEdge {
+            request.intent = SONY2FUJI_INTENT_FINAL
+            request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
+            request.long_edge = UInt32(edge)
+            request.preview_long_edge = 0
+        } else if let edge = previewLongEdge, edge > 0 {
             let edgeValue = UInt32(edge.rounded())
             request.intent = SONY2FUJI_INTENT_PREVIEW
             request.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE
@@ -189,6 +215,16 @@ extension Sony2FujiProcessor {
             return "unknown"
         }
         return String(cString: message)
+    }
+
+    func readRawWhiteBalance(from session: OpaquePointer) -> Sony2FujiProcessor.RawWhiteBalance? {
+        var temperature: Float = 6500
+        var tint: Float = 0
+        let status = sony2fuji_session_get_raw_white_balance(session, &temperature, &tint)
+        guard status == SONY2FUJI_STATUS_OK else { return nil }
+        return Sony2FujiProcessor.RawWhiteBalance(
+            temperature: Double(temperature), tint: Double(tint), isCalibrated: true
+        )
     }
 }
 

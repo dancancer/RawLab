@@ -15,6 +15,47 @@ import java.nio.ByteOrder
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun waveletDenoisePreviewAndExportShareTheSameSettings() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File(context.cacheDir, "wavelet-test.dng")
+        val output = File(context.cacheDir, "wavelet-test.png")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val off = processor.preview(input, null, EditSettings(), 200, false)
+                val settings = EditSettings(denoise = DenoiseSettings().withPreset(DenoisePreset.CLEAN))
+                val clean = processor.preview(input, null, settings, 200, false)
+                assertFalse(off.pixels.contentEquals(clean.pixels))
+                assertEquals(0, clean.backend)
+                processor.preview(input, null, settings, 128, true)
+                assertArrayEquals(clean.pixels, processor.preview(input, null, settings, 200, false).pixels)
+                assertArrayEquals(off.pixels, processor.preview(input, null,
+                    settings.copy(denoise = settings.denoise.copy(enabled = false)), 200, false).pixels)
+                processor.setGpuMode(NativeProcessor.FORCE)
+                assertThrows(Exception::class.java) { processor.preview(input, null, settings, 200, false) }
+                processor.setGpuMode(NativeProcessor.CPU)
+                processor.export(input, null, settings, output, true)
+                val header = ByteArray(26)
+                java.io.DataInputStream(output.inputStream()).use { it.readFully(header) }
+                assertEquals(16, header[24].toInt())
+                assertTrue(ByteBuffer.wrap(header, 16, 4).int > 200)
+                assertTrue(ByteBuffer.wrap(header, 20, 4).int > 200)
+                val saved = android.graphics.BitmapFactory.decodeFile(output.path)
+                val reference = File(context.cacheDir, "wavelet-reference.png")
+                NativeProcessor(NativeProcessor.CPU).use { fresh ->
+                    try {
+                        fresh.export(input, null, settings, reference, true)
+                        val full = android.graphics.BitmapFactory.decodeFile(reference.path)
+                        assertTrue("Interactive work never changes a fresh FINAL export", saved.sameAs(full))
+                        full.recycle()
+                    } finally { reference.delete() }
+                }
+                saved.recycle()
+            }
+        } finally { input.delete(); output.delete() }
+    }
+
     @Test fun whiteBalancePreviewLatency() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val input = File(instrumentation.targetContext.cacheDir, "wb-latency-test.arw")

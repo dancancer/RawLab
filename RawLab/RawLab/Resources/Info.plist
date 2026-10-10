@@ -11,14 +11,20 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
     <key>CFBundleShortVersionString</key>
-	<string>0.4.1</string>
+	<string>0.5.0</string>
 	<key>CFBundleVersion</key>
-	<string>7</string>
+	<string>8</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allows importing photos from your photo library.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Allows saving edited photos to your photo library.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 </dict>
 </plist>

@@ -12,6 +12,7 @@ CMakeFiles/
 cmake_install.cmake
 cmake-build-*/
 *.cmake
+!cmake/denoise-dependencies.cmake
 !CMakeLists.txt
 !cmake/patch-libraw.cmake
 
@@ -88,4 +89,6 @@ deps/
 third_party/*
 !third_party/stb_image_write.h
 !third_party/Adobe-DNG-SDK-LICENSE.txt
+!third_party/OpenCV-LICENSE.txt
+!third_party/wavelib-LICENSE.txt
 !third_party/rawspeed-camera-calibration.inc

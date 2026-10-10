@@ -117,13 +117,15 @@ struct ExportMetadataTests {
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try syntheticChecks(in: output)
-        let raw = root.appendingPathComponent("lutools/examples/DSC06251.ARW")
+        let raw = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"].map { URL(fileURLWithPath: $0) } ??
+            root.appendingPathComponent("lutools/examples/DSC06251.ARW")
         let original = properties(raw)
         let originalEXIF = original[kCGImagePropertyExifDictionary] as! [CFString: Any]
         let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
         let jpeg = output.appendingPathComponent("capture.jpg")
-        _ = try engine.render(raw, settings: Adjustments(), lut: nil, edge: 400, output: jpeg)
+        _ = try engine.render(raw, settings: Adjustments(), lut: nil, edge: nil, output: jpeg, exportLongEdge: 400)
         let exported = properties(jpeg)
+        check(max(decoded(jpeg).width, decoded(jpeg).height) == 400, "Final RAW export honors the chosen long-edge limit")
         let exif = exported[kCGImagePropertyExifDictionary] as? [CFString: Any]
         check(exif?[kCGImagePropertyExifDateTimeOriginal] as? String == originalEXIF[kCGImagePropertyExifDateTimeOriginal] as? String,
               "Mac JPEG export retains the actual RAW capture timestamp")
@@ -132,7 +134,7 @@ struct ExportMetadataTests {
               exif?[kCGImagePropertyExifPixelYDimension] as? Int == decoded(jpeg).height,
               "RAW export dimensions reflect crop, rotation and resize")
         let png = output.appendingPathComponent("capture.png")
-        _ = try engine.render(raw, settings: Adjustments(), lut: nil, edge: 400, output: png)
+        _ = try engine.render(raw, settings: Adjustments(), lut: nil, edge: nil, output: png, exportLongEdge: 400)
         let pngEXIF = properties(png)[kCGImagePropertyExifDictionary] as? [CFString: Any]
         check(decoded(png).bitsPerComponent == 16 &&
               pngEXIF?[kCGImagePropertyExifDateTimeOriginal] as? String == originalEXIF[kCGImagePropertyExifDateTimeOriginal] as? String,

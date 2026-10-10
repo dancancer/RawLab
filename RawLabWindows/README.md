@@ -3,15 +3,17 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
-## 下载 v0.4.1 Windows 包
+v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
 
-[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Windows-0.4.1-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.4.1) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
+## 下载 v0.5.0 Windows 包
+
+[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Windows-0.5.0-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.5.0) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.5.0/SHA256SUMS.txt)
 
 解压后运行 `RawLab.exe`，保留完整目录。发布包已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，无需另行安装 .NET。程序未签名。
 
-v0.4.1 构建 7 在专用 Windows x64 虚拟机上重新构建 WPF 与 native DLL，程序集版本为 `0.4.1`、文件版本为 `0.4.1.7`，不复用旧版 native 包。共享 LibRaw 0.22.2 修复 Panasonic RW2、新机型元数据/校准、X-Trans 并发与裁切问题；Nikon HE* 仍明确返回不支持。
+v0.5.0 构建 8 在专用 Windows x64 虚拟机上重新构建 WPF 与 native DLL，程序集版本为 `0.5.0`、文件版本为 `0.5.0.8`，不复用旧版 native 包。共享 LibRaw 0.22.2 修复 Panasonic RW2、新机型元数据/校准、X-Trans 并发与裁切问题；Nikon HE* 仍明确返回不支持。
 
-保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出。“关于 RawLab”仍只打开官方更新页面，不自动安装。本轮 CPU/RAW 验证与真实 GPU、UI 验证的边界见[兼容性记录](../docs/verification-raw-compatibility-2026-10-09.md)，不沿用历史交接包的 119 项检查作为新版证明。
+保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出。“关于 RawLab”仍只打开官方更新页面，不自动安装。本版独立构建与验证范围见[发布验证记录](../docs/verification-v0.5.0.md)，不沿用历史交接包的 119 项检查作为新版证明。
 
 ## 构建
 
@@ -69,7 +71,7 @@ python3 RawLabWindows/build-remote.py \
 | 白平衡 | 拍摄时相机增益；校准后的 2000–50000 K / ±150 色调；倒色温滑杆 |
 | 曝光基准 | 标准显影、匹配内嵌预览、传感器基准；显示实际基础偏移 |
 | 数值输入和重置 | 滑杆、数字、单项/分组/全部重置；保留照片与胶片选择 |
-| 逐照片编辑 | 本次会话内保留各照片参数和 LUT；不写回 RAW |
+| 逐照片编辑 | 本机自动保存并恢复各照片参数和 LUT 身份；失败可重试，不写回 RAW |
 | 对比 | 顶部菜单切换并排 / 左右滑动 / 关闭；中性与修改后共享缩放、平移；适合窗口、100% 实际物理像素 |
 | 直方图 / 裁切提示 | 最终 sRGB 显示图统计；RGB 线性计数、重叠填色；可折叠 |
 | 调整栏 | 底部圆形工具与带正负方向的进度环；拖动边界调高、收起恢复 |

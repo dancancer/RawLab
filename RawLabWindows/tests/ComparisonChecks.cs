@@ -45,6 +45,12 @@ static class ComparisonChecks
         canvas.SetImage(Solid(255,0,0),null);
         check(view.ActualPixels && view.Pan==new Vector(21,-13) && canvas.ImageBounds.Width==bounds.Width,
             "Replacing a preview with detail preserves native zoom and pan geometry");
+        foreach(var width in new[]{1000,2000}) {
+            var height=width*2/3;
+            canvas.SetImage(BitmapSource.Create(width,height,96,96,PixelFormats.Bgra32,null,new byte[width*height*4],width*4),null);
+            check(view.ActualPixels && view.Pan==new Vector(21,-13) && canvas.ImageBounds.Width==bounds.Width,
+                "Proxy and exact pixel dimensions preserve the same source viewport "+width);
+        }
         view.Fit();
         var grid=new PhotoGridPanel();for(var i=0;i<3;i++)grid.Children.Add(new Border());
         grid.Measure(new Size(220,double.PositiveInfinity));grid.Arrange(new Rect(0,0,220,grid.DesiredSize.Height));

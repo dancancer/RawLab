@@ -9,6 +9,18 @@ struct EditorPresentationTests {
 
     static func main() {
         var settings = RawSettings.default
+        check(!settings.denoise.enabled && settings.denoise.luma == 0 && settings.denoise.chroma == 46 && settings.denoise.coarse == 50,
+              "Denoise defaults off and retains luminance texture")
+        settings.denoise.apply(.clean)
+        check(settings.denoise.enabled && settings.denoise.luma == 10 && settings.denoise.chroma == 72 && settings.denoise.coarse == 100,
+              "Clean preset adds light luminance smoothing")
+        settings.denoise.luma = 23
+        settings.denoise.enabled = false
+        check(settings.denoise.luma == 23 && settings.denoise.preset == .custom, "Off preserves custom strengths")
+        AdjustmentKind.noiseReduction.reset(in: &settings)
+        check(settings.denoise == RawDenoiseSettings(), "Denoise group reset restores disabled defaults")
+        check(!RawDenoiseSettings(enabled: true, luma: .nan).isValid &&
+              !RawDenoiseSettings(enabled: true, chroma: 101).isValid, "Nonfinite and out-of-range denoise values rejected")
         check(AdjustmentKind.strength.range == 0...2, "Film strength range reaches 200 percent")
         AdjustmentKind.strength.setValue(2, in: &settings)
         check(settings.lutStrength == 2 && AdjustmentKind.strength.progress(in: settings) == 1,
@@ -22,12 +34,19 @@ struct EditorPresentationTests {
         check(settings.lutStrength == 1, "Default and reset film strength remain 100 percent")
         check(AdjustmentKind.temperature.progress(in: settings) == 0,
               "Unchanged white balance has no progress ring")
+        check(AdjustmentKind.temperature.range == 2000...50000,
+              "RAW temperature range reaches 50000 K")
+        check(abs(RawSettings.reciprocalSliderValue(for: 2000)) < 0.0001 &&
+              abs(RawSettings.reciprocalSliderValue(for: 50000) - 1) < 0.0001 &&
+              RawSettings.temperature(forReciprocalSliderValue: 0.5) > 2000,
+              "Temperature slider uses reciprocal Kelvin while the field stays Kelvin")
         settings.temperature = 4250
         check(AdjustmentKind.temperature.progress(in: settings) == -0.5,
               "Negative progress uses the lower half of an asymmetric range")
         settings.temperature = 8250
-        check(AdjustmentKind.temperature.progress(in: settings) == 0.5,
-              "Positive progress uses the upper half of an asymmetric range")
+        check(AdjustmentKind.temperature.progress(in: settings) > 0 &&
+              AdjustmentKind.temperature.progress(in: settings) < 0.1,
+              "Positive progress uses the upper half of the expanded temperature range")
         settings.exposure = -1
         check(AdjustmentKind.exposure.progress(in: settings) == -0.5,
               "Negative exposure travels counterclockwise")
@@ -41,6 +60,10 @@ struct EditorPresentationTests {
         AdjustmentKind.strength.reset(in: &settings)
         check(settings.lutStrength == 1 && settings.lutID == "existing-film",
               "Resetting strength does not deselect the film")
+        settings.whiteBalanceMode = .custom
+        let encoded = try! JSONEncoder().encode(settings)
+        let decoded = try! JSONDecoder().decode(RawSettings.self, from: encoded)
+        check(decoded.whiteBalanceMode == .custom, "White balance mode round-trips in the edit record")
         for kind in AdjustmentKind.allCases {
             kind.setValue(kind.range.upperBound, in: &settings)
             kind.reset(in: &settings)

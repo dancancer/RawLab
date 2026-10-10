@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RawLab · 调整记忆与批量导出 UI 设计</title>
+  <style>
+    :root { color-scheme: light; --ink:#252727; --muted:#555b5b; --line:#d7dddd; --paper:#f5f7f7; --link:#176568; }
+    * { box-sizing:border-box; letter-spacing:0; }
+    html { scroll-behavior:smooth; scroll-padding-top:24px; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    header,main,footer { width:min(1180px,calc(100% - 48px)); margin:auto; }
+    header { padding:42px 0 26px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 8px; font-size:28px; line-height:1.3; font-weight:650; }
+    h2 { margin:0 0 8px; font-size:21px; line-height:1.4; }
+    h3 { margin:22px 0 8px; font-size:16px; }
+    p { margin:8px 0 16px; }
+    .meta { color:var(--muted); font-size:13px; }
+    a { color:var(--link); text-underline-offset:4px; }
+    a:focus-visible { outline:2px solid var(--link); outline-offset:5px; }
+    nav { display:flex; flex-wrap:wrap; gap:10px 24px; margin-top:24px; }
+    nav a { font-size:14px; }
+    .intro { padding:24px 0 4px; max-width:820px; }
+    section { padding:36px 0; border-bottom:1px solid var(--line); }
+    .screen { margin-top:24px; display:grid; grid-template-columns:minmax(0,1fr) 260px; align-items:start; gap:28px; }
+    figure { margin:0; min-width:0; }
+    img { display:block; width:100%; height:auto; background:#202020; }
+    figcaption { color:var(--muted); font-size:12px; margin-top:10px; }
+    aside { font-size:14px; }
+    aside h3:first-child { margin-top:0; }
+    ul { padding-left:20px; margin:8px 0 20px; }
+    li { margin:7px 0; }
+    .mobile-grid { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:24px; }
+    .mobile-grid figure { max-width:390px; margin:0 auto; }
+    .mobile-grid img { width:100%; }
+    .mobile-grid h3 { margin:0 0 10px; }
+    .mobile-grid p { font-size:14px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th,td { text-align:left; vertical-align:top; border-bottom:1px solid var(--line); padding:12px 14px 12px 0; }
+    th:first-child,td:first-child { width:125px; }
+    .table-wrap { overflow:auto; }
+    .flow { font-weight:550; line-height:2; }
+    footer { padding:24px 0 40px; color:var(--muted); font-size:13px; }
+    ::selection { background:#c8e4df; color:#172e2c; }
+    @media(max-width:800px) { .screen { grid-template-columns:1fr; } .screen aside { max-width:650px; } }
+    @media(max-width:600px) { header,main,footer { width:calc(100% - 32px); } header { padding-top:28px; } h1 { font-size:24px; } .mobile-grid { grid-template-columns:1fr; gap:40px; } nav { gap:10px 18px; } section { padding:28px 0; } }
+    @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RawLab · 调整记忆与批量导出</h1>
+    <p>保留逐张编辑，让一张照片的调整服务于一组照片。</p>
+    <div class="meta">UI 方案 v1 · 2026-10-09 · Mac / Windows / Android / iOS</div>
+    <div class="meta">静态界面设计稿，尚未实现。照片、文件名、参数和任务结果均为示意数据。</div>
+    <nav aria-label="设计稿导航">
+      <a href="#mac">Mac 导出确认</a><a href="#windows">Windows 任务结果</a>
+      <a href="#editors">移动编辑器</a><a href="#mobile-export">移动批量流程</a><a href="#states">状态与边界</a>
+    </nav>
+  </header>
+  <main>
+    <div class="intro">
+      <p class="flow">编辑并自动保存 → 使用当前调整批量导出 → 选择 RAW → 确认 → 处理与结果</p>
+      <p>四端遵循同一套任务规则，使用各自原生交互。当前照片是固定的调整来源；批量任务只生成新成片，不覆盖目标照片的调整记录。</p>
+    </div>
+    <section id="mac">
+      <h2>Mac · 一页完成导出确认</h2>
+      <p class="meta">左侧核对目标，右侧核对来源和输出；不改变现有主编辑器布局。</p>
+      <div class="screen">
+        <figure><a href="images/mac-confirm.png"><img src="images/mac-confirm.png" alt="Mac 批量导出确认：六张已选 RAW，右侧显示固定的来源设置和输出选项"></a><figcaption>独立任务窗口。点击图稿可查看原图。</figcaption></figure>
+        <aside>
+          <h3>固定来源</h3><p>进入流程时冻结照片、外观和参数。左侧勾选目标不改变右侧来源。</p>
+          <h3>目标列表</h3><p>加号继续选文件；勾选参与本次任务；移除只影响本次列表。点击缩略图检查应用后的预览。</p>
+          <h3>明确输出</h3><p>JPEG / 16-bit PNG、输出目录可选。尺寸固定为原始分辨率；重名自动添加序号，这两项为只读值。</p>
+          <h3>开始前</h3><p>显示实际数量。零选中时禁用导出；不可用项目标明原因，可移除后继续。</p>
+        </aside>
+      </div>
+    </section>
+    <section id="windows">
+      <h2>Windows · 完成不掩盖失败</h2>
+      <p class="meta">Mac 共用这一结果结构，保留各自的窗口和控件样式。</p>
+      <div class="screen">
+        <figure><a href="images/windows-result.png"><img src="images/windows-result.png" alt="Windows 批量任务完成：成功五张，失败一张，逐文件结果和失败重试按钮"></a><figcaption>失败项保留原因，成功项不重复导出。</figcaption></figure>
+        <aside>
+          <h3>处理中</h3><p>同一区域显示“已完成 3 / 6”、当前文件和进度。底部主操作替换为“取消导出”。</p>
+          <h3>部分失败</h3><p>数量与列表一致；“重试失败的 1 张”沿用原任务的设置，不读取编辑器后来修改的值。</p>
+          <h3>全成功</h3><p>隐藏重试，突出“打开文件夹”。照片图库输出则显示“完成”，不冒充文件夹。</p>
+          <h3>取消</h3><p>先显示“正在停止…”，结束后分别列出成功、失败、未处理；已完成的文件保留。</p>
+        </aside>
+      </div>
+    </section>
+    <section id="editors">
+      <h2>移动编辑器 · 记忆调整与参数对齐</h2>
+      <p class="meta">照片仍占主要空间；保存反馈不覆盖画面，也不增加保存按钮。</p>
+      <div class="mobile-grid">
+        <figure><h3>Android · 补齐调整工具</h3><a href="images/android-editor.png"><img src="images/android-editor.png" alt="Android 编辑器：高光加25%，底部横向调整工具与调整已保存状态"></a><figcaption>自动保存反馈 + 新增高光工具示例。</figcaption><p>全部 11 个工具在同一横向栏内：胶片、强度、曝光、高光、阴影、对比度、S 曲线、饱和度、色温、色调、锐化。仅当前项显示数值和滑杆。</p></figure>
+        <figure><h3>iOS · 白平衡模式明确</h3><a href="images/ios-white-balance.png"><img src="images/ios-white-balance.png" alt="iOS 编辑器：已恢复上次调整，拍摄时白平衡，色温5200K和色调加8"></a><figcaption>恢复反馈 + RAW 拍摄时 / 自定义白平衡。</figcaption><p>拖动滑杆或输入数值即切换自定义；选择“拍摄时”恢复当前 RAW 的相机基准。自定义模式保留当前数值。缺少有效校准时保留相机白平衡，禁用不能可靠使用的数值控件。</p></figure>
+      </div>
+    </section>
+    <section id="mobile-export">
+      <h2>移动批量流程 · 先选照片，再确认导出</h2>
+      <p class="meta">Android 使用现有相册选择模式，iOS 使用系统照片选择器。以下分别展示选片和确认两个关键节点。</p>
+      <div class="mobile-grid">
+        <figure><h3>Android · 批量选片</h3><a href="images/android-select.png"><img src="images/android-select.png" alt="Android 选择RAW页面：固定来源，九张候选照片中的六张已选，底部下一步"></a><figcaption>选中以勾选和描边共同表达，不遮暗照片。</figcaption><p>初次进入不预选。保留相册原有列数和方形/原始比例偏好，图稿以三列方形示例。“全选”仅作用于当前列表。返回不丢失本次选择，也不改变编辑器来源照片。</p></figure>
+        <figure><h3>iOS · 导出确认</h3><a href="images/ios-confirm.png"><img src="images/ios-confirm.png" alt="iOS 批量导出确认：来源设置、六张目标RAW、JPEG原始分辨率保存到照片图库"></a><figcaption>固定底部动作，内容滚动；输出能力与平台匹配。</figcaption><p>Android 复用信息顺序，但提供 JPEG / 16-bit PNG 和相册/目录选项。iOS 首版三个输出值只读。点“更改”返回选片，点缩略图查看目标，点“全部调整”展开完整只读参数。</p></figure>
+      </div>
+    </section>
+    <section id="states">
+      <h2>状态与边界</h2>
+      <div class="table-wrap"><table><thead><tr><th>状态</th><th>界面反馈与操作</th></tr></thead><tbody>
+        <tr><td>自动保存</td><td>保存成功才显示“调整已保存”；快速连续调节时不反复闪动。重新打开显示“已恢复上次调整”，随后退回安静状态。</td></tr>
+        <tr><td>保存失败</td><td>持续显示带错误图标的“调整未保存”，提供重试。保留当前数值，不伪装成已完成。</td></tr>
+        <tr><td>外观丢失</td><td>保留设置，提示定位或重新选择外观；修复前不能以另一外观静默导出。</td></tr>
+        <tr><td>空选与读取失败</td><td>0 张时禁用下一步/导出。选后验证 RAW 可用性，不支持或不能读取的文件逐项解释，允许移除。</td></tr>
+        <tr><td>权限与空间</td><td>开始前检查保存权限。目录授权失效可重新选择；空间不足停止任务，保留已完成结果。</td></tr>
+        <tr><td>中断与恢复</td><td>前台批处理；保留任务记录。返回时显示“导出已中断”，用户选择继续未完成项，缺少照片访问权限时重新授权。</td></tr>
+        <tr><td>窄屏与大字号</td><td>正文和文件名可换行，数值不挤压标签。手机主要操作固定在安全区上方；横屏/大字号内容滚动，不把全部工具强塞进屏幕。</td></tr>
+      </tbody></table></div>
+      <p>图稿只展示关键状态，不是可点击的真实导出功能。图片里的图标与细微像素由原生控件落实；功能规则和准确文案以 <a href="README.md">交互说明</a> 为准。</p>
+    </section>
+  </main>
+  <footer>基于现有 PRODUCT.md / DESIGN.md 延展，不修改现有全局视觉规范。<a href="prompts.json">图片生成记录</a> · 六张图使用内置 image_gen 生成。</footer>
+</body>
+</html>

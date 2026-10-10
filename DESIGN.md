@@ -20,10 +20,11 @@ Use macOS system typography, compact 11-point tool labels and native control siz
 - Minimum content size is 950x620 points; the photo workspace expands with the window.
 - A collapsible 200-300 point file tree spans the full content height on the left. Folder rows expand into subfolders and two-column RAW thumbnail grids.
 - The photo area contains neutral/result comparison panes sharing zoom and pan. Fit mode uses bounded previews; actual-pixel viewing requests native resolution and accounts for display scale.
-- Only a collapsible histogram floats at the photo area's upper-right. There is no fixed right-side adjustment inspector.
+- A collapsible histogram floats at the photo area's upper-right. Optional photo information at the upper-left cycles between file details and capture settings, with a hidden state. Keep its width clear of the histogram and its text non-interactive so zoom and pan remain usable. There is no fixed right-side adjustment inspector.
 - Every edit control is in the bottom of the right-hand workspace, never beneath the file tree. Its header holds the active film name, exposure baseline and reset menu. Drag its upper edge to resize; collapse completely and restore using the toolbar adjustment icon without losing values or the previous height.
-- A single circular tool row contains film, strength and all nine tonal/color/detail adjustments. Film is a peer tool, never a separate mode tab.
+- A single circular tool row contains film, strength and tonal/color/detail/effects adjustments. Film is a peer tool, never a separate mode tab.
 - Selecting film replaces the value editor below the tool row with a horizontal square-label chooser. Center the list when it fits and scroll when it overflows. Selecting a numeric tool restores its input, slider, ticks and reset button without changing other values.
+- Vignette and grain each occupy one tool in that row. Their parameter groups use compact native sliders and numeric inputs below it, with parameter and group reset actions. Vignette highlights are disabled for nonnegative amounts; auxiliary controls retain their values while amount is zero. All settings fit the minimum desktop window without adding a sidebar.
 - The photo canvas has no title strip. Comparison identifiers are small bottom-left overlays only in comparison mode.
 
 ## Elevation & Depth
@@ -41,11 +42,13 @@ Use continuous surfaces and separators, not floating section cards. The histogra
 - The macOS app icon is an abstract flat mark: two offset yellow/cyan photographic frames on a charcoal rounded-square tile. No aperture blades, film perforations, text, metallic bevels or 3D camera illustration. The color overlap represents the source-to-render transformation.
 
 - Use SF Symbols, native sliders, numeric fields, pickers, menus and file dialogs. Film label bitmaps are bundled local resources with generation provenance.
-- The toolbar contains file-tree visibility, open, a comparison toggle, one zoom menu, adjustment visibility and export. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
+- The toolbar contains file-tree visibility, open, a comparison toggle, photo information, one zoom menu, adjustment visibility and export. The information action cycles hidden/file/capture; desktop `I` is inactive while entering text. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
 - Directory contents load on demand. Thumbnail decoding uses embedded previews with orientation; no full RAW decode is triggered merely to populate the file tree.
 - Histogram collapse state survives photo changes. Bottom tool selection survives film/numeric editor changes. Changed values retain their signed ring and marker.
 - No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite RAW input.
-- Photo adjustments are separate per photo within the current session; directory references persist between launches. Do not imply persistent edit sidecars or catalog features that are not implemented.
+- Photo adjustments and look identities persist locally per original photo; unseen photos start with defaults. Save failures remain visible and retryable. No sidecars or cloud catalog are created.
+- Batch export uses a frozen source adjustment snapshot, including denoise settings, in a separate desktop window or mobile task page. It never changes target photos' saved edits. The confirmed flow is documented in [the batch export design](docs/design/2026-10-09-edit-memory-batch-export/README.md).
+- Single and batch export size controls default to native resolution, with a long-edge pixel ceiling, presets and custom entry. Keep this setting separate from preview quality. Desktop file-tree context actions can explicitly copy current settings to confirmed targets' local edit records, without opening targets first or writing RAW originals; folder scope is direct RAW children only.
 
 ## Do's and Don'ts
 

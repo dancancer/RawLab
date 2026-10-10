@@ -13,20 +13,20 @@ internal sealed class RenderEngine : IDisposable
     private Native.Session session = new();
     private int gpuMode;
     private sealed record Stamp(string Path,long Length,long Time);
-    private sealed record PreviewKey(Native.Request Request,int ExposureMode,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,int ExposureMode,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private PreviewKey? previewKey;
     private (Stamp Raw,Stamp? Lut)? sourceStamp;
+    private (Stamp Raw,int Edge,RenderedImage Frame)? original;
     private readonly Dictionary<int,PreviewFrame> previews=new();
+    // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
-    private static long FrameBytes(PreviewFrame frame)
-    {
-        static long Size(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2);
-        return Size(frame.Result)+(ReferenceEquals(frame.Neutral,frame.Result) ? 0 : Size(frame.Neutral));
-    }
+    private static long ImageBytes(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2);
+    private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
+        (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
     public RenderEngine(int gpuMode=1) => SetGpuMode(gpuMode);
     public void SetGpuMode(int mode) { var config=new Native.GpuConfig{Version=1,StructSize=12,Mode=mode};Native.Check(Native.sony2fuji_session_set_gpu_config(session,ref config));gpuMode=mode; }
-    public void Dispose() {previews.Clear();session.Dispose();}
+    public void Dispose() {previews.Clear();original=null;session.Dispose();}
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
     {
         static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);}
@@ -37,11 +37,19 @@ internal sealed class RenderEngine : IDisposable
              (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
         {session.Dispose();session=new();SetGpuMode(gpuMode);}
         sourceStamp=(rawStamp,lutStamp);
-        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.ExposureMode,gpuMode,compare,clipping,rawStamp,lutStamp);
+        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.ExposureMode,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
-        var cacheEdge=interactive && edge==1000 ? 2000 : edge;
-        if(previews.TryGetValue(cacheEdge,out var cached))return cached;
-        var neutral=compare && lut!=null ? Render(path,settings,null,edge,interactive,statistics:false,clipping:clipping) : null;
+        var cacheEdge=interactive && original?.Edge==0 ? 0 : interactive && edge==1000 ? 2000 : edge;
+        if(previews.TryGetValue(cacheEdge,out var cached)) {
+            original=compare ? (rawStamp,cacheEdge,cached.Neutral) : null;
+            return cached;
+        }
+        if(original?.Raw!=rawStamp)original=null;
+        if(!compare)original=null;
+        var originalEdge=edge==0 || (interactive && original?.Edge==0) ? 0 : 2000;
+        if(compare && (original==null || original.Value.Edge!=originalEdge))
+            original=(rawStamp,originalEdge,Render(path,new Adjustments(),null,originalEdge,statistics:false,clipping:false)!);
+        var neutral=compare ? original!.Value.Frame : null;
         var result=Render(path,settings,lut,edge,interactive,clipping:clipping)!;
         var frame=new PreviewFrame(neutral ?? result,result);
         if(!interactive && edge is 0 or 2000)
@@ -56,16 +64,24 @@ internal sealed class RenderEngine : IDisposable
         }
         return frame;
     }
-    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true)
+    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null)
     {
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && output == null ? 1 : 0));
-        var request = settings.Request(path,lut,edge,output);
+        var denoise=settings.Denoise.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise));
+        var request = settings.Request(path,lut,edge,output,longEdge);
         Native.Buffer buffer = default, mask = default;
         try
         {
-            Native.Check(Native.sony2fuji_process(session,ref request,out buffer));
-            if (output != null) { ExportMetadata.Preserve(path,output); return null; }
+            var status = Native.sony2fuji_process(session,ref request,out buffer);
+            if (output != null && status == 3) throw new OutputWriteException("无法写入成片，请检查输出位置和剩余空间。");
+            Native.Check(status);
+            if (output != null) {
+                try { ExportMetadata.Preserve(path,output); }
+                catch (IOException error) { throw new OutputWriteException("无法完成成片元数据写入：" + error.Message, error); }
+                return null;
+            }
             var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>();
             uint shadows=0,highlights=0;
             if(clipping) Native.Check(Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask));

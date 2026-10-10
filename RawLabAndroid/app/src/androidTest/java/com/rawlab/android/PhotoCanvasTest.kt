@@ -85,7 +85,7 @@ class PhotoCanvasTest {
     @Test fun editsAndPreviewQualityKeepZoomButNewPhotoResetsIt() {
         val restoration = StateRestorationTester(compose)
         val pair = fixture()
-        var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.EMPTY, "photo-a", File("photo-a")), preview = pair))
+        var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-a"), "photo-a", File("photo-a")), preview = pair))
         restoration.setContent {
             MaterialTheme {
                 EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, {})
@@ -101,10 +101,39 @@ class PhotoCanvasTest {
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
         compose.onNodeWithContentDescription("对比").performClick()
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
-        compose.runOnIdle { editor = editor.copy(photo = ImportedPhoto(Uri.EMPTY, "photo-b", File("photo-b")), preview = pair) }
+        compose.runOnIdle { editor = editor.copy(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-b"), "photo-b", File("photo-b")), preview = pair) }
         canvas.assert(SemanticsMatcher("photo starts fitted") {
             it.config[SemanticsProperties.StateDescription].startsWith("适应画面")
         })
+    }
+
+    @Test fun denoiseProxyAndExactKeepOriginalNativeZoomAndPan() {
+        val state = PhotoCanvasState()
+        val original = fixture().neutral
+        var pair by mutableStateOf(PreviewPair(original, original, 6500f, 0f))
+        compose.setContent { MaterialTheme { PhotoCanvas(pair, true, "denoise-photo", state) } }
+        val canvas = compose.onNodeWithTag("photo-canvas")
+        canvas.performTouchInput { doubleClick(center) }
+        canvas.performTouchInput {
+            down(0, Offset(centerX - 50, centerY))
+            down(1, Offset(centerX + 50, centerY))
+            moveBy(0, Offset(-100f, 0f), 100)
+            moveBy(1, Offset(-100f, 0f), 100)
+            up(1)
+            up(0)
+        }
+        val before = state.zoom
+        for (width in listOf(720, 1600)) {
+            compose.runOnIdle {
+                pair = PreviewPair(original, Bitmap.createScaledBitmap(original, width, width * 2 / 3, false), 6500f, 0f)
+            }
+            canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
+            compose.runOnIdle {
+                assertSame(original, pair.neutral)
+                assertEquals(before, state.zoom)
+            }
+        }
+        capture("denoise-proxy-exact-pan.png")
     }
 
     private fun fixture(): PreviewPair {

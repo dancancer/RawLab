@@ -12,10 +12,17 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TAR
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
+    "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
+    "$ROOT/RawLab/RawLab/UI/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/ZoomablePhoto.swift" \
     "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/ProcessorExportTests.swift" "$OUT/bridge.o" \
     -F "$APP/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker "$APP/Frameworks" -o "$OUT/processor-export"
-xcrun simctl spawn "$DEVICE" "$OUT/processor-export" "$ROOT" "$OUT"
+if [[ -n "${RAWLAB_TEST_RAW:-}" ]]; then
+    SIMCTL_CHILD_RAWLAB_TEST_RAW="$RAWLAB_TEST_RAW" \
+        xcrun simctl spawn "$DEVICE" "$OUT/processor-export" "$ROOT" "$OUT"
+else
+    xcrun simctl spawn "$DEVICE" "$OUT/processor-export" "$ROOT" "$OUT"
+fi
 echo "Artifacts: $OUT"

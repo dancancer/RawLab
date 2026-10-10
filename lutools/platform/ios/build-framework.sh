@@ -21,6 +21,10 @@ fetch LibRaw-0.22.2.tar.gz de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a
     https://www.libraw.org/data/LibRaw-0.22.2.tar.gz LibRaw-0.22.2
 fetch LibRaw-cmake-eb98e43.tar.gz 3cd218bf6d1254de86e27269541277fbfc5bae57a9002ce0b46fbe2a97088b43 \
     https://github.com/LibRaw/LibRaw-cmake/archive/eb98e4325aef2ce85d2eb031c2ff18640ca616d3.tar.gz LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3
+fetch opencv-4.12.0.tar.gz 44c106d5bb47efec04e531fd93008b3fcd1d27138985c5baf4eafac0e1ec9e9d \
+    https://github.com/opencv/opencv/archive/refs/tags/4.12.0.tar.gz opencv-4.12.0
+fetch wavelib-7f61bf5.tar.gz 62247c314bc98d395b0558882b37254b653753f0e1635cd5bd9807b27c79f96e \
+    https://github.com/rafat/wavelib/archive/7f61bf592f3c470b2a7d8199431fde821d7253ac.tar.gz wavelib-7f61bf592f3c470b2a7d8199431fde821d7253ac
 cmake -DLIBRAW_SOURCE_DIR="$SOURCES/LibRaw-0.22.2" -P "$ROOT/cmake/patch-libraw.cmake"
 
 for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
@@ -51,12 +55,17 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
         cmake -S "$ROOT" -B "$core" -GXcode "${common[@]}" \
         -DIOS=ON -DBUILD_SHARED_LIB=ON -DBUILD_CLI=OFF -DBUILD_TESTING=OFF \
         -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_GPU=ON \
+        -DSONY2FUJI_ENABLE_WAVELET_DENOISE=ON -DSONY2FUJI_BUILD_DENOISE_DEPS=ON \
+        -DFETCHCONTENT_SOURCE_DIR_RAWLAB_OPENCV="$SOURCES/opencv-4.12.0" \
+        -DFETCHCONTENT_SOURCE_DIR_RAWLAB_WAVELIB="$SOURCES/wavelib-7f61bf592f3c470b2a7d8199431fde821d7253ac" \
         -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
         -DCMAKE_INSTALL_NAME_DIR=@rpath -DCMAKE_BUILD_WITH_INSTALL_NAME_DIR=ON \
         -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE="$core/output"
     cmake --build "$core" --config Release --target sony2fuji -j "$JOBS"
     framework="$core/output/sony2fuji.framework"
     mkdir -p "$framework/Licenses"
+    cp "$ROOT/../LICENSE" "$framework/Licenses/RawLab-GPL-3.0.txt"
+    cp "$ROOT/../docs/licensing.md" "$framework/Licenses/RawLab-Licensing.md"
     for name in COPYRIGHT LICENSE.CDDL LICENSE.LGPL; do
         cp "$SOURCES/LibRaw-0.22.2/$name" "$framework/Licenses/LibRaw-$name"
     done
@@ -64,6 +73,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     cp "$ROOT/third_party/Adobe-DNG-SDK-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/platform/ios/ThirdPartyNotices.md" "$framework/Licenses/"
+    cp "$core/licenses/OpenCV-LICENSE" "$core/licenses/wavelib-COPYRIGHT" "$framework/Licenses/"
 done
 
 stage="$(mktemp -d "$ROOT/build-ios/package.XXXXXX")"

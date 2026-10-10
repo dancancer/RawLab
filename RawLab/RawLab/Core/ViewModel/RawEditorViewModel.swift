@@ -18,6 +18,15 @@ final class RawEditorViewModel: ObservableObject {
     @Published var baseHistogram: [CGFloat] = []
     @Published var availableLUTs: [LUTOption] = []
     @Published var isLoadingLUTs = false
+    @Published var rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
+    @Published var editSaveState: EditSaveState = .idle
+
+    enum EditSaveState: Equatable {
+        case idle
+        case restored
+        case saved
+        case failed(String)
+    }
 
     struct PreviewRequest: Equatable {
         let settings: RawSettings
@@ -28,8 +37,15 @@ final class RawEditorViewModel: ObservableObject {
     let processor = Sony2FujiProcessor()
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
-    var sourceURL: URL?
+    @Published var sourceURL: URL?
+    @Published var sourceRevision = UUID()
     var sourceKind: ImageSourceKind?
+    var sourceIdentity: PhotoIdentity?
+    @Published var sourceDisplayName: String?
+    var restoredSettings: RawSettings?
+    var pendingSettings: RawSettings?
+    var editSaveWork: DispatchWorkItem?
+    var editNoticeID = UUID()
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
@@ -46,5 +62,12 @@ final class RawEditorViewModel: ObservableObject {
     var lutMap: [String: LUTReference] = [:]
     var rawLUTID: String?
     var rawLUTApplied = false
+
+    var editPersistence: EditPersistence?
+
+    init(editPersistence: EditPersistence? = nil) {
+        do { self.editPersistence = try editPersistence ?? EditPersistence.appStore() }
+        catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
+    }
 
 }

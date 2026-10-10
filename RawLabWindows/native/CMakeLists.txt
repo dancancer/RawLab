@@ -10,7 +10,11 @@ FetchContent_Declare(zlib
     URL_HASH SHA256=17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c)
 FetchContent_MakeAvailable(zlib)
 add_library(ZLIB::ZLIB ALIAS zlibstatic)
-target_include_directories(zlibstatic PUBLIC "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
+set_property(TARGET zlibstatic PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    "$<BUILD_INTERFACE:${zlib_SOURCE_DIR}>;$<BUILD_INTERFACE:${zlib_BINARY_DIR}>;$<INSTALL_INTERFACE:include>")
+install(TARGETS zlibstatic EXPORT OpenCVModules ARCHIVE DESTINATION lib)
+set(ZLIB_LIBRARY zlibstatic CACHE STRING "Target zlib library" FORCE)
+set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" CACHE PATH "Target zlib headers" FORCE)
 FetchContent_Declare(libraw
     DOWNLOAD_EXTRACT_TIMESTAMP FALSE
     URL https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
@@ -33,6 +37,8 @@ set(BUILD_SHARED_LIB ON CACHE BOOL "" FORCE)
 set(SONY2FUJI_ENABLE_GPU ON CACHE BOOL "" FORCE)
 # MSVC's classic OpenMP lacks the canonical unsigned loops used by the core.
 set(SONY2FUJI_ENABLE_OPENMP OFF CACHE BOOL "" FORCE)
+set(SONY2FUJI_ENABLE_WAVELET_DENOISE ON CACHE BOOL "" FORCE)
+set(SONY2FUJI_BUILD_DENOISE_DEPS ON CACHE BOOL "" FORCE)
 add_subdirectory("${REPO}/lutools" core)
 # The RAW conversion uses signed row loops compatible with classic MSVC OpenMP.
 set_property(SOURCE "${REPO}/lutools/src/core/raw_processor.cpp" DIRECTORY "${REPO}/lutools"

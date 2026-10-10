@@ -28,6 +28,7 @@ class SourcePackageTest(unittest.TestCase):
             (root / 'lutools/deleted.cpp').unlink()
             for name in ['lutools/cmake/patch-libraw.cmake',
                          'lutools/third_party/rawspeed-camera-calibration.inc',
+                         'LICENSE', 'docs/licensing.md',
                          'lutools/examples/private.ARW', 'build/cache.bin']:
                 file = root / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -36,6 +37,8 @@ class SourcePackageTest(unittest.TestCase):
             files = module.package_source(root, archive)
             self.assertIn('lutools/cmake/patch-libraw.cmake', files)
             self.assertIn('lutools/third_party/rawspeed-camera-calibration.inc', files)
+            self.assertIn('LICENSE', files)
+            self.assertIn('docs/licensing.md', files)
             self.assertNotIn('lutools/deleted.cpp', files)
             self.assertNotIn('build/cache.bin', files)
             self.assertNotIn('lutools/examples/private.ARW', files)

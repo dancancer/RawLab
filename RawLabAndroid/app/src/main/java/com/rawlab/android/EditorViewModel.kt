@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 enum class Operation { NONE, IMPORT, IMPORT_LOOK, PICK_EXPORT, EXPORT }
+enum class EditSaveState { NONE, RESTORED, SAVED, FAILED }
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float)
 data class EditorState(
     val photo: ImportedPhoto? = null,
@@ -20,6 +22,7 @@ data class EditorState(
     val rendering: Boolean = false,
     val exact: Boolean = false,
     val error: String? = null,
+    val saveState: EditSaveState = EditSaveState.NONE,
     val message: String? = null,
     val lookImportReport: String? = null,
     val gpuEnabled: Boolean = true,
@@ -31,11 +34,13 @@ data class EditorState(
 private sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
-        val gpuMode: Int, val importing: Boolean = false) : Work
-    data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val png: Boolean, val gpuMode: Int) : Work
+        val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false) : Work
+    data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val png: Boolean,
+        val longEdge: Int?, val gpuMode: Int) : Work
 }
 private sealed interface WorkResult {
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
+    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings) : WorkResult
     data object Export : WorkResult
 }
 private sealed interface LookWork {
@@ -54,7 +59,13 @@ private sealed interface LookResult {
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
+    private var editStore: EditStore? = runCatching { EditStore(File(application.filesDir, "edits")) }.getOrNull()
+    private val mutableBatch = MutableStateFlow<BatchExportModel?>(null)
+    val batch = mutableBatch.asStateFlow()
+    private val mutablePendingBatch = MutableStateFlow<List<BatchJob>>(emptyList())
+    val pendingBatch = mutablePendingBatch.asStateFlow()
     private var processor: NativeProcessor? = null
+    private var original: Pair<java.io.File, Bitmap>? = null
     private var currentRevision = 0L
     private var lookRevision = 0L
     private var releases = 0
@@ -73,7 +84,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }, ::releaseStorage)
 
     init {
+        if (editStore == null) mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED,
+            error = text(R.string.edit_storage_error))
         lookRevision = lookQueue.submit(LookWork.Load)
+        refreshPendingBatch()
     }
 
     private fun engine() = processor ?: NativeProcessor().also { processor = it }
@@ -82,26 +96,33 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private fun perform(work: Work): WorkResult = synchronized(storage) { when (work) {
         is Work.Import -> {
             val photo = storage.import(work.uri)
-            try { perform(Work.Preview(photo, EditSettings(), false, work.gpuMode, importing = true)) }
+            val restored = editStore?.load(photo.identity)
+            try {
+                if (restored != null && runCatching { storage.filmPath(restored.film) }.isFailure) {
+                    engine().preview(photo.file, null, restored.copy(film = "neutral"), 256, false)
+                    WorkResult.MissingLook(photo, restored)
+                } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
+                    importing = true, restored = restored != null))
+            }
             catch (error: Throwable) { photo.file.delete(); throw error }
         }
         is Work.Preview -> {
             val edge = if (work.interactive) 1000 else 1600
             val native = engine()
             native.setGpuMode(work.gpuMode)
-            val neutral = native.preview(work.photo.file, null, work.edits, edge, work.interactive)
+            if (original?.first != work.photo.file) {
+                original = null
+                original = work.photo.file to native.preview(work.photo.file, null, EditSettings(), 1600, false).bitmap()
+            }
             val lut = storage.filmPath(work.edits.film)
-            val film = if (lut == null || work.edits.strength == 0f) neutral
-                else native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
-            val neutralBitmap = neutral.bitmap()
-            WorkResult.Preview(work, PreviewPair(neutralBitmap,
-                if (neutral === film) neutralBitmap else film.bitmap(), neutral.temperature, neutral.tint))
+            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
+            WorkResult.Preview(work, PreviewPair(original!!.second, film.bitmap(), film.temperature, film.tint))
         }
         is Work.Export -> {
             val output = storage.temporaryOutput(work.png)
             try {
                 engine().setGpuMode(work.gpuMode)
-                engine().export(work.photo.file, storage.filmPath(work.edits.film), work.edits, output, work.png)
+                engine().export(work.photo.file, storage.filmPath(work.edits.film), work.edits, output, work.png, work.longEdge)
                 if (work.destination == null) storage.saveAlbum(output, work.png)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
             } finally { output.delete() }
@@ -137,6 +158,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private fun accept(result: Result<WorkResult>) {
         result.fold({ value ->
             when (value) {
+                is WorkResult.MissingLook -> {
+                    mutable.value.photo?.file?.takeIf { it != value.photo.file }?.delete()
+                    mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(photo = value.photo,
+                        edits = value.edits, preview = null, exact = false,
+                        saveState = EditSaveState.RESTORED, error = text(R.string.look_unavailable))
+                }
                 is WorkResult.Preview -> {
                     val request = value.request
                     if (request.importing) {
@@ -145,12 +172,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     val settings = if (!request.edits.customWb && value.pair.temperature.isFinite())
                         request.edits.copy(temperature = value.pair.temperature.coerceIn(2000f, 50000f), tint = value.pair.tint.coerceIn(-150f, 150f))
                     else request.edits
+                    val saved = when {
+                        request.importing -> if (editStore == null) EditSaveState.FAILED else if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE
+                        request.interactive -> mutable.value.saveState
+                        else -> persist(request.photo, settings)
+                    }
                     mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
                         photo = request.photo, edits = settings, preview = value.pair,
-                        exact = !request.interactive, error = null)
+                        exact = !request.interactive, error = null,
+                        saveState = if (request.restored && saved == EditSaveState.SAVED) EditSaveState.RESTORED else saved)
                 }
                 WorkResult.Export -> mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
             }
+            fadeSaveNotice()
         }, { error ->
             mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(error = failure(error))
         })
@@ -208,6 +242,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun importPhoto(uri: Uri?) {
         if (uri == null || mutable.value.operation != Operation.NONE) return
+        val current = mutable.value
+        if (current.photo != null && persist(current.photo, current.edits) == EditSaveState.FAILED) {
+            mutable.value = current.copy(saveState = EditSaveState.FAILED, error = text(R.string.edit_storage_error))
+            return
+        }
         mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null)
         currentRevision = queue.submit(Work.Import(uri, gpuMode()))
     }
@@ -244,14 +283,40 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             mutable.value = current.copy(error = text(R.string.look_unavailable))
             return
         }
-        mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null)
+        val saved = if (interactive) current.saveState else persist(current.photo!!, edits)
+        mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null, saveState = saved)
         currentRevision = queue.submit(Work.Preview(current.photo!!, edits, interactive, gpuMode()))
     }
 
     fun retry() { edit(mutable.value.edits) }
+    fun retrySave() {
+        val photo = mutable.value.photo
+        if (photo != null) mutable.value = mutable.value.copy(saveState = persist(photo, mutable.value.edits))
+        else try {
+            editStore = EditStore(File(getApplication<Application>().filesDir, "edits"))
+            mutable.value = mutable.value.copy(saveState = EditSaveState.NONE, error = null)
+        } catch (_: Exception) { mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED) }
+        fadeSaveNotice()
+    }
     fun reset() { edit(mutable.value.edits.reset()) }
 
+    private var saveNotice: kotlinx.coroutines.Job? = null
+    private fun fadeSaveNotice() {
+        saveNotice?.cancel()
+        if (mutable.value.saveState !in setOf(EditSaveState.SAVED, EditSaveState.RESTORED)) return
+        saveNotice = viewModelScope.launch {
+            kotlinx.coroutines.delay(3000)
+            if (mutable.value.saveState in setOf(EditSaveState.SAVED, EditSaveState.RESTORED)) mutable.value = mutable.value.copy(saveState = EditSaveState.NONE)
+        }
+    }
+
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
+
+    private fun persist(photo: ImportedPhoto, edits: EditSettings): EditSaveState = try {
+        if (editStore == null) editStore = EditStore(File(getApplication<Application>().filesDir, "edits"))
+        editStore!!.save(photo.identity, edits)
+        EditSaveState.SAVED
+    } catch (_: Throwable) { EditSaveState.FAILED }
     fun setGpuEnabled(enabled: Boolean) {
         if (mutable.value.operation != Operation.NONE) return
         mutable.value = mutable.value.copy(gpuEnabled = enabled)
@@ -266,19 +331,64 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun cancelExport() {
         if (mutable.value.operation == Operation.PICK_EXPORT) mutable.value = mutable.value.copy(operation = Operation.NONE)
     }
-    fun export(destination: Uri?, png: Boolean) {
+    fun export(destination: Uri?, png: Boolean, longEdge: Int? = null) {
         val current = mutable.value
         if (current.operation != Operation.PICK_EXPORT || current.photo == null) return
+        if (!ExportSize.isValid(longEdge)) {
+            mutable.value = current.copy(operation = Operation.NONE, error = text(R.string.output_size_error))
+            return
+        }
         mutable.value = current.copy(operation = Operation.EXPORT)
-        currentRevision = queue.submit(Work.Export(current.photo, current.edits, destination, png, gpuMode()))
+        currentRevision = queue.submit(Work.Export(current.photo, current.edits, destination, png, longEdge, gpuMode()))
     }
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
+
+    fun beginBatch() {
+        val current = mutable.value
+        if (!current.canExport || mutableBatch.value != null) return
+        val photo = current.photo ?: return
+        mutableBatch.value = BatchExportModel(getApplication(), storage,
+            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name))
+    }
+
+    fun resumeBatch(job: BatchJob) {
+        if (mutableBatch.value != null) return
+        mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job)
+    }
+
+    fun closeBatch() {
+        val model = mutableBatch.value ?: return
+        if (model.state.value.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) return
+        model.discardDraftOrCompleted()
+        model.close()
+        mutableBatch.value = null
+        refreshPendingBatch()
+    }
+
+    private fun refreshPendingBatch() {
+        viewModelScope.launch {
+            try {
+                mutablePendingBatch.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val journal = BatchJournal(File(getApplication<Application>().filesDir, "RawLab/BatchJobs"))
+                    journal.pending().mapNotNull(journal::load)
+                }
+            } catch (error: Exception) { mutable.value = mutable.value.copy(error = "无法读取批量任务：${error.message}") }
+        }
+    }
+
+    fun onBackground() {
+        mutableBatch.value?.cancel()
+        mutable.value.photo?.let { photo ->
+            if (persist(photo, mutable.value.edits) == EditSaveState.FAILED) mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED)
+        }
+    }
     private fun text(id: Int) = getApplication<Application>().getString(id)
     private fun failure(error: Throwable): String = if (error is OutOfMemoryError) text(R.string.memory_error)
         else text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
 
     override fun onCleared() {
         disposed = true
+        mutableBatch.value?.close()
         lookQueue.close()
         queue.close()
     }

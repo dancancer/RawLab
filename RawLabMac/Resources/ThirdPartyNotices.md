@@ -12,6 +12,13 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
 | libjpeg-turbo | 3.1.3 | https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3 | libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg |
 | Little CMS | 2.17 | https://github.com/mm2/Little-CMS/tree/lcms2.17 | Little-CMS-LICENSE |
+| OpenCV / opencv_contrib | 4.12.0 | https://github.com/opencv/opencv/tree/4.12.0 and https://github.com/opencv/opencv_contrib/tree/4.12.0 | OpenCV/ directory |
+
+The optional display-chroma filter uses OpenCV core, imgproc and ximgproc,
+with their transitive modules. Pinned source archives and build options are in
+`RawLabMac/build-chroma-dependency.sh`. OpenCV's Apache 2.0 notices, the guided
+filter's BSD notice and the installed third-party notices are included in
+`OpenCV/`. No darktable denoising implementation or executable is bundled.
 
 This software is based in part on the work of the Independent JPEG Group.
 
@@ -55,3 +62,10 @@ The film-label artwork and application icon are generated assets, not official
 product artwork. See their generation records in the RawLab source repository.
 
 RawLab source and releases: https://github.com/dancancer/RawLab
+
+Linear wavelet denoising uses wavelib (BSD 3-Clause), pinned to
+7f61bf592f3c470b2a7d8199431fde821d7253ac, with a local SWT2 inverse phase
+correction validated against PyWavelets. The DWT/IDWT filter kernels are unchanged.
+See wavelib-COPYRIGHT and lutools/cmake/wavelib-iswt2.c.inc in the source.
+Source: https://github.com/rafat/wavelib
+No darktable denoising code or noise-profile database is included.

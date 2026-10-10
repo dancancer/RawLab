@@ -27,10 +27,26 @@ public sealed class Adjustments
 {
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
     public int ExposureMode { get; set; }
+    public DenoiseSettings Denoise { get; set; } = new();
     public bool CameraWhiteBalance { get; private set; } = true;
     public (double Temperature, double Tint)? AsShot { get; private set; }
     public double this[Parameter id] => values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
+    public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint, Denoise);
+    public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
+    {
+        if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
+            snapshot.Values.Where((value, index) => !double.IsFinite(value) || value < ParameterSpec.All[index].Min || value > ParameterSpec.All[index].Max).Any())
+            throw new System.IO.InvalidDataException("调整记录无效，原有文件未被覆盖。");
+        var denoise = snapshot.Denoise ?? new DenoiseSettings();
+        _ = denoise.NativeConfig();
+        return new Adjustments {
+            Denoise = denoise,
+            values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
+            CameraWhiteBalance = snapshot.CameraWhiteBalance,
+            AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null
+        };
+    }
     public double Default(Parameter id) => id == Parameter.Strength ? 100 : id == Parameter.Temperature ? AsShot?.Temperature ?? 6500 : id == Parameter.Tint ? AsShot?.Tint ?? 0 : 0;
     public void Set(Parameter id, double value)
     {
@@ -47,10 +63,14 @@ public sealed class Adjustments
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 0; ResetWhiteBalance(); }
+        if (group == "细节") Denoise = new();
     }
-    public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); }
-    internal Native.Request Request(string path, string? lut, int edge, string? output)
+    public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); Denoise = new(); }
+    internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
+        if (longEdge is { } requested && !ExportSize.IsValid(requested))
+            throw new ArgumentOutOfRangeException(nameof(longEdge), "导出长边必须在 1 到 65535 像素之间。");
+        var limitedFinal = output != null && longEdge.HasValue;
         return new Native.Request {
             Version=2, StructSize=(uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.Request>(), InputPath=path,
             LutPath=lut, LutStrength=lut == null ? 0 : (float)this[Parameter.Strength]/100,
@@ -59,9 +79,12 @@ public sealed class Adjustments
             Saturation=1+(float)this[Parameter.Saturation]/100, Temperature=CameraWhiteBalance ? 6500 : (float)this[Parameter.Temperature],
             Tint=CameraWhiteBalance ? 0 : (float)this[Parameter.Tint], Highlights=-(float)this[Parameter.Highlights]/100,
             Shadows=(float)this[Parameter.Shadows]/100,ToneCurve=(float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
-            SizeMode=3,OutputTarget=output == null ? 1 : 0,OutputPath=output,
+            // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
+            // remains independent and is never used to size an export.
+            SizeMode=limitedFinal ? 4 : 3,LongEdge=limitedFinal ? (uint)longEdge!.Value : 0,
+            OutputTarget=output == null ? 1 : 0,OutputPath=output,
             OutputFormat=output == null ? 3 : System.IO.Path.GetExtension(output).Equals(".png",StringComparison.OrdinalIgnoreCase) ? 1 : 0,
-            JpegQuality=95, Intent=edge == 0 ? 1 : 0, PreviewLongEdge=(uint)edge
+            JpegQuality=95, Intent=output != null || edge == 0 ? 1 : 0, PreviewLongEdge=(uint)edge
         };
     }
 }

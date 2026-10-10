@@ -1,0 +1,98 @@
+<Window x:Class="RawLab.Windows.BatchExportWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="clr-namespace:RawLab.Windows" Title="RawLab · 批量导出" Width="1040" Height="760" MinWidth="900" MinHeight="620">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Margin="22,20,22,14">
+      <DockPanel>
+        <StackPanel x:Name="SelectionActions" DockPanel.Dock="Right" Orientation="Horizontal">
+          <Button Click="AddClicked" ToolTip="添加 RAW 照片" AutomationProperties.Name="添加 RAW"><local:EditorIcon Kind="Add" Width="20" Height="20"/></Button>
+          <Button Content="全选" Click="SelectAllClicked"/><Button Content="全不选" Click="SelectNoneClicked"/>
+        </StackPanel>
+        <TextBlock x:Name="Heading" Text="批量导出" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      </DockPanel>
+      <TextBlock x:Name="Summary" Foreground="{StaticResource Muted}" Margin="0,8,0,10" AutomationProperties.LiveSetting="Polite"/>
+      <ProgressBar x:Name="Progress" Height="4" Foreground="{StaticResource Accent}" Visibility="Collapsed"/>
+      <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#FFAB92" Margin="0,10,0,0" Visibility="Collapsed" AutomationProperties.LiveSetting="Assertive"/>
+    </StackPanel>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>
+      <Grid Margin="14,0,0,0">
+        <ListBox x:Name="Targets" BorderThickness="0" Background="Transparent" Foreground="{StaticResource Foreground}" HorizontalContentAlignment="Stretch"
+          ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True">
+          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Focusable" Value="False"/></Style></ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate><DataTemplate>
+            <Border BorderBrush="#35373B" BorderThickness="0,0,0,1" Padding="8,12">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <CheckBox IsChecked="{Binding Selected,Mode=TwoWay}" IsEnabled="{Binding Editable}" VerticalAlignment="Center" Margin="0,0,12,0" AutomationProperties.Name="{Binding Name}"/>
+                <Button Grid.Column="1" Click="InspectClicked" Style="{StaticResource QuietButton}" Padding="0" Width="78" Height="68" ToolTip="查看应用后的效果" IsEnabled="{Binding CanInspect}">
+                  <Image Source="{Binding Thumbnail}" Stretch="Uniform" AutomationProperties.Name="{Binding Name}"/>
+                </Button>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="8,0">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Input}"/>
+                  <TextBlock Text="{Binding Detail}" Foreground="{Binding DetailColor}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                  <Button Content="移除" Click="RemoveClicked" Style="{StaticResource QuietButton}" Visibility="{Binding EditVisibility}"/>
+                  <Button Click="RevealClicked" Style="{StaticResource QuietButton}" Visibility="{Binding OutputVisibility}" ToolTip="显示成片" AutomationProperties.Name="显示成片"><local:EditorIcon Kind="Folder" Width="20" Height="20"/></Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <local:EditorIcon Kind="Photo" Width="40" Height="40" HorizontalAlignment="Center"/>
+          <TextBlock Text="尚未选择 RAW" Margin="0,16" HorizontalAlignment="Center"/>
+          <Button Content="选择照片…" Click="AddClicked"/>
+        </StackPanel>
+      </Grid>
+      <Border Grid.Column="1" BorderBrush="#35373B" BorderThickness="1,0,0,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="22,10,22,20">
+            <TextBlock Text="调整来源" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,18"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Image x:Name="SourceThumbnail" Height="78" Stretch="Uniform"/>
+              <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="SourceName" TextWrapping="Wrap"/><TextBlock x:Name="SourceLook" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/></StackPanel>
+            </Grid>
+            <TextBlock x:Name="SourceSummary" Margin="0,20,0,14" LineHeight="28" TextWrapping="Wrap"/>
+            <Expander Header="全部调整" Foreground="{StaticResource Foreground}"><TextBlock x:Name="AllSettings" Margin="0,12,0,0" LineHeight="24" TextWrapping="Wrap"/></Expander>
+            <Separator Margin="0,24,0,18"/>
+            <TextBlock Text="输出" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14"/>
+            <StackPanel x:Name="FormatOptions" Orientation="Horizontal" Margin="0,0,0,20">
+              <RadioButton x:Name="Jpeg" Content="JPEG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{StaticResource Foreground}"/>
+              <RadioButton x:Name="Png" Content="16-bit PNG" GroupName="Format" Checked="FormatChanged" Foreground="{StaticResource Foreground}"/>
+            </StackPanel>
+            <StackPanel Margin="0,0,0,18">
+              <DockPanel><TextBlock Text="尺寸"/><TextBlock x:Name="SizeHint" Text="原尺寸" Foreground="{StaticResource Muted}" DockPanel.Dock="Right"/></DockPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <ComboBox x:Name="SizeSelection" Width="150" SelectionChanged="ExportSizeChanged" AutomationProperties.Name="导出尺寸">
+                  <ComboBoxItem Content="原尺寸" Tag="original"/><ComboBoxItem Content="长边 2048 px" Tag="2048"/><ComboBoxItem Content="长边 3000 px" Tag="3000"/><ComboBoxItem Content="长边 4096 px" Tag="4096"/><ComboBoxItem Content="自定义" Tag="custom"/>
+                </ComboBox>
+                <TextBox x:Name="CustomLongEdge" Width="82" Margin="8,0,0,0" Visibility="Collapsed" TextChanged="CustomSizeTextChanged" LostKeyboardFocus="CustomSizeCommitted" KeyDown="CustomSizeKeyDown" AutomationProperties.Name="自定义长边"/>
+                <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0"/>
+              </StackPanel>
+              <TextBlock x:Name="SizeError" Foreground="#FFAB92" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+            <DockPanel Margin="0,0,0,18">
+              <Button x:Name="ChooseFolder" Click="FolderClicked" DockPanel.Dock="Right" ToolTip="选择输出文件夹" AutomationProperties.Name="选择输出文件夹"><local:EditorIcon Kind="Folder" Width="20" Height="20"/></Button>
+              <TextBlock Text="保存到" VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <TextBlock x:Name="Destination" Foreground="{StaticResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+            <DockPanel><TextBlock Text="自动添加序号" Foreground="{StaticResource Muted}" DockPanel.Dock="Right"/><TextBlock Text="重名文件"/></DockPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" BorderBrush="#35373B" BorderThickness="0,1,0,0" Padding="18,12">
+      <DockPanel>
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+          <Button x:Name="CloseAction" Content="取消" Click="CloseClicked"/>
+          <Button x:Name="RevealFolder" Content="打开文件夹" Click="RevealFolderClicked" Visibility="Collapsed"/>
+          <Button x:Name="PrimaryAction" Content="导出 0 张" Click="PrimaryClicked" Background="{StaticResource Accent}" Foreground="#17191D" FontWeight="SemiBold" MinWidth="125"/>
+        </StackPanel>
+        <TextBlock x:Name="Footnote" Text="仅用于本次导出，保留各照片原有调整" Foreground="{StaticResource Muted}" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0"/>
+      </DockPanel>
+    </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
+    <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
+    <Compile Include="../../Native.cs" Link="Native.cs" />
+    <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />
+    <Compile Include="../../PhotoInfo.cs" Link="PhotoInfo.cs" />
+    <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
+    <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
+    <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
+  </ItemGroup>
+</Project>

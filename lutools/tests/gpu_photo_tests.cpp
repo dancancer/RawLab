@@ -334,6 +334,37 @@ int main() {
             std::filesystem::remove(path);
         }
     }
+#ifdef SONY2FUJI_ENABLE_METAL
+    const auto effectsPath = makePhotoLUT("FLog2", "Effects");
+    const auto effectsUtf8 = effectsPath.u8string();
+    std::vector<unsigned char> texture(513 * 257 * 3);
+    for (size_t i = 0; i < texture.size(); ++i) texture[i] = static_cast<unsigned char>((i * 37 + i / 131) % 256);
+    const std::array<sony2fuji_photo_effects_config, 4> effects{{
+        {1, sizeof(sony2fuji_photo_effects_config), -100, 0, -100, 0, 100, 0, 25, 50},
+        {1, sizeof(sony2fuji_photo_effects_config), 100, 100, 100, 100, 0, 0, 25, 50},
+        {1, sizeof(sony2fuji_photo_effects_config), 0, 50, 0, 50, 0, 100, 0, 0},
+        {1, sizeof(sony2fuji_photo_effects_config), -65, 35, -37, 60, 80, 100, 100, 100}
+    }};
+    for (size_t index = 0; index < effects.size(); ++index) {
+        check(sony2fuji_session_set_photo_effects(session, &effects[index]) == SONY2FUJI_STATUS_OK &&
+              sony2fuji_session_set_photo_effects(forced, &effects[index]) == SONY2FUJI_STATUS_OK, "effects configure both backends");
+        for (bool withLUT : {false, true}) for (bool preview : {false, true}) {
+            auto request = baseRequest(texture, 513, 257);
+            request.lut_path = withLUT ? effectsUtf8.c_str() : nullptr;
+            request.lut_strength = withLUT ? 1.2f : 0;
+            request.intent = preview ? SONY2FUJI_INTENT_PREVIEW : SONY2FUJI_INTENT_FINAL;
+            request.target_width = preview ? 129 : 513;
+            request.target_height = preview ? 65 : 257;
+            request.contrast = 1.15f; request.saturation = 0.85f;
+            request.shadows = 0.2f; request.highlights = -0.25f;
+            // Include both the unsharpened early-resize guard and the detail/effects ordering.
+            request.sharpening = withLUT ? 0.7f : 0;
+            compareForcedCase(session, forced, request, "photo effects " + std::to_string(index) +
+                (withLUT ? " with LUT" : " neutral") + (preview ? " resized preview" : " native final"));
+        }
+    }
+    std::filesystem::remove(effectsPath);
+#endif
     sony2fuji_session_destroy(forced);
 
     sony2fuji_session_destroy(session);

@@ -10,6 +10,8 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 
 ## 功能 / Features
 
+v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+
 - 应用内 RAW 相册、按相册筛选、系统文件导入。相册权限被拒绝时仍可使用文件入口。
   In-app RAW albums with album filtering and a system document-picker fallback.
 - 相册右上角的视图菜单可切换方形缩略图和原始比例，并选择每行 1-6 张，默认原始比例、3 列。返回编辑页再打开相册或旋转屏幕时保留视图选择。
@@ -39,9 +41,9 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 - 导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等拍摄 EXIF，更新成片方向、尺寸及 sRGB 标记，不复制旧缩略图或 RAW 专有 MakerNotes。
   Exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, and update output orientation, dimensions and sRGB tags without copying old thumbnails or opaque RAW MakerNotes.
 
-只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数不跨进程退出保存。
+只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
 
-RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits are session-only.
+RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits persist locally by original resource identity.
 
 外观导入只接受已制备成品，不直接执行源 DCP/XMP。先在桌面按 [LUT Preparation](../lutools/docs/lut-preparation.md) 制备，再传给手机；Android 不安装 Python/OCIO。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
 
@@ -84,11 +86,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.4.1 APK / Download Android v0.4.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Android-0.4.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
+[下载 Android v0.5.0 APK / Download Android v0.5.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Android-0.5.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.5.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.5.0/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.4.1`、`versionCode` 为 `7`，沿用正式发布密钥，支持从构建 6 及同签名的旧正式版覆盖升级。新版从带相机补丁的 LibRaw 0.22.2 重新构建两个 ABI；不包含开发中的批量导出或编辑记忆。“更多 → 关于 RawLab”包含项目/作者链接和更新检测，只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
+发布 APK 的 `versionName` 为 `0.5.0`、`versionCode` 为 `8`，沿用正式发布密钥，支持从所有更早的同签名正式版覆盖升级。新版从带相机补丁的 LibRaw 0.22.2 重新构建两个 ABI；包含批量导出、编辑记忆、降噪、照片信息和导出尺寸控制。“更多 → 关于 RawLab”包含项目/作者链接和更新检测，只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
 
-The release APK uses `versionName=0.4.1` and `versionCode=7`, retaining the release key for upgrades from build 6 and earlier release-signed versions. Both ABIs are rebuilt with patched LibRaw 0.22.2; in-progress batch export and edit persistence are excluded. More > About RawLab opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses `versionName=0.5.0` and `versionCode=8`, retaining the release key for upgrades from all earlier release-signed versions. Both ABIs are rebuilt with patched LibRaw 0.22.2; batch export, edit persistence, denoising, photo information and export sizing are included. More > About RawLab opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -152,7 +154,7 @@ Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestR
   Albums show authorized, indexed RAW media; unindexed files use the document picker.
 - 相册缩略图由系统媒体库提供；Android 10+ 根据显示尺寸请求有界缩略图，Android 8-9 使用系统 `MINI_KIND` 缩略图。尺寸元数据缺失时，原始比例在缩略图加载后确定。
   Album thumbnails come from MediaStore. Android 10+ requests bounded thumbnails for the display size; Android 8-9 uses system `MINI_KIND` previews. Missing dimension metadata falls back to the loaded thumbnail's ratio.
-- 进程被系统终止后，不恢复未保存的编辑或进行中的导出。长时间导出需保持应用前台。
+- 已保存的编辑和未完成批量任务可在重开后恢复；未知的图库写入结果需先核对，避免重复输出。不承诺后台持续导出，长时间导出需保持应用前台。
   Process death does not resume edits or exports; keep the app foreground during export.
 - 通过 GitHub Release 提供签名 APK，尚未发布到应用商店；不承诺所有设备的性能。
   Signed APKs are distributed through GitHub Releases, not an app store; performance varies by device.

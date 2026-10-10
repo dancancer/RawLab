@@ -8,9 +8,12 @@
         <TextBlock Text="RAWLAB" FontWeight="Bold" FontSize="18" Foreground="{StaticResource Foreground}" VerticalAlignment="Center" Margin="6,0,22,0"/>
         <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="关于 RawLab / 检查更新" AutomationProperties.Name="关于 RawLab"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
         <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="查看更新"/>
-        <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="导出原始分辨率照片" AutomationProperties.Name="导出">
+        <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="导出照片" AutomationProperties.Name="导出">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
-          <Button.ContextMenu><ContextMenu><MenuItem x:Name="ExportJpeg" Header="导出 JPEG" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" Header="导出 16-bit PNG" Click="ExportPngClicked" IsEnabled="False"/></ContextMenu></Button.ContextMenu>
+          <Button.ContextMenu><ContextMenu>
+            <MenuItem Header="尺寸"><MenuItem x:Name="ExportOriginalSize" Header="原尺寸" IsCheckable="True" Click="ExportOriginalSizeClicked"/><MenuItem x:Name="ExportSize2048" Header="长边 2048 px" IsCheckable="True" Click="ExportSizeClicked" Tag="2048"/><MenuItem x:Name="ExportSize3000" Header="长边 3000 px" IsCheckable="True" Click="ExportSizeClicked" Tag="3000"/><MenuItem x:Name="ExportSize4096" Header="长边 4096 px" IsCheckable="True" Click="ExportSizeClicked" Tag="4096"/><MenuItem x:Name="ExportCustomSize" Header="自定义…" IsCheckable="True" Click="ExportCustomSizeClicked"/></MenuItem>
+            <Separator/><MenuItem x:Name="ExportJpeg" Header="导出 JPEG" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" Header="导出 16-bit PNG" Click="ExportPngClicked" IsEnabled="False"/><Separator/><MenuItem x:Name="BatchExportMenu" Header="使用当前调整批量导出…" Click="BatchExportClicked" IsEnabled="False"/><MenuItem x:Name="ViewBatchMenu" Header="查看批量任务…" Click="ShowBatchClicked" IsEnabled="False"/>
+          </ContextMenu></Button.ContextMenu>
         </Button>
         <StackPanel Orientation="Horizontal">
           <Button Click="OpenClicked" Style="{StaticResource ToolbarButton}" ToolTip="打开 RAW（Ctrl+O）" AutomationProperties.Name="打开 RAW"><local:EditorIcon Kind="Folder" Width="22" Height="22"/></Button>
@@ -22,6 +25,7 @@
           </Button>
           <Button Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="缩放与适合窗口" AutomationProperties.Name="缩放"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem Header="适合窗口" InputGestureText="F" Click="FitClicked"/><MenuItem Header="100% 实际像素" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="放大" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="缩小" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
           <Button x:Name="ClippingButton" Click="ClippingClicked" Style="{StaticResource ToolbarButton}" ToolTip="显示高光与暗部裁切提示" AutomationProperties.Name="裁切提示"><local:EditorIcon Kind="Clipping" Width="22" Height="22"/></Button>
+          <Button x:Name="InfoButton" Click="InfoClicked" Style="{StaticResource ToolbarButton}" ToolTip="照片信息：隐藏 / 文件信息 / 拍摄参数（I）" AutomationProperties.Name="照片信息"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
           <Button x:Name="AdjustToggleButton" Click="DockToggle" Style="{StaticResource ToolbarButton}" ToolTip="显示或隐藏调整栏" AutomationProperties.Name="调整栏"><local:EditorIcon Kind="Adjust" Width="22" Height="22"/></Button>
         </StackPanel>
       </DockPanel>
@@ -32,7 +36,7 @@
         <DockPanel Margin="8">
           <StackPanel DockPanel.Dock="Top"><TextBlock Text="照片目录" FontWeight="SemiBold" Margin="10,14,0,8"/><Button Content="添加目录" Click="AddFolderClicked"/></StackPanel>
           <TextBlock DockPanel.Dock="Bottom" Text="右键根目录可移除；不会删除文件" Foreground="#95979F" FontSize="11" Margin="7" TextWrapping="Wrap"/>
-          <TreeView x:Name="Files" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+          <TreeView x:Name="Files" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" PreviewMouseRightButtonDown="FilesPreviewMouseRightButtonDown" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
             <TreeView.Resources>
               <ResourceDictionary>
               <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#494332"/>
@@ -53,6 +57,7 @@
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><local:PhotoGridPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate><DataTemplate>
                     <Button Click="PhotoSelected" ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}" Margin="3" Padding="5" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                      <Button.ContextMenu><ContextMenu Opened="PhotoContextMenuOpened"><MenuItem Header="在资源管理器中打开" Click="OpenInExplorerClicked"/><MenuItem Header="应用当前设置" Click="ApplyCurrentSettingsClicked"/></ContextMenu></Button.ContextMenu>
                       <Button.Style><Style TargetType="Button" BasedOn="{StaticResource QuietButton}"><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="BorderBrush" Value="{StaticResource Accent}"/><Setter Property="Foreground" Value="{StaticResource Accent}"/></DataTrigger></Style.Triggers></Style></Button.Style>
                       <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="24"/></Grid.RowDefinitions>
                         <Border Background="#191B20" CornerRadius="3"><local:EditorIcon Kind="Photo" Width="24" Height="24" TextElement.Foreground="#8E939F"/></Border>
@@ -66,7 +71,7 @@
               </ResourceDictionary>
             </TreeView.Resources>
             <TreeView.ItemContainerStyleSelector><StaticResource ResourceKey="PhotoTreeStyles"/></TreeView.ItemContainerStyleSelector>
-            <TreeView.ContextMenu><ContextMenu><MenuItem Header="从列表移除根目录" Click="RemoveFolderClicked"/><MenuItem Header="刷新目录" Click="RefreshFolderClicked"/></ContextMenu></TreeView.ContextMenu>
+            <TreeView.ContextMenu><ContextMenu x:Name="FileTreeContextMenu" Opened="FileTreeContextMenuOpened"><MenuItem x:Name="OpenTreeEntryMenu" Header="在资源管理器中打开" Click="OpenInExplorerClicked"/><MenuItem x:Name="ApplyTreeEntryMenu" Header="应用当前设置" Click="ApplyCurrentSettingsClicked"/><Separator/><MenuItem x:Name="RemoveRootMenu" Header="从列表移除根目录" Click="RemoveFolderClicked"/><MenuItem x:Name="RefreshRootMenu" Header="刷新目录" Click="RefreshFolderClicked"/></ContextMenu></TreeView.ContextMenu>
           </TreeView>
         </DockPanel>
       </Border>
@@ -79,8 +84,11 @@
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Margin="0,0,2,0"/>
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Column="1"/>
-          <Border x:Name="NeutralLabel" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock Text="中性" FontSize="12"/></Border>
+          <Border x:Name="NeutralLabel" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock Text="原图" FontSize="12"/></Border>
           <Border x:Name="FilmLabel" Grid.Column="1" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock x:Name="FilmLabelText" FontSize="12"/></Border>
+          <Border x:Name="InfoOverlay" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
+            <StackPanel><TextBlock x:Name="InfoFileText" FontSize="12" TextWrapping="Wrap"/><TextBlock x:Name="InfoCaptureText" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
+          </Border>
           <StackPanel x:Name="Welcome" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center">
             <TextBlock Text="打开一张 RAW 照片" FontSize="24" Foreground="#D2D3D7" HorizontalAlignment="Center"/>
             <TextBlock Text="拖入照片，或添加目录开始浏览" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,14"/>
@@ -111,6 +119,9 @@
                   <TextBlock Text="胶片" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                 </StackPanel>
               </Button>
+              <Button x:Name="DenoiseCategory" Click="DenoiseCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="降噪" AutomationProperties.Name="降噪">
+                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="DenoiseCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="降噪" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+              </Button>
             </StackPanel></ScrollViewer>
             <WrapPanel x:Name="ParameterPanel" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,5">
               <TextBlock x:Name="ParameterTitle" Width="65" VerticalAlignment="Center" FontWeight="SemiBold"/>
@@ -123,12 +134,16 @@
             <DockPanel x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,3,0,0">
               <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" VerticalContentAlignment="Center"><StackPanel x:Name="FilmStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
             </DockPanel>
+            <local:DenoisePanel x:Name="DenoiseEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
           </Grid>
         </Border>
       </Grid>
     </Grid>
     <Border Grid.Row="2" Background="#222429" BorderBrush="#35373B" BorderThickness="0,1,0,0">
       <DockPanel Margin="14,0">
+        <Button x:Name="BatchNotice" DockPanel.Dock="Right" Content="继续上次批量任务" Click="ShowBatchClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
+        <Button x:Name="RetrySave" DockPanel.Dock="Right" Content="重试保存" Click="RetrySaveClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
+        <TextBlock x:Name="SaveState" DockPanel.Dock="Right" Margin="8,0" VerticalAlignment="Center" FontSize="11" AutomationProperties.LiveSetting="Polite"/>
         <ComboBox x:Name="GpuMode" DockPanel.Dock="Right" Width="116" SelectedIndex="0" SelectionChanged="GpuModeChanged" Margin="10,2,0,2" AutomationProperties.Name="渲染加速"><ComboBoxItem Content="GPU 自动"/><ComboBoxItem Content="仅 CPU"/><ComboBoxItem Content="强制 GPU"/></ComboBox>
         <TextBlock x:Name="BackendLabel" Text="Windows · GPU 自动 · sRGB" Foreground="{StaticResource Muted}" DockPanel.Dock="Right" VerticalAlignment="Center"/>
         <Button x:Name="RetryButton" Content="重新显影" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2" MinHeight="26" Margin="6,0"/>
