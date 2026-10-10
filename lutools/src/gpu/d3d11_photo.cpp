@@ -1,6 +1,8 @@
 #include "gpu/d3d11_photo.h"
 #include "gpu/d3d11_photo_shader.h"
 #include "core/photo_lut.h"
+#include "core/chroma_denoise.h"
+#include "gpu/denoise.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
@@ -140,9 +142,11 @@ D3D11PhotoRenderer::D3D11PhotoRenderer() = default;
 D3D11PhotoRenderer::~D3D11PhotoRenderer() = default;
 bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
-    const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
+    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution) {
     if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
-        input.pixels.size()!=static_cast<size_t>(input.width)*input.height) return false;
+        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() ||
+        chromaDenoise < 0 || chromaDenoise > 2) return false;
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
     if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
     try {
@@ -174,12 +178,25 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             c.context->UpdateSubresource(c.source.data.Get(),0,nullptr,input.pixels.data(),0,0);
             c.revision=revision;c.sourceWidth=input.width;c.sourceHeight=input.height;
         }
-        const bool early=request.intent==SONY2FUJI_INTENT_PREVIEW && request.sharpening<=0;
+        const bool early=request.intent==SONY2FUJI_INTENT_PREVIEW && request.sharpening<=0 &&
+            !effects.active() && chromaDenoise == 0 && !preserveSourceResolution;
         const uint32_t pw=early ? width : input.width,ph=early ? height : input.height;
         c.dispatch(c.source,c.processing[0],p,0,input.width,input.height,pw,ph);
         int current=0;
+        if (chromaDenoise != 0) {
+            ImageData toned(static_cast<int>(pw), static_cast<int>(ph));
+            c.read(c.processing[current], toned);
+            if (applyChromaDenoise(toned, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success) return false;
+            c.context->UpdateSubresource(c.processing[current].data.Get(), 0, nullptr, toned.pixels.data(), 0, 0);
+        }
         if (request.noise_reduction>0) { c.dispatch(c.processing[current],c.processing[1-current],p,2,pw,ph,pw,ph);current=1-current; }
         if (request.sharpening>0) { c.dispatch(c.processing[current],c.processing[1-current],p,3,pw,ph,pw,ph);current=1-current; }
+        if (effects.active()) {
+            ImageData finished(static_cast<int>(pw), static_cast<int>(ph));
+            c.read(c.processing[current], finished);
+            if (!gpuPhotoEffects(finished, effects)) return false;
+            c.context->UpdateSubresource(c.processing[current].data.Get(), 0, nullptr, finished.pixels.data(), 0, 0);
+        }
         auto* final=&c.processing[current];
         if (pw!=width || ph!=height) { c.dispatch(*final,c.resized,p,1,pw,ph,width,height);final=&c.resized; }
         ImageData result(static_cast<int>(width),static_cast<int>(height));c.read(*final,result);

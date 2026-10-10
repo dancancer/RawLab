@@ -50,7 +50,7 @@ python3 RawLabWindows/build-remote.py \
 
 脚本发送当前已跟踪及未忽略的新源文件，包含尚未提交的改动，排除 RAW 样片和忽略的构建产物。Windows 工作目录为 `C:/RawLabBuild/workspace`，保留依赖和编译缓存，只清理上次清单中已从本次源码删除的文件。请勿让多个任务同时使用这个工作目录。远程编译自包含 x64 包并取回 `build/windows-remote/<timestamp>/RawLab-Windows.zip`，同目录保留完整 `build.log`。
 
-`--test --raw /path/to/sample.ARW` 会另外上传指定样片并执行原有完整测试。编译不要求 GPU，但完整测试要求真实 Direct3D 11 硬件；普通虚拟显示适配器只能验证编译、CPU 解码和自动回退，不能据此声明 GPU 通过。未使用 `--test` 时不运行完整测试。
+`--test --raw /path/to/sample.ARW` 会另外上传指定样片并执行原有完整测试。编译不要求 GPU，但完整 GPU 测试要求实际 Direct3D 11 执行；仅有虚拟机编译结果或显示适配器名称，不能据此声明 GPU 通过。未使用 `--test` 时不运行完整测试。
 
 新建专用 Windows 编译机时，管理员可使用 [provision-build-tools.ps1](scripts/provision-build-tools.ps1) 安装校验过的 .NET 8.0.425 SDK 和 VS 2022 Build Tools 17.14.41。脚本需要预先下载的官方安装包，检查固定摘要和 Microsoft Authenticode 签名，安装 C++、Windows SDK、CMake 与托管桌面构建组件；不负责 Windows 授权或 SSH 配置。
 
@@ -68,6 +68,8 @@ python3 RawLabWindows/build-remote.py \
 | 缩略图 | 只提取内嵌预览，不解包/显影 RAW；最多两个后台读取任务 |
 | 胶片 | 独立“胶片”类别，选中后显示胶片列表；同一套十种 LUT 与包装图；支持中性、多选导入兼容 CUBE/RLOOK；导入项使用会话内的外部文件引用 |
 | 调整 | 胶片强度 0–200%（默认 100%）、曝光、色温、色调、对比度、高光、阴影、S 曲线、饱和度、锐化 |
+| 效果 | 独立暗角和颗粒工具；暗角强度/中点/圆度/羽化/高光保护，颗粒强度/大小/粗糙度；辅助参数可单项或分组重置，强度为零时保留编辑值 |
+| 降噪 | 小波亮度/色彩/粗色斑参数与独立显示色彩降噪模式；所有模式按每次显影请求写入 native 会话 |
 | 白平衡 | 拍摄时相机增益；校准后的 2000–50000 K / ±150 色调；倒色温滑杆 |
 | 曝光基准 | 标准显影、匹配内嵌预览、传感器基准；显示实际基础偏移 |
 | 数值输入和重置 | 滑杆、数字、单项/分组/全部重置；保留照片与胶片选择 |
@@ -121,8 +123,9 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 
 需要支持 Direct3D feature level 11.0 的硬件显卡。优先选择独立显存较大的硬件
 适配器，不将 WARP 软件渲染器标记为 GPU。矩阵、线性曝光、F-Log2、3D LUT、
-强度、明暗/色彩、细节和双线性缩放在 GPU 执行。锐化始终在原像素尺度处理。
-RAW 解包、白平衡、去马赛克、高光重建、文件编码及直方图统计保留在 CPU。
+强度、明暗/色彩、细节、暗角/颗粒、小波过滤、显示色度引导滤波和双线性缩放在 GPU 执行。
+锐化、暗角/颗粒和显示色度均在原像素尺度处理。RAW 解包、白平衡、去马赛克、
+高光重建、噪声估计、OpenCV Lab 转换、文件编码及直方图统计保留在 CPU。
 每个会话复用 GPU 设备、LUT、线性 RAW 上传及中间缓冲；切换白平衡后更新上传。
 
 “GPU 自动”在设备创建、资源分配或渲染失败后走 CPU，并在状态栏显示回退。
@@ -130,11 +133,15 @@ RAW 解包、白平衡、去马赛克、高光重建、文件编码及直方图�
 较多显存，显存不足时自动模式仍能导出。诊断环境变量 `RAWLAB_DISABLE_D3D11=1`
 用于验证自动回退及强制失败；正常运行不要设置。
 
+跨平台接入的构建与运行范围见 [本轮验证记录](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路径已运行。
+
 ## 验证
 
 `build.ps1 -Test` 运行共享核心 CTest 和独立的 Windows 测试程序，测试参数映射、
 调度、外部 Sony ARW、中文路径、缩略图、直方图、白平衡、曝光基准、PNG 位深和
-全分辨率导出。GPU 测试还检查 CPU / Direct3D 11 像素差异、细节边界、LUT 域、
+全分辨率导出。托管测试覆盖暗角/颗粒默认值、范围、40 字节 versioned ABI、旧记录迁移、
+编辑记忆和批量快照。GPU 测试还检查 CPU / Direct3D 11 像素差异、细节边界、LUT 域、
 交互/精确/导出隔离，要求测试机器具有上述硬件。输出保存在忽略的 `build/windows-verification`。
 可选 DJI / 高光样片未随仓库提供时，不把缺少样片算作已验证。
 测试不再依赖仓库内置 RAW。`-Test` 默认从 `Z:\Photo\2019\2019-02-02` 按文件名
@@ -150,6 +157,6 @@ RAW 解包、白平衡、去马赛克、高光重建、文件编码及直方图�
 dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --interactions $PWD.Path 'C:/samples/photo.ARW'
 ```
 
-本次验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心此前 11 项 CTest 通过；其他平台尚未复测。
+历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。

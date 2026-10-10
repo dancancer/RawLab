@@ -1,4 +1,5 @@
-#include "gpu/metal_denoise.h"
+#include "gpu/denoise.h"
+#include "native_gpu_test_support.h"
 #include "core/wavelet_denoise.h"
 #include "core/chroma_denoise.h"
 #include <opencv2/core.hpp>
@@ -74,14 +75,14 @@ static void waveletTests() {
         settings.depth = depth;
         std::fill(std::begin(settings.sigma), std::end(settings.sigma), .4f);
         std::fill(std::begin(settings.thresholdScale), std::end(settings.thresholdScale), shrink ? 1.5f : 0.f);
-        assert(metalWaveletFilter(input.data(), width, height, settings, result.data()));
+        assert(gpuWaveletFilter(input.data(), width, height, settings, result.data()));
         compare(waveletReference(input, width, height, settings), result, 5e-5f, 5e-5f, "db2 tiled filter");
         if (!shrink) compare(input, result, 5e-5f, 5e-5f, "db2 reconstruction");
         auto repeated = result;
-        assert(metalWaveletFilter(input.data(), width, height, settings, repeated.data()));
+        assert(gpuWaveletFilter(input.data(), width, height, settings, repeated.data()));
         assert(repeated == result);
         settings.depth = 7;
-        assert(!metalWaveletFilter(input.data(), width, height, settings, repeated.data()));
+        assert(!gpuWaveletFilter(input.data(), width, height, settings, repeated.data()));
         assert(repeated == result);
     }
 }
@@ -100,7 +101,7 @@ static void guidedTests() {
             cv::Mat reference;
             cv::ximgproc::guidedFilter(guide, source, reference, radius, epsilon);
             std::vector<float> output(source.total() * 2);
-            assert(metalGuidedFilter(guide.ptr<float>(), source.ptr<float>(), size.width, size.height,
+            assert(gpuGuidedFilter(guide.ptr<float>(), source.ptr<float>(), size.width, size.height,
                                      radius, epsilon, output.data()));
             compare(std::vector<float>(reference.ptr<float>(), reference.ptr<float>() + output.size()),
                     output, 0.003f, 0.0001f, "RGB-guide chroma filter");
@@ -151,7 +152,37 @@ static void denoiserTests() {
 }
 
 int main() {
+#ifdef SONY2FUJI_ENABLE_D3D11
+    if (!rawlabtest::nativeGpuAvailable()) {
+        std::cout << "SKIP: native GPU unavailable; GPU filter verification not reached\n";
+        return 77;
+    }
+#endif
     waveletTests();
     guidedTests();
     denoiserTests();
+#if defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+    ImageData source(513, 257);
+    for (size_t i = 0; i < source.pixels.size(); ++i) {
+        const float value = float((i * 37 + i / 131) % 997) / 997;
+        source.pixels[i] = {value, value * .7f, 1 - value};
+    }
+    for (const PhotoEffectsOptions options : {PhotoEffectsOptions{},
+         PhotoEffectsOptions{-100, 0, -100, 0, 100, 0, 25, 50},
+         PhotoEffectsOptions{100, 100, 100, 100, 0, 0, 25, 50},
+         PhotoEffectsOptions{0, 50, 0, 50, 0, 100, 0, 0},
+         PhotoEffectsOptions{-65, 35, -37, 60, 80, 100, 100, 100}}) {
+        auto reference = source, gpu = source;
+        applyPhotoEffects(reference, options);
+        assert(gpuPhotoEffects(gpu, options));
+        compare(pixels(reference), pixels(gpu), .0005f, .0001f, "source-pixel vignette/grain");
+        auto repeated = source;
+        assert(gpuPhotoEffects(repeated, options));
+        assert(pixels(repeated) == pixels(gpu));
+    }
+    auto unchanged = source;
+    auto invalid = PhotoEffectsOptions{}; invalid.grainAmount = 101;
+    assert(!gpuPhotoEffects(unchanged, invalid));
+    assert(pixels(unchanged) == pixels(source));
+#endif
 }

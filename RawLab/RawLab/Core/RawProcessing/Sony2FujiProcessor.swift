@@ -5,6 +5,12 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct Sony2FujiProcessor {
+    let gpuMode: sony2fuji_gpu_mode
+
+    init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO) {
+        self.gpuMode = gpuMode
+    }
+
     // =========================================================================
     // Types
     // =========================================================================

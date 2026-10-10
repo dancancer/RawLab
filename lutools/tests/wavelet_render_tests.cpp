@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "native_gpu_test_support.h"
 #include "core/wavelet_denoise.h"
 #include "core/photo_lut.h"
 #include "sony2fuji/lut_applicator.h"
@@ -11,6 +12,7 @@
 #include <vector>
 
 int main() {
+    const bool nativeGpu = rawlabtest::nativeGpuAvailable();
     sony2fuji_session* session=nullptr;
     assert(sony2fuji_session_create(&session)==SONY2FUJI_STATUS_OK);
     sony2fuji_wavelet_denoise_config options{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,sizeof(options),0,40,46,50};
@@ -60,22 +62,18 @@ int main() {
     gpu.mode=SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     const auto automatic = render();
-#if defined(SONY2FUJI_ENABLE_METAL)
-    assert(sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_METAL);
-    for (size_t i=0;i<exact.size();++i) assert(std::abs(int(automatic[i])-int(exact[i]))<=2);
-#else
-    assert(automatic==exact && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU);
-#endif
+    if (nativeGpu) {
+        assert(sony2fuji_session_get_last_backend(session)==rawlabtest::nativeBackend);
+        for (size_t i=0;i<exact.size();++i) assert(std::abs(int(automatic[i])-int(exact[i]))<=2);
+    } else assert(automatic==exact && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU);
     gpu.mode=SONY2FUJI_GPU_FORCE;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     sony2fuji_buffer rejected{};
-#if defined(SONY2FUJI_ENABLE_METAL)
-    assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_OK);
-    assert(sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_METAL);
-    sony2fuji_release_buffer(&rejected);
-#else
-    assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_PROCESSING_ERROR);
-#endif
+    if (nativeGpu) {
+        assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_OK);
+        assert(sony2fuji_session_get_last_backend(session)==rawlabtest::nativeBackend);
+        sony2fuji_release_buffer(&rejected);
+    } else assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_PROCESSING_ERROR);
     gpu.mode=SONY2FUJI_GPU_OFF;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     options.enabled=0;

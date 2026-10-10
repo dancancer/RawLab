@@ -58,28 +58,30 @@ speckles, although final channel clipping can affect saturated colors. Size is
 measured in source pixels, not preview pixels. This is a deterministic artistic
 approximation, not measured film stock or physical silver-halide simulation.
 
-The stage runs after sharpening and before final resize on CPU or Metal, including
-neutral/CUBE/DCP output. Active effects use full RAW resolution even during
-interactive previews. Off restores the existing early-resize/proxy paths. Auto
-retains CPU fallback; other GPU backends reject active effects in Force mode.
+The stage runs after sharpening and before final resize on CPU, Metal, GLES or
+D3D11. Neutral/CUBE output supports every backend; native DCP rendering remains
+CPU/Metal only. Active effects use full RAW resolution even during interactive
+previews. Off restores the existing early-resize/proxy paths. Auto retains CPU
+fallback; Force reports a failure when the platform GPU cannot complete the job.
 
 References considered: [darktable lightness grain](https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/grain/),
 [AOMedia parameterized grain](https://aomediacodec.github.io/afgs1-spec/), and
 [IPOL Monte Carlo film grain](https://www.ipol.im/pub/art/2017/192/). None of these
 implementations is copied or embedded.
 
-### Metal Denoising
+### GPU Denoising
 
 The existing denoise controls and saved parameters are unchanged. Optional
 `SONY2FUJI_ENABLE_WAVELET_DENOISE` and `SONY2FUJI_ENABLE_CHROMA_DENOISE` builds remain
-independent. Mac Auto uses Metal for the heavy filtering; GPU failures fall back
-to CPU. Force requires successful Metal filters and photo rendering, never a
+independent. Mac/iOS use Metal, Android uses GLES 3.1 compute, and Windows uses
+hardware D3D11 compute for heavy filtering; GPU failures in Auto fall back to CPU.
+Force requires successful platform filters and photo rendering, never a
 silent CPU replacement. A reliable-noise estimate is still required; off/zero
 strength and insufficient-evidence cases remain no-ops.
 
 Wavelet denoising stays in linear sRGB before user exposure and LUT evaluation.
 CPU retains flat-sample selection, noise-model fitting, normalization, opponent
-conversion, band calibration and variance-aware restoration. Metal executes db2
+conversion, band calibration and variance-aware restoration. The GPU executes db2
 SWT analysis, box-energy thresholds and the transpose inverse per tile/channel.
 The original 4/6 levels, periodic SWT indices, REFLECT_101 energy boundaries and
 512/1024 tile centers with 96/256 halos are preserved. Bounded GPU tile jobs are
@@ -92,22 +94,26 @@ mode. CPU/Auto/Force cannot reuse each other's cached denoise results. Interacti
 wavelet previews may remain approximations; final/file requests never reuse them.
 Active chroma or photo effects require the exact source-resolution path.
 
-Display-chroma denoising stays after tone/LUT and before sharpening. The Metal
-photo command buffer completes the tone stage, then CPU performs the original
-OpenCV Lab conversion and sampled profile estimation. Metal executes the
+Display-chroma denoising stays after tone/LUT and before sharpening. The GPU
+completes the source-resolution tone stage, then CPU performs the original
+OpenCV Lab conversion and sampled profile estimation. The GPU executes the
 three-channel-guide/two-channel-source guided filters with BORDER_REFLECT means;
 CPU keeps the original preblur, protection mask, coarse resize/correction and
-Lab-to-RGB conversion. A second Metal command buffer resumes detail, effects and
+Lab-to-RGB conversion. GPU rendering resumes detail, effects and
 final resize. This deliberate readback preserves OpenCV's LUT-based Lab and
 half-pixel/area-resampling semantics; it is not an all-GPU pipeline.
 
 Direct core denoiser calls default to CPU for backward compatibility. Internal
-diagnostics distinguish an applied filter from an actual Metal filter. Failed
+diagnostics distinguish an applied filter from an actual GPU filter. Failed
 GPU calls commit no output. RAW originals/cache remain immutable. Legacy LibRaw
-FBDD, RAW decoding and file encoding remain CPU operations. Non-Metal backends
-keep their previous CPU fallback/Force rejection policy for these denoisers.
+FBDD, RAW decoding and file encoding remain CPU operations. GLES/D3D11 share the
+same filter graph and formulas, with platform-specific buffer/dispatch adapters.
+GLES limits each storage buffer to the driver's block-size limit and preserves
+the previous EGL context. All compute jobs are serialized per backend. Effects
+and GLES detail process bounded row strips before final resizing; grain hash and
+vignette geometry always use full-image coordinates.
 
-`metal_denoise` compares individual filters and complete denoisers against
+`metal_denoise` (or Android's `gpu_filter_tests`) compares individual filters and complete denoisers against
 wavelib/OpenCV; `wavelet_render`, `chroma_denoise`, `gpu_photo`, `photo_effects`
 and `native_dcp_metal` cover pipeline/backend contracts. Mac
 `photo-effects-render.sh RAW LUT wavelet|chroma` tests real RAW CPU/Metal parity,
@@ -146,7 +152,7 @@ F-Log/F-Log2/F-Log2C inputs and named display or explicit Log outputs are implem
 in the CPU, Metal, GLES and D3D11 photo paths. The GPU receives the same input
 gamut matrix and chooses input encoding and output decoding independently.
 Auto falls back on backend failure; Force returns an error instead of hiding CPU
-execution. GLES detail-filter limitations remain unchanged. Strength zero bypasses
+execution. GLES detail filters now run before final resize. Strength zero bypasses
 look loading. Current Fuji runtime verification covers Metal and Android GLES on
 an emulator; D3D11's matching shader/host changes await Windows verification.
 

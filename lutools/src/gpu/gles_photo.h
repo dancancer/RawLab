@@ -16,7 +16,8 @@ public:
     bool render(const ImageData& input, ColorSpace inputSpace,
         const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
         const RGB& relativeWB, uint32_t width, uint32_t height,
-        uint64_t decodeRevision, ImageData& output);
+        uint64_t decodeRevision, ImageData& output, const PhotoEffectsOptions& effects = {},
+        int chromaDenoise = 0, bool preserveSourceResolution = false);
 
 private:
     struct Impl;

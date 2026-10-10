@@ -21,6 +21,8 @@ struct BatchExportTests {
         try Data("source".utf8).write(to: sourceURL)
         var settings = RawSettings.default
         settings.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
+        settings.photoEffects.vignetteMidpoint = 62
+        settings.photoEffects.grainSize = 60
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
                                           sourceURL: sourceURL, displayName: "source.ARW", settings: settings)
         let targets = (1...6).map { index in
@@ -42,6 +44,8 @@ struct BatchExportTests {
                                               from: JSONSerialization.data(withJSONObject: oldJournal))
         check(oldJob.longEdge == nil, "old journals default to native export size")
         check(reopenedJob?.source.settings.denoise == settings.denoise, "journal preserves denoise settings")
+        check(reopenedJob?.source.settings.photoEffects == settings.photoEffects,
+              "journal preserves photo effects auxiliary values")
         check(pendingJobs.contains(where: { $0.id == job.id }), "pending journal is recoverable after interruption")
         var renderCount = 0
         var writeCount = 0
@@ -50,6 +54,8 @@ struct BatchExportTests {
                                         render: { target, settings in
                                             renderCount += 1
                                             check(settings.denoise == source.settings.denoise, "batch uses frozen denoise settings")
+                                            check(settings.photoEffects == source.settings.photoEffects,
+                                                  "batch uses frozen photo effects settings")
                                             return Data("\(target.id):\(settings.exposure)".utf8)
                                         }, write: { data, name, target, _ in
                                             writeCount += 1

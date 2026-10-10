@@ -140,10 +140,10 @@ Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestR
 
 ## 边界 / Limitations
 
-- GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度和逐像素明暗处理。RAW 解码、去马赛克、文件编码仍在 CPU。
-  GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending and pointwise tone. RAW decoding/demosaic and encoding stay on CPU.
-- 当前界面未提供的锐化/降噪邻域运算不走 GLES；C API Auto 回退 CPU，Force 报错。真机数据见 [GPU 验证记录](gpu-verification.md)。
-  Neighborhood sharpening/denoise are not accelerated by GLES: C API Auto falls back, Force fails. See [GPU verification](gpu-verification.md).
+- GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度、明暗处理、细节、暗角/颗粒、小波过滤和显示色度引导滤波。RAW 解码、去马赛克、噪声估计、OpenCV Lab 转换及文件编码仍在 CPU。
+  GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending, tone, detail, vignette/grain, wavelet filtering and display-chroma guided filtering. RAW decoding/demosaic, noise estimation, OpenCV Lab conversion and encoding stay on CPU.
+- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
+  All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
 - 全尺寸 RAW 显影需要较多 native 内存。低内存设备可能失败或被系统终止；没有验证所有相机和像素尺寸。
   Full-resolution RAW development is memory-intensive; low-memory devices may fail or be killed by the OS.
   X-Trans 并发修复新增每像素 8 字节的只读输入副本，40 MP 约增加 304 MiB 峰值内存；本轮仅验证 Android 构建，未验证这些机型在设备上的内存表现。

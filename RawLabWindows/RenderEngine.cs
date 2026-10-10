@@ -13,7 +13,8 @@ internal sealed class RenderEngine : IDisposable
     private Native.Session session = new();
     private int gpuMode;
     private sealed record Stamp(string Path,long Length,long Time);
-    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,int ExposureMode,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,int DisplayChromaDenoise,
+        int ExposureMode,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private PreviewKey? previewKey;
     private (Stamp Raw,Stamp? Lut)? sourceStamp;
     private (Stamp Raw,int Edge,RenderedImage Frame)? original;
@@ -37,7 +38,8 @@ internal sealed class RenderEngine : IDisposable
              (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
         {session.Dispose();session=new();SetGpuMode(gpuMode);}
         sourceStamp=(rawStamp,lutStamp);
-        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.ExposureMode,gpuMode,compare,clipping,rawStamp,lutStamp);
+        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.DisplayChromaDenoise,
+            settings.ExposureMode,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var cacheEdge=interactive && original?.Edge==0 ? 0 : interactive && edge==1000 ? 2000 : edge;
         if(previews.TryGetValue(cacheEdge,out var cached)) {
@@ -70,6 +72,9 @@ internal sealed class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && output == null ? 1 : 0));
         var denoise=settings.Denoise.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise));
+        var effects=settings.Effects.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects));
+        Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
         var request = settings.Request(path,lut,edge,output,longEdge);
         Native.Buffer buffer = default, mask = default;
         try

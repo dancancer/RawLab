@@ -41,8 +41,32 @@ extension Sony2FujiProcessor {
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
-        config.mode = SONY2FUJI_GPU_OFF
-        _ = sony2fuji_session_set_gpu_config(session, &config)
+        config.mode = gpuMode
+        let gpuStatus = sony2fuji_session_set_gpu_config(session, &config)
+        guard gpuStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed("Invalid GPU configuration: \(statusMessage(gpuStatus))")
+        }
+        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed("Invalid photo effects.") }
+        var effects = sony2fuji_photo_effects_config()
+        effects.version = UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION)
+        effects.struct_size = UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size)
+        effects.vignette_amount = Float(settings.photoEffects.vignetteAmount)
+        effects.vignette_midpoint = Float(settings.photoEffects.vignetteMidpoint)
+        effects.vignette_roundness = Float(settings.photoEffects.vignetteRoundness)
+        effects.vignette_feather = Float(settings.photoEffects.vignetteFeather)
+        effects.vignette_highlights = Float(settings.photoEffects.vignetteHighlights)
+        effects.grain_amount = Float(settings.photoEffects.grainAmount)
+        effects.grain_size = Float(settings.photoEffects.grainSize)
+        effects.grain_roughness = Float(settings.photoEffects.grainRoughness)
+        let effectsStatus = sony2fuji_session_set_photo_effects(session, &effects)
+        guard effectsStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed("Invalid photo effects: \(statusMessage(effectsStatus))")
+        }
+        let chromaMode = Int32(settings.displayChromaDenoise)
+        let chromaStatus = sony2fuji_session_set_chroma_denoise(session, chromaMode)
+        guard chromaStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed("Invalid display chroma denoise mode: \(statusMessage(chromaStatus))")
+        }
         guard settings.denoise.isValid else { throw ProcessorError.processFailed("Invalid denoise strengths.") }
         var denoise = sony2fuji_wavelet_denoise_config()
         denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)

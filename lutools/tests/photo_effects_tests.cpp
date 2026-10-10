@@ -1,5 +1,6 @@
 #include "core/photo_effects.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "native_gpu_test_support.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -185,23 +186,20 @@ static void apiTests() {
     gpu.mode = SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
     const auto accelerated = render();
-#if defined(SONY2FUJI_ENABLE_METAL)
-    assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL);
-    for (size_t i = 0; i < final.size(); ++i) assert(std::abs(int(accelerated[i]) - int(final[i])) <= 2);
-#else
-    assert(accelerated == final && sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU);
-#endif
+    const bool nativeGpu = autoBackend == rawlabtest::nativeBackend && autoBackend != SONY2FUJI_BACKEND_CPU;
+    if (nativeGpu) {
+        assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+        for (size_t i = 0; i < final.size(); ++i) assert(std::abs(int(accelerated[i]) - int(final[i])) <= 2);
+    } else assert(accelerated == final && sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU);
     gpu.mode = SONY2FUJI_GPU_FORCE;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
     sony2fuji_buffer rejected{};
-#if defined(SONY2FUJI_ENABLE_METAL)
-    assert(sony2fuji_process(session, &request, &rejected) == SONY2FUJI_STATUS_OK);
-    assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL);
-    sony2fuji_release_buffer(&rejected);
-    assert(render() == accelerated);
-#else
-    assert(sony2fuji_process(session, &request, &rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
-#endif
+    if (nativeGpu) {
+        assert(sony2fuji_process(session, &request, &rejected) == SONY2FUJI_STATUS_OK);
+        assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+        sony2fuji_release_buffer(&rejected);
+        assert(render() == accelerated);
+    } else assert(sony2fuji_process(session, &request, &rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
     gpu.mode = SONY2FUJI_GPU_OFF;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
     options.vignette_amount = options.grain_amount = 0;

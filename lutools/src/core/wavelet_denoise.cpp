@@ -1,7 +1,5 @@
 #include "wavelet_denoise.h"
-#if defined(SONY2FUJI_ENABLE_METAL)
-#include "gpu/metal_denoise.h"
-#endif
+#include "gpu/denoise.h"
 #include <atomic>
 #include <cmath>
 #include <algorithm>
@@ -300,7 +298,6 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
     if (strength==0) return plane.clone();
     const int depth=channel!=0 && options.coarse>0 ? chromaLevels : levels;
     if (gpuMode != sony2fuji::GpuMode::Off) {
-#if defined(SONY2FUJI_ENABLE_METAL)
         sony2fuji::WaveletFilterSettings settings;
         settings.depth = depth;
         for (int scale = 0; scale < depth; ++scale) {
@@ -312,13 +309,10 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
                     model.coarseSigma[channel - 1][scale][direction] : model.sigma[channel][levels - sourceLevel][direction];
         }
         cv::Mat result(plane.size(), CV_32F);
-        if (sony2fuji::metalWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
+        if (sony2fuji::gpuWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
             gpuUsed.store(true, std::memory_order_relaxed);
             return result;
         }
-#else
-        (void)gpuUsed;
-#endif
         if (gpuMode == sony2fuji::GpuMode::Force) throw WaveletGpuFailure{};
     }
     StationaryWavelet transform(plane,depth);

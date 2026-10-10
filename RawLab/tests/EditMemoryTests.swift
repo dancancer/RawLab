@@ -27,17 +27,24 @@ struct EditMemoryTests {
         changed.whiteBalanceMode = .custom
         changed.temperature = 4250
         changed.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
+        changed.photoEffects.vignetteMidpoint = 62
+        changed.photoEffects.grainSize = 60
         try store.save(first, state: PhotoEditState(settings: changed, filmID: "provia"))
 
         let reopened = try EditPersistence(directory: root)
         check(reopened.state(for: first)?.settings.exposure == 0.75, "edit survives restart")
         check(reopened.state(for: first)?.settings.denoise == changed.denoise, "denoise survives restart")
+        check(reopened.state(for: first)?.settings.photoEffects == changed.photoEffects,
+              "photo effects auxiliary values survive restart even when amount is zero")
         check(reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
         check(reopened.state(for: second) == nil, "unseen photo uses no previous record")
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
         legacy.removeValue(forKey: "denoise")
+        legacy.removeValue(forKey: "photoEffects")
+        legacy.removeValue(forKey: "displayChromaDenoise")
         let legacySettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
         check(legacySettings.denoise == RawDenoiseSettings(), "older records default to disabled denoise")
+        check(legacySettings.photoEffects == PhotoEffectsSettings(), "older records default to disabled photo effects")
 
         try store.save(sameNameA, state: PhotoEditState(settings: changed))
         var other = RawSettings.default

@@ -1,7 +1,5 @@
 #include "chroma_denoise.h"
-#if defined(SONY2FUJI_ENABLE_METAL)
-#include "gpu/metal_denoise.h"
-#endif
+#include "gpu/denoise.h"
 
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
 #include <opencv2/core.hpp>
@@ -181,13 +179,11 @@ cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double eps
         cv::GaussianBlur(lab(bounds).clone(),guide,{},.7);
         const cv::Mat input = source(bounds).clone();
         bool accelerated = false;
-#if defined(SONY2FUJI_ENABLE_METAL)
         if (gpuMode != sony2fuji::GpuMode::Off) {
             filtered.create(input.size(), input.type());
-            accelerated = sony2fuji::metalGuidedFilter(guide.ptr<float>(), input.ptr<float>(),
+            accelerated = sony2fuji::gpuGuidedFilter(guide.ptr<float>(), input.ptr<float>(),
                 input.cols, input.rows, radius, static_cast<float>(epsilon), filtered.ptr<float>());
         }
-#endif
         if (accelerated) gpuUsed = true;
         else {
             if (gpuMode == sony2fuji::GpuMode::Force) throw ChromaGpuFailure{};
