@@ -5,6 +5,7 @@
 #include "sony2fuji/lut_parser.h"
 #include "sony2fuji/dcp_look.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "core/photo_effects.h"
 
 #include <cstdint>
 #include <memory>
@@ -20,7 +21,10 @@ bool renderPhotoMetal(
     uint32_t targetWidth,
     uint32_t targetHeight,
     ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp = {}
+    const std::shared_ptr<const DcpLook>& dcp = {},
+    const PhotoEffectsOptions& effects = {},
+    int chromaDenoise = 0,
+    bool preserveSourceResolution = false
 );
 
 } // namespace sony2fuji

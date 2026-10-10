@@ -258,12 +258,13 @@ void photoTests(const fs::path& root) {
 }
 
 #ifdef SONY2FUJI_ENABLE_METAL
-bool metal(const std::shared_ptr<const DcpLook>& look, const sony2fuji::ImageData& input, sony2fuji::ImageData& output) {
+bool metal(const std::shared_ptr<const DcpLook>& look, const sony2fuji::ImageData& input, sony2fuji::ImageData& output,
+           const sony2fuji::PhotoEffectsOptions& effects = {}) {
     sony2fuji_request request{};
     request.brightness = request.contrast = request.saturation = request.lut_strength = 1;
     request.temperature = 6500;
     return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, request, nullptr, RGB(1, 1, 1),
-                                     input.width, input.height, output, look);
+                                     input.width, input.height, output, look, effects);
 }
 
 void metalTests(const fs::path& root) {
@@ -294,6 +295,18 @@ void metalTests(const fs::path& root) {
                 changed |= std::abs(first[i].r - output.pixels[i].r) + std::abs(first[i].g - output.pixels[i].g) > .1f;
             check(changed, "native Metal cache uses updated stage data");
         }
+        sony2fuji::PhotoEffectsOptions effects;
+        effects.vignetteAmount = -50; effects.grainAmount = 80;
+        auto expectedEffects = output;
+        sony2fuji::applyPhotoEffects(expectedEffects, effects);
+        check(metal(look, input, output, effects), "DCP and photo effects execute together on Metal");
+        maximum = 0;
+        for (size_t i = 0; i < output.pixels.size(); ++i) {
+            const auto a = output.pixels[i], b = expectedEffects.pixels[i];
+            maximum = std::max({maximum, double(std::abs(a.r - b.r)),
+                                double(std::abs(a.g - b.g)), double(std::abs(a.b - b.b))});
+        }
+        check(maximum <= 5e-5, "DCP effects follow profile stages with CPU-equivalent pixels");
     }
 }
 #endif

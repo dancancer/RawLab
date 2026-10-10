@@ -34,6 +34,10 @@ struct AdjustmentDock: View {
                         .id(resetVersion)
                         .frame(maxWidth: 560).padding(.horizontal, 16)
                         .disabled(model.result == nil)
+                } else if let parameter = selected, parameter.isPhotoEffect {
+                    PhotoEffectsControls(model: model, tool: parameter)
+                        .id("\(parameter.rawValue).\(resetVersion)")
+                        .disabled(model.result == nil)
                 } else if let parameter = selected {
                     AdjustmentRow(parameter: parameter, value: Binding(
                         get: { model.settings[keyPath: parameter.spec.keyPath] },
@@ -62,7 +66,8 @@ struct AdjustmentDock: View {
     private func tool(_ parameter: AdjustmentParameter) -> some View {
         let spec = parameter.spec(for: model.settings)
         let value = model.settings[keyPath: spec.keyPath]
-        let changed = parameter == .denoiseMode ? model.settings.isDenoiseEnabled : value != spec.defaultValue
+        let changed = parameter.isPhotoEffect ? !model.settings.isEffectDefault(parameter) :
+            (parameter == .denoiseMode ? model.settings.isDenoiseEnabled : value != spec.defaultValue)
         let active = selected == parameter
         let progress = parameter == .denoiseMode ? (changed ? 1.0 : 0.0) : spec.progress(for: value)
         let valueText = parameter == .denoiseMode ?
@@ -87,13 +92,16 @@ struct AdjustmentDock: View {
         }
         .buttonStyle(.plain)
         .disabled(parameter.isWhiteBalance && model.settings.asShotWhiteBalance == nil)
-        .disabled(parameter == .denoiseMode && model.result == nil)
+        .disabled((parameter == .denoiseMode || parameter.isPhotoEffect) && model.result == nil)
         .accessibilityLabel(spec.title).accessibilityValue(valueText)
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("tool.\(parameter.rawValue)")
         .help(parameter == .denoiseMode ? noiseReductionHelp : "\(spec.title)：\(valueText)")
         .contextMenu {
-            Button("重置\(spec.title)") { model.settings.set(parameter, to: spec.defaultValue) }.disabled(!changed)
+            Button("重置\(spec.title)") {
+                if parameter.isPhotoEffect { model.settings.resetEffect(parameter) }
+                else { model.settings.set(parameter, to: spec.defaultValue) }
+            }.disabled(!changed)
         }
     }
 

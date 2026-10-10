@@ -1,6 +1,8 @@
 #include "gpu/photo_gpu.h"
 #include "gpu/metal_dcp_shader.h"
+#include "gpu/metal_effects_shader.h"
 #include "core/photo_lut.h"
+#include "core/chroma_denoise.h"
 
 #include <algorithm>
 #include <array>
@@ -61,6 +63,13 @@ struct PhotoParams {
 };
 static_assert(sizeof(PhotoParams) == 184, "Photo Metal parameter layout");
 
+struct PhotoEffectsParams {
+    uint32_t width, height;
+    sony2fuji::PhotoEffectsOptions effects;
+};
+static_assert(sizeof(PhotoEffectsParams) == 40, "Photo effects Metal parameter layout");
+static_assert(offsetof(PhotoEffectsParams, effects) == 8, "Photo effects Metal options offset");
+
 struct MetalContext {
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> queue = nil;
@@ -71,6 +80,7 @@ struct MetalContext {
     id<MTLComputePipelineState> tonePipeline = nil;
     id<MTLComputePipelineState> noisePipeline = nil;
     id<MTLComputePipelineState> sharpenPipeline = nil;
+    id<MTLComputePipelineState> effectsPipeline = nil;
     bool ready = false;
 };
 
@@ -534,6 +544,11 @@ MetalContext& metalContext() {
             if (@available(macOS 15.0, iOS 18.0, *)) {
                 MTLCompileOptions* options = [MTLCompileOptions new];
                 options.mathMode = MTLMathModeSafe;
+                NSString* effectsSource = [NSString stringWithUTF8String:kPhotoEffectsShaderSource];
+                error = nil;
+                id<MTLLibrary> effectsLibrary = [context.device newLibraryWithSource:effectsSource options:options error:&error];
+                if (effectsLibrary && !error) context.effectsPipeline = makePipeline(context.device, effectsLibrary, @"photoEffects");
+                else NSLog(@"RawLab effects Metal compilation failed: %@", error);
                 NSString* dcpSource = [source stringByAppendingString:[NSString stringWithUTF8String:kDcpShaderSource]];
                 error = nil;
                 id<MTLLibrary> dcpLibrary = [context.device newLibraryWithSource:dcpSource options:options error:&error];
@@ -834,7 +849,10 @@ bool renderPhotoMetalImpl(
     uint32_t targetWidth,
     uint32_t targetHeight,
     ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp
+    const std::shared_ptr<const DcpLook>& dcp,
+    const sony2fuji::PhotoEffectsOptions& effects,
+    int chromaDenoise,
+    bool preserveSourceResolution
 ) {
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
@@ -845,7 +863,7 @@ bool renderPhotoMetalImpl(
         !std::isfinite(request.tone_curve) || !std::isfinite(request.noise_reduction) ||
         !std::isfinite(request.sharpening) || !std::isfinite(request.lut_strength) ||
         !std::isfinite(relativeWB.r) || !std::isfinite(relativeWB.g) ||
-        !std::isfinite(relativeWB.b)) {
+        !std::isfinite(relativeWB.b) || !effects.valid() || chromaDenoise < 0 || chromaDenoise > 2) {
         return false;
     }
     size_t inputCount = 0;
@@ -856,7 +874,7 @@ bool renderPhotoMetalImpl(
     }
 
     MetalContext& context = metalContext();
-    if (!context.ready) {
+    if (!context.ready || (effects.active() && !context.effectsPipeline)) {
         return false;
     }
 
@@ -897,7 +915,8 @@ bool renderPhotoMetalImpl(
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
     const uint32_t inputHeight = static_cast<uint32_t>(input.height);
     const bool earlyResize = request.intent == SONY2FUJI_INTENT_PREVIEW &&
-        request.sharpening <= 0.0f && (targetWidth != inputWidth || targetHeight != inputHeight);
+        request.sharpening <= 0.0f && !effects.active() && chromaDenoise == 0 && !preserveSourceResolution &&
+        (targetWidth != inputWidth || targetHeight != inputHeight);
     const uint32_t processingWidth = earlyResize ? targetWidth : inputWidth;
     const uint32_t processingHeight = earlyResize ? targetHeight : inputHeight;
     size_t processingCount = 0;
@@ -966,6 +985,22 @@ bool renderPhotoMetalImpl(
         return false;
     }
 
+    if (chromaDenoise != 0) {
+        // Preserve OpenCV's exact Lab conversion and sampled noise estimation.
+        // The denoiser dispatches its guided filters on Metal before we resume detail stages.
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        if (commandBuffer.status != MTLCommandBufferStatusCompleted ||
+            (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) return false;
+        ImageData display(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
+        std::memcpy(display.pixels.data(), currentBuffer.contents, processingBytes);
+        if (sony2fuji::applyChromaDenoise(display, chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
+            sony2fuji::ErrorCode::Success) return false;
+        std::memcpy(currentBuffer.contents, display.pixels.data(), processingBytes);
+        commandBuffer = [context.queue commandBuffer];
+        if (!commandBuffer) return false;
+    }
+
     if (request.noise_reduction > 0.0f) {
         if (!runProcessingKernel(context.noisePipeline, nil)) {
             return false;
@@ -975,6 +1010,15 @@ bool renderPhotoMetalImpl(
         if (!runProcessingKernel(context.sharpenPipeline, nil)) {
             return false;
         }
+    }
+
+    if (effects.active()) {
+        const PhotoEffectsParams effectsParams{processingWidth, processingHeight, effects};
+        id<MTLBuffer> effectsBuffer = [context.device newBufferWithBytes:&effectsParams
+            length:sizeof(effectsParams) options:MTLResourceStorageModeShared];
+        if (!effectsBuffer || !encodeKernel(commandBuffer, context.effectsPipeline, effectsBuffer,
+            currentBuffer, nextBuffer, nil, processingCount)) return false;
+        std::swap(currentBuffer, nextBuffer);
     }
 
     id<MTLBuffer> finalBuffer = currentBuffer;
@@ -1011,7 +1055,10 @@ bool renderPhotoMetal(
     uint32_t targetWidth,
     uint32_t targetHeight,
     ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp
+    const std::shared_ptr<const DcpLook>& dcp,
+    const PhotoEffectsOptions& effects,
+    int chromaDenoise,
+    bool preserveSourceResolution
 ) {
     bool result = false;
     @try {
@@ -1019,7 +1066,7 @@ bool renderPhotoMetal(
             try {
                 result = renderPhotoMetalImpl(
                     input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output, dcp
+                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution
                 );
             } catch (...) {
                 result = false;
@@ -1045,7 +1092,11 @@ bool renderPhotoMetal(
     const RGB&,
     uint32_t,
     uint32_t,
-    ImageData&
+    ImageData&,
+    const std::shared_ptr<const DcpLook>&,
+    const PhotoEffectsOptions&,
+    int,
+    bool
 ) {
     return false;
 }

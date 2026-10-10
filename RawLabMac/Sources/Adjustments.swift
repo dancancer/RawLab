@@ -74,6 +74,54 @@ enum DenoiseParameter: String, CaseIterable, Identifiable {
     var defaultValue: Double { WaveletDenoiseSettings()[keyPath: keyPath] }
 }
 
+struct PhotoEffectsSettings: Equatable, Codable {
+    var vignetteAmount = 0.0
+    var vignetteMidpoint = 50.0
+    var vignetteRoundness = 0.0
+    var vignetteFeather = 50.0
+    var vignetteHighlights = 0.0
+    var grainAmount = 0.0
+    var grainSize = 25.0
+    var grainRoughness = 50.0
+}
+
+enum PhotoEffectParameter: String, CaseIterable, Identifiable {
+    case vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights
+    case grainAmount, grainSize, grainRoughness
+    var id: String { rawValue }
+    var isVignette: Bool {
+        switch self {
+        case .grainAmount, .grainSize, .grainRoughness: return false
+        default: return true
+        }
+    }
+    var title: String {
+        switch self {
+        case .vignetteAmount, .grainAmount: return "强度"
+        case .vignetteMidpoint: return "中点"
+        case .vignetteRoundness: return "圆度"
+        case .vignetteFeather: return "羽化"
+        case .vignetteHighlights: return "高光保护"
+        case .grainSize: return "大小"
+        case .grainRoughness: return "粗糙度"
+        }
+    }
+    var keyPath: WritableKeyPath<PhotoEffectsSettings, Double> {
+        switch self {
+        case .vignetteAmount: return \.vignetteAmount
+        case .vignetteMidpoint: return \.vignetteMidpoint
+        case .vignetteRoundness: return \.vignetteRoundness
+        case .vignetteFeather: return \.vignetteFeather
+        case .vignetteHighlights: return \.vignetteHighlights
+        case .grainAmount: return \.grainAmount
+        case .grainSize: return \.grainSize
+        case .grainRoughness: return \.grainRoughness
+        }
+    }
+    var range: ClosedRange<Double> { self == .vignetteAmount || self == .vignetteRoundness ? -100...100 : 0...100 }
+    var defaultValue: Double { PhotoEffectsSettings()[keyPath: keyPath] }
+}
+
 struct Adjustments: Equatable, Codable {
     var exposureMode = ExposureMode.scene
     var exposure = 0.0
@@ -93,7 +141,47 @@ struct Adjustments: Equatable, Codable {
     var chromaNoiseReduction: Double?
     // nil 保留旧算法语义，显式启用或选择预设后才迁移。
     var waveletNoiseReduction: WaveletDenoiseSettings?
+    var photoEffects: PhotoEffectsSettings?
     private(set) var supportsRawNoiseReduction = false
+
+    var effectSettings: PhotoEffectsSettings { photoEffects ?? PhotoEffectsSettings() }
+    var vignetteAmount: Double {
+        get { effectSettings.vignetteAmount }
+        set { setEffect(.vignetteAmount, to: newValue) }
+    }
+    var grainAmount: Double {
+        get { effectSettings.grainAmount }
+        set { setEffect(.grainAmount, to: newValue) }
+    }
+
+    mutating func setEffect(_ parameter: PhotoEffectParameter, to value: Double) {
+        guard value.isFinite else { return }
+        var state = effectSettings
+        state[keyPath: parameter.keyPath] = min(parameter.range.upperBound, max(parameter.range.lowerBound, value.rounded()))
+        photoEffects = state == PhotoEffectsSettings() ? nil : state
+    }
+
+    mutating func resetEffect(_ tool: AdjustmentParameter) {
+        for parameter in PhotoEffectParameter.allCases where parameter.isVignette == (tool == .vignetteAmount) {
+            setEffect(parameter, to: parameter.defaultValue)
+        }
+    }
+
+    func isEffectDefault(_ tool: AdjustmentParameter) -> Bool {
+        PhotoEffectParameter.allCases.filter { $0.isVignette == (tool == .vignetteAmount) }
+            .allSatisfy { effectSettings[keyPath: $0.keyPath] == $0.defaultValue }
+    }
+
+    var photoEffectsConfig: sony2fuji_photo_effects_config {
+        let state = effectSettings
+        return sony2fuji_photo_effects_config(
+            version: UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION),
+            struct_size: UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size),
+            vignette_amount: Float(state.vignetteAmount), vignette_midpoint: Float(state.vignetteMidpoint),
+            vignette_roundness: Float(state.vignetteRoundness), vignette_feather: Float(state.vignetteFeather),
+            vignette_highlights: Float(state.vignetteHighlights), grain_amount: Float(state.grainAmount),
+            grain_size: Float(state.grainSize), grain_roughness: Float(state.grainRoughness))
+    }
 
     var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
     var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
@@ -168,12 +256,14 @@ struct Adjustments: Equatable, Codable {
             set(parameter, to: parameter.spec(for: self).defaultValue)
         }
         if group == .input { exposureMode = .scene; resetWhiteBalance() }
+        if group == .effects { photoEffects = nil }
     }
 
     func isDefault(_ group: AdjustmentGroup) -> Bool {
         group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
             && (group != .input || exposureMode == .scene)
             && (group != .detail || !isDenoiseEnabled)
+            && (group != .effects || effectSettings == PhotoEffectsSettings())
     }
 
     mutating func resolveWhiteBalance(_ camera: WhiteBalance?) {
@@ -211,7 +301,7 @@ struct Adjustments: Equatable, Codable {
 }
 
 enum AdjustmentGroup: String, CaseIterable, Identifiable {
-    case film = "胶片模拟", input = "输入调整", tone = "明暗", color = "色彩", detail = "细节"
+    case film = "胶片模拟", input = "输入调整", tone = "明暗", color = "色彩", detail = "细节", effects = "效果"
     var id: String { rawValue }
     var parameters: [AdjustmentParameter] {
         switch self {
@@ -220,6 +310,7 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
         case .tone: return [.contrast, .highlights, .shadows, .toneCurve]
         case .color: return [.saturation]
         case .detail: return [.denoiseMode, .sharpening]
+        case .effects: return [.vignetteAmount, .grainAmount]
         }
     }
 }
@@ -267,8 +358,10 @@ struct AdjustmentSpec {
 
 enum AdjustmentParameter: String, CaseIterable, Identifiable {
     case strength, exposure, temperature, tint, contrast, highlights, shadows, toneCurve, saturation, sharpening, rawNoiseReduction, denoiseMode
+    case vignetteAmount, grainAmount
     var id: String { rawValue }
     var isWhiteBalance: Bool { self == .temperature || self == .tint }
+    var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
     func spec(for settings: Adjustments) -> AdjustmentSpec {
         var value = spec
         if self == .temperature { value.defaultValue = settings.asShotWhiteBalance?.temperature ?? 6500 }
@@ -276,7 +369,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         return value
     }
     static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .tint, .denoiseMode, .sharpening]
+                                    .saturation, .temperature, .tint, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"
@@ -290,6 +383,8 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .tint: return "camera.filters"
         case .sharpening: return "triangle"
         case .rawNoiseReduction, .denoiseMode: return "circle.dotted"
+        case .vignetteAmount: return "circle.lefthalf.filled.inverse"
+        case .grainAmount: return "square.dotted"
         }
     }
     var spec: AdjustmentSpec {
@@ -306,6 +401,8 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .sharpening: return AdjustmentSpec(title: "锐化", keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 1, unit: "%")
         case .rawNoiseReduction: return AdjustmentSpec(title: "RAW 降噪", keyPath: \.rawNoiseReduction, range: 0...2, defaultValue: 0, step: 1, unit: "")
         case .denoiseMode: return AdjustmentSpec(title: "降噪", keyPath: \.denoiseMode, range: 0...2, defaultValue: 0, step: 1, unit: "")
+        case .vignetteAmount: return AdjustmentSpec(title: "暗角", keyPath: \.vignetteAmount, range: -100...100, defaultValue: 0, step: 1, unit: "")
+        case .grainAmount: return AdjustmentSpec(title: "颗粒", keyPath: \.grainAmount, range: 0...100, defaultValue: 0, step: 1, unit: "")
         }
     }
 }

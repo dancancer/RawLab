@@ -157,6 +157,26 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 
   Histogram and clipping-mask generation now run in C++, with a Metal implementation also available. CPU was faster on this machine for pixels already read back, so Auto uses optimized CPU statistics rather than adding unnecessary GPU transfers.
 
+### 暗角、颗粒与 GPU 降噪 / Effects and GPU Denoising
+
+底部工具栏新增“暗角”和“颗粒”。暗角强度为 -100 至 100，负值压暗、正值提亮，
+同时提供中点、圆度、羽化和高光保护；高光保护只在负强度下可用。颗粒提供 0 至 100 的
+强度、大小和粗糙度，相同参数重复渲染保持一致。两项默认关闭，支持单参数、整项及效果组
+重置；新参数跟随逐照片调整状态，缺少新字段的旧序列化记录按关闭处理。
+
+暗角和颗粒在 Metal 上按原图分辨率执行，然后缩放预览。小波降噪的 SWT 分解、阈值和重建，
+以及色度降噪的引导滤波也支持 Metal，可与暗角和颗粒同时启用。GPU 失败时 Auto 回退 CPU；
+Force 不隐藏失败。噪声估计/校准、OpenCV 色彩转换及部分辅助处理仍在 CPU，旧 FBDD、RAW
+解码和文件编码也仍在 CPU。结果不是 Lightroom 像素级复刻或实测胶片模型。
+
+The dock adds Vignette (Amount, Midpoint, Roundness, Feather, Highlights) and
+Grain (Amount, Size, Roughness), both defaulting off. Effects run at source
+resolution on Metal before resizing. Metal also accelerates wavelet SWT filtering
+and display-chroma guided filtering, retaining CPU estimation/calibration and
+OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
+failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
+See the [shared contract](../lutools/docs/color-contract.md#metal-denoising).
+
 ## 验证 / Verification
 
 RAW 样片不再随仓库分发。运行真实 RAW 测试前设置 `RAWLAB_TEST_RAW=/path/to/sample.ARW`；
@@ -173,6 +193,9 @@ bash RawLabMac/tests/smoke.sh
 bash RawLabMac/tests/adjustments.sh
 bash RawLabMac/tests/export-metadata.sh
 bash RawLabMac/tests/presentation.sh
+bash RawLabMac/tests/photo-effects-presentation.sh "$RAWLAB_TEST_RAW" .impeccable/review
+bash RawLabMac/tests/photo-effects-render.sh "$RAWLAB_TEST_RAW" /path/to/film.cube wavelet
+bash RawLabMac/tests/photo-effects-render.sh "$RAWLAB_TEST_RAW" /path/to/film.cube chroma
 bash RawLabMac/tests/app-icon.sh
 bash RawLabMac/tests/histogram.sh
 bash RawLabMac/tests/render-scheduling.sh

@@ -20,6 +20,10 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         var settings = Adjustments()
         settings.exposure = 0.75
         settings.rawNoiseReduction = 2
+        settings.setEffect(.vignetteAmount, to: -40)
+        settings.setEffect(.vignetteFeather, to: 70)
+        settings.setEffect(.grainAmount, to: 60)
+        settings.setEffect(.grainRoughness, to: 30)
         settings.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
         settings.set(.temperature, to: 6000)
         try store.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))

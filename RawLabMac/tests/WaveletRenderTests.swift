@@ -15,6 +15,7 @@ import ImageIO
         let off = try engine.render(input, settings: settings, lut: lut, edge: 600)!
         settings.applyDenoisePreset(.detail)
         let detail = try engine.render(input, settings: settings, lut: lut, edge: 600)!
+        check(engine.lastBackend == SONY2FUJI_BACKEND_METAL, "Auto wavelet denoising uses Metal")
         check(bytes(detail) != bytes(off), "Adjustable denoise changes real RAW pixels")
         let repeated = try engine.render(input, settings: settings, lut: lut, edge: 600)!
         check(bytes(detail) == bytes(repeated), "Repeated exact render is stable")

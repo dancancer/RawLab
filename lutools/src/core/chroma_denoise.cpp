@@ -1,4 +1,7 @@
 #include "chroma_denoise.h"
+#if defined(SONY2FUJI_ENABLE_METAL)
+#include "gpu/metal_denoise.h"
+#endif
 
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
 #include <opencv2/core.hpp>
@@ -12,6 +15,7 @@
 #include <vector>
 
 namespace {
+struct ChromaGpuFailure {};
 
 float quantile(std::vector<float> values, float fraction = .5f) {
     if (values.empty()) return 0;
@@ -165,7 +169,8 @@ NoiseProfile estimate(const cv::Mat& lab) {
     return result;
 }
 
-cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double epsilon) {
+cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double epsilon,
+               sony2fuji::GpuMode gpuMode, bool& gpuUsed) {
     cv::Mat result(source.size(),source.type());
     constexpr int tile = 768, halo = 32;
     for (int y = 0; y < source.rows; y += tile) for (int x = 0; x < source.cols; x += tile) {
@@ -174,7 +179,20 @@ cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double eps
         const cv::Rect bounds(left,top,std::min(source.cols,x+tile+halo)-left,std::min(source.rows,y+tile+halo)-top);
         cv::Mat guide, filtered;
         cv::GaussianBlur(lab(bounds).clone(),guide,{},.7);
-        cv::ximgproc::guidedFilter(guide,source(bounds).clone(),filtered,radius,epsilon);
+        const cv::Mat input = source(bounds).clone();
+        bool accelerated = false;
+#if defined(SONY2FUJI_ENABLE_METAL)
+        if (gpuMode != sony2fuji::GpuMode::Off) {
+            filtered.create(input.size(), input.type());
+            accelerated = sony2fuji::metalGuidedFilter(guide.ptr<float>(), input.ptr<float>(),
+                input.cols, input.rows, radius, static_cast<float>(epsilon), filtered.ptr<float>());
+        }
+#endif
+        if (accelerated) gpuUsed = true;
+        else {
+            if (gpuMode == sony2fuji::GpuMode::Force) throw ChromaGpuFailure{};
+            cv::ximgproc::guidedFilter(guide,input,filtered,radius,epsilon);
+        }
         filtered(cv::Rect(x-left,y-top,center.width,center.height)).copyTo(result(center));
     }
     return result;
@@ -191,9 +209,9 @@ float localSigma(const NoiseProfile& profile, float lightness) {
     return levels.back().second;
 }
 
-void filter(cv::Mat& lab, const NoiseProfile& noise, bool coarse) {
+void filter(cv::Mat& lab, const NoiseProfile& noise, bool coarse, sony2fuji::GpuMode gpuMode, bool& gpuUsed) {
     cv::Mat ab = chroma(lab);
-    cv::Mat delta = guided(lab,ab,8,std::max(.05f,16*noise.sigma*noise.sigma))-ab;
+    cv::Mat delta = guided(lab,ab,8,std::max(.05f,16*noise.sigma*noise.sigma),gpuMode,gpuUsed)-ab;
     cv::Mat low;
     cv::GaussianBlur(delta,low,{},6);
     delta -= low;
@@ -220,7 +238,7 @@ void filter(cv::Mat& lab, const NoiseProfile& noise, bool coarse) {
             cv::Mat guide, source, correction;
             cv::resize(lab,guide,size,0,0,cv::INTER_AREA);
             cv::resize(candidate,source,size,0,0,cv::INTER_AREA);
-            correction = guided(guide,source,4,std::max(.05f,4*noise.sigma*noise.sigma))-source;
+            correction = guided(guide,source,4,std::max(.05f,4*noise.sigma*noise.sigma),gpuMode,gpuUsed)-source;
             cv::resize(correction,correction,lab.size(),0,0,cv::INTER_LINEAR);
             candidate += correction;
         }
@@ -248,7 +266,7 @@ bool chromaDenoiseAvailable() {
 #endif
 }
 
-ErrorCode applyChromaDenoise(ImageData& image, int mode, ChromaDenoiseDiagnostics* diagnostics) {
+ErrorCode applyChromaDenoise(ImageData& image, int mode, ChromaDenoiseDiagnostics* diagnostics, GpuMode gpuMode) {
     if (diagnostics) *diagnostics = {};
     if (mode < 0 || mode > 2) return ErrorCode::InvalidFormat;
     if (mode == 0) return ErrorCode::Success;
@@ -262,12 +280,15 @@ ErrorCode applyChromaDenoise(ImageData& image, int mode, ChromaDenoiseDiagnostic
     const auto noise = estimate(lab);
     if (diagnostics) { diagnostics->flatTiles = noise.tiles; diagnostics->confidence = noise.confidence; }
     if (noise.confidence == 0) return ErrorCode::Success;
-    filter(lab,noise,mode == 2);
+    bool gpuUsed = false;
+    try { filter(lab,noise,mode == 2,gpuMode,gpuUsed); }
+    catch (const ChromaGpuFailure&) { return ErrorCode::ProcessingError; }
     cv::cvtColor(lab,rgb,cv::COLOR_Lab2RGB);
-    if (diagnostics) diagnostics->applied = true;
+    if (diagnostics) { diagnostics->applied = true; diagnostics->gpuUsed = gpuUsed; }
     return ErrorCode::Success;
 #else
     (void)image;
+    (void)gpuMode;
     return ErrorCode::InvalidFormat;
 #endif
 }

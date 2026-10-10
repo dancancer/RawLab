@@ -7,6 +7,35 @@ struct PresentationTests {
         print("PASS: \(message)")
     }
     static func main() throws {
+        check(AdjustmentParameter.photoTools.contains { $0.rawValue == "vignetteAmount" },
+              "Photo tools include vignette controls")
+        check(AdjustmentParameter.photoTools.contains { $0.rawValue == "grainAmount" },
+              "Photo tools include film grain controls")
+        var effects = Adjustments()
+        check(effects.effectSettings == PhotoEffectsSettings() && effects.isDefault(.effects),
+              "Photo effects start disabled with canonical defaults")
+        effects.setEffect(.vignetteAmount, to: -40)
+        effects.setEffect(.vignetteMidpoint, to: 20)
+        effects.setEffect(.grainAmount, to: 65)
+        effects.setEffect(.grainSize, to: 70)
+        let persistedEffects = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(effects))
+        check(persistedEffects == effects, "Effect settings persist")
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(effects)) as! [String: Any]
+        legacy.removeValue(forKey: "photoEffects")
+        let migrated = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: legacy))
+        check(migrated.effectSettings == PhotoEffectsSettings(), "Old edits decode with effects off")
+        effects.setEffect(.grainAmount, to: 1000)
+        check(effects.grainAmount == 100, "Effect values clamp to slider range")
+        effects.setEffect(.grainAmount, to: .nan)
+        check(effects.grainAmount == 100, "Nonfinite effects are ignored")
+        let config = effects.photoEffectsConfig
+        check(config.vignette_amount == -40 && config.vignette_midpoint == 20 &&
+              config.grain_amount == 100 && config.grain_size == 70, "All effect fields reach the native config")
+        effects.resetEffect(.vignetteAmount)
+        check(effects.vignetteAmount == 0 && effects.effectSettings.vignetteMidpoint == 50 && effects.grainAmount == 100,
+              "Vignette reset clears its auxiliary controls without touching grain")
+        effects.reset(.effects)
+        check(effects == Adjustments(), "Effects group reset restores canonical defaults")
         let strength = AdjustmentParameter.strength.spec
         check(strength.parse("200") == 2 && strength.parse("250") == 2,
               "Film strength accepts 200 percent and clamps larger input")
@@ -53,7 +82,7 @@ struct PresentationTests {
         let tools = AdjustmentParameter.photoTools
         check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction }),
               "Photo tools expose every image adjustment exactly once")
-        check(tools.count == 10 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
+        check(tools.count == 12 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
               "Photo tools replace legacy FBDD with chroma denoising")
         for tool in tools {
             check(NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) != nil,

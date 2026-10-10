@@ -91,6 +91,7 @@ set(CORE_SOURCES
     src/core/raw_processor.cpp
     src/core/chroma_denoise.cpp
     src/core/wavelet_denoise.cpp
+    src/core/photo_effects.cpp
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
     src/ffi/sony2fuji_c.cpp
@@ -105,9 +106,9 @@ if(SONY2FUJI_ENABLE_GPU)
     endif()
     if(APPLE)
         enable_language(OBJCXX)
-        list(APPEND CORE_SOURCES src/gpu/metal_lut.mm src/gpu/metal_photo.mm src/gpu/metal_stats.mm)
+        list(APPEND CORE_SOURCES src/gpu/metal_lut.mm src/gpu/metal_photo.mm src/gpu/metal_stats.mm src/gpu/metal_denoise.mm)
         add_compile_definitions(SONY2FUJI_ENABLE_METAL)
-        set_source_files_properties(src/gpu/metal_lut.mm src/gpu/metal_photo.mm src/gpu/metal_stats.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        set_source_files_properties(src/gpu/metal_lut.mm src/gpu/metal_photo.mm src/gpu/metal_stats.mm src/gpu/metal_denoise.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     endif()
     if(ANDROID)
         list(APPEND CORE_SOURCES src/gpu/gles_lut.cpp src/gpu/gles_photo.cpp)
@@ -235,6 +236,20 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         endforeach()
     endif()
     add_executable(raw_reuse_tests tests/raw_reuse_tests.cpp)
+    add_executable(photo_effects_tests tests/photo_effects_tests.cpp)
+    target_link_libraries(photo_effects_tests sony2fuji_core)
+    if(MSVC)
+        target_compile_options(photo_effects_tests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(photo_effects_tests PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME photo_effects COMMAND photo_effects_tests)
+    if(SONY2FUJI_ENABLE_GPU AND APPLE AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY2FUJI_ENABLE_WAVELET_DENOISE)
+        add_executable(metal_denoise_tests tests/metal_denoise_tests.cpp)
+        target_link_libraries(metal_denoise_tests sony2fuji_core)
+        target_compile_options(metal_denoise_tests PRIVATE -UNDEBUG)
+        add_test(NAME metal_denoise COMMAND metal_denoise_tests)
+    endif()
     add_executable(raw_noise_tests tests/raw_noise_tests.cpp)
     if(SONY2FUJI_ENABLE_WAVELET_DENOISE)
         add_executable(wavelet_denoise_tests tests/wavelet_denoise_tests.cpp)
