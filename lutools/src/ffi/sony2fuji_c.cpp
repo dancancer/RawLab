@@ -1097,7 +1097,7 @@ static sony2fuji_status processImpl(
     session->last_backend = SONY2FUJI_BACKEND_CPU;
     const bool waveletActive = session->wavelet_denoise.active();
     const bool effectsActive = session->photo_effects.active();
-#if defined(SONY2FUJI_ENABLE_METAL)
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool cpuOnlyStages = false;
 #else
     const bool cpuOnlyStages = effectsActive || waveletActive || session->chroma_denoise != 0;
@@ -1125,7 +1125,7 @@ static sony2fuji_status processImpl(
 #if defined(SONY2FUJI_ENABLE_METAL)
     bool gpuPipeline = session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #elif defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    bool gpuPipeline = session->chroma_denoise == 0 && !waveletActive && !effectsActive && !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
+    bool gpuPipeline = !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #else
     bool gpuPipeline = false;
 #endif
@@ -1215,16 +1215,17 @@ static sony2fuji_status processImpl(
         if (status != SONY2FUJI_STATUS_OK) return status;
         if (!session->gles_renderer) session->gles_renderer = std::make_unique<sony2fuji::GlesPhotoRenderer>();
         const bool raw = local.input_type == SONY2FUJI_INPUT_RAW;
-        const auto& source = raw ? session->raw_cache : image;
+        const auto& source = raw && !waveletActive ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (session->gles_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
-                width, height, raw ? session->raw_revision : 0, rendered)) {
+                width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
+                session->photo_effects, session->chroma_denoise, waveletActive)) {
             session->last_backend = SONY2FUJI_BACKEND_GLES;
             if (local.output_target == SONY2FUJI_TARGET_FILE) return writeOutputFile(local, rendered);
             return writeOutputBuffer(local, rendered, out_buffer);
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-        if (raw) image = session->raw_cache;
+        if (raw && !waveletActive) image = session->raw_cache;
     }
 #endif
 #if defined(SONY2FUJI_ENABLE_D3D11)
@@ -1234,16 +1235,17 @@ static sony2fuji_status processImpl(
         if (status != SONY2FUJI_STATUS_OK) return status;
         if (!session->d3d_renderer) session->d3d_renderer = std::make_unique<sony2fuji::D3D11PhotoRenderer>();
         const bool raw = local.input_type == SONY2FUJI_INPUT_RAW;
-        const auto& source = raw ? session->raw_cache : image;
+        const auto& source = raw && !waveletActive ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (session->d3d_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
-                width, height, raw ? session->raw_revision : 0, rendered)) {
+                width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
+                session->photo_effects, session->chroma_denoise, waveletActive)) {
             session->last_backend = SONY2FUJI_BACKEND_D3D11;
             if (local.output_target == SONY2FUJI_TARGET_FILE) return writeOutputFile(local, rendered);
             return writeOutputBuffer(local, rendered, out_buffer);
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-        if (raw) image = session->raw_cache;
+        if (raw && !waveletActive) image = session->raw_cache;
     }
 #endif
     // A pixel-radius filter must run at source resolution for preview/export parity.

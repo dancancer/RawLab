@@ -1,0 +1,53 @@
+<UserControl x:Class="RawLab.Windows.PhotoEffectsPanel"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="1120">
+ <UserControl.Resources>
+  <Style TargetType="StackPanel"><Setter Property="MinHeight" Value="62"/></Style>
+ </UserControl.Resources>
+ <Grid Margin="4">
+  <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <DockPanel>
+   <Button x:Name="ResetGroupButton" DockPanel.Dock="Right" Click="ResetGroupClicked" ToolTip="重置当前效果" AutomationProperties.Name="重置当前效果" Padding="6,2" HorizontalAlignment="Right">
+    <local:EditorIcon Kind="Reset" Width="16" Height="16"/>
+   </Button>
+   <TextBlock x:Name="Title" VerticalAlignment="Center" FontWeight="SemiBold"/>
+  </DockPanel>
+  <UniformGrid x:Name="VignetteParameters" Grid.Row="1" Columns="5">
+   <StackPanel x:Name="VignetteAmountParameters" Margin="0,4,8,0">
+    <DockPanel><Button Tag="VignetteAmount" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置暗角强度" AutomationProperties.Name="重置暗角强度" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="VignetteAmountText" Tag="VignetteAmount" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="暗角强度数值"/><TextBlock Text="强度" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="VignetteAmountSlider" Tag="VignetteAmount" Minimum="-100" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="暗角强度"/>
+   </StackPanel>
+   <StackPanel x:Name="VignetteMidpointParameters" Margin="4,4,8,0">
+    <DockPanel><Button Tag="VignetteMidpoint" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置暗角中点" AutomationProperties.Name="重置暗角中点" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="VignetteMidpointText" Tag="VignetteMidpoint" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="暗角中点数值"/><TextBlock Text="中点" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="VignetteMidpointSlider" Tag="VignetteMidpoint" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="暗角中点"/>
+   </StackPanel>
+   <StackPanel x:Name="VignetteRoundnessParameters" Margin="4,4,8,0">
+    <DockPanel><Button Tag="VignetteRoundness" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置暗角圆度" AutomationProperties.Name="重置暗角圆度" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="VignetteRoundnessText" Tag="VignetteRoundness" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="暗角圆度数值"/><TextBlock Text="圆度" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="VignetteRoundnessSlider" Tag="VignetteRoundness" Minimum="-100" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="暗角圆度"/>
+   </StackPanel>
+   <StackPanel x:Name="VignetteFeatherParameters" Margin="4,4,8,0">
+    <DockPanel><Button Tag="VignetteFeather" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置暗角羽化" AutomationProperties.Name="重置暗角羽化" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="VignetteFeatherText" Tag="VignetteFeather" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="暗角羽化数值"/><TextBlock Text="羽化" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="VignetteFeatherSlider" Tag="VignetteFeather" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="暗角羽化"/>
+   </StackPanel>
+   <StackPanel x:Name="VignetteHighlightsParameters" Margin="4,4,0,0">
+    <DockPanel><Button Tag="VignetteHighlights" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置暗角高光保护" AutomationProperties.Name="重置暗角高光保护" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="VignetteHighlightsText" Tag="VignetteHighlights" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="暗角高光保护数值"/><TextBlock Text="高光保护" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="VignetteHighlightsSlider" Tag="VignetteHighlights" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="暗角高光保护"/>
+   </StackPanel>
+  </UniformGrid>
+  <UniformGrid x:Name="GrainParameters" Grid.Row="1" Columns="3" Visibility="Collapsed">
+   <StackPanel x:Name="GrainAmountParameters" Margin="0,4,8,0">
+    <DockPanel><Button Tag="GrainAmount" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置颗粒强度" AutomationProperties.Name="重置颗粒强度" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="GrainAmountText" Tag="GrainAmount" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="颗粒强度数值"/><TextBlock Text="强度" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="GrainAmountSlider" Tag="GrainAmount" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="颗粒强度"/>
+   </StackPanel>
+   <StackPanel x:Name="GrainSizeParameters" Margin="4,4,8,0">
+    <DockPanel><Button Tag="GrainSize" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置颗粒大小" AutomationProperties.Name="重置颗粒大小" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="GrainSizeText" Tag="GrainSize" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="颗粒大小数值"/><TextBlock Text="大小" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="GrainSizeSlider" Tag="GrainSize" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="颗粒大小"/>
+   </StackPanel>
+   <StackPanel x:Name="GrainRoughnessParameters" Margin="4,4,0,0">
+    <DockPanel><Button Tag="GrainRoughness" Click="ResetValue" DockPanel.Dock="Right" ToolTip="重置颗粒粗糙度" AutomationProperties.Name="重置颗粒粗糙度" Padding="3"><local:EditorIcon Kind="Reset" Width="14" Height="14"/></Button><TextBox x:Name="GrainRoughnessText" Tag="GrainRoughness" DockPanel.Dock="Right" Width="42" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="颗粒粗糙度数值"/><TextBlock Text="粗糙度" FontSize="11" VerticalAlignment="Center"/></DockPanel>
+    <Slider x:Name="GrainRoughnessSlider" Tag="GrainRoughness" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SliderChanged" AutomationProperties.Name="颗粒粗糙度"/>
+   </StackPanel>
+  </UniformGrid>
+ </Grid>
+</UserControl>

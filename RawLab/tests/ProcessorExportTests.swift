@@ -14,10 +14,17 @@ struct ProcessorExportTests {
         return CGImageSourceCopyPropertiesAtIndex(source, 0, nil)! as! [CFString: Any]
     }
 
+    static func maximumDifference(_ first: Data, _ second: Data) -> Int {
+        guard first.count == second.count else { return Int.max }
+        return zip(first, second).map { abs(Int($0) - Int($1)) }.max() ?? 0
+    }
+
     static func main() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         let processor = Sony2FujiProcessor()
+        let cpuProcessor = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_OFF)
+        let forcedProcessor = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_FORCE)
         var random: UInt32 = 8171
         var noisy = Data(count: 256 * 256 * 4)
         for i in 0..<(256 * 256) {
@@ -55,6 +62,45 @@ struct ProcessorExportTests {
         denoised.denoise.enabled = false
         check(try processor.processBuffer(buffer: noiseBuffer, settings: denoised, previewLongEdge: 128, lutURL: nil).data == noiseOff.data,
               "iOS disabling denoise restores the original output")
+        var effects = RawSettings.default
+        effects.photoEffects.vignetteAmount = -65
+        effects.photoEffects.vignetteMidpoint = 52
+        effects.photoEffects.vignetteRoundness = -35
+        effects.photoEffects.vignetteFeather = 70
+        effects.photoEffects.vignetteHighlights = 75
+        effects.photoEffects.grainAmount = 70
+        effects.photoEffects.grainSize = 60
+        effects.photoEffects.grainRoughness = 80
+        let effectsOn = try processor.processBuffer(buffer: noiseBuffer, settings: effects,
+                                                     previewLongEdge: 128, lutURL: nil)
+        check(effectsOn.data != noiseOff.data, "iOS photo effects reach native vignette and grain processing")
+        let effectsCPU = try cpuProcessor.processBuffer(buffer: noiseBuffer, settings: effects,
+                                                         previewLongEdge: 128, lutURL: nil)
+        check(Self.maximumDifference(effectsOn.data, effectsCPU.data) <= 2,
+              "iOS Auto/CPU photo effects remain within two code values")
+        let effectsExport = try processor.processBuffer(buffer: noiseBuffer, settings: effects,
+                                                        previewLongEdge: nil, lutURL: nil,
+                                                        exportLongEdge: 64)
+        check(effectsExport.width == 64 && effectsExport.height == 64,
+              "iOS photo effects survive final export resizing")
+        var chroma = RawSettings.default
+        chroma.displayChromaDenoise = 1
+        let chromaOn = try processor.processBuffer(buffer: noiseBuffer, settings: chroma,
+                                                   previewLongEdge: 128, lutURL: nil)
+        check(chromaOn.data != noiseOff.data, "iOS display chroma mode reaches native processing")
+        var combined = effects
+        combined.denoise.apply(.clean)
+        combined.displayChromaDenoise = 2
+        combined.sharpening = 0.5
+        let combinedCPU = try cpuProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+                                                           previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
+        let combinedGPU = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+                                                              previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
+        check(Self.maximumDifference(combinedCPU.data, combinedGPU.data) <= 2,
+              "iOS forced Metal combined effects, wavelet, chroma and detail match CPU")
+        let combinedAgain = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+                                                                previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
+        check(combinedAgain.data == combinedGPU.data, "iOS GPU grain is deterministic")
         let scroll = PhotoScrollView()
         scroll.frame = CGRect(x: 0, y: 0, width: 390, height: 500)
         scroll.pixels = CGSize(width: 2400, height: 1600)

@@ -232,7 +232,21 @@ extension ContentView {
 
     @ViewBuilder
     var valuePanel: some View {
-        if selectedAdjustment == .noiseReduction {
+        if selectedAdjustment == .vignette {
+            IOSPhotoEffectsControls(effect: .vignette, settings: Binding(
+                get: { settings.photoEffects },
+                set: { settings.photoEffects = $0 }
+            ), onEditingChanged: setSliderEditing)
+                .padding(.horizontal, 16)
+                .disabled(!viewModel.hasImage || editingLocked)
+        } else if selectedAdjustment == .grain {
+            IOSPhotoEffectsControls(effect: .grain, settings: Binding(
+                get: { settings.photoEffects },
+                set: { settings.photoEffects = $0 }
+            ), onEditingChanged: setSliderEditing)
+                .padding(.horizontal, 16)
+                .disabled(!viewModel.hasImage || editingLocked)
+        } else if selectedAdjustment == .noiseReduction {
             IOSDenoiseControls(settings: Binding(
                 get: { settings.denoise },
                 set: { settings.denoise = $0; settings.noiseReduction = 0 }
@@ -451,6 +465,77 @@ private struct IOSDenoiseControls: View {
                     }.accessibilityLabel("重置\(parameter.0)").disabled(value.wrappedValue == parameter.2)
                 }.disabled(!settings.enabled).frame(minHeight: 44)
             }
+        }
+    }
+}
+
+private struct IOSPhotoEffectsControls: View {
+    let effect: AdjustmentKind
+    @Binding var settings: PhotoEffectsSettings
+    let onEditingChanged: (Bool) -> Void
+
+    private var parameters: [PhotoEffectParameter] {
+        PhotoEffectParameter.allCases.filter { $0.isVignette == (effect == .vignette) }
+    }
+
+    private var effectIsDefault: Bool {
+        parameters.allSatisfy { settings[keyPath: $0.keyPath] == $0.defaultValue }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(effect.title).font(.subheadline)
+                Spacer(minLength: 4)
+                Button { resetEffect() } label: {
+                    Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 44)
+                }
+                .accessibilityLabel("重置\(effect.title)")
+                .disabled(effectIsDefault)
+            }
+            ForEach(parameters) { parameter in
+                let value = binding(for: parameter)
+                HStack(spacing: 6) {
+                    Text(parameter.title).font(.caption).frame(width: 72, alignment: .leading)
+                    Slider(value: value, in: parameter.range, step: 1, onEditingChanged: onEditingChanged)
+                        .accessibilityLabel(parameter.title)
+                        .accessibilityIdentifier("effects.\(effect.rawValue).slider.\(parameter.rawValue)")
+                    TextField(parameter.title, value: value,
+                              format: .number.precision(.fractionLength(0)))
+                        .keyboardType(parameter.range.lowerBound < 0 ? .numbersAndPunctuation : .numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 48)
+                        .accessibilityLabel("\(parameter.title)数值")
+                        .accessibilityIdentifier("effects.\(effect.rawValue).value.\(parameter.rawValue)")
+                    Button { value.wrappedValue = parameter.defaultValue } label: {
+                        Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 44)
+                    }
+                    .accessibilityLabel("重置\(parameter.title)")
+                    .disabled(value.wrappedValue == parameter.defaultValue)
+                }
+                .disabled(parameter == .vignetteHighlights && settings.vignetteAmount >= 0)
+                .frame(minHeight: 44)
+            }
+        }
+    }
+
+    private func binding(for parameter: PhotoEffectParameter) -> Binding<Double> {
+        Binding(
+            get: { settings[keyPath: parameter.keyPath] },
+            set: { value in
+                guard value.isFinite else { return }
+                settings[keyPath: parameter.keyPath] = min(parameter.range.upperBound,
+                                                           max(parameter.range.lowerBound, value.rounded()))
+            }
+        )
+    }
+
+    private func resetEffect() {
+        if effect == .vignette {
+            settings.resetVignette()
+        } else {
+            settings.resetGrain()
         }
     }
 }

@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
     sony2fuji_release_buffer(&output);
     require(static_cast<int>(sony2fuji_session_get_last_backend(forced.value)) == 2, "actual GLES backend, not CPU fallback");
 
-    const std::string cube = "/data/local/tmp/rawlab-gpu-test/domain.cube";
+    const std::string cube = "domain.cube";
     {
         std::ofstream file(cube);
         file << "#Gamma:F-Log2 to PROVIA\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 3\nDOMAIN_MIN -0.1 0.1 0.2\nDOMAIN_MAX 0.8 0.9 1.1\n";
@@ -98,8 +98,8 @@ int main(int argc, char** argv) {
     request.shadows = .3; request.tone_curve = .25;
     compare(render(cpu, request, false), render(forced, request, true), "FINAL resize after pointwise tone");
     request.sharpening = .5;
-    compare(render(cpu, request, false), render(automatic, request, false), "unsupported detail Auto fallback");
-    require(sony2fuji_process(forced.value, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR, "Force never silently falls back");
+    compare(render(cpu, request, false), render(automatic, request, true), "detail Auto GLES");
+    compare(render(cpu, request, false), render(forced, request, true), "detail Force GLES");
     request.sharpening = 0;
     std::thread first([&] { compare(render(cpu, request, false), render(forced, request, true), "worker one"); });
     first.join();
@@ -139,13 +139,29 @@ int main(int argc, char** argv) {
                 }
             }
             contract.sharpening = .5f;
-            compare(render(cpu, contract, false), render(automatic, contract, false), "Fuji detail Auto fallback");
-            require(sony2fuji_process(forced.value, &contract, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR,
-                    "Fuji Force does not hide unsupported detail");
+            compare(render(cpu, contract, false), render(automatic, contract, true), "Fuji detail Auto GLES");
+            compare(render(cpu, contract, false), render(forced, contract, true), "Fuji detail Force GLES");
             std::remove(path.c_str());
         }
     }
     std::remove(cube.c_str());
+
+    sony2fuji_photo_effects_config effects{SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION, sizeof(effects),
+        -65, 52, -35, 70, 75, 70, 60, 80};
+    sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
+        sizeof(wavelet), 1, 40, 46, 50};
+    for (Session* session : {&cpu, &forced, &automatic}) {
+        require(sony2fuji_session_set_photo_effects(session->value, &effects) == SONY2FUJI_STATUS_OK, "effects setter");
+        require(sony2fuji_session_set_chroma_denoise(session->value, 2) == SONY2FUJI_STATUS_OK, "chroma setter");
+        require(sony2fuji_session_set_wavelet_denoise(session->value, &wavelet) == SONY2FUJI_STATUS_OK, "wavelet setter");
+    }
+    request.lut_path = nullptr;
+    request.sharpening = .5f;
+    const auto combinedCPU = render(cpu, request, false);
+    const auto combinedGPU = render(forced, request, true);
+    compare(combinedCPU, combinedGPU, "combined effects/wavelet/chroma/detail FINAL");
+    require(combinedGPU == render(forced, request, true), "combined grain is deterministic");
+    compare(combinedCPU, render(automatic, request, true), "combined Auto uses GLES");
 
     if (argc < 3) return 0;
     request = {};
@@ -179,7 +195,7 @@ int main(int argc, char** argv) {
     request.intent = SONY2FUJI_INTENT_FINAL;
     compare(render(cpu, request, false), render(forced, request, true), "native full-resolution pixels");
     request.output_target = SONY2FUJI_TARGET_FILE; request.output_format = SONY2FUJI_OUTPUT_PNG;
-    const std::string out = "/data/local/tmp/rawlab-gpu-test/full-gpu.png";
+    const std::string out = "full-gpu.png";
     request.output_path = out.c_str();
     const auto start = std::chrono::steady_clock::now();
     require(sony2fuji_process(forced.value, &request, nullptr) == SONY2FUJI_STATUS_OK, "full native 16-bit PNG GPU export");
@@ -189,7 +205,7 @@ int main(int argc, char** argv) {
     std::ifstream file(out, std::ios::binary); file.read(reinterpret_cast<char*>(header), sizeof(header));
     auto dimension = [&](int offset) { return (uint32_t(header[offset]) << 24) | (uint32_t(header[offset + 1]) << 16) | (uint32_t(header[offset + 2]) << 8) | header[offset + 3]; };
     require(dimension(16) == 7008 && dimension(20) == 4672 && header[24] == 16, "native dimensions and bit depth");
-    const std::string cpuOut = "/data/local/tmp/rawlab-gpu-test/full-cpu.png";
+    const std::string cpuOut = "full-cpu.png";
     request.output_path = cpuOut.c_str();
     const auto cpuStart = std::chrono::steady_clock::now();
     require(sony2fuji_process(cpu.value, &request, nullptr) == SONY2FUJI_STATUS_OK, "CPU native PNG export baseline");

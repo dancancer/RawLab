@@ -38,6 +38,7 @@ set(SONY2FUJI_ENABLE_GPU ON CACHE BOOL "" FORCE)
 # MSVC's classic OpenMP lacks the canonical unsigned loops used by the core.
 set(SONY2FUJI_ENABLE_OPENMP OFF CACHE BOOL "" FORCE)
 set(SONY2FUJI_ENABLE_WAVELET_DENOISE ON CACHE BOOL "" FORCE)
+set(SONY2FUJI_ENABLE_CHROMA_DENOISE ON CACHE BOOL "" FORCE)
 set(SONY2FUJI_BUILD_DENOISE_DEPS ON CACHE BOOL "" FORCE)
 add_subdirectory("${REPO}/lutools" core)
 # The RAW conversion uses signed row loops compatible with classic MSVC OpenMP.

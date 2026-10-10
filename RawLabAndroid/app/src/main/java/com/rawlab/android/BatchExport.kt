@@ -515,16 +515,36 @@ internal object SettingsCodec {
         settings.contrast, settings.toneCurve, settings.saturation, settings.customWb,
         settings.temperature, settings.tint, settings.sharpening,
         settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
+        settings.displayChromaDenoise,
+        settings.effects.vignetteAmount, settings.effects.vignetteMidpoint, settings.effects.vignetteRoundness,
+        settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
+        settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
     ).joinToString("|")
 
     fun decode(value: String): EditSettings {
         val fields = value.split('|')
-        require(fields.size == 12 || fields.size == 16)
+        require(fields.size == 12 || fields.size == 16 || fields.size == 25)
         return EditSettings(film = fields[0], strength = fields[1].toFloat(), exposure = fields[2].toFloat(),
             highlights = fields[3].toFloat(), shadows = fields[4].toFloat(), contrast = fields[5].toFloat(),
             toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = fields[8].toBoolean(),
             temperature = fields[9].toFloat(), tint = fields[10].toFloat(), sharpening = fields[11].toFloat(),
             denoise = if (fields.size == 16) DenoiseSettings(fields[12].toBoolean(), fields[13].toFloat(),
-                fields[14].toFloat(), fields[15].toFloat()) else DenoiseSettings())
+                fields[14].toFloat(), fields[15].toFloat())
+            else if (fields.size == 25) DenoiseSettings(fields[12].toBoolean(), fields[13].toFloat(),
+                fields[14].toFloat(), fields[15].toFloat())
+            else DenoiseSettings(),
+            displayChromaDenoise = if (fields.size == 25) parseChromaMode(fields[16]) else 0,
+            effects = if (fields.size == 25) PhotoEffectsSettings(
+                vignetteAmount = fields[17].toFloat(), vignetteMidpoint = fields[18].toFloat(),
+                vignetteRoundness = fields[19].toFloat(), vignetteFeather = fields[20].toFloat(),
+                vignetteHighlights = fields[21].toFloat(), grainAmount = fields[22].toFloat(),
+                grainSize = fields[23].toFloat(), grainRoughness = fields[24].toFloat(),
+            ) else PhotoEffectsSettings())
+    }
+
+    private fun parseChromaMode(value: String): Int {
+        val number = value.toFloat()
+        require(number.isFinite() && number == number.toInt().toFloat())
+        return number.toInt()
     }
 }

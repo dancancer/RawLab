@@ -244,25 +244,25 @@ sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* se
 // Display-sRGB chroma denoising after tone/LUT, before sharpening and resizing.
 // 0 off (default), 1 detail priority, 2 noise priority. Does not change request v2.
 // Requires a core built with SONY2FUJI_ENABLE_CHROMA_DENOISE; otherwise nonzero
-// modes return UNSUPPORTED. Metal accelerates the guided filters at source
+// modes return UNSUPPORTED. Metal/GLES/D3D11 accelerate guided filters at source
 // resolution; sampled estimation and OpenCV Lab conversion remain on CPU.
-// Auto falls back to CPU; Force requires Metal success (unsupported on other GPUs).
+// Auto falls back to CPU; Force requires the platform GPU to succeed.
 sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session, int32_t mode);
 
 // Linear-sRGB wavelets before user exposure, tone/LUT and sharpening. Additive ABI.
 // Exact previews and exports filter at source resolution. Explicit interactive
 // buffer previews may use a reduced image; final/file output is never downgraded.
-// Metal accelerates the tiled SWT filter; estimation/calibration remain on CPU.
-// Auto falls back to CPU; Force requires Metal success (unsupported on other GPUs).
+// Metal/GLES/D3D11 accelerate tiled SWT; estimation/calibration remain on CPU.
+// Auto falls back to CPU; Force requires the platform GPU to succeed.
 // Old FBDD/display-chroma settings are independent; clients choose whether to stack.
 sony2fuji_status sony2fuji_session_set_wavelet_denoise(
     sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config
 );
 
 // Additive API; request v2 is unchanged. Both amounts zero is an exact bypass.
-// Source-resolution display effects run before output resize, on CPU or Metal.
-// Auto retains CPU fallback. Other GPU backends reject active effects in Force
-// mode. Fixed grain is reproducible. Wavelet/chroma denoising can precede effects on Metal.
+// Source-resolution display effects run before output resize on CPU/Metal/GLES/D3D11.
+// Auto retains CPU fallback; Force requires the platform GPU to succeed.
+// Fixed grain is reproducible. Wavelet/chroma denoising can precede effects.
 sony2fuji_status sony2fuji_session_set_photo_effects(
     sony2fuji_session* session, const sony2fuji_photo_effects_config* config
 );

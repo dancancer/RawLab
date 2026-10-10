@@ -77,16 +77,34 @@ class EditStore(private val directory: File) {
         settings.contrast, settings.toneCurve, settings.saturation,
         if (settings.customWb) 1f else 0f, settings.temperature, settings.tint, settings.sharpening,
         if (settings.denoise.enabled) 1f else 0f, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
+        settings.displayChromaDenoise,
+        settings.effects.vignetteAmount, settings.effects.vignetteMidpoint, settings.effects.vignetteRoundness,
+        settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
+        settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
     ).joinToString(",")
 
     private fun decode(values: String, film: String): EditSettings {
         val fields = values.split(',').map(String::toFloat)
-        require(fields.size == 11 || fields.size == 15)
+        require(fields.size == 11 || fields.size == 15 || fields.size == 24)
         return EditSettings(film = film, strength = fields[0], exposure = fields[1],
             highlights = fields[2], shadows = fields[3], contrast = fields[4], toneCurve = fields[5],
             saturation = fields[6], customWb = fields[7] != 0f, temperature = fields[8], tint = fields[9],
             sharpening = fields[10], denoise = if (fields.size == 15)
-                DenoiseSettings(fields[11] != 0f, fields[12], fields[13], fields[14]) else DenoiseSettings())
+                DenoiseSettings(fields[11] != 0f, fields[12], fields[13], fields[14])
+            else if (fields.size == 24)
+                DenoiseSettings(fields[11] != 0f, fields[12], fields[13], fields[14])
+            else DenoiseSettings(),
+            displayChromaDenoise = if (fields.size == 24) parseChromaMode(fields[15]) else 0,
+            effects = if (fields.size == 24) PhotoEffectsSettings(
+                vignetteAmount = fields[16], vignetteMidpoint = fields[17], vignetteRoundness = fields[18],
+                vignetteFeather = fields[19], vignetteHighlights = fields[20], grainAmount = fields[21],
+                grainSize = fields[22], grainRoughness = fields[23],
+            ) else PhotoEffectsSettings())
+    }
+
+    private fun parseChromaMode(value: Float): Int {
+        require(value.isFinite() && value == value.toInt().toFloat())
+        return value.toInt()
     }
 
     private fun moveAtomically(from: File, to: File) {

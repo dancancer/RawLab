@@ -21,6 +21,42 @@ struct EditorPresentationTests {
         check(settings.denoise == RawDenoiseSettings(), "Denoise group reset restores disabled defaults")
         check(!RawDenoiseSettings(enabled: true, luma: .nan).isValid &&
               !RawDenoiseSettings(enabled: true, chroma: 101).isValid, "Nonfinite and out-of-range denoise values rejected")
+        check(settings.photoEffects == PhotoEffectsSettings(vignetteAmount: 0, vignetteMidpoint: 50,
+                                                               vignetteRoundness: 0, vignetteFeather: 50,
+                                                               vignetteHighlights: 0, grainAmount: 0,
+                                                               grainSize: 25, grainRoughness: 50),
+              "Photo effects use the canonical disabled defaults")
+        var effects = settings.photoEffects
+        effects.vignetteAmount = 125
+        effects.vignetteRoundness = -125
+        effects.vignetteMidpoint = 125
+        effects.grainSize = -1
+        effects.grainRoughness = 125
+        check(effects.vignetteAmount == 100 && effects.vignetteRoundness == -100 &&
+              effects.vignetteMidpoint == 100 && effects.grainSize == 0 && effects.grainRoughness == 100,
+              "Photo effect controls clamp each parameter to its canonical range")
+        effects.vignetteAmount = 0.5
+        effects.vignetteRoundness = -0.5
+        check(effects.vignetteAmount == 1 && effects.vignetteRoundness == -1,
+              "Photo effect values use the shared nearest-integer rounding contract")
+        effects.vignetteAmount = 0
+        effects.vignetteMidpoint = 62
+        settings.photoEffects = effects
+        check(settings.photoEffects.vignetteAmount == 0 && settings.photoEffects.vignetteMidpoint == 62,
+              "Vignette auxiliary values survive while amount is zero")
+        AdjustmentKind.vignette.reset(in: &settings)
+        check(settings.photoEffects.vignetteAmount == 0 && settings.photoEffects.vignetteMidpoint == 50 &&
+              settings.photoEffects.vignetteRoundness == 0 && settings.photoEffects.vignetteFeather == 50 &&
+              settings.photoEffects.vignetteHighlights == 0,
+              "Vignette group reset restores all vignette defaults")
+        settings.photoEffects.grainAmount = 70
+        settings.photoEffects.grainSize = 60
+        AdjustmentKind.grain.reset(in: &settings)
+        check(settings.photoEffects == PhotoEffectsSettings(), "Grain group reset restores all defaults")
+        settings.displayChromaDenoise = 3
+        check(settings.displayChromaDenoise == 2, "Display chroma mode clamps to the supported range")
+        settings.displayChromaDenoise = -1
+        check(settings.displayChromaDenoise == 0, "Display chroma mode clamps negative values to off")
         check(AdjustmentKind.strength.range == 0...2, "Film strength range reaches 200 percent")
         AdjustmentKind.strength.setValue(2, in: &settings)
         check(settings.lutStrength == 2 && AdjustmentKind.strength.progress(in: settings) == 1,
@@ -64,6 +100,13 @@ struct EditorPresentationTests {
         let encoded = try! JSONEncoder().encode(settings)
         let decoded = try! JSONDecoder().decode(RawSettings.self, from: encoded)
         check(decoded.whiteBalanceMode == .custom, "White balance mode round-trips in the edit record")
+        var legacy = try! JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        legacy.removeValue(forKey: "photoEffects")
+        legacy.removeValue(forKey: "displayChromaDenoise")
+        let oldDecoded = try! JSONDecoder().decode(RawSettings.self,
+                                                     from: JSONSerialization.data(withJSONObject: legacy))
+        check(oldDecoded.photoEffects == PhotoEffectsSettings() && oldDecoded.displayChromaDenoise == 0,
+              "Older edit records default effects and display chroma to off")
         for kind in AdjustmentKind.allCases {
             kind.setValue(kind.range.upperBound, in: &settings)
             kind.reset(in: &settings)

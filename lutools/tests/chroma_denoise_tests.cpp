@@ -1,5 +1,6 @@
 #include "core/chroma_denoise.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "native_gpu_test_support.h"
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -8,6 +9,7 @@
 #include <vector>
 
 int main(int argc, char** argv) {
+    const bool nativeGpu = rawlabtest::nativeGpuAvailable();
     if (argc == 4) {
         std::ifstream input(argv[1],std::ios::binary);
         uint32_t dimensions[2];
@@ -88,24 +90,19 @@ int main(int argc, char** argv) {
         assert(sony2fuji_session_set_chroma_denoise(session,mode) == SONY2FUJI_STATUS_OK);
         request.intent = SONY2FUJI_INTENT_PREVIEW;
         const auto preview = render();
-#if defined(SONY2FUJI_ENABLE_METAL)
-        assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL);
-#else
-        assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU);
-#endif
+        assert(sony2fuji_session_get_last_backend(session) ==
+            (nativeGpu ? rawlabtest::nativeBackend : SONY2FUJI_BACKEND_CPU));
         request.intent = SONY2FUJI_INTENT_FINAL;
         assert(render() == preview);
     }
     config.mode = SONY2FUJI_GPU_FORCE;
     assert(sony2fuji_session_set_gpu_config(session,&config) == SONY2FUJI_STATUS_OK);
     sony2fuji_buffer rejected{};
-#if defined(SONY2FUJI_ENABLE_METAL)
-    assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_OK);
-    assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL);
-    sony2fuji_release_buffer(&rejected);
-#else
-    assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
-#endif
+    if (nativeGpu) {
+        assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_OK);
+        assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+        sony2fuji_release_buffer(&rejected);
+    } else assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
     sony2fuji_session_destroy(session);
     std::cout << "PASS: chroma defaults, validation, denoising, preview/final parity and explicit GPU fallback\n";
 }

@@ -25,13 +25,15 @@ public partial class MainWindow : Window
     private readonly LatestWork<EmbeddedWork> embeddedScheduler=new();
     private long openRevision;
     private readonly Dictionary<Parameter,(Button Button,AdjustmentRing Ring)> toolButtons=[];
+    private readonly Dictionary<PhotoEffectTool,(Button Button,AdjustmentRing Ring)> effectToolButtons=[];
     private readonly Dictionary<string,Button> filmButtons=new(StringComparer.OrdinalIgnoreCase);
     private Adjustments settings=new();
     private Parameter selectedParameter=Parameter.Exposure;
     private string? file,lut;
     private RenderEngine? engine;
     private bool ready,syncing,interacting,exporting,closing,exactReady;
-    private bool compare=true,clipping,choosingFilm,choosingDenoise,swipe;
+    private bool compare=true,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,swipe;
+    private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
     private int? exportLongEdge;
     private PhotoInfo? photoInfo;
@@ -82,6 +84,10 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting)return;
             settings.Denoise=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
+        PhotoEffectsEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting)return;
+            settings.Effects=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
         ValueSlider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{interacting=true;}));
         ValueSlider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{interacting=false; Schedule();}));
         ready=true; RefreshControls();
@@ -112,12 +118,24 @@ public partial class MainWindow : Window
             var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=spec.Title,FontSize=11,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=spec.Title};
             AutomationProperties.SetName(button,spec.Title);
-            button.Click+=(_,_)=>{choosingFilm=false;choosingDenoise=false;selectedParameter=spec.Id;RefreshControls();};
+            button.Click+=(_,_)=>{choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;selectedParameter=spec.Id;RefreshControls();};
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
+        foreach(var (tool,title,icon) in new[] {
+            (PhotoEffectTool.Vignette,"暗角","Clipping"), (PhotoEffectTool.Grain,"颗粒","Film")
+        })
+        {
+            var ring=new AdjustmentRing{Width=40,Height=40};
+            var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=icon,Width=20,Height=20});
+            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=title,FontSize=11,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? "Vignette / 暗角" : "Grain / 颗粒"};
+            AutomationProperties.SetName(button,tool.ToString());
+            button.Click+=(_,_)=>{if(exporting)return;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
+            Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
+        }
     }
-    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { choosingFilm=true;choosingDenoise=false;RefreshControls(); }
-    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { choosingDenoise=true;choosingFilm=false;RefreshControls(); }
+    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;RefreshControls(); }
+    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;RefreshControls(); }
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear();
@@ -150,24 +168,34 @@ public partial class MainWindow : Window
             ValueSlider.Value=spec.Position(settings[selectedParameter]);
             AutomationProperties.SetName(ValueSlider,spec.Title);
             AutomationProperties.SetName(ValueText,spec.Title+"数值（"+spec.Unit+"）");
-            var canAdjust=file!=null && !exporting && !choosingFilm && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);
+            var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
-            ParameterPanel.Visibility=choosingFilm || choosingDenoise ? Visibility.Collapsed : Visibility.Visible;
+            ParameterPanel.Visibility=choosingFilm || choosingDenoise || choosingPhotoEffects ? Visibility.Collapsed : Visibility.Visible;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
             DenoiseEditor.IsEnabled=file!=null && !exporting;DenoiseEditor.Refresh(settings.Denoise);
+            PhotoEffectsSurface.Visibility=choosingPhotoEffects ? Visibility.Visible : Visibility.Collapsed;
+            PhotoEffectsEditor.IsEnabled=file!=null && !exporting;PhotoEffectsEditor.Refresh(settings.Effects,selectedEffect);
             DenoiseCategory.Tag=choosingDenoise ? "selected" : null;
             DenoiseCategoryRing.Selected=choosingDenoise;
             DenoiseCategoryRing.Progress=settings.Denoise.Enabled ? 1 : 0;DenoiseCategoryRing.InvalidateVisual();
             FilmCategory.Tag=choosingFilm ? "selected" : null;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
+            foreach(var (tool,controls) in effectToolButtons)
+            {
+                var selected=choosingPhotoEffects && selectedEffect==tool;
+                controls.Button.Tag=selected ? "selected" : null;
+                controls.Ring.Selected=selected;
+                controls.Ring.Progress=settings.IsEffectDefault(tool==PhotoEffectTool.Vignette) ? 0 : 1;
+                controls.Ring.InvalidateVisual();
+            }
             ExposureMode.SelectedIndex=settings.ExposureMode;
             ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
             ResetParameterButton.IsEnabled=ResetGroupButton.IsEnabled=canAdjust;
             AsShotButton.IsEnabled=file!=null && !exporting && settings.AsShot!=null;
             foreach(var (id,controls) in toolButtons)
             {
-                var selected=!choosingFilm && !choosingDenoise && id==selectedParameter;
+                var selected=!choosingFilm && !choosingDenoise && !choosingPhotoEffects && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;

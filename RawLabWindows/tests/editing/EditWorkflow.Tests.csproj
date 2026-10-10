@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
     <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
+    <Compile Include="../../PhotoEffectsSettings.cs" Link="PhotoEffectsSettings.cs" />
     <Compile Include="../../Native.cs" Link="Native.cs" />
     <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />
     <Compile Include="../../PhotoInfo.cs" Link="PhotoInfo.cs" />

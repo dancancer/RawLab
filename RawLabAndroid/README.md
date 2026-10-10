@@ -86,11 +86,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.5.0 APK / Download Android v0.5.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Android-0.5.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.5.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.5.0/SHA256SUMS.txt)
+[下载 Android v0.5.1 APK / Download Android v0.5.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.5.1/RawLab-Android-0.5.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.5.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.5.1/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.5.0`、`versionCode` 为 `8`，沿用正式发布密钥，支持从所有更早的同签名正式版覆盖升级。新版从带相机补丁的 LibRaw 0.22.2 重新构建两个 ABI；包含批量导出、编辑记忆、降噪、照片信息和导出尺寸控制。“更多 → 关于 RawLab”包含项目/作者链接和更新检测，只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
+发布 APK 的 `versionName` 为 `0.5.1`、`versionCode` 为 `9`，沿用正式发布密钥，支持从所有更早的同签名正式版覆盖升级。两个 ABI 从本版源码重新构建，新增一致的暗角、颗粒与 GLES 降噪，保留批量导出、编辑记忆、照片信息和导出尺寸控制。“更多 → 关于 RawLab”只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
 
-The release APK uses `versionName=0.5.0` and `versionCode=8`, retaining the release key for upgrades from all earlier release-signed versions. Both ABIs are rebuilt with patched LibRaw 0.22.2; batch export, edit persistence, denoising, photo information and export sizing are included. More > About RawLab opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses `versionName=0.5.1` and `versionCode=9`, retaining the release key for upgrades from all earlier release-signed versions. Both ABIs are rebuilt with matching vignette/grain and GLES denoising, alongside batch export, edit persistence, photo information and export sizing. About opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -140,10 +140,10 @@ Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestR
 
 ## 边界 / Limitations
 
-- GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度和逐像素明暗处理。RAW 解码、去马赛克、文件编码仍在 CPU。
-  GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending and pointwise tone. RAW decoding/demosaic and encoding stay on CPU.
-- 当前界面未提供的锐化/降噪邻域运算不走 GLES；C API Auto 回退 CPU，Force 报错。真机数据见 [GPU 验证记录](gpu-verification.md)。
-  Neighborhood sharpening/denoise are not accelerated by GLES: C API Auto falls back, Force fails. See [GPU verification](gpu-verification.md).
+- GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度、明暗处理、细节、暗角/颗粒、小波过滤和显示色度引导滤波。RAW 解码、去马赛克、噪声估计、OpenCV Lab 转换及文件编码仍在 CPU。
+  GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending, tone, detail, vignette/grain, wavelet filtering and display-chroma guided filtering. RAW decoding/demosaic, noise estimation, OpenCV Lab conversion and encoding stay on CPU.
+- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
+  All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
 - 全尺寸 RAW 显影需要较多 native 内存。低内存设备可能失败或被系统终止；没有验证所有相机和像素尺寸。
   Full-resolution RAW development is memory-intensive; low-memory devices may fail or be killed by the OS.
   X-Trans 并发修复新增每像素 8 字节的只读输入副本，40 MP 约增加 304 MiB 峰值内存；本轮仅验证 Android 构建，未验证这些机型在设备上的内存表现。
