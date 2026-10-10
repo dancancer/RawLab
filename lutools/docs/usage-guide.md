@@ -305,4 +305,4 @@ LUT_3D_SIZE 33
 
 ## 许可证
 
-MIT License - 详见 LICENSE 文件
+[GPLv3 only](../../LICENSE)（`GPL-3.0-only`），第三方许可见[许可与归属说明](../../docs/licensing.md)。

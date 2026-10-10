@@ -10,7 +10,7 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 
 ## 功能 / Features
 
-未发布源码新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
 
 - 应用内 RAW 相册、按相册筛选、系统文件导入。相册权限被拒绝时仍可使用文件入口。
   In-app RAW albums with album filtering and a system document-picker fallback.
@@ -86,11 +86,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.4.1 APK / Download Android v0.4.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Android-0.4.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.4.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
+[下载 Android v0.5.0 APK / Download Android v0.5.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Android-0.5.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.5.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.5.0/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.4.1`、`versionCode` 为 `7`，沿用正式发布密钥，支持从构建 6 及同签名的旧正式版覆盖升级。新版从带相机补丁的 LibRaw 0.22.2 重新构建两个 ABI；不包含开发中的批量导出或编辑记忆。“更多 → 关于 RawLab”包含项目/作者链接和更新检测，只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
+发布 APK 的 `versionName` 为 `0.5.0`、`versionCode` 为 `8`，沿用正式发布密钥，支持从所有更早的同签名正式版覆盖升级。新版从带相机补丁的 LibRaw 0.22.2 重新构建两个 ABI；包含批量导出、编辑记忆、降噪、照片信息和导出尺寸控制。“更多 → 关于 RawLab”包含项目/作者链接和更新检测，只打开官方下载页面，不自动安装。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
 
-The release APK uses `versionName=0.4.1` and `versionCode=7`, retaining the release key for upgrades from build 6 and earlier release-signed versions. Both ABIs are rebuilt with patched LibRaw 0.22.2; in-progress batch export and edit persistence are excluded. More > About RawLab opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses `versionName=0.5.0` and `versionCode=8`, retaining the release key for upgrades from all earlier release-signed versions. Both ABIs are rebuilt with patched LibRaw 0.22.2; batch export, edit persistence, denoising, photo information and export sizing are included. More > About RawLab opens the official update page without installing. Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
