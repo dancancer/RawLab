@@ -42,6 +42,16 @@ v0.4.0 构建 6 的 Mac、Windows、Android 新增“关于 RawLab”，包含 [
 
 The v0.4.0 build 6 Mac, Windows and Android apps add About with repository and author links, optional startup update checks at most once per 24 hours, and an unrestricted manual check. Checks read public GitHub release metadata, require an asset for the current platform, and open the official release page without installing updates or uploading photos. Background failures do not interrupt editing.
 
+### 照片信息与导出尺寸 / Photo Info and Export Size
+
+当前未发布源码在四端增加照片信息叠层，信息按钮在隐藏、文件信息和拍摄参数之间切换；Mac / Windows 也可按 `I` 切换。显示原始照片可读取的文件名、拍摄时间、尺寸、相机、镜头、快门、光圈、ISO 和焦距，缺失字段不生成虚构数值，信息文字不会写入成片。
+
+单张和批量导出支持原始尺寸或指定长边像素，提供 2048 / 3000 / 4096 和自定义值。缩放保持比例、不会放大小图，且在最终显影后进行，不使用交互预览代替成片。批量任务保存所选尺寸，恢复和重试沿用任务快照；旧任务默认原始尺寸。各平台原有输出格式不变，iOS 仍为 JPEG。
+
+Mac / Windows 文件树的照片和目录右键菜单新增“在 Finder / 资源管理器中打开”和“应用当前设置”。应用设置前确认数量，复制当前调整与外观并替换目标的本机调整记录，不改写 RAW；目录仅处理直接包含的 RAW，不含子目录。这与批量导出不同，批量导出仍保留目标照片的调整记录。
+
+The unreleased sources add a three-state photo information overlay to all four clients, with an information button and desktop `I` shortcut. Readable capture metadata comes from the original photo; missing fields are not invented and overlay text is never burned into exported images. Single and batch exports support native size or a custom long-edge pixel ceiling, including 2048 / 3000 / 4096 presets, without enlarging small inputs. Sizing follows final rendering, preserves aspect ratio and is frozen in batch journals. Existing output formats are unchanged; iOS remains JPEG-only. Desktop file-tree context menus can reveal files in Finder / Explorer or copy the current settings into confirmed targets' local edit records without modifying RAW files. Folder targets exclude subfolders; batch export remains non-destructive to target edit records.
+
 ## 下载 / Download
 
 Windows 新包已加入快速内嵌预览、原尺寸缩放缓存、多核 RAW 处理及远程桌面下的 WPF 画布硬件加速：选中照片先显示预览，双击立即放大并后台补齐细节，拖动时复用图像图层。构建方法见 [Windows 文档](RawLabWindows/README.md)，测量条件与结果见 [性能记录](RawLabWindows/performance.md)。

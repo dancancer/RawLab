@@ -33,6 +33,11 @@ int main() {
     assert(exported.wb_mode == SONY2FUJI_WB_TEMPERATURE);
     assert(exported.temperature == 4800 && exported.tint == -10);
     assert(exported.lut_strength == 0);
+    auto limited = rawlab::makeRequest("input.dng", nullptr, "out.jpg", 1, 0, false, 6500, 0,
+        0, 0, 0, 0, 0, 0, 1600, false, 3000);
+    assert(limited.intent == SONY2FUJI_INTENT_FINAL);
+    assert(limited.size_mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE);
+    assert(limited.long_edge == 3000 && limited.preview_long_edge == 0);
     for (const char* output : {static_cast<const char*>(nullptr), "out.jpg"}) {
         auto strong = rawlab::makeRequest("in", "film.cube", output, 2, 0, false, 6500, 0, 400, false);
         assert(strong.lut_strength == 2);

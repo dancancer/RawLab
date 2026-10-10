@@ -11,6 +11,10 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -62,11 +66,16 @@ class EditorScreenTest {
         compose.onNodeWithText("色温").assertDoesNotExist()
         capture("editor-collapsed.png")
         compose.onNodeWithContentDescription("展开调整").performClick()
+        val adjustments = compose.onAllNodes(hasScrollToIndexAction() and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)).onLast()
+        adjustments.performScrollToNode(hasText("色温"))
         compose.onNodeWithText("色温").performClick()
         compose.onNodeWithTag("adjustment-slider").assertIsDisplayed()
+        adjustments.performScrollToNode(hasText("色调"))
         compose.onNodeWithText("色调").performClick()
         compose.onNodeWithTag("adjustment-slider").assertIsDisplayed()
         capture("editor-tint.png")
+        adjustments.performScrollToNode(hasText("胶片"))
         compose.onNodeWithText("胶片").performClick()
         compose.waitForIdle()
         capture("editor-comparison.png")

@@ -19,6 +19,14 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         var settings = Adjustments(); settings.exposure = 0.75
         settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
         var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Velvia")
+        job.longEdge = 2048
+        let encodedJob = try JSONEncoder().encode(job)
+        try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).longEdge == 2048,
+                  "batch keeps the chosen export size")
+        var legacyJob = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
+        legacyJob.removeValue(forKey: "longEdge")
+        try check(try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: legacyJob)).longEdge == nil,
+                  "older batch tasks retain original export size")
         job.outputDirectory = output
         job.items = try inputs.map { try BatchExportItem(url: $0) }
         try check(job.items.allSatisfy { !$0.selected }, "candidates start unselected")

@@ -27,18 +27,19 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
         return checkNotNull(nativeProcess(handle, input.path, lut?.path, null, settings.strength,
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
-            settings.saturation, settings.sharpening, edge, interactive, false,
+            settings.saturation, settings.sharpening, edge, interactive, false, 0,
             settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse))
     }
 
     @Synchronized
-    fun export(input: File, lut: File?, settings: EditSettings, output: File, png: Boolean) {
+    fun export(input: File, lut: File?, settings: EditSettings, output: File, png: Boolean, longEdge: Int? = null) {
         check(handle != 0L) { "Processor is closed" }
         require(input.canonicalPath != output.canonicalPath)
+        require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
         nativeProcess(handle, input.path, lut?.path, output.path, settings.strength,
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
-            settings.saturation, settings.sharpening, 0, false, png,
+            settings.saturation, settings.sharpening, 0, false, png, longEdge ?: 0,
             settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse)
         ExportMetadata.preserve(input, output)
     }
@@ -54,7 +55,7 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
     private external fun nativeProcess(handle: Long, input: String, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
         highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
-        edge: Int, interactive: Boolean, png: Boolean,
+        edge: Int, interactive: Boolean, png: Boolean, longEdge: Int,
         denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float): NativeFrame?
 
     companion object {

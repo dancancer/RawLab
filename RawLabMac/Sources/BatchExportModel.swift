@@ -130,6 +130,11 @@ final class BatchExportModel: ObservableObject {
         job.png = value; saveDraft()
     }
 
+    func setLongEdge(_ value: Int?) {
+        guard !running, !job.started, value == nil || (1...65535).contains(value!) else { return }
+        job.longEdge = value; saveDraft()
+    }
+
     private func saveDraft() {
         do { try journal.save(job); error = nil }
         catch { self.error = "任务未保存：\(error.localizedDescription)" }
@@ -152,7 +157,7 @@ final class BatchExportModel: ObservableObject {
                 }) { input, settings, look, output in
                     if self.engine == nil { self.engine = try RenderEngine() }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
-                    _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output)
+                    _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output, exportLongEdge: snapshot.longEdge)
                 }
             } catch { failure = error.localizedDescription; work.interrupted = true }
             let final = work, message = failure

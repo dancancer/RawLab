@@ -59,7 +59,15 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
+    var infoMode by rememberSaveable(state.photo?.file?.absolutePath) { mutableIntStateOf(0) }
     val photoCanvas = rememberSaveable(state.photo?.file?.absolutePath, saver = PhotoCanvasState.Saver) { PhotoCanvasState() }
+    val photoInfo by produceState<PhotoInfo?>(null, state.photo?.file?.absolutePath) {
+        value = null
+        val photo = state.photo ?: return@produceState
+        value = withContext(Dispatchers.IO) {
+            runCatching { PhotoInfoReader.read(photo.file, photo.name) }.getOrElse { PhotoInfo(fileName = photo.name) }
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); onMessageDismiss() }
@@ -105,7 +113,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 if (wide && state.photo != null) {
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
-                            EditorCanvas(state, compare, photoCanvas, Modifier.weight(1f), onAlbum, onFile, onLicenses)
+                            EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
+                                Modifier.weight(1f), onAlbum, onFile, onLicenses)
                             RenderError(state, onRetry)
                         }
                         VerticalDivider()
@@ -114,7 +123,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             onImportLook, onRenameLook, onDeleteLook)
                     }
                 } else {
-                    EditorCanvas(state, compare, photoCanvas, Modifier.weight(1f), onAlbum, onFile, onLicenses)
+                    EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
+                        Modifier.weight(1f), onAlbum, onFile, onLicenses)
                     RenderError(state, onRetry)
                     if (state.photo != null) {
                         HorizontalDivider()
@@ -129,10 +139,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
 }
 
 @Composable
-private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, modifier: Modifier,
+private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, photoInfo: PhotoInfo?, infoMode: Int,
+    onInfoClick: () -> Unit, modifier: Modifier,
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit) {
     Box(modifier.fillMaxWidth().background(Color(0xFF18191A)), contentAlignment = Alignment.Center) {
-        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas) }
+        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick) }
             ?: if (!state.rendering) EmptyEditor(onAlbum, onFile, onLicenses) else Unit
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)

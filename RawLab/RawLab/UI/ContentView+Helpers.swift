@@ -45,9 +45,9 @@ extension ContentView {
         return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
-    func exportJPEG() {
+    func exportJPEG(longEdge: Int? = nil) {
         isSaving = true
-        viewModel.exportJPEG(settings: settings) { result in
+        viewModel.exportJPEG(settings: settings, longEdge: longEdge) { result in
             switch result {
             case .success(let data):
                 saveToPhotoLibrary(data)

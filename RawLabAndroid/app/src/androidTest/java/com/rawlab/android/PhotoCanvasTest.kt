@@ -85,7 +85,7 @@ class PhotoCanvasTest {
     @Test fun editsAndPreviewQualityKeepZoomButNewPhotoResetsIt() {
         val restoration = StateRestorationTester(compose)
         val pair = fixture()
-        var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.EMPTY, "photo-a", File("photo-a")), preview = pair))
+        var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-a"), "photo-a", File("photo-a")), preview = pair))
         restoration.setContent {
             MaterialTheme {
                 EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, {})
@@ -101,7 +101,7 @@ class PhotoCanvasTest {
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
         compose.onNodeWithContentDescription("对比").performClick()
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
-        compose.runOnIdle { editor = editor.copy(photo = ImportedPhoto(Uri.EMPTY, "photo-b", File("photo-b")), preview = pair) }
+        compose.runOnIdle { editor = editor.copy(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-b"), "photo-b", File("photo-b")), preview = pair) }
         canvas.assert(SemanticsMatcher("photo starts fitted") {
             it.config[SemanticsProperties.StateDescription].startsWith("适应画面")
         })

@@ -19,6 +19,7 @@ swiftc -swift-version 5 -O -sdk "$SDK" \
     "$ROOT/RawLabMac/Sources/RenderScheduling.swift" \
     "$ROOT/RawLabMac/Sources/LookLibrary.swift" \
     "$ROOT/RawLabMac/Sources/EditorModel.swift" \
+    "$ROOT/RawLabMac/Sources/ExportSizePicker.swift" \
     "$ROOT/RawLabMac/tests/ProgressiveRenderTests.swift" \
     "$BUILD/libsony2fuji_core.a" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib) -lc++ -lz \

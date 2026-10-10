@@ -58,7 +58,10 @@ final class RenderEngine {
 
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false) throws -> RenderedImage? {
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil) throws -> RenderedImage? {
+        if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
+            throw RenderError.failed("导出长边必须为 1-65535 像素。")
+        }
         guard sony2fuji_session_set_interactive_preview(session, interactive && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed("无效的预览模式")
         }
@@ -100,6 +103,11 @@ final class RenderEngine {
         request.lut_strength = lut == nil ? 0 : Float(settings.strength)
         request.intent = edge == nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW
         request.size_mode = SONY2FUJI_SIZE_NATIVE
+        if output != nil, let exportLongEdge {
+            request.intent = SONY2FUJI_INTENT_FINAL
+            request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
+            request.long_edge = UInt32(exportLongEdge)
+        }
         if let edge { request.preview_long_edge = UInt32(edge) }
         request.output_target = output == nil ? SONY2FUJI_TARGET_BUFFER : SONY2FUJI_TARGET_FILE
         request.output_format = output == nil ? SONY2FUJI_OUTPUT_RGBA8 :

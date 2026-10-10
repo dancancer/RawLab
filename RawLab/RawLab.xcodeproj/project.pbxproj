@@ -10,6 +10,7 @@
 		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
 		AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000012 /* ZoomablePhoto.swift */; };
 		AB1700000000000000000001 /* ExportMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1700000000000000000002 /* ExportMetadata.swift */; };
+		AB1700000000000000000003 /* PhotoInformation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1700000000000000000004 /* PhotoInformation.swift */; };
 		AB1400000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */; };
 		AB1400000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */; };
 		AB1400000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube */; };
@@ -56,12 +57,16 @@
 		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
 		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
 		D00100000000000000000004 /* UI/BatchExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000014 /* UI/BatchExportView.swift */; };
+		D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000015 /* Core/Models/ExportSize.swift */; };
+		D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */; };
+		D00100000000000000000007 /* UI/ExportSizePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000017 /* UI/ExportSizePicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		AB1800000000000000000011 /* PhotoZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoZoomGeometry.swift; sourceTree = "<group>"; };
 		AB1800000000000000000012 /* ZoomablePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomablePhoto.swift; sourceTree = "<group>"; };
 		AB1700000000000000000002 /* ExportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExportMetadata.swift; path = "../Shared/ExportMetadata.swift"; sourceTree = SOURCE_ROOT; };
+		AB1700000000000000000004 /* PhotoInformation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhotoInformation.swift; path = "../Shared/PhotoInformation.swift"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ACROS_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ASTIA_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ASTIA_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
@@ -112,6 +117,9 @@
 		D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportCore.swift; sourceTree = "<group>"; };
 		D00100000000000000000013 /* Core/Batch/BatchExport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExport.swift; sourceTree = "<group>"; };
 		D00100000000000000000014 /* UI/BatchExportView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportView.swift; sourceTree = "<group>"; };
+		D00100000000000000000015 /* Core/Models/ExportSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSize.swift; sourceTree = "<group>"; };
+		D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ContentView+PhotoInfo.swift"; sourceTree = "<group>"; };
+		D00100000000000000000017 /* UI/ExportSizePicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSizePicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -174,6 +182,7 @@
 			isa = PBXGroup;
 			children = (
 				AB1700000000000000000002 /* ExportMetadata.swift */,
+				AB1700000000000000000004 /* PhotoInformation.swift */,
 				8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */,
 				8F3A1B2C3D4E5F6789012350 /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift */,
 			);
@@ -207,6 +216,8 @@
 				7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */,
 				6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */,
 				D00100000000000000000014 /* UI/BatchExportView.swift */,
+				D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */,
+				D00100000000000000000017 /* UI/ExportSizePicker.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -298,6 +309,7 @@
 				75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */,
 				E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */,
 				99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */,
+				D00100000000000000000015 /* Core/Models/ExportSize.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -422,6 +434,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB1700000000000000000001 /* ExportMetadata.swift in Sources */,
+				AB1700000000000000000003 /* PhotoInformation.swift in Sources */,
 				AB1200000000000000000001 /* EditorComponents.swift in Sources */,
 				AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */,
 				AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */,
@@ -442,6 +455,9 @@
 				D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */,
 				D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */,
 				D00100000000000000000004 /* UI/BatchExportView.swift in Sources */,
+				D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */,
+				D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */,
+				D00100000000000000000007 /* UI/ExportSizePicker.swift in Sources */,
 				8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */,
 				8F3A1B2C3D4E5F678901234F /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift in Sources */,
 			);

@@ -13,7 +13,8 @@ class AboutScreenTest {
         compose.onNodeWithText("关于 RawLab").performClick()
         compose.onNodeWithText("GitHub 仓库").assertIsDisplayed()
         compose.onNodeWithText("作者的小红书主页").assertIsDisplayed()
-        compose.onNodeWithText("版本 0.4.0").assertIsDisplayed()
+        val version = compose.activity.packageManager.getPackageInfo(compose.activity.packageName, 0).versionName
+        compose.onNodeWithText("版本 $version").assertIsDisplayed()
         compose.onNodeWithText("检查更新").assertExists()
         val automatic = compose.activity.updates.state.value.automatic
         compose.onNodeWithContentDescription("自动检查更新").performClick()

@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -75,7 +76,15 @@ class PhotoCanvasState {
 }
 
 @Composable
-internal fun PhotoCanvas(pair: PreviewPair, compare: Boolean, filename: String, state: PhotoCanvasState) {
+internal fun PhotoCanvas(
+    pair: PreviewPair,
+    compare: Boolean,
+    filename: String,
+    state: PhotoCanvasState,
+    info: PhotoInfo? = null,
+    infoMode: Int = 0,
+    onInfoClick: () -> Unit = {},
+) {
     val wipeDescription = stringResource(R.string.comparison_wipe)
     val fitDescription = stringResource(R.string.zoom_fit)
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 8.dp).clipToBounds()) {
@@ -124,8 +133,68 @@ internal fun PhotoCanvas(pair: PreviewPair, compare: Boolean, filename: String, 
                         color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
             }
+            PhotoInfoOverlay(info, infoMode, onInfoClick)
         }
     }
+}
+
+@Composable
+private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit) {
+    val modeDescription = when (mode) {
+        1 -> stringResource(R.string.info_file)
+        2 -> stringResource(R.string.info_capture)
+        else -> stringResource(R.string.info_hidden)
+    }
+    IconButton(
+        onClick = onInfoClick,
+        modifier = Modifier.padding(8.dp).size(48.dp)
+            .background(Color.Black.copy(alpha = .65f), CircleShape)
+            .testTag("photo-info-button")
+            .semantics { contentDescription = modeDescription },
+    ) {
+        Icon(Icons.Outlined.Info, modeDescription, tint = Color.White)
+    }
+    if (mode != 0 && info != null) {
+        Column(
+            Modifier.padding(start = 60.dp, top = 12.dp).widthIn(max = 360.dp)
+                .background(Color.Black.copy(alpha = .72f))
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .testTag("photo-info-panel"),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            if (mode == 1) {
+                InfoLine(stringResource(R.string.info_filename), info.fileName)
+                info.captureTime?.let { InfoLine(stringResource(R.string.info_capture_time), it) }
+                info.orientationCorrection?.let { InfoLine(stringResource(R.string.info_orientation), it) }
+                if (info.originalWidth != null && info.originalHeight != null) {
+                    InfoLine(stringResource(R.string.info_original_dimensions), "${info.originalWidth} × ${info.originalHeight}")
+                }
+            } else {
+                InfoLine(stringResource(R.string.info_filename), info.fileName)
+                val hasCaptureParameters = info.camera != null || info.lens != null || info.shutter != null ||
+                    info.aperture != null || info.iso != null || info.focalLength != null
+                if (!hasCaptureParameters) {
+                    Text(stringResource(R.string.info_capture_missing), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
+                info.camera?.let { InfoLine(stringResource(R.string.info_camera), it) }
+                info.lens?.let { InfoLine(stringResource(R.string.info_lens), it) }
+                info.shutter?.let { InfoLine(stringResource(R.string.info_shutter), it) }
+                info.aperture?.let { InfoLine(stringResource(R.string.info_aperture), "f/$it") }
+                info.iso?.let { InfoLine(stringResource(R.string.info_iso), it) }
+                info.focalLength?.let { InfoLine(stringResource(R.string.info_focal_length), it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoLine(title: String, value: String) {
+    Text(
+        "$title  $value",
+        color = Color.White,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, compare: Boolean) {

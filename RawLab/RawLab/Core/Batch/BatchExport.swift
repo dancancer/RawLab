@@ -83,6 +83,12 @@ final class BatchExportModel: ObservableObject {
         saveJournal()
     }
 
+    func setLongEdge(_ value: Int?) {
+        guard canChangeTargets, ExportSize.isValid(value) else { return }
+        job.longEdge = value
+        saveJournal()
+    }
+
     func addPickerItems(_ items: [PhotosPickerItem]) async {
         guard canChangeTargets, let journalStore else { return }
         await MainActor.run { isPreparing = true; validationMessage = nil }
@@ -127,12 +133,15 @@ final class BatchExportModel: ObservableObject {
         cancellation.lock(); didCancel = false; cancellation.unlock()
         backgroundInterruption = false
         let failedIDs = failuresOnly ? Set(snapshot.targets.filter { $0.status == .failed }.map(\.id)) : nil
+        let frozenLongEdge = snapshot.longEdge
         queue.async { [self] in
             do {
                 try PhotoLibraryBatchWriter.authorize()
                 let result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
                     render: { target, settings in
-                        try self.render(target: target, settings: settings, look: snapshot.source.lookURL)
+                        try self.render(target: target, settings: settings,
+                                        look: snapshot.source.lookURL,
+                                        longEdge: frozenLongEdge)
                     },
                     write: { data, name, target, checkpoint in
                         try PhotoLibraryBatchWriter.write(data: data, outputName: name, target: target, checkpoint: checkpoint)
@@ -219,12 +228,15 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    private func render(target: BatchTarget, settings: RawSettings, look: URL?) throws -> Data {
+    private func render(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?) throws -> Data {
         guard target.sourceKind == .raw else { throw BatchExportError.target("不是 RAW 照片。") }
         return try autoreleasepool {
             let processor = Sony2FujiProcessor()
-            let result = try processor.processRaw(url: target.sourceURL, settings: settings, previewLongEdge: nil, lutURL: look)
-            return try processor.makeJPEGData(from: result.buffer, sourceURL: target.sourceURL, orientation: result.orientation, quality: 0.92)
+            let result = try processor.processRaw(url: target.sourceURL, settings: settings,
+                                                   previewLongEdge: nil, lutURL: look,
+                                                   exportLongEdge: longEdge)
+            return try processor.makeJPEGData(from: result.buffer, sourceURL: target.sourceURL,
+                                              orientation: result.orientation, quality: 0.92)
         }
     }
 

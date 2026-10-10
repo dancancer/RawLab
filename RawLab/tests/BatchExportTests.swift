@@ -8,6 +8,10 @@ struct BatchExportTests {
     }
 
     static func main() throws {
+        check(ExportSize.isValid(nil), "native export size is valid")
+        check(ExportSize.presets == [2048, 3000, 4096], "standard export sizes are available")
+        check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),
+              "custom export size enforces the 1-65535 range")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-batch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -25,12 +29,18 @@ struct BatchExportTests {
                         displayName: "target-\(index).ARW")
         }
         for target in targets { try Data(target.id.utf8).write(to: target.sourceURL) }
-        var job = BatchExportJob(source: source, targets: targets)
+        var job = BatchExportJob(source: source, targets: targets, longEdge: 3000)
         let journal = try BatchJournalStore(directory: root.appendingPathComponent("journal", isDirectory: true))
         try journal.save(job)
         let reopenedJob = try journal.load(id: job.id)
         let pendingJobs = try journal.pendingJobs()
         check(reopenedJob?.targets.count == 6, "journal round-trips the selected rows")
+        check(reopenedJob?.longEdge == 3000, "journal freezes the selected export long edge")
+        var oldJournal = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as! [String: Any]
+        oldJournal.removeValue(forKey: "longEdge")
+        let oldJob = try JSONDecoder().decode(BatchExportJob.self,
+                                              from: JSONSerialization.data(withJSONObject: oldJournal))
+        check(oldJob.longEdge == nil, "old journals default to native export size")
         check(reopenedJob?.source.settings.denoise == settings.denoise, "journal preserves denoise settings")
         check(pendingJobs.contains(where: { $0.id == job.id }), "pending journal is recoverable after interruption")
         var renderCount = 0
@@ -71,6 +81,7 @@ struct BatchExportTests {
                                                    render: { _, _ in Data([9]) },
                                                    write: { data, name, _, _ in try data.write(to: root.appendingPathComponent(name)) })
         check(retry.targets.filter { $0.status == .succeeded }.count == 6, "retry only reruns the failed row")
+        check(retry.longEdge == 3000, "retry retains the frozen export long edge")
         check(retry.targets.first(where: { $0.id == successfulID })?.status == .succeeded,
               "retry preserves the original successful row")
         check(Set(retry.targets.map(\.outputName)).count == 6, "output names remain collision free")

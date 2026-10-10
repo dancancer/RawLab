@@ -19,10 +19,11 @@ import ImageIO
         else { settings.applyDenoisePreset(.clean); settings.setDenoiseParameter(.luma, to: 53) }
         let engine = try RenderEngine()
         for png in [false, true] {
+            for longEdge: Int? in [nil, 2048] {
             let single = root.appendingPathComponent(png ? "single.png" : "single.jpg")
-            _ = try engine.render(input, settings: settings, lut: nil, edge: nil, output: single)
+            _ = try engine.render(input, settings: settings, lut: nil, edge: nil, output: single, exportLongEdge: longEdge)
             var job = BatchExportJob(source: input, settings: settings, look: nil, lookName: "Neutral")
-            job.outputDirectory = root; job.png = png
+            job.outputDirectory = root; job.png = png; job.longEdge = longEdge
             var item = try BatchExportItem(url: input); item.selected = true
             job.items = [item]
             let model = BatchExportModel(job: job, journal: journal)
@@ -40,8 +41,13 @@ import ImageIO
                   first.dataProvider!.data! as Data == second.dataProvider!.data! as Data else {
                 throw RenderError.failed("Single and batch pixels differ")
             }
+            if let longEdge, max(first.width, first.height) != longEdge {
+                throw RenderError.failed("Batch output ignored its frozen long-edge size")
+            }
+            if png && first.bitsPerComponent != 16 { throw RenderError.failed("Sized PNG lost sixteen-bit channels") }
             guard try OriginalFileIdentity(input) == original else { throw RenderError.failed("Original RAW changed") }
             print("PASS: \(input.lastPathComponent) \(png ? "16-bit PNG" : "JPEG") single/batch pixels, \(first.width)x\(first.height), original unchanged")
+            }
         }
     }
 }

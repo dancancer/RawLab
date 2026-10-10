@@ -5,6 +5,7 @@ var root = Path.Combine(Path.GetTempPath(), "rawlab-edit-" + Guid.NewGuid());
 Directory.CreateDirectory(root);
 try
 {
+    FeatureRegressionChecks.Run(Check);
     var a = Path.Combine(root, "a", "same.ARW");
     var b = Path.Combine(root, "b", "same.ARW");
     foreach (var path in new[] { a, b }) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, path); }

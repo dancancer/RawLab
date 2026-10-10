@@ -26,7 +26,7 @@ inline size_t previewByteCount(const sony2fuji_buffer& buffer) {
 inline sony2fuji_request makeRequest(const char* input, const char* lut, const char* output,
     float strength, float exposure, bool customWb, float temperature, float tint,
     float highlights, float shadows, float contrast, float toneCurve, float saturation,
-    float sharpening, int edge, bool png) {
+    float sharpening, int edge, bool png, uint32_t longEdge = 0) {
     if (!input || !*input || !std::isfinite(strength) || strength < 0 || strength > 2 ||
         !std::isfinite(exposure) || exposure < -4 || exposure > 4 ||
         !std::isfinite(highlights) || highlights < -1 || highlights > 1 ||
@@ -36,7 +36,8 @@ inline sony2fuji_request makeRequest(const char* input, const char* lut, const c
         !std::isfinite(saturation) || saturation < -1 || saturation > 1 ||
         !std::isfinite(sharpening) || sharpening < 0 || sharpening > 2 ||
         !std::isfinite(temperature) || temperature < 2000 || temperature > 50000 ||
-        !std::isfinite(tint) || tint < -150 || tint > 150 || (!output && (edge < 1 || edge > 1600))) {
+        !std::isfinite(tint) || tint < -150 || tint > 150 || (!output && (edge < 1 || edge > 1600)) ||
+        (output && longEdge > 65535)) {
         throw std::invalid_argument("Invalid render settings");
     }
     sony2fuji_request request{};
@@ -61,7 +62,9 @@ inline sony2fuji_request makeRequest(const char* input, const char* lut, const c
     request.tone_curve = toneCurve;
     request.sharpening = sharpening;
     request.intent = output ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW;
-    request.size_mode = SONY2FUJI_SIZE_NATIVE;
+    request.size_mode = output && longEdge > 0
+        ? SONY2FUJI_SIZE_LIMIT_LONG_EDGE : SONY2FUJI_SIZE_NATIVE;
+    request.long_edge = output ? longEdge : 0;
     request.preview_long_edge = output ? 0 : static_cast<uint32_t>(edge);
     request.output_target = output ? SONY2FUJI_TARGET_FILE : SONY2FUJI_TARGET_BUFFER;
     request.output_path = output;

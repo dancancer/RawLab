@@ -71,7 +71,10 @@ typedef enum sony2fuji_size_mode {
     SONY2FUJI_SIZE_EXACT = 0,
     SONY2FUJI_SIZE_FIT_LONG_EDGE = 1,
     SONY2FUJI_SIZE_FIT_SHORT_EDGE = 2,
-    SONY2FUJI_SIZE_NATIVE = 3
+    SONY2FUJI_SIZE_NATIVE = 3,
+    // Final-size pixel ceiling: preserve aspect ratio and never enlarge.
+    // As with other size modes, PREVIEW's preview_long_edge takes priority.
+    SONY2FUJI_SIZE_LIMIT_LONG_EDGE = 4
 } sony2fuji_size_mode;
 
 typedef enum sony2fuji_intent {

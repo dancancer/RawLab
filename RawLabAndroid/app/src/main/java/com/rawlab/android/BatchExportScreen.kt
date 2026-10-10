@@ -45,6 +45,13 @@ fun BatchExportScreen(
     var discard by remember { mutableStateOf(false) }
     var effectTarget by remember { mutableStateOf<BatchRow?>(null) }
     var png by rememberSaveable(state.job.id) { mutableStateOf(state.job.outputPng) }
+    var exportSizeKey by rememberSaveable(state.job.id) {
+        mutableStateOf(exportSizeChoice(state.job.outputLongEdge).key)
+    }
+    var exportCustomSize by rememberSaveable(state.job.id) {
+        mutableStateOf(if (state.job.outputLongEdge != null && exportSizeChoice(state.job.outputLongEdge) == ExportSizeChoice.CUSTOM)
+            state.job.outputLongEdge.toString() else "")
+    }
     var destination by rememberSaveable(state.job.id) { mutableStateOf<Uri?>(state.job.destination?.let(Uri::parse)) }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.addUris(it) }
     val directory = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -78,10 +85,12 @@ fun BatchExportScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (state.phase) {
                 BatchPhase.SELECTING -> BatchConfirmContent(state, storage, png, destination,
+                    ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize,
                     onAlbum = { album = true }, onFiles = { files.launch(arrayOf("*/*")) },
                     onDirectory = { directory.launch(null) }, onAlbumOutput = { destination = null; model.setDestination(null) }, onPng = { png = it },
+                    onSize = { choice -> exportSizeKey = choice.key }, onCustomSize = { exportCustomSize = it },
                     onRemove = model::remove, onInspect = { effectTarget = it },
-                    onStart = { model.start(png, destination) })
+                    onStart = { model.start(png, destination, ExportSize.parse(ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize)) })
                 BatchPhase.PREPARING, BatchPhase.RUNNING -> BatchProgressContent(state, model::cancel)
                 BatchPhase.COMPLETE, BatchPhase.CANCELLED, BatchPhase.FAILED -> BatchResultContent(state,
                     onRetry = model::retryFailed, onClose = onBack, onDirectory = { directory.launch(state.destination) },
@@ -119,11 +128,15 @@ private fun BatchConfirmContent(
     storage: PhotoStorage,
     png: Boolean,
     destination: Uri?,
+    sizeChoice: ExportSizeChoice,
+    customSize: String,
     onAlbum: () -> Unit,
     onFiles: () -> Unit,
     onDirectory: () -> Unit,
     onAlbumOutput: () -> Unit,
     onPng: (Boolean) -> Unit,
+    onSize: (ExportSizeChoice) -> Unit,
+    onCustomSize: (String) -> Unit,
     onRemove: (String) -> Unit,
     onInspect: (BatchRow) -> Unit,
     onStart: () -> Unit,
@@ -188,15 +201,32 @@ private fun BatchConfirmContent(
                 }
                 OutlinedButton(onClick = onDirectory) { Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(4.dp)); Text("选择目录") }
             }
+            ExportSizeControls(
+                selected = sizeChoice,
+                customText = customSize,
+                onSelected = onSize,
+                onCustomText = onCustomSize,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
             Text(destination?.lastPathSegment ?: "照片图库", Modifier.padding(horizontal = 20.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
             state.error?.let { Text(it, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error) }
         }
     }
     Text("仅用于本次导出，保留各照片原有调整", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
-    Button(onClick = onStart, enabled = state.job.rows.isNotEmpty() && (Build.VERSION.SDK_INT >= 29 || destination != null), modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+    val longEdge = ExportSize.parse(sizeChoice, customSize)
+    val sizeValid = sizeChoice != ExportSizeChoice.CUSTOM || longEdge != null
+    Button(onClick = onStart, enabled = sizeValid && state.job.rows.isNotEmpty() && (Build.VERSION.SDK_INT >= 29 || destination != null), modifier = Modifier.fillMaxWidth().padding(20.dp)) {
         Text("导出 ${state.job.rows.size} 张")
     }
     }
+}
+
+private fun exportSizeChoice(longEdge: Int?): ExportSizeChoice = when (longEdge) {
+    null -> ExportSizeChoice.ORIGINAL
+    2048 -> ExportSizeChoice.EDGE_2048
+    3000 -> ExportSizeChoice.EDGE_3000
+    4096 -> ExportSizeChoice.EDGE_4096
+    else -> ExportSizeChoice.CUSTOM
 }
 
 @Composable

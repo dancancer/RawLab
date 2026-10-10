@@ -95,4 +95,16 @@ class BatchExportTest {
             assertTrue(journal.pending().isEmpty())
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun journalRoundTripsRequestedOutputLongEdge() {
+        val root = Files.createTempDirectory("rawlab-size").toFile()
+        try {
+            val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"), EditSettings())
+            val job = BatchJob(source, listOf(BatchTarget(PhotoIdentity("target"), File(root, "target.raw"), "target.raw")),
+                outputLongEdge = 3000)
+            val journal = BatchJournal(root)
+            journal.save(job)
+            assertEquals(3000, journal.load(job.id)?.outputLongEdge)
+        } finally { root.deleteRecursively() }
+    }
 }

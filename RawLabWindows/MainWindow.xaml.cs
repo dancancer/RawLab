@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows.Automation;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -31,6 +33,11 @@ public partial class MainWindow : Window
     private bool ready,syncing,interacting,exporting,closing,exactReady;
     private bool compare=true,clipping,choosingFilm,choosingDenoise,swipe;
     private bool renderFailed;
+    private int? exportLongEdge;
+    private PhotoInfo? photoInfo;
+    private PhotoInfoMode photoInfoMode;
+    private long photoInfoRevision;
+    private LibraryEntry? contextEntry;
     private double dockHeight=264;
     private double libraryWidth=260;
     private RenderedImage? result;
@@ -53,6 +60,7 @@ public partial class MainWindow : Window
         Files.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,_)=>QueueThumbnailRefresh()));
         Files.SizeChanged+=(_,_)=>QueueThumbnailRefresh();
         Files.Loaded+=(_,_)=>QueueThumbnailRefresh();
+        EditorArea.SizeChanged+=(_,_)=>InfoOverlay.MaxWidth=Math.Max(80,Math.Min(380,EditorArea.ActualWidth-268));
         DockHeader.SizeChanged+=(_,_)=>UpdateDockMinimum();
         ToolsScroller.SizeChanged+=(_,_)=>UpdateDockMinimum();
         NeutralCanvas.Viewport=ResultCanvas.Viewport=viewport;
@@ -171,9 +179,11 @@ public partial class MainWindow : Window
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             CompareButton.Tag=compare ? "selected" : null;
             ClippingButton.Tag=clipping ? "selected" : null;
+            InfoButton.Tag=photoInfoMode == PhotoInfoMode.Hidden ? null : "selected";
             LibraryToggleButton.Tag=LibraryPanel.Visibility==Visibility.Visible ? "selected" : null;
             AdjustToggleButton.Tag=AdjustmentPanel.Visibility==Visibility.Visible ? "selected" : null;
             UpdateBusy();
+            RefreshExportSizeMenu();
         }
         finally { syncing=false; }
     }
@@ -186,7 +196,7 @@ public partial class MainWindow : Window
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting;
         BusyIndicator.Visibility=scheduler.Busy || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
-        ExportButton.ToolTip=file==null ? "打开 RAW 照片后导出" : scheduler.Busy ? "精确预览完成后可导出" : "导出原始分辨率照片";
+        ExportButton.ToolTip=file==null ? "打开 RAW 照片后导出" : scheduler.Busy ? "精确预览完成后可导出" : "导出照片（尺寸可选）";
         ToolTipService.SetShowOnDisabled(ExportButton,true);
         ToolTipService.SetShowOnDisabled(ExportJpeg,true);ToolTipService.SetShowOnDisabled(ExportPng,true);
     }
@@ -203,15 +213,48 @@ public partial class MainWindow : Window
             if(!LibraryEntry.IsRaw(path))throw new InvalidOperationException("请选择支持的 RAW 文件。");
             if(!SaveEdits())return;
             RestoreEdits(path);
-            file=path; interacting=false; exactReady=false; result=null;syncing=true;viewport.Fit();syncing=false;
+            file=path; interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();syncing=false;
             viewport.SetSourceSize(0,0);
             NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(placeholder,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
+            RefreshPhotoInfo();
             BackendLabel.Text="相机预览 · 正在显影";BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
             embeddedScheduler.Submit(new(path,++openRevision));PumpEmbedded();
+            _ = LoadPhotoInfo(path, photoInfoRevision);
             RefreshControls(); Schedule(initialPreview:true);QueueThumbnailRefresh();
         }
         catch(Exception ex) { Report(ex); }
+    }
+    private async Task LoadPhotoInfo(string path, long revision)
+    {
+        var info = await Task.Run(() => PhotoInfoReader.Read(path));
+        if (closing || revision != photoInfoRevision || !StringComparer.OrdinalIgnoreCase.Equals(path, file)) return;
+        photoInfo = info;
+        RefreshPhotoInfo();
+    }
+    private void RefreshPhotoInfo()
+    {
+        if (photoInfo == null || photoInfoMode == PhotoInfoMode.Hidden)
+        {
+            InfoOverlay.Visibility = Visibility.Collapsed;
+            InfoFileText.Text = InfoCaptureText.Text = "";
+            return;
+        }
+        var text = photoInfoMode == PhotoInfoMode.File ? photoInfo.FileLine : photoInfo.CaptureLine;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            InfoOverlay.Visibility = Visibility.Collapsed;
+            InfoFileText.Text = InfoCaptureText.Text = "";
+            return;
+        }
+        InfoFileText.Text = photoInfoMode == PhotoInfoMode.File ? text : "";
+        InfoCaptureText.Text = photoInfoMode == PhotoInfoMode.Capture ? text : "";
+        InfoOverlay.Visibility = Visibility.Visible;
+    }
+    private void InfoClicked(object sender, RoutedEventArgs e)
+    {
+        photoInfoMode = photoInfoMode.Next();
+        RefreshPhotoInfo(); RefreshControls();
     }
     private async void PumpEmbedded()
     {
@@ -360,10 +403,172 @@ public partial class MainWindow : Window
         selectedThumbnail=entry;entry.IsSelected=true;OpenFile(entry.Path,entry.Thumbnail);QueueThumbnailRefresh();
     }
     private void FileSelected(object sender,RoutedPropertyChangedEventArgs<object> e) { if(e.NewValue is LibraryEntry{IsFolder:false} entry && entry.Path!="")OpenFile(entry.Path,entry.Thumbnail); }
-    private void RemoveFolderClicked(object sender,RoutedEventArgs e) { if(Files.SelectedItem is LibraryEntry entry && library.Roots.Contains(entry))try{library.Remove(entry);}catch(Exception ex){Report(ex);} }
+    private static T? FindParent<T>(DependencyObject? element) where T : DependencyObject
+    {
+        while (element != null)
+        {
+            if (element is T match) return match;
+            element = element is Visual ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
+        }
+        return null;
+    }
+    private LibraryEntry? ResolveContextEntry(object sender)
+    {
+        if (sender is MenuItem { Parent: ContextMenu menu } && menu.PlacementTarget is FrameworkElement target && target.DataContext is LibraryEntry entry)
+            return entry;
+        return contextEntry;
+    }
+    private void FilesPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var source=(DependencyObject)e.OriginalSource;
+        contextEntry=null;
+        var photoButton=FindParent<Button>(source);
+        if (photoButton?.DataContext is LibraryEntry photo && !photo.IsFolder)
+        {
+            contextEntry=photo;
+            if(photoButton.ContextMenu is { } menu) { menu.PlacementTarget=photoButton; menu.IsOpen=true; }
+            e.Handled=true;
+            return;
+        }
+        if (FindParent<TreeViewItem>(source) is { DataContext: LibraryEntry entry })
+        {
+            contextEntry=entry;
+            FileTreeContextMenu.PlacementTarget=Files; FileTreeContextMenu.IsOpen=true;
+            e.Handled=true;
+        }
+    }
+    private void FileTreeContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        var isRoot=contextEntry != null && library.Roots.Contains(contextEntry);
+        RemoveRootMenu.IsEnabled=isRoot; RefreshRootMenu.IsEnabled=isRoot;
+        ApplyTreeEntryMenu.IsEnabled=CanApplyCurrentSettings;
+    }
+    private bool CanApplyCurrentSettings => file != null && result != null && exactReady && !scheduler.Busy && !exporting && LookAvailable;
+    private void PhotoContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if(sender is not ContextMenu menu) return;
+        foreach(var item in menu.Items.OfType<MenuItem>())
+            if(string.Equals(item.Header?.ToString(),"应用当前设置",StringComparison.Ordinal)) item.IsEnabled=CanApplyCurrentSettings;
+    }
+    private async void OpenInExplorerClicked(object sender, RoutedEventArgs e)
+    {
+        var entry=ResolveContextEntry(sender);
+        if (entry == null || string.IsNullOrEmpty(entry.Path)) return;
+        try
+        {
+            if (entry.IsFolder)
+                Process.Start(new ProcessStartInfo(entry.Path) { UseShellExecute=true });
+            else
+            {
+                var item = await Task.Run(() => {
+                    Marshal.ThrowExceptionForHR(SHParseDisplayName(entry.Path, IntPtr.Zero, out var parsed, 0, out _));
+                    return parsed;
+                });
+                try { Marshal.ThrowExceptionForHR(SHOpenFolderAndSelectItems(item, 0, IntPtr.Zero, 0)); }
+                finally { Marshal.FreeCoTaskMem(item); }
+                await EnsureExplorerSelection(entry.Path);
+            }
+        }
+        catch (Exception error) { Report(error); }
+    }
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+    private static extern int SHParseDisplayName(string name, IntPtr bindContext, out IntPtr item, uint attributes, out uint resultAttributes);
+    [DllImport("shell32.dll")]
+    private static extern int SHOpenFolderAndSelectItems(IntPtr item, uint count, IntPtr children, uint flags);
+    private static async Task EnsureExplorerSelection(string path)
+    {
+        var parent=Path.GetDirectoryName(path)!;
+        dynamic shell=Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+        try
+        {
+            var watch=Stopwatch.StartNew(); var stable=0;
+            // RAW 目录首次加载可能丢失 Shell 的初始选择，视图就绪后再明确选中。
+            while(watch.Elapsed<TimeSpan.FromSeconds(10))
+            {
+                stable=SelectExplorerItem(shell,parent,path) ? stable+1 : 0;
+                if(stable>=3) return;
+                await Task.Delay(100);
+            }
+            throw new IOException("资源管理器已打开，但未能选中照片。");
+        }
+        finally { Marshal.ReleaseComObject(shell); }
+    }
+    private static bool SelectExplorerItem(dynamic shell,string parent,string path)
+    {
+        object? windows=null;
+        try
+        {
+            windows=shell.Windows();
+            for(var index=0;index<(int)((dynamic)windows).Count;index++)
+            {
+                object? window=null,view=null,folder=null,self=null,item=null,selected=null,selection=null;
+                try
+                {
+                    window=((dynamic)windows).Item(index); view=((dynamic)window).Document;
+                    folder=((dynamic)view).Folder; self=((dynamic)folder).Self;
+                    if(!StringComparer.OrdinalIgnoreCase.Equals((string)((dynamic)self).Path,parent)) continue;
+                    selected=((dynamic)view).SelectedItems();
+                    if((int)((dynamic)selected).Count==1)
+                    {
+                        selection=((dynamic)selected).Item(0);
+                        if(StringComparer.OrdinalIgnoreCase.Equals((string)((dynamic)selection).Path,path)) return true;
+                    }
+                    item=((dynamic)folder).ParseName(Path.GetFileName(path));
+                    if(item!=null) ((dynamic)view).SelectItem(item,1|4|8|16);
+                }
+                catch(COMException) { }
+                catch(Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+                finally
+                {
+                    foreach(var value in new[]{selection,selected,item,self,folder,view,window})
+                        if(value!=null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
+                }
+            }
+            return false;
+        }
+        finally { if(windows!=null) Marshal.ReleaseComObject(windows); }
+    }
+    private async void ApplyCurrentSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        var entry=ResolveContextEntry(sender);
+        if (entry == null || string.IsNullOrEmpty(entry.Path)) return;
+        if (file == null) { SetStatus("请先打开一张照片作为调整来源。",true); return; }
+        if (exporting || scheduler.Busy || !exactReady || result == null)
+        {
+            SetStatus("精确显影完成后才能应用当前设置。",true); return;
+        }
+        if (!LookAvailable) { SetStatus("当前外观不可用，不能应用设置。",true); return; }
+        var snapshot=settings.Capture(); var look=CurrentLookIdentity();
+        try
+        {
+            LibraryEntry[] targets;
+            if (entry.IsFolder)
+            {
+                targets=await Task.Run(()=>new DirectoryInfo(entry.Path).EnumerateFiles()
+                    .Where(child=>(child.Attributes&(FileAttributes.Hidden|FileAttributes.ReparsePoint))==0)
+                    .Where(child=>LibraryEntry.IsRaw(child.FullName))
+                    .Select(child=>new LibraryEntry(child.FullName,false)).ToArray());
+            }
+            else targets=LibraryEntry.IsRaw(entry.Path) ? [entry] : [];
+            if (targets.Length == 0) { SetStatus("目录中没有直接 RAW 照片。",true); return; }
+            var answer=MessageBox.Show(this,
+                $"将覆盖 {targets.Length} 张照片的本机编辑记录。不会修改 RAW 文件。继续？",
+                "应用当前设置",MessageBoxButton.YesNo,MessageBoxImage.Question);
+            if (answer != MessageBoxResult.Yes) return;
+            SaveSettingsCopies(targets.Select(target=>target.Path),snapshot,look);
+            SetStatus($"已应用当前设置到 {targets.Length} 张照片。",false);
+        }
+        catch (Exception error) { Report(error); }
+    }
+    private void RemoveFolderClicked(object sender,RoutedEventArgs e)
+    {
+        var entry=ResolveContextEntry(sender) ?? Files.SelectedItem as LibraryEntry;
+        if(entry != null && library.Roots.Contains(entry))try{library.Remove(entry);}catch(Exception ex){Report(ex);}
+    }
     private void RefreshFolderClicked(object sender,RoutedEventArgs e)
     {
-        if(Files.SelectedItem is LibraryEntry entry && library.Roots.Contains(entry)) { var index=library.Roots.IndexOf(entry);library.Roots[index]=new(entry.Path,true); }
+        var entry=ResolveContextEntry(sender) ?? Files.SelectedItem as LibraryEntry;
+        if(entry != null && library.Roots.Contains(entry)) { var index=library.Roots.IndexOf(entry);library.Roots[index]=new(entry.Path,true); }
     }
     private void FilesDropped(object sender,DragEventArgs e)
     {
@@ -424,13 +629,38 @@ public partial class MainWindow : Window
     private void ZoomOutClicked(object sender,RoutedEventArgs e)=>viewport.Magnify(.8);
     private void KeyPressed(object sender,KeyEventArgs e)
     {
-        if(e.OriginalSource is TextBox or ComboBox || Keyboard.FocusedElement is ComboBox)return;
+        if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
         else if(e.Key is Key.Add or Key.OemPlus)ZoomInClicked(sender,e); else if(e.Key is Key.Subtract or Key.OemMinus)ZoomOutClicked(sender,e);
+        else if(e.Key==Key.I)InfoClicked(sender,e);
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(false);
     private void ExportPngClicked(object sender,RoutedEventArgs e)=>Export(true);
+    private void ExportOriginalSizeClicked(object sender,RoutedEventArgs e) { exportLongEdge=null; RefreshExportSizeMenu(); }
+    private void ExportSizeClicked(object sender,RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string text } && int.TryParse(text, out var edge))
+        {
+            exportLongEdge=ExportSize.IsValid(edge) ? edge : null;
+            RefreshExportSizeMenu();
+        }
+    }
+    private void ExportCustomSizeClicked(object sender,RoutedEventArgs e)
+    {
+        var value=LongEdgeDialog.Show(this,exportLongEdge);
+        if (value is not null) { exportLongEdge=value; RefreshExportSizeMenu(); }
+    }
+    private void RefreshExportSizeMenu()
+    {
+        if (ExportOriginalSize == null) return;
+        ExportOriginalSize.IsChecked=exportLongEdge == null;
+        ExportSize2048.IsChecked=exportLongEdge == 2048;
+        ExportSize3000.IsChecked=exportLongEdge == 3000;
+        ExportSize4096.IsChecked=exportLongEdge == 4096;
+        ExportCustomSize.IsChecked=exportLongEdge.HasValue && exportLongEdge != 2048 && exportLongEdge != 3000 && exportLongEdge != 4096;
+        ExportCustomSize.Header=ExportCustomSize.IsChecked == true ? $"自定义 {exportLongEdge} px" : "自定义…";
+    }
     private async void Export(bool png)
     {
         if(!exactReady || scheduler.Busy || exporting || file==null || engine==null)return;
@@ -442,7 +672,8 @@ public partial class MainWindow : Window
         var input=file;var adjustment=settings.Clone();var film=lut;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
         var temp=Path.Combine(Path.GetDirectoryName(dialog.FileName)!,".rawlab-"+Guid.NewGuid().ToString("N")+(png ? ".png" : ".jpg"));
-        try { await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp));File.Move(temp,dialog.FileName,true);SetStatus($"已导出（{(engine.LastBackend==3 ? "Direct3D 11" : "CPU")}）：{dialog.FileName}"); }
+        var size=exportLongEdge;
+        try { await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size));File.Move(temp,dialog.FileName,true);SetStatus($"已导出（{(engine.LastBackend==3 ? "Direct3D 11" : "CPU")}）：{dialog.FileName}"); }
         catch(Exception ex){Report(ex);}
         finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} exporting=false;RefreshControls();if(closing)FinishClose();}
     }

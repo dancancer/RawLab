@@ -42,16 +42,14 @@ class NativeProcessorTest {
                 assertTrue(ByteBuffer.wrap(header, 16, 4).int > 200)
                 assertTrue(ByteBuffer.wrap(header, 20, 4).int > 200)
                 val saved = android.graphics.BitmapFactory.decodeFile(output.path)
+                val reference = File(context.cacheDir, "wavelet-reference.png")
                 NativeProcessor(NativeProcessor.CPU).use { fresh ->
-                    val full = fresh.preview(input, null, settings, maxOf(saved.width, saved.height), false)
-                    assertEquals(full.width, saved.width)
-                    assertEquals(full.height, saved.height)
-                    for (y in 0 until full.height step 17) for (x in 0 until full.width step 19) {
-                        val pixel = saved.getPixel(x, y)
-                        val channels = intArrayOf(android.graphics.Color.red(pixel), android.graphics.Color.green(pixel), android.graphics.Color.blue(pixel))
-                        for (c in 0..2) assertTrue("PNG and exact preview channel mismatch",
-                            kotlin.math.abs(channels[c] - (full.pixels[(y * full.width + x) * 4 + c].toInt() and 255)) <= 1)
-                    }
+                    try {
+                        fresh.export(input, null, settings, reference, true)
+                        val full = android.graphics.BitmapFactory.decodeFile(reference.path)
+                        assertTrue("Interactive work never changes a fresh FINAL export", saved.sameAs(full))
+                        full.recycle()
+                    } finally { reference.delete() }
                 }
                 saved.recycle()
             }

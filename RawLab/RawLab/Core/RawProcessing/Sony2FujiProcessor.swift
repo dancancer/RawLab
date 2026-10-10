@@ -59,6 +59,7 @@ struct Sony2FujiProcessor {
         case bufferCopyFailed
         case rasterDecodeFailed
         case histogramFailed(String)
+        case invalidExportSize
 
         var errorDescription: String? {
             switch self {
@@ -76,6 +77,8 @@ struct Sony2FujiProcessor {
                 return "Raster decode failed."
             case .histogramFailed(let message):
                 return "Histogram failed: \(message)"
+            case .invalidExportSize:
+                return "导出长边必须在 1 到 65535 像素之间。"
             }
         }
     }
@@ -89,8 +92,12 @@ struct Sony2FujiProcessor {
         settings: RawSettings,
         previewLongEdge: CGFloat?,
         lutURL: URL?,
-        interactive: Bool = false
+        interactive: Bool = false,
+        exportLongEdge: Int? = nil
     ) throws -> ProcessResult {
+        guard ExportSize.isValid(exportLongEdge) else {
+            throw ProcessorError.invalidExportSize
+        }
         let metadata = try loadMetadata(from: url)
         let targetWidth: UInt32
         let targetHeight: UInt32
@@ -104,11 +111,13 @@ struct Sony2FujiProcessor {
         }
         let session = try createSession()
         defer { destroySession(session) }
-        try configureSession(session, settings: settings, interactive: interactive && previewLongEdge != nil)
+        try configureSession(session, settings: settings,
+                             interactive: interactive && previewLongEdge != nil && exportLongEdge == nil)
 
         var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
         request.input_type = SONY2FUJI_INPUT_RAW
-        applySize(&request, width: targetWidth, height: targetHeight, previewLongEdge: previewLongEdge)
+        applySize(&request, width: targetWidth, height: targetHeight,
+                  previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
         let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
         request.lut_strength = lutStrength
 
@@ -135,11 +144,16 @@ struct Sony2FujiProcessor {
         settings: RawSettings,
         previewLongEdge: CGFloat?,
         lutURL: URL?,
-        interactive: Bool = false
+        interactive: Bool = false,
+        exportLongEdge: Int? = nil
     ) throws -> Buffer {
+        guard ExportSize.isValid(exportLongEdge) else {
+            throw ProcessorError.invalidExportSize
+        }
         let session = try createSession()
         defer { destroySession(session) }
-        try configureSession(session, settings: settings, interactive: interactive && previewLongEdge != nil)
+        try configureSession(session, settings: settings,
+                             interactive: interactive && previewLongEdge != nil && exportLongEdge == nil)
 
         var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_BUFFER)
         request.input_type = SONY2FUJI_INPUT_BUFFER
@@ -148,7 +162,8 @@ struct Sony2FujiProcessor {
         request.input_pixel_format = buffer.pixelFormat
         request.input_color_space = SONY2FUJI_COLOR_SRGB
         request.input_is_linear = 0
-        applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height), previewLongEdge: previewLongEdge)
+        applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
+                  previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
         let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
         request.lut_strength = lutStrength
 

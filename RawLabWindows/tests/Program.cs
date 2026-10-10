@@ -35,12 +35,14 @@ static class Program
     {
         try
         {
+            if(args.Length==3 && args[0]=="--photo-features") { PhotoFeatureChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--denoise") { DenoiseChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--interactions") { InteractionChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark") { PerformanceChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark-ui") { PerformanceChecks.Run(args[1],args[2],true);return 0; }
             var repo=Path.GetFullPath(args[0]); var output=Path.Combine(repo,"build","windows-verification");Directory.CreateDirectory(output);
             var settings=new Adjustments();
+            FeatureRegressionChecks.Run(Check);
             settings.Set(Parameter.Strength,250);
             Check(settings[Parameter.Strength]==200 && settings.Request("test.arw","test.cube",2000,null).LutStrength==2,
                 "Film strength clamps at 200% and reaches the native renderer");
@@ -75,7 +77,7 @@ static class Program
             {
                 var thumb=RenderEngine.Thumbnail(unicodeRaw);Check(thumb!=null && Math.Max(thumb.PixelWidth,thumb.PixelHeight)<=180,"Embedded thumbnail on Unicode path");
                 settings=new();var neutral=engine.Render(unicodeRaw,settings,null,800)!;var rendered=engine.Render(unicodeRaw,settings,unicodeLut,800)!;
-                Check(rendered.Image.PixelWidth==800 && rendered.Image.PixelHeight>0,"Real ARW and UTF-8 LUT paths");
+                Check(Math.Max(rendered.Image.PixelWidth,rendered.Image.PixelHeight)==800,"Real ARW and UTF-8 LUT paths");
                 Check(rendered.Backend==3,"Actual Direct3D 11 hardware completes RAW rendering");
                 Check(!Pixels(neutral.Image).SequenceEqual(Pixels(rendered.Image)),"Film branch changes pixels");
                 settings.Set(Parameter.Strength,200);
@@ -106,7 +108,7 @@ static class Program
                 }
                 settings.Set(Parameter.Temperature,8000);var proxy=engine.Render(unicodeRaw,settings,unicodeLut,1000,true)!;
                 var exact=engine.Render(unicodeRaw,settings,unicodeLut,800)!;
-                Check(proxy.Image.PixelWidth==1000 && !Pixels(exact.Image).SequenceEqual(Pixels(rendered.Image)),"Interactive WB followed by exact WB");
+                Check(Math.Max(proxy.Image.PixelWidth,proxy.Image.PixelHeight)==1000 && !Pixels(exact.Image).SequenceEqual(Pixels(rendered.Image)),"Interactive WB followed by exact WB");
                 settings.ResetAll();var reset=engine.Render(unicodeRaw,settings,unicodeLut,800)!;
                 Check(Pixels(reset.Image).SequenceEqual(Pixels(rendered.Image)),"Reset returns exactly to as-shot rendering");
                 settings.ExposureMode=2;Check(engine.Render(unicodeRaw,settings,null,800)!.Baseline==0,"Sensor exposure baseline");
