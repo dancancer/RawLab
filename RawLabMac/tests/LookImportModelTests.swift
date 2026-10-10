@@ -50,7 +50,7 @@ struct LookImportModelTests {
         check(restored.selectedFilm?.name == "Renamed" && restored.selectedFilmID == id, "rename refreshes the selected label without changing identity")
         restored.removeLook(id: id)
         settle(restored)
-        check(restored.selectedFilmID.isEmpty && !restored.films.contains { $0.id == id }, "removing the active look selects neutral")
+        check(restored.selectedFilmID == id && restored.missingFilm && !restored.films.contains { $0.id == id }, "removing the active look preserves identity instead of silently selecting neutral")
         check(!manager.fileExists(atPath: imported.url.path), "removing the active look removes its managed bytes")
         let afterDelete = EditorModel(lookDirectory: directory)
         check(!afterDelete.films.contains { $0.id == id }, "removed look does not return on restart")

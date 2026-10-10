@@ -18,7 +18,8 @@ data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
 }
-data class ImportedPhoto(val uri: Uri, val name: String, val file: File)
+data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
+    val identity: PhotoIdentity = PhotoIdentity(uri.toString()))
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
     if (width <= 0 || height <= 0) return null
@@ -68,11 +69,15 @@ class PhotoStorage(
     } catch (_: Exception) { null }
 
     fun import(uri: Uri): ImportedPhoto {
+        runCatching {
+            resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
+        if (!RawFiles.accepts(name, resolver.getType(uri))) throw IOException("Selected item is not a supported RAW")
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream))
+        return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream), PhotoIdentity(uri.toString()))
     }
 
     fun looks(): List<LookChoice> = LookChoice.builtIns + lookLibrary.list().map {
@@ -121,23 +126,33 @@ class PhotoStorage(
         stream.use { output -> file.inputStream().use { it.copyTo(output) } }
     }
 
-    fun saveAlbum(file: File, png: Boolean): Uri {
+    fun saveAlbum(file: File, png: Boolean, outputName: String? = null, onCreated: (Uri) -> Unit = {}): Uri {
         check(Build.VERSION.SDK_INT >= 29)
+        val names = mutableSetOf<String>()
+        resolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
+            "${MediaStore.Images.Media.RELATIVE_PATH} = ?", arrayOf("Pictures/RawLab/"), null)?.use { cursor ->
+            while (cursor.moveToNext()) names += cursor.getString(0).lowercase()
+        }
+        val name = outputName ?: "RawLab-${System.currentTimeMillis()}.${if (png) "png" else "jpg"}"
+        var candidate = name
+        var suffix = 2
+        while (candidate.lowercase() in names) candidate = "${name.substringBeforeLast('.')}-${suffix++}.${name.substringAfterLast('.')}"
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "RawLab-${System.currentTimeMillis()}.${if (png) "png" else "jpg"}")
+            put(MediaStore.Images.Media.DISPLAY_NAME, candidate)
             put(MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/RawLab")
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw IOException("Cannot create image")
         try {
+            onCreated(uri)
             val output = resolver.openOutputStream(uri) ?: throw IOException("Cannot write image")
             output.use { to -> file.inputStream().use { it.copyTo(to) } }
             val published = resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
             if (published != 1) throw IOException("Cannot publish image")
             return uri
         } catch (error: Throwable) {
-            runCatching { resolver.delete(uri, null, null) }
+            if (runCatching { resolver.delete(uri, null, null) }.getOrDefault(0) != 1) throw BatchPublicationUncertain("无法确认照片保存结果，请核对照片图库", error)
             throw error
         }
     }

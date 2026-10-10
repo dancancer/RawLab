@@ -7,5 +7,6 @@
   <ItemGroup>
     <Compile Include="Program.cs"/><Compile Include="../../Adjustments.cs"/>
     <Compile Include="../../DenoiseSettings.cs"/><Compile Include="../../Native.cs"/>
+    <Compile Include="../../EditPersistence.cs"/>
   </ItemGroup>
 </Project>

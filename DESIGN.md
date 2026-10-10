@@ -45,7 +45,8 @@ Use continuous surfaces and separators, not floating section cards. The histogra
 - Directory contents load on demand. Thumbnail decoding uses embedded previews with orientation; no full RAW decode is triggered merely to populate the file tree.
 - Histogram collapse state survives photo changes. Bottom tool selection survives film/numeric editor changes. Changed values retain their signed ring and marker.
 - No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite RAW input.
-- Photo adjustments are separate per photo within the current session; directory references persist between launches. Do not imply persistent edit sidecars or catalog features that are not implemented.
+- Photo adjustments and look identities persist locally per original photo; unseen photos start with defaults. Save failures remain visible and retryable. No sidecars or cloud catalog are created.
+- Batch export uses a frozen source adjustment snapshot, including denoise settings, in a separate desktop window or mobile task page. It never changes target photos' saved edits. The confirmed flow is documented in [the batch export design](docs/design/2026-10-09-edit-memory-batch-export/README.md).
 
 ## Do's and Don'ts
 

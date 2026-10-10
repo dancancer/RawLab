@@ -3,6 +3,8 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
+未发布源码新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+
 ## 下载 v0.4.1 Windows 包
 
 [下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.4.1/RawLab-Windows-0.4.1-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.4.1) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.4.1/SHA256SUMS.txt)
@@ -69,7 +71,7 @@ python3 RawLabWindows/build-remote.py \
 | 白平衡 | 拍摄时相机增益；校准后的 2000–50000 K / ±150 色调；倒色温滑杆 |
 | 曝光基准 | 标准显影、匹配内嵌预览、传感器基准；显示实际基础偏移 |
 | 数值输入和重置 | 滑杆、数字、单项/分组/全部重置；保留照片与胶片选择 |
-| 逐照片编辑 | 本次会话内保留各照片参数和 LUT；不写回 RAW |
+| 逐照片编辑 | 本机自动保存并恢复各照片参数和 LUT 身份；失败可重试，不写回 RAW |
 | 对比 | 顶部菜单切换并排 / 左右滑动 / 关闭；中性与修改后共享缩放、平移；适合窗口、100% 实际物理像素 |
 | 直方图 / 裁切提示 | 最终 sRGB 显示图统计；RGB 线性计数、重叠填色；可折叠 |
 | 调整栏 | 底部圆形工具与带正负方向的进度环；拖动边界调高、收起恢复 |

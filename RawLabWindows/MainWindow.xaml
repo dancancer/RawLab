@@ -10,7 +10,7 @@
         <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="查看更新"/>
         <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="导出原始分辨率照片" AutomationProperties.Name="导出">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
-          <Button.ContextMenu><ContextMenu><MenuItem x:Name="ExportJpeg" Header="导出 JPEG" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" Header="导出 16-bit PNG" Click="ExportPngClicked" IsEnabled="False"/></ContextMenu></Button.ContextMenu>
+          <Button.ContextMenu><ContextMenu><MenuItem x:Name="ExportJpeg" Header="导出 JPEG" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" Header="导出 16-bit PNG" Click="ExportPngClicked" IsEnabled="False"/><Separator/><MenuItem x:Name="BatchExportMenu" Header="使用当前调整批量导出…" Click="BatchExportClicked" IsEnabled="False"/><MenuItem x:Name="ViewBatchMenu" Header="查看批量任务…" Click="ShowBatchClicked" IsEnabled="False"/></ContextMenu></Button.ContextMenu>
         </Button>
         <StackPanel Orientation="Horizontal">
           <Button Click="OpenClicked" Style="{StaticResource ToolbarButton}" ToolTip="打开 RAW（Ctrl+O）" AutomationProperties.Name="打开 RAW"><local:EditorIcon Kind="Folder" Width="22" Height="22"/></Button>
@@ -133,6 +133,9 @@
     </Grid>
     <Border Grid.Row="2" Background="#222429" BorderBrush="#35373B" BorderThickness="0,1,0,0">
       <DockPanel Margin="14,0">
+        <Button x:Name="BatchNotice" DockPanel.Dock="Right" Content="继续上次批量任务" Click="ShowBatchClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
+        <Button x:Name="RetrySave" DockPanel.Dock="Right" Content="重试保存" Click="RetrySaveClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
+        <TextBlock x:Name="SaveState" DockPanel.Dock="Right" Margin="8,0" VerticalAlignment="Center" FontSize="11" AutomationProperties.LiveSetting="Polite"/>
         <ComboBox x:Name="GpuMode" DockPanel.Dock="Right" Width="116" SelectedIndex="0" SelectionChanged="GpuModeChanged" Margin="10,2,0,2" AutomationProperties.Name="渲染加速"><ComboBoxItem Content="GPU 自动"/><ComboBoxItem Content="仅 CPU"/><ComboBoxItem Content="强制 GPU"/></ComboBox>
         <TextBlock x:Name="BackendLabel" Text="Windows · GPU 自动 · sRGB" Foreground="{StaticResource Muted}" DockPanel.Dock="Right" VerticalAlignment="Center"/>
         <Button x:Name="RetryButton" Content="重新显影" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2" MinHeight="26" Margin="6,0"/>

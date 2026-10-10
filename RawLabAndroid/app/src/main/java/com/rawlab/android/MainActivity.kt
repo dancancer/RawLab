@@ -22,6 +22,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -52,6 +55,17 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
     var about by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(updates) { updates.check(manual = false) }
     var album by rememberSaveable { mutableStateOf(false) }
+    val batch by model.batch.collectAsStateWithLifecycle()
+    val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
+    val owner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    DisposableEffect(owner, model) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && (context as? android.app.Activity)?.isChangingConfigurations != true) model.onBackground()
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var png by rememberSaveable { mutableStateOf(false) }
     var licenses by rememberSaveable { mutableStateOf(false) }
@@ -68,19 +82,33 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
     val savePng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) {
         if (it == null) model.cancelExport() else model.export(it, true)
     }
-    if (album) {
+    if (batch != null) {
+        BatchExportScreen(model = batch!!, storage = model.storage, onBack = model::closeBatch)
+    } else if (album) {
         screenState.SaveableStateProvider("album") {
             AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
                 onPhoto = { album = false; model.importPhoto(it) })
         }
     } else {
+        Column(Modifier.fillMaxSize()) {
+        pendingBatch.firstOrNull()?.let { job ->
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("有未完成的批量导出", Modifier.weight(1f))
+                TextButton(onClick = { model.resumeBatch(job) }) { Text("查看任务") }
+            }
+        }
+        Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
             onEdit = model::edit, onReset = model::reset, onRetry = model::retry,
+            onSaveRetry = model::retrySave,
             onExport = { if (model.beginExport()) exportDialog = true },
+            onBatchExport = model::beginBatch,
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version)
+        }
+        }
     }
     if (exportDialog) AlertDialog(
         onDismissRequest = { exportDialog = false; model.cancelExport() },

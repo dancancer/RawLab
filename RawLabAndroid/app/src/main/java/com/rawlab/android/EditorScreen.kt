@@ -50,6 +50,8 @@ fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, onClick: ()
 fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
+    onSaveRetry: () -> Unit = {},
+    onBatchExport: () -> Unit = {},
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null) {
@@ -78,6 +80,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             if (updateVersion != null) ToolIcon(Icons.Outlined.SystemUpdate, R.string.view_update, onClick = onAbout)
             ToolIcon(Icons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE, onAlbum)
             ToolIcon(Icons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
+            ToolIcon(Icons.Outlined.Layers, R.string.batch_export, state.canExport, onBatchExport)
             Box {
                 ToolIcon(Icons.Outlined.MoreVert, R.string.more) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -107,7 +110,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         }
                         VerticalDivider()
                         AdjustmentDock(state, Modifier.width(320.dp).fillMaxHeight(), tool, { tool = it }, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
+                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset, onSaveRetry,
                             onImportLook, onRenameLook, onDeleteLook)
                     }
                 } else {
@@ -116,7 +119,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     if (state.photo != null) {
                         HorizontalDivider()
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, { tool = it }, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
+                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset, onSaveRetry,
                             onImportLook, onRenameLook, onDeleteLook)
                     }
                 }
@@ -172,9 +175,13 @@ private fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () 
 private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, selectTool: (Int) -> Unit,
     expanded: Boolean, toggleExpanded: () -> Unit, compare: Boolean, toggleCompare: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit,
+    onSaveRetry: () -> Unit,
     onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit) {
-    val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.temperature, R.string.tint, R.string.denoise)
-    val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Grain)
+    val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights, R.string.shadows,
+        R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.temperature, R.string.tint, R.string.sharpening, R.string.denoise)
+    val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.WbSunny,
+        Icons.Outlined.DarkMode, Icons.Outlined.Contrast, Icons.Outlined.ShowChart, Icons.Outlined.WaterDrop,
+        Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Deblur, Icons.Outlined.Grain)
     val edits = state.edits
     val calibrated = state.preview?.temperature?.isFinite() == true
     var menuLookId by remember { mutableStateOf<String?>(null) }
@@ -186,7 +193,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             IconToggleButton(checked = compare, onCheckedChange = { toggleCompare() }, enabled = state.preview != null) {
                 Icon(Icons.Outlined.Compare, stringResource(R.string.compare))
             }
-            if (expanded && tool in 3..4) {
+            if (expanded && (tool == 8 || tool == 9)) {
                 TextButton(onClick = { onEdit(edits.copy(customWb = false), false) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
             } else {
@@ -196,6 +203,16 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             ToolIcon(Icons.Outlined.RestartAlt, R.string.reset, state.controlsEnabled, onReset)
             ToolIcon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
                 if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments, onClick = toggleExpanded)
+        }
+        when (state.saveState) {
+            EditSaveState.RESTORED -> Text(stringResource(R.string.edit_restored), Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            EditSaveState.SAVED -> Text(stringResource(R.string.edit_saved), Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            EditSaveState.FAILED -> TextButton(onClick = onSaveRetry, modifier = Modifier.padding(horizontal = 8.dp)) {
+                Text(stringResource(R.string.edit_unsaved), color = MaterialTheme.colorScheme.error)
+            }
+            EditSaveState.NONE -> Unit
         }
         if (!expanded) return@Column
         Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -243,12 +260,22 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             }
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
-            2 -> NumericControl(R.string.exposure, edits.exposure, -5f..5f, "EV", state.controlsEnabled,
+            2 -> NumericControl(R.string.exposure, edits.exposure, -4f..4f, "EV", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(exposure = value), dragging) }, { onEdit(edits.copy(exposure = 0f), false) })
-            3, 4 -> {
+            3 -> NumericControl(R.string.highlights, edits.highlights * 100, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(highlights = value / 100), dragging) }, { onEdit(edits.copy(highlights = 0f), false) })
+            4 -> NumericControl(R.string.shadows, edits.shadows * 100, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(shadows = value / 100), dragging) }, { onEdit(edits.copy(shadows = 0f), false) })
+            5 -> NumericControl(R.string.contrast, edits.contrast * 100, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(contrast = value / 100), dragging) }, { onEdit(edits.copy(contrast = 0f), false) })
+            6 -> NumericControl(R.string.tone_curve, edits.toneCurve * 100, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(toneCurve = value / 100), dragging) }, { onEdit(edits.copy(toneCurve = 0f), false) })
+            7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(saturation = value / 100), dragging) }, { onEdit(edits.copy(saturation = 0f), false) })
+            8, 9 -> {
                 if (!calibrated) Text(stringResource(R.string.wb_unavailable), Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
                 else {
-                    if (tool == 3) NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
+                    if (tool == 8) NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = true, temperature = value), dragging) },
                         { onEdit(edits.copy(customWb = false), false) }, reciprocal = true)
                     else NumericControl(R.string.tint, edits.tint, -150f..150f, "", state.controlsEnabled,
@@ -256,15 +283,18 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                         { onEdit(edits.copy(customWb = false), false) })
                 }
             }
-            5 -> DenoiseControls(edits.denoise, state.controlsEnabled) { value, dragging ->
+            11 -> DenoiseControls(edits.denoise, state.controlsEnabled) { value, dragging ->
                 onEdit(edits.copy(denoise = value), dragging)
             }
+            10 -> NumericControl(R.string.sharpening, edits.sharpening * 100, 0f..200f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(sharpening = value / 100), dragging) }, { onEdit(edits.copy(sharpening = 0f), false) })
         }
         }
-        Row(Modifier.fillMaxWidth().height(64.dp)) {
-            titles.forEachIndexed { index, title ->
+        LazyRow(Modifier.fillMaxWidth().height(64.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
+            items(titles.size) { index ->
+                val title = titles[index]
                 val color = if (tool == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                Column(Modifier.weight(1f).fillMaxHeight().selectable(tool == index, enabled = state.controlsEnabled, role = Role.Tab,
+                Column(Modifier.width(76.dp).fillMaxHeight().selectable(tool == index, enabled = state.controlsEnabled, role = Role.Tab,
                     onClick = { selectTool(index) }), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center) {
                     Icon(icons[index], null, Modifier.size(24.dp), tint = color)

@@ -32,6 +32,21 @@ public sealed class Adjustments
     public (double Temperature, double Tint)? AsShot { get; private set; }
     public double this[Parameter id] => values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
+    public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint, Denoise);
+    public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
+    {
+        if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
+            snapshot.Values.Where((value, index) => !double.IsFinite(value) || value < ParameterSpec.All[index].Min || value > ParameterSpec.All[index].Max).Any())
+            throw new System.IO.InvalidDataException("调整记录无效，原有文件未被覆盖。");
+        var denoise = snapshot.Denoise ?? new DenoiseSettings();
+        _ = denoise.NativeConfig();
+        return new Adjustments {
+            Denoise = denoise,
+            values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
+            CameraWhiteBalance = snapshot.CameraWhiteBalance,
+            AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null
+        };
+    }
     public double Default(Parameter id) => id == Parameter.Strength ? 100 : id == Parameter.Temperature ? AsShot?.Temperature ?? 6500 : id == Parameter.Tint ? AsShot?.Tint ?? 0 : 0;
     public void Set(Parameter id, double value)
     {

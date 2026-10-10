@@ -33,6 +33,7 @@ extension RawEditorViewModel {
         let lutID: String?
         let lutApplied: Bool
         let orientation: CGImagePropertyOrientation?
+        let rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
     }
 
     struct RasterPreviewBase {
@@ -66,7 +67,8 @@ extension RawEditorViewModel {
             baseHistogram: baseHistogram,
             lutID: nil,
             lutApplied: false,
-            orientation: rawBase.orientation
+            orientation: rawBase.orientation,
+            rawWhiteBalance: rawBase.rawWhiteBalance
         )
     }
 
@@ -98,7 +100,12 @@ extension RawEditorViewModel {
 }
 
 extension RawEditorViewModel {
-    func importImage(from source: PhotoImportSource, settings: RawSettings) {
+    func importImage(
+        from source: PhotoImportSource,
+        identity: PhotoIdentity? = nil,
+        settings: RawSettings = .default,
+        onSettingsRestored: ((RawSettings) -> Void)? = nil
+    ) {
         statusMessage = nil
         isBusy = true
         previewWorkItem?.cancel()
@@ -110,6 +117,7 @@ extension RawEditorViewModel {
         let sourceKind: ImageSourceKind = source.isRaw ? .raw : .raster
 
         DispatchQueue.global(qos: .userInitiated).async {
+            defer { PhotoImportFile.release(source.url) }
             let didStart = source.url.startAccessingSecurityScopedResource()
             defer {
                 if didStart {
@@ -118,13 +126,17 @@ extension RawEditorViewModel {
             }
 
             do {
-                let localURL = try self.copyToCache(source.url)
+                let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: source.url))
+                let record = resolvedIdentity.flatMap { self.editPersistence?.state(for: $0) }
+                let restoredSettings = record?.settings ?? .default
+                let missingLook = !self.isLookAvailable(for: restoredSettings)
+                let localURL = try self.copyToCache(source.url, identity: resolvedIdentity)
                 if sourceKind == .raw {
                     let rawBase = try self.buildRawPreviewBase(url: localURL)
-                    let lutURL = self.lutURL(for: settings)
+                    let lutURL = self.lutURL(for: restoredSettings)
                     let previewResult = try self.processor.processRaw(
                         url: localURL,
-                        settings: settings,
+                        settings: restoredSettings,
                         previewLongEdge: self.previewMaxDimension,
                         lutURL: lutURL
                     )
@@ -140,17 +152,25 @@ extension RawEditorViewModel {
                     DispatchQueue.main.async {
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
+                        self.sourceIdentity = resolvedIdentity
+                        self.sourceDisplayName = source.url.lastPathComponent
+                        self.restoredSettings = restoredSettings
+                        self.pendingSettings = nil
                         self.sourceOrientation = previewResult.orientation ?? rawBase.orientation
                         self.draftBuffer = rawBase.buffer
                         self.draftPreviewBuffer = rawBase.previewBuffer
                         self.basePreviewImage = rawBase.basePreviewImage
                         self.baseHistogram = rawBase.baseHistogram
-                        self.rawLUTID = settings.lutID
-                        self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
+                        self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
+                        self.rawLUTID = restoredSettings.lutID
+                        self.rawLUTApplied = restoredSettings.lutID != nil && restoredSettings.lutStrength > 0
                         self.previewImage = adjustedImage
                         self.histogram = adjustedHistogram
                         self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
                         self.isBusy = false
+                        if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
+                        onSettingsRestored?(restoredSettings)
+                        if missingLook { self.statusMessage = "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。" }
                         if adjustedImage == nil {
                             self.statusMessage = "Preview render failed."
                         }
@@ -159,9 +179,9 @@ extension RawEditorViewModel {
                     let rasterBase = try self.buildRasterPreviewBase(url: localURL)
                     let adjustedBuffer = try self.processor.processBuffer(
                         buffer: rasterBase.buffer,
-                        settings: settings,
+                        settings: restoredSettings,
                         previewLongEdge: self.previewMaxDimension,
-                        lutURL: self.lutURL(for: settings)
+                        lutURL: self.lutURL(for: restoredSettings)
                     )
                     let adjustedImage = self.processor.makeUIImage(
                         from: adjustedBuffer,
@@ -175,6 +195,10 @@ extension RawEditorViewModel {
                     DispatchQueue.main.async {
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
+                        self.sourceIdentity = resolvedIdentity
+                        self.sourceDisplayName = source.url.lastPathComponent
+                        self.restoredSettings = restoredSettings
+                        self.pendingSettings = nil
                         self.sourceOrientation = rasterBase.orientation
                         self.draftBuffer = rasterBase.buffer
                         self.draftPreviewBuffer = rasterBase.previewBuffer
@@ -182,10 +206,14 @@ extension RawEditorViewModel {
                         self.baseHistogram = rasterBase.baseHistogram
                         self.rawLUTID = nil
                         self.rawLUTApplied = false
+                        self.rawWhiteBalance = nil
                         self.previewImage = adjustedImage
                         self.histogram = adjustedHistogram
                         self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
                         self.isBusy = false
+                        if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
+                        onSettingsRestored?(restoredSettings)
+                        if missingLook { self.statusMessage = "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。" }
                         if adjustedImage == nil {
                             self.statusMessage = "Preview render failed."
                         }
@@ -201,9 +229,12 @@ extension RawEditorViewModel {
                     self.draftBuffer = nil
                     self.sourceURL = nil
                     self.sourceKind = nil
+                    self.sourceIdentity = nil
                     self.sourceOrientation = nil
                     self.rawLUTID = nil
                     self.rawLUTApplied = false
+                    self.rawWhiteBalance = nil
+                    self.editSaveState = .idle
                     self.hasImage = false
                     self.histogram = []
                     self.baseHistogram = []
@@ -212,7 +243,79 @@ extension RawEditorViewModel {
         }
     }
 
+    func consumeRestoredSettings(_ settings: RawSettings) -> Bool {
+        let matches = restoredSettings == settings
+        restoredSettings = nil
+        return matches
+    }
+
+    func queueSettingsSave(_ settings: RawSettings) {
+        guard sourceIdentity != nil else { return }
+        pendingSettings = settings
+        editSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in _ = self?.saveCurrentSettings(settings) }
+        editSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    @discardableResult func saveCurrentSettings(_ settings: RawSettings) -> Bool {
+        editSaveWork?.cancel()
+        guard let sourceIdentity, pendingSettings != nil else { return true }
+        do {
+            if editPersistence == nil { editPersistence = try EditPersistence.appStore() }
+            try editPersistence!.save(sourceIdentity, state: PhotoEditState(settings: settings))
+            pendingSettings = nil
+            setEditNotice(.saved)
+            return true
+        } catch {
+            editSaveState = .failed(error.localizedDescription)
+            return false
+        }
+    }
+
+    func setEditNotice(_ state: EditSaveState) {
+        editSaveState = state
+        let noticeID = UUID()
+        editNoticeID = noticeID
+        guard state == .saved || state == .restored else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            if self?.editNoticeID == noticeID && self?.editSaveState == state { self?.editSaveState = .idle }
+        }
+    }
+
+    func retrySave(settings: RawSettings) {
+        if editPersistence == nil && pendingSettings == nil {
+            do {
+                editPersistence = try EditPersistence.appStore()
+                editSaveState = .idle
+                statusMessage = "调整记录已恢复，请重新选择照片载入。"
+            } catch { editSaveState = .failed(error.localizedDescription) }
+            return
+        }
+        saveCurrentSettings(settings)
+    }
+
+    func resetCurrentSettings() throws {
+        guard let sourceIdentity else { return }
+        guard let editPersistence else { throw EditPersistenceError.corruptStore }
+        try editPersistence.reset(sourceIdentity)
+        setEditNotice(.saved)
+    }
+
+    func currentBatchSource(settings: RawSettings) -> BatchSourceSnapshot? {
+        guard let sourceURL, let sourceKind, let sourceIdentity else { return nil }
+        return BatchSourceSnapshot(identity: sourceIdentity,
+                                   sourceURL: sourceURL,
+                                   displayName: sourceDisplayName ?? sourceURL.lastPathComponent,
+                                   sourceKind: sourceKind == .raw ? .raw : .raster,
+                                   settings: settings)
+    }
+
     func exportJPEG(settings: RawSettings, completion: @escaping (Result<Data, Error>) -> Void) {
+        guard isLookAvailable(for: settings) else {
+            completion(.failure(BatchExportError.global("所选外观不可用，请重新选择外观。")))
+            return
+        }
         guard let sourceURL, let sourceKind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -353,7 +456,7 @@ extension RawEditorViewModel {
 }
 
 private extension RawEditorViewModel {
-    func copyToCache(_ sourceURL: URL) throws -> URL {
+    func copyToCache(_ sourceURL: URL, identity: PhotoIdentity?) throws -> URL {
         let fileManager = FileManager.default
         let cacheRoot = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let cacheDir = cacheRoot.appendingPathComponent("RawLab", isDirectory: true)
@@ -362,7 +465,9 @@ private extension RawEditorViewModel {
             try fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         }
 
-        let fileName = sourceURL.lastPathComponent.isEmpty ? UUID().uuidString : sourceURL.lastPathComponent
+        let identityName = identity?.key.replacingOccurrences(of: "/", with: "_")
+        let fileName = (identityName ?? UUID().uuidString) +
+            (sourceURL.pathExtension.isEmpty ? "" : ".\(sourceURL.pathExtension)")
         let destinationURL = cacheDir.appendingPathComponent(fileName)
         if destinationURL.standardizedFileURL == sourceURL.standardizedFileURL {
             return destinationURL

@@ -86,9 +86,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .saturation:
             return 0...2
         case .temperature:
-            return 2000...10000
+            return RawSettings.temperatureRange
         case .tint:
-            return -100...100
+            return RawSettings.tintRange
         case .noiseReduction:
             return 0...1
         case .sharpening:

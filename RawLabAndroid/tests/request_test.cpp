@@ -18,6 +18,12 @@ int main() {
     assert(preview.preview_long_edge == 1600);
     assert(preview.output_format == SONY2FUJI_OUTPUT_RGBA8);
     assert(preview.exposure_ev == 1.5f);
+    auto highlights = rawlab::makeRequest("input.dng", nullptr, nullptr, 1, 0, false, 6500, 0,
+        0.25f, 0, 0, 0, 0, 0, 400, false);
+    assert(highlights.highlights == -0.25f);
+    auto tone = rawlab::makeRequest("input.dng", nullptr, nullptr, 1, 0, false, 6500, 0,
+        0, 0, 0.2f, -0.3f, 0.4f, 1.5f, 400, false);
+    assert(tone.contrast == 1.2f && tone.tone_curve == -0.3f && tone.saturation == 1.4f && tone.sharpening == 1.5f);
     auto exported = rawlab::makeRequest("input.dng", nullptr, "out.png", 1, 0, true, 4800, -10, 1000, true);
     assert(exported.intent == SONY2FUJI_INTENT_FINAL);
     assert(exported.size_mode == SONY2FUJI_SIZE_NATIVE);

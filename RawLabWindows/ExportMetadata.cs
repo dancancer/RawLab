@@ -7,6 +7,12 @@ namespace RawLab.Windows;
 
 internal static class ExportMetadata
 {
+    internal static string VerifyAvailable()
+    {
+        var executable = Path.Combine(AppContext.BaseDirectory, "ExifTool", "ExifTool.exe");
+        if (!File.Exists(executable)) throw new OutputWriteException("缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。");
+        return executable;
+    }
     // Copy capture information only. RAW layout, MakerNotes and thumbnails describe
     // the input sensor data and must not be attached to developed pixels.
     private static readonly string[] CaptureTags = [
@@ -46,9 +52,7 @@ internal static class ExportMetadata
 
     internal static string Run(IEnumerable<string> arguments)
     {
-        var executable=Path.Combine(AppContext.BaseDirectory,"ExifTool","ExifTool.exe");
-        if (!File.Exists(executable))
-            throw new IOException("缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。");
+        var executable=VerifyAvailable();
         var lines=arguments.ToArray();
         if (lines.Any(line=>line.Contains('\n') || line.Contains('\r')))
             throw new ArgumentException("EXIF 参数不能包含换行。");

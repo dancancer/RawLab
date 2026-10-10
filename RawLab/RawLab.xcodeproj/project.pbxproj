@@ -52,6 +52,10 @@
 		8F3A1B2C3D4E5F678901234B /* sony2fuji.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; };
 		8F3A1B2C3D4E5F678901234C /* sony2fuji.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C9A1B2C3D4E5F60718293A4B /* Support/RawMetadataBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */; };
+		D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */; };
+		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
+		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
+		D00100000000000000000004 /* UI/BatchExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000014 /* UI/BatchExportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -104,6 +108,10 @@
 		8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = sony2fuji.xcframework; path = "../lutools/build-ios/sony2fuji.xcframework"; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4C /* Support/RawMetadataBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = RawMetadataBridge.h; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; path = RawMetadataBridge.mm; sourceTree = "<group>"; };
+		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
+		D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportCore.swift; sourceTree = "<group>"; };
+		D00100000000000000000013 /* Core/Batch/BatchExport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExport.swift; sourceTree = "<group>"; };
+		D00100000000000000000014 /* UI/BatchExportView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,10 +145,29 @@
 			isa = PBXGroup;
 			children = (
 				967181A1C76B4194B0C0185F /* Models */,
+				D00100000000000000000021 /* Persistence */,
+				D00100000000000000000022 /* Batch */,
 				8F3A1B2C3D4E5F6789012347 /* RawProcessing */,
 				234ED6798A8A4780851F1B79 /* ViewModel */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		D00100000000000000000021 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		D00100000000000000000022 /* Batch */ = {
+			isa = PBXGroup;
+			children = (
+				D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */,
+				D00100000000000000000013 /* Core/Batch/BatchExport.swift */,
+			);
+			path = Batch;
 			sourceTree = "<group>";
 		};
 		8F3A1B2C3D4E5F6789012347 /* RawProcessing */ = {
@@ -179,6 +206,7 @@
 				7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */,
 				7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */,
 				6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */,
+				D00100000000000000000014 /* UI/BatchExportView.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -410,6 +438,10 @@
 				7A32C02543E94D8D8AD059DA /* Core/ViewModel/RawEditorViewModel+Rendering.swift in Sources */,
 				F985B27612A241E0BF2D3B6E /* Core/ViewModel/RawEditorViewModel+LUT.swift in Sources */,
 				2A9B3E15E0704167ABE93960 /* Core/ViewModel/RawEditorViewModel+IO.swift in Sources */,
+				D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */,
+				D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */,
+				D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */,
+				D00100000000000000000004 /* UI/BatchExportView.swift in Sources */,
 				8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */,
 				8F3A1B2C3D4E5F678901234F /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift in Sources */,
 			);

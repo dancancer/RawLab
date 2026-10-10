@@ -77,10 +77,17 @@ struct RawLabMacApp: App {
                     Divider()
                     Button("导出 JPEG…") { model.export(png: false) }
                         .keyboardShortcut("e", modifiers: [.command, .shift])
-                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy)
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    Button("使用当前调整批量导出…") {
+                        if model.prepareBatch() { openWindow(id: "batch-export") }
+                    }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    Button("查看批量任务…") { openWindow(id: "batch-export") }.disabled(model.batch == nil)
                 }
             }
         Window("关于 RawLab", id: "about") { AboutView(updates: updates) }
             .windowResizability(.contentSize)
+        Window("批量导出", id: "batch-export") {
+            if let batch = model.batch { BatchExportView(model: batch) }
+        }.defaultSize(width: 1040, height: 720)
     }
 }

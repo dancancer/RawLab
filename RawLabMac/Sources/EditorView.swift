@@ -3,6 +3,7 @@ import AppKit
 
 struct EditorView: View {
     @ObservedObject var model: EditorModel
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
     @State private var compare = true
     @State private var clipping = false
@@ -52,6 +53,8 @@ struct EditorView: View {
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
         .onChange(of: model.file) { _, _ in fit() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
         .onAppear {
             let args = CommandLine.arguments
@@ -169,6 +172,15 @@ struct EditorView: View {
             Text(model.file?.lastPathComponent ?? "未打开照片").lineLimit(1).truncationMode(.middle)
                 .help(model.file?.path ?? "未打开照片")
             Spacer(minLength: 8)
+            if let failure = model.saveError {
+                Button { model.saveEdits() } label: { Label("调整未保存 · 重试", systemImage: "exclamationmark.triangle") }
+                    .buttonStyle(.plain).foregroundStyle(.yellow).help(failure)
+            } else if !model.saveStatus.isEmpty {
+                Label(model.saveStatus, systemImage: "checkmark").foregroundStyle(.secondary)
+            }
+            if model.batch?.job.interrupted == true {
+                Button("继续上次批量任务") { openWindow(id: "batch-export") }
+            }
             if model.busy || model.exporting {
                 ProgressView().controlSize(.mini)
                 Text(model.exporting ? "正在导出…" : "正在显影…")
@@ -209,9 +221,18 @@ struct EditorView: View {
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
                 Button("JPEG…") { model.export(png: false) }
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
                 Button("PNG · 16-bit…") { model.export(png: true) }
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                Divider()
+                Button("使用当前调整批量导出…") {
+                    if model.prepareBatch() { openWindow(id: "batch-export") }
+                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                if model.batch != nil {
+                    Button("查看批量任务…") { openWindow(id: "batch-export") }
+                }
             } label: { Label("导出", systemImage: "square.and.arrow.up") }
-            .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy)
+            .disabled(model.file == nil && model.batch == nil)
         }
     }
 

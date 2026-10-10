@@ -1,6 +1,45 @@
 import XCTest
 
 final class EditorUITests: XCTestCase {
+    func testEditMemoryAndBatchWorkflow() {
+        let app = XCUIApplication()
+        app.launch()
+        importPhoto(in: app)
+        app.buttons["tool.exposure"].tap()
+        app.buttons["重置曝光"].tap()
+        app.sliders["adjustment.slider"].adjust(toNormalizedSliderPosition: 0.6)
+        let savedExposure = app.buttons["tool.exposure"].value as? String
+        XCTAssertNotEqual(savedExposure, "+0.0 EV")
+        XCTAssertTrue(app.staticTexts["调整已保存"].waitForExistence(timeout: 10))
+        app.terminate()
+        app.launch()
+        importPhoto(in: app)
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, savedExposure)
+        app.buttons["editor.export"].tap()
+        XCTAssertTrue(app.buttons["editor.batchExport"].isEnabled, "Seed the simulator with a RAW photo, not an earlier JPEG export")
+        app.buttons["使用当前调整批量导出…"].tap()
+        XCTAssertTrue(app.buttons["batch.pick"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["batch.export"].isEnabled)
+        app.buttons["batch.pick"].tap()
+        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15), app.debugDescription)
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let add = app.buttons["Add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        add.tap()
+        expectation(for: NSPredicate { _, _ in app.buttons["batch.export"].isEnabled }, evaluatedWith: app)
+        waitForExpectations(timeout: 90)
+        capture("batch-confirm-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        capture("batch-confirm-landscape")
+        XCTAssertTrue(app.buttons["batch.export"].isHittable)
+        XCUIDevice.shared.orientation = .portrait
+        app.buttons["batch.export"].tap()
+        XCTAssertTrue(app.staticTexts["已保存 1 张到照片图库"].waitForExistence(timeout: 180), app.debugDescription)
+        capture("batch-result")
+        app.buttons["完成"].tap()
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
@@ -61,6 +100,7 @@ final class EditorUITests: XCTestCase {
         capture("photo-adjustment-landscape")
         XCUIDevice.shared.orientation = .portrait
         app.buttons["editor.export"].tap()
+        app.buttons["保存当前照片"].tap()
         XCTAssertTrue(app.alerts.staticTexts["已保存到照片。"].waitForExistence(timeout: 60))
         app.alerts.buttons["关闭"].tap()
     }
@@ -74,12 +114,16 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         XCTAssertTrue(app.buttons["tool.film"].waitForExistence(timeout: 10))
         capture("large-text-portrait")
-        app.scrollViews["editor.panel"].swipeUp()
+        for _ in 0..<3 where !app.sliders["adjustment.slider"].isHittable {
+            app.scrollViews["editor.panel"].swipeUp()
+        }
         XCTAssertTrue(app.sliders["adjustment.slider"].isHittable)
         XCTAssertLessThan(app.staticTexts["adjustment.value"].frame.maxX, app.frame.maxX)
         capture("large-text-slider")
         XCUIDevice.shared.orientation = .landscapeLeft
-        app.scrollViews["editor.panel"].swipeUp()
+        for _ in 0..<3 where !app.sliders["adjustment.slider"].isHittable {
+            app.scrollViews["editor.panel"].swipeUp()
+        }
         XCTAssertTrue(app.sliders["adjustment.slider"].isHittable)
         capture("large-text-landscape")
     }
@@ -138,7 +182,10 @@ final class EditorUITests: XCTestCase {
         // The system Photos grid can report no AX hit point for a visible image.
         photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         expectation(for: NSPredicate { _, _ in
-            app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists
+            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            let allow = springboard.buttons.matching(NSPredicate(format: "label == '允许完全访问' OR label == 'Allow Full Access'")).firstMatch
+            if allow.exists { allow.tap() }
+            return app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists
         }, evaluatedWith: app)
         waitForExpectations(timeout: 90)
         XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.alerts.debugDescription)

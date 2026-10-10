@@ -4,16 +4,28 @@ data class EditSettings(
     val film: String = "neutral",
     val strength: Float = 1f,
     val exposure: Float = 0f,
+    val highlights: Float = 0f,
+    val shadows: Float = 0f,
+    val contrast: Float = 0f,
+    val toneCurve: Float = 0f,
+    val saturation: Float = 0f,
     val customWb: Boolean = false,
     val temperature: Float = 6500f,
     val tint: Float = 0f,
     val denoise: DenoiseSettings = DenoiseSettings(),
+    val sharpening: Float = 0f,
 ) {
     init {
         require(strength.isFinite() && strength in 0f..2f)
-        require(exposure.isFinite() && exposure in -5f..5f)
+        require(exposure.isFinite() && exposure in -4f..4f)
+        require(highlights.isFinite() && highlights in -1f..1f)
+        require(shadows.isFinite() && shadows in -1f..1f)
+        require(contrast.isFinite() && contrast in -1f..1f)
+        require(toneCurve.isFinite() && toneCurve in -1f..1f)
+        require(saturation.isFinite() && saturation in -1f..1f)
         require(temperature.isFinite() && temperature in 2000f..50000f)
         require(tint.isFinite() && tint in -150f..150f)
+        require(sharpening.isFinite() && sharpening in 0f..2f)
     }
     fun reset() = EditSettings(film = film)
 }
