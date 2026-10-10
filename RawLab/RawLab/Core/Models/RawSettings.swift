@@ -5,6 +5,155 @@ enum RawDenoisePreset: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+struct PhotoEffectsSettings: Codable, Equatable {
+    static let vignetteAmountRange: ClosedRange<Double> = -100...100
+    static let vignetteMidpointRange: ClosedRange<Double> = 0...100
+    static let vignetteRoundnessRange: ClosedRange<Double> = -100...100
+    static let vignetteFeatherRange: ClosedRange<Double> = 0...100
+    static let vignetteHighlightsRange: ClosedRange<Double> = 0...100
+    static let grainAmountRange: ClosedRange<Double> = 0...100
+    static let grainSizeRange: ClosedRange<Double> = 0...100
+    static let grainRoughnessRange: ClosedRange<Double> = 0...100
+
+    var vignetteAmount: Double {
+        didSet { vignetteAmount = Self.clamped(vignetteAmount, to: Self.vignetteAmountRange) }
+    }
+    var vignetteMidpoint: Double {
+        didSet { vignetteMidpoint = Self.clamped(vignetteMidpoint, to: Self.vignetteMidpointRange) }
+    }
+    var vignetteRoundness: Double {
+        didSet { vignetteRoundness = Self.clamped(vignetteRoundness, to: Self.vignetteRoundnessRange) }
+    }
+    var vignetteFeather: Double {
+        didSet { vignetteFeather = Self.clamped(vignetteFeather, to: Self.vignetteFeatherRange) }
+    }
+    var vignetteHighlights: Double {
+        didSet { vignetteHighlights = Self.clamped(vignetteHighlights, to: Self.vignetteHighlightsRange) }
+    }
+    var grainAmount: Double {
+        didSet { grainAmount = Self.clamped(grainAmount, to: Self.grainAmountRange) }
+    }
+    var grainSize: Double {
+        didSet { grainSize = Self.clamped(grainSize, to: Self.grainSizeRange) }
+    }
+    var grainRoughness: Double {
+        didSet { grainRoughness = Self.clamped(grainRoughness, to: Self.grainRoughnessRange) }
+    }
+
+    init(vignetteAmount: Double = 0,
+         vignetteMidpoint: Double = 50,
+         vignetteRoundness: Double = 0,
+         vignetteFeather: Double = 50,
+         vignetteHighlights: Double = 0,
+         grainAmount: Double = 0,
+         grainSize: Double = 25,
+         grainRoughness: Double = 50) {
+        self.vignetteAmount = Self.clamped(vignetteAmount, to: Self.vignetteAmountRange)
+        self.vignetteMidpoint = Self.clamped(vignetteMidpoint, to: Self.vignetteMidpointRange)
+        self.vignetteRoundness = Self.clamped(vignetteRoundness, to: Self.vignetteRoundnessRange)
+        self.vignetteFeather = Self.clamped(vignetteFeather, to: Self.vignetteFeatherRange)
+        self.vignetteHighlights = Self.clamped(vignetteHighlights, to: Self.vignetteHighlightsRange)
+        self.grainAmount = Self.clamped(grainAmount, to: Self.grainAmountRange)
+        self.grainSize = Self.clamped(grainSize, to: Self.grainSizeRange)
+        self.grainRoughness = Self.clamped(grainRoughness, to: Self.grainRoughnessRange)
+    }
+
+    var isValid: Bool {
+        [vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather,
+         vignetteHighlights, grainAmount, grainSize, grainRoughness].allSatisfy { $0.isFinite }
+    }
+
+    var isDefault: Bool { self == Self() }
+
+    mutating func resetVignette() {
+        self = Self(vignetteAmount: 0, vignetteMidpoint: 50, vignetteRoundness: 0,
+                    vignetteFeather: 50, vignetteHighlights: 0,
+                    grainAmount: grainAmount, grainSize: grainSize, grainRoughness: grainRoughness)
+    }
+
+    mutating func resetGrain() {
+        self = Self(vignetteAmount: vignetteAmount, vignetteMidpoint: vignetteMidpoint,
+                    vignetteRoundness: vignetteRoundness, vignetteFeather: vignetteFeather,
+                    vignetteHighlights: vignetteHighlights, grainAmount: 0, grainSize: 25,
+                    grainRoughness: 50)
+    }
+
+    private static func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        guard value.isFinite else { return range.lowerBound <= 0 && range.upperBound >= 0 ? 0 : range.lowerBound }
+        return min(range.upperBound, max(range.lowerBound, value.rounded()))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights
+        case grainAmount, grainSize, grainRoughness
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            vignetteAmount: try values.decodeIfPresent(Double.self, forKey: .vignetteAmount) ?? 0,
+            vignetteMidpoint: try values.decodeIfPresent(Double.self, forKey: .vignetteMidpoint) ?? 50,
+            vignetteRoundness: try values.decodeIfPresent(Double.self, forKey: .vignetteRoundness) ?? 0,
+            vignetteFeather: try values.decodeIfPresent(Double.self, forKey: .vignetteFeather) ?? 50,
+            vignetteHighlights: try values.decodeIfPresent(Double.self, forKey: .vignetteHighlights) ?? 0,
+            grainAmount: try values.decodeIfPresent(Double.self, forKey: .grainAmount) ?? 0,
+            grainSize: try values.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25,
+            grainRoughness: try values.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
+        )
+    }
+}
+
+enum PhotoEffectParameter: String, CaseIterable, Identifiable {
+    case vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights
+    case grainAmount, grainSize, grainRoughness
+
+    var id: String { rawValue }
+    var isVignette: Bool {
+        switch self {
+        case .vignetteAmount, .vignetteMidpoint, .vignetteRoundness, .vignetteFeather, .vignetteHighlights:
+            return true
+        case .grainAmount, .grainSize, .grainRoughness:
+            return false
+        }
+    }
+    var title: String {
+        switch self {
+        case .vignetteAmount, .grainAmount: return "强度"
+        case .vignetteMidpoint: return "中点"
+        case .vignetteRoundness: return "圆度"
+        case .vignetteFeather: return "羽化"
+        case .vignetteHighlights: return "高光保护"
+        case .grainSize: return "大小"
+        case .grainRoughness: return "粗糙度"
+        }
+    }
+    var keyPath: WritableKeyPath<PhotoEffectsSettings, Double> {
+        switch self {
+        case .vignetteAmount: return \.vignetteAmount
+        case .vignetteMidpoint: return \.vignetteMidpoint
+        case .vignetteRoundness: return \.vignetteRoundness
+        case .vignetteFeather: return \.vignetteFeather
+        case .vignetteHighlights: return \.vignetteHighlights
+        case .grainAmount: return \.grainAmount
+        case .grainSize: return \.grainSize
+        case .grainRoughness: return \.grainRoughness
+        }
+    }
+    var range: ClosedRange<Double> {
+        switch self {
+        case .vignetteAmount: return PhotoEffectsSettings.vignetteAmountRange
+        case .vignetteMidpoint: return PhotoEffectsSettings.vignetteMidpointRange
+        case .vignetteRoundness: return PhotoEffectsSettings.vignetteRoundnessRange
+        case .vignetteFeather: return PhotoEffectsSettings.vignetteFeatherRange
+        case .vignetteHighlights: return PhotoEffectsSettings.vignetteHighlightsRange
+        case .grainAmount: return PhotoEffectsSettings.grainAmountRange
+        case .grainSize: return PhotoEffectsSettings.grainSizeRange
+        case .grainRoughness: return PhotoEffectsSettings.grainRoughnessRange
+        }
+    }
+    var defaultValue: Double { PhotoEffectsSettings()[keyPath: keyPath] }
+}
+
 struct RawDenoiseSettings: Codable, Equatable {
     var enabled = false
     var luma = 0.0
@@ -38,6 +187,10 @@ struct RawSettings: Codable, Equatable {
     static let tintRange: ClosedRange<Double> = -150...150
 
     var denoise = RawDenoiseSettings()
+    var photoEffects = PhotoEffectsSettings()
+    var displayChromaDenoise = 0 {
+        didSet { displayChromaDenoise = Self.clampedDisplayChromaDenoise(displayChromaDenoise) }
+    }
     var exposure: Double
     var contrast: Double
     var saturation: Double
@@ -55,7 +208,7 @@ struct RawSettings: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
-        case denoise
+        case denoise, photoEffects, displayChromaDenoise
     }
 
     var clampedLUTStrength: Float {
@@ -75,7 +228,9 @@ struct RawSettings: Codable, Equatable {
         sharpening: 0,
         lutID: nil,
         lutStrength: 1,
-        whiteBalanceMode: .camera
+        whiteBalanceMode: .camera,
+        photoEffects: PhotoEffectsSettings(),
+        displayChromaDenoise: 0
     )
 
     init(
@@ -91,8 +246,12 @@ struct RawSettings: Codable, Equatable {
         sharpening: Double,
         lutID: String?,
         lutStrength: Double,
-        whiteBalanceMode: RawWhiteBalanceMode = .camera
+        whiteBalanceMode: RawWhiteBalanceMode = .camera,
+        photoEffects: PhotoEffectsSettings = PhotoEffectsSettings(),
+        displayChromaDenoise: Int = 0
     ) {
+        self.photoEffects = photoEffects
+        self.displayChromaDenoise = Self.clampedDisplayChromaDenoise(displayChromaDenoise)
         self.exposure = exposure
         self.contrast = contrast
         self.saturation = saturation
@@ -124,9 +283,17 @@ struct RawSettings: Codable, Equatable {
         lutStrength = try values.decodeIfPresent(Double.self, forKey: .lutStrength) ?? 1
         whiteBalanceMode = try values.decodeIfPresent(RawWhiteBalanceMode.self, forKey: .whiteBalanceMode) ?? .camera
         denoise = try values.decodeIfPresent(RawDenoiseSettings.self, forKey: .denoise) ?? RawDenoiseSettings()
+        photoEffects = try values.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects) ?? PhotoEffectsSettings()
+        displayChromaDenoise = Self.clampedDisplayChromaDenoise(
+            try values.decodeIfPresent(Int.self, forKey: .displayChromaDenoise) ?? 0
+        )
         guard denoise.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .denoise, in: values, debugDescription: "Invalid denoise strengths")
         }
+    }
+
+    private static func clampedDisplayChromaDenoise(_ mode: Int) -> Int {
+        min(2, max(0, mode))
     }
 
     var usesCustomWhiteBalance: Bool { whiteBalanceMode == .custom }

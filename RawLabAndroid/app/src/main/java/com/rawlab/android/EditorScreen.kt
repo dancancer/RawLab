@@ -189,10 +189,12 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     onSaveRetry: () -> Unit,
     onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit) {
     val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights, R.string.shadows,
-        R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.temperature, R.string.tint, R.string.sharpening, R.string.denoise)
+        R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.temperature, R.string.tint, R.string.sharpening,
+        R.string.denoise, R.string.vignette, R.string.grain)
     val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.WbSunny,
         Icons.Outlined.DarkMode, Icons.Outlined.Contrast, Icons.Outlined.ShowChart, Icons.Outlined.WaterDrop,
-        Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Deblur, Icons.Outlined.Grain)
+        Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Deblur, Icons.Outlined.Grain,
+        Icons.Outlined.Circle, Icons.Outlined.Grain)
     val edits = state.edits
     val calibrated = state.preview?.temperature?.isFinite() == true
     var menuLookId by remember { mutableStateOf<String?>(null) }
@@ -297,6 +299,12 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             11 -> DenoiseControls(edits.denoise, state.controlsEnabled) { value, dragging ->
                 onEdit(edits.copy(denoise = value), dragging)
             }
+            12 -> PhotoEffectsControls(edits.effects, vignette = true, enabled = state.controlsEnabled) { value, dragging ->
+                onEdit(edits.copy(effects = value), dragging)
+            }
+            13 -> PhotoEffectsControls(edits.effects, vignette = false, enabled = state.controlsEnabled) { value, dragging ->
+                onEdit(edits.copy(effects = value), dragging)
+            }
             10 -> NumericControl(R.string.sharpening, edits.sharpening * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(sharpening = value / 100), dragging) }, { onEdit(edits.copy(sharpening = 0f), false) })
         }
@@ -333,12 +341,15 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
 
 @Composable
 internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
-    enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false) {
+    enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false,
+    clampInput: Boolean = false) {
     var editing by remember { mutableStateOf(false) }
     var latestValue by remember(value) { mutableStateOf(value) }
     val formatted = if (unit == "EV") String.format(Locale.ROOT, "%.2f", value) else value.roundToInt().toString()
     var input by remember { mutableStateOf("") }
-    val parsed = input.toFloatOrNull()?.takeIf { it.isFinite() && it in range }
+    val parsed = input.toFloatOrNull()?.takeIf { it.isFinite() }?.let { entered ->
+        if (clampInput) entered.coerceIn(range) else entered.takeIf { it in range }
+    }
     Column(Modifier.padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(label), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)

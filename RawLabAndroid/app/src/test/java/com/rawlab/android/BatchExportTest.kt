@@ -9,6 +9,22 @@ class BatchExportTest {
     @Test fun olderSnapshotsDefaultToDisabledDenoise() {
         val settings = SettingsCodec.decode("neutral|1.0|0.0|0.0|0.0|0.0|0.0|0.0|false|6500.0|0.0|0.0")
         assertEquals(DenoiseSettings(), settings.denoise)
+        assertEquals(PhotoEffectsSettings(), settings.effects)
+        assertEquals(0, settings.displayChromaDenoise)
+        val withDenoise = SettingsCodec.decode("neutral|1.0|0.0|0.0|0.0|0.0|0.0|0.0|false|6500.0|0.0|0.0|true|10.0|72.0|100.0")
+        assertEquals(DenoiseSettings(true, 10f, 72f, 100f), withDenoise.denoise)
+        assertEquals(PhotoEffectsSettings(), withDenoise.effects)
+    }
+
+    @Test fun settingsCodecRoundTripsEffectsAndDisplayChromaAlongsideWaveletDenoise() {
+        val settings = EditSettings(
+            denoise = DenoiseSettings(true, 10f, 72f, 100f),
+            displayChromaDenoise = 1,
+            effects = PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f,
+                vignetteRoundness = -30f, vignetteFeather = 70f, vignetteHighlights = 60f,
+                grainAmount = 65f, grainSize = 70f, grainRoughness = 80f),
+        )
+        assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
     }
 
     @Test fun pngResumeAndPublishingCheckpointAreDurable() {

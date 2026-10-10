@@ -311,6 +311,12 @@ private fun SettingsSummary(settings: EditSettings) {
         SettingLine("亮度降噪", String.format("%.0f", settings.denoise.luma))
         SettingLine("色彩降噪", String.format("%.0f", settings.denoise.chroma))
         SettingLine("粗颗粒降噪", String.format("%.0f", settings.denoise.coarse))
+        SettingLine("显示色彩降噪", settings.displayChromaDenoise.toString())
+        SettingLine("暗角", String.format("强度 %+.0f · 中点 %.0f · 圆度 %+.0f · 羽化 %.0f · 高光保护 %.0f",
+            settings.effects.vignetteAmount, settings.effects.vignetteMidpoint, settings.effects.vignetteRoundness,
+            settings.effects.vignetteFeather, settings.effects.vignetteHighlights))
+        SettingLine("颗粒", String.format("强度 %.0f · 大小 %.0f · 粗糙度 %.0f",
+            settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness))
     }
 }
 

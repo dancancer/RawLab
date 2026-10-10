@@ -25,7 +25,9 @@ class EditPersistenceTest {
             val identity = PhotoIdentity("content://media/external/images/media/7")
             val changed = EditSettings(film = "velvia", exposure = .75f, contrast = .25f,
                 highlights = .25f, customWb = true, temperature = 4200f,
-                denoise = DenoiseSettings(true, 10f, 72f, 100f))
+                denoise = DenoiseSettings(true, 10f, 72f, 100f), displayChromaDenoise = 2,
+                effects = PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f,
+                    grainAmount = 65f, grainSize = 70f))
             EditStore(directory).save(identity, changed)
             val reopened = EditStore(directory)
             assertEquals(changed, reopened.load(identity))

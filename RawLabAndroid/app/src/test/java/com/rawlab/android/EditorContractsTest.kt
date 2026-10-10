@@ -24,6 +24,18 @@ class EditorContractsTest {
         assertEquals(1f, edits.reset().strength)
     }
 
+    @Test fun resetRestoresDisplayChromaAndPhotoEffectsDefaults() {
+        val edits = EditSettings(
+            film = "velvia",
+            displayChromaDenoise = 2,
+            effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f),
+        )
+        val reset = edits.reset()
+        assertEquals("velvia", reset.film)
+        assertEquals(0, reset.displayChromaDenoise)
+        assertEquals(PhotoEffectsSettings(), reset.effects)
+    }
+
     @Test fun rejectsNonFiniteAndOutOfRangeEdits() {
         for (bad in listOf(Float.NaN, Float.POSITIVE_INFINITY, 6f, -6f)) {
             assertThrows(IllegalArgumentException::class.java) { EditSettings(exposure = bad) }

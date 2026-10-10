@@ -2,6 +2,8 @@
 #include "gpu/gles_photo_shader.h"
 #include "gpu/lut_gpu_internal.h"
 #include "core/photo_lut.h"
+#include "core/chroma_denoise.h"
+#include "gpu/denoise.h"
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <android/log.h>
@@ -247,11 +249,12 @@ GlesPhotoRenderer::~GlesPhotoRenderer() = default;
 
 bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
+    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution) {
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
-        request.noise_reduction > 0 || request.sharpening > 0) return false;
+        !effects.valid() || chromaDenoise < 0 || chromaDenoise > 2) return false;
     try {
         if (!impl_) { impl_ = std::make_unique<Impl>(); impl_->initialize(); }
         auto& context = *impl_;
@@ -267,6 +270,21 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             std::clamp(request.highlights, -1.f, 1.f), std::clamp(request.shadows, -1.f, 1.f));
         glUniform1f(context.uniform("curve"), request.tone_curve);
         context.setLut(request.lut_strength > 0 ? lut : nullptr);
+        if (effects.active() || chromaDenoise != 0 || request.noise_reduction > 0 || request.sharpening > 0 || preserveSourceResolution) {
+            context.cachedRevision = 0;
+            ImageData native(input.width, input.height);
+            context.bands(input, input.width, input.height, 2, &native);
+            if (applyChromaDenoise(native, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
+                ((request.noise_reduction > 0 || request.sharpening > 0) &&
+                 !gpuDetailFilter(native, request.noise_reduction, request.sharpening)) ||
+                (effects.active() && !gpuPhotoEffects(native, effects))) return false;
+            if (width != static_cast<uint32_t>(native.width) || height != static_cast<uint32_t>(native.height)) {
+                ImageData resized(static_cast<int>(width), static_cast<int>(height));
+                context.bands(native, width, height, 4, &resized);
+                output = std::move(resized);
+            } else output = std::move(native);
+            return true;
+        }
         ImageData result(static_cast<int>(width), static_cast<int>(height));
         const size_t bytes = result.pixels.size() * sizeof(RGB);
         const bool preview = request.intent == SONY2FUJI_INTENT_PREVIEW;

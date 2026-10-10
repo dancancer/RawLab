@@ -1,12 +1,7 @@
 #pragma once
+#include "denoise.h"
 
 namespace sony2fuji {
-
-struct WaveletFilterSettings {
-    int depth = 4;
-    float sigma[18] = {};
-    float thresholdScale[6] = {};
-};
 
 // Contiguous float planes; coarse-to-fine bands. Failed calls leave output intact.
 bool metalWaveletFilter(const float* input, int width, int height,

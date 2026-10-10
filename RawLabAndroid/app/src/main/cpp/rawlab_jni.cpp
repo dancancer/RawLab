@@ -6,6 +6,9 @@
 #include <mutex>
 #include <unordered_map>
 
+static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
+    "Photo effects config ABI must remain a versioned 40-byte struct");
+
 namespace {
 struct SessionDeleter {
     void operator()(sony2fuji_session* session) const { sony2fuji_session_destroy(session); }
@@ -113,7 +116,9 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
     jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
     jint edge, jboolean interactive, jboolean png, jint longEdge,
-    jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse) {
+    jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
+    jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
+    jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
@@ -128,6 +133,11 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
             sizeof(sony2fuji_wavelet_denoise_config), denoiseEnabled ? 1 : 0, luma, chroma, coarse};
         check(sony2fuji_session_set_wavelet_denoise(session, &denoise));
+        sony2fuji_photo_effects_config effects{SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION,
+            sizeof(sony2fuji_photo_effects_config), vignetteAmount, vignetteMidpoint, vignetteRoundness,
+            vignetteFeather, vignetteHighlights, grainAmount, grainSize, grainRoughness};
+        check(sony2fuji_session_set_photo_effects(session, &effects));
+        check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
         if (output) return nullptr;

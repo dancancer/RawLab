@@ -28,7 +28,10 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
             settings.saturation, settings.sharpening, edge, interactive, false, 0,
-            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse))
+            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
+            settings.displayChromaDenoise, settings.effects.vignetteAmount, settings.effects.vignetteMidpoint,
+            settings.effects.vignetteRoundness, settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
+            settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness))
     }
 
     @Synchronized
@@ -40,7 +43,10 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
             settings.saturation, settings.sharpening, 0, false, png, longEdge ?: 0,
-            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse)
+            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
+            settings.displayChromaDenoise, settings.effects.vignetteAmount, settings.effects.vignetteMidpoint,
+            settings.effects.vignetteRoundness, settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
+            settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness)
         ExportMetadata.preserve(input, output)
     }
 
@@ -56,7 +62,9 @@ class NativeProcessor(mode: Int = AUTO) : AutoCloseable {
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
         highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
         edge: Int, interactive: Boolean, png: Boolean, longEdge: Int,
-        denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float): NativeFrame?
+        denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
+        vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
+        vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float): NativeFrame?
 
     companion object {
         const val CPU = 0

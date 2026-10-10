@@ -82,6 +82,63 @@ final class EditorUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    func testPhotoEffectsControls() {
+        let app = XCUIApplication()
+        app.launch()
+        importPhoto(in: app)
+        let strips = app.scrollViews.containing(.button, identifier: "tool.grain").allElementsBoundByIndex
+        let strip = strips.min { $0.frame.height < $1.frame.height }!
+        for _ in 0..<8 {
+            let frame = app.buttons["tool.vignette"].frame
+            if frame.width > 0 && strip.frame.insetBy(dx: 12, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) { break }
+            strip.swipeLeft()
+        }
+        app.buttons["tool.vignette"].tap()
+        let amount = app.sliders["effects.vignette.slider.vignetteAmount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        amount.adjust(toNormalizedSliderPosition: 0.3)
+        let panel = app.scrollViews["editor.panel"]
+        func scrollPanel(up: Bool) {
+            let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: up ? 0.85 : 0.15))
+            let end = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: up ? 0.15 : 0.85))
+            start.press(forDuration: 0.1, thenDragTo: end)
+        }
+        for parameter in ["vignetteAmount", "vignetteMidpoint", "vignetteRoundness", "vignetteFeather", "vignetteHighlights"] {
+            let slider = app.sliders["effects.vignette.slider.\(parameter)"]
+            for _ in 0..<3 {
+                if panel.frame.insetBy(dx: 0, dy: 12).contains(CGPoint(x: slider.frame.midX, y: slider.frame.midY)) { break }
+                scrollPanel(up: true)
+            }
+            XCTAssertTrue(slider.isHittable, app.debugDescription)
+        }
+        capture("effects-vignette-portrait")
+        scrollPanel(up: false)
+        app.buttons["重置暗角"].tap()
+        XCTAssertEqual(app.textFields["effects.vignette.value.vignetteAmount"].value as? String, "0")
+        XCTAssertFalse(app.sliders["effects.vignette.slider.vignetteHighlights"].isEnabled)
+        for _ in 0..<8 {
+            let frame = app.buttons["tool.grain"].frame
+            if frame.width > 0 && strip.frame.insetBy(dx: 12, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) { break }
+            strip.swipeLeft()
+        }
+        app.buttons["tool.grain"].tap()
+        let grain = app.sliders["effects.grain.slider.grainAmount"]
+        XCTAssertTrue(grain.waitForExistence(timeout: 5))
+        grain.adjust(toNormalizedSliderPosition: 0.6)
+        for parameter in ["grainAmount", "grainSize", "grainRoughness"] {
+            let slider = app.sliders["effects.grain.slider.\(parameter)"]
+            for _ in 0..<3 {
+                if panel.frame.insetBy(dx: 0, dy: 12).contains(CGPoint(x: slider.frame.midX, y: slider.frame.midY)) { break }
+                scrollPanel(up: true)
+            }
+            XCTAssertTrue(slider.isHittable)
+        }
+        capture("effects-grain-portrait")
+        scrollPanel(up: false)
+        app.buttons["重置颗粒"].tap()
+        XCTAssertEqual(app.textFields["effects.grain.value.grainAmount"].value as? String, "0")
+    }
+
     func testEmptyEditorAndPanelVisibility() {
         let app = XCUIApplication()
         app.launch()

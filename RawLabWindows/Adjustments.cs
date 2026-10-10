@@ -28,20 +28,38 @@ public sealed class Adjustments
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
     public int ExposureMode { get; set; }
     public DenoiseSettings Denoise { get; set; } = new();
+    public PhotoEffectsSettings Effects { get; set; } = new();
+    private int displayChromaDenoise;
+    public int DisplayChromaDenoise
+    {
+        get => displayChromaDenoise;
+        set
+        {
+            if (value is < 0 or > 2) throw new ArgumentOutOfRangeException(nameof(value), "显示色彩降噪模式必须为 0、1 或 2。");
+            displayChromaDenoise = value;
+        }
+    }
     public bool CameraWhiteBalance { get; private set; } = true;
     public (double Temperature, double Tint)? AsShot { get; private set; }
     public double this[Parameter id] => values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
-    public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint, Denoise);
+    public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
+        Denoise, Effects, DisplayChromaDenoise);
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
         if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
             snapshot.Values.Where((value, index) => !double.IsFinite(value) || value < ParameterSpec.All[index].Min || value > ParameterSpec.All[index].Max).Any())
             throw new System.IO.InvalidDataException("调整记录无效，原有文件未被覆盖。");
         var denoise = snapshot.Denoise ?? new DenoiseSettings();
+        var effects = snapshot.Effects ?? new PhotoEffectsSettings();
         _ = denoise.NativeConfig();
+        _ = effects.NativeConfig();
+        if (snapshot.DisplayChromaDenoise is < 0 or > 2)
+            throw new System.IO.InvalidDataException("调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。");
         return new Adjustments {
             Denoise = denoise,
+            Effects = effects,
+            DisplayChromaDenoise = snapshot.DisplayChromaDenoise,
             values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
             CameraWhiteBalance = snapshot.CameraWhiteBalance,
             AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null
@@ -59,13 +77,38 @@ public sealed class Adjustments
     public void ResolveWhiteBalance((double Temperature, double Tint)? wb) { AsShot = wb; if (CameraWhiteBalance) ResetWhiteBalance(); }
     public void ResetWhiteBalance() { values[2] = Default(Parameter.Temperature); values[3] = Default(Parameter.Tint); CameraWhiteBalance = true; }
     public void Reset(Parameter id) => Set(id, Default(id));
+    public double EffectDefault(PhotoEffectParameter id) => PhotoEffectSpec.For(id).DefaultValue;
+    public void SetEffect(PhotoEffectParameter id, double value)
+    {
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        var spec = PhotoEffectSpec.For(id);
+        value = Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
+        Effects = id switch {
+            PhotoEffectParameter.VignetteAmount => Effects with { VignetteAmount = value },
+            PhotoEffectParameter.VignetteMidpoint => Effects with { VignetteMidpoint = value },
+            PhotoEffectParameter.VignetteRoundness => Effects with { VignetteRoundness = value },
+            PhotoEffectParameter.VignetteFeather => Effects with { VignetteFeather = value },
+            PhotoEffectParameter.VignetteHighlights => Effects with { VignetteHighlights = value },
+            PhotoEffectParameter.GrainAmount => Effects with { GrainAmount = value },
+            PhotoEffectParameter.GrainSize => Effects with { GrainSize = value },
+            PhotoEffectParameter.GrainRoughness => Effects with { GrainRoughness = value },
+            _ => throw new ArgumentOutOfRangeException(nameof(id))
+        };
+    }
+    public void ResetEffect(PhotoEffectParameter id) => SetEffect(id, EffectDefault(id));
+    public void ResetEffects(bool vignette) {
+        foreach (var spec in PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)) ResetEffect(spec.Id);
+    }
+    public bool IsEffectDefault(bool vignette) => PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
+        .All(spec => this.Effects[spec.Id] == spec.DefaultValue);
     public void ResetGroup(string group)
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 0; ResetWhiteBalance(); }
-        if (group == "细节") Denoise = new();
+        if (group == "细节") { Denoise = new(); DisplayChromaDenoise = 0; }
+        if (group == "效果") Effects = new();
     }
-    public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); Denoise = new(); }
+    public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); Denoise = new(); Effects = new(); DisplayChromaDenoise = 0; }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))

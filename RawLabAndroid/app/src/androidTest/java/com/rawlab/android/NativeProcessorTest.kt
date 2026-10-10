@@ -15,6 +15,39 @@ import java.nio.ByteOrder
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun photoEffectsAndDisplayChromaReachPreviewAndExport() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File(context.cacheDir, "effects-test.dng")
+        val output = File(context.cacheDir, "effects-test.png")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val neutral = processor.preview(input, null, EditSettings(), 200, false)
+                val settings = EditSettings(
+                    displayChromaDenoise = 2,
+                    denoise = DenoiseSettings().withPreset(DenoisePreset.CLEAN),
+                    effects = PhotoEffectsSettings(vignetteAmount = -65f, vignetteMidpoint = 20f,
+                        vignetteRoundness = -35f, vignetteFeather = 70f, vignetteHighlights = 75f,
+                        grainAmount = 70f, grainSize = 60f, grainRoughness = 80f),
+                )
+                val result = processor.preview(input, null, settings, 200, false)
+                assertFalse(neutral.pixels.contentEquals(result.pixels))
+                processor.setGpuMode(NativeProcessor.FORCE)
+                val gpu = processor.preview(input, null, settings, 200, false)
+                assertEquals(2, gpu.backend)
+                assertEquals(result.pixels.size, gpu.pixels.size)
+                val maximum = result.pixels.indices.maxOf { index ->
+                    kotlin.math.abs((result.pixels[index].toInt() and 255) - (gpu.pixels[index].toInt() and 255))
+                }
+                assertTrue("Combined effects/wavelet/chroma CPU/GLES parity max DN=$maximum", maximum <= 2)
+                assertArrayEquals(gpu.pixels, processor.preview(input, null, settings, 200, false).pixels)
+                processor.export(input, null, settings, output, true)
+                assertTrue(output.isFile && output.length() > 0)
+            }
+        } finally { input.delete(); output.delete() }
+    }
+
     @Test fun waveletDenoisePreviewAndExportShareTheSameSettings() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -33,7 +66,13 @@ class NativeProcessorTest {
                 assertArrayEquals(off.pixels, processor.preview(input, null,
                     settings.copy(denoise = settings.denoise.copy(enabled = false)), 200, false).pixels)
                 processor.setGpuMode(NativeProcessor.FORCE)
-                assertThrows(Exception::class.java) { processor.preview(input, null, settings, 200, false) }
+                val gpu = processor.preview(input, null, settings, 200, false)
+                assertEquals(2, gpu.backend)
+                assertEquals(clean.pixels.size, gpu.pixels.size)
+                val difference = clean.pixels.indices.maxOf { index ->
+                    kotlin.math.abs((clean.pixels[index].toInt() and 255) - (gpu.pixels[index].toInt() and 255))
+                }
+                assertTrue("Wavelet GLES CPU parity max DN=$difference", difference <= 2)
                 processor.setGpuMode(NativeProcessor.CPU)
                 processor.export(input, null, settings, output, true)
                 val header = ByteArray(26)

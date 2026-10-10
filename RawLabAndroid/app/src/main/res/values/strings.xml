@@ -118,4 +118,16 @@
     <string name="denoise_luma">亮度降噪</string>
     <string name="denoise_chroma">色彩降噪</string>
     <string name="denoise_coarse">粗色斑抑制</string>
+    <string name="vignette">暗角</string>
+    <string name="grain">颗粒</string>
+    <string name="vignette_amount">强度</string>
+    <string name="vignette_midpoint">中点</string>
+    <string name="vignette_roundness">圆度</string>
+    <string name="vignette_feather">羽化</string>
+    <string name="vignette_highlights">高光保护</string>
+    <string name="grain_amount">强度</string>
+    <string name="grain_size">大小</string>
+    <string name="grain_roughness">粗糙度</string>
+    <string name="reset_vignette">重置暗角</string>
+    <string name="reset_grain">重置颗粒</string>
 </resources>

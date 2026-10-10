@@ -10,9 +10,15 @@ try
     var b = Path.Combine(root, "b", "same.ARW");
     foreach (var path in new[] { a, b }) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, path); }
     var state = new Adjustments(); state.ResolveWhiteBalance((5200, 8)); state.Set(Parameter.Temperature, 6000); state.Set(Parameter.Exposure, .75);
+    state.SetEffect(PhotoEffectParameter.VignetteAmount, -40);
+    state.SetEffect(PhotoEffectParameter.GrainAmount, 65);
+    state.DisplayChromaDenoise = 1;
     var saved = state.Capture();
     state.Denoise = DenoiseSettings.Clean;
     Check(!saved.SameAs(state.Capture()), "denoise changes mark the snapshot dirty");
+    state.DisplayChromaDenoise = 0;
+    Check(!saved.SameAs(state.Capture()), "display chroma changes mark the snapshot dirty");
+    state.DisplayChromaDenoise = 1;
     saved = state.Capture();
     var storePath = Path.Combine(root, "edits");
     var store = new EditStore(storePath);
@@ -22,6 +28,8 @@ try
     Check(restored.Settings.SameAs(saved), "settings survive store restart");
     Check(!restored.Settings.Restore().CameraWhiteBalance, "custom white balance mode survives");
     Check(restored.Settings.Restore().Denoise == DenoiseSettings.Clean, "denoise survives store restart");
+    Check(restored.Settings.Restore().Effects == state.Effects && restored.Settings.Restore().DisplayChromaDenoise == 1,
+        "photo effects and display chroma survive store restart");
     var legacy = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(saved))!.AsObject();
     legacy.Remove("Denoise");
     Check(System.Text.Json.JsonSerializer.Deserialize<AdjustmentSnapshot>(legacy.ToJsonString())!.Restore().Denoise == new DenoiseSettings(), "older records default to disabled denoise");
@@ -45,6 +53,7 @@ try
     BatchRunner.Run(job, journal, false, CancellationToken.None, (_, _) => { }, (input, settings, _, destination) => {
         calls.Add(input); Check(settings[Parameter.Exposure] == .75, "frozen source parameters");
         Check(settings.Denoise == DenoiseSettings.Clean, "frozen source denoise");
+        Check(settings.Effects == saved.Effects && settings.DisplayChromaDenoise == 1, "frozen source effects and display chroma");
         if (input == b) throw new InvalidOperationException("invalid RAW");
         File.WriteAllText(destination, "rendered");
     });
@@ -64,6 +73,8 @@ try
     journal.Save(cancelled);
     var recovered = journal.Load()!;
     Check(recovered.Settings.Restore().Denoise == DenoiseSettings.Clean, "denoise survives journal recovery");
+    Check(recovered.Settings.Restore().Effects == saved.Effects && recovered.Settings.Restore().DisplayChromaDenoise == 1,
+        "effects and display chroma survive journal recovery");
     Check(recovered.Interrupted && recovered.Items[1].Status == BatchStatus.Waiting, "interrupted running work recovers");
     Directory.CreateDirectory(Path.Combine(output, "directory-collision.jpg"));
     Check(Path.GetFileName(BatchRunner.UniqueOutput(output, "directory-collision", "jpg")) == "directory-collision-1.jpg", "directory names also occupy output names");

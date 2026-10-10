@@ -12,6 +12,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     case tint
     case noiseReduction
     case sharpening
+    case vignette
+    case grain
 
     var id: String { rawValue }
 
@@ -39,6 +41,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return "降噪"
         case .sharpening:
             return "锐化"
+        case .vignette:
+            return "暗角"
+        case .grain:
+            return "颗粒"
         }
     }
 
@@ -66,6 +72,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return "sparkles"
         case .sharpening:
             return "triangle"
+        case .vignette:
+            return "circle.dashed"
+        case .grain:
+            return "circle.dotted"
         }
     }
 
@@ -93,6 +103,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return 0...1
         case .sharpening:
             return 0...1.5
+        case .vignette:
+            return PhotoEffectsSettings.vignetteAmountRange
+        case .grain:
+            return PhotoEffectsSettings.grainAmountRange
         }
     }
 
@@ -118,6 +132,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return 0.05
         case .sharpening:
             return 0.05
+        case .vignette, .grain:
+            return 1
         }
     }
 
@@ -145,6 +161,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return settings.denoise.enabled ? 1 : 0
         case .sharpening:
             return settings.sharpening
+        case .vignette:
+            return settings.photoEffects.vignetteAmount
+        case .grain:
+            return settings.photoEffects.grainAmount
         }
     }
 
@@ -173,6 +193,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             settings.denoise = RawDenoiseSettings(enabled: value > 0)
         case .sharpening:
             settings.sharpening = value
+        case .vignette:
+            settings.photoEffects.vignetteAmount = value
+        case .grain:
+            settings.photoEffects.grainAmount = value
         }
     }
 
@@ -190,10 +214,24 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return String(format: "%.0fK", value)
         case .tint:
             return String(format: "%.0f", value)
+        case .vignette, .grain:
+            return String(format: "%+.0f", value)
         }
     }
 
     func progress(in settings: RawSettings) -> Double {
+        if self == .vignette || self == .grain {
+            let deltas = PhotoEffectParameter.allCases
+                .filter { $0.isVignette == (self == .vignette) }
+                .map { parameter -> Double in
+                    let value = settings.photoEffects[keyPath: parameter.keyPath]
+                    let baseline = parameter.defaultValue
+                    let delta = value - baseline
+                    let span = delta >= 0 ? parameter.range.upperBound - baseline : baseline - parameter.range.lowerBound
+                    return span > 0 ? min(max(delta / span, -1), 1) : 0
+                }
+            return deltas.max { abs($0) < abs($1) } ?? 0
+        }
         let baseline = value(from: .default)
         let delta = value(from: settings) - baseline
         let span = delta >= 0 ? range.upperBound - baseline : baseline - range.lowerBound
@@ -202,6 +240,16 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     }
 
     func reset(in settings: inout RawSettings) {
+        switch self {
+        case .vignette:
+            settings.photoEffects.resetVignette()
+            return
+        case .grain:
+            settings.photoEffects.resetGrain()
+            return
+        default:
+            break
+        }
         setValue(value(from: .default), in: &settings)
     }
 }

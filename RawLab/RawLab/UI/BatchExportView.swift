@@ -100,6 +100,15 @@ struct BatchExportView: View {
                     settingRow("亮度降噪", value: String(format: "%.0f", denoise.luma))
                     settingRow("色彩降噪", value: String(format: "%.0f", denoise.chroma))
                     settingRow("粗颗粒降噪", value: String(format: "%.0f", denoise.coarse))
+                    let effects = model.job.source.settings.photoEffects
+                    settingRow("暗角强度", value: String(format: "%+.0f", effects.vignetteAmount))
+                    settingRow("暗角中点", value: String(format: "%.0f", effects.vignetteMidpoint))
+                    settingRow("暗角圆度", value: String(format: "%+.0f", effects.vignetteRoundness))
+                    settingRow("暗角羽化", value: String(format: "%.0f", effects.vignetteFeather))
+                    settingRow("暗角高光保护", value: String(format: "%.0f", effects.vignetteHighlights))
+                    settingRow("颗粒强度", value: String(format: "%.0f", effects.grainAmount))
+                    settingRow("颗粒大小", value: String(format: "%.0f", effects.grainSize))
+                    settingRow("颗粒粗糙度", value: String(format: "%.0f", effects.grainRoughness))
                 }
             }.padding(.vertical, 16).accessibilityIdentifier("batch.settings")
         }.padding(.horizontal, 20)
