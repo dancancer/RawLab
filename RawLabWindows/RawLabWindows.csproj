@@ -9,9 +9,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.4.1</Version>
-    <FileVersion>0.4.1.7</FileVersion>
-    <InformationalVersion>0.4.1+build.7</InformationalVersion>
+    <Version>0.5.0</Version>
+    <FileVersion>0.5.0.8</FileVersion>
+    <InformationalVersion>0.5.0+build.8</InformationalVersion>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />

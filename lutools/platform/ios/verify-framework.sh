@@ -18,7 +18,8 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
         exit 1
     fi
     for notice in LibRaw-COPYRIGHT LibRaw-LICENSE.CDDL LibRaw-LICENSE.LGPL \
-        rawspeed-camera-calibration.inc Adobe-DNG-SDK-LICENSE.txt stb-MIT-LICENSE.txt ThirdPartyNotices.md; do
+        rawspeed-camera-calibration.inc Adobe-DNG-SDK-LICENSE.txt stb-MIT-LICENSE.txt ThirdPartyNotices.md \
+        RawLab-GPL-3.0.txt RawLab-Licensing.md; do
         test -f "$(dirname "$binary")/Licenses/$notice"
     done
 done

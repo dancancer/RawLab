@@ -195,7 +195,7 @@ sony2fuji_session_set_gpu_config(session, &gpu_config);
 
 ## 许可证
 
-核心库: MIT License
+核心库: [GPLv3 only](../../LICENSE)（`GPL-3.0-only`）
 依赖库: 各自的许可证 (libraw: LGPL/CDDL)
 
 ## 贡献
