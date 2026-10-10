@@ -22,8 +22,9 @@ Use macOS system typography, compact 11-point tool labels and native control siz
 - The photo area contains neutral/result comparison panes sharing zoom and pan. Fit mode uses bounded previews; actual-pixel viewing requests native resolution and accounts for display scale.
 - Only a collapsible histogram floats at the photo area's upper-right. There is no fixed right-side adjustment inspector.
 - Every edit control is in the bottom of the right-hand workspace, never beneath the file tree. Its header holds the active film name, exposure baseline and reset menu. Drag its upper edge to resize; collapse completely and restore using the toolbar adjustment icon without losing values or the previous height.
-- A single circular tool row contains film, strength and all nine tonal/color/detail adjustments. Film is a peer tool, never a separate mode tab.
+- A single circular tool row contains film, strength and tonal/color/detail/effects adjustments. Film is a peer tool, never a separate mode tab.
 - Selecting film replaces the value editor below the tool row with a horizontal square-label chooser. Center the list when it fits and scroll when it overflows. Selecting a numeric tool restores its input, slider, ticks and reset button without changing other values.
+- Vignette and grain each occupy one tool in that row. Their parameter groups use compact native sliders and numeric inputs below it, with parameter and group reset actions. Vignette highlights are disabled for nonnegative amounts; auxiliary controls retain their values while amount is zero. All settings fit the minimum desktop window without adding a sidebar.
 - The photo canvas has no title strip. Comparison identifiers are small bottom-left overlays only in comparison mode.
 
 ## Elevation & Depth

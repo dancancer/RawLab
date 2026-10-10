@@ -174,6 +174,20 @@ typedef struct sony2fuji_wavelet_denoise_config {
     float coarse; // 0..100, coarse color-band fraction of chroma strength.
 } sony2fuji_wavelet_denoise_config;
 
+#define SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION 1
+typedef struct sony2fuji_photo_effects_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float vignette_amount;     // -100..100; negative darkens, positive lightens.
+    float vignette_midpoint;   // 0..100; default 50.
+    float vignette_roundness;  // -100..100; default 0.
+    float vignette_feather;    // 0..100; default 50.
+    float vignette_highlights; // 0..100; protects highlights with negative amount.
+    float grain_amount;        // 0..100; default 0 (off).
+    float grain_size;          // 0..100; default 25.
+    float grain_roughness;     // 0..100; default 50.
+} sony2fuji_photo_effects_config;
+
 // ============================================================================
 // Opaque Session
 // ============================================================================
@@ -227,17 +241,27 @@ sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* se
 // Display-sRGB chroma denoising after tone/LUT, before sharpening and resizing.
 // 0 off (default), 1 detail priority, 2 noise priority. Does not change request v2.
 // Requires a core built with SONY2FUJI_ENABLE_CHROMA_DENOISE; otherwise nonzero
-// modes return UNSUPPORTED. Uses full-resolution CPU rendering in Auto/Off;
-// Force GPU rejects this CPU-only stage rather than silently falling back.
+// modes return UNSUPPORTED. Metal accelerates the guided filters at source
+// resolution; sampled estimation and OpenCV Lab conversion remain on CPU.
+// Auto falls back to CPU; Force requires Metal success (unsupported on other GPUs).
 sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session, int32_t mode);
 
 // Linear-sRGB wavelets before user exposure, tone/LUT and sharpening. Additive ABI.
 // Exact previews and exports filter at source resolution. Explicit interactive
 // buffer previews may use a reduced image; final/file output is never downgraded.
-// Auto uses CPU; Force GPU returns an error when this CPU-only stage is active.
+// Metal accelerates the tiled SWT filter; estimation/calibration remain on CPU.
+// Auto falls back to CPU; Force requires Metal success (unsupported on other GPUs).
 // Old FBDD/display-chroma settings are independent; clients choose whether to stack.
 sony2fuji_status sony2fuji_session_set_wavelet_denoise(
     sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config
+);
+
+// Additive API; request v2 is unchanged. Both amounts zero is an exact bypass.
+// Source-resolution display effects run before output resize, on CPU or Metal.
+// Auto retains CPU fallback. Other GPU backends reject active effects in Force
+// mode. Fixed grain is reproducible. Wavelet/chroma denoising can precede effects on Metal.
+sony2fuji_status sony2fuji_session_set_photo_effects(
+    sony2fuji_session* session, const sony2fuji_photo_effects_config* config
 );
 
 // Capability of the last successfully decoded RAW: 0 unsupported, 1 supported.

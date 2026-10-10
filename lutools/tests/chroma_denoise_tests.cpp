@@ -88,14 +88,24 @@ int main(int argc, char** argv) {
         assert(sony2fuji_session_set_chroma_denoise(session,mode) == SONY2FUJI_STATUS_OK);
         request.intent = SONY2FUJI_INTENT_PREVIEW;
         const auto preview = render();
+#if defined(SONY2FUJI_ENABLE_METAL)
+        assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL);
+#else
         assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU);
+#endif
         request.intent = SONY2FUJI_INTENT_FINAL;
         assert(render() == preview);
     }
     config.mode = SONY2FUJI_GPU_FORCE;
     assert(sony2fuji_session_set_gpu_config(session,&config) == SONY2FUJI_STATUS_OK);
     sony2fuji_buffer rejected{};
+#if defined(SONY2FUJI_ENABLE_METAL)
+    assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_OK);
+    assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL);
+    sony2fuji_release_buffer(&rejected);
+#else
     assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
+#endif
     sony2fuji_session_destroy(session);
     std::cout << "PASS: chroma defaults, validation, denoising, preview/final parity and explicit GPU fallback\n";
 }

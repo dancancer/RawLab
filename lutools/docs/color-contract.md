@@ -27,15 +27,91 @@ sample-limited validation are documented in the RAW compatibility report.
 ## Rendering Order
 
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
-2. Apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
+2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
-5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation, curves and detail adjustments follow.
+5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then optional display-chroma denoising, detail adjustments, vignette and grain, and final resizing.
 6. Write RGB/RGBA preview, JPEG or actual 16-bit PNG. PNG includes an sRGB chunk. Photo outputs use an sRGB display interpretation; the film-simulation names alone do not establish camera-to-camera colorimetric equivalence or a measured display EOTF. JPEG consumers must use this sRGB interpretation.
 
 When sharpening is enabled, the early preview downsample is skipped. The fixed pixel-radius filter runs at source resolution before the final preview resize, matching its export footprint. At zero sharpening the existing fast preview path remains unchanged. Mac's contrast/saturation controls use percent offsets from the core's identity value 1; highlight signs are reversed at the UI boundary so positive values consistently brighten. All six output adjustments default to an identity result.
 
 The film output interpretation is a declared application convention. It is not a claim that Fujifilm's short LUT overview specifies every viewing parameter. No guessed extra gamma is applied to an already rendered film LUT output.
+
+### Vignette and Film Grain
+
+`sony2fuji_session_set_photo_effects` adds a versioned configuration without
+changing request v2. Amounts default to zero, an exact bypass even if auxiliary
+settings are retained. Invalid/nonfinite configuration leaves session state intact.
+Clients set the full configuration on every render, including neutral renders.
+
+Vignette Amount spans -100..100: negative darkens, positive lightens. Midpoint
+restricts coverage as it increases; Roundness changes a rounded rectangle through
+an image-aspect ellipse to a circle. Feather smooths the boundary; Highlights
+protects bright areas only for negative Amount. Defaults are 0/50/0/50/0. Controls
+reference [Lightroom post-crop vignette](https://helpx.adobe.com/ie/lightroom-classic/desktop/process-and-develop-photos/retouch-photos.html),
+not lens correction or Adobe's proprietary rendering styles.
+
+Grain Amount/Size/Roughness span 0..100, defaulting to 0/25/50. Two scales of
+normalized interpolated spatial noise share a fixed integer hash. Amplitude
+decreases toward black and white. A common RGB delta avoids independent colored
+speckles, although final channel clipping can affect saturated colors. Size is
+measured in source pixels, not preview pixels. This is a deterministic artistic
+approximation, not measured film stock or physical silver-halide simulation.
+
+The stage runs after sharpening and before final resize on CPU or Metal, including
+neutral/CUBE/DCP output. Active effects use full RAW resolution even during
+interactive previews. Off restores the existing early-resize/proxy paths. Auto
+retains CPU fallback; other GPU backends reject active effects in Force mode.
+
+References considered: [darktable lightness grain](https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/grain/),
+[AOMedia parameterized grain](https://aomediacodec.github.io/afgs1-spec/), and
+[IPOL Monte Carlo film grain](https://www.ipol.im/pub/art/2017/192/). None of these
+implementations is copied or embedded.
+
+### Metal Denoising
+
+The existing denoise controls and saved parameters are unchanged. Optional
+`SONY2FUJI_ENABLE_WAVELET_DENOISE` and `SONY2FUJI_ENABLE_CHROMA_DENOISE` builds remain
+independent. Mac Auto uses Metal for the heavy filtering; GPU failures fall back
+to CPU. Force requires successful Metal filters and photo rendering, never a
+silent CPU replacement. A reliable-noise estimate is still required; off/zero
+strength and insufficient-evidence cases remain no-ops.
+
+Wavelet denoising stays in linear sRGB before user exposure and LUT evaluation.
+CPU retains flat-sample selection, noise-model fitting, normalization, opponent
+conversion, band calibration and variance-aware restoration. Metal executes db2
+SWT analysis, box-energy thresholds and the transpose inverse per tile/channel.
+The original 4/6 levels, periodic SWT indices, REFLECT_101 energy boundaries and
+512/1024 tile centers with 96/256 halos are preserved. Bounded GPU tile jobs are
+serialized to avoid allocating full-image wavelet coefficients. Float GPU results
+are tested against the existing double wavelib implementation, not substituted
+with a different denoising algorithm.
+
+The exact filtered RAW cache includes the complete denoise options and execution
+mode. CPU/Auto/Force cannot reuse each other's cached denoise results. Interactive
+wavelet previews may remain approximations; final/file requests never reuse them.
+Active chroma or photo effects require the exact source-resolution path.
+
+Display-chroma denoising stays after tone/LUT and before sharpening. The Metal
+photo command buffer completes the tone stage, then CPU performs the original
+OpenCV Lab conversion and sampled profile estimation. Metal executes the
+three-channel-guide/two-channel-source guided filters with BORDER_REFLECT means;
+CPU keeps the original preblur, protection mask, coarse resize/correction and
+Lab-to-RGB conversion. A second Metal command buffer resumes detail, effects and
+final resize. This deliberate readback preserves OpenCV's LUT-based Lab and
+half-pixel/area-resampling semantics; it is not an all-GPU pipeline.
+
+Direct core denoiser calls default to CPU for backward compatibility. Internal
+diagnostics distinguish an applied filter from an actual Metal filter. Failed
+GPU calls commit no output. RAW originals/cache remain immutable. Legacy LibRaw
+FBDD, RAW decoding and file encoding remain CPU operations. Non-Metal backends
+keep their previous CPU fallback/Force rejection policy for these denoisers.
+
+`metal_denoise` compares individual filters and complete denoisers against
+wavelib/OpenCV; `wavelet_render`, `chroma_denoise`, `gpu_photo`, `photo_effects`
+and `native_dcp_metal` cover pipeline/backend contracts. Mac
+`photo-effects-render.sh RAW LUT wavelet|chroma` tests real RAW CPU/Metal parity,
+combined effects, stable exact/interactive rendering and JPEG/16-bit PNG export.
 
 ## LUT Contracts
 

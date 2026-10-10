@@ -66,6 +66,10 @@ final class RenderEngine {
             throw RenderError.failed("无效的曝光基准")
         }
         let wavelet = settings.waveletNoiseReduction
+        var effectsConfig = settings.photoEffectsConfig
+        guard sony2fuji_session_set_photo_effects(session, &effectsConfig) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed("无效的暗角或颗粒参数")
+        }
         var waveletConfig = sony2fuji_wavelet_denoise_config()
         waveletConfig.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
         waveletConfig.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)

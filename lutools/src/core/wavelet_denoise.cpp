@@ -1,4 +1,8 @@
 #include "wavelet_denoise.h"
+#if defined(SONY2FUJI_ENABLE_METAL)
+#include "gpu/metal_denoise.h"
+#endif
+#include <atomic>
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -12,6 +16,7 @@
 #include <wavelib.h>
 
 namespace {
+struct WaveletGpuFailure {};
 constexpr int levels = 4, halo = 96, tileSize = 512;
 constexpr int chromaLevels = 6, coarseHalo = 256;
 using Bands = std::array<std::array<float,3>,levels>;
@@ -289,10 +294,33 @@ void calibrateCoarseBands(NoiseModel& model,const cv::Mat& transformed,const std
     }
 }
 
-cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,int channel) {
+cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,int channel,
+                    sony2fuji::GpuMode gpuMode,std::atomic<bool>& gpuUsed) {
     const float strength=channel==0 ? options.luma*.02f : options.chroma*.025f;
     if (strength==0) return plane.clone();
     const int depth=channel!=0 && options.coarse>0 ? chromaLevels : levels;
+    if (gpuMode != sony2fuji::GpuMode::Off) {
+#if defined(SONY2FUJI_ENABLE_METAL)
+        sony2fuji::WaveletFilterSettings settings;
+        settings.depth = depth;
+        for (int scale = 0; scale < depth; ++scale) {
+            const int sourceLevel = depth - scale;
+            settings.thresholdScale[scale] = strength * (sourceLevel >= levels ?
+                (channel == 0 ? .5f : options.coarse * .01f) : 1);
+            for (int direction = 0; direction < 3; ++direction)
+                settings.sigma[scale * 3 + direction] = sourceLevel > levels ?
+                    model.coarseSigma[channel - 1][scale][direction] : model.sigma[channel][levels - sourceLevel][direction];
+        }
+        cv::Mat result(plane.size(), CV_32F);
+        if (sony2fuji::metalWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
+            gpuUsed.store(true, std::memory_order_relaxed);
+            return result;
+        }
+#else
+        (void)gpuUsed;
+#endif
+        if (gpuMode == sony2fuji::GpuMode::Force) throw WaveletGpuFailure{};
+    }
     StationaryWavelet transform(plane,depth);
     for (int scale=0;scale<depth;++scale) {
         const int sourceLevel=depth-scale;
@@ -319,7 +347,8 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
     return transform.reconstruct();
 }
 
-cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options) {
+cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,
+                sony2fuji::GpuMode gpuMode,std::atomic<bool>& gpuUsed) {
     const int height=transformed.rows,width=transformed.cols;
     const bool coarse=options.chroma>0 && options.coarse>0;
     const int centerSize=coarse ? 1024 : tileSize;
@@ -338,7 +367,7 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
                     ((w+divisor-1)/divisor)*divisor+2*radius,((h+divisor-1)/divisor)*divisor+2*radius));
                 cv::Mat plane;
                 cv::extractChannel(tile,plane,c);
-                const auto filtered=filterPlane(plane,model,options,c);
+                const auto filtered=filterPlane(plane,model,options,c,gpuMode,gpuUsed);
                 for (int py=0;py<h;++py) for (int px=0;px<w;++px)
                     output.at<cv::Vec3f>(y+py,x+px)[c]=filtered.at<float>(radius+py,radius+px);
             }
@@ -377,7 +406,7 @@ bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
         if (!std::isfinite(value) || value < 0 || value > 100) return false;
     return true;
 }
-ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics) {
+ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics, GpuMode gpuMode) {
     if (diagnostics) *diagnostics = {};
     if (!validWaveletDenoiseOptions(options)) return ErrorCode::InvalidFormat;
     if (!options.active()) return ErrorCode::Success;
@@ -396,15 +425,20 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     cv::transform(normalized,transformed,opponent());
     calibrateBands(model,transformed,samples);
     if (options.chroma>0 && options.coarse>0) calibrateCoarseBands(model,transformed,samples);
-    const auto filtered=filter(transformed,model,options);
+    std::atomic<bool> gpuUsed{false};
+    cv::Mat filtered;
+    try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
+    catch (const WaveletGpuFailure&) { return ErrorCode::ProcessingError; }
     restore(rgb,normalized,filtered,model);
     if (diagnostics) {
         diagnostics->applied=true;
+        diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
         for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
     }
     return ErrorCode::Success;
 #else
     (void)image;
+    (void)gpuMode;
     return ErrorCode::InvalidFormat;
 #endif
 }

@@ -23,7 +23,10 @@ import ImageIO
             check(pixels(preview) != previous, "\(input.lastPathComponent): mode \(mode) changes pixels")
             previous = pixels(preview)
             let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF).render(input, settings: settings, lut: lut, edge: 600)!
-            check(pixels(cpu) == pixels(preview), "Auto and CPU share the same denoising implementation")
+            let reference = pixels(cpu), actual = pixels(preview)
+            let maximum = zip(reference, actual).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            check(maximum <= 2, "CPU/Metal denoising differs by at most two code values")
+            check(engine.lastBackend == SONY2FUJI_BACKEND_METAL, "Auto chroma denoising uses Metal")
             let proxyEngine = try RenderEngine()
             _ = try proxyEngine.render(input, settings: Adjustments(), lut: lut, edge: 600, interactive: true)
             let interactive = try proxyEngine.render(input, settings: settings, lut: lut, edge: 600, interactive: true)!

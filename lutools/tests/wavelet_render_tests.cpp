@@ -59,11 +59,23 @@ int main() {
     assert(sony2fuji_session_set_interactive_preview(session,0)==SONY2FUJI_STATUS_OK);
     gpu.mode=SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
-    assert(render()==exact && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU);
+    const auto automatic = render();
+#if defined(SONY2FUJI_ENABLE_METAL)
+    assert(sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_METAL);
+    for (size_t i=0;i<exact.size();++i) assert(std::abs(int(automatic[i])-int(exact[i]))<=2);
+#else
+    assert(automatic==exact && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU);
+#endif
     gpu.mode=SONY2FUJI_GPU_FORCE;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     sony2fuji_buffer rejected{};
+#if defined(SONY2FUJI_ENABLE_METAL)
+    assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_OK);
+    assert(sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_METAL);
+    sony2fuji_release_buffer(&rejected);
+#else
     assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_PROCESSING_ERROR);
+#endif
     gpu.mode=SONY2FUJI_GPU_OFF;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     options.enabled=0;
