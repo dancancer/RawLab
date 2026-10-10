@@ -9,9 +9,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.5.0</Version>
-    <FileVersion>0.5.0.8</FileVersion>
-    <InformationalVersion>0.5.0+build.8</InformationalVersion>
+    <Version>0.5.1</Version>
+    <FileVersion>0.5.1.9</FileVersion>
+    <InformationalVersion>0.5.1+build.9</InformationalVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <ItemGroup>

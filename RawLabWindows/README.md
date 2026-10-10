@@ -5,15 +5,15 @@
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.5.0 Windows 包
+## 下载 v0.5.1 Windows 包
 
-[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.5.0/RawLab-Windows-0.5.0-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.5.0) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.5.0/SHA256SUMS.txt)
+[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.5.1/RawLab-Windows-0.5.1-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.5.1) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.5.1/SHA256SUMS.txt)
 
 解压后运行 `RawLab.exe`，保留完整目录。发布包已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，无需另行安装 .NET。程序未签名。
 
-v0.5.0 构建 8 在专用 Windows x64 虚拟机上重新构建 WPF 与 native DLL，程序集版本为 `0.5.0`、文件版本为 `0.5.0.8`，不复用旧版 native 包。共享 LibRaw 0.22.2 修复 Panasonic RW2、新机型元数据/校准、X-Trans 并发与裁切问题；Nikon HE* 仍明确返回不支持。
+v0.5.1 构建 9 从发布源码重新构建 WPF 与 native DLL，程序集版本为 `0.5.1`、文件版本为 `0.5.1.9`，不复用旧版 native 包。暗角、颗粒参数与其他平台一致，小波和显示色度过滤支持 D3D11。共享 LibRaw 0.22.2 的相机兼容性修复保持不变；Nikon HE* 仍明确返回不支持。
 
-保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出。“关于 RawLab”仍只打开官方更新页面，不自动安装。本版独立构建与验证范围见[发布验证记录](../docs/verification-v0.5.0.md)，不沿用历史交接包的 119 项检查作为新版证明。
+保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出。“关于 RawLab”仍只打开官方更新页面，不自动安装。本版构建与验证范围见[发布验证记录](../docs/verification-v0.5.1.md)，不沿用历史交接包的检查作为新版证明。
 
 ## 构建
 
