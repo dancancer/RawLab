@@ -3,6 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP="${1:-$ROOT/build/RawLab Mac.app}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+for notice in RawLab-GPL-3.0.txt RawLab-Licensing.md; do
+    test -f "$APP/Contents/Resources/Licenses/$notice"
+done
 if [ -n "${MACOSX_DEPLOYMENT_TARGET:-}" ]; then
     minimum=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")
     test "$minimum" = "$MACOSX_DEPLOYMENT_TARGET" || {

@@ -17,6 +17,8 @@ cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCH
 cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/RawLab-GPL-3.0.txt"
+cp "$ROOT/docs/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
 cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resources/Licenses/"
 cp -R "$ROOT/RawLabMac/Resources/Licenses/." "$APP/Contents/Resources/Licenses/"
 cp "$ROOT/RawLabMac/Resources/ThirdPartyNotices.md" "$APP/Contents/Resources/Licenses/"

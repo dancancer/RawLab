@@ -26,6 +26,8 @@ val prepareAssets by tasks.registering(Sync::class) {
         into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "stb-MIT-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
+    from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }
+    from(repo.resolve("docs/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
     from(androidComponents.sdkComponents.ndkDirectory) {
         include("toolchains/llvm/prebuilt/*/sysroot/NOTICE")
         eachFile { path = "licenses/NDK-libcxx-NOTICE" }
@@ -49,8 +51,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.1"
+        versionCode = 8
+        versionName = "0.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }

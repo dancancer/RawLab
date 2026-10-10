@@ -8,7 +8,9 @@ import AppKit
     static func main() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let model = EditorModel(lookDirectory: folder)
+        let model = EditorModel(lookDirectory: folder.appendingPathComponent("looks"),
+                                editDirectory: folder.appendingPathComponent("edits"),
+                                batchDirectory: folder.appendingPathComponent("batch"))
         func wait() {
             let deadline = Date().addingTimeInterval(120)
             while model.busy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
