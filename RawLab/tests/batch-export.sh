@@ -6,6 +6,7 @@ trap 'rm -rf "$OUT"' EXIT
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 swiftc -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
+    "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
     "$ROOT/RawLab/RawLab/Core/Batch/BatchExportCore.swift" \
     "$ROOT/RawLab/tests/BatchExportTests.swift" \

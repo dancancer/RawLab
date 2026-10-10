@@ -71,8 +71,8 @@ class LookLibraryScreenTest {
             }
             lookId = compose.activity.model.state.value.edits.film
             assertTrue(source.delete())
-            val strip = compose.onNode(hasScrollToIndexAction() and
-                SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+            val strip = compose.onAllNodes(hasScrollToIndexAction() and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)).onFirst()
             strip.performScrollToNode(hasText(source.name))
             compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasScrollToIndexAction())).performClick()
             compose.onNodeWithText("重命名外观").performClick()

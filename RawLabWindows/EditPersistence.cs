@@ -71,10 +71,17 @@ public sealed class EditStore
 
     public void Save(string input, AdjustmentSnapshot settings, string? look)
     {
-        var identity = OriginalIdentity.Read(input);
-        var updated = new Dictionary<string, SavedEdit>(records, StringComparer.OrdinalIgnoreCase) {
-            [identity.Path] = new(identity, settings.Copy(), look)
-        };
+        Save([input], settings, look);
+    }
+
+    public void Save(IEnumerable<string> inputs, AdjustmentSnapshot settings, string? look)
+    {
+        var updated = new Dictionary<string, SavedEdit>(records, StringComparer.OrdinalIgnoreCase);
+        foreach (var input in inputs)
+        {
+            var identity = OriginalIdentity.Read(input);
+            updated[identity.Path] = new(identity, settings.Copy(), look);
+        }
         AtomicJson.Write(path, new Registry(1, updated));
         records = updated;
     }

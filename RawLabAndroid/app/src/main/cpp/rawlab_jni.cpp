@@ -112,7 +112,7 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
     jstring input, jstring lut, jstring output, jfloat strength, jfloat exposure,
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
     jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
-    jint edge, jboolean interactive, jboolean png,
+    jint edge, jboolean interactive, jboolean png, jint longEdge,
     jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
@@ -122,7 +122,8 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         UtfChars in(env, input), film(env, lut), out(env, output);
         auto request = rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
             exposure, customWb, temperature, tint, highlights, shadows, contrast,
-            toneCurve, saturation, sharpening, edge, png);
+            toneCurve, saturation, sharpening, edge, png,
+            longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge));
         check(sony2fuji_session_set_interactive_preview(session, interactive && !out.chars));
         sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
             sizeof(sony2fuji_wavelet_denoise_config), denoiseEnabled ? 1 : 0, luma, chroma, coarse};

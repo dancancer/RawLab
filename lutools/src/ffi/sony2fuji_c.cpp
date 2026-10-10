@@ -445,12 +445,14 @@ sony2fuji_status computeTargetSize(
             *out_width = request.target_width;
             *out_height = request.target_height;
             return SONY2FUJI_STATUS_OK;
-        case SONY2FUJI_SIZE_FIT_LONG_EDGE: {
+        case SONY2FUJI_SIZE_FIT_LONG_EDGE:
+        case SONY2FUJI_SIZE_LIMIT_LONG_EDGE: {
             if (long_edge == 0) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             uint32_t max_edge = std::max(src_width, src_height);
             float scale = static_cast<float>(long_edge) / static_cast<float>(max_edge);
+            if (mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE) scale = std::min(1.0f, scale);
             *out_width = std::max(1u, static_cast<uint32_t>(std::round(src_width * scale)));
             *out_height = std::max(1u, static_cast<uint32_t>(std::round(src_height * scale)));
             return SONY2FUJI_STATUS_OK;

@@ -1,6 +1,10 @@
 import XCTest
 
 final class EditorUITests: XCTestCase {
+    private let seedPhotoDate = "2025年6月02日, 16:45"
+    private let seedPhotoBase = "DJI_20250602164503_0444_D"
+    private var verifiedSeedPickerIndex: Int?
+
     func testEditMemoryAndBatchWorkflow() {
         let app = XCUIApplication()
         app.launch()
@@ -21,14 +25,47 @@ final class EditorUITests: XCTestCase {
         XCTAssertTrue(app.buttons["batch.pick"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["batch.export"].isEnabled)
         app.buttons["batch.pick"].tap()
-        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 15), app.debugDescription)
+        let photos = app.images.matching(identifier: "PXGGridLayout-Info")
+        XCTAssertTrue(photos.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        let candidates = photos.allElementsBoundByIndex
+        guard let index = verifiedSeedPickerIndex, candidates.indices.contains(index) else {
+            XCTFail("The original DNG has not been verified in the Photos picker")
+            return
+        }
+        // 同日期的导出 JPEG 也在图库中，复用刚刚按完整文件名验证过的原图位置。
+        let photo = candidates[index]
+        XCTAssertTrue(photo.label.contains(seedPhotoDate), photo.label)
         photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
         add.tap()
+        XCTAssertTrue(app.staticTexts[seedPhotoBase + ".DNG"].waitForExistence(timeout: 5), app.debugDescription)
         expectation(for: NSPredicate { _, _ in app.buttons["batch.export"].isEnabled }, evaluatedWith: app)
         waitForExpectations(timeout: 90)
+        let batchSizePicker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '导出尺寸'")).firstMatch
+        let scrollCandidates = app.scrollViews.allElementsBoundByIndex
+        XCTAssertFalse(scrollCandidates.isEmpty, app.debugDescription)
+        let batchScroll = scrollCandidates.last(where: { $0.frame.height > app.frame.height * 0.7 }) ?? scrollCandidates[scrollCandidates.count - 1]
+        XCTAssertTrue(batchScroll.waitForExistence(timeout: 5), app.debugDescription)
+        // The fixed export bar overlaps the output row until the batch form is scrolled.
+        for _ in 0..<2 {
+            batchScroll.swipeUp()
+        }
+        XCTAssertTrue(batchSizePicker.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(batchSizePicker.isHittable, app.debugDescription)
+        batchSizePicker.tap()
+        XCTAssertTrue(app.buttons["长边 2,048 px"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["长边 2,048 px"].tap()
+        XCTAssertTrue(batchSizePicker.label.contains("长边 2,048 px"))
+        batchSizePicker.tap()
+        app.buttons["自定义…"].tap()
+        let batchCustom = app.textFields["长边（1–65535 px）"]
+        XCTAssertTrue(batchCustom.waitForExistence(timeout: 5), app.debugDescription)
+        batchCustom.tap()
+        batchCustom.typeText("128")
+        XCTAssertTrue(app.buttons["batch.export"].isEnabled)
+        capture("batch-size-custom-128")
+        batchScroll.swipeDown()
         capture("batch-confirm-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         capture("batch-confirm-landscape")
@@ -56,6 +93,73 @@ final class EditorUITests: XCTestCase {
         XCTAssertTrue(app.buttons["editor.import.empty"].isHittable)
         XCUIDevice.shared.orientation = .landscapeLeft
         capture("empty-landscape")
+    }
+
+    func testPhotoInfoOverlay() {
+        let app = XCUIApplication()
+        app.launch()
+        importPhoto(in: app)
+        let info = app.buttons["editor.photoInfo"]
+        XCTAssertTrue(info.waitForExistence(timeout: 5))
+        info.tap()
+        XCTAssertEqual(info.value as? String, "文件信息")
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].label.contains("3072 × 3072"),
+                      "The info overlay must show the original DNG size, not its embedded preview")
+        capture("photo-info-file")
+        info.tap()
+        XCTAssertEqual(info.value as? String, "拍摄参数")
+        info.tap()
+        XCTAssertEqual(info.value as? String, "隐藏照片信息")
+        XCTAssertFalse(app.descendants(matching: .any)["editor.photoInfo.overlay"].exists)
+    }
+
+    func testExportSizePickerPresetsAndValidation() {
+        let app = XCUIApplication()
+        app.launch()
+        importPhoto(in: app)
+
+        app.buttons["editor.export"].tap()
+        app.buttons["保存当前照片"].tap()
+        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '导出尺寸'")).firstMatch
+        let original = app.buttons["editor.export.confirm"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(original.isEnabled)
+        XCTAssertTrue(picker.label.contains("原始分辨率"))
+        capture("export-size-original")
+
+        picker.tap()
+        XCTAssertTrue(app.buttons["长边 2,048 px"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["长边 2,048 px"].tap()
+        XCTAssertTrue(picker.label.contains("长边 2,048 px"))
+        capture("export-size-2048")
+
+        picker.tap()
+        XCTAssertTrue(app.buttons["自定义…"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["自定义…"].tap()
+        let invalid = app.textFields["长边（1–65535 px）"]
+        XCTAssertTrue(invalid.waitForExistence(timeout: 5), app.debugDescription)
+        invalid.tap()
+        invalid.typeText("70000")
+        XCTAssertFalse(original.isEnabled)
+        capture("export-size-custom-invalid")
+        app.buttons["取消"].tap()
+
+        app.buttons["editor.export"].tap()
+        app.buttons["保存当前照片"].tap()
+        let validPicker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '导出尺寸'")).firstMatch
+        let validConfirm = app.buttons["editor.export.confirm"]
+        validPicker.tap()
+        app.buttons["自定义…"].tap()
+        let valid = app.textFields["长边（1–65535 px）"]
+        XCTAssertTrue(valid.waitForExistence(timeout: 5), app.debugDescription)
+        valid.tap()
+        valid.typeText("1024")
+        XCTAssertTrue(validConfirm.isEnabled)
+        capture("export-size-custom-valid")
+        validConfirm.tap()
+        XCTAssertTrue(app.alerts.staticTexts["已保存到照片。"].waitForExistence(timeout: 60), app.alerts.debugDescription)
+        app.alerts.buttons["关闭"].tap()
     }
 
     // Seed the simulator Photos library with a single real image before running.
@@ -101,6 +205,8 @@ final class EditorUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         app.buttons["editor.export"].tap()
         app.buttons["保存当前照片"].tap()
+        XCTAssertTrue(app.buttons["editor.export.confirm"].waitForExistence(timeout: 5))
+        app.buttons["editor.export.confirm"].tap()
         XCTAssertTrue(app.alerts.staticTexts["已保存到照片。"].waitForExistence(timeout: 60))
         app.alerts.buttons["关闭"].tap()
     }
@@ -173,14 +279,42 @@ final class EditorUITests: XCTestCase {
     }
 
     private func importPhoto(in app: XCUIApplication) {
-        app.buttons["editor.import"].tap()
-        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 15), app.debugDescription)
-        if photo.frame.midY > app.frame.maxY - 100 {
-            app.scrollViews["photosView_content_scroll_view"].swipeUp()
+        var attemptedIndices: Set<Int> = []
+        for attempt in 0..<12 {
+            app.buttons["editor.import"].tap()
+            let photos = app.images.matching(identifier: "PXGGridLayout-Info")
+            XCTAssertTrue(photos.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+            let candidates = photos.allElementsBoundByIndex
+            let orderedIndices = candidates.indices.sorted { lhs, rhs in
+                let leftIsSeedDate = candidates[lhs].label.contains(seedPhotoDate)
+                let rightIsSeedDate = candidates[rhs].label.contains(seedPhotoDate)
+                return leftIsSeedDate && !rightIsSeedDate
+            }
+            guard let index = orderedIndices.first(where: { !attemptedIndices.contains($0) }) else {
+                XCTFail("The Photos picker did not expose the seeded DNG")
+                return
+            }
+            attemptedIndices.insert(index)
+            let photo = candidates[index]
+            if photo.frame.midY > app.frame.maxY - 100 {
+                app.scrollViews["photosView_content_scroll_view"].swipeUp()
+            }
+            // The system Photos grid can report no AX hit point for a visible image.
+            photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            waitForImportedPhoto(in: app)
+            let importedName = importedPhotoFileName(in: app)
+            if importedName.localizedCaseInsensitiveContains(seedPhotoBase + ".DNG") {
+                verifiedSeedPickerIndex = index
+                return
+            }
+            if attempt == 11 || attemptedIndices.count == candidates.count {
+                XCTFail("The seeded DNG was not selected; imported \(importedName)")
+                return
+            }
         }
-        // The system Photos grid can report no AX hit point for a visible image.
-        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func waitForImportedPhoto(in app: XCUIApplication) {
         expectation(for: NSPredicate { _, _ in
             let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
             let allow = springboard.buttons.matching(NSPredicate(format: "label == '允许完全访问' OR label == 'Allow Full Access'")).firstMatch
@@ -189,6 +323,18 @@ final class EditorUITests: XCTestCase {
         }, evaluatedWith: app)
         waitForExpectations(timeout: 90)
         XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.alerts.debugDescription)
+    }
+
+    private func importedPhotoFileName(in app: XCUIApplication) -> String {
+        let info = app.buttons["editor.photoInfo"]
+        XCTAssertTrue(info.waitForExistence(timeout: 5), app.debugDescription)
+        info.tap()
+        let overlay = app.descendants(matching: .any)["editor.photoInfo.overlay"]
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5), app.debugDescription)
+        let fileName = overlay.label
+        info.tap()
+        info.tap()
+        return fileName
     }
 
     private func revealFilm(_ name: String, in app: XCUIApplication) {

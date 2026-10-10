@@ -28,8 +28,11 @@ extension ContentView {
             .accessibilityIdentifier("editor.adjustments")
 
             Menu {
-                Button("保存当前照片", action: exportJPEG)
-                    .disabled(!viewModel.hasImage || editorBusy || !viewModel.isLookAvailable(for: settings))
+                Button("保存当前照片") {
+                    exportLongEdge = nil
+                    showingExportSize = true
+                }
+                .disabled(!viewModel.hasImage || editorBusy || !viewModel.isLookAvailable(for: settings))
                 Button("使用当前调整批量导出…", action: openBatchExport)
                     .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || !viewModel.isLookAvailable(for: settings))
                     .accessibilityIdentifier("editor.batchExport")
@@ -91,6 +94,15 @@ extension ContentView {
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
                 }
+            }
+            .overlay(alignment: .topLeading) {
+                photoInfoOverlay(maxWidth: min(
+                    360,
+                    min(
+                        geometry.size.width * 0.38,
+                        max(80, geometry.size.width - min(180, geometry.size.width * 0.48) - 56)
+                    )
+                ))
             }
             .overlay(alignment: .bottomLeading) {
                 if showingBefore && viewModel.hasImage {

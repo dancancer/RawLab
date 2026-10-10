@@ -28,6 +28,9 @@ public sealed class BatchJob
     public string LookName { get; set; } = "中性";
     public string? OutputDirectory { get; set; }
     public bool Png { get; set; }
+    // Null is deliberately the original-size default, including for journals
+    // written by older versions that do not have this property.
+    public int? LongEdge { get; set; }
     public bool Started { get; set; }
     public bool Interrupted { get; set; }
     public bool Cancelled { get; set; }
@@ -43,7 +46,7 @@ public sealed class BatchJob
     };
     public BatchJob Copy() => new() {
         Version=Version, Id=Id, Source=Source, Settings=Settings.Copy(), Look=Look, LookName=LookName,
-        OutputDirectory=OutputDirectory, Png=Png, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
+        OutputDirectory=OutputDirectory, Png=Png, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
         Error=Error, Items=Items.Select(x => x with { }).ToList()
     };
     public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{Suffix}");
@@ -71,6 +74,7 @@ public sealed class BatchJournal
         if (!File.Exists(PathName)) return null;
         var job = AtomicJson.Read<BatchJob>(PathName);
         if (job.Version != 1) throw new InvalidDataException("无法读取此版本的批量任务。");
+        if (job.LongEdge is { } edge && !ExportSize.IsValid(edge)) job.LongEdge = null;
         _ = job.Settings.Restore();
         for (var i = 0; i < job.Items.Count; i++)
         {
@@ -106,9 +110,21 @@ public sealed class OutputWriteException(string message, Exception? inner = null
 public static class BatchRunner
 {
     public delegate void Render(string input, Adjustments settings, string? look, string destination);
+    public delegate void SizedRender(string input, Adjustments settings, string? look, string destination, int? longEdge);
 
     public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
-                           Action<BatchJob, string?> changed, Render render)
+                           Action<BatchJob, string?> changed, Render render) =>
+        Run(job, journal, failuresOnly, cancellation, changed,
+            (input, settings, look, destination, _) => render(input, settings, look, destination));
+
+    public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
+                           Action<BatchJob, string?> changed, SizedRender render)
+    {
+        RunCore(job, journal, failuresOnly, cancellation, changed, render);
+    }
+
+    private static void RunCore(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
+                                Action<BatchJob, string?> changed, SizedRender render)
     {
         if (job.SelectedCount == 0) throw new InvalidOperationException("请至少选择一张 RAW。");
         if (job.OutputDirectory == null) throw new OutputWriteException("请选择输出文件夹。");
@@ -139,7 +155,7 @@ public static class BatchRunner
         journal.Save(job); changed(job.Copy(), null);
     }
 
-    private static void Export(int index, BatchJob job, BatchJournal journal, Render render)
+    private static void Export(int index, BatchJob job, BatchJournal journal, SizedRender render)
     {
         var item = job.Items[index];
         var temporary = job.TemporaryPath(item);
@@ -148,7 +164,7 @@ public static class BatchRunner
             try
             {
                 if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException("原始文件已被替换，请重新选择。");
-                render(item.Input, job.Settings.Restore(), job.Look, temporary);
+                render(item.Input, job.Settings.Restore(), job.Look, temporary, job.LongEdge);
             }
             catch (Exception error)
             {

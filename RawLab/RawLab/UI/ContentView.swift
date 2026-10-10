@@ -21,6 +21,10 @@ struct ContentView: View {
     @State private var checkedBatchRecovery = false
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
+    @State var photoInfoMode = PhotoInfoMode.hidden
+    @State var photoInformation: PhotoInformation?
+    @State var showingExportSize = false
+    @State var exportLongEdge: Int?
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
     @ScaledMetric(relativeTo: .caption) var toolHeight = 82.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
@@ -127,6 +131,12 @@ struct ContentView: View {
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {
                 BatchExportView(model: batchModel)
+            }
+        }
+        .sheet(isPresented: $showingExportSize) {
+            ExportSizeSheet(longEdge: $exportLongEdge) {
+                showingExportSize = false
+                exportJPEG(longEdge: exportLongEdge)
             }
         }
     }

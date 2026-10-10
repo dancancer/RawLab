@@ -66,8 +66,11 @@ public sealed class Adjustments
         if (group == "细节") Denoise = new();
     }
     public void ResetAll() { foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 0; ResetWhiteBalance(); Denoise = new(); }
-    internal Native.Request Request(string path, string? lut, int edge, string? output)
+    internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
+        if (longEdge is { } requested && !ExportSize.IsValid(requested))
+            throw new ArgumentOutOfRangeException(nameof(longEdge), "导出长边必须在 1 到 65535 像素之间。");
+        var limitedFinal = output != null && longEdge.HasValue;
         return new Native.Request {
             Version=2, StructSize=(uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.Request>(), InputPath=path,
             LutPath=lut, LutStrength=lut == null ? 0 : (float)this[Parameter.Strength]/100,
@@ -76,9 +79,12 @@ public sealed class Adjustments
             Saturation=1+(float)this[Parameter.Saturation]/100, Temperature=CameraWhiteBalance ? 6500 : (float)this[Parameter.Temperature],
             Tint=CameraWhiteBalance ? 0 : (float)this[Parameter.Tint], Highlights=-(float)this[Parameter.Highlights]/100,
             Shadows=(float)this[Parameter.Shadows]/100,ToneCurve=(float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
-            SizeMode=3,OutputTarget=output == null ? 1 : 0,OutputPath=output,
+            // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
+            // remains independent and is never used to size an export.
+            SizeMode=limitedFinal ? 4 : 3,LongEdge=limitedFinal ? (uint)longEdge!.Value : 0,
+            OutputTarget=output == null ? 1 : 0,OutputPath=output,
             OutputFormat=output == null ? 3 : System.IO.Path.GetExtension(output).Equals(".png",StringComparison.OrdinalIgnoreCase) ? 1 : 0,
-            JpegQuality=95, Intent=edge == 0 ? 1 : 0, PreviewLongEdge=(uint)edge
+            JpegQuality=95, Intent=output != null || edge == 0 ? 1 : 0, PreviewLongEdge=(uint)edge
         };
     }
 }

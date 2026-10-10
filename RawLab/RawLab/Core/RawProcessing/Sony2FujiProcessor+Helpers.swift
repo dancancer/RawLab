@@ -92,9 +92,15 @@ extension Sony2FujiProcessor {
         _ request: inout sony2fuji_request,
         width: UInt32,
         height: UInt32,
-        previewLongEdge: CGFloat?
+        previewLongEdge: CGFloat?,
+        exportLongEdge: Int?
     ) {
-        if let edge = previewLongEdge, edge > 0 {
+        if let edge = exportLongEdge {
+            request.intent = SONY2FUJI_INTENT_FINAL
+            request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
+            request.long_edge = UInt32(edge)
+            request.preview_long_edge = 0
+        } else if let edge = previewLongEdge, edge > 0 {
             let edgeValue = UInt32(edge.rounded())
             request.intent = SONY2FUJI_INTENT_PREVIEW
             request.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE

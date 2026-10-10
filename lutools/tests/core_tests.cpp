@@ -408,6 +408,28 @@ int main() {
         "Sharpening changes real edges rather than only preview resizing");
     sony2fuji_release_buffer(&unsharpened);
     sony2fuji_release_buffer(&fullDetail); sony2fuji_release_buffer(&previewDetail);
+    std::vector<unsigned char> sizingPixels(18 * 12 * 3, 80);
+    auto sizingRequest = request(sizingPixels.data());
+    sizingRequest.input_width = 18; sizingRequest.input_height = 12;
+    sizingRequest.intent = SONY2FUJI_INTENT_FINAL;
+    sizingRequest.size_mode = static_cast<sony2fuji_size_mode>(4);
+    for (auto edge : {9u, 36u}) {
+        sizingRequest.long_edge = edge;
+        sony2fuji_buffer resized{};
+        const auto code = sony2fuji_process(session, &sizingRequest, &resized);
+        check(code == SONY2FUJI_STATUS_OK && resized.width == (edge == 9 ? 9u : 18u) &&
+              resized.height == (edge == 9 ? 6u : 12u),
+              "Export long-edge limit preserves aspect ratio without enlarging small inputs");
+        sony2fuji_release_buffer(&resized);
+    }
+    sizingRequest.input_width = 12; sizingRequest.input_height = 18; sizingRequest.long_edge = 9;
+    sony2fuji_buffer portrait{};
+    check(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_OK &&
+          portrait.width == 6 && portrait.height == 9, "Export sizing uses the oriented portrait long edge");
+    sony2fuji_release_buffer(&portrait);
+    sizingRequest.long_edge = 0;
+    check(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "Export sizing rejects an empty pixel limit");
     sony2fuji_session_destroy(session);
     std::filesystem::remove_all(dir);
     return failures ? 1 : 0;

@@ -57,6 +57,7 @@ data class BatchJob(
     val targets: List<BatchTarget>,
     val id: String = UUID.randomUUID().toString(),
     val outputPng: Boolean = false,
+    val outputLongEdge: Int? = null,
     val destination: String? = null,
     val rows: List<BatchRow> = uniqueRows(targets, outputPng),
     val globalError: String? = null,
@@ -167,6 +168,7 @@ class BatchJournal(private val directory: File) {
         properties.setProperty("global.error", job.globalError.orEmpty())
         properties.setProperty("source.settings", SettingsCodec.encode(job.source.settings))
         properties.setProperty("output.png", job.outputPng.toString())
+        properties.setProperty("output.longEdge", job.outputLongEdge?.toString().orEmpty())
         properties.setProperty("output.destination", job.destination.orEmpty())
         properties.setProperty("row.count", job.rows.size.toString())
         job.rows.forEachIndexed { index, row ->
@@ -208,6 +210,8 @@ class BatchJournal(private val directory: File) {
         }
         val base = BatchJob(source, targets, id = id,
             outputPng = properties.getProperty("output.png", "false").toBoolean(),
+            outputLongEdge = properties.getProperty("output.longEdge").orEmpty().toIntOrNull()
+                ?.takeIf { ExportSize.isValid(it) },
             destination = properties.getProperty("output.destination").orEmpty().ifBlank { null })
         return base.withRows(base.rows.map { row ->
             val prefix = "row.${base.rows.indexOf(row)}."
@@ -298,7 +302,9 @@ class BatchExportModel(
             val accepted = additions.filter { existing.add(it.identity.value) }
             val all = mutable.value.job.rows.map { it.target } + accepted
             mutable.value = mutable.value.copy(job = BatchJob(mutable.value.job.source, all,
-                id = mutable.value.job.id), phase = BatchPhase.SELECTING, stopping = false,
+                id = mutable.value.job.id, outputPng = mutable.value.job.outputPng,
+                outputLongEdge = mutable.value.job.outputLongEdge, destination = mutable.value.job.destination),
+                phase = BatchPhase.SELECTING, stopping = false,
                 error = failures.takeIf { it.isNotEmpty() }?.joinToString("\n"))
         }
     }
@@ -307,18 +313,24 @@ class BatchExportModel(
         if (mutable.value.phase != BatchPhase.SELECTING) return
         val targets = mutable.value.job.rows.filterNot { it.id == id }.map { it.target }
         mutable.value = mutable.value.copy(job = BatchJob(mutable.value.job.source, targets,
-            id = mutable.value.job.id))
+            id = mutable.value.job.id, outputPng = mutable.value.job.outputPng,
+            outputLongEdge = mutable.value.job.outputLongEdge, destination = mutable.value.job.destination))
     }
 
-    fun start(png: Boolean, destination: Uri?) {
-        startInternal(png, destination, retry = false)
+    fun start(png: Boolean, destination: Uri?, longEdge: Int? = null) {
+        startInternal(png, destination, longEdge, retry = false)
     }
 
-    private fun startInternal(png: Boolean, destination: Uri?, retry: Boolean) {
+    private fun startInternal(png: Boolean, destination: Uri?, longEdge: Int?, retry: Boolean) {
         val current = mutable.value
         if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
         if (retry && current.unfinishedCount == 0) return
+        if (!ExportSize.isValid(longEdge)) {
+            mutable.value = current.copy(error = "请输入 1–65535 之间的像素数")
+            return
+        }
         val configured = current.job.copy(outputPng = png, destination = destination?.toString(),
+            outputLongEdge = longEdge,
             rows = current.job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + if (png) ".png" else ".jpg") })
         mutable.value = current.copy(job = configured, phase = BatchPhase.PREPARING, outputPng = png, destination = destination, error = null, stopping = false)
         cancelRequested.set(false)
@@ -334,7 +346,8 @@ class BatchExportModel(
                     val render: (BatchTarget, EditSettings) -> ByteArray = { target, settings ->
                         val temporary = File.createTempFile("render-", if (png) ".png" else ".jpg", context.filesDir)
                         try {
-                            processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, png)
+                            processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, png,
+                                materialized.outputLongEdge)
                             temporary.readBytes()
                         } finally { temporary.delete() }
                     }
@@ -372,7 +385,7 @@ class BatchExportModel(
 
     fun retryFailed() {
         if (mutable.value.phase == BatchPhase.RUNNING || mutable.value.unfinishedCount == 0) return
-        startInternal(mutable.value.outputPng, mutable.value.destination, retry = true)
+        startInternal(mutable.value.outputPng, mutable.value.destination, mutable.value.job.outputLongEdge, retry = true)
     }
 
     fun cancel() {
@@ -446,7 +459,8 @@ class BatchExportModel(
 
     suspend fun preview(target: BatchTarget): android.graphics.Bitmap = withContext(Dispatchers.IO) {
         val source = mutable.value.job.source
-        NativeProcessor().use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, false).bitmap() }
+        // 效果查看先限长再降噪，避免处理整张 RAW；最终导出仍保留完整质量。
+        NativeProcessor().use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true).bitmap() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {

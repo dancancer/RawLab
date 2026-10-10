@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -16,7 +17,7 @@ public partial class BatchExportWindow : Window
     private readonly BatchJournal journal;
     private readonly ObservableCollection<BatchRow> rows = [];
     private CancellationTokenSource cancellation = new();
-    private bool ready, closeRequested;
+    private bool ready, closeRequested, refreshingSize, editingCustomSize;
     public bool Running { get; private set; }
     public bool Discarded { get; private set; }
     public BatchJob Job => job;
@@ -51,6 +52,8 @@ public partial class BatchExportWindow : Window
         Progress.Maximum = Math.Max(1, job.SelectedCount); Progress.Value = job.SucceededCount + job.FailedCount;
         SelectionActions.Visibility = job.Started ? Visibility.Collapsed : Visibility.Visible;
         FormatOptions.IsEnabled = !job.Started && !Running; ChooseFolder.IsEnabled = !Running;
+        SizeSelection.IsEnabled = CustomLongEdge.IsEnabled = !job.Started && !Running;
+        RefreshSizeControls();
         Destination.Text = job.OutputDirectory == null ? "未选择" : Path.GetFileName(job.OutputDirectory.TrimEnd(Path.DirectorySeparatorChar));
         Destination.ToolTip = job.OutputDirectory;
         EmptyState.Visibility = job.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -66,7 +69,8 @@ public partial class BatchExportWindow : Window
         PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? "正在停止…" : "取消导出" :
             !job.Started ? $"导出 {job.SelectedCount} 张" : job.RemainingCount > 0 ? $"继续未完成的 {job.SelectedCount - job.SucceededCount} 张" : $"重试失败的 {job.FailedCount} 张";
         PrimaryAction.Visibility = !Running && job.Started && job.SucceededCount == job.SelectedCount ? Visibility.Collapsed : Visibility.Visible;
-        PrimaryAction.IsEnabled = Running ? !cancellation.IsCancellationRequested : job.SelectedCount > 0 && job.OutputDirectory != null;
+        PrimaryAction.IsEnabled = Running ? !cancellation.IsCancellationRequested : job.SelectedCount > 0 && job.OutputDirectory != null &&
+            (!editingCustomSize || ExportSize.Parse(CustomLongEdge.Text) != null);
     }
 
     private void SaveDraft()
@@ -126,6 +130,58 @@ public partial class BatchExportWindow : Window
         if (picker.ShowDialog(this) == true) { job.OutputDirectory = picker.FolderName; SaveDraft(); }
     }
     private void FormatChanged(object sender, RoutedEventArgs e) { if (ready && !job.Started && !Running) { job.Png = Png.IsChecked == true; SaveDraft(); } }
+    private void RefreshSizeControls()
+    {
+        refreshingSize=true;
+        try
+        {
+            if (!editingCustomSize || job.Started)
+            {
+                var index=job.LongEdge switch { 2048 => 1, 3000 => 2, 4096 => 3, null => 0, _ => 4 };
+                SizeSelection.SelectedIndex=index;
+                CustomLongEdge.Text=index == 4 ? job.LongEdge?.ToString() ?? "" : "";
+                editingCustomSize=index == 4;
+            }
+            CustomLongEdge.Visibility=editingCustomSize ? Visibility.Visible : Visibility.Collapsed;
+            SizeHint.Text=editingCustomSize && ExportSize.Parse(CustomLongEdge.Text) == null ? "自定义长边" : ExportSize.Label(job.LongEdge);
+        }
+        finally { refreshingSize=false; }
+    }
+    private void ExportSizeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ready || refreshingSize || job.Started || Running || SizeSelection.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
+        if (tag == "custom")
+        {
+            editingCustomSize=true;
+            Refresh(); CustomLongEdge.Focus(); CustomLongEdge.SelectAll();
+            return;
+        }
+        editingCustomSize=false;
+        job.LongEdge=tag == "original" ? null : ExportSize.Parse(tag);
+        SizeError.Text=""; SaveDraft();
+    }
+    private void CustomSizeKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { CommitCustomSize(); e.Handled=true; }
+        else if (e.Key == Key.Escape) { editingCustomSize=false; Refresh(); e.Handled=true; }
+    }
+    private void CustomSizeCommitted(object sender, KeyboardFocusChangedEventArgs e) { if (!refreshingSize && SizeSelection.SelectedItem is ComboBoxItem { Tag: "custom" }) CommitCustomSize(); }
+    private void CustomSizeTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!ready || refreshingSize || !editingCustomSize || job.Started || Running) return;
+        SizeError.Text=ExportSize.Parse(CustomLongEdge.Text) == null ? "请输入 1 到 65535 之间的整数。" : "";
+        PrimaryAction.IsEnabled=job.SelectedCount > 0 && job.OutputDirectory != null && ExportSize.Parse(CustomLongEdge.Text) != null;
+    }
+    private bool CommitCustomSize()
+    {
+        var value=ExportSize.Parse(CustomLongEdge.Text);
+        if (value is null)
+        {
+            SizeError.Text="请输入 1 到 65535 之间的整数。"; return false;
+        }
+        job.LongEdge=value; SizeError.Text=""; SaveDraft();
+        return true;
+    }
     private void CloseClicked(object sender, RoutedEventArgs e)
     {
         if (!job.Started && !Running)
@@ -146,6 +202,7 @@ public partial class BatchExportWindow : Window
     {
         if (Running) { CancelExecution(); return; }
         if (job.SelectedCount == 0 || job.OutputDirectory == null) return;
+        if (!job.Started && editingCustomSize && !CommitCustomSize()) return;
         Running = true; cancellation = new(); RunningChanged?.Invoke(true); Refresh();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
         try
@@ -155,9 +212,9 @@ public partial class BatchExportWindow : Window
                 using var engine = new RenderEngine();
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => Dispatcher.BeginInvoke(new Action(() => { job = updated; Refresh(); })),
-                    (input, settings, look, destination) => {
+                    (input, settings, look, destination, longEdge) => {
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
-                        engine.Render(input, settings, look, 0, output: destination);
+                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge);
                     });
             });
         }

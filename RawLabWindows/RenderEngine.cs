@@ -64,13 +64,13 @@ internal sealed class RenderEngine : IDisposable
         }
         return frame;
     }
-    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true)
+    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null)
     {
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && output == null ? 1 : 0));
         var denoise=settings.Denoise.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise));
-        var request = settings.Request(path,lut,edge,output);
+        var request = settings.Request(path,lut,edge,output,longEdge);
         Native.Buffer buffer = default, mask = default;
         try
         {

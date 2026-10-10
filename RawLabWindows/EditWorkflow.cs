@@ -44,14 +44,29 @@ public partial class MainWindow
         try
         {
             editStore ??= new EditStore(EditStore.DefaultDirectory);
-            var savedLook = lut;
-            if (lut != null && StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(lut), Path.Combine(AppContext.BaseDirectory, "LUTs")))
-                savedLook = "builtin:" + Path.GetFileName(lut);
-            editStore.Save(file, settings.Capture(), savedLook);
+            editStore.Save(file, settings.Capture(), CurrentLookIdentity());
             editDirty = false; SetSaveNotice("调整已保存", "", false);
             return true;
         }
         catch (Exception error) { SetSaveNotice("调整未保存", error.Message, true); return false; }
+    }
+
+    internal string? CurrentLookIdentity()
+    {
+        if (lut != null && StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(lut), Path.Combine(AppContext.BaseDirectory, "LUTs")))
+            return "builtin:" + Path.GetFileName(lut);
+        return lut;
+    }
+
+    internal void SaveSettingsCopy(string input, AdjustmentSnapshot snapshot, string? look)
+    {
+        SaveSettingsCopies([input], snapshot, look);
+    }
+
+    internal void SaveSettingsCopies(IEnumerable<string> inputs, AdjustmentSnapshot snapshot, string? look)
+    {
+        editStore ??= new EditStore(EditStore.DefaultDirectory);
+        editStore.Save(inputs, snapshot, look);
     }
 
     private void RestoreEdits(string input)

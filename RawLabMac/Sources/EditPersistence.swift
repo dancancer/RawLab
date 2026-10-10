@@ -53,9 +53,15 @@ final class EditPersistence {
     }
 
     func save(_ url: URL, state: PhotoEditState) throws {
-        let identity = try OriginalFileIdentity(url)
+        try save([url], state: state)
+    }
+
+    func save(_ urls: [URL], state: PhotoEditState) throws {
         var updated = registry
-        updated.records[identity.path] = Record(identity: identity, state: state)
+        for url in urls {
+            let identity = try OriginalFileIdentity(url)
+            updated.records[identity.path] = Record(identity: identity, state: state)
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(updated).write(to: file, options: .atomic)
         registry = updated

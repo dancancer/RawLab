@@ -35,7 +35,8 @@ private sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false) : Work
-    data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val png: Boolean, val gpuMode: Int) : Work
+    data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val png: Boolean,
+        val longEdge: Int?, val gpuMode: Int) : Work
 }
 private sealed interface WorkResult {
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
@@ -121,7 +122,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val output = storage.temporaryOutput(work.png)
             try {
                 engine().setGpuMode(work.gpuMode)
-                engine().export(work.photo.file, storage.filmPath(work.edits.film), work.edits, output, work.png)
+                engine().export(work.photo.file, storage.filmPath(work.edits.film), work.edits, output, work.png, work.longEdge)
                 if (work.destination == null) storage.saveAlbum(output, work.png)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
             } finally { output.delete() }
@@ -330,11 +331,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun cancelExport() {
         if (mutable.value.operation == Operation.PICK_EXPORT) mutable.value = mutable.value.copy(operation = Operation.NONE)
     }
-    fun export(destination: Uri?, png: Boolean) {
+    fun export(destination: Uri?, png: Boolean, longEdge: Int? = null) {
         val current = mutable.value
         if (current.operation != Operation.PICK_EXPORT || current.photo == null) return
+        if (!ExportSize.isValid(longEdge)) {
+            mutable.value = current.copy(operation = Operation.NONE, error = text(R.string.output_size_error))
+            return
+        }
         mutable.value = current.copy(operation = Operation.EXPORT)
-        currentRevision = queue.submit(Work.Export(current.photo, current.edits, destination, png, gpuMode()))
+        currentRevision = queue.submit(Work.Export(current.photo, current.edits, destination, png, longEdge, gpuMode()))
     }
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 

@@ -37,10 +37,11 @@ final class RawEditorViewModel: ObservableObject {
     let processor = Sony2FujiProcessor()
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
-    var sourceURL: URL?
+    @Published var sourceURL: URL?
+    @Published var sourceRevision = UUID()
     var sourceKind: ImageSourceKind?
     var sourceIdentity: PhotoIdentity?
-    var sourceDisplayName: String?
+    @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?
     var pendingSettings: RawSettings?
     var editSaveWork: DispatchWorkItem?

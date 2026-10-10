@@ -9,6 +9,7 @@ struct BatchExportView: View {
     @State private var selectedTarget: BatchTarget?
     @State private var confirmTarget: BatchTarget?
     @State private var showDiscard = false
+    @State private var exportSizeValid = true
 
     var body: some View {
         NavigationStack {
@@ -169,7 +170,9 @@ struct BatchExportView: View {
             Divider()
             Text("输出").font(.title3.weight(.semibold)).padding(.top, 18).padding(.bottom, 10)
             settingRow("格式", value: "JPEG")
-            settingRow("尺寸", value: "原始分辨率")
+            ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge),
+                             onValidityChanged: { exportSizeValid = $0 })
+                .disabled(!model.canChangeTargets)
             settingRow("保存到", value: "照片图库")
         }.padding(.horizontal, 20).padding(.bottom, 16)
     }
@@ -203,7 +206,7 @@ struct BatchExportView: View {
                 }
                 if model.pendingCount > 0 {
                     primary(model.job.status == .draft ? "导出 \(model.selectedCount) 张" : "继续未完成项") { model.start() }
-                        .disabled(!model.canStart).accessibilityIdentifier("batch.export")
+                        .disabled(!model.canStart || !exportSizeValid).accessibilityIdentifier("batch.export")
                 } else if model.failedCount > 0 {
                     primary("重试失败的 \(model.failedCount) 张") { model.retryFailed() }.disabled(!model.canStart)
                 } else if model.job.status == .draft {

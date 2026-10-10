@@ -40,6 +40,7 @@ struct BatchExportJob: Codable {
     var items: [BatchExportItem] = []
     var outputDirectory: URL?
     var png = false
+    var longEdge: Int?
     var started = false
     var interrupted = false
     var cancelled = false

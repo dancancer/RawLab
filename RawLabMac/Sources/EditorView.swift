@@ -16,12 +16,15 @@ struct EditorView: View {
     @State private var resetVersion = 0
     @State private var adjustmentPanel = AdjustmentPanelLayout()
     @State private var resizeStart: CGFloat?
+    @State private var infoMode = PhotoInfoMode.hidden
+    @State private var photoInformation: PhotoInformation?
 
     var body: some View {
         GeometryReader { geometry in
             HSplitView {
                 if showFiles {
-                    FileBrowser(library: library, selected: model.file, open: model.open)
+                    FileBrowser(library: library, selected: model.file, open: model.open,
+                                canApplySettings: model.canApplySettings, applySettings: model.confirmApplySettings)
                         .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
                         .disabled(model.exporting)
                 }
@@ -30,6 +33,20 @@ struct EditorView: View {
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
                     .overlay(alignment: .topTrailing) {
                         FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if infoMode != .hidden, let photoInformation {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(Array(photoInformation.lines(for: infoMode).enumerated()), id: \.offset) { index, line in
+                                    Text(line).font(.system(size: index == 0 ? 14 : 12, weight: index == 0 ? .semibold : .regular))
+                                        .lineLimit(2).truncationMode(.middle)
+                                }
+                            }.foregroundStyle(.white).shadow(color: .black, radius: 2, y: 1)
+                                .padding(10).background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 4))
+                                .frame(maxWidth: min(380, max(130, geometry.size.width - (showFiles ? 300 : 0) - 300)), alignment: .leading)
+                                .padding(12).allowsHitTesting(false)
+                                .accessibilityElement(children: .combine)
+                        }
                     }
                     .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3) } }
                     .onDrop(of: [.fileURL], isTargeted: $dropTarget) { providers in
@@ -53,6 +70,12 @@ struct EditorView: View {
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
         .onChange(of: model.file) { _, _ in fit() }
+        .task(id: model.file) {
+            photoInformation = nil
+            guard let file = model.file else { return }
+            let info = await Task.detached(priority: .utility) { PhotoInformation.read(file) }.value
+            if !Task.isCancelled && model.file == file { photoInformation = info }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
@@ -203,6 +226,13 @@ struct EditorView: View {
                 .tint(compare ? .yellow : nil)
                 .help("原图与调整后对比").accessibilityLabel("对比")
                 .accessibilityValue(compare ? "已开启" : "已关闭").disabled(model.result == nil)
+            Button {
+                if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
+                infoMode = infoMode.next
+            } label: { Image(systemName: "info.circle") }
+                .tint(infoMode == .hidden ? nil : .yellow)
+                .help("照片信息").accessibilityLabel("照片信息").accessibilityValue(infoMode.title)
+                .keyboardShortcut("i", modifiers: []).disabled(model.file == nil)
             Menu {
                 Button("适合窗口", action: fit).keyboardShortcut("0")
                 Button("实际像素 · 100%") {

@@ -28,12 +28,18 @@ class AlbumScreenTest {
     private val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
     private val bucket = "Scroll-${UUID.randomUUID().toString().take(8)}"
     private val media = mutableListOf<Uri>()
+    private var originalColumns = 3
+    private var originalSquare = false
     private fun photoName(index: Int) = "$bucket-${index.toString().padStart(4, '0')}.dng"
     private val grid get() = compose.onNode(hasScrollToIndexAction() and
         SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
 
     @Before fun createPhotos() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val preferences = instrumentation.targetContext.getSharedPreferences("album_layout", android.content.Context.MODE_PRIVATE)
+        originalColumns = preferences.getInt("columns", 3)
+        originalSquare = preferences.getBoolean("square", false)
+        preferences.edit().putInt("columns", 3).putBoolean("square", false).commit()
         instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName,
             if (Build.VERSION.SDK_INT >= 33) "android.permission.READ_MEDIA_IMAGES" else "android.permission.READ_EXTERNAL_STORAGE")
         for (index in 0..160) {
@@ -49,13 +55,24 @@ class AlbumScreenTest {
 
     @After fun removePhotos() {
         media.forEach { resolver.delete(it, null, null) }
+        InstrumentationRegistry.getInstrumentation().targetContext
+            .getSharedPreferences("album_layout", android.content.Context.MODE_PRIVATE).edit()
+            .putInt("columns", originalColumns).putBoolean("square", originalSquare).commit()
     }
 
     private fun openAlbum() {
         compose.onNodeWithContentDescription("相册").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("全部相册").fetchSemanticsNodes().isNotEmpty() }
+        waitForAlbumQuery()
         compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
             .performScrollToNode(hasText(bucket))
+    }
+
+    private fun waitForAlbumQuery() {
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
+                .fetchSemanticsNodes().isEmpty()
+        }
     }
 
     private fun scrollInBucket(): String {
@@ -272,8 +289,11 @@ class AlbumScreenTest {
         scrollInBucket()
         media.take(160).forEach { resolver.delete(it, null, null); media.remove(it) }
         compose.onNodeWithContentDescription("刷新").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText(photoName(160)).fetchSemanticsNodes().isNotEmpty() }
+        waitForAlbumQuery()
         compose.onNodeWithText("全部相册").assertIsSelected()
+        val position = compose.activity.model.storage.album().indexOfFirst { it.uri == media.single() }
+        assertTrue("Remaining fixture is still queryable", position >= 0)
+        grid.performScrollToIndex(position)
         compose.onNodeWithText(photoName(160)).assertIsDisplayed()
         compose.onNodeWithText(bucket).assertDoesNotExist()
     }

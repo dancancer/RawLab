@@ -4,6 +4,8 @@ struct FileBrowser: View {
     @ObservedObject var library: PhotoLibrary
     let selected: URL?
     let open: (URL) -> Void
+    var canApplySettings = false
+    var applySettings: (URL, Bool) -> Void = { _, _ in }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -26,9 +28,6 @@ struct FileBrowser: View {
                             .padding(.leading, CGFloat(row.depth) * 8)
                             .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
                             .listRowSeparator(.hidden)
-                            .contextMenu {
-                                Button("从侧栏移除此目录") { library.remove(row.root) }
-                            }
                     }
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
@@ -39,11 +38,18 @@ struct FileBrowser: View {
         switch row.content {
         case .folder(let folder):
             FolderHeading(folder: folder)
+                .contextMenu {
+                    fileActions(folder.url, directory: true)
+                    Divider()
+                    Button("从侧栏移除此目录") { library.remove(row.root) }
+                }
         case .photos(let first, let second):
             HStack(spacing: 8) {
                 PhotoThumbnail(url: first, selected: selected == first) { open(first) }
+                    .overlay { PhotoContextMenu(url: first, canApply: canApplySettings) { applySettings(first, false) } }
                 if let second {
                     PhotoThumbnail(url: second, selected: selected == second) { open(second) }
+                        .overlay { PhotoContextMenu(url: second, canApply: canApplySettings) { applySettings(second, false) } }
                 } else {
                     Color.clear.frame(maxWidth: .infinity)
                 }
@@ -57,6 +63,55 @@ struct FileBrowser: View {
         case .empty:
             Text("无 RAW 照片").font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
         }
+    }
+
+    @ViewBuilder private func fileActions(_ url: URL, directory: Bool) -> some View {
+        Button {
+            if directory { NSWorkspace.shared.open(url) }
+            else { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        } label: {
+            Label("在 Finder 中打开", systemImage: "folder")
+        }
+        Button { applySettings(url, directory) } label: {
+            Label("应用当前设置", systemImage: "slider.horizontal.3")
+        }.disabled(!canApplySettings)
+    }
+}
+
+// List 会合并同一行的 SwiftUI 菜单；让每张缩略图独立命中右键目标。
+private struct PhotoContextMenu: NSViewRepresentable {
+    let url: URL
+    let canApply: Bool
+    let apply: () -> Void
+
+    func makeNSView(context: Context) -> MenuView { MenuView() }
+    func updateNSView(_ view: MenuView, context: Context) {
+        view.url = url; view.canApply = canApply; view.apply = apply
+    }
+
+    final class MenuView: NSView {
+        var url: URL?
+        var canApply = false
+        var apply: (() -> Void)?
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent,
+                  event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)),
+                  bounds.contains(convert(point, from: superview)) else { return nil }
+            return self
+        }
+        override func rightMouseDown(with event: NSEvent) { showMenu(event) }
+        override func mouseDown(with event: NSEvent) { showMenu(event) }
+        private func showMenu(_ event: NSEvent) {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            let open = menu.addItem(withTitle: "在 Finder 中打开", action: #selector(openInFinder), keyEquivalent: "")
+            open.target = self
+            let copy = menu.addItem(withTitle: "应用当前设置", action: #selector(applyCurrentSettings), keyEquivalent: "")
+            copy.target = self; copy.isEnabled = canApply
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
+        @objc private func openInFinder() { if let url { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+        @objc private func applyCurrentSettings() { apply?() }
     }
 }
 

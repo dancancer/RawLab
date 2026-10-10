@@ -112,6 +112,7 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
     var targets: [BatchTarget]
     var status: BatchJobStatus
     var outputFormat: BatchOutputFormat
+    var longEdge: Int?
     var createdAt: Date
     var updatedAt: Date
     var globalError: String?
@@ -120,6 +121,7 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
          source: BatchSourceSnapshot,
          targets: [BatchTarget],
          outputFormat: BatchOutputFormat = .jpeg,
+         longEdge: Int? = nil,
          status: BatchJobStatus = .draft,
          createdAt: Date = Date()) {
         self.id = id
@@ -127,6 +129,7 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
         self.targets = OutputNameAllocator.assignUniqueNames(targets)
         self.status = status
         self.outputFormat = outputFormat
+        self.longEdge = ExportSize.normalized(longEdge)
         self.createdAt = createdAt
         self.updatedAt = createdAt
         self.globalError = nil

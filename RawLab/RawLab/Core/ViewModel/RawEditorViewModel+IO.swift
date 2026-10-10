@@ -108,6 +108,7 @@ extension RawEditorViewModel {
     ) {
         statusMessage = nil
         isBusy = true
+        sourceRevision = UUID()
         previewWorkItem?.cancel()
         previewWorkItem = nil
         cancelHistogramWorkItem()
@@ -153,7 +154,7 @@ extension RawEditorViewModel {
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
-                        self.sourceDisplayName = source.url.lastPathComponent
+                        self.sourceDisplayName = source.displayName
                         self.restoredSettings = restoredSettings
                         self.pendingSettings = nil
                         self.sourceOrientation = previewResult.orientation ?? rawBase.orientation
@@ -168,6 +169,7 @@ extension RawEditorViewModel {
                         self.histogram = adjustedHistogram
                         self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
                         self.isBusy = false
+                        self.sourceRevision = UUID()
                         if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                         onSettingsRestored?(restoredSettings)
                         if missingLook { self.statusMessage = "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。" }
@@ -196,7 +198,7 @@ extension RawEditorViewModel {
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
-                        self.sourceDisplayName = source.url.lastPathComponent
+                        self.sourceDisplayName = source.displayName
                         self.restoredSettings = restoredSettings
                         self.pendingSettings = nil
                         self.sourceOrientation = rasterBase.orientation
@@ -211,6 +213,7 @@ extension RawEditorViewModel {
                         self.histogram = adjustedHistogram
                         self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
                         self.isBusy = false
+                        self.sourceRevision = UUID()
                         if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                         onSettingsRestored?(restoredSettings)
                         if missingLook { self.statusMessage = "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。" }
@@ -230,6 +233,7 @@ extension RawEditorViewModel {
                     self.sourceURL = nil
                     self.sourceKind = nil
                     self.sourceIdentity = nil
+                    self.sourceDisplayName = nil
                     self.sourceOrientation = nil
                     self.rawLUTID = nil
                     self.rawLUTApplied = false
@@ -238,6 +242,7 @@ extension RawEditorViewModel {
                     self.hasImage = false
                     self.histogram = []
                     self.baseHistogram = []
+                    self.sourceRevision = UUID()
                 }
             }
         }
@@ -311,13 +316,18 @@ extension RawEditorViewModel {
                                    settings: settings)
     }
 
-    func exportJPEG(settings: RawSettings, completion: @escaping (Result<Data, Error>) -> Void) {
+    func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
+                    completion: @escaping (Result<Data, Error>) -> Void) {
         guard isLookAvailable(for: settings) else {
             completion(.failure(BatchExportError.global("所选外观不可用，请重新选择外观。")))
             return
         }
         guard let sourceURL, let sourceKind else {
             completion(.failure(EditorError.noImageLoaded))
+            return
+        }
+        guard ExportSize.isValid(longEdge) else {
+            completion(.failure(Sony2FujiProcessor.ProcessorError.invalidExportSize))
             return
         }
 
@@ -333,7 +343,8 @@ extension RawEditorViewModel {
                         url: sourceURL,
                         settings: settings,
                         previewLongEdge: nil,
-                        lutURL: lutURL
+                        lutURL: lutURL,
+                        exportLongEdge: longEdge
                     )
                     let output = try self.processor.makeJPEGData(
                         from: result.buffer,
@@ -348,7 +359,8 @@ extension RawEditorViewModel {
                         buffer: raster.buffer,
                         settings: settings,
                         previewLongEdge: nil,
-                        lutURL: lutURL
+                        lutURL: lutURL,
+                        exportLongEdge: longEdge
                     )
                     let output = try self.processor.makeJPEGData(
                         from: outputBuffer,
@@ -380,6 +392,7 @@ extension RawEditorViewModel {
 
         statusMessage = nil
         isBusy = true
+        sourceRevision = UUID()
         let lutURL = lutURL(for: settings)
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -416,6 +429,7 @@ extension RawEditorViewModel {
                 DispatchQueue.main.async {
                     self.sourceURL = url
                     self.sourceKind = .raw
+                    self.sourceDisplayName = url.lastPathComponent
                     self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
                     self.draftBuffer = rawPreview.buffer
                     self.draftPreviewBuffer = rawPreview.previewBuffer
@@ -427,6 +441,7 @@ extension RawEditorViewModel {
                     self.histogram = previewHistogram
                     self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
                     self.isBusy = false
+                    self.sourceRevision = UUID()
                     let sizeKB = Double(data.count) / 1024.0
                     let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
                     self.statusMessage = message
@@ -442,12 +457,14 @@ extension RawEditorViewModel {
                     self.draftBuffer = nil
                     self.sourceURL = nil
                     self.sourceKind = nil
+                    self.sourceDisplayName = nil
                     self.sourceOrientation = nil
                     self.rawLUTID = nil
                     self.rawLUTApplied = false
                     self.hasImage = false
                     self.histogram = []
                     self.baseHistogram = []
+                    self.sourceRevision = UUID()
                     self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
                 }
             }

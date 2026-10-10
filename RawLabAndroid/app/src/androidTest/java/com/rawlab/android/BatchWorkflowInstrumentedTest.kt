@@ -62,7 +62,11 @@ class BatchWorkflowInstrumentedTest {
             assertSame(batch, compose.activity.model.batch.value)
             compose.onNodeWithText("导出 1 张").assertIsDisplayed()
             compose.onNodeWithText("查看").performClick()
+            val previewStarted = android.os.SystemClock.elapsedRealtime()
             compose.waitUntil(90_000) { compose.onAllNodesWithContentDescription("target.dng").fetchSemanticsNodes().isNotEmpty() }
+            instrumentation.sendStatus(2, android.os.Bundle().apply {
+                putString("stream", "Batch effect preview ms=${android.os.SystemClock.elapsedRealtime() - previewStarted}\n")
+            })
             capture("batch-effect.png")
             compose.onNodeWithText("确定").performClick()
             compose.onNodeWithText("导出 1 张").performClick()

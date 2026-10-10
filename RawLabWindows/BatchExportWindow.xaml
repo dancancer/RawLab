@@ -63,7 +63,17 @@
               <RadioButton x:Name="Jpeg" Content="JPEG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{StaticResource Foreground}"/>
               <RadioButton x:Name="Png" Content="16-bit PNG" GroupName="Format" Checked="FormatChanged" Foreground="{StaticResource Foreground}"/>
             </StackPanel>
-            <DockPanel Margin="0,0,0,18"><TextBlock Text="原始分辨率" Foreground="{StaticResource Muted}" DockPanel.Dock="Right"/><TextBlock Text="尺寸"/></DockPanel>
+            <StackPanel Margin="0,0,0,18">
+              <DockPanel><TextBlock Text="尺寸"/><TextBlock x:Name="SizeHint" Text="原尺寸" Foreground="{StaticResource Muted}" DockPanel.Dock="Right"/></DockPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <ComboBox x:Name="SizeSelection" Width="150" SelectionChanged="ExportSizeChanged" AutomationProperties.Name="导出尺寸">
+                  <ComboBoxItem Content="原尺寸" Tag="original"/><ComboBoxItem Content="长边 2048 px" Tag="2048"/><ComboBoxItem Content="长边 3000 px" Tag="3000"/><ComboBoxItem Content="长边 4096 px" Tag="4096"/><ComboBoxItem Content="自定义" Tag="custom"/>
+                </ComboBox>
+                <TextBox x:Name="CustomLongEdge" Width="82" Margin="8,0,0,0" Visibility="Collapsed" TextChanged="CustomSizeTextChanged" LostKeyboardFocus="CustomSizeCommitted" KeyDown="CustomSizeKeyDown" AutomationProperties.Name="自定义长边"/>
+                <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0"/>
+              </StackPanel>
+              <TextBlock x:Name="SizeError" Foreground="#FFAB92" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
             <DockPanel Margin="0,0,0,18">
               <Button x:Name="ChooseFolder" Click="FolderClicked" DockPanel.Dock="Right" ToolTip="选择输出文件夹" AutomationProperties.Name="选择输出文件夹"><local:EditorIcon Kind="Folder" Width="20" Height="20"/></Button>
               <TextBlock Text="保存到" VerticalAlignment="Center" Margin="0,0,12,0"/>

@@ -28,6 +28,7 @@ final class EditorModel: ObservableObject {
     @Published private(set) var saveStatus = ""
     @Published private(set) var saveError: String?
     @Published private(set) var batch: BatchExportModel?
+    @Published var exportLongEdge: Int?
     private let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     private let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
     private var scheduler = RenderScheduler<RenderWork>()
@@ -43,6 +44,7 @@ final class EditorModel: ObservableObject {
     private var lookLibrary: LookLibrary?
     var selectedFilm: Film? { films.first { $0.id == selectedFilmID } }
     var missingFilm: Bool { !selectedFilmID.isEmpty && (selectedFilm == nil || !FileManager.default.isReadableFile(atPath: selectedFilm!.url.path)) }
+    var canApplySettings: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm }
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,
          editDirectory: URL = EditPersistence.defaultDirectory,
@@ -107,6 +109,33 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    @discardableResult func applyCurrentSettings(to urls: [URL]) throws -> Int {
+        guard file != nil, !exporting, !lookLibraryBusy, !missingFilm else {
+            throw RenderError.failed("当前照片的设置尚不可用。")
+        }
+        let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL }))
+        guard !targets.isEmpty else { return 0 }
+        let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
+        if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+        try editStore!.save(targets, state: PhotoEditState(settings: settings, filmID: filmID))
+        status = "已将当前设置应用到 \(targets.count) 张照片"
+        return targets.count
+    }
+
+    func confirmApplySettings(to url: URL, directory: Bool) {
+        guard canApplySettings else { return }
+        do {
+            let targets = directory ? try DirectoryContents.read(url).photos : [url]
+            guard !targets.isEmpty else { throw RenderError.failed("此目录没有 RAW 照片。") }
+            let alert = NSAlert()
+            alert.messageText = "应用当前设置到 \(targets.count) 张照片？"
+            alert.informativeText = "将替换目标照片的本机调整记录，不改写原始 RAW。" +
+                (directory ? "仅包含此目录中的 RAW，不包含子目录。" : "")
+            alert.addButton(withTitle: "应用当前设置"); alert.addButton(withTitle: "取消")
+            if alert.runModal() == .alertFirstButtonReturn { try applyCurrentSettings(to: targets) }
+        } catch { self.error = error.localizedDescription }
+    }
+
     func prepareBatch() -> Bool {
         guard !busy, !exporting, !lookLibraryBusy, result != nil, !missingFilm, let file else { return false }
         if batch?.validating == true || batch?.previewing == true { return true }
@@ -120,6 +149,7 @@ final class EditorModel: ObservableObject {
         do {
             if let batch { try batchJournal.discard(batch.job) }
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: selectedFilm?.name ?? "中性")
+            job.longEdge = exportLongEdge
             job.look = try batchJournal.snapshotLook(selectedFilm?.url, for: job.id)
             try batchJournal.save(job)
             attachBatch(job)
@@ -361,15 +391,18 @@ final class EditorModel: ObservableObject {
         panel.allowedContentTypes = [png ? .png : .jpeg]
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-" +
             (selectedFilm?.name ?? "neutral") + (png ? ".png" : ".jpg")
+        let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self).padding(12).frame(width: 360))
+        sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
+        panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
         exporting = true
-        let settings = settings, lut = selectedFilm?.url
+        let settings = settings, lut = selectedFilm?.url, longEdge = exportLongEdge
         queue.async { [weak self] in
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
-                                             interactive: false)
+                                             interactive: false, exportLongEdge: longEdge)
                 DispatchQueue.main.async { self.exporting = false; self.status = "已导出：\(output.lastPathComponent)" }
             } catch {
                 DispatchQueue.main.async { self.exporting = false; self.error = error.localizedDescription }

@@ -29,6 +29,21 @@ struct ProcessorExportTests {
         }
         let noiseBuffer = Sony2FujiProcessor.Buffer(data: noisy, width: 256, height: 256, stride: 1024,
                                                    pixelFormat: SONY2FUJI_PIXEL_RGBA8)
+        let limited = try processor.processBuffer(buffer: noiseBuffer, settings: .default,
+                                                   previewLongEdge: nil, lutURL: nil,
+                                                   exportLongEdge: 64)
+        check(limited.width == 64 && limited.height == 64,
+              "iOS final buffer export applies the requested long-edge cap")
+        let capped = try processor.processBuffer(buffer: noiseBuffer, settings: .default,
+                                                  previewLongEdge: nil, lutURL: nil,
+                                                  exportLongEdge: 512)
+        check(capped.width == noiseBuffer.width && capped.height == noiseBuffer.height,
+              "iOS final export never enlarges a small buffer")
+        let finalWinsOverPreview = try processor.processBuffer(buffer: noiseBuffer, settings: .default,
+                                                                previewLongEdge: 128, lutURL: nil,
+                                                                interactive: true, exportLongEdge: 64)
+        check(finalWinsOverPreview.width == 64 && finalWinsOverPreview.height == 64,
+              "iOS export size stays FINAL and separate from the preview edge")
         let noiseOff = try processor.processBuffer(buffer: noiseBuffer, settings: .default, previewLongEdge: 128, lutURL: nil)
         var denoised = RawSettings.default
         denoised.denoise.apply(.clean)
@@ -93,7 +108,12 @@ struct ProcessorExportTests {
               exif[kCGImagePropertyExifPixelYDimension] as? Int == 2,
               "Raster export keeps the orientation of unrotated buffer pixels")
         try jpeg.write(to: output.appendingPathComponent("ios-raster-exif.jpg"))
-        let raw = root.appendingPathComponent("lutools/examples/DSC06251.ARW")
+        let raw = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"].map { URL(fileURLWithPath: $0) }
+            ?? root.appendingPathComponent("lutools/examples/DSC06251.ARW")
+        guard FileManager.default.fileExists(atPath: raw.path) else {
+            print("SKIP: RAW sample unavailable; buffer export checks above passed")
+            return
+        }
         let standardRaw = try processor.processRaw(url: raw, settings: .default, previewLongEdge: 128, lutURL: lut)
         let strongRaw = try processor.processRaw(url: raw, settings: stronger, previewLongEdge: 128, lutURL: lut)
         check(standardRaw.buffer.data != strongRaw.buffer.data, "iOS RAW processing also passes through 200 percent")
@@ -111,6 +131,10 @@ struct ProcessorExportTests {
               "Custom RAW temperature uses the pre-demosaic Kelvin request")
         check(camera.rawWhiteBalance?.isCalibrated == true && (camera.rawWhiteBalance?.temperature ?? 0) > 0,
               "iOS RAW processing returns calibrated as-shot WB metadata")
+        let limitedRaw = try processor.processRaw(url: raw, settings: .default, previewLongEdge: nil,
+                                                  lutURL: lut, exportLongEdge: 128)
+        check(max(limitedRaw.buffer.width, limitedRaw.buffer.height) <= 128,
+              "iOS RAW final export honors the long-edge cap")
         let rawJPEG = try processor.makeJPEGData(from: strongRaw.buffer, sourceURL: raw,
                                                 orientation: strongRaw.orientation, quality: 0.92)
         let rawFields = properties(rawJPEG)

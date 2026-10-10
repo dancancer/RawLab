@@ -134,7 +134,8 @@ struct BatchExportView: View {
                 Text("JPEG").tag(false)
                 Text("16-bit PNG").tag(true)
             }.pickerStyle(.segmented).labelsHidden().disabled(model.job.started)
-            valueRow("尺寸", "原始分辨率")
+            ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge))
+                .disabled(model.job.started)
             HStack {
                 Text("保存到")
                 Spacer(minLength: 10)
@@ -150,7 +151,7 @@ struct BatchExportView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Text(model.job.started ? "\(model.job.png ? "16-bit PNG" : "JPEG") · 原始分辨率" :
+            Text(model.job.started ? "\(model.job.png ? "16-bit PNG" : "JPEG") · \(model.job.longEdge.map { "长边 \($0) px" } ?? "原始尺寸")" :
                  "仅用于本次导出，保留各照片原有调整")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
