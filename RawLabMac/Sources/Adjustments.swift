@@ -159,6 +159,31 @@ struct Adjustments: Equatable, Codable {
     private(set) var supportsRawNoiseReduction = false
     var masterRecipeID: String? = nil
 
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        exposureMode = (try? container.decodeIfPresent(ExposureMode.self, forKey: .exposureMode)) ?? .scene
+        exposure = (try? container.decodeIfPresent(Double.self, forKey: .exposure)) ?? 0.0
+        temperature = (try? container.decodeIfPresent(Double.self, forKey: .temperature)) ?? 6500.0
+        tint = (try? container.decodeIfPresent(Double.self, forKey: .tint)) ?? 0.0
+        whiteBalanceMode = (try? container.decodeIfPresent(WhiteBalanceMode.self, forKey: .whiteBalanceMode)) ?? .asShot
+        asShotWhiteBalance = try? container.decodeIfPresent(WhiteBalance.self, forKey: .asShotWhiteBalance)
+        strength = (try? container.decodeIfPresent(Double.self, forKey: .strength)) ?? 1.0
+        contrast = (try? container.decodeIfPresent(Double.self, forKey: .contrast)) ?? 0.0
+        highlights = (try? container.decodeIfPresent(Double.self, forKey: .highlights)) ?? 0.0
+        shadows = (try? container.decodeIfPresent(Double.self, forKey: .shadows)) ?? 0.0
+        toneCurve = (try? container.decodeIfPresent(Double.self, forKey: .toneCurve)) ?? 0.0
+        saturation = (try? container.decodeIfPresent(Double.self, forKey: .saturation)) ?? 0.0
+        sharpening = (try? container.decodeIfPresent(Double.self, forKey: .sharpening)) ?? 0.0
+        rawNoiseReduction = (try? container.decodeIfPresent(Double.self, forKey: .rawNoiseReduction)) ?? 0.0
+        chromaNoiseReduction = try? container.decodeIfPresent(Double.self, forKey: .chromaNoiseReduction)
+        waveletNoiseReduction = try? container.decodeIfPresent(WaveletDenoiseSettings.self, forKey: .waveletNoiseReduction)
+        photoEffects = try? container.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects)
+        supportsRawNoiseReduction = (try? container.decodeIfPresent(Bool.self, forKey: .supportsRawNoiseReduction)) ?? false
+        masterRecipeID = try? container.decodeIfPresent(String.self, forKey: .masterRecipeID)
+    }
+
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
     var effectSettings: PhotoEffectsSettings { photoEffects ?? PhotoEffectsSettings() }
     var vignetteAmount: Double {

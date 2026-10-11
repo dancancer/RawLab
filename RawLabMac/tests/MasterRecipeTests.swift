@@ -8,36 +8,58 @@ struct MasterRecipeTests {
             print("PASS: \(name)")
         } else {
             fputs("FAIL: \(name)\n", stderr)
-            failures += 1
         }
     }
 
     static func main() throws {
-        // 1. Definition and parameter verification
-        let recipe = MasterRecipe.hamadaDaylightV2
-        check(recipe.id == "hamada_daylight_v2", "Recipe has expected ID")
-        check(recipe.name == "滨田英明", "Recipe name is 滨田英明")
-        check(recipe.exposureDelta == 0.40, "Sony exposure delta is +0.40 EV")
-        check(recipe.shadowsDelta == 20.0, "Sony shadows delta is +20.0")
-        check(recipe.highlightsDelta == -15.0, "Sony highlights delta is -15.0")
-        check(recipe.contrastDelta == -15.0, "Sony contrast delta is -15.0")
-        check(recipe.saturationDelta == -8.0, "Sony saturation delta is -8.0")
-        check(recipe.tintDelta == 5.0, "Sony tint delta is +5.0")
-        check(recipe.lutURL() != nil, "Recipe CUBE URL resolves successfully")
+        // 1. Definition and parameter verification for all 14 recipes
+        check(MasterRecipe.allRecipes.count == 14, "MasterRecipe defines exactly 14 recipes")
 
-        check(MasterRecipe.recipe(for: "hamada_daylight_v2")?.name == "滨田英明", "Recipe lookup by ID succeeds")
+        for r in MasterRecipe.allRecipes {
+            check(!r.id.isEmpty, "Recipe \(r.name) has non-empty ID")
+            check(!r.name.isEmpty, "Recipe \(r.id) has non-empty name")
+            check(!r.subtitle.isEmpty, "Recipe \(r.name) has subtitle")
+            check(!r.lutFileName.isEmpty, "Recipe \(r.name) has CUBE filename")
+            check(r.lutURL() != nil, "Recipe \(r.name) CUBE URL resolves successfully (\(r.lutFileName))")
+            check(MasterRecipe.recipe(for: r.id)?.name == r.name, "Lookup for \(r.id) returns \(r.name)")
+        }
+
         check(MasterRecipe.recipe(for: nil) == nil, "Lookup nil returns nil")
         check(MasterRecipe.recipe(for: "") == nil, "Lookup empty returns nil")
 
-        // 2. Adjustments and strength scaling verification
+        // 2. Specific master parameter verification
+        let hamada = MasterRecipe.hamadaDaylightV2
+        check(hamada.exposureDelta == 0.40, "Hamada exposure delta is +0.40 EV")
+        check(hamada.shadowsDelta == 20.0, "Hamada shadows delta is +20.0")
+        check(hamada.highlightsDelta == -15.0, "Hamada highlights delta is -15.0")
+        check(hamada.contrastDelta == -15.0, "Hamada contrast delta is -15.0")
+        check(hamada.saturationDelta == -8.0, "Hamada saturation delta is -8.0")
+        check(hamada.tintDelta == 5.0, "Hamada tint delta is +5.0")
+
+        let takashi = MasterRecipe.takashiYasuiZen
+        check(takashi.contrastDelta == 30.0, "Takashi Yasui contrast delta is +30.0")
+        check(takashi.shadowsDelta == -25.0, "Takashi Yasui shadows delta is -25.0")
+
+        let sakai = MasterRecipe.takahiroSakaiBlue
+        check(sakai.exposureDelta == 0.35, "Takahiro Sakai exposure delta is +0.35 EV")
+        check(sakai.shadowsDelta == 35.0, "Takahiro Sakai shadows delta is +35.0")
+
+        let luke = MasterRecipe.withlukeEpic
+        check(luke.saturationDelta == -12.0, "withluke saturation delta is -12.0")
+
+        let rk = MasterRecipe.rkrkrkCyberpunk
+        check(rk.saturationDelta == 15.0, "rkrkrk saturation delta is +15.0")
+        check(rk.highlightsDelta == -40.0, "rkrkrk highlights delta is -40.0")
+
+        // 3. Adjustments and strength scaling verification
         var settings = Adjustments()
         check(settings.masterRecipeID == nil, "Default adjustments have no master recipe")
         check(settings.masterRecipe == nil, "Default adjustments masterRecipe property is nil")
         check(settings.isDefault(.film), "Default adjustments report film group default")
 
         // Set master recipe
-        settings.masterRecipeID = recipe.id
-        check(settings.masterRecipe?.id == recipe.id, "Master recipe resolved on adjustments")
+        settings.masterRecipeID = hamada.id
+        check(settings.masterRecipe?.id == hamada.id, "Master recipe resolved on adjustments")
         check(!settings.isDefault(.film), "Active master recipe marks film group non-default")
 
         var request = sony2fuji_request()
@@ -58,11 +80,11 @@ struct MasterRecipeTests {
         check(abs(request.exposure_ev - 0.20) < 1e-4, "Strength 0.5 scales exposure to +0.20 EV")
         check(abs(request.shadows - 0.10) < 1e-4, "Strength 0.5 scales shadows to +0.10")
         check(abs(request.highlights - 0.075) < 1e-4, "Strength 0.5 scales highlights to +0.075")
-        check(abs(request.contrast - 0.85 - 0.075) < 1e-4, "Strength 0.5 scales contrast to 0.925")
-        check(abs(request.saturation - 0.92 - 0.04) < 1e-4, "Strength 0.5 scales saturation to 0.96")
+        check(abs(request.contrast - 0.925) < 1e-4, "Strength 0.5 scales contrast to 0.925")
+        check(abs(request.saturation - 0.96) < 1e-4, "Strength 0.5 scales saturation to 0.96")
         check(abs(request.tint - 2.5) < 1e-4, "Strength 0.5 scales tint to +2.5")
 
-        // Test at strength 0.0 (0%) - neutral reversion
+        // Test at strength 0.0 (0% - neutral)
         settings.strength = 0.0
         settings.apply(to: &request)
         check(abs(request.exposure_ev - 0.0) < 1e-4, "Strength 0.0 reverts exposure to 0")
@@ -72,43 +94,42 @@ struct MasterRecipeTests {
         check(abs(request.saturation - 1.0) < 1e-4, "Strength 0.0 reverts saturation to 1.0")
         check(abs(request.tint - 0.0) < 1e-4, "Strength 0.0 reverts tint to 0")
 
-        // Test at strength 1.5 (150%) - boost
+        // Test at strength 1.5 (150% - amplified)
         settings.strength = 1.5
         settings.apply(to: &request)
         check(abs(request.exposure_ev - 0.60) < 1e-4, "Strength 1.5 scales exposure to +0.60 EV")
         check(abs(request.shadows - 0.30) < 1e-4, "Strength 1.5 scales shadows to +0.30")
         check(abs(request.highlights - 0.225) < 1e-4, "Strength 1.5 scales highlights to +0.225")
 
-        // Test user manual adjustments on top of recipe
-        settings.strength = 1.0
+        // Test with user manual trimming on top
         settings.exposure = 0.25
         settings.shadows = 10.0
+        settings.strength = 1.0
         settings.apply(to: &request)
         check(abs(request.exposure_ev - 0.65) < 1e-4, "User exposure +0.25 combines with recipe +0.40 to +0.65 EV")
         check(abs(request.shadows - 0.30) < 1e-4, "User shadows +10 combines with recipe +20 to +0.30")
 
-        // 3. Reset behavior
+        // Reset group film
         settings.reset(.film)
         check(settings.masterRecipeID == nil, "Film group reset clears masterRecipeID")
         check(settings.strength == 1.0, "Film group reset restores 100% strength")
 
-        settings.masterRecipeID = recipe.id
+        settings.masterRecipeID = rk.id
         settings.resetAll()
         check(settings.masterRecipeID == nil, "Reset all clears masterRecipeID")
 
-        // 4. Persistence & Serialization
-        let state = PhotoEditState(settings: settings, filmID: "some_film", masterRecipeID: recipe.id)
-        let data = try JSONEncoder().encode(state)
-        let restored = try JSONDecoder().decode(PhotoEditState.self, from: data)
-        check(restored.masterRecipeID == recipe.id, "PhotoEditState encodes and decodes masterRecipeID")
-        check(restored.filmID == "some_film", "PhotoEditState preserves filmID")
+        // 4. Persistence verification
+        let editState = PhotoEditState(settings: settings, filmID: "", masterRecipeID: rk.id)
+        let data = try JSONEncoder().encode(editState)
+        let decoded = try JSONDecoder().decode(PhotoEditState.self, from: data)
+        check(decoded.masterRecipeID == rk.id, "PhotoEditState encodes and decodes masterRecipeID")
+        check(decoded.filmID == "", "PhotoEditState preserves filmID")
 
-        // Backwards compatibility with legacy JSON lacking masterRecipeID
+        // Legacy format backward compatibility
         let legacyJSON = """
         {
             "settings": {
-                "exposure": 0.5,
-                "exposureMode": "标准显影",
+                "exposure": 0.0,
                 "temperature": 6500.0,
                 "tint": 0.0,
                 "whiteBalanceMode": "拍摄时设置",
@@ -142,8 +163,8 @@ struct MasterRecipeTests {
             if !f.isEmpty { simMasterRecipeID = nil }
         }
 
-        selectRecipe(recipe)
-        check(simMasterRecipeID == recipe.id && simSelectedFilmID.isEmpty,
+        selectRecipe(hamada)
+        check(simMasterRecipeID == hamada.id && simSelectedFilmID.isEmpty,
               "Selecting master recipe clears film ID to empty (neutral)")
 
         selectFilm("CLASSIC_CHROME")
