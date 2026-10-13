@@ -1,4 +1,5 @@
 #include "wavelet_denoise.h"
+#include "sony2fuji/color_converter.h"
 #include "gpu/denoise.h"
 #include <atomic>
 #include <cmath>
@@ -375,17 +376,16 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model) {
     cv::Mat normalized;
     cv::transform(filtered,normalized,opponent().t());
     filtered.release();
-    cv::Mat difference=normalize(rgb,model),removed;
+    cv::Mat difference=normalize(rgb,model);
     cv::subtract(difference,normalized,difference);
     cv::multiply(difference,difference,difference);
-    cv::GaussianBlur(difference,removed,{},3);
-    difference.release();
+    cv::GaussianBlur(difference,difference,{},3);
     cv::parallel_for_(cv::Range(0,rgb.rows),[&](const cv::Range& range) {
         for (int y=range.start;y<range.end;++y) for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
             const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
             const float value=normalized.at<cv::Vec3f>(y,x)[c], positive=std::max(value,0.f);
             rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
-                (value>0 ? .25f*a*removed.at<cv::Vec3f>(y,x)[c] : 0.f);
+                (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
         }
     });
 }
@@ -422,12 +422,28 @@ bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
     return true;
 }
 ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics,
-    GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey) {
+    GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey,
+    const ImageData* immutableSource, ColorSpace sourceSpace) {
     if (diagnostics) *diagnostics = {};
     if (!validWaveletDenoiseOptions(options)) return ErrorCode::InvalidFormat;
     if (!options.active()) return ErrorCode::Success;
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    const bool reloadable = immutableSource && immutableSource != &image;
+    if (reloadable && (immutableSource->width <= 0 || immutableSource->height <= 0 ||
+        immutableSource->pixels.size() != static_cast<size_t>(immutableSource->width) * immutableSource->height))
+        return ErrorCode::InvalidFormat;
+    auto reload = [&]() {
+        image = *immutableSource;
+        return ColorConverter().convertImage(image, sourceSpace, ColorSpace::sRGB);
+    };
+    // Auto 在 GPU 失败后重试时，工作副本可能已释放；原始输入仍由 session 持有。
+    if (reloadable && image.pixels.empty()) {
+        const auto result = reload();
+        if (result != ErrorCode::Success) return result;
+    }
     if (image.width<=0 || image.height<=0 || image.pixels.size()!=static_cast<size_t>(image.width)*image.height)
+        return ErrorCode::InvalidFormat;
+    if (reloadable && (immutableSource->width != image.width || immutableSource->height != image.height))
         return ErrorCode::InvalidFormat;
     static_assert(sizeof(RGB)==sizeof(float)*3);
     cv::Mat rgb(image.height,image.width,CV_32FC3,image.pixels.data());
@@ -460,6 +476,8 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
         const cv::Mat normalized=normalize(rgb,model);
         cv::transform(normalized,transformed,opponent());
     }
+    // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
+    if (reloadable) { rgb.release(); image = {}; }
     if (!reused) calibrateBands(model,transformed,samples);
     state->ready=true;
     if (options.chroma>0 && options.coarse>0) {
@@ -474,6 +492,11 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
     catch (const WaveletGpuFailure&) { return ErrorCode::ProcessingError; }
     transformed.release();
+    if (reloadable) {
+        const auto result = reload();
+        if (result != ErrorCode::Success) return result;
+        rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
+    }
     restore(rgb,std::move(filtered),model);
     if (diagnostics) {
         diagnostics->applied=true;
@@ -486,6 +509,8 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     (void)gpuMode;
     (void)analysis;
     (void)sourceKey;
+    (void)immutableSource;
+    (void)sourceSpace;
     return ErrorCode::InvalidFormat;
 #endif
 }
