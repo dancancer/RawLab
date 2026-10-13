@@ -61,7 +61,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 - [Documentation index](docs/README.md)
 - [Download the latest release](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.6.0 release notes (build 10)](docs/releases/v0.6.0.md)
+- [v0.7.0 release notes (build 11)](docs/releases/v0.7.0.md)
 - [Installation and distribution notes](docs/installation.md)
 - [iPhone installation guide](docs/ios-installation.md)
 - [Changelog](CHANGELOG.md)

@@ -7,15 +7,11 @@
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.6.0 Windows 包
+## 下载 v0.7.0 Windows 包
 
-[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Windows-0.6.0-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.6.0) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.6.0/SHA256SUMS.txt)
+[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Windows-0.7.0-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.7.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。发布包已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，无需另行安装 .NET。程序未签名。
-
-v0.6.0 构建 10 从发布源码重新构建 WPF 与 native DLL，程序集版本为 `0.6.0`、文件版本为 `0.6.0.10`，不复用旧版 native 包。新增 14 个大师配方、八色 HSL 与自动曝光；应用配方覆盖六项调色和全部 HSL，0-200% 强度整体缩放当前参数与 LUT。胶片和配方列表溢出时显示左右按钮，全部放得下时隐藏。暗角、颗粒参数与其他平台一致，小波和显示色度过滤支持 D3D11。共享 LibRaw 0.22.2 的相机兼容性修复保持不变；Nikon HE* 仍明确返回不支持。
-
-保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出，并提供不写入来源拍摄 EXIF 的渲染型 DNG。“关于 RawLab”仍只打开官方更新页面，不自动安装。本版构建与验证范围见[发布验证记录](../docs/verification-v0.6.0.md)，不沿用历史交接包的检查作为新版证明。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.7.0/build11，self-contained .NET8；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。受 Sony 内存修复影响的 native DLL 已增量重建，未变的 WPF/runtime/resources 沿用已验证的0.7候选。新增 JPEG XL DNG、渲染型 DNG 导出、镜头配置校正、六语界面和视口/降噪复用。实际包检查与既有 GPU/UI 覆盖见[发布验收](../docs/verification-v0.7.0-release.md)。
 
 ## 构建
 

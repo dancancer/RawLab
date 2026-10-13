@@ -28,15 +28,18 @@ tracks the next version.
 - [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
 - [Licensing and attribution](licensing.md)
 
-## v0.7.0 Preparation
+## v0.7.0 Candidate
 
-- [Feature evidence and pending integrated verification](verification-v0.7.0.md)
+- [Candidate notes](releases/v0.7.0.md) and [corresponding-source instructions](releases/v0.7.0-source.md)
+- [Feature deliveries and final verification](verification-v0.7.0.md)
+- [Final five-feature composition report](verification-final-composition-2026-10-13.md)
+- [Versioned local candidate package verification](verification-v0.7.0-candidate.md)
 - [Version and release preparation checklist](releases/v0.7.0-preparation.md)
 - [JPEG XL DNG verification](verification-dng-jpeg-xl-2026-10-12.md)
 
-The integration tracker links exact feature snapshots for reports that have not
-yet entered this documentation baseline. Their original checks retain their
-own scope; final combined verification is pending.
+All five features are integrated in development. The final composition report
+distinguishes new execution from evidence reused through identical source.
+Candidate packages are local preparation; published downloads remain v0.6.0.
 
 ## Published Releases and History
 

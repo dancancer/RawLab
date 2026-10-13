@@ -233,10 +233,15 @@ macOS 最初两次 SDK OOM probe 失败。CMake cache/link.txt/otool 证明旧 b
 没有修改 native 源码或放宽断言。
 
 Android 第一次缺少 `sample.RAW`，6 个选中测试中 3 个 FileNotFoundException，未记通过。
-随后 Sony `DSC06251.ARW`（7008×4672、45199360 bytes）的两次 nativeDNG 均被 AVD guest
-`lmkd` 杀死：PID 2971/RSS 471488 kB，低 swap/thrashing；PID 3993/RSS 416732 kB，
-低 swap/min watermark。两次均有 Zygote signal 9/进程死亡证据，没有对应 native fatal signal/backtrace。
-最终 DJI fixture 的通过不能替代 Sony 大尺寸 nativeDNG 的未完成覆盖。
+随后 Sony `DSC06251.ARW` 输入（7008×4672、45199360 bytes）的两次预览/导出测试
+在实际 2.5 GiB/4 CPU AVD 上被 guest `lmkd` 杀死：PID 2971/RSS 471488 kB，
+低 swap/thrashing；PID 3993/RSS 416732 kB，低 swap/min watermark。两次均有
+Zygote signal 9/进程死亡证据，没有对应 native fatal signal/backtrace。
+证据更正：方法虽名为 `nativeDngBakesAllAdjustmentsOnCpuAndForcedGles`，预览及 DNG/PNG
+输出请求实际都是 longEdge128；FINAL 仍先执行全分辨率计算再缩输出尺寸。CPU 整轮
+`preview+exports` 完成 marker 未出现，旧日志不能定位失败在预览、渲染、编码/writer 或其他阶段，
+不能写成原尺寸输出 DNG 失败。原尺寸 DNG 文件输出仍未验证；DJI fixture 通过不能替代
+Sony 大 RAW 输入流程的未完成覆盖。
 
 Windows 初次 full-feature configure 因临时路径达到 279 字符触发 MAX_PATH；
 仅缩短本线 fresh build 根目录后成功，没有改源码、脚本执行策略、系统长路径设置或其他 VM 配置。

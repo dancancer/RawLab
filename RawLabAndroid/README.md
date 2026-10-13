@@ -93,11 +93,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.6.0 APK / Download Android v0.6.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Android-0.6.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.6.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.6.0/SHA256SUMS.txt)
+[下载 Android v0.7.0 APK / Download Android v0.7.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Android-0.7.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.7.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.6.0`、`versionCode` 为 `10`，沿用正式发布密钥，支持从所有更早的同签名正式版覆盖升级。两个 ABI 从本版源码重新构建。新增 14 个大师配方、八色 HSL 与自动曝光；应用配方覆盖六项调色和全部 HSL，0-200% 强度整体缩放当前参数与 LUT。胶片和配方列表直接拖动，不显示左右按钮。保留暗角、颗粒、GLES 降噪、批量导出和编辑记忆。“更多 → 关于 RawLab”只打开官方下载页面，不自动安装。验证范围见[发布验收记录](../docs/verification-v0.6.0.md)。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
+发布 APK 为 `versionName=0.7.0`、`versionCode=11`，沿用正式发布签名，支持同签名旧正式版覆盖升级。arm64-v8a/x86_64 共享核心均从本轮源码增量重建，新增 JPEG XL DNG、渲染型 DNG 导出、Lensfun 镜头校正与六语界面，并优化视口预览和降噪内存。专属2.5GB AVD 的 Sony 原尺寸三格式及独立 FINAL 验收通过；GPU 验收范围为≥6GB，实际真机约12GB。详见[发布验收](../docs/verification-v0.7.0-release.md)。
 
-The release APK uses `versionName=0.6.0` and `versionCode=10`, retaining the release key for upgrades from all earlier release-signed versions. Both ABIs are rebuilt. Fourteen master recipes, eight-channel HSL and Auto exposure join the existing effects, GLES denoising, batch export and edit memory. Recipes replace six adjustments and all HSL values; 0-200% strength scales the current controls and LUT together. Mobile look lists use direct dragging without arrow buttons. About opens the official update page without installing. See [release verification](../docs/verification-v0.6.0.md). Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses version0.7.0/code11 and the existing release identity. Both native ABIs include the verified Sony memory fix. JPEG XL DNG, rendered DNG export, Lensfun correction, six languages and viewport/denoise reuse are new in this version. Existing local validation is retained; packaging adds no new device experiment. See [release verification](../docs/verification-v0.7.0-release.md).
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
