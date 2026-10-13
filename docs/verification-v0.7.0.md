@@ -1,8 +1,10 @@
 # v0.7.0 Integration Tracking
 
-Status: all five feature PRs are merged, and final development composition
-verification is accepted. Four local release candidate packages are complete; the release PR remains
-a draft and formal publication is pending.
+Status: all five features and Sony memory repair PR #31 are merged into
+development. The release candidate absorbed the repair at `2dac9d9` and the
+affected available packages were rebuilt. [Release verification](verification-v0.7.0-release.md)
+and [the remote Release](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)
+record final package/source identities and publication.
 
 Source baseline: `3f252a1006d349c2a3655129a9cf665385dccaca`, merged on
 2026-10-13. Its Git tree is `8cd099efca75c18765ec5db178746d8bd8da3ebd`,
@@ -28,6 +30,7 @@ for new execution, adopted evidence and artifact identities.
 | [#26, Lensfun](https://github.com/dancancer/RawLab/pull/26) | `b89e1bd9080e2d320252f774fb82f97e0ffc9b17` | `d810fe6e47fbc70be79786a8ebaee2d1e9e9fe0e` |
 | [#27, viewport/cache/memory](https://github.com/dancancer/RawLab/pull/27) | `15e0d044a91102a2157219e8250b69f5c5ac7ada` | `2c46edc5f0d8a26933f853afbb068e5def06e2bf` |
 | [#25, six languages](https://github.com/dancancer/RawLab/pull/25) | `de3b79376d40657856285f5dfc41ca8bf4ecc1e9` | `3f252a1006d349c2a3655129a9cf665385dccaca` |
+| [#31, Sony memory](https://github.com/dancancer/RawLab/pull/31) | `627d45e7a8dddb0424203afba08c46a0515113be` | `ff6ae5114ea7da7452f9dd7c7638636becf0893b` |
 
 Root verified each delivery and the actual remote merge. The final merge has
 parents `2c46edc5f0d8a26933f853afbb068e5def06e2bf` and
@@ -68,15 +71,13 @@ evidence and are not repeated or relabeled as a new integrated memory test.
 
 ## Failed Attempts and Remaining Coverage
 
-- Two Sony 7008x4672 RAW-input preview/export runs on the 2.5 GiB/four-CPU
-  AVD were killed by guest `lmkd`/SIGKILL under low swap. The test requested
-  longEdge128 preview and DNG/PNG output; FINAL performs full-resolution
-  computation before output resizing. No CPU-round completion marker was
-  emitted, so the failing stage is not located and an original-size DNG
-  output/writer failure is not established. Final DJI 3072x3072 CPU/GLES DNG
-  passed in 216.539 seconds. Five other Sony tests have individual successes;
-  there is no successful aggregate for the original group. Original-size
-  DNG file output and physical GPU behavior remain unverified.
+- The earlier Sony LMK attempts remain in the historical candidate record.
+  Controlled follow-up located the kill in wavelet filter, fixed overlapping
+  buffers and completed original-size JPEG/PNG/DNG plus independent FINAL on
+  the 2.5GB CPU AVD and approximately 12GB physical CPU/Force GLES device.
+  Complete before/after files match; sampled CPU heap 2.085→1.692GB. Existing
+  budgets/tolerances and GPU ≥6GB acceptance remain unchanged. See
+  [Sony verification](verification-android-sony-dng-memory-2026-10-14.md).
 - iOS earlier Files Cancel accessibility queries failed. The final two UI
   tests passed with the visible Save action and an actual copied 128x128
   float32 DNG. Native Files cancellation remains unverified.
@@ -87,10 +88,11 @@ evidence and are not repeated or relabeled as a new integrated memory test.
   preview/busy guard observations remain recorded for the relevant owners.
   Normal UI export has preview/busy gating; these were not localization
   regressions or silently changed as part of translation.
-- Physical mobile devices, larger RAWs, Android/macOS x86_64 runtime,
+- Apart from the recorded Sony physical Android matrix, other physical mobile
+  devices, larger RAWs, Android/macOS x86_64 runtime,
   untested OS versions and fresh interactive Mac GUI remain outside the
   stated coverage. The final composition verification uses host 27.0.1 and target 26.0;
-  published v0.6.0 packages target 15.0. Candidate support remains macOS 15; the separate arm64 target15 build,
+  published v0.6.0 packages target 15.0. Candidate support remains macOS 15; the separate arm64 target 15 build,
   all-Mach-O minimum-OS/signature checks and hidden-prefix packaged smoke passed.
   Physical macOS15 runtime and Intel candidate packaging remain unverified.
 
@@ -101,11 +103,11 @@ At 2026-10-13 22:25:58 Asia/Shanghai, GitHub check-runs on exact development
 an empty statuses list. The legacy status value `pending` does not mean a
 workflow is running. No hosted CI was implemented or triggered.
 
-The accepted combined source and `release/0.7.0` preparation endpoint are
-complete: version 0.7.0/build11, source/rebuild documentation, four actual local
-packages and checksums. The final pushed head and draft PR are recorded at
-delivery; [candidate verification](verification-v0.7.0-candidate.md) retains
-package configuration and coverage. Main merge, tag, remote
-Release/assets, notarization and store distribution remain separate steps.
+The pre-fix candidate record is retained in
+[candidate verification](verification-v0.7.0-candidate.md). Final release
+packages and source are bound to the absorbed repair in
+[release verification](verification-v0.7.0-release.md). The remote Release and
+Git history record main/tag/development delivery; package validation is local.
+
 See [candidate preparation](releases/v0.7.0-preparation.md) and
 [the integration workflow](integration-workflow.md).

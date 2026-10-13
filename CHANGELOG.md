@@ -3,7 +3,7 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
-## [0.7.0] - Unreleased candidate
+## [0.7.0] - 2026-10-14
 
 ### Added
 
@@ -26,18 +26,18 @@ release notes include assets, installation requirements and validation limits.
 
 ### Fixed
 
+- Avoid overlapping full-resolution Sony CPU buffers during denoise, preserving
+  byte-identical JPEG/PNG/DNG exports and existing memory/quality thresholds.
 - Replay pending iOS viewport/settings changes after rendered-DNG export
   success and failure, using a reproduced RED/GREEN regression.
 - Remove non-system absolute runtime search paths from Mac package copies,
   ensuring actual processing dependencies load from the signed bundle.
 
-Candidate metadata is `0.7.0`, build `11`. The five-feature development source
-is accepted; candidate artifacts and remaining platform limits are recorded
-in [the candidate notes](docs/releases/v0.7.0.md),
-[corresponding-source instructions](docs/releases/v0.7.0-source.md),
-[final composition verification](docs/verification-final-composition-2026-10-13.md)
-and [the integration tracker](docs/verification-v0.7.0.md).
-No v0.7.0 publication is implied by this entry.
+Version `0.7.0`, build `11`. Available release packages include signed Android,
+ad-hoc signed macOS15 arm64 and Windows x64; iOS distribution signing is absent.
+See [release notes](docs/releases/v0.7.0.md),
+[release verification](docs/verification-v0.7.0-release.md) and
+[corresponding-source instructions](docs/releases/v0.7.0-source.md).
 
 ## [0.6.0] - 2026-10-12
 

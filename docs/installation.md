@@ -4,15 +4,18 @@ Get current packages and checksums from the [latest release](https://github.com/
 
 ## Packages
 
-| Platform | v0.6.0 package | Requirements |
+| Platform | Package | Requirements |
 | --- | --- | --- |
-| Windows | [x64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Windows-0.6.0-win-x64.zip) | Windows 10/11 x64 |
-| macOS Apple Silicon | [arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-arm64.zip) | macOS 15+ |
-| macOS Intel | [x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-x86_64.zip) | macOS 15+ |
-| Android | [Signed APK](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Android-0.6.0.apk) | Android 8.0+, ARM64 or x86_64 |
-| iOS | [Unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-iOS-0.6.0-unsigned.ipa) | iOS 18+, iPhone and iPad; re-signing required |
+| Windows | [v0.7.0 x64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Windows-0.7.0-win-x64.zip) | Windows10/11 x64 |
+| macOS Apple Silicon | [v0.7.0 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Mac-0.7.0-macOS15-arm64.zip) | macOS15+ |
+| Android | [v0.7.0 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Android-0.7.0.apk) | Android8+, ARM64 or x86_64 |
+| macOS Intel | [Previous v0.6.0 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-x86_64.zip) | No v0.7.0 Intel package; macOS15+ |
+| iOS | [Build and sign from source](releases/v0.7.0-source.md#ios) | iOS18+; valid signing and provisioning required |
 
-[SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.6.0/SHA256SUMS.txt) cover the release assets.
+[v0.7.0 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
+cover this release's assets. The previous Intel package retains its
+[v0.6.0 checksum](https://github.com/dancancer/RawLab/releases/download/v0.6.0/SHA256SUMS.txt).
+No directly installable iOS package is published for v0.7.0.
 
 ## Windows
 
@@ -43,7 +46,9 @@ For step-by-step personal-device installation, see the
 ([Simplified Chinese](ios-installation.zh-CN.md)), including an executable
 workflow for AI agents.
 
-**The unsigned IPA cannot be installed directly.** Re-sign the application and
+**Unsigned IPAs cannot be installed directly.** This release has no valid Apple
+signing/provisioning configuration, so its old unsigned candidate is not an
+installable v0.7.0 download. Re-sign the application and
 embedded framework with your own valid certificate and provisioning profile.
 It is not an App Store or TestFlight package. Physical-device installation,
 memory and thermal validation remain outstanding. See the
@@ -54,6 +59,6 @@ memory and thermal validation remain outstanding. See the
 The release provides corresponding source, pinned dependency sources and build
 instructions alongside the binaries. Original project code is distributed
 under [GPLv3 only](../LICENSE); dependencies and resources retain their own
-licenses. See [licensing](licensing.md) and the [release notes](releases/v0.6.0.md).
+licenses. See [licensing](licensing.md) and the [release notes](releases/v0.7.0.md).
 
 RAW files and private signing material are never included in source packages.

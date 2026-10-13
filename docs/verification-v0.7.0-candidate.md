@@ -1,5 +1,10 @@
 # v0.7.0 Local Candidate Verification
 
+This is the preserved pre-Sony-fix candidate record at `baea491e`.
+Final rebuilt release packages and signing are documented in
+[release verification](verification-v0.7.0-release.md); the old unsigned
+mobile candidates below are not the final installable release assets.
+
 ## Source and Scope
 
 Accepted development source: `3f252a1006d349c2a3655129a9cf665385dccaca`.
