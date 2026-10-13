@@ -57,10 +57,10 @@ failed logs and post-fix passing logs are retained separately.
 
 ## Feature-Stage Evidence
 
-The [cross-platform report](verification/cross-platform-master-recipes-20261011.md)
+The [cross-platform report](archive/verification/cross-platform-master-recipes-20261011.md)
 records the earlier same-implementation recipe, persistence, frozen batch and
-mobile/desktop picker regressions. [HSL calibration](verification/master-recipes-hsl-20261011.md)
-and [reference optimization](verification/master-recipes-optimization-20261011.md)
+mobile/desktop picker regressions. [HSL calibration](archive/verification/master-recipes-hsl-20261011.md)
+and [reference optimization](archive/verification/master-recipes-optimization-20261011.md)
 record the constrained fourteen-look refinements. These are not reruns of the
 final signed packages. Release-tree results above distinguish current builds
 from that earlier evidence.

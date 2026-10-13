@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhotoZoomTest {
+    @Test fun previewSizeUsesViewportAndZoomWithoutUpsampling() {
+        val area = PhotoViewport(2400f, 1600f, 1200f, 1800f)
+        assertEquals(1216, area.previewLongEdge(area.fitScale))
+        assertEquals(1600, area.previewLongEdge(1f))
+        val small = PhotoViewport(300f, 200f, 1200f, 1800f)
+        assertEquals(300, small.previewLongEdge(small.fitScale))
+        val landscape = PhotoViewport(2400f, 1600f, 1800f, 600f)
+        assertEquals(960, landscape.previewLongEdge(landscape.fitScale))
+    }
     private val viewport = PhotoViewport(2400f, 1600f, 1200f, 1800f)
 
     @Test fun doubleTapUsesOneImagePixelPerDisplayPixel() {

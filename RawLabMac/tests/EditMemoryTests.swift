@@ -26,6 +26,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         settings.setEffect(.vignetteFeather, to: 70)
         settings.setEffect(.grainAmount, to: 60)
         settings.setEffect(.grainRoughness, to: 30)
+        settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false,
+            mode: .manual, profileID: "saved-lens-profile")
         settings.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
         settings.set(.temperature, to: 6000)
         try store.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))

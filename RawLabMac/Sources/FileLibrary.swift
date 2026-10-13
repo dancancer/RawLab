@@ -83,7 +83,7 @@ final class PhotoLibrary: ObservableObject {
     }
     func addDirectories() {
         let panel = NSOpenPanel()
-        panel.title = "添加照片目录"
+        panel.title = L10n.text("添加照片目录")
         panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = true
         guard panel.runModal() == .OK else { return }
         for url in panel.urls.map({ $0.standardizedFileURL.resolvingSymlinksInPath() }) {

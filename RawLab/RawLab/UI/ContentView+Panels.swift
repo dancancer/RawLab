@@ -8,13 +8,21 @@ extension ContentView {
             photoImportButton(isEnabled: !editorBusy)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Menu {
+                Picker(L10n.text("语言"), selection: $languagePreference) {
+                    ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
+                }
+                .id(localizationLocale.identifier)
+            } label: { Image(systemName: "globe") }
+                .accessibilityLabel(L10n.text("语言"))
+                .accessibilityIdentifier("settings.language")
             Button { showingBefore.toggle() } label: {
                 Image(systemName: "circle.lefthalf.filled")
                     .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
             }
-            .accessibilityLabel("前后对比")
-            .accessibilityValue(showingBefore ? "调整前" : "调整后")
-            .help("切换调整前后")
+            .accessibilityLabel(L10n.text("前后对比"))
+            .accessibilityValue(showingBefore ? L10n.text("调整前") : L10n.text("调整后"))
+            .help(L10n.text("切换调整前后"))
             .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.compare")
 
@@ -22,26 +30,33 @@ extension ContentView {
                 Image(systemName: "slider.horizontal.3")
                     .foregroundStyle(!viewModel.hasImage ? Color.secondary : adjustmentsExpanded ? .yellow : .primary)
             }
-            .accessibilityLabel(!viewModel.hasImage ? "调整" : adjustmentsExpanded ? "收起调整栏" : "展开调整栏")
-            .help("显示或收起调整栏")
+            .accessibilityLabel(!viewModel.hasImage ? L10n.text("调整") : adjustmentsExpanded ? L10n.text("收起调整栏") : L10n.text("展开调整栏"))
+            .help(L10n.text("显示或收起调整栏"))
             .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.adjustments")
 
             Menu {
-                Button("保存当前照片") {
+                Button(L10n.text("保存当前照片")) {
+                    singleExportFormat = .jpeg
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || !viewModel.isLookAvailable(for: settings))
-                Button("使用当前调整批量导出…", action: openBatchExport)
-                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                Button(L10n.text("导出渲染型 DNG…")) {
+                    singleExportFormat = .renderedDNG
+                    exportLongEdge = nil
+                    showingExportSize = true
+                }
+                .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
+                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                     .accessibilityIdentifier("editor.batchExport")
-                if batchModel != nil { Button("查看批量任务") { showingBatchExport = true } }
+                if batchModel != nil { Button(L10n.text("查看批量任务")) { showingBatchExport = true } }
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }
-            .accessibilityLabel("导出")
-            .help("导出照片")
+            .accessibilityLabel(L10n.text("导出"))
+            .help(L10n.text("导出照片"))
             .disabled((!viewModel.hasImage || editorBusy) && batchModel == nil)
             .accessibilityIdentifier("editor.export")
         }
@@ -53,7 +68,8 @@ extension ContentView {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
                     ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
-                                  label: showingBefore ? "调整前的照片" : "调整后的照片")
+                                  label: showingBefore ? L10n.text("调整前的照片") : L10n.text("调整后的照片"),
+                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: settings) })
                         .id(viewModel.basePreviewImage)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 } else {
@@ -63,10 +79,10 @@ extension ContentView {
                                 .font(.largeTitle)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
-                            Text("RAW 照片").font(.title2.weight(.semibold))
+                            Text(L10n.text("RAW 照片")).font(.title2.weight(.semibold))
                             PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
                                 Label {
-                                    Text("导入照片")
+                                    Text(L10n.text("导入照片"))
                                 } icon: {
                                     Image(systemName: "photo.badge.plus").accessibilityHidden(true)
                                 }
@@ -77,7 +93,7 @@ extension ContentView {
                             .buttonStyle(.borderedProminent)
                             .foregroundStyle(.black)
                             .disabled(editorBusy)
-                            .accessibilityLabel("导入照片")
+                            .accessibilityLabel(L10n.text("导入照片"))
                             .accessibilityIdentifier("editor.import.empty")
                         }
                         .padding(24)
@@ -106,7 +122,7 @@ extension ContentView {
             }
             .overlay(alignment: .bottomLeading) {
                 if showingBefore && viewModel.hasImage {
-                    Text("调整前").font(.caption)
+                    Text(L10n.text("调整前")).font(.caption)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
                         .padding(12)
@@ -115,7 +131,7 @@ extension ContentView {
             }
             .overlay(alignment: viewModel.hasImage ? .topLeading : .center) {
                 if editorBusy {
-                    ProgressView(isImporting ? "正在导入" : isSaving ? "正在保存" : "正在处理")
+                    ProgressView(isImporting ? L10n.text("正在导入") : isSaving ? L10n.text("正在保存") : L10n.text("正在处理"))
                         .font(.caption)
                         .padding(12)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -136,17 +152,17 @@ extension ContentView {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Menu {
-                    Button("重置全部调整", role: .destructive) {
+                    Button(L10n.text("重置全部调整"), role: .destructive) {
                         applySettingsChange(.default)
                     }
                     if let adjustment = selectedAdjustment {
-                        Button("重置\(adjustment.title)") { reset(adjustment) }
+                        Button(L10n.format("重置%@", String(describing: adjustment.title))) { reset(adjustment) }
                     }
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
                         .frame(width: 44, height: 44)
                 }
-                .accessibilityLabel("重置调整")
+                .accessibilityLabel(L10n.text("重置调整"))
                 .disabled(!viewModel.hasImage || editingLocked || settings == .default)
             }
             .padding(.horizontal, 16)
@@ -165,13 +181,13 @@ extension ContentView {
         case .idle:
             EmptyView()
         case .restored:
-            Label("已恢复上次调整", systemImage: "checkmark.circle.fill")
+            Label(L10n.text("已恢复上次调整"), systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
         case .saved:
-            Label("调整已保存", systemImage: "checkmark.circle.fill")
+            Label(L10n.text("调整已保存"), systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -180,7 +196,7 @@ extension ContentView {
             Button {
                 viewModel.retrySave(settings: settings)
             } label: {
-                Label("调整未保存，点击重试", systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.text("调整未保存，点击重试"), systemImage: "exclamationmark.triangle.fill")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .font(.caption)
@@ -194,31 +210,39 @@ extension ContentView {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    Button { choosingMasterRecipe = false; selectedAdjustment = nil } label: {
-                        AdjustmentToolLabel(title: "胶片", symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe,
+                    Button { lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                        AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected,
                                             progress: 0, width: toolWidth, height: toolHeight)
                     }
                     .accessibilityValue(selectedFilmName)
-                    .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe ? .isSelected : [])
+                    .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected ? .isSelected : [])
                     .accessibilityIdentifier("tool.film")
                     .id("film")
-                    Button { choosingMasterRecipe = true; selectedAdjustment = nil } label: {
-                        AdjustmentToolLabel(title: "大师配方", symbol: "photo.stack", selected: choosingMasterRecipe,
+                    Button { lensSelected = false; choosingMasterRecipe = true; selectedAdjustment = nil } label: {
+                        AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "photo.stack", selected: choosingMasterRecipe,
                                             progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: toolHeight)
-                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? "无配方")
+                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? L10n.text("无配方"))
+                        .id("masterRecipe")
+                    Button { lensSelected = true; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                        AdjustmentToolLabel(title: L10n.text("镜头"), symbol: "viewfinder", selected: lensSelected,
+                                            progress: settings.lensSettings.isEnabled ? 1 : 0,
+                                            width: toolWidth, height: toolHeight)
+                    }.disabled(viewModel.sourceKind != .raw)
+                        .accessibilityIdentifier("tool.lens")
+                        .accessibilityAddTraits(lensSelected ? .isSelected : []).id("lens")
                     ForEach(AdjustmentKind.allCases) { adjustment in
-                        Button { choosingMasterRecipe = false; selectedAdjustment = adjustment } label: {
+                        Button { lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = adjustment } label: {
                             AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
-                                                selected: selectedAdjustment == adjustment,
+                                                selected: selectedAdjustment == adjustment && !lensSelected,
                                                 progress: adjustmentProgress(adjustment),
                                                 width: toolWidth, height: toolHeight)
                         }
                         .disabled(adjustment == .strength && !settings.hasLook)
                         .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
-                        .accessibilityAddTraits(selectedAdjustment == adjustment ? .isSelected : [])
+                        .accessibilityAddTraits(selectedAdjustment == adjustment && !lensSelected ? .isSelected : [])
                         .accessibilityIdentifier("tool.\(adjustment.rawValue)")
                         .contextMenu {
-                            Button("重置\(adjustment.title)") { reset(adjustment) }
+                            Button(L10n.format("重置%@", String(describing: adjustment.title))) { reset(adjustment) }
                             .disabled(!viewModel.hasImage || adjustmentProgress(adjustment) == 0 || editingLocked)
                         }
                         .id(adjustment.rawValue)
@@ -228,10 +252,16 @@ extension ContentView {
             }
             .frame(height: toolHeight)
             .onGeometryChange(for: CGFloat.self) { geometry in geometry.size.width } action: { _ in
-                proxy.scrollTo(selectedAdjustment?.rawValue ?? "film", anchor: .center)
+                proxy.scrollTo(lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
             }
             .onChange(of: selectedAdjustment) { _, adjustment in
-                proxy.scrollTo(adjustment?.rawValue ?? "film", anchor: .center)
+                proxy.scrollTo(lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : adjustment?.rawValue ?? "film", anchor: .center)
+            }
+            .onChange(of: lensSelected) { _, selected in
+                if selected { proxy.scrollTo("lens", anchor: .center) }
+            }
+            .onChange(of: choosingMasterRecipe) { _, selected in
+                if selected { proxy.scrollTo("masterRecipe", anchor: .center) }
             }
         }
         .buttonStyle(.plain)
@@ -239,7 +269,11 @@ extension ContentView {
 
     @ViewBuilder
     var valuePanel: some View {
-        if choosingMasterRecipe {
+        if lensSelected {
+            IOSLensControls(settings: $settings, info: viewModel.lensInfo)
+                .padding(.horizontal, 16)
+                .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)
+        } else if choosingMasterRecipe {
             masterRecipePanel
         } else if selectedAdjustment == .hsl {
             HSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
@@ -275,7 +309,7 @@ extension ContentView {
                     Text(adjustment.title).font(.subheadline)
                     Spacer()
                     if adjustment == .exposure {
-                        Button(action: autoExposure) { Label("自动", systemImage: "wand.and.stars") }
+                        Button(action: autoExposure) { Label(L10n.text("自动"), systemImage: "wand.and.stars") }
                             .font(.caption).disabled(autoExposing || viewModel.isBusy)
                             .accessibilityIdentifier("exposure.auto")
                     }
@@ -287,7 +321,7 @@ extension ContentView {
                     Button { reset(adjustment) } label: {
                         Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("重置\(adjustment.title)")
+                    .accessibilityLabel(L10n.format("重置%@", String(describing: adjustment.title)))
                     .disabled(adjustmentProgress(adjustment) == 0)
                 }
                 Slider(value: adjustmentBinding(adjustment), in: adjustment.range, step: adjustment.step,
@@ -301,9 +335,9 @@ extension ContentView {
                             .frame(height: 4).offset(y: 5).allowsHitTesting(false)
                     }
                 if adjustment == .exposure, viewModel.sourceKind == .raw {
-                    Picker("曝光基准", selection: $settings.exposureMode) {
+                    Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                         ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.menu).accessibilityIdentifier("exposure.mode")
+                    }.pickerStyle(.menu).id(localizationLocale.identifier).accessibilityIdentifier("exposure.mode")
                 }
             }
             .padding(.horizontal, 24)
@@ -317,24 +351,25 @@ extension ContentView {
 
     var whiteBalancePanel: some View {
         VStack(spacing: 8) {
-            Picker("白平衡模式", selection: Binding(
+            Picker(L10n.text("白平衡模式"), selection: Binding(
                 get: { settings.whiteBalanceMode },
                 set: { setWhiteBalanceMode($0) }
             )) {
-                Text("拍摄时").tag(RawWhiteBalanceMode.camera)
-                Text("自定义").tag(RawWhiteBalanceMode.custom)
+                Text(L10n.text("拍摄时")).tag(RawWhiteBalanceMode.camera)
+                Text(L10n.text("自定义")).tag(RawWhiteBalanceMode.custom)
             }
             .pickerStyle(.segmented)
+            .id(localizationLocale.identifier)
             .disabled(viewModel.rawWhiteBalance == nil)
             .accessibilityIdentifier("whiteBalance.mode")
 
             HStack {
-                Text("色温").font(.subheadline)
+                Text(L10n.text("色温")).font(.subheadline)
                 Spacer()
                 if settings.whiteBalanceMode == .camera, viewModel.rawWhiteBalance == nil {
-                    Text("拍摄时设置").foregroundStyle(.secondary)
+                    Text(L10n.text("拍摄时设置")).foregroundStyle(.secondary)
                 } else {
-                    TextField("色温", value: temperatureNumberBinding(), format: .number.precision(.fractionLength(0)))
+                    TextField(L10n.text("色温"), value: temperatureNumberBinding(), format: .number.precision(.fractionLength(0)))
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 96)
@@ -349,7 +384,7 @@ extension ContentView {
                 Slider(value: reciprocalTemperatureBinding(), in: 0...1, step: 0.001,
                        onEditingChanged: setSliderEditing)
                     .frame(minHeight: 44)
-                    .accessibilityLabel("色温")
+                    .accessibilityLabel(L10n.text("色温"))
                     .disabled(settings.whiteBalanceMode == .camera || viewModel.rawWhiteBalance == nil)
                     .overlay(alignment: .bottom) {
                         DefaultValueMarker(range: 0...1, value: RawSettings.reciprocalSliderValue(for: RawSettings.default.temperature))
@@ -364,9 +399,9 @@ extension ContentView {
                 .foregroundStyle(.secondary)
             }
             HStack {
-                Text("色调").font(.subheadline)
+                Text(L10n.text("色调")).font(.subheadline)
                 Spacer()
-                TextField("色调", value: Binding(
+                TextField(L10n.text("色调"), value: Binding(
                     get: { displayedTint },
                     set: { value in
                         var updated = settings
@@ -390,13 +425,13 @@ extension ContentView {
             .disabled((settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil) || viewModel.rawWhiteBalance == nil)
             if let whiteBalance = viewModel.rawWhiteBalance {
                 Text(settings.whiteBalanceMode == .camera
-                     ? String(format: "拍摄时：%.0f K · 色调 %+.0f", whiteBalance.temperature, whiteBalance.tint)
-                     : "自定义白平衡")
+                     ? String(format: L10n.text("拍摄时：%.0f K · 色调 %+.0f"), whiteBalance.temperature, whiteBalance.tint)
+                     : L10n.text("自定义白平衡"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text("缺少有效相机校准，保留拍摄时白平衡")
+                Text(L10n.text("缺少有效相机校准，保留拍摄时白平衡"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -410,7 +445,7 @@ extension ContentView {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    filmButton(name: "中性", id: nil, imageSize: imageSize)
+                    filmButton(name: L10n.text("中性"), id: nil, imageSize: imageSize)
                     ForEach(viewModel.availableLUTs) { lut in
                         filmButton(name: lut.name, id: lut.id, imageSize: imageSize)
                     }
@@ -423,9 +458,9 @@ extension ContentView {
         }
         .overlay {
             if viewModel.isLoadingLUTs {
-                ProgressView("正在加载胶片").padding(8).background(.regularMaterial)
+                ProgressView(L10n.text("正在加载胶片")).padding(8).background(.regularMaterial)
             } else if viewModel.availableLUTs.isEmpty {
-                Text("未找到胶片 LUT").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.text("未找到胶片 LUT")).font(.caption).foregroundStyle(.secondary)
                     .padding(8).background(.regularMaterial)
             }
         }
@@ -460,12 +495,12 @@ extension ContentView {
                         Image(uiImage: image).resizable().scaledToFit()
                     } else { Image(systemName: "circle.lefthalf.filled").font(.title) }
                 }.frame(width: filmSize, height: filmSize)
-                Text(recipe?.name ?? "无配方").font(.caption).lineLimit(2).frame(height: 32)
+                Text(recipe?.name ?? L10n.text("无配方")).font(.caption).lineLimit(2).frame(height: 32)
                     .foregroundStyle(settings.masterRecipeID == recipe?.id ? Color.yellow : Color.primary)
-                Text(recipe?.subtitle ?? "中性直出").font(.caption2).foregroundStyle(.secondary).lineLimit(2).frame(height: 32)
+                Text(L10n.text(recipe?.subtitle ?? "中性直出")).font(.caption2).foregroundStyle(.secondary).lineLimit(2).frame(height: 32)
             }.frame(width: width)
         }.disabled(!viewModel.hasImage || editingLocked)
-            .accessibilityLabel(recipe?.name ?? "无配方").accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
+            .accessibilityLabel(recipe?.name ?? L10n.text("无配方")).accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
             .accessibilityAddTraits(settings.masterRecipeID == recipe?.id ? .isSelected : [])
     }
 
@@ -487,26 +522,32 @@ extension ContentView {
 }
 
 private struct IOSDenoiseControls: View {
+    @Environment(\.locale) private var localizationLocale
     @Binding var settings: RawDenoiseSettings
     let onEditingChanged: (Bool) -> Void
-    private let parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] = [
-        ("亮度降噪", \.luma, 0), ("色彩降噪", \.chroma, 46), ("粗色斑抑制", \.coarse, 50)
-    ]
+    private var parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] { [
+        (L10n.text("亮度降噪"), \.luma, 0), (L10n.text("色彩降噪"), \.chroma, 46), (L10n.text("粗色斑抑制"), \.coarse, 50)
+    ] }
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 0) {
             HStack {
-                Toggle("降噪", isOn: $settings.enabled).fixedSize()
+                Toggle(L10n.text("降噪"), isOn: $settings.enabled).fixedSize()
                     .accessibilityIdentifier("denoise.enabled")
                 Spacer(minLength: 4)
-                Picker("预设", selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
-                    Text(RawDenoisePreset.detail.rawValue).tag(RawDenoisePreset.detail)
-                    Text(RawDenoisePreset.clean.rawValue).tag(RawDenoisePreset.clean)
-                    if settings.preset == .custom { Text("自定义").tag(RawDenoisePreset.custom) }
-                }.pickerStyle(.menu).accessibilityIdentifier("denoise.preset")
                 Button { settings = RawDenoiseSettings() } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 44)
-                }.accessibilityLabel("重置降噪")
+                }.accessibilityLabel(L10n.text("重置降噪"))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.text("预设")).font(.subheadline)
+                Picker(L10n.text("预设"), selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
+                    Text(RawDenoisePreset.detail.title).tag(RawDenoisePreset.detail)
+                    Text(RawDenoisePreset.clean.title).tag(RawDenoisePreset.clean)
+                    if settings.preset == .custom { Text(L10n.text("自定义")).tag(RawDenoisePreset.custom) }
+                }.labelsHidden().pickerStyle(.menu).id(localizationLocale.identifier).accessibilityIdentifier("denoise.preset")
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             ForEach(parameters.indices, id: \.self) { index in
                 let parameter = parameters[index]
@@ -520,10 +561,10 @@ private struct IOSDenoiseControls: View {
                     TextField(parameter.0, value: value, format: .number.precision(.fractionLength(0)))
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                         .textFieldStyle(.roundedBorder).frame(width: 42)
-                        .accessibilityLabel("\(parameter.0)数值").accessibilityIdentifier("denoise.value.\(index)")
+                        .accessibilityLabel(L10n.format("%@数值", String(describing: parameter.0))).accessibilityIdentifier("denoise.value.\(index)")
                     Button { value.wrappedValue = parameter.2 } label: {
                         Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 44)
-                    }.accessibilityLabel("重置\(parameter.0)").disabled(value.wrappedValue == parameter.2)
+                    }.accessibilityLabel(L10n.format("重置%@", String(describing: parameter.0))).disabled(value.wrappedValue == parameter.2)
                 }.disabled(!settings.enabled).frame(minHeight: 44)
             }
         }
@@ -551,7 +592,7 @@ private struct IOSPhotoEffectsControls: View {
                 Button { resetEffect() } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 44)
                 }
-                .accessibilityLabel("重置\(effect.title)")
+                .accessibilityLabel(L10n.format("重置%@", String(describing: effect.title)))
                 .disabled(effectIsDefault)
             }
             ForEach(parameters) { parameter in
@@ -567,12 +608,12 @@ private struct IOSPhotoEffectsControls: View {
                         .multilineTextAlignment(.trailing)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 48)
-                        .accessibilityLabel("\(parameter.title)数值")
+                        .accessibilityLabel(L10n.format("%@数值", String(describing: parameter.title)))
                         .accessibilityIdentifier("effects.\(effect.rawValue).value.\(parameter.rawValue)")
                     Button { value.wrappedValue = parameter.defaultValue } label: {
                         Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 44)
                     }
-                    .accessibilityLabel("重置\(parameter.title)")
+                    .accessibilityLabel(L10n.format("重置%@", String(describing: parameter.title)))
                     .disabled(value.wrappedValue == parameter.defaultValue)
                 }
                 .disabled(parameter == .vignetteHighlights && settings.vignetteAmount >= 0)

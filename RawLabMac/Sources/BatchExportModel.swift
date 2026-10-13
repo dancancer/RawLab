@@ -34,21 +34,21 @@ final class BatchExportModel: ObservableObject {
 
     var canRun: Bool { !running && !validating && job.selectedCount > 0 && job.outputDirectory != nil }
     var title: String {
-        if stopping { return "正在停止…" }
-        if running { return "正在导出" }
-        if job.interrupted { return "导出已中断" }
-        if job.cancelled { return "导出已取消" }
-        return job.started ? "导出完成" : "批量导出"
+        if stopping { return L10n.text("正在停止…") }
+        if running { return L10n.text("正在导出") }
+        if job.interrupted { return L10n.text("导出已中断") }
+        if job.cancelled { return L10n.text("导出已取消") }
+        return job.started ? L10n.text("导出完成") : L10n.text("批量导出")
     }
     var summary: String {
-        if !job.started { return "已选 \(job.selectedCount) 张" }
-        return "成功 \(job.succeededCount) 张 · 失败 \(job.failedCount) 张 · 未处理 \(job.remainingCount) 张"
+        if !job.started { return L10n.format("已选 %@ 张", String(describing: job.selectedCount)) }
+        return L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张", String(describing: job.succeededCount), String(describing: job.failedCount), String(describing: job.remainingCount))
     }
 
     func addFiles() {
         guard !running, !job.started, !validating else { return }
         let panel = NSOpenPanel()
-        panel.title = "选择待导出的 RAW 照片"
+        panel.title = L10n.text("选择待导出的 RAW 照片")
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = DirectoryContents.rawExtensions.compactMap { UTType(filenameExtension: $0) }
@@ -62,7 +62,7 @@ final class BatchExportModel: ObservableObject {
         for url in urls {
             do {
                 guard DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased()) else {
-                    throw RenderError.failed("不是支持的 RAW 文件")
+                    throw RenderError.failed(L10n.text("不是支持的 RAW 文件"))
                 }
                 var item = try BatchExportItem(url: url)
                 item.selected = true
@@ -118,16 +118,16 @@ final class BatchExportModel: ObservableObject {
     func chooseDirectory() {
         guard !running else { return }
         let panel = NSOpenPanel()
-        panel.title = "选择输出文件夹"
+        panel.title = L10n.text("选择输出文件夹")
         panel.canChooseFiles = false; panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.directoryURL = job.outputDirectory
         if panel.runModal() == .OK { job.outputDirectory = panel.url; saveDraft() }
     }
 
-    func setPNG(_ value: Bool) {
+    func setFormat(_ value: ExportFormat) {
         guard !running, !job.started else { return }
-        job.png = value; saveDraft()
+        job.format = value; saveDraft()
     }
 
     func setLongEdge(_ value: Int?) {
@@ -137,7 +137,7 @@ final class BatchExportModel: ObservableObject {
 
     private func saveDraft() {
         do { try journal.save(job); error = nil }
-        catch { self.error = "任务未保存：\(error.localizedDescription)" }
+        catch { self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
     }
 
     func start(_ scope: BatchRunScope = .unfinished) {

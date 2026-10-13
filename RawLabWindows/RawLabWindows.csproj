@@ -9,18 +9,20 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.6.0</Version>
-    <FileVersion>0.6.0.10</FileVersion>
-    <InformationalVersion>0.6.0+build.10</InformationalVersion>
+    <Version>0.7.0</Version>
+    <FileVersion>0.7.0.11</FileVersion>
+    <InformationalVersion>0.7.0+build.11</InformationalVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
     <Compile Remove="tests/**/*.cs" />
+    <EmbeddedResource Include="Resources/Localization/*.json" />
     <Content Include="../lutools/flog-2-new/*.cube" Exclude="../lutools/flog-2-new/*FLog2-709*;../lutools/flog-2-new/*WDR*" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/FilmIcons/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="../RawLabMac/Resources/AppIcon.png" Link="AppIcon.png" />
     <Content Include="../Shared/master-recipes.json" Link="master-recipes.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../lutools/third_party/lensfun/version_1/*.xml" Link="Lensfun/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/MasterRecipes/*.cube" Link="MasterRecipes/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/MasterRecipeIcons/*.png" Link="MasterRecipeIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

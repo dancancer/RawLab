@@ -21,6 +21,7 @@ struct HorizontalPickerScrollState: Equatable {
 }
 
 struct HorizontalPicker<Content: View>: View {
+    @Environment(\.locale) private var localizationLocale
     let selectedID: String
     let name: String
     private let content: Content
@@ -66,7 +67,7 @@ struct HorizontalPicker<Content: View>: View {
 
     private func scrollButton(towardTrailing: Bool) -> some View {
         let enabled = towardTrailing ? scrollState.canScrollRight : scrollState.canScrollLeft
-        let title = towardTrailing ? "向右滚动\(name)" : "向左滚动\(name)"
+        let title = towardTrailing ? L10n.format("向右滚动%@", String(describing: name)) : L10n.format("向左滚动%@", String(describing: name))
         return Button {
             let target = scrollState.pageOffset(towardTrailing: towardTrailing)
             if reduceMotion { position.scrollTo(x: target) }

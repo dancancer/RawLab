@@ -35,6 +35,9 @@ static class Program
     {
         try
         {
+            Loc.Initialize("zh-Hans");
+            if(args.Length==3 && args[0]=="--lens") { LensChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--rendered-dng") { RenderedDngChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--master-recipes") { MasterRecipeChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--photo-features") { PhotoFeatureChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--denoise") { DenoiseChecks.Run(args[1],args[2]);return 0; }
@@ -70,6 +73,7 @@ static class Program
             ComparisonChecks.Run(Check);
             if(args.Length<2)throw new ArgumentException("Supply repository root and an external RAW fixture path.");
             var raw=Path.GetFullPath(args[1]);
+            if(!args.Contains("--ui-only")) LensChecks.Run(repo,raw,Check);
             var film=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_PROVIA_65grid_V.1.00.cube");
             var unicodeDir=Path.Combine(output,"中文目录");Directory.CreateDirectory(unicodeDir);
             var unicodeRaw=Path.Combine(unicodeDir,"照片.ARW");var unicodeLut=Path.Combine(unicodeDir,"胶片.cube");File.Copy(raw,unicodeRaw,true);File.Copy(film,unicodeLut,true);
@@ -167,6 +171,7 @@ static class Program
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
             var app=new App();app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
+            foreach(var pair in Loc.Strings) app.Resources[pair.Key]=pair.Value;
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             var window=new MainWindow {Width=1440,Height=920};
             window.Show();
@@ -179,15 +184,27 @@ static class Program
             var statusText=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
             EventHandler previewChanged=(_,_)=>{if(window.Status.Text.StartsWith("交互预览 ")){proxyPublished=true;proxyMs=openClock.Elapsed.TotalMilliseconds;proxyAllowedExport|=window.ExportPng.IsEnabled;}};
             statusText.AddValueChanged(window.Status,previewChanged);
-            window.OpenFile(raw);PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
+            window.OpenFile(raw,RenderEngine.ReadEmbeddedPreview(raw).Image);
+            window.Width=1344;window.Height=1048;
+            window.Measure(new Size(1344,1048));window.Arrange(new Rect(0,0,1344,1048));window.UpdateLayout();
+            PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             statusText.RemoveValueChanged(window.Status,previewChanged);
             Check(proxyPublished && !proxyAllowedExport,"Opening publishes a fast RAW proxy before exact work and never exports the proxy");
             Console.WriteLine($"WPF open: first proxy {proxyMs:F1} ms; exact {openClock.Elapsed.TotalMilliseconds:F1} ms");
-            Check(window.Status.Text.Contains("2000"),"WPF exact render completes and enables export");
+            var settled=(RenderedImage)typeof(MainWindow).GetField("result",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(window)!;
+            Console.WriteLine($"WPF settled: bitmap={settled.Image.PixelWidth}x{settled.Image.PixelHeight}, viewport-edge={window.ResultCanvas.PreviewLongEdge}, status={window.Status.Text}");
+            Check(window.Status.Text.StartsWith("预览 ") && Math.Max(settled.Image.PixelWidth,settled.Image.PixelHeight)==window.ResultCanvas.PreviewLongEdge,
+                "WPF settled render uses the current viewport dimensions and enables export");
             window.ValueSlider.Value=.625;Check(!window.ExportPng.IsEnabled,"Editing immediately blocks stale export");
             window.ValueSlider.Value=.75;window.ValueSlider.Value=.625;
             PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             window.OpenFile(unicodeRaw);Check(Math.Abs(window.ValueSlider.Value-.5)<.001,"New photo starts with default exposure");
+            PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
+            var switched=(RenderedImage)typeof(MainWindow).GetField("result",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(window)!;
+            Check(Math.Max(switched.Image.PixelWidth,switched.Image.PixelHeight)==window.ResultCanvas.PreviewLongEdge,
+                "Opening without a supplied embedded image settles at the current viewport resolution");
             window.OpenFile(raw);Check(Math.Abs(window.ValueSlider.Value-.625)<.001,"Photo switch restores its own exposure");
             window.ValueSlider.Value=.5;PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             Check(window.BackendLabel.Text.Contains("Direct3D 11"),"WPF reports actual GPU backend");

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AdjustmentRow: View {
+    @Environment(\.locale) private var localizationLocale
     let parameter: AdjustmentParameter
     @Binding var value: Double
     var showsTicks = false
@@ -15,38 +16,40 @@ struct AdjustmentRow: View {
     private var spec: AdjustmentSpec { specOverride ?? parameter.spec }
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 6) {
             HStack(spacing: 5) {
                 if let whiteBalanceMode {
-                    Picker("白平衡", selection: whiteBalanceMode) {
-                        ForEach(WhiteBalanceMode.allCases) { Text($0.rawValue).tag($0) }
-                    }.labelsHidden().frame(width: 130).accessibilityLabel("白平衡")
+                    Picker(L10n.text("白平衡"), selection: whiteBalanceMode) {
+                        ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
+                    }.labelsHidden().frame(width: 160).id(localizationLocale.identifier)
+                        .accessibilityLabel(L10n.text("白平衡"))
                 } else {
                     Text(spec.title).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if let onAuto {
-                    Button(action: onAuto) { Label("自动", systemImage: "wand.and.stars") }
+                    Button(action: onAuto) { Label(L10n.text("自动"), systemImage: "wand.and.stars") }
                         .controlSize(.small).disabled(autoBusy)
-                        .accessibilityIdentifier("exposure.auto").help("自动调整曝光")
+                        .accessibilityIdentifier("exposure.auto").help(L10n.text("自动调整曝光"))
                 }
                 TextField(spec.title, text: $draft)
                     .textFieldStyle(.roundedBorder).controlSize(.small)
                     .multilineTextAlignment(.trailing).monospacedDigit()
                     .frame(width: 66).focused($editing)
-                    .accessibilityLabel("\(spec.title)数值")
+                    .accessibilityLabel(L10n.format("%@数值", String(describing: spec.title)))
                     .accessibilityIdentifier("value.\(parameter.rawValue)")
                     .onSubmit(commit)
                     .onChange(of: editing) { _, focused in if !focused { commit() } }
                     .onExitCommand { draft = spec.text(value); invalid = false; editing = false }
                     .overlay { if invalid { RoundedRectangle(cornerRadius: 4).stroke(.red, lineWidth: 1) } }
-                    .help(invalid ? "请输入有效数字" : "\(spec.text(spec.range.lowerBound)) 至 \(spec.text(spec.range.upperBound)) \(spec.unit)")
+                    .help(invalid ? L10n.text("请输入有效数字") : L10n.format("%@ 至 %@ %@", String(describing: spec.text(spec.range.lowerBound)), String(describing: spec.text(spec.range.upperBound)), String(describing: spec.unit)))
                 Text(spec.unit).font(.caption).foregroundStyle(.secondary).frame(width: 19, alignment: .leading)
                 Button {
                     value = spec.defaultValue; draft = spec.text(value); invalid = false
                 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 16, height: 18) }
                 .buttonStyle(.borderless).disabled(value == spec.defaultValue && !invalid)
-                .help("重置\(spec.title)").accessibilityLabel("重置\(spec.title)")
+                .help(L10n.format("重置%@", String(describing: spec.title))).accessibilityLabel(L10n.format("重置%@", String(describing: spec.title)))
             }
             Slider(value: Binding(get: { spec.position(for: value) }, set: { value = spec.value(at: $0) }),
                    in: 0...1, onEditingChanged: onEditingChanged)

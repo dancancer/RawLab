@@ -37,13 +37,15 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
-    func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool) throws {
+    func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
+                          viewportPreview: Bool = false) throws {
+        try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
         guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK,
-              settings.hsl.isValid else { throw ProcessorError.processFailed("Invalid exposure mode or HSL parameters.") }
+              settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid exposure mode or HSL parameters.")) }
         var hsl = settings.hsl.nativeConfig
         guard sony2fuji_session_set_hsl(session, &hsl) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed("Invalid HSL parameters.")
+            throw ProcessorError.processFailed(L10n.text("Invalid HSL parameters."))
         }
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
@@ -51,9 +53,9 @@ extension Sony2FujiProcessor {
         config.mode = gpuMode
         let gpuStatus = sony2fuji_session_set_gpu_config(session, &config)
         guard gpuStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed("Invalid GPU configuration: \(statusMessage(gpuStatus))")
+            throw ProcessorError.processFailed(L10n.format("Invalid GPU configuration: %@", statusMessage(gpuStatus)))
         }
-        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed("Invalid photo effects.") }
+        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid photo effects.")) }
         var effects = sony2fuji_photo_effects_config()
         effects.version = UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION)
         effects.struct_size = UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size)
@@ -67,14 +69,14 @@ extension Sony2FujiProcessor {
         effects.grain_roughness = Float(settings.photoEffects.grainRoughness)
         let effectsStatus = sony2fuji_session_set_photo_effects(session, &effects)
         guard effectsStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed("Invalid photo effects: \(statusMessage(effectsStatus))")
+            throw ProcessorError.processFailed(L10n.format("Invalid photo effects: %@", statusMessage(effectsStatus)))
         }
         let chromaMode = Int32(settings.displayChromaDenoise)
         let chromaStatus = sony2fuji_session_set_chroma_denoise(session, chromaMode)
         guard chromaStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed("Invalid display chroma denoise mode: \(statusMessage(chromaStatus))")
+            throw ProcessorError.processFailed(L10n.format("Invalid display chroma denoise mode: %@", statusMessage(chromaStatus)))
         }
-        guard settings.denoise.isValid else { throw ProcessorError.processFailed("Invalid denoise strengths.") }
+        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid denoise strengths.")) }
         var denoise = sony2fuji_wavelet_denoise_config()
         denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
         denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
@@ -86,6 +88,8 @@ extension Sony2FujiProcessor {
         guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
         let previewStatus = sony2fuji_session_set_interactive_preview(session, interactive ? 1 : 0)
         guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
+        let viewportStatus = sony2fuji_session_set_viewport_preview(session, viewportPreview ? 1 : 0)
+        guard viewportStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(viewportStatus)) }
     }
 
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {
@@ -104,7 +108,7 @@ extension Sony2FujiProcessor {
         defer { sony2fuji_release_buffer(&buffer) }
         let status = processRaw(session: session, request: &request, inputPath: url.path, lutPath: nil, outBuffer: &buffer)
         guard status == SONY2FUJI_STATUS_OK, let camera = readRawWhiteBalance(from: session), camera.isCalibrated else {
-            throw ProcessorError.processFailed("此 RAW 无法解析拍摄白平衡，不能应用配方色调。")
+            throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
         }
         return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
@@ -138,6 +142,11 @@ extension Sony2FujiProcessor {
         request.noise_reduction = settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request
+    }
+
+    func configureDNGFile(_ request: inout sony2fuji_request) {
+        request.output_target = SONY2FUJI_TARGET_FILE
+        request.output_format = SONY2FUJI_OUTPUT_DNG
     }
 
     func applySize(
@@ -206,6 +215,52 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func processRawToFile(
+        session: OpaquePointer,
+        request: inout sony2fuji_request,
+        inputPath: String,
+        lutPath: String?,
+        outputPath: String
+    ) -> sony2fuji_status {
+        inputPath.withCString { inputPtr in
+            outputPath.withCString { outputPtr in
+                request.input_path = inputPtr
+                request.output_path = outputPtr
+                if let lutPath {
+                    return lutPath.withCString { lutPtr in
+                        request.lut_path = lutPtr
+                        return sony2fuji_process(session, &request, nil)
+                    }
+                }
+                request.lut_path = nil
+                return sony2fuji_process(session, &request, nil)
+            }
+        }
+    }
+
+    func processBufferToFile(
+        session: OpaquePointer,
+        request: inout sony2fuji_request,
+        buffer: Buffer,
+        lutPath: String?,
+        outputPath: String
+    ) -> sony2fuji_status {
+        buffer.data.withUnsafeBytes { bytes in
+            outputPath.withCString { outputPtr in
+                request.input_pixels = bytes.baseAddress
+                request.output_path = outputPtr
+                if let lutPath {
+                    return lutPath.withCString { lutPtr in
+                        request.lut_path = lutPtr
+                        return sony2fuji_process(session, &request, nil)
+                    }
+                }
+                request.lut_path = nil
+                return sony2fuji_process(session, &request, nil)
+            }
+        }
+    }
+
     func copyBuffer(_ buffer: sony2fuji_buffer) throws -> Buffer {
         guard let baseAddress = buffer.data,
               buffer.width > 0,
@@ -247,6 +302,17 @@ extension Sony2FujiProcessor {
             shouldInterpolate: true,
             intent: .defaultIntent
         )
+    }
+
+    func orientedCGImage(_ image: CGImage, orientation: CGImagePropertyOrientation) -> CGImage? {
+        guard orientation != .up else { return image }
+        let oriented = UIImage(cgImage: image, scale: 1, orientation: UIImage.Orientation(orientation))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: oriented.size, format: format).image { _ in
+            oriented.draw(in: CGRect(origin: .zero, size: oriented.size))
+        }.cgImage
     }
 
     func outputColorSpace() -> CGColorSpace {

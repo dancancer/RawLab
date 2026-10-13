@@ -24,7 +24,15 @@ val prepareAssets by tasks.registering(Sync::class) {
     from(repo.resolve("RawLabMac/Resources/MasterRecipes")) { into("MasterRecipes"); include("*.cube") }
     from(repo.resolve("RawLabMac/Resources/MasterRecipeIcons")) { into("MasterRecipeIcons"); include("*.png") }
     from(repo.resolve("RawLabMac/Resources")) { include("AppIcon.png") }
+    from(repo.resolve("lutools/third_party/lensfun/version_1")) { into("Lensfun"); include("*.xml") }
+    from(repo.resolve("lutools/third_party/lensfun")) { into("licenses/lensfun"); include("*.txt", "*.md") }
+    from(repo.resolve("lutools/third_party/lensfun/dependency-licenses")) { into("licenses/lensfun"); include("*.txt") }
     from(repo.resolve("lutools/third_party")) { into("licenses"); include("*LICENSE*") }
+    from(repo.resolve("lutools/third_party/dng-sdk")) {
+        into("licenses")
+        include("*.txt")
+        rename { if (it == "Adobe-DNG-SDK-LICENSE.txt") "Adobe-DNG-SDK-1.7.1-LICENSE.txt" else it }
+    }
     from(repo.resolve("RawLabMac/Resources/Licenses")) {
         into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "stb-MIT-LICENSE.txt")
     }
@@ -54,8 +62,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.6.0"
+        versionCode = 11
+        versionName = "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }

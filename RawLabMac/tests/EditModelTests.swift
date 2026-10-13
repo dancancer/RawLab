@@ -154,6 +154,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
             live.settings.set(.temperature, to: 8000)
             try waitForRender()
             try check(live.neutral!.image === original, "white balance must not replace the original image")
+            live.updatePreviewLongEdge(1000)
             live.setInteracting(true)
             live.settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 65, chroma: 72, coarse: 100)
             let deadline = Date().addingTimeInterval(60)

@@ -6,6 +6,30 @@
 #include <new>
 
 namespace rawlab {
+enum class ExportFormat : int {
+    JPEG = SONY2FUJI_OUTPUT_JPEG,
+    PNG = SONY2FUJI_OUTPUT_PNG,
+    DNG = SONY2FUJI_OUTPUT_DNG,
+};
+
+inline sony2fuji_output_format nativeOutputFormat(ExportFormat format) {
+    switch (format) {
+        case ExportFormat::JPEG: return SONY2FUJI_OUTPUT_JPEG;
+        case ExportFormat::PNG: return SONY2FUJI_OUTPUT_PNG;
+        case ExportFormat::DNG: return SONY2FUJI_OUTPUT_DNG;
+        default: throw std::invalid_argument("Invalid output format");
+    }
+}
+
+inline ExportFormat parseExportFormat(int value) {
+    switch (value) {
+        case static_cast<int>(ExportFormat::JPEG): return ExportFormat::JPEG;
+        case static_cast<int>(ExportFormat::PNG): return ExportFormat::PNG;
+        case static_cast<int>(ExportFormat::DNG): return ExportFormat::DNG;
+        default: throw std::invalid_argument("Invalid output format");
+    }
+}
+
 inline void checkStatus(sony2fuji_status status) {
     if (status == SONY2FUJI_STATUS_OUT_OF_MEMORY) throw std::bad_alloc();
     if (status == SONY2FUJI_STATUS_INVALID_ARGUMENT)
@@ -26,7 +50,8 @@ inline size_t previewByteCount(const sony2fuji_buffer& buffer) {
 inline sony2fuji_request makeRequest(const char* input, const char* lut, const char* output,
     float strength, float exposure, bool customWb, float temperature, float tint,
     float highlights, float shadows, float contrast, float toneCurve, float saturation,
-    float sharpening, int edge, bool png, uint32_t longEdge = 0) {
+    float sharpening, int edge, ExportFormat format, uint32_t longEdge = 0) {
+    const auto nativeFormat = nativeOutputFormat(format);
     if (!input || !*input || !std::isfinite(strength) || strength < 0 || strength > 2 ||
         !std::isfinite(exposure) || exposure < -4 || exposure > 4 ||
         !std::isfinite(highlights) || highlights < -1 || highlights > 1 ||
@@ -68,15 +93,15 @@ inline sony2fuji_request makeRequest(const char* input, const char* lut, const c
     request.preview_long_edge = output ? 0 : static_cast<uint32_t>(edge);
     request.output_target = output ? SONY2FUJI_TARGET_FILE : SONY2FUJI_TARGET_BUFFER;
     request.output_path = output;
-    request.output_format = output ? (png ? SONY2FUJI_OUTPUT_PNG : SONY2FUJI_OUTPUT_JPEG) : SONY2FUJI_OUTPUT_RGBA8;
+    request.output_format = output ? nativeFormat : SONY2FUJI_OUTPUT_RGBA8;
     request.jpeg_quality = 95;
     return request;
 }
 
 inline sony2fuji_request makeRequest(const char* input, const char* lut, const char* output,
     float strength, float exposure, bool customWb, float temperature, float tint,
-    int edge, bool png) {
+    int edge, ExportFormat format) {
     return makeRequest(input, lut, output, strength, exposure, customWb, temperature, tint,
-        0, 0, 0, 0, 0, 0, edge, png);
+        0, 0, 0, 0, 0, 0, edge, format);
 }
 }

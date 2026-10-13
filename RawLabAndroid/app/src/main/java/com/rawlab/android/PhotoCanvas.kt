@@ -84,17 +84,19 @@ internal fun PhotoCanvas(
     info: PhotoInfo? = null,
     infoMode: Int = 0,
     onInfoClick: () -> Unit = {},
+    onPreviewSizeChange: (Int) -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.comparison_wipe)
     val fitDescription = stringResource(R.string.zoom_fit)
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 8.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         // Keep exact-preview geometry while a smaller interactive preview is displayed.
-        val viewport = PhotoViewport(max(pair.result.width.toFloat(), state.viewport?.imageWidth ?: 0f),
-            max(pair.result.height.toFloat(), state.viewport?.imageHeight ?: 0f),
+        val viewport = PhotoViewport(pair.neutral.width.toFloat(), pair.neutral.height.toFloat(),
             constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         val zoom = state.zoom?.resize(state.viewport ?: viewport, viewport) ?: PhotoZoom(viewport.fitScale)
         SideEffect { if (state.viewport != viewport) state.resize(viewport) }
+        val previewEdge = viewport.previewLongEdge(zoom.scale)
+        LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
         val transform = Modifier.fillMaxSize().graphicsLayer {
             scaleX = zoom.scale / viewport.fitScale
             scaleY = zoom.scale / viewport.fitScale
@@ -104,7 +106,7 @@ internal fun PhotoCanvas(
         val percent = "${(zoom.scale * 100).roundToInt()}%"
         Box(Modifier.fillMaxSize().testTag("photo-canvas").semantics {
             contentDescription = filename
-            stateDescription = if (viewport.isFit(zoom.scale)) "$fitDescription $percent" else percent
+            stateDescription = if (viewport.isFit(zoom.scale)) "${fitDescription} ${percent}" else percent
             customActions = listOf(
                 CustomAccessibilityAction("100%") { state.zoom = PhotoZoom(1f); true },
                 CustomAccessibilityAction(fitDescription) { state.zoom = PhotoZoom(viewport.fitScale); true }
@@ -179,7 +181,7 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
                 info.camera?.let { InfoLine(stringResource(R.string.info_camera), it) }
                 info.lens?.let { InfoLine(stringResource(R.string.info_lens), it) }
                 info.shutter?.let { InfoLine(stringResource(R.string.info_shutter), it) }
-                info.aperture?.let { InfoLine(stringResource(R.string.info_aperture), "f/$it") }
+                info.aperture?.let { InfoLine(stringResource(R.string.info_aperture), "f/${it}") }
                 info.iso?.let { InfoLine(stringResource(R.string.info_iso), it) }
                 info.focalLength?.let { InfoLine(stringResource(R.string.info_focal_length), it) }
             }
@@ -190,7 +192,7 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
 @Composable
 private fun InfoLine(title: String, value: String) {
     Text(
-        "$title  $value",
+        "${title}  ${value}",
         color = Color.White,
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier.fillMaxWidth(),

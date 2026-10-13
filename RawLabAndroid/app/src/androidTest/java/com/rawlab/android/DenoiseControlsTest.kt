@@ -17,11 +17,12 @@ import org.junit.Rule
 import org.junit.Test
 
 class DenoiseControlsTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
     @Test fun presetsAndDisablePreserveValuesInCompactLayout() {
         var value by mutableStateOf(DenoiseSettings())
-        compose.setContent {
+        compose.setChineseContent {
             MaterialTheme {
                 Box(Modifier.width(360.dp)) { DenoiseControls(value, true) { next, _ -> value = next } }
             }

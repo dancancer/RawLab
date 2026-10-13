@@ -36,6 +36,19 @@ notice also retained. Its corresponding patched source is supplied with the
 release. OpenCV, wavelib, stb, Adobe-derived code, calibration data, ExifTool,
 runtime libraries and LUTs retain their respective notices.
 
+Profile-based lens correction uses unmodified Lensfun 0.3.4 (LGPL-3.0).
+The vendored DB1 snapshot is separately licensed under CC BY-SA 3.0, with its
+provenance, attribution and original license retained in
+[the Lensfun dependency directory](../lutools/third_party/lensfun/README.md).
+macOS packages also retain the GLib, gettext libintl and PCRE2 runtime notices.
+iOS, Android and Windows statically link target-built Lensfun/GLib/PCRE2 and
+proxy-libintl; Android also links GNU libiconv/libcharset, Windows bundled TRE.
+Their original license texts accompany the clients. Pinned source URLs, hashes,
+the iOS GLib availability-probe adjustment and complete rebuild commands live in
+`lutools/cmake/lens-dependencies.json`, `build-lens-dependencies.py` and
+[the native platform notes](lens-correction-platforms.md). Preserve those sources
+and the application's corresponding source when redistributing a binary.
+
 ## Historical MIT Notice
 
 Earlier RawLab releases were published under MIT. Their published license is

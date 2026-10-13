@@ -5,7 +5,13 @@ import Combine
 final class UpdateChecker: ObservableObject {
     @Published private(set) var checking = false
     @Published private(set) var available: UpdateRelease?
-    @Published private(set) var status = "尚未检查更新"
+    @Published private var statusKey = "尚未检查更新"
+    var status: String {
+        if statusKey == "available", let available {
+            return L10n.format("发现新版本 %@", String(describing: available.version))
+        }
+        return L10n.text(statusKey)
+    }
     @Published var automatic: Bool {
         didSet { defaults.set(automatic, forKey: "updates.automatic") }
     }
@@ -27,7 +33,7 @@ final class UpdateChecker: ObservableObject {
         automatic = defaults.object(forKey: "updates.automatic") as? Bool ?? true
         if let data = defaults.data(forKey: "updates.cachedRelease") {
             available = try? UpdateRelease.parse(data, current: currentVersion, assetSuffix: assetSuffix)
-            if let available { status = "发现新版本 \(available.version)" }
+            if available != nil { statusKey = "available" }
         }
     }
 
@@ -35,16 +41,16 @@ final class UpdateChecker: ObservableObject {
         guard !checking, UpdateRelease.shouldCheck(manual: manual, enabled: automatic,
             last: defaults.double(forKey: "updates.lastAttempt"), now: Date().timeIntervalSince1970) else { return }
         checking = true
-        status = "正在检查更新…"
+        statusKey = "正在检查更新…"
         defaults.set(Date().timeIntervalSince1970, forKey: "updates.lastAttempt")
         defer { checking = false }
         do {
             let data = try await fetch()
             available = try UpdateRelease.parse(data, current: currentVersion, assetSuffix: assetSuffix)
             defaults.set(data, forKey: "updates.cachedRelease")
-            status = available.map { "发现新版本 \($0.version)" } ?? "未发现适用于此 Mac 的新版本"
+            statusKey = available == nil ? "未发现适用于此 Mac 的新版本" : "available"
         } catch {
-            status = "检查失败，请稍后重试或访问 GitHub 仓库"
+            statusKey = "检查失败，请稍后重试或访问 GitHub 仓库"
         }
     }
 

@@ -52,6 +52,16 @@ static class ComparisonChecks
                 "Proxy and exact pixel dimensions preserve the same source viewport "+width);
         }
         view.Fit();
+        var waitingView=new Viewport();
+        var waitingCanvas=new PhotoCanvas{Viewport=waitingView};var waitingChanges=0;
+        waitingCanvas.PreviewSizeChanged+=_=>waitingChanges++;
+        waitingCanvas.Measure(new Size(600,400));waitingCanvas.Arrange(new Rect(0,0,600,400));
+        waitingView.SetSourceSize(6000,4000);
+        check(waitingCanvas.PreviewLongEdge==waitingView.PreviewLongEdge(waitingCanvas.RenderSize,VisualTreeHelper.GetDpi(waitingCanvas),default),
+            "Source metadata selects viewport resolution before an embedded image is available");
+        var beforeMetadataChange=waitingChanges;waitingView.SetSourceSize(4000,6000);
+        check(waitingCanvas.PreviewLongEdge==waitingView.PreviewLongEdge(waitingCanvas.RenderSize,VisualTreeHelper.GetDpi(waitingCanvas),default) && waitingChanges>beforeMetadataChange,
+            "Late source metadata updates viewport resolution without an embedded image");
         var grid=new PhotoGridPanel();for(var i=0;i<3;i++)grid.Children.Add(new Border());
         grid.Measure(new Size(220,double.PositiveInfinity));grid.Arrange(new Rect(0,0,220,grid.DesiredSize.Height));
         check(grid.Children[1].TranslatePoint(new Point(),grid).X==0 && grid.DesiredSize.Height==420,"Narrow file tree uses one thumbnail column");

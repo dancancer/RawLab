@@ -31,6 +31,8 @@ struct EditMemoryTests {
         changed.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
         changed.photoEffects.vignetteMidpoint = 62
         changed.photoEffects.grainSize = 60
+        changed.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false,
+                                                       mode: .manual, profileID: "Maker\n镜头 Model,|\nMount\n1.000000")
         try store.save(first, state: PhotoEditState(settings: changed, filmID: "provia"))
 
         let reopened = try EditPersistence(directory: root)
@@ -38,6 +40,8 @@ struct EditMemoryTests {
         check(reopened.state(for: first)?.settings.hsl == changed.hsl && reopened.state(for: first)?.settings.exposureMode == .sensor,
               "HSL and the selected exposure mode survive restart")
         check(reopened.state(for: first)?.settings.denoise == changed.denoise, "denoise survives restart")
+        check(reopened.state(for: first)?.settings.lensCorrection == changed.lensCorrection, "lens configuration survives restart")
+        check(LensCorrectionSettings(mode: .manual).coreProfileID == "__rawlab_manual_selection_required__", "manual mode never falls back to automatic")
         check(reopened.state(for: first)?.settings.photoEffects == changed.photoEffects,
               "photo effects auxiliary values survive restart even when amount is zero")
         check(reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
@@ -48,8 +52,10 @@ struct EditMemoryTests {
         legacy.removeValue(forKey: "displayChromaDenoise")
         legacy.removeValue(forKey: "hsl")
         legacy.removeValue(forKey: "exposureMode")
+        legacy.removeValue(forKey: "lensCorrection")
         let legacySettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
         check(legacySettings.denoise == RawDenoiseSettings(), "older records default to disabled denoise")
+        check(!legacySettings.lensSettings.isEnabled, "older records default to disabled lens correction")
         check(legacySettings.photoEffects == PhotoEffectsSettings(), "older records default to disabled photo effects")
         check(legacySettings.hsl.isIdentity && legacySettings.exposureMode == .scene, "legacy records preserve scene exposure and no HSL")
 

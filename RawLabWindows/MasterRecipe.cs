@@ -8,7 +8,7 @@ public sealed record RecipeHsl(double[] Hue, double[] Saturation, double[] Light
 {
     public HslSettings Settings() => Hue.Length == 8 && Saturation.Length == 8 && Lightness.Length == 8
         ? new(Hue.Concat(Saturation).Concat(Lightness).ToArray())
-        : throw new InvalidDataException("配方 HSL 参数无效。");
+        : throw new InvalidDataException(Loc.Text("配方 HSL 参数无效。"));
 }
 
 public sealed record MasterRecipe(string Id, string Name, string Subtitle, string Summary, string LutFileName,
@@ -24,9 +24,9 @@ public sealed record MasterRecipe(string Id, string Name, string Subtitle, strin
         var path = new[] { Path.Combine(AppContext.BaseDirectory, "master-recipes.json"), "Shared/master-recipes.json" }
             .First(File.Exists);
         var recipes = JsonSerializer.Deserialize<MasterRecipe[]>(File.ReadAllText(path),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("配方目录无效。");
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException(Loc.Text("配方目录无效。"));
         if (recipes.Length != 14 || recipes.Select(recipe => recipe.Id).Distinct().Count() != recipes.Length)
-            throw new InvalidDataException("配方目录不完整。");
+            throw new InvalidDataException(Loc.Text("配方目录不完整。"));
         foreach (var recipe in recipes) _ = recipe.Hsl.Settings();
         return Array.AsReadOnly(recipes);
     }

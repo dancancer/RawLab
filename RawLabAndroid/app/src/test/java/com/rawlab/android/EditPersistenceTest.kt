@@ -28,7 +28,9 @@ class EditPersistenceTest {
                 highlights = .25f, customWb = true, temperature = 4200f,
                 denoise = DenoiseSettings(true, 10f, 72f, 100f), displayChromaDenoise = 2,
                 effects = PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f,
-                    grainAmount = 65f, grainSize = 70f))
+                    grainAmount = 65f, grainSize = 70f),
+                recipeID = "recipe",
+                lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000"))
             EditStore(directory).save(identity, changed)
             val reopened = EditStore(directory)
             assertEquals(changed, reopened.load(identity))
@@ -36,10 +38,12 @@ class EditPersistenceTest {
             val properties = java.util.Properties().also { file.inputStream().use(it::load) }
             val key = properties.stringPropertyNames().first { it.endsWith(".values") }
             properties.setProperty(key, properties.getProperty(key).split(',').take(24).joinToString(","))
+            properties.remove(key.removeSuffix(".values") + ".lens")
             file.outputStream().use { properties.store(it, null) }
             val legacy = EditStore(directory).load(identity)!!
             assertEquals(0, legacy.exposureMode)
             assertTrue(legacy.hsl.isIdentity)
+            assertEquals(LensSettings(), legacy.lens)
             assertNull(reopened.load(PhotoIdentity("content://media/external/images/media/8")))
             reopened.reset(identity)
             assertNull(EditStore(directory).load(identity))

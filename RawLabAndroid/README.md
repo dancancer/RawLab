@@ -1,4 +1,7 @@
 # RawLab Android
+镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。
+源依赖构建当前支持 macOS/Linux 主机，需要 Python 3.11+、POSIX shell 和 make。Windows 主机的 GNU libiconv 交叉构建尚未支持；不要将 Windows 托管检查当作 Android 原生构建通过。
+
 
 真实 RAW 仪器测试使用外部样片：设置 `RAWLAB_TEST_RAW` 或传入
 `-PrawlabTestRaw=/path/to/photo.ARW`。构建时仅复制到测试 APK 的 `sample.RAW`；
@@ -10,7 +13,7 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 
 ## 功能 / Features
 
-v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 - 应用内 RAW 相册、按相册筛选、系统文件导入。相册权限被拒绝时仍可使用文件入口。
   In-app RAW albums with album filtering and a system document-picker fallback.
@@ -38,8 +41,12 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
   Portrait uses a full-size before/after wipe, collapsible controls, a fixed bottom tool row, and separate temperature/tint tools.
 - 原尺寸 JPEG (quality 95) / 16-bit PNG。Android 10+ 可直接保存到相册；所有支持版本均可保存到文件。
   Native-resolution JPEG/16-bit PNG, saved to albums on Android 10+ or to a document on every supported version.
-- 导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等拍摄 EXIF，更新成片方向、尺寸及 sRGB 标记，不复制旧缩略图或 RAW 专有 MakerNotes。
-  Exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, and update output orientation, dimensions and sRGB tags without copying old thumbnails or opaque RAW MakerNotes.
+- 单张和批量支持渲染型 DNG 文件导出，保留当前全部调整和导出尺寸。DNG 只保存到文件或所选目录，不写入图库；批量通过文件流发布，不把整个 DNG 复制到 Java 堆。
+  Single and batch rendered DNG exports retain current adjustments and final sizing. DNG uses documents/selected folders only, with streamed batch publication rather than full-file Java heap copies.
+- JPEG/PNG 导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等拍摄 EXIF，更新成片方向、尺寸及 sRGB 标记，不复制旧缩略图或 RAW 专有 MakerNotes。
+  JPEG/PNG exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, and update output orientation, dimensions and sRGB tags without copying old thumbnails or opaque RAW MakerNotes.
+- 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩 float32 RGB 约占每像素 12 字节。构建和实测边界见[验证记录](../docs/verification-rendered-dng-export.md)。
+  Rendered DNG bakes appearance, not sensor RAW or reversible controls. It omits source capture EXIF and uses about 12 bytes per pixel for uncompressed float32 RGB. See the linked verification for runtime limits.
 
 只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
 
@@ -86,11 +93,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.6.0 APK / Download Android v0.6.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Android-0.6.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.6.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.6.0/SHA256SUMS.txt)
+[下载 Android v0.7.0 APK / Download Android v0.7.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Android-0.7.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.7.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
 
-发布 APK 的 `versionName` 为 `0.6.0`、`versionCode` 为 `10`，沿用正式发布密钥，支持从所有更早的同签名正式版覆盖升级。两个 ABI 从本版源码重新构建。新增 14 个大师配方、八色 HSL 与自动曝光；应用配方覆盖六项调色和全部 HSL，0-200% 强度整体缩放当前参数与 LUT。胶片和配方列表直接拖动，不显示左右按钮。保留暗角、颗粒、GLES 降噪、批量导出和编辑记忆。“更多 → 关于 RawLab”只打开官方下载页面，不自动安装。验证范围见[发布验收记录](../docs/verification-v0.6.0.md)。自行发布前需核对 `app/build.gradle.kts` 的版本配置并递增 `versionCode`。
+发布 APK 为 `versionName=0.7.0`、`versionCode=11`，沿用正式发布签名，支持同签名旧正式版覆盖升级。arm64-v8a/x86_64 共享核心均从本轮源码增量重建，新增 JPEG XL DNG、渲染型 DNG 导出、Lensfun 镜头校正与六语界面，并优化视口预览和降噪内存。专属2.5GB AVD 的 Sony 原尺寸三格式及独立 FINAL 验收通过；GPU 验收范围为≥6GB，实际真机约12GB。详见[发布验收](../docs/verification-v0.7.0-release.md)。
 
-The release APK uses `versionName=0.6.0` and `versionCode=10`, retaining the release key for upgrades from all earlier release-signed versions. Both ABIs are rebuilt. Fourteen master recipes, eight-channel HSL and Auto exposure join the existing effects, GLES denoising, batch export and edit memory. Recipes replace six adjustments and all HSL values; 0-200% strength scales the current controls and LUT together. Mobile look lists use direct dragging without arrow buttons. About opens the official update page without installing. See [release verification](../docs/verification-v0.6.0.md). Check `app/build.gradle.kts` and increment `versionCode` before publishing your own update.
+The release APK uses version0.7.0/code11 and the existing release identity. Both native ABIs include the verified Sony memory fix. JPEG XL DNG, rendered DNG export, Lensfun correction, six languages and viewport/denoise reuse are new in this version. Existing local validation is retained; packaging adds no new device experiment. See [release verification](../docs/verification-v0.7.0-release.md).
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -138,18 +145,30 @@ c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
 
 Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestRaw=/path/to/photo.ARW`, packaged only into the test APK. v0.2 verified native 7008x4672 JPEG/16-bit PNG and EXIF with a Sony fixture, and passed 10 emulator tests against the release-signed APK. See [verification.md](verification.md) for coverage details.
 
+JPEG XL 原生回归使用已运行的本机模拟器，不安装应用，也不修改原始 RAW：
+
+```bash
+bash RawLabAndroid/tests/dng-jxl.sh \
+  RawLabAndroid/app/.cxx/Debug/<build-id>/arm64-v8a emulator-5554 \
+  "$RAWLAB_TEST_JXL_DNG"
+```
+
+先运行 `:app:assembleDebug`。测试会比较无损 JPEG XL 和未压缩像素，验证必需的
+Stage2 GainMap、白平衡重载、解码器复用、损坏文件错误分类以及 C ABI CPU/Auto 输出。
+测试仅使用独立模拟器临时目录，并在结束时删除测试副本。
+
 ## 边界 / Limitations
 
 - GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度、明暗处理、细节、暗角/颗粒、小波过滤和显示色度引导滤波。RAW 解码、去马赛克、噪声估计、OpenCV Lab 转换及文件编码仍在 CPU。
   GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending, tone, detail, vignette/grain, wavelet filtering and display-chroma guided filtering. RAW decoding/demosaic, noise estimation, OpenCV Lab conversion and encoding stay on CPU.
-- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
-  All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
+- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
+  All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
 - 全尺寸 RAW 显影需要较多 native 内存。低内存设备可能失败或被系统终止；没有验证所有相机和像素尺寸。
   Full-resolution RAW development is memory-intensive; low-memory devices may fail or be killed by the OS.
   X-Trans 并发修复新增每像素 8 字节的只读输入副本，40 MP 约增加 304 MiB 峰值内存；本轮仅验证 Android 构建，未验证这些机型在设备上的内存表现。
   The X-Trans concurrency fix adds an eight-byte-per-pixel immutable input copy, about 304 MiB for 40 MP. This camera sweep validates Android compilation only, not device memory behavior for these models.
-- LibRaw 启用 zlib，不编译可选 LCMS/JPEG/JasPer/RawSpeed/DNG SDK 集成；有损 JPEG DNG、JPEG2000 等依赖这些可选组件的格式不保证支持。
-  Optional LibRaw codecs/integrations are disabled; lossy JPEG DNG and JPEG2000-dependent inputs are not guaranteed.
+- LibRaw 启用 zlib 和 Adobe DNG SDK 1.7.1 的 JPEG XL DNG 解码；其他 RAW 仍使用现有 LibRaw 路径。不编译可选 LCMS/JPEG/JasPer/RawSpeed；有损 JPEG DNG、JPEG2000 等仍不保证支持。
+  JPEG XL DNG uses the pinned Adobe DNG SDK 1.7.1; other RAWs retain the existing LibRaw path. Optional LCMS/JPEG/JasPer/RawSpeed remain disabled.
 - 相册仅显示被系统媒体库收录且已授权的 RAW。未收录文件可通过系统文件入口导入。
   Albums show authorized, indexed RAW media; unindexed files use the document picker.
 - 相册缩略图由系统媒体库提供；Android 10+ 根据显示尺寸请求有界缩略图，Android 8-9 使用系统 `MINI_KIND` 缩略图。尺寸元数据缺失时，原始比例在缩略图加载后确定。

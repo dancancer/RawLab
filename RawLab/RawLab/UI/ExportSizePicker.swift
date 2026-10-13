@@ -2,8 +2,9 @@ import SwiftUI
 import UIKit
 
 struct ExportSizePicker: View {
+    @Environment(\.locale) private var localizationLocale
     @Binding var longEdge: Int?
-    var title = "导出尺寸"
+    var title: String? = nil
     var onValidityChanged: (Bool) -> Void = { _ in }
     @State private var customText = ""
     @State private var choice = 0
@@ -14,18 +15,20 @@ struct ExportSizePicker: View {
     }
 
     var body: some View {
+        let _ = localizationLocale
         VStack(alignment: .leading, spacing: 8) {
-            Picker(title, selection: $choice) {
-                Text("原始分辨率").tag(0)
+            Picker(title ?? L10n.text("导出尺寸"), selection: $choice) {
+                Text(L10n.text("原始分辨率")).tag(0)
                 ForEach(ExportSize.presets, id: \.self) { edge in
-                    Text("长边 \(edge) px").tag(edge)
+                    Text(L10n.format("长边 %@ px", String(describing: edge))).tag(edge)
                 }
-                Text("自定义…").tag(-1)
+                Text(L10n.text("自定义…")).tag(-1)
             }
             .pickerStyle(.menu)
+            .id(localizationLocale.identifier)
 
             if customSelected {
-                TextField("长边（1–65535 px）", text: $customText)
+                TextField(L10n.text("长边（1–65535 px）"), text: $customText)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: customText) { _, value in
@@ -33,7 +36,7 @@ struct ExportSizePicker: View {
                         onValidityChanged(customValueIsValid)
                     }
                 if !customValueIsValid {
-                    Text("请输入 1–65535 之间的像素数")
+                    Text(L10n.text("请输入 1–65535 之间的像素数"))
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -69,7 +72,9 @@ struct ExportSizePicker: View {
 }
 
 struct ExportSizeSheet: View {
+    @Environment(\.locale) private var localizationLocale
     @Binding var longEdge: Int?
+    var title = "保存当前照片"
     let onExport: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var sizeIsValid = true
@@ -79,20 +84,21 @@ struct ExportSizeSheet: View {
     }
 
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             Form {
                 Section {
                     ExportSizePicker(longEdge: $longEdge) { sizeIsValid = $0 }
                 }
             }
-            .navigationTitle("保存当前照片")
+            .navigationTitle(L10n.text(title))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
+                    Button(L10n.text("取消")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("导出") { onExport() }
+                    Button(L10n.text("导出")) { onExport() }
                         .disabled(!canExport)
                         .accessibilityIdentifier("editor.export.confirm")
                 }

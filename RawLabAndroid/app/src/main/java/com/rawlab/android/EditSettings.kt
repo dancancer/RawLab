@@ -22,6 +22,7 @@ data class EditSettings(
     val exposureMode: Int = 1,
     val hsl: HslSettings = HslSettings(),
     val recipeID: String? = null,
+    val lens: LensSettings = LensSettings(),
 ) {
     init {
         require(exposureMode in 0..2)
@@ -49,6 +50,25 @@ data class EditSettings(
             copy(recipeID = null, tint = cameraTint ?: 0f)
         else copy(recipeID = null, customWb = true, tint = ((cameraTint ?: 0f) + tint).coerceIn(-150f, 150f))
         return independent.copy(film = id)
+    }
+}
+
+data class LensSettings(val distortion: Boolean = false, val tca: Boolean = false,
+    val autoCrop: Boolean = true, val manual: Boolean = false, val profileId: String? = null) {
+    val enabled: Boolean get() = distortion || tca
+    val coreProfileId: String get() = if (manual) profileId ?: "__rawlab_manual_selection_required__" else ""
+    fun encode(): String = listOf(if (distortion) 1 else 0, if (tca) 1 else 0,
+        if (autoCrop) 1 else 0, if (manual) 1 else 0,
+        profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "")
+        .joinToString("|")
+    companion object {
+        fun decode(value: String?): LensSettings {
+            if (value == null) return LensSettings()
+            val fields = value.split('|')
+            require(fields.size == 5 && fields.take(4).all { it == "0" || it == "1" })
+            return LensSettings(fields[0] == "1", fields[1] == "1", fields[2] == "1", fields[3] == "1",
+                fields[4].takeIf { it.isNotEmpty() }?.let { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) })
+        }
     }
 }
 

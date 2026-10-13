@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$Test, [switch]$SelfContained, [string]$DotNet, [string]$CMake,
+param([switch]$Test, [switch]$SelfContained, [string]$DotNet, [string]$CMake, [string]$Python,
     [string]$RawPath, [string]$RawDirectory = 'Z:\Photo\2019\2019-02-02')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -23,6 +23,14 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed with exit code $LASTEXITCODE" }
 }
+$vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+$vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$environment = & cmd.exe /d /s /c "`"$vs/VC/Auxiliary/Build/vcvars64.bat`" >nul && set"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize the MSVC x64 build environment.' }
+foreach ($line in $environment) {
+    if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+}
+if (!$Python) { $Python = & "$PSScriptRoot/build-host-python.ps1" -Directory "$repo/build/tools/python-lens" }
 $fixture = ''
 if ($Test) {
     Invoke-Checked $DotNet @('run','--project',"$PSScriptRoot/tests/updates/UpdateChecks.csproj",'-c','Release')
@@ -35,7 +43,7 @@ if ($Test) {
     Copy-Item -LiteralPath $RawPath -Destination $fixture -Force
     Write-Host "Test fixture: $RawPath"
 }
-Invoke-Checked $CMake @('-S',"$PSScriptRoot/native",'-B',$native,'-A','x64','-DBUILD_TESTING=ON',"-DSONY2FUJI_TEST_RAW=$($fixture.Replace('\','/'))")
+Invoke-Checked $CMake @('-S',"$PSScriptRoot/native",'-B',$native,'-A','x64','-DBUILD_TESTING=ON',"-DPython3_EXECUTABLE=$Python","-DSONY2FUJI_TEST_RAW=$($fixture.Replace('\','/'))")
 Invoke-Checked $CMake @('--build',$native,'--config','Release','--parallel')
 $iconPath=Join-Path $native 'RawLab.ico'
 & "$PSScriptRoot/build-icon.ps1" -Source "$repo/RawLabMac/Resources/AppIcon.png" -Output $iconPath
@@ -55,7 +63,10 @@ if (!$openmp) { throw 'Cannot locate the Visual C++ OpenMP runtime.' }
 Copy-Item "$($openmp.FullName)/*.dll" $output -Force
 $licenses = Join-Path $output 'Licenses'
 New-Item -ItemType Directory -Force $licenses | Out-Null
-Copy-Item "$native/licenses/*", "$repo/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt", "$repo/lutools/third_party/rawspeed-camera-calibration.inc", "$repo/RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" $licenses -Force
+$libtiffLicense = Join-Path $native 'licenses/libtiff/LICENSE.md'
+if (!(Test-Path $libtiffLicense)) { throw 'The native build did not export the libtiff license.' }
+Copy-Item "$native/licenses/*" $licenses -Recurse -Force
+Copy-Item "$repo/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt", "$repo/lutools/third_party/rawspeed-camera-calibration.inc", "$repo/RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" $licenses -Force
 Copy-Item "$PSScriptRoot/Licenses/*" $licenses -Force
 Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md", "$PSScriptRoot/performance.md" $output -Force
 Copy-Item "$repo/LICENSE" $output -Force
@@ -67,8 +78,10 @@ if ($Test) {
     $env:PATH = "$output;$env:PATH"
     $ctest = Join-Path (Split-Path $CMake) 'ctest.exe'
     Invoke-Checked $ctest @('--test-dir',$native,'-C','Release','--output-on-failure','--no-tests=error')
-    Invoke-Checked $DotNet @('build',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release')
-    $testOut = "$PSScriptRoot/tests/bin/Release/net8.0-windows"
+    # 远端归档保留源文件时间，验证时强制重编译，避免运行旧的测试程序集。
+    Invoke-Checked $DotNet @('build',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-incremental')
+    $testOut = (& $DotNet msbuild "$PSScriptRoot/tests/RawLabWindows.Tests.csproj" -getProperty:TargetDir -p:Configuration=Release).Trim()
+    if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $testOut)) { throw 'Cannot resolve the WPF test output directory.' }
     Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll", "$($openmp.FullName)/*.dll" $testOut -Force
     Copy-Item "$output/ExifTool" $testOut -Recurse -Force
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)

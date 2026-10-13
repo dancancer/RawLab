@@ -11,6 +11,7 @@ public sealed class EditorIcon : FrameworkElement
     private static readonly Dictionary<string,Geometry> Shapes=new()
     {
         ["Info"]=Geometry.Parse("M12,2 A10,10 0 1 1 11.99,2 M12,11 V17 M12,7 V7.1"),
+        ["Lens"]=Geometry.Parse("M9,3 H5 A2,2 0 0 0 3,5 V9 M15,3 H19 A2,2 0 0 1 21,5 V9 M21,15 V19 A2,2 0 0 1 19,21 H15 M9,21 H5 A2,2 0 0 1 3,19 V15 M12,8 A4,4 0 1 1 11.99,8"),
         // Lucide Film, ISC license; converted from its SVG to WPF path geometry.
         ["Film"]=Geometry.Parse("M5,3 H19 A2,2 0 0 1 21,5 V19 A2,2 0 0 1 19,21 H5 A2,2 0 0 1 3,19 V5 A2,2 0 0 1 5,3 Z M7,3 V21 M3,7.5 H7 M3,12 H21 M3,16.5 H7 M17,3 V21 M17,7.5 H21 M17,16.5 H21"),
         ["Strength"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,7 A5,5 0 1 1 11.99,7"),

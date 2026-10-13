@@ -3,12 +3,18 @@ package com.rawlab.android
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.ceil
 
 data class PhotoViewport(val imageWidth: Float, val imageHeight: Float, val width: Float, val height: Float) {
     val fitScale = min(width / imageWidth, height / imageHeight)
     val minimumScale = min(fitScale, 1f)
     val maximumScale = max(fitScale * 8f, 1f)
     fun isFit(scale: Float) = abs(scale - fitScale) < fitScale * .001f
+    fun previewLongEdge(scale: Float, limit: Int = 1600): Int {
+        val source = max(imageWidth, imageHeight)
+        if (!scale.isFinite() || scale <= 0 || !source.isFinite() || source <= 0) return limit
+        return minOf(limit, source.toInt(), max(64, ceil(source * scale / 64).toInt() * 64))
+    }
 }
 
 data class PhotoZoom(val scale: Float, val x: Float = 0f, val y: Float = 0f) {

@@ -45,7 +45,7 @@ inferred. Numerical comparisons use tolerances, not cross-driver bit identity.
 
 ## Feature-Stage Evidence
 
-The [implementation report](verification-cross-platform-effects-gpu-denoise-2026-10-10.md)
+The [implementation report](archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)
 records the earlier tests of the same runtime implementation, including Android
 real Sony/DJI RAW instrumentation and both effects-control tests, iOS targeted
 effects UI and inspected Windows/Android/iOS screenshots. Those are not reruns

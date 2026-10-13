@@ -11,6 +11,15 @@ import zipfile
 SOURCE_PATHS = ['RawLabWindows', 'lutools', 'RawLabMac/Resources', 'Shared', 'LICENSE',
                 'docs/licensing.md']
 RAW_SUFFIXES = {'.arw', '.nef', '.cr2', '.cr3', '.raf', '.rw2', '.orf', '.3fr', '.dng', '.pef'}
+SYNTHETIC_RAW_FIXTURES = {
+    'lutools/tests/fixtures/' + name for name in
+    ('linear-jxl.dng', 'linear-uncompressed.dng', 'linear-jxl-gain.dng', 'linear-doubled.dng',
+     'linear-jxl-stage1.dng', 'linear-halved.dng', 'linear-jxl-crop-gain.dng',
+     'linear-crop-doubled.dng', 'linear-jxl-required-unknown.dng',
+     'linear-jxl-default-crop-gain.dng', 'linear-default-crop-doubled.dng',
+     'linear-jxl-channel-levels.dng', 'linear-channel-levels.dng', 'linear-normalized.dng',
+     'linear-jxl-lens.dng', 'linear-lens.dng', 'linear-jxl-stage3-lens.dng')
+}
 
 
 def package_source(root, archive):
@@ -19,7 +28,8 @@ def package_source(root, archive):
         '--exclude-standard', '--', *SOURCE_PATHS])
     files = sorted({name.decode() for name in listed.split(b'\0') if name and
                     (root / name.decode()).is_file() and
-                    Path(name.decode()).suffix.lower() not in RAW_SUFFIXES})
+                    (Path(name.decode()).suffix.lower() not in RAW_SUFFIXES or
+                     name.decode() in SYNTHETIC_RAW_FIXTURES)})
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for name in files:
             package.write(root / name, name)
@@ -34,6 +44,7 @@ def main():
     parser.add_argument('--known-hosts', type=Path, help='Optional dedicated SSH host-key file')
     parser.add_argument('--test', action='store_true', help='Run the full native/WPF/GPU suite')
     parser.add_argument('--raw', type=Path, help='External RAW fixture required by --test')
+    parser.add_argument('--workspace', default='C:/RawLabBuild/workspace', help='Isolated remote build checkout')
     args = parser.parse_args()
     if args.test and (args.raw is None or not args.raw.is_file()):
         parser.error('--test requires --raw pointing to an existing external fixture')
@@ -58,7 +69,9 @@ def main():
             raise SystemExit(f'Remote operation failed ({result.returncode}); logs: {output}')
 
     incoming = f'C:/RawLabBuild/incoming/{stamp}'
-    workspace = 'C:/RawLabBuild/workspace'
+    workspace = args.workspace
+    if not workspace.startswith('C:/RawLabBuild/') or any(c in workspace for c in "'\r\n"):
+        parser.error('--workspace must be a directory under C:/RawLabBuild')
     powershell(f"New-Item -ItemType Directory -Force '{incoming}' | Out-Null")
     subprocess.run(['scp', *options, str(output / 'source.zip'),
                     f'{args.host}:{incoming}/source.zip'], check=True)

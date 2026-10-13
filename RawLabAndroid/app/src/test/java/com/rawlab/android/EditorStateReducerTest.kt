@@ -9,6 +9,11 @@ import org.junit.Test
 import java.io.File
 
 class EditorStateReducerTest {
+    @Test fun completingRenderKeepsPendingViewportResize() {
+        val finished = EditorStateReducer.renderFinished(EditorState(rendering = true, previewResizePending = true))
+        assertTrue(finished.previewResizePending)
+        assertFalse(finished.canExport)
+    }
     @Test
     fun finishingEarlierRenderDoesNotEndLookMutation() {
         val current = EditorState(operation = Operation.IMPORT_LOOK, rendering = true)

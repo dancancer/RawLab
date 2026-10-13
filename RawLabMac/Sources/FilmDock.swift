@@ -1,23 +1,25 @@
 import SwiftUI
 
 struct FilmDock: View {
+    @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
     var body: some View {
+        let _ = localizationLocale
         GeometryReader { geometry in
             let itemHeight = max(66, geometry.size.height - 16)
             let imageSize = max(32, min(96, itemHeight - 34))
-            HorizontalPicker(selectedID: model.selectedFilmID, name: "胶片") {
+            HorizontalPicker(selectedID: model.selectedFilmID, name: L10n.text("胶片")) {
                 HStack(spacing: 8) {
-                    filmButton(name: "中性", id: "", imageSize: imageSize, height: itemHeight)
+                    filmButton(name: L10n.text("中性"), id: "", imageSize: imageSize, height: itemHeight)
                     ForEach(model.films) { film in
                         filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
                                    isCustom: film.managedID != nil)
                             .contextMenu {
                                 if film.managedID != nil {
-                                    Text("用户外观 · \(film.url.pathExtension.uppercased())")
-                                    Button("重命名…", systemImage: "pencil") { model.renameLookPanel(film) }
+                                    Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
+                                    Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
                                         .disabled(model.lookLibraryBusy || model.exporting)
-                                    Button("移除外观…", systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
+                                    Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
                                         .disabled(model.lookLibraryBusy || model.exporting)
                                 }
                             }
@@ -28,10 +30,10 @@ struct FilmDock: View {
                                 if model.lookLibraryBusy { ProgressView().controlSize(.small) }
                                 else { Image(systemName: "plus.circle").font(.system(size: 26)) }
                             }.frame(height: imageSize)
-                            Text("导入外观").font(.system(size: 11))
+                            Text(L10n.text("导入外观")).font(.system(size: 11))
                         }.frame(width: max(88, imageSize + 12), height: itemHeight)
                             .contentShape(Rectangle())
-                    }.buttonStyle(.plain).help("导入外观…").disabled(model.lookLibraryBusy || model.exporting)
+                    }.buttonStyle(.plain).help(L10n.text("导入外观…")).disabled(model.lookLibraryBusy || model.exporting)
                 }.scrollTargetLayout().padding(.horizontal, 16)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).tint(.yellow)
@@ -59,10 +61,12 @@ struct FilmDock: View {
 }
 
 private struct FilmPackageImage: View {
+    @Environment(\.locale) private var localizationLocale
     let name: String
     let neutral: Bool
     let isCustom: Bool
     var body: some View {
+        let _ = localizationLocale
         if neutral {
             Image(systemName: "circle.lefthalf.filled").font(.system(size: 28)).foregroundStyle(.secondary)
         } else if let image = FilmArtwork.image(for: name, isCustom: isCustom) {

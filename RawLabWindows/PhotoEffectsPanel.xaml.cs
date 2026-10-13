@@ -42,7 +42,7 @@ public partial class PhotoEffectsPanel : UserControl
         syncing = true;
         value = settings;
         tool = selected;
-        Title.Text = selected == PhotoEffectTool.Vignette ? "暗角" : "颗粒";
+        Title.Text = selected == PhotoEffectTool.Vignette ? Loc.Text("暗角") : Loc.Text("颗粒");
         VignetteParameters.Visibility = selected == PhotoEffectTool.Vignette ? Visibility.Visible : Visibility.Collapsed;
         GrainParameters.Visibility = selected == PhotoEffectTool.Grain ? Visibility.Visible : Visibility.Collapsed;
         Set(VignetteAmountSlider, VignetteAmountText, PhotoEffectParameter.VignetteAmount);

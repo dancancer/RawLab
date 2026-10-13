@@ -38,6 +38,9 @@ film looks do not promise an exact match to in-camera JPEGs.
 - Photo information overlays, zoom/pan and original-size or long-edge exports.
   Desktop file browsers can reveal photos and apply confirmed current settings.
 - JPEG and 16-bit PNG export on Windows, macOS and Android; JPEG export on iOS.
+  Rendered DNG file export is available in single and batch workflows on all four
+  clients. It bakes the current adjustments, not reversible sensor RAW controls.
+  See [verification and platform limits](docs/verification-rendered-dng-export.md).
   Readable capture metadata is retained, while output size and orientation are
   updated.
 - Metal, Direct3D 11 and OpenGL ES processing where supported, with automatic CPU
@@ -56,8 +59,9 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 ## Downloads and Documentation
 
+- [Documentation index](docs/README.md)
 - [Download the latest release](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.6.0 release notes (build 10)](docs/releases/v0.6.0.md)
+- [v0.7.0 release notes (build 11)](docs/releases/v0.7.0.md)
 - [Installation and distribution notes](docs/installation.md)
 - [iPhone installation guide](docs/ios-installation.md)
 - [Changelog](CHANGELOG.md)

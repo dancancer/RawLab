@@ -20,7 +20,8 @@ internal static class PreviewChecks
         if((long)embedded.Width*embedded.Height*8+2000L*2000*8<=256L*1024*1024)
         {
             check(ReferenceEquals(fit,Frame()) && ReferenceEquals(full,Frame(0)),"Fit/native toggles reuse exact frames without processing or readback");
-            check(ReferenceEquals(fit,Frame(1000,true)),"An exact cached preview may satisfy a proxy request");
+            check(ReferenceEquals(fit,Frame(2000,true)),"An exact cached preview may satisfy a same-size proxy request");
+            check(!ReferenceEquals(fit,Frame(1000,true)),"A viewport-size change cannot reuse a different-size frame");
         }
         settings.Set(Parameter.Exposure,.35);
         var proxy=Frame(1000,true);var changed=Frame();

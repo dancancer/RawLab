@@ -5,10 +5,15 @@
 <key>CFBundleIdentifier</key><string>com.rawtools.rawlab.mac</string>
 <key>CFBundleName</key><string>RawLab Mac</string>
 <key>CFBundleDisplayName</key><string>RawLab Mac</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array>
+<string>en</string><string>zh-Hans</string><string>de</string>
+<string>fr</string><string>ja</string><string>es</string>
+</array>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.6.0</string>
-<key>CFBundleVersion</key><string>10</string>
+<key>CFBundleShortVersionString</key><string>0.7.0</string>
+<key>CFBundleVersion</key><string>11</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

@@ -56,7 +56,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onBatchExport: () -> Unit = {},
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
-    onAbout: () -> Unit = {}, updateVersion: String? = null) {
+    onAbout: () -> Unit = {}, updateVersion: String? = null,
+    onPreviewSizeChange: (Int) -> Unit = {}) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
@@ -110,13 +111,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val wide = maxWidth >= 600.dp && maxWidth > maxHeight
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().height(4.dp)) {
-                    if (state.rendering || state.operation == Operation.EXPORT) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (state.rendering || state.previewResizePending || state.operation == Operation.EXPORT) LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 if (wide && state.photo != null) {
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
                             EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                                Modifier.weight(1f), onAlbum, onFile, onLicenses)
+                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange)
                             RenderError(state, onRetry)
                         }
                         VerticalDivider()
@@ -126,7 +127,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                        Modifier.weight(1f), onAlbum, onFile, onLicenses)
+                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange)
                     RenderError(state, onRetry)
                     if (state.photo != null) {
                         HorizontalDivider()
@@ -143,15 +144,15 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
 @Composable
 private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, photoInfo: PhotoInfo?, infoMode: Int,
     onInfoClick: () -> Unit, modifier: Modifier,
-    onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit) {
+    onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit) {
     Box(modifier.fillMaxWidth().background(Color(0xFF18191A)), contentAlignment = Alignment.Center) {
-        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick) }
+        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange) }
             ?: if (!state.rendering) EmptyEditor(onAlbum, onFile, onLicenses) else Unit
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
             state.operation == Operation.IMPORT -> stringResource(R.string.importing)
             state.operation == Operation.IMPORT_LOOK -> stringResource(R.string.look_importing)
-            state.rendering -> stringResource(R.string.rendering)
+            state.rendering || state.previewResizePending -> stringResource(R.string.rendering)
             else -> null
         }
         status?.let { Text(it, Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f)).padding(6.dp),
@@ -193,11 +194,11 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     onAutoExposure: () -> Unit) {
     val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights, R.string.shadows,
         R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.temperature, R.string.tint, R.string.sharpening,
-        R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl, R.string.master_recipes)
+        R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl, R.string.master_recipes, R.string.info_lens)
     val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.WbSunny,
         Icons.Outlined.DarkMode, Icons.Outlined.Contrast, Icons.Outlined.ShowChart, Icons.Outlined.WaterDrop,
         Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Deblur, Icons.Outlined.Grain,
-        Icons.Outlined.Circle, Icons.Outlined.Grain, Icons.Outlined.Tune, Icons.Outlined.PhotoLibrary)
+        Icons.Outlined.Circle, Icons.Outlined.Grain, Icons.Outlined.Tune, Icons.Outlined.PhotoLibrary, Icons.Outlined.CenterFocusStrong)
     val edits = state.edits
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
@@ -215,7 +216,10 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 TextButton(onClick = { onEdit(edits.copy(customWb = false, tint = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f), false) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
             } else {
-                Text(recipes.firstOrNull { it.id == edits.recipeID }?.name ?: state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film, Modifier.weight(1f),
+                val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.name
+                    ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
+                    else state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film
+                Text(displayLook, Modifier.weight(1f),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
             }
             ToolIcon(Icons.Outlined.RestartAlt, R.string.reset, state.controlsEnabled, onReset)
@@ -255,7 +259,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                                 if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize())
                                 else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
                             }
-                            Text(look.name, Modifier.heightIn(min = 42.dp).padding(top = 4.dp), maxLines = 3,
+                            Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else look.name, Modifier.heightIn(min = 42.dp).padding(top = 4.dp), maxLines = 3,
                                 overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
                         }
                         if (look.managed) {
@@ -334,6 +338,9 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 onEdit(edits.copy(effects = value), dragging)
             }
             14 -> HslControls(edits.hsl, state.controlsEnabled) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
+            16 -> LensControls(edits.lens, state.preview?.lens, state.controlsEnabled) { value ->
+                onEdit(edits.copy(lens = value), false)
+            }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
                 onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
             }
@@ -342,7 +349,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
         }
         }
         LazyRow(Modifier.fillMaxWidth().height(64.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
-            items(listOf(0, 15) + (1 until 15).toList(), key = { it }) { index ->
+            items(listOf(0, 15) + (1 until 15).toList() + listOf(16), key = { it }) { index ->
                 val title = titles[index]
                 val color = if (tool == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 Column(Modifier.width(76.dp).fillMaxHeight().selectable(tool == index, enabled = state.controlsEnabled, role = Role.Tab,
@@ -385,11 +392,11 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     Column(Modifier.padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(label), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            TextButton(onClick = { input = formatted; editing = true }, enabled = enabled) { Text("$formatted $unit") }
+            TextButton(onClick = { input = formatted; editing = true }, enabled = enabled) { Text("${formatted} ${unit}") }
             ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_value, enabled, onReset)
         }
         val sliderRange = if (reciprocal) (-1f / range.start)..(-1f / range.endInclusive) else range
-        Slider(modifier = Modifier.testTag("adjustment-slider").semantics { stateDescription = "$formatted $unit" },
+        Slider(modifier = Modifier.testTag("adjustment-slider").semantics { stateDescription = "${formatted} ${unit}" },
             value = if (reciprocal) -1f / value else value, onValueChange = {
             val raw = if (reciprocal) (-1f / it).coerceIn(range) else it
             val step = when (label) { R.string.exposure -> .05f; R.string.temperature -> 10f; else -> 1f }
@@ -401,7 +408,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
         text = {
             OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = if (range.start < 0) KeyboardType.Text else KeyboardType.Decimal), isError = parsed == null,
-                label = { Text("${range.start} … ${range.endInclusive} $unit") },
+                label = { Text("${range.start} … ${range.endInclusive} ${unit}") },
                 supportingText = { if (parsed == null) Text(stringResource(R.string.invalid_value)) })
         }, confirmButton = { TextButton(onClick = { parsed?.let { onValue(it, false) }; editing = false }, enabled = parsed != null) { Text(stringResource(R.string.confirm)) } },
         dismissButton = { TextButton(onClick = { editing = false }) { Text(stringResource(R.string.cancel)) } })
@@ -422,7 +429,7 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                 Text(recipe?.name ?: stringResource(R.string.no_recipe), Modifier.heightIn(min = 22.dp), maxLines = 2,
                     style = MaterialTheme.typography.labelMedium,
                     color = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                Text(recipe?.subtitle ?: "中性直出", Modifier.heightIn(min = 36.dp), maxLines = 2,
+                Text(recipe?.let { AppStrings.recipeSubtitle(it) } ?: AppStrings.text(R.string.neutral_direct_output), Modifier.heightIn(min = 36.dp), maxLines = 2,
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

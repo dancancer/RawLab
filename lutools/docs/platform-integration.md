@@ -67,7 +67,7 @@ make -j$(nproc)
 
 #### iOS
 
-详见 [iOS 集成指南](ios/README.md)
+详见 [iOS 集成指南](../platform/ios/README.md)
 
 主要步骤:
 1. 使用 CMake 构建 iOS Framework
@@ -76,7 +76,7 @@ make -j$(nproc)
 
 #### Android
 
-详见 [Android 集成指南](android/README.md)
+详见 [Android 集成指南](../platform/android/README.md)
 
 主要步骤:
 1. 使用 NDK 构建 .so 库

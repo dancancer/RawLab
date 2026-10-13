@@ -17,13 +17,13 @@ enum BatchTargetStatus: String, Codable, Equatable {
 
     var title: String {
         switch self {
-        case .pending: return "等待导出"
-        case .processing: return "正在显影"
-        case .publishing: return "正在保存"
-        case .needsConfirmation: return "保存结果待确认"
-        case .succeeded: return "已保存"
-        case .failed: return "导出失败"
-        case .cancelled: return "未处理"
+        case .pending: return L10n.text("等待导出")
+        case .processing: return L10n.text("正在显影")
+        case .publishing: return L10n.text("正在保存")
+        case .needsConfirmation: return L10n.text("保存结果待确认")
+        case .succeeded: return L10n.text("已保存")
+        case .failed: return L10n.text("导出失败")
+        case .cancelled: return L10n.text("未处理")
         }
     }
 }
@@ -38,8 +38,23 @@ enum BatchJobStatus: String, Codable, Equatable {
     case failed
 }
 
-enum BatchOutputFormat: String, Codable, Equatable {
+enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     case jpeg
+    case renderedDNG = "dng"
+
+    var title: String {
+        switch self {
+        case .jpeg: return "JPEG"
+        case .renderedDNG: return L10n.text("DNG · 渲染型")
+        }
+    }
+
+    var suffix: String {
+        switch self {
+        case .jpeg: return "jpg"
+        case .renderedDNG: return "dng"
+        }
+    }
 }
 
 enum BatchExportError: LocalizedError {
@@ -86,6 +101,7 @@ struct BatchTarget: Codable, Equatable, Identifiable {
     var errorMessage: String?
     var outputName: String
     var outputAssetIdentifier: String?
+    var outputFileURL: URL?
 
     var id: String { identity.key }
 
@@ -95,7 +111,8 @@ struct BatchTarget: Codable, Equatable, Identifiable {
          sourceKind: BatchSourceKind = .raw,
          status: BatchTargetStatus = .pending,
          errorMessage: String? = nil,
-         outputName: String? = nil) {
+         outputName: String? = nil,
+         outputFileURL: URL? = nil) {
         self.identity = identity
         self.sourceURL = sourceURL
         self.displayName = displayName
@@ -103,6 +120,26 @@ struct BatchTarget: Codable, Equatable, Identifiable {
         self.status = status
         self.errorMessage = errorMessage
         self.outputName = outputName ?? OutputNameAllocator.baseName(for: displayName)
+        self.outputFileURL = outputFileURL
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case identity, sourceURL, displayName, sourceKind, status, errorMessage
+        case outputName, outputAssetIdentifier, outputFileURL
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        identity = try values.decode(PhotoIdentity.self, forKey: .identity)
+        sourceURL = try values.decode(URL.self, forKey: .sourceURL)
+        displayName = try values.decode(String.self, forKey: .displayName)
+        sourceKind = try values.decodeIfPresent(BatchSourceKind.self, forKey: .sourceKind) ?? .raw
+        status = try values.decodeIfPresent(BatchTargetStatus.self, forKey: .status) ?? .pending
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+        outputName = try values.decodeIfPresent(String.self, forKey: .outputName)
+            ?? OutputNameAllocator.baseName(for: displayName)
+        outputAssetIdentifier = try values.decodeIfPresent(String.self, forKey: .outputAssetIdentifier)
+        outputFileURL = try values.decodeIfPresent(URL.self, forKey: .outputFileURL)
     }
 }
 
@@ -126,7 +163,7 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
          createdAt: Date = Date()) {
         self.id = id
         self.source = source
-        self.targets = OutputNameAllocator.assignUniqueNames(targets)
+        self.targets = OutputNameAllocator.assignUniqueNames(targets, suffix: outputFormat.suffix)
         self.status = status
         self.outputFormat = outputFormat
         self.longEdge = ExportSize.normalized(longEdge)
@@ -134,28 +171,86 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
         self.updatedAt = createdAt
         self.globalError = nil
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, targets, status, outputFormat, longEdge, createdAt, updatedAt, globalError
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        source = try values.decode(BatchSourceSnapshot.self, forKey: .source)
+        targets = try values.decode([BatchTarget].self, forKey: .targets)
+        status = try values.decode(BatchJobStatus.self, forKey: .status)
+        outputFormat = try values.decodeIfPresent(BatchOutputFormat.self, forKey: .outputFormat) ?? .jpeg
+        longEdge = try values.decodeIfPresent(Int.self, forKey: .longEdge)
+        createdAt = try values.decode(Date.self, forKey: .createdAt)
+        updatedAt = try values.decode(Date.self, forKey: .updatedAt)
+        globalError = try values.decodeIfPresent(String.self, forKey: .globalError)
+    }
 }
 
 extension BatchExportJob {
-    func recovered(assetExists: (String) -> Bool? = { _ in nil }) -> BatchExportJob {
+    func recovered(assetExists: (String) -> Bool? = { _ in nil },
+                   fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> BatchExportJob {
         var copy = self
+        func existingDNGOutput(for target: BatchTarget) -> URL? {
+            let currentDestination = BatchFileOutputStore.destination(jobID: id, outputName: target.outputName)
+            if fileExists(currentDestination) { return currentDestination }
+            if let output = target.outputFileURL, fileExists(output) { return output }
+            if let asset = target.outputAssetIdentifier,
+               asset.hasPrefix("file:") {
+                let output = URL(fileURLWithPath: String(asset.dropFirst(5)))
+                if fileExists(output) { return output }
+            }
+            return nil
+        }
+
         for index in copy.targets.indices {
             switch copy.targets[index].status {
             case .processing:
                 copy.targets[index].status = .pending
+            case .succeeded:
+                guard outputFormat == .renderedDNG else { break }
+                if let output = existingDNGOutput(for: copy.targets[index]) {
+                    copy.targets[index].outputFileURL = output
+                    copy.targets[index].outputAssetIdentifier = nil
+                    copy.targets[index].errorMessage = nil
+                } else {
+                    copy.targets[index].outputFileURL = nil
+                    copy.targets[index].outputAssetIdentifier = nil
+                    copy.targets[index].status = .pending
+                    copy.targets[index].errorMessage = nil
+                }
             case .publishing, .needsConfirmation:
-                if let asset = copy.targets[index].outputAssetIdentifier, let exists = assetExists(asset) {
+                if outputFormat == .renderedDNG {
+                    if let output = existingDNGOutput(for: copy.targets[index]) {
+                        copy.targets[index].outputFileURL = output
+                        copy.targets[index].outputAssetIdentifier = nil
+                        copy.targets[index].status = .succeeded
+                    } else {
+                        copy.targets[index].outputFileURL = nil
+                        copy.targets[index].outputAssetIdentifier = nil
+                        copy.targets[index].status = .pending
+                    }
+                    if copy.globalError == copy.targets[index].errorMessage { copy.globalError = nil }
+                    copy.targets[index].errorMessage = nil
+                } else if let asset = copy.targets[index].outputAssetIdentifier, let exists = assetExists(asset) {
                     copy.targets[index].status = exists ? .succeeded : .pending
                     if !exists { copy.targets[index].outputAssetIdentifier = nil }
                     copy.targets[index].errorMessage = nil
                 } else {
                     copy.targets[index].status = .needsConfirmation
-                    copy.targets[index].errorMessage = "保存时发生中断，请先核对照片图库，避免重复生成。"
+                    copy.targets[index].errorMessage = L10n.text("保存时发生中断，请先核对照片图库，避免重复生成。")
                 }
             default: break
             }
         }
         if status == .running || copy.targets.contains(where: { $0.status == .needsConfirmation }) { copy.status = .interrupted }
+        if outputFormat == .renderedDNG && copy.status == .completed &&
+            copy.targets.contains(where: { $0.status != .succeeded }) {
+            copy.status = .interrupted
+        }
         if !copy.targets.isEmpty && copy.targets.allSatisfy({ $0.status == .succeeded }) { copy.status = .completed }
         return copy
     }
@@ -197,7 +292,12 @@ final class BatchJournalStore {
         return try urls.compactMap { url -> BatchExportJob? in
             let original = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
             let recovered = relocateOwnedFiles(original).recovered()
-            if recovered.status == .completed { try discard(id: recovered.id); return nil }
+            // JPEG completion is fully owned by Photos; DNG files remain in Documents/Exports
+            // until the user explicitly finishes or discards the recovered job.
+            if recovered.status == .completed && recovered.outputFormat == .jpeg {
+                try discard(id: recovered.id)
+                return nil
+            }
             if recovered != original { try save(recovered) }
             return recovered
         }.sorted { $0.updatedAt > $1.updatedAt }
@@ -270,7 +370,7 @@ enum BatchInputStore {
         job.source.sourceURL = try copy(job.source.sourceURL, identity: job.source.identity, jobID: job.id, root: root)
         if job.source.settings.hasLook {
             guard let look, FileManager.default.isReadableFile(atPath: look.path) else {
-                throw BatchExportError.global("所选外观不可用，请重新选择外观。")
+                throw BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))
             }
             let folder = try directory(for: job.id, root: root).deletingLastPathComponent()
             let destination = folder.appendingPathComponent("look.\(look.pathExtension)")
@@ -282,21 +382,76 @@ enum BatchInputStore {
     }
 }
 
-enum OutputNameAllocator {
-    static func baseName(for displayName: String) -> String {
-        let base = URL(fileURLWithPath: displayName).deletingPathExtension().lastPathComponent
-        return (base.isEmpty ? "RawLab" : base) + ".jpg"
+enum BatchFileOutputStore {
+    static func root() -> URL {
+        (FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory)
+            .appendingPathComponent("Exports", isDirectory: true)
     }
 
-    static func assignUniqueNames(_ targets: [BatchTarget]) -> [BatchTarget] {
+    static func directory(for jobID: UUID) throws -> URL {
+        let directory = root().appendingPathComponent(jobID.uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            throw BatchExportError.global(error.localizedDescription)
+        }
+        return directory
+    }
+
+    static func destination(jobID: UUID, outputName: String) -> URL {
+        root().appendingPathComponent(jobID.uuidString, isDirectory: true)
+            .appendingPathComponent(outputName)
+    }
+
+    static func temporaryURL(for jobID: UUID, outputName: String) -> URL {
+        root().appendingPathComponent(jobID.uuidString, isDirectory: true)
+            .appendingPathComponent(".rawlab-\(UUID().uuidString)-\(outputName)")
+    }
+}
+
+enum BatchFileWriter {
+    static func write(file: URL, outputName: String, jobID: UUID,
+                      checkpoint: @escaping (String) throws -> Void) throws {
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            throw BatchExportError.target(L10n.text("渲染型 DNG 未生成。"))
+        }
+        let directory = try BatchFileOutputStore.directory(for: jobID)
+        let destination = directory.appendingPathComponent(outputName)
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: file,
+                                                          backupItemName: nil, options: .usingNewMetadataOnly)
+            } else {
+                try FileManager.default.moveItem(at: file, to: destination)
+            }
+        } catch {
+            throw BatchExportError.global(error.localizedDescription)
+        }
+        do {
+            try checkpoint("file:\(destination.path)")
+        } catch {
+            throw BatchExportError.uncertain(L10n.text("DNG 已生成，但任务记录未更新，请先核对保存结果。"))
+        }
+    }
+}
+
+enum OutputNameAllocator {
+    static func baseName(for displayName: String, suffix: String = "jpg") -> String {
+        let base = URL(fileURLWithPath: displayName).deletingPathExtension().lastPathComponent
+        return (base.isEmpty ? "RawLab" : base) + "." + suffix
+    }
+
+    static func assignUniqueNames(_ targets: [BatchTarget], suffix: String = "jpg") -> [BatchTarget] {
         var used = Set<String>()
         return targets.map { target in
-            var candidate = target.outputName
-            let base = URL(fileURLWithPath: candidate).deletingPathExtension().lastPathComponent
-            var suffix = 2
+            let original = URL(fileURLWithPath: target.outputName).deletingPathExtension().lastPathComponent
+            let base = original.isEmpty ? URL(fileURLWithPath: target.displayName).deletingPathExtension().lastPathComponent : original
+            var candidate = (base.isEmpty ? "RawLab" : base) + "." + suffix
+            var number = 2
             while used.contains(candidate.lowercased()) {
-                candidate = "\(base)-\(suffix).jpg"
-                suffix += 1
+                candidate = "\(base)-\(number).\(suffix)"
+                number += 1
             }
             used.insert(candidate.lowercased())
             var copy = target
@@ -307,14 +462,14 @@ enum OutputNameAllocator {
 }
 
 struct BatchExportRunner {
-    typealias Renderer = (_ target: BatchTarget, _ settings: RawSettings) throws -> Data
-    typealias Writer = (_ data: Data, _ outputName: String, _ target: BatchTarget, _ checkpoint: @escaping (String) throws -> Void) throws -> Void
     typealias Cancellation = () -> Bool
 
-    static func run(job: BatchExportJob,
+    static func run<Payload>(job: BatchExportJob,
                     journalStore: BatchJournalStore?,
-                    render: @escaping Renderer,
-                    write: @escaping Writer,
+                    render: @escaping (_ target: BatchTarget, _ settings: RawSettings) throws -> Payload,
+                    write: @escaping (_ payload: Payload, _ outputName: String, _ target: BatchTarget,
+                                      _ checkpoint: @escaping (String) throws -> Void) throws -> Void,
+                    cleanup: @escaping (_ payload: Payload) -> Void = { _ in },
                     shouldCancel: @escaping Cancellation = { false },
                     didUpdate: @escaping (BatchExportJob) -> Void = { _ in },
                     onlyIDs: Set<String>? = nil) throws -> BatchExportJob {
@@ -338,15 +493,24 @@ struct BatchExportRunner {
 
             job.targets[index].status = .processing
             job.targets[index].errorMessage = nil
+            job.targets[index].outputAssetIdentifier = nil
+            job.targets[index].outputFileURL = nil
             try journalStore?.save(job)
             didUpdate(job)
             do {
-                let data = try render(job.targets[index], job.source.settings)
+                let payload = try render(job.targets[index], job.source.settings)
+                defer { cleanup(payload) }
                 job.targets[index].status = .publishing
                 try journalStore?.save(job)
                 didUpdate(job)
-                try write(data, job.targets[index].outputName, job.targets[index]) { identifier in
-                    job.targets[index].outputAssetIdentifier = identifier
+                try write(payload, job.targets[index].outputName, job.targets[index]) { identifier in
+                    if identifier.hasPrefix("file:") {
+                        job.targets[index].outputFileURL = URL(fileURLWithPath: String(identifier.dropFirst(5)))
+                        job.targets[index].outputAssetIdentifier = nil
+                    } else {
+                        job.targets[index].outputAssetIdentifier = identifier
+                        job.targets[index].outputFileURL = nil
+                    }
                     try journalStore?.save(job)
                     didUpdate(job)
                 }
@@ -393,10 +557,12 @@ struct BatchExportRunner {
         return job
     }
 
-    static func retryFailed(job: BatchExportJob,
+    static func retryFailed<Payload>(job: BatchExportJob,
                             journalStore: BatchJournalStore?,
-                            render: @escaping Renderer,
-                            write: @escaping Writer,
+                            render: @escaping (_ target: BatchTarget, _ settings: RawSettings) throws -> Payload,
+                            write: @escaping (_ payload: Payload, _ outputName: String, _ target: BatchTarget,
+                                              _ checkpoint: @escaping (String) throws -> Void) throws -> Void,
+                            cleanup: @escaping (_ payload: Payload) -> Void = { _ in },
                             shouldCancel: @escaping Cancellation = { false },
                             didUpdate: @escaping (BatchExportJob) -> Void = { _ in }) throws -> BatchExportJob {
         var retry = job
@@ -407,6 +573,7 @@ struct BatchExportRunner {
         }
         retry.status = .draft
         return try run(job: retry, journalStore: journalStore, render: render, write: write,
+                       cleanup: cleanup,
                        shouldCancel: shouldCancel, didUpdate: didUpdate, onlyIDs: failedIDs)
     }
 

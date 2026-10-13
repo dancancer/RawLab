@@ -29,6 +29,21 @@ class SourcePackageTest(unittest.TestCase):
             for name in ['lutools/cmake/patch-libraw.cmake',
                          'lutools/third_party/rawspeed-camera-calibration.inc',
                          'LICENSE', 'docs/licensing.md',
+                         'lutools/tests/fixtures/linear-jxl.dng',
+                         'lutools/tests/fixtures/linear-uncompressed.dng',
+                         'lutools/tests/fixtures/linear-jxl-gain.dng',
+                         'lutools/tests/fixtures/linear-doubled.dng',
+                         'lutools/tests/fixtures/linear-jxl-stage1.dng',
+                         'lutools/tests/fixtures/linear-halved.dng',
+                         'lutools/tests/fixtures/linear-jxl-crop-gain.dng',
+                         'lutools/tests/fixtures/linear-crop-doubled.dng',
+                         'lutools/tests/fixtures/linear-jxl-required-unknown.dng',
+                         'lutools/tests/fixtures/linear-jxl-default-crop-gain.dng',
+                         'lutools/tests/fixtures/linear-default-crop-doubled.dng',
+                         'lutools/tests/fixtures/linear-jxl-channel-levels.dng',
+                         'lutools/tests/fixtures/linear-channel-levels.dng',
+                         'lutools/tests/fixtures/linear-normalized.dng',
+                         'lutools/tests/fixtures/private.dng',
                          'lutools/examples/private.ARW', 'build/cache.bin']:
                 file = root / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -42,6 +57,16 @@ class SourcePackageTest(unittest.TestCase):
             self.assertNotIn('lutools/deleted.cpp', files)
             self.assertNotIn('build/cache.bin', files)
             self.assertNotIn('lutools/examples/private.ARW', files)
+            self.assertNotIn('lutools/tests/fixtures/private.dng', files)
+            for name in ['linear-jxl.dng', 'linear-uncompressed.dng',
+                         'linear-jxl-gain.dng', 'linear-doubled.dng',
+                         'linear-jxl-stage1.dng', 'linear-halved.dng',
+                         'linear-jxl-crop-gain.dng', 'linear-crop-doubled.dng',
+                         'linear-jxl-required-unknown.dng',
+                         'linear-jxl-default-crop-gain.dng', 'linear-default-crop-doubled.dng',
+                         'linear-jxl-channel-levels.dng', 'linear-channel-levels.dng',
+                         'linear-normalized.dng']:
+                self.assertIn('lutools/tests/fixtures/' + name, files)
             with zipfile.ZipFile(archive) as package:
                 self.assertEqual(package.read('RawLabWindows/build.ps1'), b'current dirty contents')
 

@@ -1,50 +1,17 @@
 # 大师配方验证与图片资源
 
-日期：2026-10-11。范围：macOS，14 个大师配方。
+Archived record dated 2026-10-11.
 
-本文保留优化前的原表测试记录。后续参考辅助重调及新 CUBE 的测量、验收和限制见 [大师配方参考辅助优化](master-recipes-optimization-20261011.md)。
+[Read the historical record](../archive/verification/master-recipes-20261011.md). The original scope, results, unchecked tasks and limitations are retained there. Current guides and iteration tracking are listed in the [documentation index](../README.md).
 
 ## 版本与改动
 
-- 修复基线保持 `b175b2837c3fe8661bd5b34eed49cfe07b647b8a`。
-- 从 `d2b150fffd4bcaffcee7b4714999379c0e59e12d` 补入其余 13 个配方定义和 CUBE，未引入该版本的其他设置或渲染逻辑。
-- 保留预设覆盖曝光、阴影、高光、对比度、饱和度、色调的行为；强度整体缩放这些当前参数和 LUT，色温及其他独立调整保留。
-- 每个配方配有独立的 256x256 PNG 风格图片，替换原来的渐变圆点；入口使用原生 `photo.stack`。
-- 大师配方栏与胶片栏采用一致的竖向排列：图片、11pt 名称、10pt 弱化说明；无卡片背景或外框，保留黄色选中提示与滚动定位。
-- 胶片和大师配方列表共用左右滚动控件：仅溢出时显示两侧箭头，边界方向禁用，点击滚动 85% 可见宽度；保留原生滚动、选中项定位及胶片管理入口。
-- CineStill 文案改为“红灯冷青”。逐像素 LUT 不产生空间光晕，因此不再宣称 Halation。
-- 本轮实现时未提交、推送或修改原工作区；后续用户已授权通过独立分支向 `development` 交付，具体状态以 PR 为准。
+[Read this section in the archive](../archive/verification/master-recipes-20261011.md#版本与改动).
 
 ## 已通过验证
 
-| 检查 | 结果 |
-| --- | --- |
-| 14 个 CUBE 结构 | 均为 65x65x65、274625 个 RGB 样本；数值 finite、域为 0..1；无重复文件 |
-| 原生 LUTParser | 14/14 正确识别 sRGB 输入及 Display 输出 |
-| `bash RawLabMac/tests/master-recipe.sh` | 14 个条目的查找、参数覆盖、四档强度、持久化及图片解码通过 |
-| `bash RawLabMac/tests/edit-model.sh` | 14 个条目的实际 EditorModel 选择、胶片互斥、保存及手动调整恢复通过 |
-| `bash RawLabMac/tests/horizontal-picker.sh` | 13 项溢出判断、边界、分页、回弹、内容缩减及窗口宽度变化检查通过 |
-| `bash RawLabMac/tests/master-recipe-render.sh <DNG> <ARW>` | 14 个配方在两种真实 RAW 上全部通过 |
-| `ctest --test-dir lutools/build-macos --output-on-failure` | 当前配置的 14/14 测试通过 |
-| `bash RawLabMac/build.sh` | 构建、打包、签名及 CUBE/PNG 逐文件 bundle 比对通过 |
-| `git diff --check` | 通过 |
-
-真实 RAW 使用仓库的 `DJI_20250602164503_0444_D.DNG` 和本地 `DSC06251.ARW`。渲染矩阵覆盖 0%、50%、100%、200%，包括：显式手动参数参照、0% 与中性连续、CPU/强制 Metal 在 2 DN 容差内一致、首次预览使用目标拍摄白平衡、自定义色温保留、最大色调边界、单张与冻结批量 JPEG/16-bit PNG 解码像素一致。每个 RAW 上的 14 个结果均不重复，原文件身份信息未变化。
-
-原生 `MasterRecipeDock` 在隔离预览程序内检查了 620x66、950x130、1280x170 三种尺寸，未见图片和长名称重叠；选中末尾条目自动滚动、按钮选中状态和“无配方”切换均通过。预览程序使用生产视图和隔离模型，不写用户的照片或调整记录。
-
-左右按钮在另一隔离原生程序中使用生产 `EditorModel`、`FilmDock` 和 `MasterRecipeDock` 验证：胶片及配方在 620x130 超宽状态均可左右翻页，首尾方向正确禁用；620x78 的短胶片列表不出现箭头；从完整胶片列表缩减到两项后，箭头立即消失，恢复列表后重新显示。配方末项与首项自动定位、原生滚动区域的辅助功能滚动操作均同步更新按钮状态，620x66 紧凑配方区域未见按钮、文字或滚动条重叠。实际硬件触控板惯性/回弹本轮未测，回弹边界由纯状态测试覆盖。
-
-额外输出同一 DJI RAW 的 14 张 100% 配方样片并查看对比图，未见空白、破图或明显渲染破损。对比图位于忽略的 `build/master-recipe-raw-comparison.png`，图片资源总览位于 `build/master-recipe-icons.png`，不作为源资产提交。
+[Read this section in the archive](../archive/verification/master-recipes-20261011.md#已通过验证).
 
 ## 质量提示与边界
 
-`generate-lut` 的结构校验均通过，但严格质量检查有以下创意 LUT 提示，未擅自重调原表：
-
-- 滨田英明、酒井贵弘、Luiz Clas 的内部采样截断比例分别为 3.60%、3.27%、1.36%。
-- 酒井贵弘有 5053/811200，约 0.623% 的相邻采样亮度反转。
-- Billy Dinh、CineStill、Jungraphy、Luiz Clas、rkrkrk、Samalive 的中性灰偏色超过通用阈值。强偏色可以是创意设计，不等同于解析或执行缺陷。
-
-当前样本覆盖山景和 Sony 照片的技术回归，不构成每个配方对专用人像、街拍、霓虹夜景的完整视觉校准，也不证明摄影师风格精确复现。其他平台 GPU 本轮未运行。
-
-14 张图片通过内置 `image_gen` 原创生成，无参考图、真实摄影师肖像或外部作品输入，随后仅使用 `sips` 缩放打包。它们是风格示意图，不是对应 LUT 的实际渲染样片，也不表示摄影师授权或认可。完整生成提示词及源文件标识见 `RawLabMac/Resources/MasterRecipeIcons/prompts.json`。
+[Read this section in the archive](../archive/verification/master-recipes-20261011.md#质量提示与边界).

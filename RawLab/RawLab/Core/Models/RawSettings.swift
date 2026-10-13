@@ -3,6 +3,7 @@ import Foundation
 enum RawDenoisePreset: String, CaseIterable, Identifiable {
     case detail = "细节优先", clean = "去噪优先", custom = "自定义"
     var id: String { rawValue }
+    var title: String { L10n.text(rawValue) }
 }
 
 struct PhotoEffectsSettings: Codable, Equatable {
@@ -118,13 +119,13 @@ enum PhotoEffectParameter: String, CaseIterable, Identifiable {
     }
     var title: String {
         switch self {
-        case .vignetteAmount, .grainAmount: return "强度"
-        case .vignetteMidpoint: return "中点"
-        case .vignetteRoundness: return "圆度"
-        case .vignetteFeather: return "羽化"
-        case .vignetteHighlights: return "高光保护"
-        case .grainSize: return "大小"
-        case .grainRoughness: return "粗糙度"
+        case .vignetteAmount, .grainAmount: return L10n.text("强度")
+        case .vignetteMidpoint: return L10n.text("中点")
+        case .vignetteRoundness: return L10n.text("圆度")
+        case .vignetteFeather: return L10n.text("羽化")
+        case .vignetteHighlights: return L10n.text("高光保护")
+        case .grainSize: return L10n.text("大小")
+        case .grainRoughness: return L10n.text("粗糙度")
         }
     }
     var keyPath: WritableKeyPath<PhotoEffectsSettings, Double> {
@@ -181,14 +182,28 @@ enum RawWhiteBalanceMode: String, Codable, CaseIterable, Equatable {
     static var asShot: Self { .camera }
 }
 
+enum LensProfileMode: String, Codable, CaseIterable { case automatic, manual }
+
+struct LensCorrectionSettings: Codable, Equatable {
+    var distortion = false
+    var tca = false
+    var autoCrop = true
+    var mode = LensProfileMode.automatic
+    var profileID: String?
+    var isEnabled: Bool { distortion || tca }
+    var coreProfileID: String {
+        mode == .automatic ? "" : (profileID ?? "__rawlab_manual_selection_required__")
+    }
+}
+
 enum RawExposureMode: Int, Codable, CaseIterable, Identifiable {
     case scene = 0, preview = 1, sensor = 2
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .scene: return "标准显影"
-        case .preview: return "匹配内嵌预览"
-        case .sensor: return "传感器基准"
+        case .scene: return L10n.text("标准显影")
+        case .preview: return L10n.text("匹配内嵌预览")
+        case .sensor: return L10n.text("传感器基准")
         }
     }
 }
@@ -199,6 +214,8 @@ struct RawSettings: Codable, Equatable {
     static let tintRange: ClosedRange<Double> = -150...150
 
     var denoise = RawDenoiseSettings()
+    var lensCorrection: LensCorrectionSettings?
+    var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
     var photoEffects = PhotoEffectsSettings()
     var hsl = HSLSettings()
     var exposureMode = RawExposureMode.preview
@@ -253,7 +270,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID
+        case masterRecipeID, lensCorrection
     }
 
     var clampedLUTStrength: Float {
@@ -334,6 +351,7 @@ struct RawSettings: Codable, Equatable {
         lutStrength = try values.decodeIfPresent(Double.self, forKey: .lutStrength) ?? 1
         whiteBalanceMode = try values.decodeIfPresent(RawWhiteBalanceMode.self, forKey: .whiteBalanceMode) ?? .camera
         denoise = try values.decodeIfPresent(RawDenoiseSettings.self, forKey: .denoise) ?? RawDenoiseSettings()
+        lensCorrection = try values.decodeIfPresent(LensCorrectionSettings.self, forKey: .lensCorrection)
         photoEffects = try values.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects) ?? PhotoEffectsSettings()
         displayChromaDenoise = Self.clampedDisplayChromaDenoise(
             try values.decodeIfPresent(Int.self, forKey: .displayChromaDenoise) ?? 0

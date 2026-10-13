@@ -22,6 +22,16 @@ internal static class InteractionChecks
     }
     internal static void Run(string repo,string raw)
     {
+        var geometry=new Viewport();geometry.SetSourceSize(6000,4000);
+        if(geometry.PreviewLongEdge(new Size(600,400),new DpiScale(2,2),default)!=1216 ||
+           geometry.PreviewLongEdge(new Size(400,400),new DpiScale(2,2),default)!=832)
+            throw new Exception("Viewport resize must use physical display pixels");
+        geometry.Magnify(2);
+        if(geometry.PreviewLongEdge(new Size(400,400),new DpiScale(2,2),default)!=1600)
+            throw new Exception("Zoom must increase viewport resolution");
+        geometry.Actual();
+        if(geometry.PreviewLongEdge(new Size(400,400),new DpiScale(2,2),default)!=0)
+            throw new Exception("Actual pixels must select native processing");
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
@@ -30,6 +40,15 @@ internal static class InteractionChecks
         window.Show();
         try
         {
+            var edgeField=typeof(MainWindow).GetField("previewLongEdge",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            var renderEdge=typeof(MainWindow).GetMethod("RenderEdge",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            edgeField.SetValue(window,0);
+            if((int)renderEdge.Invoke(window,[true])! != 2000 || (int)renderEdge.Invoke(window,[false])! != 0)
+                throw new Exception("Native-pixel dragging must stay bounded and release must restore native");
+            edgeField.SetValue(window,1216);
+            if((int)renderEdge.Invoke(window,[true])! != 1216)
+                throw new Exception("Fit dragging must retain the viewport edge");
+            edgeField.SetValue(window,2000);
             var imageField=typeof(PhotoCanvas).GetField("image",BindingFlags.Instance|BindingFlags.NonPublic)!;
             var timer=Stopwatch.StartNew();window.OpenFile(raw);
             PumpUntil(()=>imageField.GetValue(window.ResultCanvas)!=null);

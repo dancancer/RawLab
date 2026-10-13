@@ -5,6 +5,8 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
+#include <string>
 #include <algorithm>
 #include <cmath>
 
@@ -24,7 +26,36 @@ jlong nextId = 1;
 void throwJava(JNIEnv* env, const char* type, const char* message) {
     if (!env->ExceptionCheck()) env->ThrowNew(env->FindClass(type), message);
 }
+
+struct NativeStatusError : std::runtime_error {
+    sony2fuji_status status;
+    NativeStatusError(sony2fuji_status value)
+        : std::runtime_error(sony2fuji_status_message(value)), status(value) {}
+};
+
+void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
+    if (env->ExceptionCheck()) return;
+    auto type = env->FindClass("com/rawlab/android/NativeProcessingException");
+    if (!type) {
+        env->ExceptionClear();
+        throwJava(env, "java/io/IOException", error.what());
+        return;
+    }
+    auto constructor = env->GetMethodID(type, "<init>", "(ILjava/lang/String;)V");
+    if (!constructor) {
+        env->ExceptionClear();
+        throwJava(env, "java/io/IOException", error.what());
+        return;
+    }
+    auto message = env->NewStringUTF(error.what());
+    if (!message) return;
+    auto exception = env->NewObject(type, constructor, static_cast<jint>(error.status), message);
+    if (exception) env->Throw(static_cast<jthrowable>(exception));
+}
+
 void check(sony2fuji_status status) {
+    if (status == SONY2FUJI_STATUS_IO_ERROR || status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR)
+        throw NativeStatusError(status);
     rawlab::checkStatus(status);
 }
 struct UtfChars {
@@ -52,7 +83,7 @@ void prepareRecipeWb(sony2fuji_session* session, const char* input, bool active,
     check(sony2fuji_session_set_photo_effects(session, &effects));
     check(sony2fuji_session_set_chroma_denoise(session, 0));
     check(sony2fuji_session_set_interactive_preview(session, 0));
-    auto neutral = rawlab::makeRequest(input, nullptr, nullptr, 0, 0, false, 6500, 0, 32, false);
+    auto neutral = rawlab::makeRequest(input, nullptr, nullptr, 0, 0, false, 6500, 0, 32, rawlab::ExportFormat::JPEG);
     Buffer buffer;
     check(sony2fuji_process(session, &neutral, &buffer.value));
     float cameraTemperature = 0, cameraTint = 0;
@@ -63,6 +94,92 @@ void prepareRecipeWb(sony2fuji_session* session, const char* input, bool active,
     tint = std::clamp(std::round(cameraTint) + tint * strength, -150.0f, 150.0f);
     custom = true;
 }
+}
+
+namespace {
+sony2fuji_session* sessionFor(jlong id) {
+    const auto found = sessions.find(id);
+    if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
+    return found->second.get();
+}
+jobjectArray strings(JNIEnv* env, const std::vector<std::string>& values) {
+    auto type = env->FindClass("java/lang/String");
+    if (!type) return nullptr;
+    auto constructor = env->GetMethodID(type, "<init>", "([BLjava/lang/String;)V");
+    auto charset = env->NewStringUTF("UTF-8");
+    if (!constructor || !charset) return nullptr;
+    auto result = env->NewObjectArray(static_cast<jsize>(values.size()), type, nullptr);
+    if (!result) return nullptr;
+    for (size_t i = 0; i < values.size() && !env->ExceptionCheck(); ++i) {
+        auto bytes = env->NewByteArray(static_cast<jsize>(values[i].size()));
+        if (!bytes) return nullptr;
+        env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(values[i].size()), reinterpret_cast<const jbyte*>(values[i].data()));
+        auto value = env->NewObject(type, constructor, bytes, charset);
+        if (!value) return nullptr;
+        env->SetObjectArrayElement(result, static_cast<jsize>(i), value);
+        env->DeleteLocalRef(value);
+        env->DeleteLocalRef(bytes);
+    }
+    return env->ExceptionCheck() ? nullptr : result;
+}
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeSetLensDatabase(JNIEnv* env, jobject, jlong id, jstring path) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        UtfChars directory(env, path);
+        check(sony2fuji_session_set_lens_database(sessionFor(id), directory.chars));
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, jobject, jlong id,
+    jboolean distortion, jboolean tca, jboolean crop, jbyteArray profile) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        if (!profile) throw std::invalid_argument("Missing lens profile ID");
+        std::string value(static_cast<size_t>(env->GetArrayLength(profile)), '\0');
+        env->GetByteArrayRegion(profile, 0, static_cast<jsize>(value.size()), reinterpret_cast<jbyte*>(value.data()));
+        if (env->ExceptionCheck()) return;
+        sony2fuji_lens_correction_config config{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION,
+            sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()};
+        check(sony2fuji_session_set_lens_correction(sessionFor(id), &config));
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeLensProfiles(JNIEnv* env, jobject, jlong id, jstring input) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        auto* session = sessionFor(id);
+        UtfChars path(env, input);
+        sony2fuji_lens_report report{};
+        uint32_t count = 0;
+        check(sony2fuji_session_inspect_lens(session, path.chars, &report, nullptr, 0, &count));
+        std::vector<sony2fuji_lens_profile> profiles(count);
+        check(sony2fuji_session_inspect_lens(session, path.chars, &report, profiles.data(), count, &count));
+        std::vector<std::string> values;
+        values.reserve(static_cast<size_t>(count) * 6);
+        for (const auto& profile : profiles) {
+            values.insert(values.end(), {profile.id, profile.maker, profile.model,
+                profile.has_distortion ? "1" : "0", profile.has_tca ? "1" : "0", profile.is_match ? "1" : "0"});
+        }
+        return strings(env, values);
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeLensReport(JNIEnv* env, jobject, jlong id) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_lens_report report{};
+        check(sony2fuji_session_get_lens_report(sessionFor(id), &report));
+        return strings(env, {std::to_string(report.state), report.lens_model, report.profile.model,
+            report.applied_distortion ? "1" : "0", report.applied_tca ? "1" : "0", std::to_string(report.crop_scale)});
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -140,7 +257,7 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
     jstring input, jstring lut, jstring output, jfloat strength, jfloat exposure,
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
     jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
-    jint edge, jboolean interactive, jboolean png, jint longEdge,
+    jint edge, jboolean interactive, jint format, jint longEdge,
     jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
@@ -165,9 +282,10 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         std::copy(hslData+8, hslData+16, hsl.saturation);
         std::copy(hslData+16, hslData+24, hsl.lightness);
         check(sony2fuji_session_set_hsl(session, &hsl));
+        const auto outputFormat = rawlab::parseExportFormat(format);
         auto request = rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
             exposure, effectiveCustom, temperature, tint, highlights, shadows, contrast,
-            toneCurve, saturation, sharpening, edge, png,
+            toneCurve, saturation, sharpening, edge, outputFormat,
             longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge));
         if (recipeActive) {
             request.exposure_ev *= strength;
@@ -177,6 +295,7 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
             request.saturation = 1 + saturation * strength;
         }
         check(sony2fuji_session_set_interactive_preview(session, interactive && !out.chars));
+        check(sony2fuji_session_set_viewport_preview(session, !out.chars && edge > 0));
         sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
             sizeof(sony2fuji_wavelet_denoise_config), denoiseEnabled ? 1 : 0, luma, chroma, coarse};
         check(sony2fuji_session_set_wavelet_denoise(session, &denoise));
@@ -209,6 +328,8 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         if (!constructor) return nullptr;
         return env->NewObject(type, constructor, static_cast<jint>(b.width),
             static_cast<jint>(b.height), pixels, kelvin, wbTint, static_cast<jint>(sony2fuji_session_get_last_backend(session)));
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to develop this RAW");
     } catch (const std::invalid_argument& error) {
@@ -233,14 +354,15 @@ Java_com_rawlab_android_NativeProcessor_nativeAutoExposure(JNIEnv* env, jobject,
         bool effectiveCustom = customWb;
         prepareRecipeWb(found->second.get(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
         auto request = rawlab::makeRequest(in.chars, nullptr, nullptr, 0, 0, effectiveCustom,
-            temperature, tint, 0, 0, 0, 0, 0, 0, 1, false);
+            temperature, tint, 0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG);
         check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         float ev = 0;
         const auto status = sony2fuji_session_estimate_auto_exposure(found->second.get(), &request, &ev);
         if (status == SONY2FUJI_STATUS_OUT_OF_MEMORY) throw std::bad_alloc();
         check(status);
         return ev;
-    } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to meter this RAW"); }
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+    catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to meter this RAW"); }
     catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
     catch (...) { throwJava(env, "java/io/IOException", "Automatic exposure failed"); }
     return 0;

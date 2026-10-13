@@ -16,6 +16,58 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class EditorViewModelRaceInstrumentedTest {
+    @Test fun denoiseResizeWaitsForQuietAndKeepsLatestEdits() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val raw = File(context.cacheDir, "resize-${UUID.randomUUID()}.arw")
+        copyFixture(raw)
+        val store = ViewModelStore()
+        try {
+            val model = EditorViewModel(context.applicationContext as Application)
+            store.put("editor", model)
+            model.importPhoto(Uri.fromFile(raw))
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync {
+                model.edit(model.state.value.edits.copy(denoise = DenoiseSettings().withPreset(DenoisePreset.CLEAN)))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync {
+                model.updatePreviewSize(768)
+                model.updatePreviewSize(512)
+                assertTrue(model.state.value.previewResizePending)
+                assertFalse(model.state.value.canExport)
+                model.edit(model.state.value.edits.copy(exposure = .5f))
+            }
+            awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 512 }
+            assertEquals(.5f, model.state.value.edits.exposure)
+            instrumentation.runOnMainSync {
+                model.updatePreviewSize(640)
+                model.updatePreviewSize(512)
+                assertFalse(model.state.value.previewResizePending)
+            }
+            assertTrue(model.state.value.canExport)
+            instrumentation.runOnMainSync {
+                model.updatePreviewSize(768)
+                model.edit(model.state.value.edits.copy(denoise = model.state.value.edits.denoise.copy(enabled = false)))
+                assertFalse(model.state.value.previewResizePending)
+            }
+            awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 768 }
+            instrumentation.runOnMainSync {
+                model.updatePreviewSize(1216)
+                model.edit(model.state.value.edits.copy(exposure = .75f), interactive = true)
+            }
+            awaitState(model) { !it.rendering && maxOf(it.preview!!.result.width, it.preview.result.height) == 1216 }
+            assertFalse(model.state.value.exact)
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits) }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync {
+                assertTrue(model.beginExport())
+                model.updatePreviewSize(896)
+                model.cancelExport()
+            }
+            awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 896 }
+        } finally { store.clear(); raw.delete() }
+    }
     @Test fun startupLookLoadSurvivesImmediatePhotoImport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = File(context.filesDir, "looks")

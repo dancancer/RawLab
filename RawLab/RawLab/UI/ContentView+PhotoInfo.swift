@@ -15,10 +15,10 @@ extension ContentView {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("照片信息")
+                .accessibilityLabel(L10n.text("照片信息"))
                 .accessibilityValue(photoInfoMode.title)
                 .accessibilityIdentifier("editor.photoInfo")
-                .help("切换照片信息")
+                .help(L10n.text("切换照片信息"))
             }
 
             if photoInfoMode != .hidden, let photoInformation, !editorBusy {

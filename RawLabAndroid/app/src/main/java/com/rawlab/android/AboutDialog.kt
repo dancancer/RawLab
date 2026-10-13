@@ -32,6 +32,7 @@ fun AboutDialog(state: UpdateState, onAutomatic: (Boolean) -> Unit, onCheck: () 
         text = {
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.app_version, state.version))
+                LanguageMenu()
                 HorizontalDivider()
                 Text(stringResource(R.string.project_author), style = MaterialTheme.typography.titleSmall)
                 TextButton(onClick = { open(UpdateRelease.REPOSITORY) }) {
@@ -63,4 +64,35 @@ fun AboutDialog(state: UpdateState, onAutomatic: (Boolean) -> Unit, onCheck: () 
                 }
             }
         }, confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.confirm)) } })
+}
+
+@Composable
+private fun LanguageMenu() {
+    val context = LocalContext.current
+    var expanded by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    val preference = AppStrings.preference(context)
+    val index = LanguageChoice.codes.indexOf(preference).coerceAtLeast(0)
+    val systemName = stringResource(R.string.follow_system)
+    val label = if (index == 0) systemName else LanguageChoice.nativeNames[index]
+    Column {
+        Text(stringResource(R.string.language), style = MaterialTheme.typography.labelLarge)
+        Box {
+            OutlinedButton(onClick = { expanded = true }) { Text(label) }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                LanguageChoice.codes.forEachIndexed { i, code ->
+                    DropdownMenuItem(text = { Text(if (i == 0) systemName else LanguageChoice.nativeNames[i]) }, onClick = {
+                        expanded = false
+                        if (code != preference) {
+                            try {
+                                AppStrings.setPreference(context, code)
+                                if (android.os.Build.VERSION.SDK_INT < 33) (context as? android.app.Activity)?.recreate()
+                            } catch (_: IllegalStateException) { failed = true }
+                        }
+                    })
+                }
+            }
+        }
+        if (failed) Text(stringResource(R.string.language_save_error), color = MaterialTheme.colorScheme.error)
+    }
 }

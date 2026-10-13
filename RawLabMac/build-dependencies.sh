@@ -79,20 +79,22 @@ if [ "$ARCH" = arm64 ]; then HOST=aarch64-apple-darwin; fi
     make -j "$JOBS"
     make install
 )
-cmake -S "$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3" \
-    -B "$BUILD/libraw-cmake" "${COMMON[@]}" -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2" \
+cmake -S "$ROOT/lutools/cmake/libraw" \
+    -B "$BUILD/libraw-dng-cmake" "${COMMON[@]}" -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2" \
+    -DLIBRAW_CMAKE_SOURCE_DIR="$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3" \
+    -DRAWLAB_DNGSDK_SHARED=ON -DLIBRAW_INSTALL=ON \
     -DBUILD_SHARED_LIBS=ON -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=ON \
     -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" -DOpenMP_CXX_LIB_NAMES=omp \
     -DOpenMP_omp_LIBRARY="$PREFIX/lib/libomp.dylib" \
     -DZLIB_LIBRARY="$SDK/usr/lib/libz.tbd" -DZLIB_INCLUDE_DIR="$SDK/usr/include"
 # LibRaw 0.22 removed the legacy RedCine decoder.
 for feature in LCMS DNGDEFLATECODEC DNGLOSSYCODEC OPENMP; do
-    grep -q "^#define LIBRAW_USE_$feature 1" "$BUILD/libraw-cmake/libraw_config.h" || {
+    grep -q "^#define LIBRAW_USE_$feature 1" "$BUILD/libraw-dng-cmake/libraw/libraw_config.h" || {
         echo "Missing LibRaw feature: $feature" >&2; exit 1;
     }
 done
-cmake --build "$BUILD/libraw-cmake" -j "$JOBS"
-cmake --install "$BUILD/libraw-cmake"
+cmake --build "$BUILD/libraw-dng-cmake" -j "$JOBS"
+cmake --install "$BUILD/libraw-dng-cmake"
 RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-chroma-dependency.sh"
 RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
 echo "Dependencies installed: $PREFIX"

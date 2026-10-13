@@ -12,7 +12,31 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
 | libjpeg-turbo | 3.1.3 | https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3 | libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg |
 | Little CMS | 2.17 | https://github.com/mm2/Little-CMS/tree/lcms2.17 | Little-CMS-LICENSE |
+| Adobe DNG SDK | 1.7.1 Build 2724 | https://www.adobe.com/go/dng_sdk | dng-sdk/Adobe-DNG-SDK-LICENSE.txt |
+| JPEG XL, Brotli, Highway, skcms | Sources bundled with the pinned DNG SDK | https://download.adobe.com/pub/adobe/dng/dng_sdk_1_7_1_2724_20260908.zip | dng-sdk/ directory |
 | OpenCV / opencv_contrib | 4.12.0 | https://github.com/opencv/opencv/tree/4.12.0 and https://github.com/opencv/opencv_contrib/tree/4.12.0 | OpenCV/ directory |
+| libtiff | 4.7.1 | https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz | libtiff-LICENSE.md |
+| Lensfun library | 0.3.4 | https://github.com/lensfun/lensfun/tree/v0.3.4 | Lensfun/lgpl-3.0.txt, Lensfun/UPSTREAM-README.md |
+| Lensfun database | DB1 snapshot, 2026-10-12 | https://lensfun.github.io/ | Lensfun/database-CC-BY-SA-3.0.txt, Lensfun/README.md |
+| GLib | 2.84.3 in the verified arm64 bundle | https://github.com/GNOME/glib/tree/2.84.3 | GLib-COPYING |
+| GNU gettext libintl | 0.25 in the verified arm64 bundle | https://ftp.gnu.org/gnu/gettext/ | Gettext-COPYING.LIB |
+| PCRE2 | 10.45 in the verified arm64 bundle | https://github.com/PCRE2Project/pcre2/tree/pcre2-10.45 | PCRE2-LICENCE |
+
+Lensfun is built unmodified from a checksum-pinned source archive using
+`RawLabMac/build-lens-dependency.sh`, without Python tools, lenstool or libpng.
+The library is LGPL-3.0; the unmodified offline database is CC BY-SA 3.0 and
+remains separate from RawLab code. Lensfun database authors/contributors retain
+their rights; the project and calibration contribution service are at
+https://lensfun.github.io/. Database provenance is retained in Lensfun/README.md.
+GLib and libintl retain LGPL-2.1-or-later terms; PCRE2 retains its original BSD
+license and PCRE2 exception. Their source releases are available at
+https://download.gnome.org/sources/glib/2.84/,
+https://ftp.gnu.org/gnu/gettext/, and
+https://github.com/PCRE2Project/pcre2/releases/tag/pcre2-10.45.
+
+Rendered DNG serialization uses libtiff with a virtual output-referred linear-sRGB
+profile. It does not embed original sensor data or claim reversible RAW edits.
+This product includes DNG technology under license by Adobe.
 
 The optional display-chroma filter uses OpenCV core, imgproc and ximgproc,
 with their transitive modules. Pinned source archives and build options are in
@@ -21,6 +45,14 @@ filter's BSD notice and the installed third-party notices are included in
 `OpenCV/`. No darktable denoising implementation or executable is bundled.
 
 This software is based in part on the work of the Independent JPEG Group.
+
+This product includes DNG technology under license by Adobe.
+JPEG XL DNG decoding uses the DNG SDK only for the JPEG XL decoder path.
+The SDK is built without its command-line validator, XMP metadata editing or
+XMP toolkit. The local CMake adapter adds missing `qDNGUseXMP` guards to
+`dng_jxl.cpp`; image decoding is unchanged. JPEG XL and its bundled dependencies
+are statically linked into the DNG SDK dependency. Their full original licenses
+are retained under `dng-sdk/`.
 
 LibRaw is distributed here under its CDDL 1.0 option. Its base source is
 available from the official release archive below. `LibRaw-Homebrew.rb` records

@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct AdjustmentToolLabel: View {
+    @Environment(\.locale) private var localizationLocale
     @ScaledMetric(relativeTo: .title3) private var diameter = 44.0
     let title: String
     let symbol: String
@@ -11,6 +12,7 @@ struct AdjustmentToolLabel: View {
     let height: CGFloat
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 5) {
             ZStack {
                 Circle().fill(selected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
@@ -36,6 +38,7 @@ struct AdjustmentToolLabel: View {
 }
 
 struct FilmLabel: View {
+    @Environment(\.locale) private var localizationLocale
     @ScaledMetric(relativeTo: .caption) private var labelHeight = 30.0
     @ScaledMetric(relativeTo: .caption) private var minimumWidth = 82.0
     let name: String
@@ -45,6 +48,7 @@ struct FilmLabel: View {
     let imageSize: CGFloat
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 6) {
             Group {
                 if let artworkName, let image = Self.artwork[artworkName] {
@@ -83,10 +87,12 @@ struct FilmLabel: View {
 }
 
 struct DefaultValueMarker: View {
+    @Environment(\.locale) private var localizationLocale
     let range: ClosedRange<Double>
     let value: Double
 
     var body: some View {
+        let _ = localizationLocale
         GeometryReader { geometry in
             let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
             Circle().fill(.yellow).frame(width: 3, height: 3)
@@ -97,10 +103,12 @@ struct DefaultValueMarker: View {
 }
 
 struct FloatingHistogram: View {
+    @Environment(\.locale) private var localizationLocale
     let values: [CGFloat]
     @Binding var expanded: Bool
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 0) {
             Button { expanded.toggle() } label: {
                 HStack(spacing: 12) {
@@ -115,14 +123,14 @@ struct FloatingHistogram: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("亮度直方图")
-            .accessibilityValue(expanded ? "已展开" : "已收起")
+            .accessibilityLabel(L10n.text("亮度直方图"))
+            .accessibilityValue(expanded ? L10n.text("已展开") : L10n.text("已收起"))
             .accessibilityIdentifier("editor.histogram")
             if expanded {
                 HistogramView(values: values)
                     .frame(height: 54)
                     .padding(.horizontal, 12).padding(.bottom, 12)
-                    .accessibilityLabel("当前预览的亮度分布")
+                    .accessibilityLabel(L10n.text("当前预览的亮度分布"))
             }
         }
         .frame(width: expanded ? nil : 76)
@@ -133,9 +141,11 @@ struct FloatingHistogram: View {
 }
 
 struct HistogramView: View {
+    @Environment(\.locale) private var localizationLocale
     let values: [CGFloat]
 
     var body: some View {
+        let _ = localizationLocale
         Canvas { context, size in
             guard let peak = values.max(), peak > 0 else { return }
             let barWidth = size.width / CGFloat(values.count)

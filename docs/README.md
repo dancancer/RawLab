@@ -1,0 +1,52 @@
+# Documentation
+
+Use the guides below for the current source. Published downloads remain
+[v0.6.0, build 10](releases/v0.6.0.md); [v0.7.0 preparation](releases/v0.7.0-preparation.md)
+tracks the next version.
+
+## Using RawLab
+
+- [Installation and published packages](installation.md)
+- [iPhone installation](ios-installation.md) and [Simplified Chinese guide](ios-installation.zh-CN.md)
+- [macOS](../RawLabMac/README.md), [Windows](../RawLabWindows/README.md), and [Android](../RawLabAndroid/README.md)
+- [Core and CLI](../lutools/README.md) and [usage guide](../lutools/docs/usage-guide.md)
+- [Look reference](../lutools/docs/look-reference.md) and [LUT preparation](../lutools/docs/lut-preparation.md)
+
+## Rendering and Interfaces
+
+- [Color and rendering contract](../lutools/docs/color-contract.md)
+- [Platform integration](../lutools/docs/platform-integration.md) and [iOS API](../lutools/docs/ios-api.md)
+- [Native DCP look format](superpowers/specs/2026-10-03-native-dcp-look-design.md)
+- [DCP HueSatMap and Metal contract](superpowers/specs/2026-10-03-dcp-hsm-metal-design.md)
+- [Fujifilm LUT compatibility](superpowers/specs/2026-10-07-fuji-lut-compatibility.md)
+
+## Development and Design
+
+- [Gitflow, integration and release procedure](../agent.md) and [repository instructions](../AGENTS.md)
+- [Desktop design](../DESIGN.md) and [product scope](../PRODUCT.md)
+- [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
+- [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
+- [Licensing and attribution](licensing.md)
+
+## v0.7.0 Candidate
+
+- [Candidate notes](releases/v0.7.0.md) and [corresponding-source instructions](releases/v0.7.0-source.md)
+- [Feature deliveries and final verification](verification-v0.7.0.md)
+- [Final five-feature composition report](verification-final-composition-2026-10-13.md)
+- [Versioned local candidate package verification](verification-v0.7.0-candidate.md)
+- [Version and release preparation checklist](releases/v0.7.0-preparation.md)
+- [JPEG XL DNG verification](verification-dng-jpeg-xl-2026-10-12.md)
+
+All five features are integrated in development. The final composition report
+distinguishes new execution from evidence reused through identical source.
+Candidate packages are local preparation; published downloads remain v0.6.0.
+
+## Published Releases and History
+
+- [Changelog](../CHANGELOG.md)
+- [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)
+- [v0.5.1 release](releases/v0.5.1.md) and [v0.5.0 release](releases/v0.5.0.md)
+- [Historical plans, feature checks, reviews and experiment references](archive/README.md)
+
+Archived records preserve their dates, branch context, results and limitations.
+Use the current integration tracker when assessing the next release.

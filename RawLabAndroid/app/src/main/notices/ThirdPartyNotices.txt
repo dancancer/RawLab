@@ -1,5 +1,17 @@
 RawLab Android uses the repository's shared Sony2Fuji C++ core.
 
+Lens correction statically links Lensfun 0.3.4 (LGPL-3.0-or-later), GLib 2.84.4
+(LGPL-2.1-or-later), PCRE2 10.44 (BSD), proxy-libintl (LGPL-2.0-or-later) and
+GNU libiconv/libcharset 1.18 (LGPL-2.1-or-later) into librawlab-jni.so.
+Original license texts and attribution are in assets/licenses/lensfun.
+The unmodified offline DB1 snapshot (2026-10-12) is CC BY-SA 3.0, separate from
+the library license; it ships in assets/Lensfun. Sources and SHA256 pins:
+lutools/cmake/lens-dependencies.json. Build: lutools/cmake/build-lens-dependencies.py.
+https://lensfun.github.io/ and https://gitlab.gnome.org/GNOME/glib
+https://github.com/PCRE2Project/pcre2 and https://github.com/frida/proxy-libintl
+https://www.gnu.org/software/libiconv/
+
+
 OpenCV 4.12.0 (core/imgproc): https://github.com/opencv/opencv/tree/4.12.0
 Apache 2.0; see OpenCV-LICENSE.txt.
 wavelib: https://github.com/rafat/wavelib, BSD 3-Clause; see wavelib-LICENSE.txt.
@@ -8,13 +20,26 @@ and archive hashes are pinned in lutools/cmake/denoise-dependencies.cmake.
 Local stationary-wavelet column and inverse-transform optimizations are in
 lutools/cmake/wavelib-swt-columns.c.inc and wavelib-iswt2.c.inc.
 
+LibTIFF 4.7.1: https://libtiff.gitlab.io/libtiff/, libtiff-LICENSE.md.
+Only the static TIFF directory/strip writer is linked for rendered DNG output;
+optional codecs and tools are disabled.
+
 LibRaw 0.22.2: https://github.com/LibRaw/LibRaw/tree/0.22.2
 Source archive: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
 SHA-256: de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
 Built from patched source as libraw.so; Android CMake build configuration
 is supplied in app/src/main/cpp/CMakeLists.txt. LGPL/CDDL license choices and
 copyright notices are included in this directory. Optional LCMS, JPEG/JasPer,
-RawSpeed and Adobe DNG SDK integrations are not compiled into LibRaw here.
+and RawSpeed integrations are not compiled into LibRaw here.
+
+This product includes DNG technology under license by Adobe.
+Adobe DNG SDK 1.7.1 Build 2724 and its bundled JPEG XL/Brotli/Highway/skcms
+sources are pinned by lutools/cmake/dng-sdk.cmake and statically linked for
+JPEG XL DNG decoding. The SDK's XMP editing and command-line validator are
+disabled; missing qDNGUseXMP guards in dng_jxl.cpp are added by the local adapter.
+Source: https://download.adobe.com/pub/adobe/dng/dng_sdk_1_7_1_2724_20260908.zip
+Full notices: Adobe-DNG-SDK-1.7.1-LICENSE.txt, JPEG-XL-LICENSE.txt,
+Brotli-LICENSE.txt, Highway-LICENSE.txt, Highway-LICENSE-BSD3.txt and skcms-LICENSE.txt.
 
 Local crop, X-Trans concurrency and Nikon recognition changes are applied by
 lutools/cmake/patch-libraw.cmake. Four exact-model camera matrices are adapted

@@ -1,6 +1,9 @@
 #include "core/wavelet_denoise.h"
+#include "core/wavelet_tile.h"
+#include "sony2fuji/color_converter.h"
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -9,6 +12,60 @@
 #include <opencv2/imgproc.hpp>
 
 using namespace sony2fuji;
+
+void checkReflectedTilePlanes() {
+    for (const auto size : {cv::Size(1800,1025),cv::Size(1025,1800),cv::Size(1025,1025),
+                           cv::Size(513,513),cv::Size(1537,1025),cv::Size(65,513),
+                           cv::Size(1,1),cv::Size(1,1024),cv::Size(63,1024),
+                           cv::Size(64,1),cv::Size(32,24)}) {
+        cv::Mat image(size,CV_32FC3);
+        for (int y=0;y<image.rows;++y) for (int x=0;x<image.cols;++x)
+            image.at<cv::Vec3f>(y,x)={float(x+3*y),float(2*x-y),float(x-7*y)};
+        for (const bool coarse : {false,true}) {
+            const int centerSize=coarse ? 1024 : 512;
+            const int border=coarse ? 256 : 96,alignment=coarse ? 64 : 16;
+            cv::Mat padded;
+            cv::copyMakeBorder(image,padded,border,border+(alignment-image.rows%alignment)%alignment,
+                border,border+(alignment-image.cols%alignment)%alignment,cv::BORDER_REFLECT_101);
+            for (const int y : {0,(image.rows-1)/centerSize*centerSize})
+                for (const int x : {0,(image.cols-1)/centerSize*centerSize}) {
+                    const cv::Rect center(x,y,std::min(centerSize,image.cols-x),std::min(centerSize,image.rows-y));
+                    for (int c=0;c<3;++c) {
+                        const int radius=c!=0 && coarse ? 256 : 96,divisor=c!=0 && coarse ? 64 : 16;
+                        const cv::Rect region(x+border-radius,y+border-radius,
+                            (center.width+divisor-1)/divisor*divisor+2*radius,
+                            (center.height+divisor-1)/divisor*divisor+2*radius);
+                        cv::Mat expected;
+                        cv::extractChannel(padded(region),expected,c);
+                        const auto actual=waveletTilePlane(image,center,radius,divisor,c);
+                        assert(actual.size()==expected.size());
+                        assert(cv::norm(actual,expected,cv::NORM_INF)==0);
+                    }
+                }
+        }
+    }
+    std::cout << "PASS: reflected tile planes match full padding, including thin edge tiles\n";
+}
+
+void checkParallelTiles() {
+    ImageData source(1537,1025);
+    std::mt19937 rng(7419);
+    std::normal_distribution<float> noise(0,.014f);
+    for (auto& p:source.pixels) p={.18f+noise(rng),.18f+noise(rng),.18f+noise(rng)};
+    const int threads=cv::getNumThreads();
+    for (const bool coarse : {false,true}) {
+        const WaveletDenoiseOptions options{true,10,72,coarse ? 100.f : 0.f};
+        auto serial=source,parallel=source;
+        WaveletDenoiseDiagnostics first,second;
+        cv::setNumThreads(1);
+        assert(applyWaveletDenoise(serial,options,&first)==ErrorCode::Success && first.applied);
+        cv::setNumThreads(2);
+        assert(applyWaveletDenoise(parallel,options,&second)==ErrorCode::Success && second.applied);
+        assert(std::memcmp(serial.pixels.data(),parallel.pixels.data(),serial.pixels.size()*sizeof(RGB))==0);
+    }
+    cv::setNumThreads(threads);
+    std::cout << "PASS: multi-tile fine/coarse output is bitwise identical with one/two threads\n";
+}
 
 double error(const ImageData& image, float reference, bool chroma = false) {
     double sum = 0;
@@ -220,6 +277,94 @@ void checkColorEdgesAndRamp() {
     }
 }
 
+void checkAnalysisReuse() {
+    ImageData source(256,256);
+    std::mt19937 rng(1539);
+    std::normal_distribution<float> noise(.18f,.014f);
+    for (auto& p:source.pixels) p={noise(rng),noise(rng),noise(rng)};
+    WaveletDenoiseAnalysisCache cache;
+    int index=0;
+    for (const auto& options : {WaveletDenoiseOptions{true,20,30,0}, {true,70,30,0},
+                               {true,70,75,0}, {true,70,75,70}, {true,70,75,95}}) {
+        auto cached=source, independent=source;
+        WaveletDenoiseDiagnostics info;
+        assert(applyWaveletDenoise(cached,options,&info,GpuMode::Off,&cache,"source-a")==ErrorCode::Success);
+        assert(info.applied && info.analysisReused==(index>0));
+        assert(info.coarseAnalysisReused==(index==4));
+        assert(applyWaveletDenoise(independent,options)==ErrorCode::Success);
+        for (size_t i=0;i<cached.pixels.size();++i) {
+            const auto& a=cached.pixels[i]; const auto& b=independent.pixels[i];
+            assert(a.r==b.r && a.g==b.g && a.b==b.b);
+        }
+        ++index;
+    }
+    WaveletDenoiseDiagnostics info;
+    auto image=source;
+    assert(applyWaveletDenoise(image,{true,70,75,95},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::Success);
+    assert(!info.analysisReused && !info.coarseAnalysisReused);
+    cache.clear(); image=source;
+    assert(applyWaveletDenoise(image,{true,70,75,95},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::Success);
+    assert(!info.analysisReused);
+    image=ImageData(32,32);
+    assert(applyWaveletDenoise(image,{true,40,46,50},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::Success);
+    assert(!info.applied && !info.analysisReused);
+    assert(applyWaveletDenoise(image,{true,70,75,95},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::Success);
+    assert(!info.applied && info.analysisReused);
+    assert(applyWaveletDenoise(image,{true,-1,75,95},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::InvalidFormat);
+    assert(!info.analysisReused);
+    assert(applyWaveletDenoise(image,{false,40,46,50},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::Success);
+    assert(!info.analysisReused);
+}
+
+void checkImmutableSourceReload() {
+    ImageData source(256,256);
+    std::mt19937 rng(7381);
+    std::normal_distribution<float> noise(.18f,.014f);
+    for (auto& p:source.pixels) p={noise(rng),noise(rng),noise(rng)};
+    const auto original=source;
+    auto converted=source;
+    assert(ColorConverter().convertImage(converted,ColorSpace::AdobeRGB,ColorSpace::sRGB)==ErrorCode::Success);
+    WaveletDenoiseAnalysisCache cache;
+    int index=0;
+    for (const auto& options : {WaveletDenoiseOptions{true,10,72,0}, {true,10,72,100}, {true,25,60,80}}) {
+        auto retained=converted,reloaded=converted;
+        WaveletDenoiseDiagnostics info;
+        assert(applyWaveletDenoise(retained,options)==ErrorCode::Success);
+        assert(applyWaveletDenoise(reloaded,options,&info,GpuMode::Off,&cache,"immutable-a",&source,
+            ColorSpace::AdobeRGB)==ErrorCode::Success);
+        assert(info.applied && info.analysisReused==(index>0) && info.coarseAnalysisReused==(index==2));
+        assert(reloaded.width==retained.width && reloaded.height==retained.height);
+        assert(std::memcmp(retained.pixels.data(),reloaded.pixels.data(),retained.pixels.size()*sizeof(RGB))==0);
+        assert(std::memcmp(source.pixels.data(),original.pixels.data(),source.pixels.size()*sizeof(RGB))==0);
+        ++index;
+    }
+    auto invalid=source;
+    invalid.pixels.push_back({0,0,0});
+    auto image=converted;
+    assert(applyWaveletDenoise(image,{true,10,72,100},nullptr,GpuMode::Off,nullptr,{},&invalid,
+        ColorSpace::AdobeRGB)==ErrorCode::InvalidFormat);
+    assert(std::memcmp(image.pixels.data(),converted.pixels.data(),converted.pixels.size()*sizeof(RGB))==0);
+#if defined(TEST_WAVELET_GPU_DISABLED)
+    // 无 GPU 构建可确定触发 Force 失败，覆盖 Auto 重新载入工作图的重试路径。
+    WaveletDenoiseAnalysisCache retryCache;
+    WaveletDenoiseDiagnostics info;
+    image=converted;
+    assert(applyWaveletDenoise(image,{true,10,72,100},&info,GpuMode::Force,&retryCache,"retry-a",&source,
+        ColorSpace::AdobeRGB)==ErrorCode::ProcessingError);
+    assert(image.pixels.empty());
+    assert(applyWaveletDenoise(image,{true,10,72,100},&info,GpuMode::Off,&retryCache,"retry-a",&source,
+        ColorSpace::AdobeRGB)==ErrorCode::Success);
+    assert(info.applied && info.analysisReused && info.coarseAnalysisReused && !info.gpuUsed);
+    auto independent=converted;
+    assert(applyWaveletDenoise(independent,{true,10,72,100})==ErrorCode::Success);
+    assert(image.pixels.size()==independent.pixels.size());
+    assert(std::memcmp(image.pixels.data(),independent.pixels.data(),image.pixels.size()*sizeof(RGB))==0);
+    assert(std::memcmp(source.pixels.data(),original.pixels.data(),source.pixels.size()*sizeof(RGB))==0);
+    std::cout << "PASS: released working image is reloaded after Force GPU failure\n";
+#endif
+    std::cout << "PASS: immutable AdobeRGB reload preserves pixels and analysis reuse\n";
+}
+
 int main(int argc, char** argv) {
     if (argc == 6) {
         std::ifstream input(argv[1],std::ios::binary);
@@ -241,6 +386,10 @@ int main(int argc, char** argv) {
         std::cout << '\n';
         return 0;
     }
+    checkReflectedTilePlanes();
+    checkParallelTiles();
+    checkAnalysisReuse();
+    checkImmutableSourceReload();
     checkInversePhases();
     checkFineLumaTexture();
     checkNeutralColorBands();

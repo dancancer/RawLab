@@ -17,7 +17,7 @@ void printUsage(const char* programName) {
     std::cout << "  " << programName << " <输入RAW文件> -o <输出文件> [选项]\n\n";
     std::cout << "必需参数:\n";
     std::cout << "  <输入RAW文件>        Sony RAW 文件路径 (.ARW)\n";
-    std::cout << "  -o, --output <file>  输出文件路径 (.jpg 或 .png)\n\n";
+    std::cout << "  -o, --output <file>  输出文件路径 (.jpg、.png 或渲染型 .dng)\n\n";
     std::cout << "可选参数:\n";
     std::cout << "  -l, --lut <file>       胶片外观文件路径 (.cube 或 .rlook)\n";
     std::cout << "  --no-lut               不应用 LUT,输出 sRGB 参考图像\n";
@@ -155,10 +155,14 @@ OutputFormat getOutputFormat(const std::string& filename) {
     size_t dotPos = filename.find_last_of('.');
     if (dotPos != std::string::npos) {
         std::string ext = filename.substr(dotPos + 1);
-        if (ext == "jpg" || ext == "jpeg" || ext == "JPG" || ext == "JPEG") {
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (ext == "jpg" || ext == "jpeg") {
             return OutputFormat::JPEG;
-        } else if (ext == "png" || ext == "PNG") {
+        } else if (ext == "png") {
             return OutputFormat::PNG;
+        } else if (ext == "dng") {
+            return OutputFormat::DNG;
         }
     }
     return OutputFormat::JPEG;  // 默认
@@ -188,8 +192,11 @@ int main(int argc, char* argv[]) {
     request.intent = SONY2FUJI_INTENT_FINAL;
     request.output_target = SONY2FUJI_TARGET_FILE;
     request.output_path = options.outputFile.c_str();
-    request.output_format = getOutputFormat(options.outputFile) == OutputFormat::PNG ?
-        SONY2FUJI_OUTPUT_PNG : SONY2FUJI_OUTPUT_JPEG;
+    switch (getOutputFormat(options.outputFile)) {
+        case OutputFormat::JPEG: request.output_format = SONY2FUJI_OUTPUT_JPEG; break;
+        case OutputFormat::PNG: request.output_format = SONY2FUJI_OUTPUT_PNG; break;
+        case OutputFormat::DNG: request.output_format = SONY2FUJI_OUTPUT_DNG; break;
+    }
     request.jpeg_quality = options.quality;
     sony2fuji_session* session = nullptr;
     auto status = sony2fuji_session_create(&session);

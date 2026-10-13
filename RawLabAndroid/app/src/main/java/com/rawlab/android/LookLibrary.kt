@@ -71,15 +71,15 @@ class LookLibrary(
     fun importLook(input: InputStream, originalName: String): ManagedLook = synchronized(this) {
         val id = UUID.randomUUID().toString()
         val namedFormat = LookFormat.fromExtension(originalName.substringAfterLast('.', ""))
-        val rawStage = File(root, ".$id.stage")
+        val rawStage = File(root, ".${id}.stage")
         var staged: File? = null
         var destination: File? = null
         try {
             rawStage.outputStream().use { output -> input.copyTo(output) }
             val format = namedFormat.takeUnless { it == LookFormat.UNKNOWN } ?: detectContainer(rawStage)
-            staged = File(root, ".$id.stage.${format.extension}")
+            staged = File(root, ".${id}.stage.${format.extension}")
             move(rawStage, staged!!)
-            val relativePath = "$id.${format.extension}"
+            val relativePath = "${id}.${format.extension}"
             destination = File(root, relativePath)
             val name = originalName.trim().ifEmpty { "Look.${format.extension}" }
             val validation = validator.validate(staged!!)
@@ -126,7 +126,7 @@ class LookLibrary(
     }
 
     private fun requireLook(id: String): ManagedLook = readRegistry().firstOrNull { it.id == id }
-        ?: throw NoSuchElementException("Unknown managed look: $id")
+        ?: throw NoSuchElementException("Unknown managed look: ${id}")
 
     private fun readRegistry(): List<ManagedLook> {
         if (!registry.exists()) return emptyList()
@@ -141,7 +141,7 @@ class LookLibrary(
             require(count >= 0) { "Invalid look registry count" }
             val ids = mutableSetOf<String>()
             return (0 until count).map { index ->
-                val prefix = "item.$index."
+                val prefix = "item.${index}."
                 val id = properties.getProperty(prefix + "id") ?: throw IOException("Missing managed look id")
                 val name = properties.getProperty(prefix + "name") ?: throw IOException("Missing managed look name")
                 val originalName = properties.getProperty(prefix + "originalName") ?: throw IOException("Missing managed look source name")
@@ -174,13 +174,13 @@ class LookLibrary(
     }
 
     private fun writeRegistry(looks: List<ManagedLook>) {
-        val temporary = File(root, ".$REGISTRY_NAME.${UUID.randomUUID()}.tmp")
+        val temporary = File(root, ".${REGISTRY_NAME}.${UUID.randomUUID()}.tmp")
         try {
             val properties = Properties().apply {
                 setProperty("version", REGISTRY_VERSION.toString())
                 setProperty("count", looks.size.toString())
                 looks.forEachIndexed { index, look ->
-                    val prefix = "item.$index."
+                    val prefix = "item.${index}."
                     setProperty(prefix + "id", look.id)
                     setProperty(prefix + "name", look.name)
                     setProperty(prefix + "originalName", look.originalName)

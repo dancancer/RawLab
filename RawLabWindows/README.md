@@ -1,24 +1,23 @@
 # RawLab Windows
+镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
+
 
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
-v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.6.0 Windows 包
+## 下载 v0.7.0 Windows 包
 
-[下载 Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Windows-0.6.0-win-x64.zip) · [完整发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.6.0) · [SHA-256 校验](https://github.com/dancancer/RawLab/releases/download/v0.6.0/SHA256SUMS.txt)
+[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Windows-0.7.0-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.7.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。发布包已包含 .NET 8、Visual C++ 运行库、LUT 和 ExifTool，无需另行安装 .NET。程序未签名。
-
-v0.6.0 构建 10 从发布源码重新构建 WPF 与 native DLL，程序集版本为 `0.6.0`、文件版本为 `0.6.0.10`，不复用旧版 native 包。新增 14 个大师配方、八色 HSL 与自动曝光；应用配方覆盖六项调色和全部 HSL，0-200% 强度整体缩放当前参数与 LUT。胶片和配方列表溢出时显示左右按钮，全部放得下时隐藏。暗角、颗粒参数与其他平台一致，小波和显示色度过滤支持 D3D11。共享 LibRaw 0.22.2 的相机兼容性修复保持不变；Nikon HE* 仍明确返回不支持。
-
-保留快速预览、缩放缓存、远程桌面画布加速、0–200% 胶片强度和带 EXIF 的 JPEG / 16-bit PNG 导出。“关于 RawLab”仍只打开官方更新页面，不自动安装。本版构建与验证范围见[发布验证记录](../docs/verification-v0.6.0.md)，不沿用历史交接包的检查作为新版证明。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.7.0/build11，self-contained .NET8；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。受 Sony 内存修复影响的 native DLL 已增量重建，未变的 WPF/runtime/resources 沿用已验证的0.7候选。新增 JPEG XL DNG、渲染型 DNG 导出、镜头配置校正、六语界面和视口/降噪复用。实际包检查与既有 GPU/UI 覆盖见[发布验收](../docs/verification-v0.7.0-release.md)。
 
 ## 构建
 
 需要 .NET 8 SDK、Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”组件
-（含 Windows SDK 与 CMake），首次构建需要联网下载校验过的 LibRaw 0.22.2 / zlib 1.3.1 源码。
+（含 Windows SDK 与 CMake），首次构建需要联网下载校验过的 LibRaw 0.22.2 / zlib 1.3.1 /
+libtiff 4.7.1 源码。
 
 ```powershell
 ./RawLabWindows/build.ps1 -Test
@@ -48,7 +47,7 @@ python3 RawLabWindows/build-remote.py \
 
 首次连接前，通过可信控制台核对 SSH 主机公钥并保存到 `known-hosts` 文件。脚本强制校验主机密钥，只使用指定私钥；不要提交私钥或关闭校验。
 
-脚本发送当前已跟踪及未忽略的新源文件，包含尚未提交的改动，排除 RAW 样片和忽略的构建产物。Windows 工作目录为 `C:/RawLabBuild/workspace`，保留依赖和编译缓存，只清理上次清单中已从本次源码删除的文件。请勿让多个任务同时使用这个工作目录。远程编译自包含 x64 包并取回 `build/windows-remote/<timestamp>/RawLab-Windows.zip`，同目录保留完整 `build.log`。
+脚本发送当前已跟踪及未忽略的新源文件，包含尚未提交的改动，排除个人 RAW 样片和忽略的构建产物；仅白名单中的四个合成 DNG 回归 fixture 随源码发送。Windows 工作目录为 `C:/RawLabBuild/workspace`，保留依赖和编译缓存，只清理上次清单中已从本次源码删除的文件。请勿让多个任务同时使用这个工作目录。远程编译自包含 x64 包并取回 `build/windows-remote/<timestamp>/RawLab-Windows.zip`，同目录保留完整 `build.log`。
 
 `--test --raw /path/to/sample.ARW` 会另外上传指定样片并执行原有完整测试。编译不要求 GPU，但完整 GPU 测试要求实际 Direct3D 11 执行；仅有虚拟机编译结果或显示适配器名称，不能据此声明 GPU 通过。未使用 `--test` 时不运行完整测试。
 
@@ -58,7 +57,7 @@ python3 RawLabWindows/build-remote.py \
 ./RawLabWindows/scripts/provision-build-tools.ps1 -InstallerDirectory 'D:\'
 ```
 
-平台实测范围见 [RAW 兼容性验证记录](../docs/verification-raw-compatibility-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
+平台实测范围见 [RAW 兼容性验证记录](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
 
 ## 功能与 Mac 对齐
 
@@ -78,20 +77,22 @@ python3 RawLabWindows/build-remote.py \
 | 直方图 / 裁切提示 | 最终 sRGB 显示图统计；RGB 线性计数、重叠填色；可折叠 |
 | 调整栏 | 底部圆形工具与带正负方向的进度环；拖动边界调高、收起恢复 |
 | 交互预览 | 一个进行中请求和一个最新待处理请求；拖动 1000px，松手精确 2000px / 原尺寸 |
-| 导出 | 精确预览完成后允许导出；原 RAW 全分辨率 JPEG / 真 16-bit PNG，保留拍摄 EXIF；失败不替换目标文件 |
+| 导出 | 精确预览完成后允许导出；原 RAW 全分辨率 JPEG / 真 16-bit PNG（保留拍摄 EXIF）以及渲染型 DNG；失败不替换目标文件 |
 | 加速 | Direct3D 11 计算着色器；GPU 自动 / 仅 CPU / 强制 GPU；显示实际后端 |
 
 `Ctrl+O` 打开，`F` 适合窗口，`1` 实际像素，`+/-` 缩放。
-顶部图标悬停显示名称，导出菜单提供 JPEG / 16-bit PNG。
+顶部图标悬停显示名称，导出菜单提供 JPEG / 16-bit PNG / 渲染型 DNG。
 滑动对比时拖动中央分隔线；画布获得焦点后，左右方向键微调，`Home` 回到中央。
 下拉框、右键菜单和滚动条使用统一深色样式；键盘焦点和选中项使用黄色标识。
 拖动画布平移、滚轮缩放。双击照片画布在适合窗口与 100% 实际像素之间切换并复位平移；手动缩放后双击回到适合窗口。双击对比分隔线不会改变缩放。文件树右键移除只修改目录列表。
 中文 RAW / LUT / 导出路径以 UTF-8 通过 C ABI，原生层转换为 Windows Unicode 路径。
 
-导出自动保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO、GPS 等拍摄信息。
+JPEG 和 PNG 导出自动保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO、GPS 等拍摄信息。
 方向固定为正常，尺寸与 sRGB 标记按显影结果更新；不复制 RAW 传感器布局、旧缩略图
 或不透明的 MakerNotes。JPEG 压缩图像数据保持不变，PNG 使用标准 `eXIf` 块并保留
 16-bit 通道。无拍摄 EXIF 的输入仍可导出。元数据写入失败时不会替换已有目标文件。
+渲染型 DNG 使用已应用全部调整的输出图像，不写入来源 RAW 的拍摄 EXIF；它的外观已烘焙，
+不能从 DNG 恢复为原始 RAW 调整。DNG 不需要 ExifTool。
 
 构建脚本会下载并校验 ExifTool 13.59 的 Windows x64 发行包，完整随附于 `ExifTool/`
 目录（含 Perl、源码和许可证）；无需用户另行安装。请保留完整安装包目录。
@@ -133,7 +134,7 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 较多显存，显存不足时自动模式仍能导出。诊断环境变量 `RAWLAB_DISABLE_D3D11=1`
 用于验证自动回退及强制失败；正常运行不要设置。
 
-跨平台接入的构建与运行范围见 [本轮验证记录](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+跨平台接入的构建与运行范围见 [本轮验证记录](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路径已运行。
 
 ## 验证
@@ -157,6 +158,6 @@ Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路�
 dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --interactions $PWD.Path 'C:/samples/photo.ARW'
 ```
 
-历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。

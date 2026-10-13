@@ -3,6 +3,7 @@ import AppKit
 
 @main
 struct RawLabMacApp: App {
+    @AppStorage(L10n.preferenceKey) private var languagePreference = AppLanguage.system.rawValue
     @StateObject private var model = EditorModel()
     @StateObject private var updates = UpdateChecker()
     @Environment(\.openWindow) private var openWindow
@@ -55,41 +56,53 @@ struct RawLabMacApp: App {
             VStack(spacing: 0) {
                 if let release = updates.available {
                     HStack {
-                        Text("RawLab \(release.version) 已发布")
+                        Text(L10n.format("RawLab %@ 已发布", String(describing: release.version)))
                         Spacer()
-                        Button("查看更新") { openWindow(id: "about") }
+                        Button(L10n.text("查看更新")) { openWindow(id: "about") }
                     }.padding(8)
                 }
                 EditorView(model: model)
             }.task { await updates.check(manual: false) }
+                .environment(\.locale, selectedLocale)
         }
             .defaultSize(width: 1320, height: 850)
             .commands {
+                CommandGroup(replacing: .appSettings) {
+                    Picker(L10n.text("语言"), selection: $languagePreference) {
+                        ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
+                    }.id(languagePreference)
+                }
                 CommandGroup(replacing: .appInfo) {
-                    Button("关于 RawLab…") { openWindow(id: "about") }
-                    Button("检查更新…") {
+                    Button(L10n.text("关于 RawLab…")) { openWindow(id: "about") }
+                    Button(L10n.text("检查更新…")) {
                         openWindow(id: "about")
                         Task { await updates.check(manual: true) }
                     }.disabled(updates.checking)
                 }
                 CommandGroup(replacing: .newItem) {
-                    Button("打开 RAW…", action: model.openPanel).keyboardShortcut("o")
-                    Button("导入外观…", action: model.importLUT)
+                    Button(L10n.text("打开 RAW…"), action: model.openPanel).keyboardShortcut("o")
+                    Button(L10n.text("导入外观…"), action: model.importLUT)
                         .disabled(model.lookLibraryBusy || model.exporting)
                     Divider()
-                    Button("导出 JPEG…") { model.export(png: false) }
+                    Button(L10n.text("导出 JPEG…")) { model.export(png: false) }
                         .keyboardShortcut("e", modifiers: [.command, .shift])
                         .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
-                    Button("使用当前调整批量导出…") {
+                    Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    Button(L10n.text("使用当前调整批量导出…")) {
                         if model.prepareBatch() { openWindow(id: "batch-export") }
                     }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
-                    Button("查看批量任务…") { openWindow(id: "batch-export") }.disabled(model.batch == nil)
+                    Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }.disabled(model.batch == nil)
                 }
             }
-        Window("关于 RawLab", id: "about") { AboutView(updates: updates) }
+        Window(L10n.text("关于 RawLab"), id: "about") { AboutView(updates: updates).environment(\.locale, selectedLocale) }
             .windowResizability(.contentSize)
-        Window("批量导出", id: "batch-export") {
-            if let batch = model.batch { BatchExportView(model: batch) }
+        Window(L10n.text("批量导出"), id: "batch-export") {
+            if let batch = model.batch { BatchExportView(model: batch).environment(\.locale, selectedLocale) }
         }.defaultSize(width: 1040, height: 720)
+    }
+
+    private var selectedLocale: Locale {
+        Locale(identifier: AppLanguage.resolve(preference: languagePreference, preferredLanguages: Locale.preferredLanguages).rawValue)
     }
 }

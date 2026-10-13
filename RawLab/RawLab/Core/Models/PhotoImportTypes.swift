@@ -25,7 +25,7 @@ enum PhotoImportSource {
     }
 
     var displayName: String {
-        url.lastPathComponent.isEmpty ? (isRaw ? "RAW" : "照片") : url.lastPathComponent
+        url.lastPathComponent.isEmpty ? (isRaw ? "RAW" : L10n.text("照片")) : url.lastPathComponent
     }
 }
 
@@ -37,11 +37,11 @@ enum PhotoImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedItem:
-            return "Selected item is not a supported image."
+            return L10n.text("Selected item is not a supported image.")
         case .loadFailed:
-            return "Failed to load the selected photo."
+            return L10n.text("Failed to load the selected photo.")
         case .rawResourceUnavailable:
-            return "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。"
+            return L10n.text("无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。")
         }
     }
 }

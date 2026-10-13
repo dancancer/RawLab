@@ -6,9 +6,9 @@ enum PhotoInfoMode: String, CaseIterable {
     case hidden, file, capture
     var title: String {
         switch self {
-        case .hidden: return "隐藏照片信息"
-        case .file: return "文件信息"
-        case .capture: return "拍摄参数"
+        case .hidden: return L10n.text("隐藏照片信息")
+        case .file: return L10n.text("文件信息")
+        case .capture: return L10n.text("拍摄参数")
         }
     }
     var next: Self {
@@ -93,7 +93,7 @@ struct PhotoInformation {
         switch mode {
         case .hidden: return []
         case .file: return [fileName] + fileDetails
-        case .capture: return [fileName] + captureDetails
+        case .capture: return [fileName] + (captureDetails == ["未读取到拍摄参数"] ? [L10n.text("未读取到拍摄参数")] : captureDetails)
         }
     }
 }

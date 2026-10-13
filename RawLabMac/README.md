@@ -6,7 +6,22 @@ A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ 
 
 ## 功能预览 / Preview
 
-v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](../docs/verification-edit-memory-batch-export-2026-10-10.md)。
+单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、
+降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 浮点 RGB 写入 DNG 1.4。
+支持原尺寸及长边限制，不导出低分辨率预览。调整固化在像素中，不是可逐项撤销的
+Lightroom 调整，也不恢复原始 RAW 动态范围。初版不复制相机拍摄 EXIF、旧预览或
+传感器专属标签；虚拟相机和中性色彩配置描述已渲染像素。JPEG/PNG 的拍摄元数据
+保留行为不变。未压缩 DNG 约需每像素 12 字节。
+
+Single and batch export now include rendered DNG. The FINAL pipeline bakes all
+current adjustments before writing output-referred linear-sRGB float RGB in DNG
+1.4. Native and limited-long-edge sizes are supported. This preserves the look,
+not reversible Lightroom controls or original RAW latitude. This initial format
+does not copy capture EXIF, old previews or sensor-only tags; its virtual camera
+profile describes rendered pixels. JPEG/PNG capture metadata remains unchanged.
+Uncompressed DNG uses approximately 12 bytes per pixel.
+
+v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ![RawLab Mac：中性与 Velvia 效果对比 / Neutral and Velvia comparison](../docs/images/rawlab-mac-velvia.png)
 
@@ -15,12 +30,14 @@ v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”�
 The left pane is the neutral render and the right pane is Velvia. Film selection and exposure, tone, color, white balance and sharpening controls are grouped at the bottom.
 
 ## 构建和启动 / Build and Launch
+镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。紫绿去边暂未实现。
 
-v0.6.0 构建 10 提供 14 个优化后的大师配方、八色 HSL 与一键自动曝光。应用配方覆盖六项调色及全部 HSL；0-200% 强度一起缩放当前调整与 LUT，保存和批量导出保留手动改动。配方以风格图片、下方名称和较弱说明呈现；胶片和配方列表仅在溢出时显示左右滚动按钮。详细更新见[发布说明](../docs/releases/v0.6.0.md)和[发布验收](../docs/verification-v0.6.0.md)。
 
-预编译版本：[GitHub Release v0.6.0](https://github.com/dancancer/RawLab/releases/tag/v0.6.0)。按芯片下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-x86_64.zip)，解压后可将 `RawLab Mac.app` 放入 Applications。两版均以 macOS 15.0 为最低版本；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证，macOS 可能阻止默认打开。尚未在 macOS 15 真机验证；Intel 版在 Rosetta 下测试。
+v0.7.0 构建11新增 JPEG XL DNG 解码、渲染型 DNG 导出、镜头配置校正和六语界面，并按当前视口生成预览、复用降噪分析。Sony CPU 整图降噪内存修复已纳入共享核心。详见[发布说明](../docs/releases/v0.7.0.md)和[发布验收](../docs/verification-v0.7.0-release.md)。
 
-Prebuilt apps: [GitHub Release v0.6.0](https://github.com/dancancer/RawLab/releases/tag/v0.6.0). Choose [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-arm64.zip) or [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-x86_64.zip), extract the ZIP and move `RawLab Mac.app` to Applications. Both target macOS 15.0 or later. They are ad-hoc signed, without Developer ID signing or notarization, so macOS may block opening them. macOS 15 hardware testing is pending; Intel testing used Rosetta.
+预编译版本：[GitHub Release v0.7.0](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Mac-0.7.0-macOS15-arm64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低 macOS15.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。Intel 可继续使用[上一版 v0.6.0 x86_64](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-x86_64.zip)。物理 macOS15 与新版 Intel 包未验证。
+
+Prebuilt app: [v0.7.0 Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Mac-0.7.0-macOS15-arm64.zip), targeting macOS15 or later, ad-hoc signed without notarization. Intel users may retain the previous v0.6.0 package. See [release verification](../docs/verification-v0.7.0-release.md) for actual coverage.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 
@@ -57,9 +74,9 @@ The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the
 
 Rebuild third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, DNG deflate and LCMS are retained. LibRaw 0.22 no longer enables the legacy RedCine/JasPer path; prior JPEG2000 coverage is not promised.
 
-新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/verification-raw-compatibility-2026-10-09.md)。
+新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。
 
-Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
+Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
 
 ```bash
 for arch in arm64 x86_64; do
@@ -96,9 +113,9 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 左侧文件树支持添加多个本地目录、按需展开子目录和点击 RAW 缩略图选片，可从工具栏收起。目录列表会保留；从侧栏移除目录不会删除原文件。缩略图只读取内嵌预览，不自动触发完整显影。
 
   Add multiple local directories, expand subdirectories on demand and select RAW thumbnails in the collapsible left file tree. The directory list persists; removing an entry never deletes files. Thumbnails use embedded previews rather than full RAW development.
-- 中性与结果并排对比，共享缩放和平移。适合模式使用 2000 像素预览；100% 模式重新渲染完整分辨率。
+- 中性与结果并排对比，共享缩放和平移。适合模式按照片视口、显示密度和缩放倍率计算预览尺寸；100% 模式重新渲染完整分辨率。
 
-  Neutral and film panes share zoom and pan. Fit mode uses a 2000px preview; 100% mode renders the original resolution.
+  Neutral and film panes share zoom and pan. Fit previews follow the photo pane, display scale and zoom; 100% mode renders the original resolution.
   双击任一照片画布可在适合窗口与 100% 实际像素之间切换，同时复位平移；手动缩放后双击回到适合窗口。
   Double-click either photo canvas to toggle fit and 100% actual pixels and reset pan; after manual zoom, double-click returns to fit.
 - 曝光在线性域处理。RAW 白平衡默认“拍摄时设置”：通过相机原始白平衡增益和校准矩阵推算 Kelvin/色调，绝非固定 6500 K。色温范围 2000–50000 K，调高偏暖；色调范围 -150–150，负值偏绿、正值偏洋红。选择“拍摄时设置”恢复相机原始增益，分组/全部重置保留每张照片自己的基准。
@@ -137,18 +154,21 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 明暗组提供对比度、高光、阴影、S 曲线强度；色彩组提供饱和度；细节组提供锐化。六项 UI 默认均为 0，对比度/饱和度映射到核心的恒等系数 1，其他项映射为 0。高光/阴影正值提亮、负值压暗。这些是 LUT 后成片微调，不是 RAW 高光重建，也不是 darktable 完整模块的移植。
 
   Tone includes contrast, highlights, shadows and S-curve strength; color includes saturation; detail includes sharpening. All six controls default to 0 in the UI, with contrast/saturation mapped to identity factor 1 in the core. Positive highlight/shadow values brighten and negative values darken. These are post-LUT finishing controls, not RAW highlight reconstruction or a full port of darktable modules.
-- 启用锐化时先在原图像素尺度处理，再缩小预览，避免预览和导出锐化半径不一致；预览会比未锐化时慢。100% 视图可检查真实像素细节。本批不暴露简单模糊式降噪。
+- 普通编辑预览先缩小线性输入，再执行锐化、降噪和效果；锐化半径、降噪和颗粒外观属于近似结果。100% 视图和导出仍按原图像素尺度处理，用于检查真实细节。本批不暴露简单模糊式降噪。
 
-  Sharpening runs at source-pixel scale before preview reduction to keep its radius consistent with export, so sharpened previews take longer. Use 100% view for real pixel inspection. Simple blur-based noise reduction is not exposed in this UI.
+  Ordinary editing previews reduce linear input before sharpening, denoising and effects, so detail and grain are approximations. Settled 100% views and exports retain source-pixel processing. Simple blur-based noise reduction is not exposed in this UI.
 - JPEG/16-bit PNG 导出使用原始 RAW 重新全分辨率渲染，不放大 8-bit 预览。导出不会覆盖原始 RAW 路径。
 
   JPEG and 16-bit PNG exports render at full RAW resolution rather than enlarging an 8-bit preview. Export cannot overwrite the input RAW path.
 - 导出保留 ImageIO 能读取的拍摄时间、相机/镜头、曝光、ISO、GPS 等拍摄元数据。方向和尺寸按成片更新，色彩空间标记为 sRGB；不复制旧缩略图、RAW 传感器布局或不透明 MakerNotes。JPEG 无需再次压缩；PNG 通过无损编码写入标准 eXIf，仍为 16-bit。该行为由 Mac/iOS 共用的 `Shared/ExportMetadata.swift` 实现，不改变 CLI/C API 文件编码。
 
   App exports retain ImageIO-readable capture time, camera/lens, exposure, ISO and GPS metadata. Orientation, dimensions and color space describe the rendered sRGB image; old thumbnails, RAW sensor layout and opaque MakerNotes are excluded. JPEG metadata is attached without recompression; PNG is losslessly encoded with standard eXIf while retaining 16-bit samples. The Mac/iOS shared Swift helper implements this behavior; CLI/C API file encoding is unchanged.
-- 渲染串行执行，最多保留一个在途请求和一个最新待处理请求。拖动滑杆时使用 1000 像素交互预览，松手后自动替换成 2000 像素或原尺寸的精确结果；精确结果完成前禁止导出。数字输入直接触发精确渲染。
+- 渲染串行执行，最多保留一个在途请求和一个最新待处理请求。拖动和数字输入均按当前视口尺寸预览，尺寸以 64 像素为档位，窗口、对比布局和缩放变化会更新预览。松手后应用最终参数；100% 模式恢复原尺寸精确结果。最终参数的渲染完成前禁止导出。
 
-  Rendering is serial, with at most one in-flight and one latest pending request. Dragging uses a 1000px interactive preview; release replaces it with an exact 2000px or native-resolution result. Export stays disabled until exact work completes. Numeric input requests exact rendering directly.
+  Rendering is serial, with at most one in-flight and one latest pending request. Slider and numeric edits use viewport-sized previews in 64px steps, refreshed by window, comparison and zoom changes. Release applies the final settings and restores native exact rendering in 100% mode. Export stays disabled until the settled request completes.
+- 开启降噪后，连续改变窗口或面板尺寸时沿用现有预览，尺寸稳定 200 ms 后只重建最后一个尺寸。精确降噪与最近两个视口尺寸分别缓存，预览图像缓存上限为 128 MiB。曝光和影调等后续调整复用降噪结果；修改降噪强度时复用噪声分析，但仍重新滤波。白平衡、RAW 质量和源文件变化不会误用旧结果。
+
+  With denoise enabled, continuous window or panel resizing holds the current proxy and rebuilds only the latest size after 200 ms of quiet. Exact denoise and the two recent viewport sizes have separate cache slots, with a 128 MiB preview-image budget. Exposure and tone edits reuse filtered pixels; strength edits reuse noise analysis but still filter again. WB, RAW quality and source changes cannot reuse mismatched results.
 - 会话保留当前 RAW 的解包数据和一份线性结果；连续 Kelvin/色调变化复用解包数据，但仍重新执行相机空间白平衡、去马赛克和高光处理。拍摄/自动/自定义白平衡模式之间的切换可能重新识别文件。交互白平衡使用 LibRaw half-size 处理；已有匹配的完整质量缓存可直接供交互预览使用，反之不允许。文件导出和 FINAL 请求始终忽略交互质量标志。
 
   The session retains unpacked RAW data and one linear result. Numeric Kelvin/tint changes reuse unpacked data but rerun camera-space WB, demosaicing and highlight handling. Switching camera/auto/custom WB may re-identify the file. Interactive WB uses LibRaw half-size processing; a matching full-quality cache can serve a proxy, never the reverse. File export and FINAL requests ignore the interactive-quality flag.
@@ -166,14 +186,14 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 强度、大小和粗糙度，相同参数重复渲染保持一致。两项默认关闭，支持单参数、整项及效果组
 重置；新参数跟随逐照片调整状态，缺少新字段的旧序列化记录按关闭处理。
 
-暗角和颗粒在 Metal 上按原图分辨率执行，然后缩放预览。小波降噪的 SWT 分解、阈值和重建，
+100% 视图和导出的暗角和颗粒在 Metal 上按原图分辨率执行；普通预览在缩小后的线性输入上处理。小波降噪的 SWT 分解、阈值和重建，
 以及色度降噪的引导滤波也支持 Metal，可与暗角和颗粒同时启用。GPU 失败时 Auto 回退 CPU；
 Force 不隐藏失败。噪声估计/校准、OpenCV 色彩转换及部分辅助处理仍在 CPU，旧 FBDD、RAW
 解码和文件编码也仍在 CPU。结果不是 Lightroom 像素级复刻或实测胶片模型。
 
 The dock adds Vignette (Amount, Midpoint, Roundness, Feather, Highlights) and
-Grain (Amount, Size, Roughness), both defaulting off. Effects run at source
-resolution on Metal before resizing. Metal also accelerates wavelet SWT filtering
+Grain (Amount, Size, Roughness), both defaulting off. Settled 100% views and exports
+run effects at source resolution on Metal; ordinary previews use reduced input. Metal also accelerates wavelet SWT filtering
 and display-chroma guided filtering, retaining CPU estimation/calibration and
 OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
 failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
@@ -202,6 +222,7 @@ bash RawLabMac/tests/app-icon.sh
 bash RawLabMac/tests/histogram.sh
 bash RawLabMac/tests/render-scheduling.sh
 RUN_PROGRESSIVE_RENDER=1 bash RawLabMac/tests/progressive-render.sh
+bash RawLabMac/tests/viewport-preview.sh "$RAWLAB_TEST_RAW"
 ```
 
 Smoke 模式验证 Sony ARW 和存在时的 DJI DNG，输出全分辨率 PNG/JPEG、预览统计和 JSON 至临时目录，并验证缺失输入报错。使用交互界面检查文件选择、参数调整、视图切换和缩放。

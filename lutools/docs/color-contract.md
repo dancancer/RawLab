@@ -31,6 +31,32 @@ keeps OpenMP enabled but adds eight bytes per active sensor pixel during X-Trans
 demosaic (about 304 MiB for a 40 MP image). Camera-specific corrections and their
 sample-limited validation are documented in the RAW compatibility report.
 
+JPEG XL DNG (compression 52546) uses the pinned Adobe DNG SDK 1.7.1 through
+LibRaw, with a per-processor host whose lifetime exceeds LibRaw's. Only this
+decoder receives the SDK host. `LIBRAW_RAWOPTIONS_DNG_STAGE2` runs Stage1
+opcodes before linearization even when OpcodeList2/3 are absent.
+these flags must be present during final LibRaw identification, not just
+unpack, so SDK-linearized channels do not receive a second range-based WB
+correction. The core first identifies the decoder without retained SDK flags,
+then reopens only JXL with its Stage2 flags. Other formats keep their original
+single-open identification and cannot inherit JXL state across reuse.
+`LIBRAW_RAWOPTIONS_DNG_STAGE23_IFPRESENT_JPGJXL` also applies Stage3 when present.
+`LIBRAW_RAWOPTIONS_DNG_ALLOWSIZECHANGE` lets LibRaw synchronize the SDK's
+ActiveArea-cropped dimensions and clear the storage margins. The glue also
+translates inset crop origins into the cropped image coordinates, avoiding
+rejection, a second ActiveArea crop or a shifted DefaultCrop. Unsupported
+required opcodes fail rather than being ignored.
+LibRaw then develops the decoded camera channels using the existing exposure
+and color pipeline. SDK memory exceptions retain their OutOfMemory category
+through initial load, white-balance reload and the C ABI.
+Other RAW/DNG formats retain their previous decoder paths. SDK and LibRaw must
+share the same platform and `qDNGThreadSafe` definitions to preserve SDK class
+layout, including on iOS/Android. XMP editing and the SDK validator are not
+included. Synthetic lossless 16-bit LinearRaw fixtures compare JXL with the
+same uncompressed pixels, including a Stage1-only required MapTable, a required
+Stage2 GainMap with internal ActiveArea, orientation, WB reload and decoder
+reuse. The SDK allocation-failure hook verifies the C ABI memory status.
+
 ## Rendering Order
 
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
@@ -38,9 +64,36 @@ sample-limited validation are documented in the RAW compatibility report.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, and final resizing.
-6. Write RGB/RGBA preview, JPEG or actual 16-bit PNG. PNG includes an sRGB chunk. Photo outputs use an sRGB display interpretation; the film-simulation names alone do not establish camera-to-camera colorimetric equivalence or a measured display EOTF. JPEG consumers must use this sRGB interpretation.
+6. Write RGB/RGBA preview, JPEG, actual 16-bit PNG, or rendered DNG. PNG includes an sRGB chunk. Photo outputs use an sRGB display interpretation; the film-simulation names alone do not establish camera-to-camera colorimetric equivalence or a measured display EOTF. JPEG consumers must use this sRGB interpretation.
 
-When sharpening is enabled, the early preview downsample is skipped. The fixed pixel-radius filter runs at source resolution before the final preview resize, matching its export footprint. At zero sharpening the existing fast preview path remains unchanged. Mac's contrast/saturation controls use percent offsets from the core's identity value 1; highlight signs are reversed at the UI boundary so positive values consistently brighten. All six output adjustments default to an identity result.
+### Rendered DNG
+
+`SONY2FUJI_OUTPUT_DNG=4` is an additive FILE-only format; request v2 layout and
+existing format values are unchanged. It consumes the same FINAL display-sRGB
+float RGB after LUT/recipe strength, WB/exposure, tone, HSL, denoising, detail,
+effects and final resize. It never serializes interactive proxies or scene RAW.
+
+The encoder rejects nonfinite values, clips SDR channels to [0,1] like PNG, and
+inverse-sRGB-decodes them to float32 RGB. DNG 1.4 LinearRaw stores this
+output-referred image (`ColorimetricReference=1`) under a virtual linear-sRGB
+camera, Bradford D65-to-D50 ColorMatrix/ForwardMatrix, D50 white, zero baseline,
+identity tone curve and DefaultBlackRender None. Neutral Adobe XMP disables
+initial tone, sharpening, noise reduction and effects. The already oriented
+pixels have orientation 1. No original sensor pixels, capture EXIF, old preview,
+MakerNotes or source camera calibration is copied into this virtual profile.
+
+The preserved result is appearance, not original RAW latitude or separately
+reversible RawLab controls. Lightroom import presets or later edits can change
+the appearance. Serialization uses libtiff, with an uncompressed three-channel
+float image and no ExtraSamples. There is no JPEG/PNG intermediate quantization.
+
+DNG writes stage in the destination directory and atomically replace the target
+only after a successful flush. Failed writes preserve existing output files.
+Classic TIFF size is preflighted below 4 GiB; BigTIFF is not emitted. The additive
+`SONY2FUJI_STATUS_OUTPUT_IO_ERROR=6` distinguishes output storage failures from
+source `IO_ERROR=3`, without renumbering existing statuses or changing requests.
+
+In exact/default rendering, sharpening skips the early preview downsample. The fixed pixel-radius filter runs at source resolution before the final preview resize, matching its export footprint. The separately opted-in viewport approximation below filters the reduced input instead. At zero sharpening the existing fast preview path remains unchanged. Mac's contrast/saturation controls use percent offsets from the core's identity value 1; highlight signs are reversed at the UI boundary so positive values consistently brighten. All six output adjustments default to an identity result.
 
 The film output interpretation is a declared application convention. It is not a claim that Fujifilm's short LUT overview specifies every viewing parameter. No guessed extra gamma is applied to an already rendered film LUT output.
 
@@ -122,8 +175,9 @@ approximation, not measured film stock or physical silver-halide simulation.
 
 The stage runs after sharpening and before final resize on CPU, Metal, GLES or
 D3D11. Neutral/CUBE output supports every backend; native DCP rendering remains
-CPU/Metal only. Active effects use full RAW resolution even during interactive
-previews. Off restores the existing early-resize/proxy paths. Auto retains CPU
+CPU/Metal only. Active effects use full RAW resolution in default/exact rendering,
+including legacy interactive previews. The viewport opt-in below is an
+approximation. Off restores the existing early-resize/proxy paths. Auto retains CPU
 fallback; Force reports a failure when the platform GPU cannot complete the job.
 
 References considered: [darktable lightness grain](https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/grain/),
@@ -151,10 +205,20 @@ serialized to avoid allocating full-image wavelet coefficients. Float GPU result
 are tested against the existing double wavelib implementation, not substituted
 with a different denoising algorithm.
 
-The exact filtered RAW cache includes the complete denoise options and execution
-mode. CPU/Auto/Force cannot reuse each other's cached denoise results. Interactive
-wavelet previews may remain approximations; final/file requests never reuse them.
-Active chroma or photo effects require the exact source-resolution path.
+Filtered RAW results use one exact slot and two recent viewport slots, with a
+128 MiB retained preview-image budget. Source keys include file identity, RAW
+decode settings/quality, the actual decoded baseline EV and viewport dimensions;
+baseline EV uses exact float identity, including the mutable embedded-preview
+anchor across camera-WB/FBDD transitions. Output matching also requires
+the complete denoise options and execution mode. CPU/Auto/Force cannot reuse
+each other's filtered results. The small source-analysis cache retains flat
+samples, the fitted noise model and calibrated bands across strength changes;
+it does not retain full-image coefficients or replace filtering. Coarse-band
+analysis is prepared lazily when needed. Source/quality/size changes invalidate
+that entry's analysis. Interactive wavelet previews may remain approximations;
+final/file requests never reuse viewport results.
+Active chroma or photo effects require the exact source-resolution path unless
+the caller explicitly opts into the viewport approximation below.
 
 Display-chroma denoising stays after tone/LUT and before sharpening. The GPU
 completes the source-resolution tone stage, then CPU performs the original
@@ -180,6 +244,68 @@ wavelib/OpenCV; `wavelet_render`, `chroma_denoise`, `gpu_photo`, `photo_effects`
 and `native_dcp_metal` cover pipeline/backend contracts. Mac
 `photo-effects-render.sh RAW LUT wavelet|chroma` tests real RAW CPU/Metal parity,
 combined effects, stable exact/interactive rendering and JPEG/16-bit PNG export.
+
+### Profile-Based Lens Correction
+
+Optional Lensfun 0.3.4 correction runs after LibRaw demosaic/highlight handling
+but before `rgb_cam` mixes camera channels. Distortion and lateral chromatic
+aberration (TCA) share one inverse-coordinate sampling pass. Bilinear sampling
+preserves float values through the existing camera matrix and exposure baseline;
+WB remains before demosaic. Lensfun supplies coordinates, not the pixel sampler.
+The existing GPU photo pipelines receive corrected working RGB; lens sampling
+itself remains on CPU, like RAW decoding.
+
+`sony2fuji_session_set_lens_correction` uses a versioned configuration without
+changing request v2. Both corrections default off, an exact no-resampling bypass.
+NULL/empty profile ID means automatic matching for each input, never a remembered
+resolved lens from another photograph. Multiple matches are reported as ambiguous
+and skipped. Manual IDs come from the metadata-only catalog API. Missing camera
+crop information, focal length or requested calibration is reported; absent
+corrections do not silently become a different algorithm. Four-channel camera
+data can use common distortion, but not three-channel TCA.
+
+Known cameras receive a mount-compatible catalog; unknown/ambiguous cameras
+receive the full catalog for manual selection, but correction still requires
+usable sensor crop information. Inspection reports eligibility for the current
+switches; only the post-render report records applied correction and crop scale.
+
+Auto crop defaults on and finds an inscribed zoom covering the full image
+perimeter for all three channel maps. Output dimensions and aspect ratio stay
+unchanged; field of view decreases. With auto crop off, samples outside the active
+image become black, not edge smears or unchecked array accesses. Orientation is
+applied once, using unrotated active-image coordinates. Interactive half-size
+processing constructs the map at its actual dimensions; an approximate result
+cannot serve exact/file requests. Correction switches, manual ID and database
+revision join the decoded RAW cache key, so downstream denoise/GPU caches cannot
+reuse another lens configuration.
+
+The camera-WB exposure anchor in preview-matching mode uses the same lens
+configuration/database identity. Changing the profile or crop settings while
+using temperature WB must recompute that anchor, not reuse an uncorrected one.
+The RAW lens report is cached with its pixels and restored on RAW cache hits,
+including after the session processes a display buffer.
+
+`sony2fuji_session_set_lens_database` explicitly loads an offline DB1 XML file or
+directory. Failed loads preserve existing session state. Builds without Lensfun
+retain the new C symbols and old request layout, accept disabled configuration,
+and reject enabling it with UNSUPPORTED. macOS bundles the unmodified DB snapshot
+and dependency notices. JPEG/display buffer inputs are not treated as camera
+channels; they remain unchanged and report unsupported lens input.
+
+The current JXL DNG SDK path conservatively skips additional lens correction
+when successful unpack reports `LIBRAW_WARN_DNG_STAGE3_APPLIED`. This records
+actual SDK processing, not merely presence of an opcode list; it does not claim
+that every Stage3 list contains a geometry warp. The Stage3 warning bit is cleared
+before each open/unpack because LibRaw recycle retains warnings across inputs;
+WB reload and a later ordinary/no-Stage3 file must not inherit this state.
+Metadata-only inspection does
+not claim to have applied SDK operations. Manufacturer-specific embedded lens
+models outside that path are not implemented. Defringe, axial CA correction,
+profile vignetting, perspective correction and Adobe rendering equivalence are
+outside this feature.
+
+References: [Lensfun architecture](https://lensfun.github.io/manual/latest/basearch.html)
+and [stable combined-coordinate API](https://github.com/lensfun/lensfun/blob/v0.3.4/include/lensfun/lensfun.h.in).
 
 ## LUT Contracts
 
@@ -287,8 +413,43 @@ identification-dependent camera/auto/custom WB mode still reopens it.
 `sony2fuji_session_set_interactive_preview` opts PREVIEW+BUFFER requests into
 LibRaw half-size processing. An exact cache can serve an interactive request, never
 the reverse. FINAL requests and all file outputs ignore the flag. The Mac scheduler
-uses 1000-pixel proxies during dragging and always submits an exact pass on release.
+uses viewport-sized proxies during dragging and always submits a settled pass on release.
 No post-demosaic RGB tint approximation replaces camera-space white balance.
+
+`sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
+for PREVIEW+BUFFER only, without changing request v2. It reduces linear input to
+the requested dimensions before wavelet, tone/LUT, chroma, sharpening and photo
+effects on CPU/Metal. The immutable RAW cache is sampled directly without first
+copying the entire image. Wavelet cache keys include the viewport dimensions and
+quality mode; reduced results cannot serve exact requests. GPU Auto fallback
+preserves the reduced source, while Force still requires GPU success.
+
+Mac fit/zoom previews derive their long edge from the actual photo pane, display
+scale and magnification, rounded upward in 64-pixel steps and capped by source
+resolution. Window, comparison and panel resizing update this size. With denoise
+enabled, continuous layout changes keep the current proxy size until 200 ms of
+quiet, then render the latest requested size. Other adjustments can still update
+the held proxy. Export stays blocked while this final size is pending; opening
+another photo or switching to actual pixels cancels obsolete resize work. Both
+numeric edits and settled fit previews opt in; actual-pixel viewing returns to the exact
+source-resolution path after dragging ends. Original comparison frames remain
+native and immutable. Exports and FINAL requests always ignore the opt-in.
+Pixel-radius denoising/sharpening and grain appearance in the viewport are
+approximations, not export-detail proofs. Inspect them at 100% when settled.
+Initial RAW decode, absolute WB reprocessing and legacy FBDD still incur their
+CPU costs; this mode does not perform viewport-region RAW decoding.
+
+Windows uses the same physical-pixel demand and quiet resize policy. Its explicit
+actual-pixel view remains native when settled; adjustments in that mode use a
+bounded 2000-pixel proxy until release. iOS and Android retain their existing
+1280/1600-pixel preview ceilings, respectively, and their 100% gesture still
+refers to the fixed comparison-preview pixels, not full RAW detail. Mobile pane
+resizing and zoom update demand within those ceilings without changing the
+comparison geometry. iOS reuses a serialized RAW preview session for denoise
+cache hits, while native exports use separate short-lived sessions. Android and
+Windows reset both session preview flags for each native/file export. All
+clients block export while a denoise resize is pending and preserve original
+export dimensions when no explicit export-size cap is selected.
 
 The illuminant xy/Kelvin conversion is adapted from Adobe DNG SDK's Robertson
 isotherm implementation. Its copyright and license are retained in

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MasterRecipeDock: View {
+    @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
 
     var body: some View {
@@ -9,7 +10,7 @@ struct MasterRecipeDock: View {
             let height = max(54, geometry.size.height - 16)
             let showsSubtitle = height >= 90
             let imageSize = max(32, min(96, height - (showsSubtitle ? 50 : 22)))
-            HorizontalPicker(selectedID: model.settings.masterRecipeID ?? "", name: "大师配方") {
+            HorizontalPicker(selectedID: model.settings.masterRecipeID ?? "", name: L10n.text("大师配方")) {
                 HStack(spacing: 8) {
                     recipeButton(recipe: nil, imageSize: imageSize, height: height, showsSubtitle: showsSubtitle)
                     ForEach(MasterRecipe.allRecipes) { recipe in
@@ -41,12 +42,12 @@ struct MasterRecipeDock: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .accessibilityHidden(true)
                 VStack(spacing: 2) {
-                    Text(recipe?.name ?? "无配方")
+                    Text(recipe?.name ?? L10n.text("无配方"))
                         .font(.system(size: 11, weight: selected ? .semibold : .regular))
                         .lineLimit(1)
                         .frame(width: 112, height: 14)
                     if showsSubtitle {
-                        Text(recipe?.subtitle ?? "中性直出")
+                        Text(L10n.text(recipe?.subtitle ?? "中性直出"))
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -61,9 +62,9 @@ struct MasterRecipeDock: View {
         }
         .buttonStyle(.plain)
         .id(recipe?.id ?? "")
-        .help(recipe.map { "\($0.name) · \($0.summary)" } ?? "中性直出")
-        .accessibilityLabel(recipe.map { "\($0.name)，\($0.subtitle)" } ?? "无配方")
-        .accessibilityValue(selected ? "已选中" : "未选中")
+        .help(recipe.map { "\($0.name) · \(L10n.text($0.summary))" } ?? L10n.text("中性直出"))
+        .accessibilityLabel(recipe.map { "\($0.name), \(L10n.text($0.subtitle))" } ?? L10n.text("无配方"))
+        .accessibilityValue(selected ? L10n.text("已选中") : L10n.text("未选中"))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

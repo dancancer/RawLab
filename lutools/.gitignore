@@ -92,3 +92,9 @@ third_party/*
 !third_party/OpenCV-LICENSE.txt
 !third_party/wavelib-LICENSE.txt
 !third_party/rawspeed-camera-calibration.inc
+!third_party/lensfun/
+!third_party/lensfun/**
+!cmake/lens-dependencies.cmake
+!third_party/dng-sdk/
+!third_party/dng-sdk/*.txt
+!cmake/dng-sdk.cmake

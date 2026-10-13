@@ -3,6 +3,42 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.7.0] - 2026-10-14
+
+### Added
+
+- JPEG XL-compressed DNG decoding through the pinned Adobe DNG SDK.
+- Rendered float32 DNG export alongside JPEG and 16-bit PNG, retaining
+  independent FINAL rendering and frozen batch settings.
+- English, Simplified Chinese, German, French, Japanese and Spanish on all
+  four clients, including Lens and DNG controls and dynamic states.
+- Lensfun profile-based lens correction, manual profile selection and
+  auto-crop with persistent per-photo and batch settings.
+
+### Changed
+
+- Use viewport-sized previews and reusable denoise analysis while keeping
+  Lens/profile/crop/database and exposure-baseline cache identities isolated.
+- Reduce the measured Android denoise memory working set without changing
+  the controlled experiment's 1,800,000,000-byte budget or export assertions.
+- Integrate shared SDK/JXL, TIFF and Lensfun dependencies and their notices,
+  and document one-owner shared-file and validation-resource coordination.
+
+### Fixed
+
+- Avoid overlapping full-resolution Sony CPU buffers during denoise, preserving
+  byte-identical JPEG/PNG/DNG exports and existing memory/quality thresholds.
+- Replay pending iOS viewport/settings changes after rendered-DNG export
+  success and failure, using a reproduced RED/GREEN regression.
+- Remove non-system absolute runtime search paths from Mac package copies,
+  ensuring actual processing dependencies load from the signed bundle.
+
+Version `0.7.0`, build `11`. Available release packages include signed Android,
+ad-hoc signed macOS15 arm64 and Windows x64; iOS distribution signing is absent.
+See [release notes](docs/releases/v0.7.0.md),
+[release verification](docs/verification-v0.7.0-release.md) and
+[corresponding-source instructions](docs/releases/v0.7.0-source.md).
+
 ## [0.6.0] - 2026-10-12
 
 ### Added
@@ -46,8 +82,8 @@ See the [v0.6.0 release notes](docs/releases/v0.6.0.md),
 [source rebuild instructions](docs/releases/v0.6.0-source.md),
 [release verification](docs/verification-v0.6.0.md),
 [Chinese update notes](docs/releases/master-recipes-update.md),
-[cross-platform verification](docs/verification/cross-platform-master-recipes-20261011.md)
-and [recipe HSL calibration](docs/verification/master-recipes-hsl-20261011.md).
+[cross-platform verification](docs/archive/verification/cross-platform-master-recipes-20261011.md)
+and [recipe HSL calibration](docs/archive/verification/master-recipes-hsl-20261011.md).
 
 ## [0.5.1] - 2026-10-10
 
@@ -71,7 +107,7 @@ and [recipe HSL calibration](docs/verification/master-recipes-hsl-20261011.md).
 
 See [v0.5.1 release notes](docs/releases/v0.5.1.md),
 [release verification](docs/verification-v0.5.1.md) and
-[the cross-platform implementation evidence](docs/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
+[the cross-platform implementation evidence](docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
 
 ## [0.5.0] - 2026-10-10
 
@@ -110,9 +146,9 @@ See [v0.5.0 release notes](docs/releases/v0.5.0.md) and
 - Windows 新增 Mac 发起的远程编译入口；iOS 新增可复现的三架构 XCFramework 构建。移动设备峰值内存及 Windows 真显卡验证的边界见发布说明。
   Adds remote Windows builds from Mac and reproducible three-architecture iOS frameworks. See release notes for mobile memory and Windows hardware-GPU validation limits.
 
-详见 [v0.4.1 发布说明](docs/releases/v0.4.1.md)和[逐机型兼容性记录](docs/verification-raw-compatibility-2026-10-09.md)。
+详见 [v0.4.1 发布说明](docs/releases/v0.4.1.md)和[逐机型兼容性记录](docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。
 
-See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibility report](docs/verification-raw-compatibility-2026-10-09.md).
+See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibility report](docs/archive/verification/verification-raw-compatibility-2026-10-09.md).
 
 ## v0.4.0 更新 / Previous Features
 

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PhotoEffectsControls: View {
+    @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
     let tool: AdjustmentParameter
 
@@ -9,6 +10,7 @@ struct PhotoEffectsControls: View {
     }
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 6) {
             HStack {
                 Text(tool.spec.title).font(.system(size: 12, weight: .medium))
@@ -16,7 +18,7 @@ struct PhotoEffectsControls: View {
                 Button { model.settings.resetEffect(tool) } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 20, height: 20)
                 }.buttonStyle(.borderless)
-                    .help("重置\(tool.spec.title)").accessibilityLabel("重置\(tool.spec.title)")
+                    .help(L10n.format("重置%@", String(describing: tool.spec.title))).accessibilityLabel(L10n.format("重置%@", String(describing: tool.spec.title)))
                     .accessibilityIdentifier("effects.reset.\(tool.rawValue)")
                     .disabled(model.settings.isEffectDefault(tool))
             }
@@ -41,6 +43,7 @@ struct PhotoEffectsControls: View {
 }
 
 private struct PhotoEffectControl: View {
+    @Environment(\.locale) private var localizationLocale
     let parameter: PhotoEffectParameter
     @Binding var value: Double
     let onEditingChanged: (Bool) -> Void
@@ -49,6 +52,7 @@ private struct PhotoEffectControl: View {
     @FocusState private var editing: Bool
 
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 3) {
             HStack(spacing: 3) {
                 Text(parameter.title).font(.system(size: 11)).lineLimit(1)
@@ -61,14 +65,14 @@ private struct PhotoEffectControl: View {
                     .onChange(of: editing) { _, focused in if !focused { commit() } }
                     .onExitCommand { draft = text(value); invalid = false; editing = false }
                     .overlay { if invalid { RoundedRectangle(cornerRadius: 4).stroke(.red, lineWidth: 1) } }
-                    .accessibilityLabel("\(parameter.title)数值")
+                    .accessibilityLabel(L10n.format("%@数值", String(describing: parameter.title)))
                     .accessibilityIdentifier("effects.value.\(parameter.rawValue)")
-                    .help(invalid ? "请输入范围内的有效数字" : "\(text(parameter.range.lowerBound)) 至 \(text(parameter.range.upperBound))")
+                    .help(invalid ? L10n.text("请输入范围内的有效数字") : L10n.format("%@ 至 %@", String(describing: text(parameter.range.lowerBound)), String(describing: text(parameter.range.upperBound))))
                 Button {
                     value = parameter.defaultValue; draft = text(value); invalid = false
                 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 14, height: 18) }
                     .buttonStyle(.borderless).disabled(value == parameter.defaultValue && !invalid)
-                    .help("重置\(parameter.title)").accessibilityLabel("重置\(parameter.title)")
+                    .help(L10n.format("重置%@", String(describing: parameter.title))).accessibilityLabel(L10n.format("重置%@", String(describing: parameter.title)))
             }.frame(height: 20)
             Slider(value: $value, in: parameter.range, step: 1, onEditingChanged: onEditingChanged)
                 .controlSize(.small)

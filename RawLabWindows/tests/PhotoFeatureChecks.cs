@@ -59,6 +59,7 @@ internal static class PhotoFeatureChecks
             "Production ExifTool reports oriented source dimensions and capture time");
 
         var app = new App(); app.InitializeComponent(); app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
         var store = new EditStore(Path.Combine(output, "edits")); SetField(window, "editStore", store);
@@ -118,7 +119,7 @@ internal static class PhotoFeatureChecks
             Check(!window.InfoFileText.Text.Contains("target.ARW"), "Rapid photo switches never publish the previous file metadata");
             window.ValueSlider.Value = .625; InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
             var grainTool = window.Tools.Children.OfType<Button>().Single(button =>
-                AutomationProperties.GetName(button) == "Grain");
+                AutomationProperties.GetAutomationId(button) == "Grain");
             Click(grainTool);
             window.UpdateLayout();
             var grainAmount = Descendants<TextBox>(window).Single(field =>
@@ -134,7 +135,7 @@ internal static class PhotoFeatureChecks
             grainAmountSlider.Value = 0;
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
             var vignetteTool = window.Tools.Children.OfType<Button>().Single(button =>
-                AutomationProperties.GetName(button) == "Vignette");
+                AutomationProperties.GetAutomationId(button) == "Vignette");
             Click(vignetteTool); window.UpdateLayout();
             var vignetteAmount = Descendants<Slider>(window).Single(slider =>
                 AutomationProperties.GetName(slider) == "暗角强度");

@@ -17,38 +17,39 @@ struct ProgressiveRenderTests {
         let model = EditorModel()
         model.films = [Film(name: "PROVIA", url: lut)]
         model.selectedFilmID = lut.path
+        model.updatePreviewLongEdge(1600)
         model.open(raw)
 
-        try wait(for: "initial exact preview", timeout: 120) {
+        try wait(for: "initial settled viewport preview", timeout: 120) {
             guard !model.busy, let result = model.result else { return false }
-            return model.status.hasPrefix("预览 ") && max(result.image.width, result.image.height) == 2000
+            return model.status.hasPrefix("预览 ") && max(result.image.width, result.image.height) == 1600
         }
 
         model.setInteracting(true)
         model.settings.set(.temperature, to: 6000)
         model.settings.set(.temperature, to: 8000)
-        try wait(for: "interactive 1000px preview", timeout: 120) {
+        try wait(for: "interactive viewport preview", timeout: 120) {
             guard model.busy, let result = model.result else { return false }
-            return model.status.hasPrefix("交互预览") && max(result.image.width, result.image.height) == 1000
+            return model.status.hasPrefix("交互预览") && max(result.image.width, result.image.height) == 1600
         }
         check(model.settings.temperature == 8000, "the latest slider setting remains authoritative")
 
         model.setInteracting(false)
-        try wait(for: "release exact preview", timeout: 120) {
+        try wait(for: "release settled viewport preview", timeout: 120) {
             guard !model.busy, let result = model.result else { return false }
-            return model.status.hasPrefix("预览 ") && max(result.image.width, result.image.height) == 2000
+            return model.status.hasPrefix("预览 ") && max(result.image.width, result.image.height) == 1600
         }
 
         guard let final = model.result else { fatalError("FAIL: final result missing") }
         let engine = try RenderEngine()
         guard let expected = try engine.render(raw, settings: model.settings, lut: lut,
-                                               edge: 2000, output: nil, interactive: false) else {
+                                               edge: 1600, output: nil, interactive: false, viewportPreview: true) else {
             fatalError("FAIL: direct exact render missing")
         }
         check(final.image.width == expected.image.width && final.image.height == expected.image.height,
-              "model and direct exact renders use the same bounded dimensions")
+              "model and direct settled renders use the same viewport dimensions")
         check(final.histogram == expected.histogram,
-              "model exact result matches a direct render with the final settings")
+              "model settled result matches a direct viewport render with the final settings")
     }
 
     private static func wait(for label: String, timeout: TimeInterval, condition: () -> Bool) throws {

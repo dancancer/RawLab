@@ -6,6 +6,13 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -20,12 +27,43 @@ import org.junit.Rule
 import org.junit.Test
 
 class PhotoCanvasTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
+
+    @Test fun viewportCallbackTracksPhysicalSizeButNotResultReplacementOrPan() {
+        val state = PhotoCanvasState()
+        val original = fixture().neutral
+        var pair by mutableStateOf(PreviewPair(original, original, 6500f, 0f))
+        var width by mutableStateOf(300.dp)
+        val edges = mutableListOf<Int>()
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalDensity provides Density(3f)) {
+                    Box(Modifier.width(width).height(200.dp)) {
+                        PhotoCanvas(pair, false, "viewport", state, onPreviewSizeChange = { edges += it })
+                    }
+                }
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(852f, state.viewport!!.width, .01f)
+            assertEquals(600f, state.viewport!!.height, .01f)
+            assertEquals(listOf(896), edges)
+            pair = PreviewPair(original, Bitmap.createScaledBitmap(original, 512, 341, false), 6500f, 0f)
+        }
+        compose.runOnIdle { assertEquals(1, edges.size); state.transform(1f, Offset(2f, 0f), Offset.Zero) }
+        compose.runOnIdle { assertEquals(1, edges.size); width = 200.dp }
+        compose.runOnIdle {
+            assertEquals(2, edges.size)
+            assertEquals(552f, state.viewport!!.width, .01f)
+            assertEquals(576, edges.last())
+        }
+    }
 
     @Test fun doubleTapPinchAndPanUseNativePixels() {
         val state = PhotoCanvasState()
         val pair = fixture()
-        compose.setContent { MaterialTheme { PhotoCanvas(pair, false, "zoom-test", state) } }
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, false, "zoom-test", state) } }
         val canvas = compose.onNodeWithTag("photo-canvas")
         canvas.performTouchInput { doubleClick(center) }
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
@@ -50,7 +88,7 @@ class PhotoCanvasTest {
     @Test fun comparisonWipeDoesNotCompeteWithPinchOrTwoFingerPan() {
         val state = PhotoCanvasState()
         val pair = fixture()
-        compose.setContent { MaterialTheme { PhotoCanvas(pair, true, "comparison-test", state) } }
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, true, "comparison-test", state) } }
         val canvas = compose.onNodeWithTag("photo-canvas")
         canvas.performTouchInput {
             pinch(Offset(centerX - 80, centerY), Offset(centerX + 80, centerY),
@@ -111,7 +149,7 @@ class PhotoCanvasTest {
         val state = PhotoCanvasState()
         val original = fixture().neutral
         var pair by mutableStateOf(PreviewPair(original, original, 6500f, 0f))
-        compose.setContent { MaterialTheme { PhotoCanvas(pair, true, "denoise-photo", state) } }
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, true, "denoise-photo", state) } }
         val canvas = compose.onNodeWithTag("photo-canvas")
         canvas.performTouchInput { doubleClick(center) }
         canvas.performTouchInput {

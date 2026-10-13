@@ -26,6 +26,11 @@
 尚未发布的个人功能分支可在更新基线时 rebase。已共享的分支不要自行重写历史；
 push 被拒绝时先核对远端变化，不默认 force-push。
 
+## 迭代协作与集成
+
+多功能迭代通过 [集成协作规范](docs/integration-workflow.md) 统一规划依赖、共享文件 owner、
+阶段合入、复评和验证资源。协作细则只在该文档维护；本文件的 Gitflow 和授权规则继续适用。
+
 ## 版本发布
 
 1. 从已验证的 `origin/development` 创建 `release/<version>`，例如 `release/0.5.1`。

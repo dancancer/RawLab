@@ -1,4 +1,5 @@
 #include "wavelet_denoise.h"
+#include "sony2fuji/color_converter.h"
 #include "gpu/denoise.h"
 #include <atomic>
 #include <cmath>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+#include "wavelet_tile.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <wavelib.h>
@@ -346,41 +348,44 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
     const int height=transformed.rows,width=transformed.cols;
     const bool coarse=options.chroma>0 && options.coarse>0;
     const int centerSize=coarse ? 1024 : tileSize;
-    const int border=coarse ? coarseHalo : halo, alignment=coarse ? 1<<chromaLevels : 1<<levels;
-    cv::Mat padded,output(transformed.size(),CV_32FC3);
-    cv::copyMakeBorder(transformed,padded,border,border+(alignment-height%alignment)%alignment,
-        border,border+(alignment-width%alignment)%alignment,cv::BORDER_REFLECT_101);
+    const int alignment=coarse ? 1<<chromaLevels : 1<<levels;
+    cv::Mat output(transformed.size(),CV_32FC3);
     const int columns=(width+centerSize-1)/centerSize, rows=(height+centerSize-1)/centerSize;
+    int stripes=coarse ? 4 : 8;
+#if defined(SONY2FUJI_PLATFORM_ANDROID)
+    // 大图的六层 SWT 每个 tile 需要约 400 MiB；移动端避免并发叠加。
+    if (coarse && transformed.total()>4*1024*1024) stripes=1;
+#endif
     cv::parallel_for_(cv::Range(0,columns*rows),[&](const cv::Range& range) {
         for (int index=range.start;index<range.end;++index) {
             const int x=index%columns*centerSize,y=index/columns*centerSize;
             const int w=std::min(centerSize,width-x),h=std::min(centerSize,height-y);
             for (int c=0;c<3;++c) {
                 const int radius=c!=0 && coarse ? coarseHalo : halo, divisor=c!=0 && coarse ? alignment : 16;
-                const cv::Mat tile=padded(cv::Rect(x+border-radius,y+border-radius,
-                    ((w+divisor-1)/divisor)*divisor+2*radius,((h+divisor-1)/divisor)*divisor+2*radius));
-                cv::Mat plane;
-                cv::extractChannel(tile,plane,c);
+                const auto plane=sony2fuji::waveletTilePlane(transformed,{x,y,w,h},radius,divisor,c);
                 const auto filtered=filterPlane(plane,model,options,c,gpuMode,gpuUsed);
                 for (int py=0;py<h;++py) for (int px=0;px<w;++px)
                     output.at<cv::Vec3f>(y+py,x+px)[c]=filtered.at<float>(radius+py,radius+px);
             }
         }
-    },coarse ? 4 : 8);
+    },stripes);
     return output;
 }
 
-void restore(cv::Mat& rgb,const cv::Mat& original,const cv::Mat& filtered,const NoiseModel& model) {
+void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model) {
     cv::Mat normalized;
     cv::transform(filtered,normalized,opponent().t());
-    cv::Mat difference=original-normalized,removed;
-    cv::GaussianBlur(difference.mul(difference),removed,{},3);
+    filtered.release();
+    cv::Mat difference=normalize(rgb,model);
+    cv::subtract(difference,normalized,difference);
+    cv::multiply(difference,difference,difference);
+    cv::GaussianBlur(difference,difference,{},3);
     cv::parallel_for_(cv::Range(0,rgb.rows),[&](const cv::Range& range) {
         for (int y=range.start;y<range.end;++y) for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
             const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
             const float value=normalized.at<cv::Vec3f>(y,x)[c], positive=std::max(value,0.f);
             rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
-                (value>0 ? .25f*a*removed.at<cv::Vec3f>(y,x)[c] : 0.f);
+                (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
         }
     });
 }
@@ -388,6 +393,22 @@ void restore(cv::Mat& rgb,const cv::Mat& original,const cv::Mat& filtered,const 
 #endif
 
 namespace sony2fuji {
+struct WaveletDenoiseAnalysisCache::Impl {
+    std::string key;
+    int width = 0, height = 0;
+    bool ready = false, coarseReady = false;
+#if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    NoiseModel model{};
+    std::vector<Sample> samples;
+#endif
+};
+
+WaveletDenoiseAnalysisCache::WaveletDenoiseAnalysisCache() = default;
+WaveletDenoiseAnalysisCache::~WaveletDenoiseAnalysisCache() = default;
+WaveletDenoiseAnalysisCache::WaveletDenoiseAnalysisCache(WaveletDenoiseAnalysisCache&&) noexcept = default;
+WaveletDenoiseAnalysisCache& WaveletDenoiseAnalysisCache::operator=(WaveletDenoiseAnalysisCache&&) noexcept = default;
+void WaveletDenoiseAnalysisCache::clear() { state.reset(); }
+
 bool waveletDenoiseAvailable() {
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
     return true;
@@ -400,30 +421,83 @@ bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
         if (!std::isfinite(value) || value < 0 || value > 100) return false;
     return true;
 }
-ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics, GpuMode gpuMode) {
+ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics,
+    GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey,
+    const ImageData* immutableSource, ColorSpace sourceSpace) {
     if (diagnostics) *diagnostics = {};
     if (!validWaveletDenoiseOptions(options)) return ErrorCode::InvalidFormat;
     if (!options.active()) return ErrorCode::Success;
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    const bool reloadable = immutableSource && immutableSource != &image;
+    if (reloadable && (immutableSource->width <= 0 || immutableSource->height <= 0 ||
+        immutableSource->pixels.size() != static_cast<size_t>(immutableSource->width) * immutableSource->height))
+        return ErrorCode::InvalidFormat;
+    auto reload = [&]() {
+        image = *immutableSource;
+        return ColorConverter().convertImage(image, sourceSpace, ColorSpace::sRGB);
+    };
+    // Auto 在 GPU 失败后重试时，工作副本可能已释放；原始输入仍由 session 持有。
+    if (reloadable && image.pixels.empty()) {
+        const auto result = reload();
+        if (result != ErrorCode::Success) return result;
+    }
     if (image.width<=0 || image.height<=0 || image.pixels.size()!=static_cast<size_t>(image.width)*image.height)
+        return ErrorCode::InvalidFormat;
+    if (reloadable && (immutableSource->width != image.width || immutableSource->height != image.height))
         return ErrorCode::InvalidFormat;
     static_assert(sizeof(RGB)==sizeof(float)*3);
     cv::Mat rgb(image.height,image.width,CV_32FC3,image.pixels.data());
     if (!cv::checkRange(rgb)) return ErrorCode::InvalidFormat;
-    const auto samples=flatSamples(rgb);
-    if (diagnostics) diagnostics->flatTiles=static_cast<int>(samples.size());
-    if (samples.size()<8) return ErrorCode::Success;
-    auto model=fitNoise(samples);
-    const cv::Mat normalized=normalize(rgb,model);
+    WaveletDenoiseAnalysisCache::Impl local;
+    auto* state = &local;
+    bool reused = false;
+    // sourceKey 由调用方标识不可变输入；只保留小型分析模型，不缓存整图系数。
+    if (analysis && !sourceKey.empty()) {
+        reused = analysis->state && analysis->state->ready && analysis->state->key == sourceKey &&
+            analysis->state->width == image.width && analysis->state->height == image.height;
+        if (!reused) {
+            analysis->state = std::make_unique<WaveletDenoiseAnalysisCache::Impl>();
+            analysis->state->key = sourceKey;
+            analysis->state->width = image.width; analysis->state->height = image.height;
+        }
+        state = analysis->state.get();
+    }
+    if (!reused) state->samples=flatSamples(rgb);
+    const auto& samples = state->samples;
+    if (diagnostics) {
+        diagnostics->flatTiles=static_cast<int>(samples.size());
+        diagnostics->analysisReused=reused;
+    }
+    if (samples.size()<8) { state->ready=true; return ErrorCode::Success; }
+    if (!reused) state->model=fitNoise(samples);
+    auto& model = state->model;
     cv::Mat transformed;
-    cv::transform(normalized,transformed,opponent());
-    calibrateBands(model,transformed,samples);
-    if (options.chroma>0 && options.coarse>0) calibrateCoarseBands(model,transformed,samples);
+    {
+        const cv::Mat normalized=normalize(rgb,model);
+        cv::transform(normalized,transformed,opponent());
+    }
+    // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
+    if (reloadable) { rgb.release(); image = {}; }
+    if (!reused) calibrateBands(model,transformed,samples);
+    state->ready=true;
+    if (options.chroma>0 && options.coarse>0) {
+        if (diagnostics) diagnostics->coarseAnalysisReused=state->coarseReady;
+        if (!state->coarseReady) {
+            calibrateCoarseBands(model,transformed,samples);
+            state->coarseReady=true;
+        }
+    }
     std::atomic<bool> gpuUsed{false};
     cv::Mat filtered;
     try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
     catch (const WaveletGpuFailure&) { return ErrorCode::ProcessingError; }
-    restore(rgb,normalized,filtered,model);
+    transformed.release();
+    if (reloadable) {
+        const auto result = reload();
+        if (result != ErrorCode::Success) return result;
+        rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
+    }
+    restore(rgb,std::move(filtered),model);
     if (diagnostics) {
         diagnostics->applied=true;
         diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
@@ -433,6 +507,10 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
 #else
     (void)image;
     (void)gpuMode;
+    (void)analysis;
+    (void)sourceKey;
+    (void)immutableSource;
+    (void)sourceSpace;
     return ErrorCode::InvalidFormat;
 #endif
 }

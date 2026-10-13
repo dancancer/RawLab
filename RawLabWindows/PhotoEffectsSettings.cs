@@ -33,14 +33,14 @@ public sealed record PhotoEffectSpec(
         ? Math.Clamp(value, Min, Max) : null;
 
     public static readonly PhotoEffectSpec[] All = [
-        new(PhotoEffectParameter.VignetteAmount, "强度", true, -100, 100, 0),
-        new(PhotoEffectParameter.VignetteMidpoint, "中点", true, 0, 100, 50),
-        new(PhotoEffectParameter.VignetteRoundness, "圆度", true, -100, 100, 0),
-        new(PhotoEffectParameter.VignetteFeather, "羽化", true, 0, 100, 50),
-        new(PhotoEffectParameter.VignetteHighlights, "高光保护", true, 0, 100, 0),
-        new(PhotoEffectParameter.GrainAmount, "强度", false, 0, 100, 0),
-        new(PhotoEffectParameter.GrainSize, "大小", false, 0, 100, 25),
-        new(PhotoEffectParameter.GrainRoughness, "粗糙度", false, 0, 100, 50)
+        new(PhotoEffectParameter.VignetteAmount, Loc.Text("强度"), true, -100, 100, 0),
+        new(PhotoEffectParameter.VignetteMidpoint, Loc.Text("中点"), true, 0, 100, 50),
+        new(PhotoEffectParameter.VignetteRoundness, Loc.Text("圆度"), true, -100, 100, 0),
+        new(PhotoEffectParameter.VignetteFeather, Loc.Text("羽化"), true, 0, 100, 50),
+        new(PhotoEffectParameter.VignetteHighlights, Loc.Text("高光保护"), true, 0, 100, 0),
+        new(PhotoEffectParameter.GrainAmount, Loc.Text("强度"), false, 0, 100, 0),
+        new(PhotoEffectParameter.GrainSize, Loc.Text("大小"), false, 0, 100, 25),
+        new(PhotoEffectParameter.GrainRoughness, Loc.Text("粗糙度"), false, 0, 100, 50)
     ];
 
     public static PhotoEffectSpec For(PhotoEffectParameter parameter) => All[(int)parameter];

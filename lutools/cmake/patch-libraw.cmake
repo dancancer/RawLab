@@ -18,6 +18,95 @@ function(replace_libraw relative before after)
     file(WRITE "${path}" "${source}")
 endfunction()
 
+# SDK 的平台和类布局开关必须与调用方一致，不能把 iOS 强制当成 macOS。
+replace_libraw(libraw/libraw_datastream.h [=[
+#if defined LIBRAW_WIN32_CALLS
+#define qWinOS 1
+#define qMacOS 0
+#elif defined(__APPLE__)
+#define qWinOS 0
+#define qMacOS 1
+#else
+/* define OS types for DNG here */
+#endif
+#define qDNGXMPDocOps 0
+#define qDNGUseLibJPEG 1
+#define qDNGXMPFiles 0
+#define qDNGExperimental 1
+#define qDNGThreadSafe 1
+]=] [=[
+#if !(defined(qMacOS) || defined(qWinOS) || defined(qiPhone) || defined(qAndroid) || defined(qLinux))
+#if defined LIBRAW_WIN32_CALLS
+#define qWinOS 1
+#define qMacOS 0
+#elif defined(__APPLE__)
+#define qWinOS 0
+#define qMacOS 1
+#endif
+#endif
+#ifndef qDNGXMPDocOps
+#define qDNGXMPDocOps 0
+#endif
+#ifndef qDNGUseLibJPEG
+#define qDNGUseLibJPEG 1
+#endif
+#ifndef qDNGXMPFiles
+#define qDNGXMPFiles 0
+#endif
+#ifndef qDNGExperimental
+#define qDNGExperimental 1
+#endif
+#ifndef qDNGThreadSafe
+#define qDNGThreadSafe 1
+#endif
+]=])
+
+# JPEG XL 没有备用解码器，SDK 失败必须中止，不能回落到占位器或使用半解码数据。
+file(READ "${LIBRAW_SOURCE_DIR}/src/decoders/unpack.cpp" unpack_source)
+string(FIND "${unpack_source}" "if (dng_result == LIBRAW_UNSUFFICIENT_MEMORY)" has_memory_mapping)
+if(has_memory_mapping EQUAL -1)
+    replace_libraw(src/decoders/unpack.cpp
+        "      try_dngsdk();"
+        "      const int dng_result = try_dngsdk();\n      if (load_raw == &LibRaw::jxl_dng_load_raw_placeholder && dng_result != LIBRAW_SUCCESS)\n        throw LIBRAW_EXCEPTION_DECODE_RAW;")
+
+    # 兼容已打过旧补丁的源码缓存，并保留 SDK 返回的内存不足类别。
+    replace_libraw(src/decoders/unpack.cpp
+        "      if (load_raw == &LibRaw::jxl_dng_load_raw_placeholder && dng_result != LIBRAW_SUCCESS)\n        throw LIBRAW_EXCEPTION_DECODE_RAW;"
+        "      if (load_raw == &LibRaw::jxl_dng_load_raw_placeholder && dng_result != LIBRAW_SUCCESS)\n      {\n        if (dng_result == LIBRAW_UNSUFFICIENT_MEMORY)\n          throw LIBRAW_EXCEPTION_ALLOC;\n        throw LIBRAW_EXCEPTION_DECODE_RAW;\n      }")
+endif()
+
+# Stage2 的像素已经去掉 ActiveArea 外边缘；DefaultCrop 也要换成新图像坐标。
+replace_libraw(src/integration/dngsdk_glue.cpp
+    "\t\t\tS.raw_width = S.width = stage2->Bounds().W();"
+    "\t\t\tif (stageBits & 2)\n\t\t\t{\n\t\t\t\tfor (auto &crop : S.raw_inset_crops)\n\t\t\t\t{\n\t\t\t\t\tif (crop.cleft == 0xffff || crop.ctop == 0xffff)\n\t\t\t\t\t\tcontinue;\n\t\t\t\t\tif (crop.cleft < S.left_margin || crop.ctop < S.top_margin)\n\t\t\t\t\t\tcrop.cleft = crop.ctop = 0xffff;\n\t\t\t\t\telse\n\t\t\t\t\t{\n\t\t\t\t\t\tcrop.cleft -= S.left_margin;\n\t\t\t\t\t\tcrop.ctop -= S.top_margin;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t\tS.raw_width = S.width = stage2->Bounds().W();")
+replace_libraw(src/integration/dngsdk_glue.cpp
+    "#include \"dng_host.h\""
+    "#include \"dng_host.h\"\n#include \"dng_exceptions.h\"\n#include <new>")
+replace_libraw(src/integration/dngsdk_glue.cpp [=[
+  catch (...)
+  {
+    imgdata.process_warnings |= LIBRAW_WARN_DNG_NOT_PROCESSED;
+    return LIBRAW_UNSPECIFIED_ERROR;
+  }
+]=] [=[
+  catch (const dng_exception &error)
+  {
+    imgdata.process_warnings |= LIBRAW_WARN_DNG_NOT_PROCESSED;
+    return error.ErrorCode() == dng_error_memory ? LIBRAW_UNSUFFICIENT_MEMORY
+                                               : LIBRAW_UNSPECIFIED_ERROR;
+  }
+  catch (const std::bad_alloc &)
+  {
+    imgdata.process_warnings |= LIBRAW_WARN_DNG_NOT_PROCESSED;
+    return LIBRAW_UNSUFFICIENT_MEMORY;
+  }
+  catch (...)
+  {
+    imgdata.process_warnings |= LIBRAW_WARN_DNG_NOT_PROCESSED;
+    return LIBRAW_UNSPECIFIED_ERROR;
+  }
+]=])
+
 configure_file("${CMAKE_CURRENT_LIST_DIR}/../third_party/rawspeed-camera-calibration.inc"
     "${LIBRAW_SOURCE_DIR}/src/tables/rawlab_camera_calibration.inc" COPYONLY)
 replace_libraw(src/tables/colordata.cpp

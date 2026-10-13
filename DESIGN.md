@@ -2,7 +2,7 @@
 
 ## Overview
 
-Native macOS RAW verification and editing, with a Photos-inspired bottom adjustment dock. The actual photo leads; this is not a marketing page or a catalog database. Preserve RAW originals and the shared rendering contract. Controls are Chinese; film simulation names retain their proper names.
+Native macOS RAW verification and editing, with a Photos-inspired bottom adjustment dock. The actual photo leads; this is not a marketing page or a catalog database. Preserve RAW originals and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
 
 ## Colors
 
@@ -33,7 +33,7 @@ Use continuous surfaces and separators, not floating section cards. The histogra
 
 ## Shapes
 
-- Circular tool icons have a stable 40-point diameter inside 56x70-point button layouts.
+- Circular tool icons have a stable 40-point diameter inside 72x70-point button layouts, leaving room for localized captions.
 - Progress starts at the top: positive changes run clockwise, negative changes counterclockwise. Normalize each side against its own distance from the default. Keep the ring visible on the selected tool.
 - Thumbnail corners are 4 points; film selection outlines are 6 points. Do not introduce decorative blobs or nested cards.
 

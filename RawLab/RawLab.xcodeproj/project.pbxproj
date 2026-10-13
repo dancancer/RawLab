@@ -7,12 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000011; };
+		D00200000000000000000002 /* LensControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000012; };
         AB2000000000000000000001 /* master-recipes.json in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000011; };
         AB2000000000000000000002 /* MasterRecipes in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000012; };
         AB2000000000000000000003 /* MasterRecipeIcons in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000013; };
         AB1900000000000000000001 /* HSLSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000011; };
         AB1900000000000000000002 /* HSLMixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000012; };
         AB1900000000000000000003 /* HSLNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000013; };
+		AB2100000000000000000001 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000002; };
+		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
+		AB2100000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000006; };
 		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
 		AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000012 /* ZoomablePhoto.swift */; };
 		AB1700000000000000000001 /* ExportMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1700000000000000000002 /* ExportMetadata.swift */; };
@@ -69,12 +74,27 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D00200000000000000000011 /* Sony2FujiProcessor+Lens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sony2FujiProcessor+Lens.swift"; sourceTree = "<group>"; };
+		D00200000000000000000012 /* LensControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LensControls.swift; sourceTree = "<group>"; };
         AB2000000000000000000011 /* master-recipes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../Shared/master-recipes.json"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000012 /* MasterRecipes */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipes"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000013 /* MasterRecipeIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipeIcons"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000011 /* HSLSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLSettings.swift; path = "../Shared/HSLSettings.swift"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000012 /* HSLMixer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLMixer.swift; path = "../Shared/HSLMixer.swift"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000013 /* HSLNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLNative.swift; path = "../Shared/HSLNative.swift"; sourceTree = SOURCE_ROOT; };
+		AB2100000000000000000002 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Localization.swift; path = "../Shared/Localization.swift"; sourceTree = SOURCE_ROOT; };
+		AB210000000000000000000A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AB210000000000000000000B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AB210000000000000000000C /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AB210000000000000000000D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AB210000000000000000000E /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "de"; path = "de.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AB210000000000000000000F /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "de"; path = "de.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AB2100000000000000000010 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "fr"; path = "fr.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AB2100000000000000000011 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "fr"; path = "fr.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AB2100000000000000000012 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ja"; path = "ja.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AB2100000000000000000013 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ja"; path = "ja.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AB2100000000000000000014 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AB2100000000000000000015 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB1800000000000000000011 /* PhotoZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoZoomGeometry.swift; sourceTree = "<group>"; };
 		AB1800000000000000000012 /* ZoomablePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomablePhoto.swift; sourceTree = "<group>"; };
 		AB1700000000000000000002 /* ExportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExportMetadata.swift; path = "../Shared/ExportMetadata.swift"; sourceTree = SOURCE_ROOT; };
@@ -200,6 +220,7 @@
 				AB1700000000000000000004 /* PhotoInformation.swift */,
 				8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */,
 				8F3A1B2C3D4E5F6789012350 /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift */,
+				D00200000000000000000011 /* Sony2FujiProcessor+Lens.swift */,
 			);
 			path = RawProcessing;
 			sourceTree = "<group>";
@@ -225,6 +246,7 @@
 			isa = PBXGroup;
 			children = (
 				AB1200000000000000000011 /* EditorComponents.swift */,
+				D00200000000000000000012 /* LensControls.swift */,
 				AB1800000000000000000011 /* PhotoZoomGeometry.swift */,
 				AB1800000000000000000012 /* ZoomablePhoto.swift */,
 				7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */,
@@ -251,6 +273,7 @@
 		2F109479FD08681A1F30E85C /* RawLab */ = {
 			isa = PBXGroup;
 			children = (
+				AB2100000000000000000002 /* Localization.swift */,
 				8F7749DA9EDF45519E2428F1 /* App */,
 				1CBDC5191AF9405F9B637414 /* UI */,
 				03C5C556CA624B7388F5A53F /* Core */,
@@ -285,6 +308,8 @@
                 AB2000000000000000000011,
                 AB2000000000000000000012,
                 AB2000000000000000000013,
+				AB2100000000000000000004 /* Localizable.strings */,
+				AB2100000000000000000006 /* InfoPlist.strings */,
 				AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */,
 				AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */,
 				AB1500000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube */,
@@ -395,6 +420,11 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
+				de,
+				fr,
+				ja,
+				es,
 				Base,
 			);
 			mainGroup = E067DA409E66CF448AAA9059;
@@ -417,6 +447,8 @@
                 AB2000000000000000000002,
                 AB2000000000000000000003,
 				AB1400000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube in Resources */,
+				AB2100000000000000000003 /* Localizable.strings in Resources */,
+				AB2100000000000000000005 /* InfoPlist.strings in Resources */,
 				AB1400000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube in Resources */,
 				AB1400000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube in Resources */,
 				AB1400000000000000000004 /* FLog2_to_CLASSIC-Neg._65grid_V.1.00.cube in Resources */,
@@ -459,6 +491,7 @@
                 AB1900000000000000000002 /* HSLMixer.swift in Sources */,
                 AB1900000000000000000003 /* HSLNative.swift in Sources */,
 				AB1700000000000000000003 /* PhotoInformation.swift in Sources */,
+				AB2100000000000000000001 /* Localization.swift in Sources */,
 				AB1200000000000000000001 /* EditorComponents.swift in Sources */,
 				AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */,
 				AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */,
@@ -484,10 +517,17 @@
 				D00100000000000000000007 /* UI/ExportSizePicker.swift in Sources */,
 				8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */,
 				8F3A1B2C3D4E5F678901234F /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift in Sources */,
+				D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */,
+				D00200000000000000000002 /* LensControls.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		AB2100000000000000000004 /* Localizable.strings */ = {isa = PBXVariantGroup; children = (AB210000000000000000000A, AB210000000000000000000C, AB210000000000000000000E, AB2100000000000000000010, AB2100000000000000000012, AB2100000000000000000014); name = Localizable.strings; sourceTree = "<group>"; };
+		AB2100000000000000000006 /* InfoPlist.strings */ = {isa = PBXVariantGroup; children = (AB210000000000000000000B, AB210000000000000000000D, AB210000000000000000000F, AB2100000000000000000011, AB2100000000000000000013, AB2100000000000000000015); name = InfoPlist.strings; sourceTree = "<group>"; };
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		AB1300000000000000000007 = {

@@ -47,6 +47,8 @@ try
     state.SetEffect(PhotoEffectParameter.VignetteAmount, -40);
     state.SetEffect(PhotoEffectParameter.GrainAmount, 65);
     state.DisplayChromaDenoise = 1;
+    state.Lens = new LensSettings(true,true,false,true,"Maker\n镜头 Model,|\nMount\n1.000000");
+    Check(new LensSettings(Manual:true).CoreProfileId == "__rawlab_manual_selection_required__", "manual lens requires selection");
     var saved = state.Capture();
     state.Denoise = DenoiseSettings.Clean;
     Check(!saved.SameAs(state.Capture()), "denoise changes mark the snapshot dirty");
@@ -60,15 +62,25 @@ try
     var reopened = new EditStore(storePath);
     var restored = reopened.Find(a)!;
     Check(restored.Settings.SameAs(saved), "settings survive store restart");
+    Check(restored.Settings.Restore().Lens == saved.Lens, "lens survives store restart");
+    Check(!saved.SameAs(saved with { Lens = new() }), "lens changes mark the snapshot dirty");
+    Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.LensProfile>() == 908 &&
+          System.Runtime.InteropServices.Marshal.SizeOf<Native.LensReport>() == 1440 &&
+          System.Runtime.InteropServices.Marshal.SizeOf<Native.LensConfig>() == 32, "lens ABI layout");
     Check(!restored.Settings.Restore().CameraWhiteBalance, "custom white balance mode survives");
     Check(restored.Settings.Restore().Denoise == DenoiseSettings.Clean, "denoise survives store restart");
     Check(restored.Settings.Restore().Effects == state.Effects && restored.Settings.Restore().DisplayChromaDenoise == 1,
         "photo effects and display chroma survive store restart");
     var legacy = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(saved))!.AsObject();
     legacy.Remove("Denoise");
+    legacy.Remove("Lens");
+    Check(System.Text.Json.JsonSerializer.Deserialize<AdjustmentSnapshot>(legacy.ToJsonString())!.Restore().Lens == new LensSettings(), "legacy lens is disabled");
     Check(System.Text.Json.JsonSerializer.Deserialize<AdjustmentSnapshot>(legacy.ToJsonString())!.Restore().Denoise == new DenoiseSettings(), "older records default to disabled denoise");
     Check(reopened.Find(b) == null, "same basename does not share edits");
-    state.ResetAll(); reopened.Save(a, state.Capture(), null);
+    state.ResetGroup("镜头"); Check(state.Lens == new LensSettings(), "lens group reset");
+    state.Lens = new LensSettings(true);
+    state.ResetAll(); Check(state.Lens == new LensSettings(), "reset all clears lens");
+    reopened.Save(a, state.Capture(), null);
     Check(new EditStore(storePath).Find(a)!.Settings.Restore()[Parameter.Exposure] == 0, "reset persists");
     File.AppendAllText(a, "replacement");
     Check(reopened.Find(a) == null, "replaced input does not inherit edits");
@@ -87,6 +99,7 @@ try
     BatchRunner.Run(job, journal, false, CancellationToken.None, (_, _) => { }, (input, settings, _, destination) => {
         calls.Add(input); Check(settings[Parameter.Exposure] == .75, "frozen source parameters");
         Check(settings.Denoise == DenoiseSettings.Clean, "frozen source denoise");
+        Check(settings.Lens == saved.Lens, "frozen source lens configuration");
         Check(settings.Effects == saved.Effects && settings.DisplayChromaDenoise == 1, "frozen source effects and display chroma");
         if (input == b) throw new InvalidOperationException("invalid RAW");
         File.WriteAllText(destination, "rendered");
@@ -107,6 +120,7 @@ try
     journal.Save(cancelled);
     var recovered = journal.Load()!;
     Check(recovered.Settings.Restore().Denoise == DenoiseSettings.Clean, "denoise survives journal recovery");
+    Check(recovered.Settings.Restore().Lens == saved.Lens, "lens survives journal recovery");
     Check(recovered.Settings.Restore().Effects == saved.Effects && recovered.Settings.Restore().DisplayChromaDenoise == 1,
         "effects and display chroma survive journal recovery");
     Check(recovered.Interrupted && recovered.Items[1].Status == BatchStatus.Waiting, "interrupted running work recovers");

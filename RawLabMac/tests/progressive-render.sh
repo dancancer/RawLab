@@ -10,21 +10,18 @@ RAW="${1:-${RAWLAB_TEST_RAW:-}}"
 test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an external RAW path'; exit 1; }
 LUT="${2:-$ROOT/lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube}"
 
-swiftc -swift-version 5 -O -sdk "$SDK" \
+SOURCES=()
+for source in "$ROOT"/RawLabMac/Sources/*.swift; do
+    case "$source" in */RawLabMacApp.swift) continue ;; esac
+    SOURCES+=("$source")
+done
+swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx26.0" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/RawLabMac/Sources/Engine.swift" \
-    "$ROOT/Shared/ExportMetadata.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLNative.swift" \
-    "$ROOT/RawLabMac/Sources/RenderScheduling.swift" \
-    "$ROOT/RawLabMac/Sources/LookLibrary.swift" \
-    "$ROOT/RawLabMac/Sources/EditorModel.swift" \
-    "$ROOT/RawLabMac/Sources/EditPersistence.swift" "$ROOT/RawLabMac/Sources/BatchExport.swift" \
-    "$ROOT/RawLabMac/Sources/BatchExportModel.swift" "$ROOT/RawLabMac/Sources/FileLibrary.swift" \
-    "$ROOT/RawLabMac/Sources/ExportSizePicker.swift" \
+    "${SOURCES[@]}" "$ROOT"/Shared/*.swift \
     "$ROOT/RawLabMac/tests/ProgressiveRenderTests.swift" \
     "$BUILD/libsony2fuji_core.a" \
-    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib) -lc++ -lz \
+    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -o "$OUT/progressive-render"
 

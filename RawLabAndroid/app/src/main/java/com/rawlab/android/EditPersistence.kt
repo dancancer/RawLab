@@ -46,10 +46,12 @@ class EditStore(private val directory: File) {
         properties.stringPropertyNames().filter { it.startsWith("record.") && it.endsWith(".values") }.forEach { key ->
             val encoded = key.removePrefix("record.").removeSuffix(".values")
             val identity = PhotoIdentity(String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8))
-            val storedFilm = properties.getProperty("record.$encoded.film", "neutral")
+            val storedFilm = properties.getProperty("record.${encoded}.film", "neutral")
             val film = runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
                 .getOrDefault(storedFilm)
-            records[identity] = decode(properties.getProperty(key), film).copy(recipeID = properties.getProperty("record.$encoded.recipe"))
+            records[identity] = decode(properties.getProperty(key), film).copy(
+                recipeID = properties.getProperty("record.$encoded.recipe"),
+                lens = LensSettings.decode(properties.getProperty("record.$encoded.lens")))
         }
     }
 
@@ -60,6 +62,7 @@ class EditStore(private val directory: File) {
                 .encodeToString(identity.value.toByteArray(StandardCharsets.UTF_8))
             properties.setProperty("record.$encoded.values", encode(settings))
             settings.recipeID?.let { properties.setProperty("record.$encoded.recipe", it) }
+            properties.setProperty("record.$encoded.lens", settings.lens.encode())
             properties.setProperty("record.$encoded.film", Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(settings.film.toByteArray(StandardCharsets.UTF_8)))
         }

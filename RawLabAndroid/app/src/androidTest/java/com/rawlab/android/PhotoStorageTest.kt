@@ -16,7 +16,7 @@ class PhotoStorageTest {
             "${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?", arrayOf("RawLab-%"), null)?.use { it.count } ?: 0
         PhotoStorage(context).use { storage ->
             val before = count()
-            assertThrows(Exception::class.java) { storage.saveAlbum(File(context.cacheDir, UUID.randomUUID().toString()), true) }
+            assertThrows(Exception::class.java) { storage.saveAlbum(File(context.cacheDir, UUID.randomUUID().toString()), ExportFormat.PNG) }
             assertEquals(before, count())
         }
     }
@@ -30,7 +30,7 @@ class PhotoStorageTest {
             PhotoStorage(context).use { storage ->
                 assertThrows(IllegalArgumentException::class.java) { storage.saveDocument(file, Uri.fromFile(file), Uri.fromFile(file)) }
                 assertArrayEquals(bytes, file.readBytes())
-                val uri = storage.saveAlbum(file, true)
+                val uri = storage.saveAlbum(file, ExportFormat.PNG)
                 try {
                     assertArrayEquals(bytes, context.contentResolver.openInputStream(uri)!!.use { it.readBytes() })
                     context.contentResolver.query(uri, arrayOf(MediaStore.Images.Media.IS_PENDING), null, null, null)!!.use {

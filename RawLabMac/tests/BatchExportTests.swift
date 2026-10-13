@@ -22,9 +22,23 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         var hsl = HSLSettings()
         hsl.set(.saturation, channel: 5, value: -65)
         settings.hsl = hsl
+        settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Velvia")
         job.longEdge = 2048
         let encodedJob = try JSONEncoder().encode(job)
+        var dngRecord = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
+        dngRecord["outputFormat"] = "dng"
+        dngRecord["version"] = 2
+        let restoredDNG = try JSONDecoder().decode(BatchExportJob.self,
+            from: JSONSerialization.data(withJSONObject: dngRecord))
+        try check(restoredDNG.suffix == "dng", "rendered DNG journals retain their file format")
+        try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).suffix == "jpg",
+                  "legacy JPEG journals retain their original format")
+        var legacyPNG = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
+        legacyPNG["png"] = true
+        try check(try JSONDecoder().decode(BatchExportJob.self,
+                  from: JSONSerialization.data(withJSONObject: legacyPNG)).suffix == "png",
+                  "legacy PNG journals retain their original format")
         var legacyRecipeJob = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
         var legacyRecipeSettings = legacyRecipeJob["settings"] as! [String: Any]
         legacyRecipeSettings["masterRecipeID"] = MasterRecipe.hamadaDaylightV2.id
@@ -77,11 +91,32 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         settings.exposure = -1
         settings.hsl = nil
         settings.exposureMode = .scene
+        settings.lensCorrection = LensCorrectionSettings(distortion: true, mode: .manual, profileID: "live-profile")
         let journal = BatchJournal(directory: root.appendingPathComponent("journal"))
+        var dngJob = job
+        dngJob.format = .renderedDNG
+        try journal.save(dngJob)
+        try check(try journal.load()?.format == .renderedDNG && journal.load()?.version == 2,
+                  "new DNG format survives durable journal recovery")
+        try check(ExportFormat.forOutput(URL(fileURLWithPath: "/tmp/IMAGE.DNG")) == .renderedDNG &&
+                  ExportFormat.renderedDNG.nativeFormat == SONY2FUJI_OUTPUT_DNG,
+                  "DNG extension maps to native DNG, not JPEG")
+        var dngCalls = 0
+        try BatchExportRunner.run(job: &dngJob, journal: journal, scope: .unfinished,
+                                 shouldCancel: { false }) { _, snapshot, _, destination in
+            try check(destination.pathExtension == "dng" && snapshot == job.settings,
+                      "DNG batch uses frozen adjustments and DNG temporary filenames")
+            dngCalls += 1
+            try Data("DNG".utf8).write(to: destination)
+        }
+        try check(dngCalls == inputs.count && dngJob.items.allSatisfy { $0.output?.pathExtension == "dng" },
+                  "DNG batch publishes DNG names for every selected item")
         var calls: [String] = []
         try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) { input, snapshot, _, destination in
             calls.append(input.lastPathComponent)
             try check(snapshot.exposure == 0.75, "snapshot must not follow live edits")
+            try check(snapshot.lensSettings == LensCorrectionSettings(distortion: true, tca: true) && snapshot.lensSettings.coreProfileID.isEmpty,
+                      "batch freezes automatic mode, not a resolved source lens")
             try check(snapshot.waveletSettings == WaveletDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100), "batch keeps frozen denoise settings")
             try check(snapshot.hslSettings == hsl && snapshot.exposureMode == .sensor, "batch keeps frozen HSL and exposure baseline")
             if input == inputs[1] { throw Failure(message: "invalid RAW") }

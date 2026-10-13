@@ -21,32 +21,32 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .strength:
-            return "强度"
+            return L10n.text("强度")
         case .exposure:
-            return "曝光"
+            return L10n.text("曝光")
         case .contrast:
-            return "对比度"
+            return L10n.text("对比度")
         case .highlights:
-            return "高光"
+            return L10n.text("高光")
         case .shadows:
-            return "阴影"
+            return L10n.text("阴影")
         case .toneCurve:
-            return "S 曲线"
+            return L10n.text("S 曲线")
         case .saturation:
-            return "饱和度"
+            return L10n.text("饱和度")
         case .hsl: return "HSL"
         case .temperature:
-            return "色温"
+            return L10n.text("色温")
         case .tint:
-            return "色调"
+            return L10n.text("色调")
         case .noiseReduction:
-            return "降噪"
+            return L10n.text("降噪")
         case .sharpening:
-            return "锐化"
+            return L10n.text("锐化")
         case .vignette:
-            return "暗角"
+            return L10n.text("暗角")
         case .grain:
-            return "颗粒"
+            return L10n.text("颗粒")
         }
     }
 

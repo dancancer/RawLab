@@ -4,10 +4,10 @@ enum BatchItemStatus: String, Codable {
     case waiting, running, publishing, succeeded, failed
     var title: String {
         switch self {
-        case .waiting: return "等待导出"
-        case .running, .publishing: return "正在导出"
-        case .succeeded: return "已导出"
-        case .failed: return "导出失败"
+        case .waiting: return L10n.text("等待导出")
+        case .running, .publishing: return L10n.text("正在导出")
+        case .succeeded: return L10n.text("已导出")
+        case .failed: return L10n.text("导出失败")
         }
     }
 }
@@ -40,6 +40,7 @@ struct BatchExportJob: Codable {
     var items: [BatchExportItem] = []
     var outputDirectory: URL?
     var png = false
+    var outputFormat: ExportFormat?
     var longEdge: Int?
     var started = false
     var interrupted = false
@@ -58,7 +59,11 @@ struct BatchExportJob: Codable {
     var succeededCount: Int { items.filter { $0.selected && $0.status == .succeeded }.count }
     var failedCount: Int { items.filter { $0.selected && $0.status == .failed }.count }
     var remainingCount: Int { selectedCount - succeededCount - failedCount }
-    var suffix: String { png ? "png" : "jpg" }
+    var format: ExportFormat {
+        get { outputFormat ?? (png ? .png : .jpeg) }
+        set { outputFormat = newValue; png = newValue == .png; version = 2 }
+    }
+    var suffix: String { format.suffix }
 }
 
 final class BatchJournal {
@@ -87,7 +92,7 @@ final class BatchJournal {
     func load() throws -> BatchExportJob? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         var job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
-        guard job.version == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        guard (1...2).contains(job.version) else { throw CocoaError(.fileReadCorruptFile) }
         for index in job.items.indices where [.running, .publishing].contains(job.items[index].status) {
             let item = job.items[index]
             if item.status == .publishing, let output = item.output, let expected = item.completedIdentity,
@@ -132,10 +137,10 @@ enum BatchExportFailure: LocalizedError {
     case destination, changedInput, missingLook, noSelection
     var errorDescription: String? {
         switch self {
-        case .destination: return "无法写入输出目录，请检查访问权限和剩余空间。"
-        case .changedInput: return "原始文件已被替换，请重新选择照片。"
-        case .missingLook: return "任务使用的外观文件不可用，请重新创建任务。"
-        case .noSelection: return "请至少选择一张 RAW 照片。"
+        case .destination: return L10n.text("无法写入输出目录，请检查访问权限和剩余空间。")
+        case .changedInput: return L10n.text("原始文件已被替换，请重新选择照片。")
+        case .missingLook: return L10n.text("任务使用的外观文件不可用，请重新创建任务。")
+        case .noSelection: return L10n.text("请至少选择一张 RAW 照片。")
         }
     }
 }

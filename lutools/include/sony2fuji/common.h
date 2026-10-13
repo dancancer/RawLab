@@ -42,7 +42,8 @@ enum class ColorSpace {
 // 输出格式
 enum class OutputFormat {
     JPEG,
-    PNG
+    PNG,
+    DNG
 };
 
 // 错误码
@@ -52,7 +53,8 @@ enum class ErrorCode {
     ParseError,
     InvalidFormat,
     ProcessingError,
-    OutOfMemory
+    OutOfMemory,
+    IOError
 };
 
 } // namespace sony2fuji

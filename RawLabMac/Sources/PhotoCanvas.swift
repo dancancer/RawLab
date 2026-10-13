@@ -6,6 +6,8 @@ struct PhotoCanvas: View {
     let sourceWidth: Int
     @Binding var pan: CGSize
     let clipping: Bool
+    var sourceHeight: Int? = nil
+    var onPreviewSizeChange: ((Int) -> Void)? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGSize?
 
@@ -15,6 +17,9 @@ struct PhotoCanvas: View {
                                      (geometry.size.height - 24) / CGFloat(frame.image.height)))
             let factor = viewport.factor(fit: fit, displayScale: displayScale,
                                          sourceWidth: CGFloat(sourceWidth), renderedWidth: CGFloat(frame.image.width))
+            let previewEdge = viewport.previewLongEdge(canvas: geometry.size, displayScale: displayScale,
+                source: CGSize(width: CGFloat(sourceWidth), height: sourceHeight.map(CGFloat.init) ??
+                    CGFloat(sourceWidth) * CGFloat(frame.image.height) / CGFloat(frame.image.width)))
             ZStack {
                 Color.clear
                 Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)
@@ -28,11 +33,13 @@ struct PhotoCanvas: View {
                     pan = CGSize(width: dragOrigin!.width + value.translation.width,
                                  height: dragOrigin!.height + value.translation.height)
                 }.onEnded { _ in dragOrigin = nil })
+                .onChange(of: previewEdge, initial: true) { _, edge in onPreviewSizeChange?(edge) }
         }
     }
 }
 
 struct HistogramView: View {
+    @Environment(\.locale) private var localizationLocale
     let bins: [[Double]]
 
     var body: some View {
@@ -55,7 +62,7 @@ struct HistogramView: View {
                     context.fill(Path(rect), with: .color(color(for: segment.fill).opacity(0.82)))
                 }
             }
-        }.accessibilityLabel("RGB 输出直方图")
+        }.accessibilityLabel(L10n.text("RGB 输出直方图"))
     }
 
     private func color(for fill: HistogramFill) -> Color {

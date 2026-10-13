@@ -24,7 +24,8 @@ typedef enum sony2fuji_status {
     SONY2FUJI_STATUS_UNSUPPORTED = 2,
     SONY2FUJI_STATUS_IO_ERROR = 3,
     SONY2FUJI_STATUS_PROCESSING_ERROR = 4,
-    SONY2FUJI_STATUS_OUT_OF_MEMORY = 5
+    SONY2FUJI_STATUS_OUT_OF_MEMORY = 5,
+    SONY2FUJI_STATUS_OUTPUT_IO_ERROR = 6
 } sony2fuji_status;
 
 // ============================================================================
@@ -51,7 +52,9 @@ typedef enum sony2fuji_output_format {
     SONY2FUJI_OUTPUT_JPEG = 0,
     SONY2FUJI_OUTPUT_PNG = 1,
     SONY2FUJI_OUTPUT_RGB8 = 2,
-    SONY2FUJI_OUTPUT_RGBA8 = 3
+    SONY2FUJI_OUTPUT_RGBA8 = 3,
+    // Output-referred LinearRaw with baked edits, not original sensor data. FILE only.
+    SONY2FUJI_OUTPUT_DNG = 4
 } sony2fuji_output_format;
 
 typedef enum sony2fuji_output_target {
@@ -202,6 +205,49 @@ typedef struct sony2fuji_hsl_config {
     float lightness[SONY2FUJI_HSL_CHANNELS];  // +/-0.5 display-HSL lightness.
 } sony2fuji_hsl_config;
 
+#define SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION 1u
+typedef struct sony2fuji_lens_correction_config {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t distortion;
+    int32_t tca;
+    int32_t auto_crop;
+    const char* profile_id; // NULL/empty: automatic; otherwise a catalog ID. Copied by setter.
+} sony2fuji_lens_correction_config;
+
+typedef enum sony2fuji_lens_state {
+    SONY2FUJI_LENS_OFF = 0,
+    SONY2FUJI_LENS_MATCHED = 1,
+    SONY2FUJI_LENS_NO_DATABASE = 2,
+    SONY2FUJI_LENS_NO_CAMERA = 3,
+    SONY2FUJI_LENS_NO_LENS = 4,
+    SONY2FUJI_LENS_AMBIGUOUS = 5,
+    SONY2FUJI_LENS_NO_CALIBRATION = 6,
+    SONY2FUJI_LENS_MISSING_FOCAL_LENGTH = 7,
+    SONY2FUJI_LENS_EMBEDDED_GEOMETRY = 8,
+    SONY2FUJI_LENS_UNSUPPORTED_INPUT = 9
+} sony2fuji_lens_state;
+
+typedef struct sony2fuji_lens_profile {
+    char id[512];
+    char maker[128];
+    char model[256];
+    int32_t has_distortion;
+    int32_t has_tca;
+    int32_t is_match;
+} sony2fuji_lens_profile;
+
+typedef struct sony2fuji_lens_report {
+    sony2fuji_lens_state state;
+    char camera_make[128];
+    char camera_model[128];
+    char lens_model[256];
+    float focal_length;
+    sony2fuji_lens_profile profile;
+    int32_t applied_distortion;
+    int32_t applied_tca;
+    float crop_scale; // Inscribed zoom; source dimensions/aspect are unchanged.
+} sony2fuji_lens_report;
 // ============================================================================
 // Opaque Session
 // ============================================================================
@@ -223,6 +269,15 @@ sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 
+// Explicit offline XML file/directory; NULL loads the system database. Failed loads preserve state.
+sony2fuji_status sony2fuji_session_set_lens_database(sony2fuji_session* session, const char* path);
+sony2fuji_status sony2fuji_session_set_lens_correction(
+    sony2fuji_session* session, const sony2fuji_lens_correction_config* config);
+// Metadata-only: does not unpack/develop RAW. count returns required capacity; NULL profiles queries size.
+sony2fuji_status sony2fuji_session_inspect_lens(sony2fuji_session* session, const char* input_path,
+    sony2fuji_lens_report* report, sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count);
+sony2fuji_status sony2fuji_session_get_lens_report(sony2fuji_session* session, sony2fuji_lens_report* report);
+
 // Validates a PHOTO look without a RAW, session or GPU. Optional outputs are
 // cleared on failure; CUBE is unversioned (0), RLOOK reports its header version.
 sony2fuji_status sony2fuji_validate_look(
@@ -232,6 +287,10 @@ sony2fuji_status sony2fuji_validate_look(
 // Reduced RAW processing is allowed only for PREVIEW + BUFFER requests.
 // FINAL requests and every file export ignore this flag.
 sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* session, int32_t enabled);
+// Opt-in approximation: resize linear input before filtering, tone and effects.
+// Only PREVIEW buffer requests use it; FINAL and file outputs remain exact.
+// Disabled by default; the request layout and existing preview mode are unchanged.
+sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled);
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session);
 
 // Exact 256-bin channel-major RGB counts and an optional packed RGBA8 clipping mask.

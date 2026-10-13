@@ -17,7 +17,8 @@ import java.io.File
 import java.util.UUID
 
 class PhotoInfoExportTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Before fun keepTestActivityVisible() {
@@ -119,17 +120,17 @@ class PhotoInfoExportTest {
             val original = source.readBytes()
             NativeProcessor(NativeProcessor.CPU).use { processor ->
                 processor.preview(source, null, EditSettings(exposure = 1f), 128, true)
-                for (png in listOf(false, true)) {
-                    val output = File(root, if (png) "limited.png" else "limited.jpg")
-                    processor.export(source, null, EditSettings(), output, png, 512)
+                for (format in listOf(ExportFormat.JPEG, ExportFormat.PNG)) {
+                    val output = File(root, "limited${format.suffix}")
+                    processor.export(source, null, EditSettings(), output, format, 512)
                     val image = BitmapFactory.decodeFile(output.path)
                     assertEquals(512, maxOf(image.width, image.height)); image.recycle()
                     assertEquals(PhotoInfoReader.read(source).captureTime, PhotoInfoReader.read(output).captureTime)
-                    if (png) assertEquals(16, output.readBytes()[24].toInt())
+                    if (format == ExportFormat.PNG) assertEquals(16, output.readBytes()[24].toInt())
                 }
                 val native = File(root, "native.jpg"); val capped = File(root, "no-enlarge.jpg")
-                processor.export(source, null, EditSettings(), native, false)
-                processor.export(source, null, EditSettings(), capped, false, 65535)
+                processor.export(source, null, EditSettings(), native, ExportFormat.JPEG)
+                processor.export(source, null, EditSettings(), capped, ExportFormat.JPEG, 65535)
                 val a = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(native.path, a); BitmapFactory.decodeFile(capped.path, b)
@@ -158,7 +159,7 @@ class PhotoInfoExportTest {
             compose.waitUntil(60_000) { batch.state.value.phase != BatchPhase.PREPARING }
             assertEquals(2, batch.state.value.job.rows.size)
             batch.state.value.job.rows.single { it.target.displayName == "broken.ARW" }.target.sourceFile.writeBytes(ByteArray(64))
-            compose.runOnUiThread { batch.start(false, null, 256) }
+            compose.runOnUiThread { batch.start(ExportFormat.JPEG, null, 256) }
             compose.waitUntil(240_000) { batch.state.value.phase !in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) }
             val job = batch.state.value.job
             assertEquals(1, job.rows.count { it.status == BatchRowStatus.SUCCESS })

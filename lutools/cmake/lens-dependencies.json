@@ -1,0 +1,11 @@
+{
+  "glib": {"url": "https://download.gnome.org/sources/glib/2.84/glib-2.84.4.tar.xz", "file": "glib-2.84.4.tar.xz", "sha256": "8a9ea10943c36fc117e253f80c91e477b673525ae45762942858aef57631bb90", "directory": "glib-2.84.4"},
+  "iconv": {"url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz", "file": "libiconv-1.18.tar.gz", "sha256": "3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8", "directory": "libiconv-1.18"},
+  "lensfun": {"url": "https://github.com/lensfun/lensfun/archive/refs/tags/v0.3.4.tar.gz", "file": "lensfun-0.3.4.tar.gz", "sha256": "dafb39c08ef24a0e2abd00d05d7341b1bf1f0c38bfcd5a4c69cf5f0ecb6db112", "directory": "lensfun-0.3.4"},
+  "pcre2": {"url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.bz2", "file": "pcre2-10.44.tar.bz2", "sha256": "d34f02e113cf7193a1ebf2770d3ac527088d485d4e047ed10e5d217c6ef5de96", "directory": "pcre2-10.44"},
+  "pcre2_patch": {"url": "https://github.com/mesonbuild/wrapdb/releases/download/pcre2_10.44-2/pcre2_10.44-2_patch.zip", "file": "pcre2_10.44-2_patch.zip", "sha256": "4336d422ee9043847e5e10dbbbd01940d4c9e5027f31ccdc33a7898a1ca94009"},
+  "libffi": {"url": "https://gitlab.freedesktop.org/gstreamer/meson-ports/libffi/-/archive/83d0cfd00d7d37af4b4349511d29f1f0512621b3/libffi-83d0cfd00d7d37af4b4349511d29f1f0512621b3.tar.gz", "file": "libffi-83d0cfd00d7d37af4b4349511d29f1f0512621b3.tar.gz", "sha256": "ab95eb62c77a0c7613458ed14972d9ba8448bb99de5e7901db7c98a49940c9fc", "directory": "libffi"},
+  "intl": {"url": "https://github.com/frida/proxy-libintl/archive/33934de09af6a6627eb44e310a8079df009abdbb.tar.gz", "file": "proxy-libintl-33934de09af6a6627eb44e310a8079df009abdbb.tar.gz", "sha256": "4ab5af85ec6124cb526a15c58bbc0877d241807e30855779808dbf9292d861aa", "directory": "proxy-libintl"},
+  "zlib": {"url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz", "file": "zlib-1.3.1.tar.gz", "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23", "directory": "zlib-1.3.1"},
+  "zlib_patch": {"url": "https://github.com/mesonbuild/wrapdb/releases/download/zlib_1.3.1-1/zlib_1.3.1-1_patch.zip", "file": "zlib_1.3.1-1_patch.zip", "sha256": "e79b98eb24a75392009cec6f99ca5cdca9881ff20bfa174e8b8926d5c7a47095"}
+}

@@ -23,9 +23,12 @@ public sealed class UpdateChecker : INotifyPropertyChanged
     public bool CanCheck => !Checking;
     public UpdateRelease? Available { get; private set; }
     public bool HasUpdate => Available != null;
-    public string AvailableLabel => Available is { } release ? $"RawLab {release.Version} 已发布" : "";
-    public string Status { get; private set; } = "尚未检查更新";
-    public string StorageWarning { get; private set; } = "";
+    public string AvailableLabel => Available is { } release ? Loc.Format("RawLab {0} 已发布", release.Version) : "";
+    private string statusKey = "尚未检查更新";
+    private string storageWarningKey = "";
+    public string Status => statusKey == "available" ? AvailableLabel : Loc.Text(statusKey);
+    public string StorageWarning => Loc.Text(storageWarningKey);
+    public void RefreshLanguage() => Notify();
     public bool Automatic
     {
         get => preferences.Automatic;
@@ -50,7 +53,7 @@ public sealed class UpdateChecker : INotifyPropertyChanged
             try { Available = UpdateRelease.Parse(cached, CurrentVersion); }
             catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or KeyNotFoundException) { }
         }
-        if (Available != null) Status = AvailableLabel;
+        if (Available != null) statusKey = "available";
     }
 
     public async Task CheckAsync(bool manual, CancellationToken cancellationToken = default)
@@ -58,12 +61,12 @@ public sealed class UpdateChecker : INotifyPropertyChanged
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (Checking || !UpdateRelease.ShouldCheck(manual, Automatic, preferences.LastAttempt, now)) return;
         Checking = true;
-        Status = "正在检查更新…";
+        statusKey = "正在检查更新…";
         preferences.LastAttempt = now;
         if (!Save() && !manual)
         {
             Checking = false;
-            Status = "无法保存检查时间，已跳过自动检查；可手动重试";
+            statusKey = "无法保存检查时间，已跳过自动检查；可手动重试";
             Notify();
             return;
         }
@@ -79,11 +82,11 @@ public sealed class UpdateChecker : INotifyPropertyChanged
             Available = UpdateRelease.Parse(json, CurrentVersion);
             preferences.CachedRelease = json;
             Save();
-            Status = Available == null ? "未发现适用于 Windows 的新版本" : AvailableLabel;
+            statusKey = Available == null ? "未发现适用于 Windows 的新版本" : "available";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or FormatException or InvalidOperationException or KeyNotFoundException)
         {
-            Status = "检查失败，请稍后重试或访问 GitHub 仓库";
+            statusKey = "检查失败，请稍后重试或访问 GitHub 仓库";
         }
         finally { Checking = false; Notify(); }
     }
@@ -95,12 +98,12 @@ public sealed class UpdateChecker : INotifyPropertyChanged
             Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
             File.WriteAllText(settingsPath + ".tmp", JsonSerializer.Serialize(preferences));
             File.Move(settingsPath + ".tmp", settingsPath, true);
-            StorageWarning = "";
+            storageWarningKey = "";
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            StorageWarning = "无法保存更新设置，请检查应用数据目录权限";
+            storageWarningKey = "无法保存更新设置，请检查应用数据目录权限";
             return false;
         }
     }

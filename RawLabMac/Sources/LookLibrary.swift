@@ -14,11 +14,11 @@ enum LookLibraryError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidLook: return "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。"
-        case .unreadableSource: return "无法读取外观文件。"
-        case .invalidRegistry: return "无法读取已保存的外观库，原有记录未被覆盖。"
-        case .invalidName: return "外观名称不能为空或包含控制字符。"
-        case .missingLook: return "此外观已不在外观库中。"
+        case .invalidLook: return L10n.text("外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。")
+        case .unreadableSource: return L10n.text("无法读取外观文件。")
+        case .invalidRegistry: return L10n.text("无法读取已保存的外观库，原有记录未被覆盖。")
+        case .invalidName: return L10n.text("外观名称不能为空或包含控制字符。")
+        case .missingLook: return L10n.text("此外观已不在外观库中。")
         }
     }
 }

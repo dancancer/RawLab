@@ -13,7 +13,7 @@ public sealed class HslSettings : IEquatable<HslSettings>
     public HslSettings(double[] values)
     {
         if (values.Length != 24 || values.Any(value => !double.IsFinite(value) || value is < -100 or > 100))
-            throw new ArgumentException("HSL 参数无效。", nameof(values));
+            throw new ArgumentException(Loc.Text("HSL 参数无效。"), nameof(values));
         this.values = (double[])values.Clone();
     }
     public double Value(int axis, int channel) => values[axis * 8 + channel];

@@ -14,7 +14,7 @@ data class UpdateRelease(val version: String, val notes: String, val url: String
             val difference = latest.zip(installed).firstOrNull { (a, b) -> a != b }
             if (difference == null || difference.first < difference.second) return null
             if (assets.none { it.startsWith("RawLab-Android-") && it.endsWith(".apk") }) return null
-            return UpdateRelease(latest.joinToString("."), notes, "$REPOSITORY/releases/tag/$tag")
+            return UpdateRelease(latest.joinToString("."), notes, "${REPOSITORY}/releases/tag/${tag}")
         }
 
         private fun numbers(text: String): List<Int> {

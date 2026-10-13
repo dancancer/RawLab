@@ -6,6 +6,11 @@ SOURCES="$BASE/sources"
 DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-18.0}"
 JOBS="${JOBS:-6}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+# Forward optional cache overrides, for example a local extracted DNG SDK:
+#
+#   bash .../build-framework.sh \
+#     -DFETCHCONTENT_SOURCE_DIR_RAWLAB_DNG_SOURCE=/path/to/dng_sdk_1_7_1
+CMAKE_EXTRA_ARGS=("$@")
 mkdir -p "$SOURCES" "$ROOT/build-ios"
 
 fetch() {
@@ -33,32 +38,29 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     sdk="${config%-*}"
     arch="${config##*-}"
     sysroot="$(xcrun --sdk "$sdk" --show-sdk-path)"
-    prefix="$BASE/install/$config"
     common=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$sysroot"
         -DCMAKE_OSX_ARCHITECTURES="$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local"
-        -DZLIB_LIBRARY="$sysroot/usr/lib/libz.tbd" -DZLIB_INCLUDE_DIR="$sysroot/usr/include")
-    cmake -S "$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3" \
-        -B "$BASE/libraw-$config" "${common[@]}" \
-        -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2" -DCMAKE_INSTALL_PREFIX="$prefix" \
-        -DBUILD_SHARED_LIBS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=OFF \
+        -DZLIB_LIBRARY="$sysroot/usr/lib/libz.tbd" -DZLIB_INCLUDE_DIR="$sysroot/usr/include"
+        -DSONY2FUJI_BUILD_RAW_DEPS=ON
+        -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2"
+        -DLIBRAW_CMAKE_SOURCE_DIR="$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3"
+        -DBUILD_SHARED_LIBS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=OFF
         -DENABLE_LCMS=OFF -DENABLE_JASPER=OFF -DCMAKE_DISABLE_FIND_PACKAGE_JPEG=ON
-    cmake --build "$BASE/libraw-$config" --target raw -j "$JOBS"
-    # The upstream install target includes raw_r as well as raw.
-    cmake --build "$BASE/libraw-$config" --target raw_r -j "$JOBS"
-    cmake --install "$BASE/libraw-$config"
-    # Apple ships zlib in the SDK without pkg-config metadata.
-    zlib_version="$(sed -n 's/^#define ZLIB_VERSION "\(.*\)"/\1/p' "$sysroot/usr/include/zlib.h")"
-    test -n "$zlib_version"
-    printf 'prefix=%s\nName: zlib\nDescription: iOS SDK zlib\nVersion: %s\nLibs: -lz\nCflags: -I${prefix}/usr/include\n' \
-        "$sysroot" "$zlib_version" > "$prefix/lib/pkgconfig/zlib.pc"
+        -DSONY2FUJI_ENABLE_DNGSDK=ON
+        -DSONY2FUJI_LIBRAW_TARGET=raw
+        -DSONY2FUJI_DNGSDK_TARGET=rawlab_dng_sdk)
+    # LibRaw and the Adobe DNG SDK are built by the shared core wrapper so the
+    # static decoder and its SDK support use the same target architecture.
     core="$BASE/core-$config"
-    PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig" PKG_CONFIG_PATH="$prefix/lib/pkgconfig" \
-        cmake -S "$ROOT" -B "$core" -GXcode "${common[@]}" \
+    cmake -S "$ROOT" -B "$core" -GXcode "${common[@]}" "${CMAKE_EXTRA_ARGS[@]}" \
         -DIOS=ON -DBUILD_SHARED_LIB=ON -DBUILD_CLI=OFF -DBUILD_TESTING=OFF \
+        -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_BUILD_LENS_DEPS=ON \
         -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_GPU=ON \
+        -DSONY2FUJI_BUILD_TIFF_DEPS=ON \
         -DSONY2FUJI_ENABLE_WAVELET_DENOISE=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_BUILD_DENOISE_DEPS=ON \
         -DFETCHCONTENT_SOURCE_DIR_RAWLAB_OPENCV_CONTRIB="$SOURCES/opencv_contrib-4.12.0" \
+        -DOPENCV_SKIP_LINK_NO_UNDEFINED=ON \
         -DFETCHCONTENT_SOURCE_DIR_RAWLAB_OPENCV="$SOURCES/opencv-4.12.0" \
         -DFETCHCONTENT_SOURCE_DIR_RAWLAB_WAVELIB="$SOURCES/wavelib-7f61bf592f3c470b2a7d8199431fde821d7253ac" \
         -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
@@ -77,6 +79,13 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/platform/ios/ThirdPartyNotices.md" "$framework/Licenses/"
     cp "$core/licenses/OpenCV-LICENSE" "$core/licenses/wavelib-COPYRIGHT" "$framework/Licenses/"
+    cp -R "$core/licenses/lensfun" "$framework/Licenses/"
+    rm -rf "$framework/Lensfun"
+    mkdir -p "$framework/Lensfun"
+    cp -R "$ROOT/third_party/lensfun/version_1/." "$framework/Lensfun/"
+    cp "$core/licenses/libtiff/LICENSE.md" "$framework/Licenses/libtiff-LICENSE.md"
+    test -d "$core/licenses/dng-sdk"
+    cp -R "$core/licenses/dng-sdk" "$framework/Licenses/"
 done
 
 stage="$(mktemp -d "$ROOT/build-ios/package.XXXXXX")"

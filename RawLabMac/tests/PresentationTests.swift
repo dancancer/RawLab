@@ -96,6 +96,23 @@ struct PresentationTests {
               AdjustmentParameter.temperature.spec.progress(for: 50000) == 1,
               "Asymmetric ranges fill each direction relative to its default")
         var viewport = PhotoViewport()
+        let canvas = CGSize(width: 824, height: 624)
+        let source = CGSize(width: 6000, height: 4000)
+        check(viewport.previewLongEdge(canvas: canvas, displayScale: 1, source: source) == 832,
+              "Fit preview uses the image footprint, rounded to stable 64-pixel steps")
+        check(viewport.previewLongEdge(canvas: canvas, displayScale: 2, source: source) == 1600,
+              "Retina preview requests physical pixels, not points")
+        check(viewport.previewLongEdge(canvas: CGSize(width: 424, height: 624), displayScale: 2, source: source) == 832,
+              "Split comparison reduces work to the smaller photo pane")
+        viewport.zoom(by: 2)
+        check(viewport.previewLongEdge(canvas: canvas, displayScale: 2, source: source) == 3200,
+              "Zoom requests enough pixels for the enlarged image")
+        viewport.actualPixels()
+        check(viewport.previewLongEdge(canvas: canvas, displayScale: 2, source: source) == 1600,
+              "Pixel-mode dragging stays bounded by the visible canvas")
+        viewport.fit()
+        check(viewport.previewLongEdge(canvas: canvas, displayScale: 20, source: source) == 6000,
+              "Preview never requests more than the source resolution")
         check(viewport.factor(fit: 0.2, displayScale: 2) == 0.2, "Initial canvas fits the image")
         viewport.zoom(by: 1.25)
         check(abs(viewport.factor(fit: 0.2, displayScale: 2) - 0.25) < 0.00001,

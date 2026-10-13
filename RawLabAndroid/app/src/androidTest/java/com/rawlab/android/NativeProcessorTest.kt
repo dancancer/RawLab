@@ -15,6 +15,42 @@ import java.nio.ByteOrder
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun lensCorrectionReachesPreviewExportAndReset() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File(context.cacheDir, "lens-test.RAW")
+        val output = File(context.cacheDir, "lens-test.png")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU, PhotoStorage(context).lensDatabase()).use { processor ->
+                val off = processor.preview(input, null, EditSettings(), 300, false)
+                val unselected = processor.preview(input, null,
+                    EditSettings(lens = LensSettings(distortion = true, manual = true)), 300, false)
+                assertEquals(4, unselected.lens!!.state)
+                assertArrayEquals(off.pixels, unselected.pixels)
+                val candidate = off.lens!!.candidates.first { it.isMatch && it.hasDistortion }
+                val settings = EditSettings(lens = LensSettings(true, true, true, true, candidate.id))
+                val corrected = processor.preview(input, null, settings, 300, false)
+                assertTrue(corrected.lens!!.appliedDistortion)
+                assertEquals(candidate.hasTca, corrected.lens!!.appliedTca)
+                assertEquals(off.width, corrected.width); assertEquals(off.height, corrected.height)
+                assertFalse(off.pixels.contentEquals(corrected.pixels))
+                processor.setGpuMode(NativeProcessor.FORCE)
+                val gpu = processor.preview(input, null, settings, 300, false)
+                assertEquals(2, gpu.backend)
+                assertTrue(corrected.pixels.indices.maxOf { kotlin.math.abs((corrected.pixels[it].toInt() and 255) - (gpu.pixels[it].toInt() and 255)) } <= 2)
+                processor.setGpuMode(NativeProcessor.CPU)
+                val automatic = processor.preview(input, null, settings.copy(lens = settings.lens.copy(manual = false)), 300, false)
+                if (off.lens!!.candidates.count { it.isMatch } == 1) assertArrayEquals(corrected.pixels, automatic.pixels)
+                else assertEquals(5, automatic.lens!!.state)
+                val reset = processor.preview(input, null, EditSettings(), 300, false)
+                assertArrayEquals(off.pixels, reset.pixels); assertEquals(0, reset.lens!!.state)
+                processor.export(input, null, settings, output, ExportFormat.PNG, 300)
+                assertEquals(16, output.readBytes()[24].toInt())
+            }
+        } finally { input.delete(); output.delete() }
+    }
+
     @Test fun hslAndAutomaticExposureReachTheSharedCore() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val input = File(instrumentation.targetContext.cacheDir, "hsl-auto-test.dng")
@@ -73,7 +109,7 @@ class NativeProcessorTest {
                 }
                 assertTrue("Combined effects/wavelet/chroma CPU/GLES parity max DN=$maximum", maximum <= 2)
                 assertArrayEquals(gpu.pixels, processor.preview(input, null, settings, 200, false).pixels)
-                processor.export(input, null, settings, output, true)
+                processor.export(input, null, settings, output, ExportFormat.PNG)
                 assertTrue(output.isFile && output.length() > 0)
             }
         } finally { input.delete(); output.delete() }
@@ -84,20 +120,23 @@ class NativeProcessorTest {
         val context = instrumentation.targetContext
         val input = File(context.cacheDir, "wavelet-test.dng")
         val output = File(context.cacheDir, "wavelet-test.png")
+        val reference = File(context.cacheDir, "wavelet-reference.png")
+        val jpeg = File(context.cacheDir, "wavelet-test.jpg")
+        val jpegReference = File(context.cacheDir, "wavelet-reference.jpg")
+        val settings = EditSettings(denoise = DenoiseSettings().withPreset(DenoisePreset.CLEAN))
         instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
         try {
             NativeProcessor(NativeProcessor.CPU).use { processor ->
-                val off = processor.preview(input, null, EditSettings(), 200, false)
-                val settings = EditSettings(denoise = DenoiseSettings().withPreset(DenoisePreset.CLEAN))
-                val clean = processor.preview(input, null, settings, 200, false)
+                val off = processor.preview(input, null, EditSettings(), 1600, false)
+                val clean = processor.preview(input, null, settings, 1600, false)
                 assertFalse(off.pixels.contentEquals(clean.pixels))
                 assertEquals(0, clean.backend)
                 processor.preview(input, null, settings, 128, true)
-                assertArrayEquals(clean.pixels, processor.preview(input, null, settings, 200, false).pixels)
+                assertArrayEquals(clean.pixels, processor.preview(input, null, settings, 1600, false).pixels)
                 assertArrayEquals(off.pixels, processor.preview(input, null,
-                    settings.copy(denoise = settings.denoise.copy(enabled = false)), 200, false).pixels)
+                    settings.copy(denoise = settings.denoise.copy(enabled = false)), 1600, false).pixels)
                 processor.setGpuMode(NativeProcessor.FORCE)
-                val gpu = processor.preview(input, null, settings, 200, false)
+                val gpu = processor.preview(input, null, settings, 1600, false)
                 assertEquals(2, gpu.backend)
                 assertEquals(clean.pixels.size, gpu.pixels.size)
                 val difference = clean.pixels.indices.maxOf { index ->
@@ -105,25 +144,31 @@ class NativeProcessorTest {
                 }
                 assertTrue("Wavelet GLES CPU parity max DN=$difference", difference <= 2)
                 processor.setGpuMode(NativeProcessor.CPU)
-                processor.export(input, null, settings, output, true)
-                val header = ByteArray(26)
-                java.io.DataInputStream(output.inputStream()).use { it.readFully(header) }
-                assertEquals(16, header[24].toInt())
-                assertTrue(ByteBuffer.wrap(header, 16, 4).int > 200)
-                assertTrue(ByteBuffer.wrap(header, 20, 4).int > 200)
-                val saved = android.graphics.BitmapFactory.decodeFile(output.path)
-                val reference = File(context.cacheDir, "wavelet-reference.png")
-                NativeProcessor(NativeProcessor.CPU).use { fresh ->
-                    try {
-                        fresh.export(input, null, settings, reference, true)
-                        val full = android.graphics.BitmapFactory.decodeFile(reference.path)
-                        assertTrue("Interactive work never changes a fresh FINAL export", saved.sameAs(full))
-                        full.recycle()
-                    } finally { reference.delete() }
-                }
-                saved.recycle()
+                instrumentation.sendStatus(2, Bundle().apply { putString("stream", "Applied viewport denoise; begin native PNG\n") })
+                processor.export(input, null, settings, output, ExportFormat.PNG)
+                processor.preview(input, null, settings.copy(exposure = .35f), 320, true)
+                processor.export(input, null, settings.copy(exposure = .35f), jpeg, ExportFormat.JPEG)
             }
-        } finally { input.delete(); output.delete() }
+            val header = ByteArray(26)
+            java.io.DataInputStream(output.inputStream()).use { it.readFully(header) }
+            assertEquals(16, header[24].toInt())
+            val width = ByteBuffer.wrap(header, 16, 4).int
+            val height = ByteBuffer.wrap(header, 20, 4).int
+            assertTrue(maxOf(width, height) > 1600)
+            // 独立基准串行执行，避免把两个完整 RAW session 的峰值叠加到测试中。
+            NativeProcessor(NativeProcessor.CPU).use { fresh ->
+                fresh.export(input, null, settings, reference, ExportFormat.PNG)
+                fresh.export(input, null, settings.copy(exposure = .35f), jpegReference, ExportFormat.JPEG)
+            }
+            for ((actualFile, expectedFile) in listOf(output to reference, jpeg to jpegReference)) {
+                val actual = android.graphics.BitmapFactory.decodeFile(actualFile.path)
+                val expected = android.graphics.BitmapFactory.decodeFile(expectedFile.path)
+                assertEquals(width, actual.width)
+                assertEquals(height, actual.height)
+                assertTrue("${actualFile.extension} matches independent FINAL after viewport denoise", actual.sameAs(expected))
+                actual.recycle(); expected.recycle()
+            }
+        } finally { input.delete(); output.delete(); reference.delete(); jpeg.delete(); jpegReference.delete() }
     }
 
     @Test fun whiteBalancePreviewLatency() {
@@ -200,7 +245,7 @@ class NativeProcessorTest {
                     assertFalse(neutral.pixels.contentEquals(warm.pixels))
                 }
                 val out = File(context.cacheDir, "native-export.png")
-                processor.export(input, null, EditSettings(), out, true)
+                processor.export(input, null, EditSettings(), out, ExportFormat.PNG)
                 val header = ByteArray(26)
                 java.io.DataInputStream(out.inputStream()).use { it.readFully(header) }
                 assertEquals(16, header[24].toInt())
@@ -211,7 +256,7 @@ class NativeProcessorTest {
                 assertCaptureMetadata(input, out, nativeWidth, nativeHeight)
                 out.delete()
                 val jpeg = File(context.cacheDir, "native-export.jpg")
-                processor.export(input, storage.filmPath("velvia"), EditSettings(film = "velvia", strength = 2f), jpeg, false)
+                processor.export(input, storage.filmPath("velvia"), EditSettings(film = "velvia", strength = 2f), jpeg, ExportFormat.JPEG)
                 val dimensions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 android.graphics.BitmapFactory.decodeFile(jpeg.path, dimensions)
                 assertEquals(nativeWidth, dimensions.outWidth)

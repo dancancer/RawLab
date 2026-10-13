@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -183,6 +185,50 @@ static void apiTests() {
     assert(render() == final);
     assert(sony2fuji_session_set_interactive_preview(session, 1) == SONY2FUJI_STATUS_OK);
     assert(render() == final);
+    assert(sony2fuji_session_set_viewport_preview(nullptr, 1) == SONY2FUJI_STATUS_INVALID_ARGUMENT);
+    assert(sony2fuji_session_set_viewport_preview(session, 2) == SONY2FUJI_STATUS_INVALID_ARGUMENT);
+    assert(sony2fuji_session_set_viewport_preview(session, 1) == SONY2FUJI_STATUS_OK);
+    request.preview_long_edge = 2000;
+    sony2fuji_buffer bounded{};
+    assert(sony2fuji_process(session, &request, &bounded) == SONY2FUJI_STATUS_OK);
+    assert(bounded.width == 513 && bounded.height == 385);
+    sony2fuji_release_buffer(&bounded);
+    request.preview_long_edge = 0;
+    request.sharpening = 0.8f;
+    const auto viewport = render();
+    request.input_width = 128; request.input_height = 96;
+    request.intent = SONY2FUJI_INTENT_FINAL;
+    assert(render() == viewport); // Effects run on the reduced source, not before resize.
+    request.input_width = 513; request.input_height = 385;
+    request.sharpening = 0;
+    assert(render() == final); // FINAL ignores the opt-in, even when left enabled.
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    const auto path = (std::filesystem::temp_directory_path() /
+        ("rawlab-viewport-" + std::to_string(reinterpret_cast<uintptr_t>(session)) + ".png")).string();
+    request.output_target = SONY2FUJI_TARGET_FILE;
+    request.output_format = SONY2FUJI_OUTPUT_PNG;
+    request.output_path = path.c_str();
+    auto fileRender = [&]() {
+        assert(sony2fuji_process(session, &request, nullptr) == SONY2FUJI_STATUS_OK);
+        std::ifstream stream(path, std::ios::binary);
+        return std::vector<unsigned char>(std::istreambuf_iterator<char>(stream), {});
+    };
+    const auto viewportFile = fileRender();
+    assert(sony2fuji_session_set_viewport_preview(session, 0) == SONY2FUJI_STATUS_OK);
+    assert(!viewportFile.empty() && fileRender() == viewportFile);
+    std::filesystem::remove(path);
+    request.output_target = SONY2FUJI_TARGET_BUFFER;
+    request.output_format = SONY2FUJI_OUTPUT_RGB8;
+    request.output_path = nullptr;
+    assert(sony2fuji_session_set_viewport_preview(session, 1) == SONY2FUJI_STATUS_OK);
+    gpu.mode = SONY2FUJI_GPU_AUTO;
+    assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
+    request.sharpening = 0.8f;
+    const auto viewportGPU = render();
+    for (size_t i = 0; i < viewport.size(); ++i)
+        assert(std::abs(int(viewportGPU[i]) - int(viewport[i])) <= 2);
+    request.sharpening = 0;
+    assert(sony2fuji_session_set_viewport_preview(session, 0) == SONY2FUJI_STATUS_OK);
     gpu.mode = SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
     const auto accelerated = render();

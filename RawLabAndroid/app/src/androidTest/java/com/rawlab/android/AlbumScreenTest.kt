@@ -24,7 +24,8 @@ import java.util.UUID
 
 @SdkSuppress(minSdkVersion = 29)
 class AlbumScreenTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
     private val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
     private val bucket = "Scroll-${UUID.randomUUID().toString().take(8)}"
     private val media = mutableListOf<Uri>()

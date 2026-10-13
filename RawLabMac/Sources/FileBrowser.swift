@@ -1,24 +1,26 @@
 import SwiftUI
 
 struct FileBrowser: View {
+    @Environment(\.locale) private var localizationLocale
     @ObservedObject var library: PhotoLibrary
     let selected: URL?
     let open: (URL) -> Void
     var canApplySettings = false
     var applySettings: (URL, Bool) -> Void = { _, _ in }
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 0) {
             HStack {
-                Text("文件夹").font(.headline)
+                Text(L10n.text("文件夹")).font(.headline)
                 Spacer()
                 Button(action: library.addDirectories) { Image(systemName: "folder.badge.plus") }
-                    .buttonStyle(.borderless).help("添加目录").accessibilityLabel("添加目录")
+                    .buttonStyle(.borderless).help(L10n.text("添加目录")).accessibilityLabel(L10n.text("添加目录"))
             }.padding(14)
             Divider()
             if library.roots.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "folder").font(.system(size: 28)).foregroundStyle(.secondary)
-                    Button("添加目录…", action: library.addDirectories)
+                    Button(L10n.text("添加目录…"), action: library.addDirectories)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // 目录和照片行共用原生列表，避免嵌套网格重新估算高度时改变滚动位置。
@@ -41,7 +43,7 @@ struct FileBrowser: View {
                 .contextMenu {
                     fileActions(folder.url, directory: true)
                     Divider()
-                    Button("从侧栏移除此目录") { library.remove(row.root) }
+                    Button(L10n.text("从侧栏移除此目录")) { library.remove(row.root) }
                 }
         case .photos(let first, let second):
             HStack(spacing: 8) {
@@ -58,10 +60,10 @@ struct FileBrowser: View {
             HStack(alignment: .top) {
                 Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Button(action: folder.load) { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless).help("重新读取目录").accessibilityLabel("重新读取目录")
+                    .buttonStyle(.borderless).help(L10n.text("重新读取目录")).accessibilityLabel(L10n.text("重新读取目录"))
             }
         case .empty:
-            Text("无 RAW 照片").font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
+            Text(L10n.text("无 RAW 照片")).font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
         }
     }
 
@@ -70,10 +72,10 @@ struct FileBrowser: View {
             if directory { NSWorkspace.shared.open(url) }
             else { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         } label: {
-            Label("在 Finder 中打开", systemImage: "folder")
+            Label(L10n.text("在 Finder 中打开"), systemImage: "folder")
         }
         Button { applySettings(url, directory) } label: {
-            Label("应用当前设置", systemImage: "slider.horizontal.3")
+            Label(L10n.text("应用当前设置"), systemImage: "slider.horizontal.3")
         }.disabled(!canApplySettings)
     }
 }
@@ -104,9 +106,9 @@ private struct PhotoContextMenu: NSViewRepresentable {
         private func showMenu(_ event: NSEvent) {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            let open = menu.addItem(withTitle: "在 Finder 中打开", action: #selector(openInFinder), keyEquivalent: "")
+            let open = menu.addItem(withTitle: L10n.text("在 Finder 中打开"), action: #selector(openInFinder), keyEquivalent: "")
             open.target = self
-            let copy = menu.addItem(withTitle: "应用当前设置", action: #selector(applyCurrentSettings), keyEquivalent: "")
+            let copy = menu.addItem(withTitle: L10n.text("应用当前设置"), action: #selector(applyCurrentSettings), keyEquivalent: "")
             copy.target = self; copy.isEnabled = canApply
             NSMenu.popUpContextMenu(menu, with: event, for: self)
         }
@@ -156,8 +158,10 @@ struct FileBrowserRow: Identifiable {
 }
 
 private struct FolderHeading: View {
+    @Environment(\.locale) private var localizationLocale
     @ObservedObject var folder: PhotoFolder
     var body: some View {
+        let _ = localizationLocale
         Button(action: folder.toggle) {
             HStack(spacing: 7) {
                 Image(systemName: folder.expanded ? "chevron.down" : "chevron.right")
@@ -168,16 +172,18 @@ private struct FolderHeading: View {
                 if folder.loading { ProgressView().controlSize(.mini) }
             }.font(.system(size: 12, weight: .medium)).frame(height: 26).contentShape(Rectangle())
         }.buttonStyle(.plain).help(folder.url.path)
-            .accessibilityValue(folder.expanded ? "已展开" : "已收起")
+            .accessibilityValue(folder.expanded ? L10n.text("已展开") : L10n.text("已收起"))
     }
 }
 
 private struct PhotoThumbnail: View {
+    @Environment(\.locale) private var localizationLocale
     let url: URL
     let selected: Bool
     let action: () -> Void
     @State private var image: NSImage?
     var body: some View {
+        let _ = localizationLocale
         Button(action: action) {
             VStack(spacing: 5) {
                 ZStack {

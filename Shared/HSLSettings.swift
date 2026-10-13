@@ -5,9 +5,9 @@ enum HSLAxis: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .hue: return "色相"
-        case .saturation: return "饱和度"
-        case .lightness: return "明度"
+        case .hue: return L10n.text("色相")
+        case .saturation: return L10n.text("饱和度")
+        case .lightness: return L10n.text("明度")
         }
     }
 }

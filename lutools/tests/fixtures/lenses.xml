@@ -1,0 +1,21 @@
+<lensdatabase version="1">
+    <mount><name>RawLab Test</name></mount>
+    <camera><maker>RawLab</maker><model>Test Camera</model><mount>RawLab Test</mount><cropfactor>1</cropfactor></camera>
+    <lens>
+        <maker>RawLab</maker><model>Test 24mm f/2.8</model><mount>RawLab Test</mount><cropfactor>1</cropfactor>
+        <calibration>
+            <distortion model="poly3" focal="24" k1="-0.12"/>
+            <tca model="linear" focal="24" kr="1.015" kb="0.99"/>
+        </calibration>
+    </lens>
+    <lens>
+        <maker>RawLab</maker><model>Test 50mm f/2</model><mount>RawLab Test</mount><cropfactor>1</cropfactor>
+        <calibration><distortion model="poly3" focal="50" k1="0.04"/></calibration>
+    </lens>
+    <lens><maker>RawLab</maker><model>Twin 35mm f/2 A</model><mount>RawLab Test</mount><cropfactor>1</cropfactor>
+        <calibration><distortion model="poly3" focal="35" k1="-0.05"/></calibration>
+    </lens>
+    <lens><maker>RawLab</maker><model>Twin 35mm f/2 B</model><mount>RawLab Test</mount><cropfactor>1</cropfactor>
+        <calibration><distortion model="poly3" focal="35" k1="-0.07"/></calibration>
+    </lens>
+</lensdatabase>

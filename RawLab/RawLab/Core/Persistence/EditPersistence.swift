@@ -62,9 +62,9 @@ enum EditPersistenceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidIdentity:
-            return "无法识别原始照片，调整尚未保存。"
+            return L10n.text("无法识别原始照片，调整尚未保存。")
         case .corruptStore:
-            return "无法读取已保存的调整，原有记录未被覆盖。"
+            return L10n.text("无法读取已保存的调整，原有记录未被覆盖。")
         }
     }
 }

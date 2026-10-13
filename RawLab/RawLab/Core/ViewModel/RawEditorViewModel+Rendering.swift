@@ -3,32 +3,65 @@ import Foundation
 import UIKit
 
 extension RawEditorViewModel {
+    func updatePreviewSize(_ edge: Int, settings: RawSettings) {
+        guard hasImage, edge > 0,
+              edge != requestedPreviewLongEdge || (edge != previewLongEdge && previewResizeWorkItem == nil) else { return }
+        currentPreviewSettings = settings
+        requestedPreviewLongEdge = min(Int(previewMaxDimension), edge)
+        guard !isBusy else { return }
+        previewResizeWorkItem?.cancel()
+        previewResizePending = false
+        guard requestedPreviewLongEdge != previewLongEdge else { return }
+        let commit = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.previewResizePending = false
+            self.previewResizeWorkItem = nil
+            self.previewLongEdge = self.requestedPreviewLongEdge
+            self.updatePreview(settings: self.currentPreviewSettings)
+        }
+        previewResizeWorkItem = commit
+        if settings.denoise.enabled {
+            previewResizePending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: commit)
+        } else {
+            commit.perform()
+        }
+    }
+
     func updatePreview(
         settings: RawSettings,
         includeHistogram: Bool = true,
         quality: PreviewQuality = .final,
         histogramDelay: TimeInterval? = nil
     ) {
+        currentPreviewSettings = settings
+        if !settings.denoise.enabled, previewResizeWorkItem != nil {
+            previewResizeWorkItem?.cancel()
+            previewResizeWorkItem = nil
+            previewResizePending = false
+            previewLongEdge = requestedPreviewLongEdge
+        }
+        let maxDimension = previewLongEdge
+        let request = PreviewRequest(settings: settings, quality: quality,
+                                     includeHistogram: includeHistogram, longEdge: maxDimension)
+        if request == lastPreviewRequest, !previewRendering { return }
         previewWorkItem?.cancel()
         previewWorkItem = nil
         guard isLookAvailable(for: settings) else {
             setLatestRenderID(UUID())
+            previewRendering = false
             isBusy = false
-            statusMessage = "所选外观不可用，请重新选择外观。"
+            statusMessage = L10n.text("所选外观不可用，请重新选择外观。")
             return
         }
 
-        let request = PreviewRequest(settings: settings, quality: quality, includeHistogram: includeHistogram)
-        if request == lastPreviewRequest {
-            return
-        }
         lastPreviewRequest = request
+        previewRendering = true
 
         let renderID = UUID()
         setLatestRenderID(renderID)
         cancelHistogramWorkItem()
 
-        let maxDimension = quality == .interactive ? interactivePreviewMaxDimension : previewMaxDimension
         let finalHistogramDelay = histogramDelay ?? ((includeHistogram && quality == .final) ? self.histogramDelay : 0)
         let lutURL = lutURL(for: settings)
         let existingDraftBuffer = draftBuffer
@@ -39,6 +72,11 @@ extension RawEditorViewModel {
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            defer {
+                DispatchQueue.main.async {
+                    if self.isLatestRenderID(renderID) { self.previewRendering = false }
+                }
+            }
             guard self.isLatestRenderID(renderID) else {
                 return
             }
@@ -52,9 +90,10 @@ extension RawEditorViewModel {
                     let result = try self.processor.processRaw(
                         url: sourceURL,
                         settings: settings,
-                        previewLongEdge: maxDimension,
+                        previewLongEdge: CGFloat(maxDimension),
                         lutURL: lutURL,
-                        interactive: quality == .interactive
+                        interactive: quality == .interactive,
+                        viewportPreview: true
                     )
                     let previewImage = self.processor.makeUIImage(
                         from: result.buffer,
@@ -66,6 +105,7 @@ extension RawEditorViewModel {
                             return
                         }
                         self.previewImage = previewImage
+                        self.lensInfo = result.lensInfo
                         if self.sourceOrientation == nil {
                             self.sourceOrientation = result.orientation
                         }
@@ -89,7 +129,7 @@ extension RawEditorViewModel {
                 return
             }
 
-            let inputBuffer = quality == .interactive ? (existingDraftPreview ?? existingDraftBuffer) : existingDraftBuffer
+            let inputBuffer = existingDraftBuffer ?? existingDraftPreview
             guard let inputBuffer else {
                 return
             }
@@ -99,9 +139,10 @@ extension RawEditorViewModel {
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,
-                    previewLongEdge: maxDimension,
+                    previewLongEdge: CGFloat(maxDimension),
                     lutURL: lutURL,
-                    interactive: quality == .interactive
+                    interactive: quality == .interactive,
+                    viewportPreview: true
                 )
             } catch {
                 DispatchQueue.main.async {
@@ -120,6 +161,7 @@ extension RawEditorViewModel {
                     return
                 }
                 self.previewImage = previewImage
+                self.lensInfo = nil
             }
 
             if includeHistogram {
@@ -141,7 +183,10 @@ extension RawEditorViewModel {
         quality: PreviewQuality = .final,
         histogramDelay: TimeInterval? = nil
     ) {
+        currentPreviewSettings = settings
         previewWorkItem?.cancel()
+        setLatestRenderID(UUID())
+        previewRendering = true
 
         let workItem = DispatchWorkItem { [weak self] in
             self?.updatePreview(

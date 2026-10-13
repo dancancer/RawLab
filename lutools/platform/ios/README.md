@@ -16,18 +16,26 @@ The former direct-C++ bridge examples omitted parts of F-Log2 and display-output
 
 ## 1. 构建准备 / Build Prerequisites
 
-需要 macOS、完整 Xcode/iOS SDK、CMake、pkg-config 和 curl。从仓库根目录运行以下入口，自动下载并校验 LibRaw 0.22.2、应用共享相机补丁、编译三个架构并生成应用使用的 XCFramework：
+需要 macOS、完整 Xcode/iOS SDK、CMake 和 curl。从仓库根目录运行以下入口，自动下载并校验 LibRaw 0.22.2、Adobe DNG SDK 1.7、应用共享相机补丁，编译三个架构并生成应用使用的 XCFramework。iOS 构建不再通过宿主机 `pkg-config` 查找 LibRaw。
 
-Requires macOS, full Xcode/iOS SDK, CMake, pkg-config and curl. From the repository root, this entry point downloads and verifies LibRaw 0.22.2, applies the shared camera patches, builds three architectures and packages the application's XCFramework:
+Requires macOS, full Xcode/iOS SDK, CMake and curl. From the repository root, this entry point downloads and verifies LibRaw 0.22.2 and Adobe DNG SDK 1.7, applies the shared camera patches, builds three architectures and packages the application's XCFramework. iOS no longer discovers LibRaw through the host `pkg-config`:
 
 ```bash
 bash lutools/build.sh ios
 bash lutools/platform/ios/verify-framework.sh
 ```
 
-脚本见 [build-framework.sh](build-framework.sh)。默认最低 iOS 18.0，与 RawLab 应用一致；可通过 `IOS_DEPLOYMENT_TARGET` 覆盖，但必须受所选 SDK 支持。`DEVELOPER_DIR` 可选择完整 Xcode，`JOBS` 默认 6。不再要求宿主机 Homebrew LibRaw，也不会混用旧版 0.21.5 依赖。
+脚本见 [build-framework.sh](build-framework.sh)。默认最低 iOS 18.0，与 RawLab 应用一致；可通过 `IOS_DEPLOYMENT_TARGET` 覆盖，但必须受所选 SDK 支持。`DEVELOPER_DIR` 可选择完整 Xcode，`JOBS` 默认 6。不再要求宿主机 Homebrew LibRaw，也不会混用旧版 0.21.5 依赖。若已有合规的 SDK 源码目录，可将 CMake cache 覆盖参数传给脚本：
 
-See [build-framework.sh](build-framework.sh). The default minimum is iOS 18.0, matching RawLab; `IOS_DEPLOYMENT_TARGET` may override it within the selected SDK's supported range. `DEVELOPER_DIR` selects full Xcode, and `JOBS` defaults to 6. Host Homebrew LibRaw is not required, and old 0.21.5 dependencies are not reused.
+See [build-framework.sh](build-framework.sh). The default minimum is iOS 18.0, matching RawLab; `IOS_DEPLOYMENT_TARGET` may override it within the selected SDK's supported range. `DEVELOPER_DIR` selects full Xcode, and `JOBS` defaults to 6. Host Homebrew LibRaw is not required, and old 0.21.5 dependencies are not reused. If a compliant SDK source directory is already available, pass the CMake cache override through the script:
+
+```bash
+bash lutools/platform/ios/build-framework.sh \
+  -DFETCHCONTENT_SOURCE_DIR_RAWLAB_DNG_SOURCE=/path/to/dng_sdk_1_7_1
+```
+
+The production script does not contain a machine-specific SDK path; the shared
+`lutools/cmake/dng-sdk.cmake` helper owns the pinned download and checksum.
 
 X-Trans 去马赛克新增每像素 8 字节的只读副本，40 MP 约增加 304 MiB 峰值内存；尚未完成移动设备内存验证，不能把 Mac 实测通过等同于 iOS 大图可用。
 
@@ -38,20 +46,21 @@ X-Trans demosaic adds an eight-byte-per-pixel immutable copy, about 304 MiB for 
 Architecture-specific dependencies and build caches are isolated; old directories are retained:
 
 ```text
-lutools/build-ios-libraw/0.22.2/install/iphoneos-arm64/lib/pkgconfig
-lutools/build-ios-libraw/0.22.2/install/iphonesimulator-arm64/lib/pkgconfig
-lutools/build-ios-libraw/0.22.2/install/iphonesimulator-x86_64/lib/pkgconfig
+lutools/build-ios-libraw/0.22.2/sources/LibRaw-0.22.2
+lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64
+lutools/build-ios-libraw/0.22.2/core-iphonesimulator-arm64
+lutools/build-ios-libraw/0.22.2/core-iphonesimulator-x86_64
 ```
 
-框架静态链接目标平台 LibRaw，仅动态依赖 iOS 系统库。许可证随 Framework 的 `Licenses` 目录打包。生成物通过版本、架构及动态依赖检查后才替换 `build-ios/sony2fuji.xcframework`；上一份保存在 `build-ios/previous.*/`。
+框架静态链接目标平台 LibRaw 和 Adobe DNG SDK 1.7，仅动态依赖 iOS 系统库。许可证随 Framework 的 `Licenses` 目录打包，其中完整 DNG SDK notice 位于 `Licenses/dng-sdk/`。生成物通过版本、架构、许可证及动态依赖检查后才替换 `build-ios/sony2fuji.xcframework`；上一份保存在 `build-ios/previous.*/`。
 
-The framework statically links target-platform LibRaw and dynamically depends only on iOS system libraries. License notices are included in its `Licenses` directory. Version, architecture and dependency checks run before replacing `build-ios/sony2fuji.xcframework`; the previous artifact is retained under `build-ios/previous.*/`.
+The framework statically links target-platform LibRaw and Adobe DNG SDK 1.7 and dynamically depends only on iOS system libraries. License notices are included in its `Licenses` directory, with the complete DNG SDK notices under `Licenses/dng-sdk/`. Version, architecture, license and dependency checks run before replacing `build-ios/sony2fuji.xcframework`; the previous artifact is retained under `build-ios/previous.*/`.
 
 ## 2. Framework 与 Xcode / Frameworks and Xcode
 
-当前 CMake 的 iOS 共享目标生成 `sony2fuji.framework`。设备与模拟器构建必须分别使用对应 SDK 和 LibRaw。
+当前 CMake 的 iOS 共享目标生成 `sony2fuji.framework`；共享 raw wrapper 会按当前 Apple SDK 架构构建 LibRaw 与 DNG SDK。设备与模拟器构建必须分别使用对应 SDK。
 
-The current iOS shared CMake target produces `sony2fuji.framework`. Device and simulator builds require their corresponding SDK and LibRaw.
+The current iOS shared CMake target produces `sony2fuji.framework`; the shared raw wrapper builds LibRaw and the DNG SDK for the active Apple SDK architecture. Device and simulator builds require their corresponding SDK.
 
 构建入口已自动将 arm64/x86_64 模拟器二进制合并为一个切片，并与 arm64 设备切片组成 XCFramework；不需要手动重复打包。Xcode 项目继续使用同一路径，无需修改 Framework 引用。
 
@@ -61,8 +70,8 @@ The build entry point combines arm64/x86_64 simulator binaries into one slice an
    Add the framework/XCFramework to the target's `Frameworks, Libraries, and Embedded Content`; use `Embed & Sign` for the dynamic framework.
 2. 配置头文件搜索路径指向 `lutools/include`，在桥接头中引入下面的 C 头文件。
    Point header search paths to `lutools/include` and import the C header below in the bridging header.
-3. 同时处理目标架构的 LibRaw、C++ 运行库和其他动态依赖，并检查签名与加载路径。
-   Include target-architecture LibRaw, the C++ runtime and other dynamic dependencies, checking signatures and load paths.
+3. Framework 已静态包含目标架构的 LibRaw 与 DNG SDK；仍需按应用签名要求处理 C++ 运行库和嵌入路径。
+   The framework statically contains target-architecture LibRaw and the DNG SDK; handle the C++ runtime and embedding paths according to the app's signing requirements.
 
 ```objc
 #include "sony2fuji/ffi/sony2fuji_c.h"
@@ -154,12 +163,40 @@ Use `SONY2FUJI_INTENT_PREVIEW` and `preview_long_edge` for previews. Select BUFF
 
 The [public header](../../include/sony2fuji/ffi/sony2fuji_c.h) is the current interface reference. Cross-check historical examples in the [C API notes](../../docs/ios-api.md) against the header and this page. The [color contract](../../docs/color-contract.md) defines LUT input and white-balance behavior.
 
-2026-10-09 已完成三个架构的 XCFramework、模拟器 Debug 应用和未签名设备 Release 应用构建；iOS 模拟器上 9 款相机通过 RAW/白平衡回归，其中 3 款通过 Metal 回归，并通过真实 Sony RAW 的应用导出测试。Nikon HE* 样片按预期返回不支持错误。详见[相机兼容性验证记录](../../../docs/verification-raw-compatibility-2026-10-09.md)。设备构建通过不等于真机运行或内存验证。
+2026-10-09 已完成三个架构的 XCFramework、模拟器 Debug 应用和未签名设备 Release 应用构建；iOS 模拟器上 9 款相机通过 RAW/白平衡回归，其中 3 款通过 Metal 回归，并通过真实 Sony RAW 的应用导出测试。Nikon HE* 样片按预期返回不支持错误。详见[相机兼容性验证记录](../../../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。设备构建通过不等于真机运行或内存验证。
 
-On 2026-10-09, all three XCFramework architectures, the simulator Debug app and the unsigned device Release app built successfully. On the iOS simulator, nine cameras passed RAW/white-balance regressions, three passed Metal regressions, and the app export test passed with a real Sony RAW. A Nikon HE* fixture returned the expected unsupported error. See the [compatibility report](../../../docs/verification-raw-compatibility-2026-10-09.md). Device build success does not establish physical-device runtime or memory coverage.
+On 2026-10-09, all three XCFramework architectures, the simulator Debug app and the unsigned device Release app built successfully. On the iOS simulator, nine cameras passed RAW/white-balance regressions, three passed Metal regressions, and the app export test passed with a real Sony RAW. A Nikon HE* fixture returned the expected unsupported error. See the [compatibility report](../../../docs/archive/verification/verification-raw-compatibility-2026-10-09.md). Device build success does not establish physical-device runtime or memory coverage.
 
 ```bash
 # Use the UUID of a booted simulator and external RAW fixtures.
 bash lutools/platform/ios/raw-compatibility.sh <simulator-uuid> /path/to/sample.RW2
 RAWLAB_TEST_GPU=1 bash lutools/platform/ios/raw-compatibility.sh <simulator-uuid> /path/to/sample.CR3
 ```
+
+The compatibility harness links its small native test executables against the
+LibRaw headers in `build-ios-libraw/0.22.2/sources/LibRaw-0.22.2`; it no longer
+expects a separately installed per-architecture LibRaw package.
+
+## 7. DNG JPEG XL 回归 / DNG JPEG XL Regression
+
+JPEG XL DNG 必须使用专用 harness 验证；旧的 `raw-compatibility.sh` 直接
+引用 LibRaw `unpack`，没有 Adobe DNG SDK host，不能作为 JPEG XL 解码依据。
+先构建并验证 XCFramework，再使用一个 arm64 模拟器 UUID 运行四个仓库
+fixture（普通 JPEG XL、未压缩参考、GainMap、独立双倍参考），可选地追加
+外部 DNG。脚本只读取外部文件，并将副本放入被忽略的临时目录：
+
+```bash
+JOBS=4 bash lutools/platform/ios/build-framework.sh \
+  -DFETCHCONTENT_SOURCE_DIR_RAWLAB_DNG_SOURCE=/path/to/dng_sdk_1_7_1
+bash lutools/platform/ios/dng-jxl.sh <arm64-simulator-uuid> \
+  /path/to/optional.dng
+```
+
+The dedicated harness links `tests/dng_jxl_tests.cpp` against the packaged
+simulator framework, stages the four repository fixtures in an ignored local
+simulator-test directory, and sets `TMPDIR` there so the deliberately corrupt
+JPEG XL copy is created and removed outside the source tree. It verifies lossless
+linear output, GainMap behavior, decoder reuse, CPU/Auto-matching C ABI
+rendering, and `PROCESSING_ERROR` for corrupt JPEG XL rather than an I/O or
+unsupported error. Set `RAWLAB_KEEP_TEMP=1` to retain the staged files and log
+for diagnosis.

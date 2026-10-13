@@ -6,6 +6,139 @@ import java.io.File
 import java.nio.file.Files
 
 class BatchExportTest {
+    @Test fun lensCodecPreservesAllDevelopmentFieldsAndLegacySnapshots() {
+        val lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000")
+        val settings = EditSettings(exposureMode = 2, hsl = HslSettings().withValue(1, 0, -60f),
+            recipeID = "recipe", displayChromaDenoise = 2,
+            effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f), lens = lens)
+        val fields = SettingsCodec.encode(settings).split('|')
+        assertEquals(52, fields.size)
+        assertEquals(settings, SettingsCodec.decode(fields.joinToString("|")))
+        for (count in listOf(12, 16, 25, 50, 51)) {
+            val legacy = SettingsCodec.decode(fields.take(count).joinToString("|"))
+            assertEquals(LensSettings(), legacy.lens)
+            if (count >= 25) assertEquals(settings.effects, legacy.effects)
+            if (count >= 50) assertEquals(settings.hsl, legacy.hsl)
+            if (count == 51) assertEquals(settings.recipeID, legacy.recipeID)
+        }
+        assertEquals("", lens.copy(manual = false).coreProfileId)
+        assertEquals("__rawlab_manual_selection_required__", LensSettings(manual = true).coreProfileId)
+        assertEquals(LensSettings(), settings.reset().lens)
+    }
+
+    @Test fun exportFormatsKeepNativeValuesAndStorageContracts() {
+        assertEquals(0, ExportFormat.JPEG.nativeValue)
+        assertEquals(1, ExportFormat.PNG.nativeValue)
+        assertEquals(4, ExportFormat.DNG.nativeValue)
+        assertEquals(".jpg", ExportFormat.JPEG.suffix)
+        assertEquals(".png", ExportFormat.PNG.suffix)
+        assertEquals(".dng", ExportFormat.DNG.suffix)
+        assertFalse(ExportFormat.DNG.allowsGallery)
+        assertEquals(ExportFormat.DNG, ExportFormat.fromNativeValue(4))
+        assertThrows(IllegalArgumentException::class.java) { ExportFormat.fromNativeValue(5) }
+    }
+
+    @Test fun dngJournalUsesExplicitFormatAndLegacyPngStillDecodes() {
+        val root = Files.createTempDirectory("rawlab-format-journal").toFile()
+        try {
+            val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"), EditSettings())
+            val journal = BatchJournal(root)
+            val legacy = BatchJob(source, listOf(BatchTarget(PhotoIdentity("target"), File(root, "target.raw"), "target.raw")), outputFormat = ExportFormat.PNG)
+            journal.save(legacy)
+            val legacyFile = File(root, "${legacy.id}.properties")
+            val legacyText = legacyFile.readText()
+                .lineSequence().filterNot { it.startsWith("journal.version=") || it.startsWith("output.format=") }.joinToString("\n")
+            legacyFile.writeText(legacyText)
+            assertEquals(ExportFormat.PNG, journal.load(legacy.id)!!.outputFormat)
+
+            val dng = BatchJob(source, legacy.targets, id = legacy.id, outputFormat = ExportFormat.DNG)
+            assertTrue(dng.rows.single().outputName.endsWith(".dng"))
+            journal.save(dng)
+            val dngJournal = File(root, "${dng.id}.properties").readText()
+            assertTrue(dngJournal.contains("journal.version=2"))
+            assertTrue(dngJournal.contains("output.format=dng"))
+            assertEquals(ExportFormat.DNG, journal.load(dng.id)!!.outputFormat)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun batchRunnerDisposesOwnedPayloadsAfterSuccessFailureAndCancellation() {
+        val root = Files.createTempDirectory("rawlab-payloads").toFile()
+        try {
+            val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"), EditSettings())
+            fun job() = BatchJob(source, listOf(
+                BatchTarget(PhotoIdentity("one"), File(root, "one.raw"), "one.raw"),
+                BatchTarget(PhotoIdentity("two"), File(root, "two.raw"), "two.raw"),
+            ))
+            val disposed = mutableListOf<File>()
+            val success = BatchRunner.run(job(), render = { target, _ ->
+                File(root, "${target.id}.payload").also { it.writeText("payload") }
+            }, write = { payload, _, _ -> assertTrue(payload.isFile) }, dispose = { payload ->
+                disposed += payload
+                assertTrue(payload.delete())
+            })
+            assertTrue(success.rows.all { it.status == BatchRowStatus.SUCCESS })
+            assertEquals(2, disposed.size)
+            assertTrue(disposed.none(File::exists))
+
+            disposed.clear()
+            val failed = BatchRunner.run(BatchJob(source, listOf(
+                BatchTarget(PhotoIdentity("failed"), File(root, "failed.raw"), "failed.raw"),
+            )), render = { target, _ ->
+                File(root, "${target.id}.failed").also { it.writeText("payload") }
+            }, write = { _, _, _ -> }, dispose = { payload ->
+                disposed += payload
+                assertTrue(payload.delete())
+            }, publish = { _, _, _, _ -> throw IllegalStateException("publish failed") })
+            assertEquals(BatchRowStatus.NEEDS_CONFIRMATION, failed.rows.first().status)
+            assertEquals(1, disposed.size)
+            assertTrue(disposed.none(File::exists))
+
+            disposed.clear()
+            var writes = 0
+            val cancelled = BatchRunner.run(job(), render = { target, _ ->
+                File(root, "${target.id}.cancelled").also { it.writeText("payload") }
+            }, write = { _, _, _ -> writes++ }, shouldCancel = { writes > 0 }, dispose = { payload ->
+                disposed += payload
+                assertTrue(payload.delete())
+            })
+            assertEquals(1, cancelled.rows.count { it.status == BatchRowStatus.SUCCESS })
+            assertEquals(1, disposed.size)
+            assertTrue(disposed.none(File::exists))
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun sourceIoFailureStaysPerTargetButOutputIoStopsBatch() {
+        val sourceFailure = asBatchOutputFailure(NativeProcessingException(NativeProcessingException.IO_ERROR, "source missing"))
+        assertTrue(sourceFailure is NativeProcessingException)
+        val outputFailure = asBatchOutputFailure(NativeProcessingException(NativeProcessingException.OUTPUT_IO_ERROR, "disk full"))
+        assertTrue(outputFailure is BatchGlobalFailure)
+        assertTrue(outputFailure.message!!.contains("disk full"))
+        assertEquals(IllegalStateException::class.java, asBatchOutputFailure(IllegalStateException())::class.java)
+
+        val root = Files.createTempDirectory("rawlab-status-routing").toFile()
+        try {
+            val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"), EditSettings())
+            val targets = listOf(
+                BatchTarget(PhotoIdentity("bad"), File(root, "bad.raw"), "bad.raw"),
+                BatchTarget(PhotoIdentity("good"), File(root, "good.raw"), "good.raw"),
+            )
+            val perTarget = BatchRunner.run(BatchJob(source, targets), render = { target, _ ->
+                if (target.id == "bad") throw NativeProcessingException(NativeProcessingException.IO_ERROR, "source missing")
+                byteArrayOf(1)
+            }, write = { _, _, _ -> })
+            assertEquals(BatchRowStatus.FAILED, perTarget.rows[0].status)
+            assertEquals(BatchRowStatus.SUCCESS, perTarget.rows[1].status)
+
+            val global = BatchRunner.run(BatchJob(source, targets), render = { target, _ ->
+                if (target.id == "bad") throw asBatchOutputFailure(
+                    NativeProcessingException(NativeProcessingException.OUTPUT_IO_ERROR, "disk full"))
+                byteArrayOf(1)
+            }, write = { _, _, _ -> })
+            assertEquals(BatchRowStatus.FAILED, global.rows[0].status)
+            assertEquals(BatchRowStatus.PENDING, global.rows[1].status)
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun olderSnapshotsDefaultToDisabledDenoise() {
         val settings = SettingsCodec.decode("neutral|1.0|0.0|0.0|0.0|0.0|0.0|0.0|false|6500.0|0.0|0.0")
         assertEquals(DenoiseSettings(), settings.denoise)
@@ -32,7 +165,7 @@ class BatchExportTest {
         try {
             val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "s.raw"),
                 EditSettings(denoise = DenoiseSettings(true, 10f, 72f, 100f)))
-            val job = BatchJob(source, (1..2).map { BatchTarget(PhotoIdentity("$it"), File(root, "$it.raw"), "$it.raw") }, outputPng = true)
+            val job = BatchJob(source, (1..2).map { BatchTarget(PhotoIdentity("$it"), File(root, "$it.raw"), "$it.raw") }, outputFormat = ExportFormat.PNG)
             assertTrue(job.rows.all { it.outputName.endsWith(".png") })
             val journal = BatchJournal(root)
             var writes = 0

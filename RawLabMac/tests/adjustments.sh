@@ -9,11 +9,11 @@ SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swi
 if [ -f "$ROOT/RawLabMac/Sources/Adjustments.swift" ]; then
     SOURCES+=("$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLNative.swift")
 fi
-swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT/RawLabMac/tests/AdjustmentTests.swift" \
     "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
-    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib) -lc++ -lz \
+    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/adjustments"
 SAMPLES=()
 if [ -n "${RAWLAB_TEST_RAW:-}" ]; then SAMPLES+=("$RAWLAB_TEST_RAW"); fi

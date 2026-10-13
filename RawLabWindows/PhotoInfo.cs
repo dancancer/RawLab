@@ -43,7 +43,7 @@ internal sealed record PhotoInfo(
             if (DisplayWidth is { } width && DisplayHeight is { } height)
                 fields.Add($"{width} × {height}");
             if (Orientation is { } orientation && orientation != 1)
-                fields.Add(OrientationText is { Length: > 0 } text ? text : $"方向 {orientation}");
+                fields.Add(OrientationText is { Length: > 0 } text ? text : Loc.Format("方向 {0}", orientation));
             return string.Join(" · ", fields);
         }
     }
@@ -53,13 +53,13 @@ internal sealed record PhotoInfo(
         get
         {
             var fields = new List<string> { FileName };
-            Add(fields, "相机", Camera);
-            Add(fields, "镜头", Lens);
-            Add(fields, "快门", FormatShutter(Shutter));
-            Add(fields, "光圈", FormatAperture(Aperture));
+            Add(fields, Loc.Text("相机"), Camera);
+            Add(fields, Loc.Text("镜头"), Lens);
+            Add(fields, Loc.Text("快门"), FormatShutter(Shutter));
+            Add(fields, Loc.Text("光圈"), FormatAperture(Aperture));
             Add(fields, "ISO", FormatUnit(Iso, "ISO"));
-            Add(fields, "焦距", FormatUnit(FocalLength, "mm"));
-            return fields.Count == 1 ? FileName + " · 未读取到拍摄参数" : string.Join(" · ", fields);
+            Add(fields, Loc.Text("焦距"), FormatUnit(FocalLength, "mm"));
+            return fields.Count == 1 ? FileName + Loc.Text(" · 未读取到拍摄参数") : string.Join(" · ", fields);
         }
     }
 

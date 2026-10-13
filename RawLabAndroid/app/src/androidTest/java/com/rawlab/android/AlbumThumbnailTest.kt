@@ -19,7 +19,8 @@ import java.util.UUID
 
 @SdkSuppress(minSdkVersion = 29)
 class AlbumThumbnailTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
     @Test fun missingMetadataUsesDecodedThumbnailRatio() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -39,7 +40,7 @@ class AlbumThumbnailTest {
             PhotoStorage(context).use { storage ->
                 val photo = AlbumPhoto(uri, name, "Test")
                 assertNull(photo.aspectRatio)
-                compose.setContent {
+                compose.setChineseContent {
                     RawLabTheme {
                         Box(Modifier.width(160.dp)) { AlbumThumbnail(storage, photo, false, 0) }
                     }

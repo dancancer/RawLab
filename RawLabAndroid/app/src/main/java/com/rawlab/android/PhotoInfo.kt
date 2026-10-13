@@ -26,7 +26,7 @@ internal object PhotoInfoReader {
         val capture = first(exif, TAG_DATETIME_ORIGINAL, TAG_DATETIME, TAG_DATETIME_DIGITIZED)
         val offset = first(exif, TAG_OFFSET_TIME_ORIGINAL, TAG_OFFSET_TIME, TAG_OFFSET_TIME_DIGITIZED)
         val captureTime = capture?.let { value ->
-            if (offset.isNullOrBlank()) value else "$value $offset"
+            if (offset.isNullOrBlank()) value else "${value} ${offset}"
         }
         val storedWidth = positiveInt(exif, TAG_PIXEL_X_DIMENSION, TAG_IMAGE_WIDTH)
         val storedHeight = positiveInt(exif, TAG_PIXEL_Y_DIMENSION, TAG_IMAGE_LENGTH)
@@ -88,10 +88,10 @@ internal object PhotoInfoReader {
         val degrees = exif.rotationDegrees
         val flipped = exif.isFlipped
         return when {
-            flipped && degrees != 0 -> "水平翻转，旋转 ${degrees}°"
-            flipped -> "水平翻转"
-            degrees != 0 -> "旋转 ${degrees}°"
-            value == ORIENTATION_NORMAL -> "无需修正"
+            flipped && degrees != 0 -> AppStrings.format(R.string.message_flipped_horizontally_rotated, degrees.toString())
+            flipped -> AppStrings.text(R.string.message_flipped_horizontally)
+            degrees != 0 -> AppStrings.format(R.string.message_rotated, degrees.toString())
+            value == ORIENTATION_NORMAL -> AppStrings.text(R.string.message_no_correction_needed)
             else -> null
         }
     }

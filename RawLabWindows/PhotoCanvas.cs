@@ -20,6 +20,15 @@ public sealed class Viewport
     public void ToggleActualPixels() { if(ActualPixels || Zoom!=1)Fit();else Actual(); }
     public void Magnify(double factor) { Zoom=Math.Clamp(Zoom*factor,.1,16); Changed?.Invoke(); }
     public void Move(Vector delta) { Pan+=delta; Changed?.Invoke(); }
+    internal int PreviewLongEdge(Size area,DpiScale dpi,Size fallback)
+    {
+        if(ActualPixels)return 0;
+        var size=SourceSize.Width>0 ? SourceSize : fallback;
+        if(size.Width<=0 || size.Height<=0 || area.Width<=0 || area.Height<=0)return 2000;
+        var fit=Math.Min(area.Width*dpi.DpiScaleX/size.Width,area.Height*dpi.DpiScaleY/size.Height);
+        var edge=Math.Max(size.Width,size.Height);
+        return (int)Math.Min(edge,Math.Max(64,Math.Ceiling(edge*fit*Zoom/64)*64));
+    }
 }
 public sealed class PhotoCanvas : FrameworkElement
 {
@@ -36,6 +45,8 @@ public sealed class PhotoCanvas : FrameworkElement
     internal int ContentVersion { get; private set; }
     internal Rect ImageBounds { get; private set; }
     private double divider=.5;
+    internal int PreviewLongEdge { get; private set; } = 2000;
+    internal event Action<int>? PreviewSizeChanged;
     public bool ComparisonEnabled { get=>comparisonEnabled; set { comparisonEnabled=value;UpdateComparison(); } }
     public double Divider { get=>divider; set { if(!double.IsFinite(value))throw new ArgumentOutOfRangeException(nameof(value));divider=Math.Clamp(value,0,1);UpdateComparison(); } }
     public bool ShowClipping { get=>showClipping; set {if(showClipping==value)return;showClipping=value;DrawImages();} }
@@ -94,15 +105,20 @@ public sealed class PhotoCanvas : FrameworkElement
     }
     private void UpdateTransform()
     {
-        if(image==null || Viewport==null)return;
-        var size=Viewport.SourceSize.Width>0 ? Viewport.SourceSize : new Size(image.PixelWidth,image.PixelHeight);
+        if(Viewport==null)return;
+        var size=Viewport.SourceSize.Width>0 ? Viewport.SourceSize : image!=null ? new Size(image.PixelWidth,image.PixelHeight) : default;
         var dpi=VisualTreeHelper.GetDpi(this);
-        var fit=Math.Min(ActualWidth/size.Width,ActualHeight/size.Height);
-        var w=size.Width*(Viewport.ActualPixels ? 1/dpi.DpiScaleX : fit)*Viewport.Zoom;
-        var h=size.Height*(Viewport.ActualPixels ? 1/dpi.DpiScaleY : fit)*Viewport.Zoom;
-        ImageBounds=new Rect((ActualWidth-w)/2+Viewport.Pan.X,(ActualHeight-h)/2+Viewport.Pan.Y,w,h);
-        // Keep image drawing commands and bitmap resources resident while panning.
-        imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
+        if(image!=null)
+        {
+            var fit=Math.Min(ActualWidth/size.Width,ActualHeight/size.Height);
+            var w=size.Width*(Viewport.ActualPixels ? 1/dpi.DpiScaleX : fit)*Viewport.Zoom;
+            var h=size.Height*(Viewport.ActualPixels ? 1/dpi.DpiScaleY : fit)*Viewport.Zoom;
+            ImageBounds=new Rect((ActualWidth-w)/2+Viewport.Pan.X,(ActualHeight-h)/2+Viewport.Pan.Y,w,h);
+            // Keep image drawing commands and bitmap resources resident while panning.
+            imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
+        }
+        var edge=Viewport.PreviewLongEdge(RenderSize,dpi,size);
+        if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
     }
     private void UpdateComparison()
     {
@@ -127,7 +143,7 @@ public sealed class PhotoCanvas : FrameworkElement
     private sealed class ComparisonPeer(PhotoCanvas owner) : FrameworkElementAutomationPeer(owner),IRangeValueProvider
     {
         protected override string GetClassNameCore()=>nameof(PhotoCanvas);
-        protected override string GetNameCore()=>owner.ComparisonEnabled ? "滑动对比，左侧中性，右侧修改后" : "照片预览";
+        protected override string GetNameCore()=>owner.ComparisonEnabled ? Loc.Text("滑动对比，左侧中性，右侧修改后") : Loc.Text("照片预览");
         public override object? GetPattern(PatternInterface pattern)=>pattern==PatternInterface.RangeValue && owner.ComparisonEnabled ? this : base.GetPattern(pattern);
         public bool IsReadOnly=>false;
         public double LargeChange=>10;

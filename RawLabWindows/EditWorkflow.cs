@@ -23,9 +23,9 @@ public partial class MainWindow
         editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible) SaveState.Text = ""; };
         Deactivated += (_, _) => SaveEdits();
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
-        catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
+        catch (Exception error) { SetSaveNotice(Loc.Text("无法读取调整记录"), error.Message, true); }
         try { previousBatch = batchJournal.Load(); }
-        catch (Exception error) { Report(new IOException("无法读取上次批量任务：" + error.Message, error)); }
+        catch (Exception error) { Report(new IOException(Loc.Text("无法读取上次批量任务：") + error.Message, error)); }
         RefreshBatchNotice(); UpdateBusy();
     }
 
@@ -46,10 +46,10 @@ public partial class MainWindow
         {
             editStore ??= new EditStore(EditStore.DefaultDirectory);
             editStore.Save(file, settings.Capture(), CurrentLookIdentity());
-            editDirty = false; SetSaveNotice("调整已保存", "", false);
+            editDirty = false; SetSaveNotice(Loc.Text("调整已保存"), "", false);
             return true;
         }
-        catch (Exception error) { SetSaveNotice("调整未保存", error.Message, true); return false; }
+        catch (Exception error) { SetSaveNotice(Loc.Text("调整未保存"), error.Message, true); return false; }
     }
 
     internal string? CurrentLookIdentity()
@@ -84,7 +84,7 @@ public partial class MainWindow
             films.Add(new(Path.GetFileNameWithoutExtension(lut), lut, null)); BuildFilms();
         }
         editDirty = false;
-        if (saved != null) SetSaveNotice("已恢复上次调整", "", false);
+        if (saved != null) SetSaveNotice(Loc.Text("已恢复上次调整"), "", false);
         else if (RetrySave.Visibility != Visibility.Visible) SaveState.Text = "";
     }
 
@@ -98,8 +98,8 @@ public partial class MainWindow
     private void RetrySaveClicked(object sender, RoutedEventArgs e)
     {
         if (editDirty) { SaveEdits(); return; }
-        try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }
-        catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
+        try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice(Loc.Text("调整记录可用"), "", false); }
+        catch (Exception error) { SetSaveNotice(Loc.Text("无法读取调整记录"), error.Message, true); }
     }
 
     private void BatchExportClicked(object sender, RoutedEventArgs e)
@@ -108,8 +108,8 @@ public partial class MainWindow
         var previous = CurrentBatch;
         if (previous is { Started: true } && previous.SucceededCount < previous.SelectedCount)
         {
-            var answer = MessageBox.Show(this, "继续查看上次未完成的任务吗？选择“否”会新建任务，已导出的文件会保留。",
-                "上次批量任务尚未完成", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            var answer = MessageBox.Show(this, Loc.Text("继续查看上次未完成的任务吗？选择“否”会新建任务，已导出的文件会保留。"),
+                Loc.Text("上次批量任务尚未完成"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) return;
             if (answer == MessageBoxResult.Yes) { ShowBatchClicked(sender, e); return; }
         }

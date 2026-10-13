@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.16)
+project(RawLabRawDependencies LANGUAGES C CXX)
+
+if(NOT LIBRAW_CMAKE_SOURCE_DIR OR NOT LIBRAW_PATH)
+    message(FATAL_ERROR "LIBRAW_CMAKE_SOURCE_DIR and LIBRAW_PATH are required")
+endif()
+set(LIBRAW_SOURCE_DIR "${LIBRAW_PATH}")
+include("${CMAKE_CURRENT_LIST_DIR}/../patch-libraw.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../dng-sdk.cmake")
+if(NOT RAWLAB_DNGSDK_SHARED)
+    set(BUILD_SHARED_LIBS OFF)
+endif()
+add_subdirectory("${LIBRAW_CMAKE_SOURCE_DIR}" "libraw")
+foreach(raw_target raw raw_r)
+    target_compile_definitions(${raw_target} PRIVATE USE_DNGSDK qDNGSupportJXL=1)
+    target_include_directories(${raw_target} SYSTEM PRIVATE
+        "$<TARGET_PROPERTY:rawlab_dng_sdk,INTERFACE_INCLUDE_DIRECTORIES>")
+    target_compile_definitions(${raw_target} PRIVATE
+        "$<TARGET_PROPERTY:rawlab_dng_sdk,INTERFACE_COMPILE_DEFINITIONS>")
+    if(RAWLAB_DNGSDK_SHARED)
+        # 上游导出只含 raw/raw_r；私有共享依赖不加入其公开导出接口。
+        add_dependencies(${raw_target} rawlab_dng_sdk)
+        target_link_libraries(${raw_target} PRIVATE "$<TARGET_FILE:rawlab_dng_sdk>")
+    endif()
+endforeach()
