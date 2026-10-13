@@ -1,0 +1,8 @@
+gradle.beforeProject { project ->
+    project.plugins.withId('com.android.application') {
+        project.androidComponents.finalizeDsl { android ->
+            // 使用独立应用数据，不覆盖真机上的用户安装。
+            android.defaultConfig.applicationId = 'com.rawlab.android.sonymemory'
+        }
+    }
+}

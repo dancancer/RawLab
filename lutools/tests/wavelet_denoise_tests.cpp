@@ -1,5 +1,6 @@
 #include "core/wavelet_denoise.h"
 #include "core/wavelet_tile.h"
+#include "sony2fuji/color_converter.h"
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -315,6 +316,55 @@ void checkAnalysisReuse() {
     assert(!info.analysisReused);
 }
 
+void checkImmutableSourceReload() {
+    ImageData source(256,256);
+    std::mt19937 rng(7381);
+    std::normal_distribution<float> noise(.18f,.014f);
+    for (auto& p:source.pixels) p={noise(rng),noise(rng),noise(rng)};
+    const auto original=source;
+    auto converted=source;
+    assert(ColorConverter().convertImage(converted,ColorSpace::AdobeRGB,ColorSpace::sRGB)==ErrorCode::Success);
+    WaveletDenoiseAnalysisCache cache;
+    int index=0;
+    for (const auto& options : {WaveletDenoiseOptions{true,10,72,0}, {true,10,72,100}, {true,25,60,80}}) {
+        auto retained=converted,reloaded=converted;
+        WaveletDenoiseDiagnostics info;
+        assert(applyWaveletDenoise(retained,options)==ErrorCode::Success);
+        assert(applyWaveletDenoise(reloaded,options,&info,GpuMode::Off,&cache,"immutable-a",&source,
+            ColorSpace::AdobeRGB)==ErrorCode::Success);
+        assert(info.applied && info.analysisReused==(index>0) && info.coarseAnalysisReused==(index==2));
+        assert(reloaded.width==retained.width && reloaded.height==retained.height);
+        assert(std::memcmp(retained.pixels.data(),reloaded.pixels.data(),retained.pixels.size()*sizeof(RGB))==0);
+        assert(std::memcmp(source.pixels.data(),original.pixels.data(),source.pixels.size()*sizeof(RGB))==0);
+        ++index;
+    }
+    auto invalid=source;
+    invalid.pixels.push_back({0,0,0});
+    auto image=converted;
+    assert(applyWaveletDenoise(image,{true,10,72,100},nullptr,GpuMode::Off,nullptr,{},&invalid,
+        ColorSpace::AdobeRGB)==ErrorCode::InvalidFormat);
+    assert(std::memcmp(image.pixels.data(),converted.pixels.data(),converted.pixels.size()*sizeof(RGB))==0);
+#if defined(TEST_WAVELET_GPU_DISABLED)
+    // 无 GPU 构建可确定触发 Force 失败，覆盖 Auto 重新载入工作图的重试路径。
+    WaveletDenoiseAnalysisCache retryCache;
+    WaveletDenoiseDiagnostics info;
+    image=converted;
+    assert(applyWaveletDenoise(image,{true,10,72,100},&info,GpuMode::Force,&retryCache,"retry-a",&source,
+        ColorSpace::AdobeRGB)==ErrorCode::ProcessingError);
+    assert(image.pixels.empty());
+    assert(applyWaveletDenoise(image,{true,10,72,100},&info,GpuMode::Off,&retryCache,"retry-a",&source,
+        ColorSpace::AdobeRGB)==ErrorCode::Success);
+    assert(info.applied && info.analysisReused && info.coarseAnalysisReused && !info.gpuUsed);
+    auto independent=converted;
+    assert(applyWaveletDenoise(independent,{true,10,72,100})==ErrorCode::Success);
+    assert(image.pixels.size()==independent.pixels.size());
+    assert(std::memcmp(image.pixels.data(),independent.pixels.data(),image.pixels.size()*sizeof(RGB))==0);
+    assert(std::memcmp(source.pixels.data(),original.pixels.data(),source.pixels.size()*sizeof(RGB))==0);
+    std::cout << "PASS: released working image is reloaded after Force GPU failure\n";
+#endif
+    std::cout << "PASS: immutable AdobeRGB reload preserves pixels and analysis reuse\n";
+}
+
 int main(int argc, char** argv) {
     if (argc == 6) {
         std::ifstream input(argv[1],std::ios::binary);
@@ -339,6 +389,7 @@ int main(int argc, char** argv) {
     checkReflectedTilePlanes();
     checkParallelTiles();
     checkAnalysisReuse();
+    checkImmutableSourceReload();
     checkInversePhases();
     checkFineLumaTexture();
     checkNeutralColorBands();

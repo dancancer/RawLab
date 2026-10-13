@@ -1414,7 +1414,9 @@ static sony2fuji_status processImpl(
             auto filter = [&](sony2fuji::GpuMode backend) {
                 ++session->wavelet_cache.diagnostics.filterRuns;
                 const auto result = sony2fuji::applyWaveletDenoise(image, session->wavelet_denoise, &diagnostics,
-                    backend, entry ? &entry->analysis : nullptr, waveletKey);
+                    backend, entry ? &entry->analysis : nullptr, waveletKey,
+                    local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview && !fastWavelet ? &session->raw_cache : nullptr,
+                    toCoreColorSpace(color_space));
                 if (diagnostics.analysisReused) ++session->wavelet_cache.diagnostics.analysisHits;
                 return result;
             };
@@ -1534,6 +1536,8 @@ static sony2fuji_status processImpl(
     } else {
         image = std::move(base);
     }
+    // 混合参考图已不再使用，避免与后续色度降噪和细节处理的临时数据叠加。
+    base = {};
     applyToneAdjustments(image, local);
     sony2fuji::applyHsl(image, session->hsl);
     const auto chromaResult = sony2fuji::applyChromaDenoise(image, session->chroma_denoise);
