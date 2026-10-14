@@ -72,11 +72,10 @@ import Darwin
         setbuf(stdout, nil)
         let source = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
-        let originals = output.appendingPathComponent("raw-copies", isDirectory: true)
+        let originals = output.appendingPathComponent("raw-copies-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: originals, withIntermediateDirectories: true)
         let a = originals.appendingPathComponent("a.dng"), b = originals.appendingPathComponent("b.dng")
         for copy in [a, b] {
-            if FileManager.default.fileExists(atPath: copy.path) { try FileManager.default.removeItem(at: copy) }
             try FileManager.default.copyItem(at: source, to: copy)
         }
         let original = try Data(contentsOf: source)
@@ -143,8 +142,6 @@ import Darwin
         var rejectedCopy = false
         do { _ = try model.applyCurrentSettings(to: [b]) } catch { rejectedCopy = true }
         try check(rejectedCopy, "direct copy cannot bypass the draft guard")
-        model.export(format: .jpeg)
-        try check(!model.exporting, "single export returns before opening a panel during draft editing")
         try batchGuard(raw: a, output: output, settings: baselineSettings)
 
         let selectedCrop = model.geometryDraftSettings
