@@ -395,3 +395,19 @@
 "拉直" = "Straighten";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Crop position and size use a percentage of the canvas after rotation, flips and straightening.";
 "无效的几何参数" = "Invalid geometry parameters";
+
+/* macOS 0.8 compact adjustments */
+"中性显影" = "Neutral Development";
+"中性显影与调整后对比" = "Compare Neutral Development and Edits";
+"精细调整" = "Fine Adjustments";
+"收起精细调整" = "Hide Fine Adjustments";
+"降噪已停用，参数会保留。" = "Noise reduction is off. Settings are retained.";
+"强度为 0，其他参数会保留。" = "Intensity is 0. Other settings are retained.";
+"仅在暗角强度为负值时可用。" = "Available only when vignette intensity is negative.";
+"当前通道 %@，修改仅作用于该颜色。" = "Current channel: %@. Changes apply only to this color.";
+"展开精细调整" = "Show Fine Adjustments";
+"展开暗角参数" = "Show Vignette Settings";
+"收起暗角参数" = "Hide Vignette Settings";
+"颗粒强度" = "Grain Intensity";
+"滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Wheel: %@; Shift: %@; Range: %@ to %@ %@";
+"调整工具" = "Adjustment Tools";

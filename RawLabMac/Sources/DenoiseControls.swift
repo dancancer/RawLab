@@ -1,8 +1,11 @@
 import SwiftUI
+import AppKit
 
 struct DenoiseControls: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
+    var onExpansionChanged: (Bool) -> Void = { _ in }
+    @State private var advanced = false
 
     var body: some View {
         let _ = localizationLocale
@@ -10,43 +13,85 @@ struct DenoiseControls: View {
             if model.settings.hasLegacyDenoise {
                 legacyControls
             } else {
-                VStack(spacing: 4) {
-                    HStack(spacing: 12) {
-                        Toggle(L10n.text("降噪"), isOn: Binding(
-                            get: { model.settings.waveletSettings.enabled },
-                            set: { model.settings.setDenoiseEnabled($0) }
-                        )).toggleStyle(.switch).controlSize(.mini)
-                            .accessibilityIdentifier("denoise.enabled")
-                        Spacer(minLength: 8)
-                        Picker(L10n.text("预设"), selection: Binding(
-                            get: { model.settings.waveletSettings.preset },
-                            set: { model.settings.applyDenoisePreset($0) }
-                        )) {
-                            Text(DenoisePreset.detail.title).tag(DenoisePreset.detail)
-                            Text(DenoisePreset.clean.title).tag(DenoisePreset.clean)
-                            if model.settings.waveletSettings.preset == .custom {
-                                Text(DenoisePreset.custom.title).tag(DenoisePreset.custom).disabled(true)
-                            }
-                        }.pickerStyle(.menu).controlSize(.small).fixedSize()
-                            .id(localizationLocale.identifier)
-                            .accessibilityIdentifier("denoise.preset")
-                        Button { model.settings.set(.denoiseMode, to: 0) } label: {
-                            Image(systemName: "arrow.counterclockwise").frame(width: 16, height: 18)
-                        }.buttonStyle(.borderless).help(L10n.text("重置降噪"))
-                            .accessibilityLabel(L10n.text("重置降噪"))
-                            .disabled(model.settings.waveletNoiseReduction == nil)
-                    }.frame(height: 22)
-                    HStack(spacing: 16) {
-                        ForEach(DenoiseParameter.allCases) { parameter in
-                            DenoiseParameterControl(parameter: parameter, value: Binding(
-                                get: { model.settings.waveletSettings[keyPath: parameter.keyPath] },
-                                set: { model.settings.setDenoiseParameter(parameter, to: $0) }
-                            ), onEditingChanged: model.setInteracting)
-                        }
-                    }.disabled(!model.settings.waveletSettings.enabled)
+                VStack(spacing: 0) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { modeControls; groupActions }
+                        VStack(spacing: 0) { modeControls; groupActions }
+                    }.frame(minHeight: 28).padding(.bottom, 4)
+                    parameterRow(.luma)
+                    if advanced {
+                        parameterRow(.chroma)
+                        parameterRow(.coarse)
+                    }
+                    if !model.settings.waveletSettings.enabled {
+                        Text(L10n.text("降噪已停用，参数会保留。"))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center).padding(.top, 4)
+                            .accessibilityIdentifier("denoise.disabledReason")
+                    }
                 }
             }
-        }.font(.system(size: 12))
+        }.frame(maxWidth: 720)
+            .onAppear { onExpansionChanged(advanced && !model.settings.hasLegacyDenoise) }
+            .onChange(of: advanced) { _, expanded in onExpansionChanged(expanded) }
+            .onChange(of: model.settings.hasLegacyDenoise) { _, legacy in onExpansionChanged(advanced && !legacy) }
+    }
+
+    private var modeControls: some View {
+        HStack(spacing: 12) {
+            Toggle(L10n.text("降噪"), isOn: Binding(
+                get: { model.settings.waveletSettings.enabled },
+                set: { enabled in
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    model.settings.setDenoiseEnabled(enabled)
+                }
+            )).toggleStyle(.switch).controlSize(.mini)
+                .accessibilityIdentifier("denoise.enabled")
+            Picker(L10n.text("预设"), selection: Binding(
+                get: { model.settings.waveletSettings.preset },
+                set: { preset in
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    model.settings.applyDenoisePreset(preset)
+                }
+            )) {
+                Text(DenoisePreset.detail.title).tag(DenoisePreset.detail)
+                Text(DenoisePreset.clean.title).tag(DenoisePreset.clean)
+                if model.settings.waveletSettings.preset == .custom {
+                    Text(DenoisePreset.custom.title).tag(DenoisePreset.custom).disabled(true)
+                }
+            }.pickerStyle(.segmented).controlSize(.small).fixedSize()
+                .id(localizationLocale.identifier)
+                .accessibilityIdentifier("denoise.preset")
+        }.font(.system(size: 12)).fixedSize()
+    }
+
+    private var groupActions: some View {
+        HStack(spacing: 12) {
+            Button(L10n.text(advanced ? "收起精细调整" : "展开精细调整")) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                advanced.toggle()
+            }
+                .buttonStyle(.borderless).font(.system(size: 11))
+                .accessibilityIdentifier("denoise.advanced")
+            Button {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                model.settings.set(.denoiseMode, to: 0)
+            } label: {
+                Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28)
+            }.buttonStyle(.borderless).help(L10n.text("重置降噪"))
+                .accessibilityLabel(L10n.text("重置降噪"))
+                .accessibilityIdentifier("denoise.reset")
+                .disabled(model.settings.waveletNoiseReduction == nil)
+        }.fixedSize()
+    }
+
+    private func parameterRow(_ parameter: DenoiseParameter) -> some View {
+        ParameterRow(title: parameter.shortTitle, value: Binding(
+            get: { model.settings.waveletSettings[keyPath: parameter.keyPath] },
+            set: { model.settings.setDenoiseParameter(parameter, to: $0) }
+        ), range: 0...100, defaultValue: parameter.defaultValue,
+        identifier: "denoise.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)
+            .disabled(!model.settings.waveletSettings.enabled)
     }
 
     private var legacyControls: some View {
@@ -66,57 +111,5 @@ struct DenoiseControls: View {
             Button(L10n.text("使用可调降噪")) { model.settings.applyDenoisePreset(.detail) }
                 .buttonStyle(.link).accessibilityIdentifier("denoise.upgrade")
         }
-    }
-}
-
-private struct DenoiseParameterControl: View {
-    @Environment(\.locale) private var localizationLocale
-    let parameter: DenoiseParameter
-    @Binding var value: Double
-    let onEditingChanged: (Bool) -> Void
-    @State private var draft = ""
-    @State private var invalid = false
-    @FocusState private var editing: Bool
-
-    var body: some View {
-        let _ = localizationLocale
-        VStack(spacing: 2) {
-            HStack(spacing: 4) {
-                Text(parameter.shortTitle).font(.system(size: 11)).lineLimit(1)
-                    .minimumScaleFactor(0.85).help(parameter.title)
-                Spacer(minLength: 2)
-                TextField(parameter.title, text: $draft)
-                    .textFieldStyle(.roundedBorder).controlSize(.mini)
-                    .monospacedDigit().multilineTextAlignment(.trailing)
-                    .frame(width: 38).focused($editing)
-                    .onSubmit(commit)
-                    .onChange(of: editing) { _, focused in if !focused { commit() } }
-                    .onExitCommand { draft = text(value); invalid = false; editing = false }
-                    .overlay { if invalid { RoundedRectangle(cornerRadius: 4).stroke(.red, lineWidth: 1) } }
-                    .accessibilityLabel(L10n.format("%@数值", String(describing: parameter.title)))
-                    .accessibilityIdentifier("denoise.value.\(parameter.rawValue)")
-                    .help(invalid ? L10n.text("请输入 0 至 100 的有效数字") : L10n.text("0 至 100"))
-                Button {
-                    value = parameter.defaultValue; draft = text(value); invalid = false
-                } label: { Image(systemName: "arrow.counterclockwise").frame(width: 14, height: 16) }
-                    .buttonStyle(.borderless).disabled(value == parameter.defaultValue && !invalid)
-                    .help(L10n.format("重置%@", String(describing: parameter.title))).accessibilityLabel(L10n.format("重置%@", String(describing: parameter.title)))
-            }.frame(height: 20)
-            Slider(value: $value, in: 0...100, step: 1, onEditingChanged: onEditingChanged)
-                .controlSize(.small)
-                .accessibilityLabel(parameter.title)
-                .accessibilityValue(text(value))
-                .accessibilityIdentifier("denoise.slider.\(parameter.rawValue)")
-        }.frame(maxWidth: .infinity)
-            .onAppear { draft = text(value) }
-            .onChange(of: value) { _, current in draft = text(current); invalid = false }
-    }
-
-    private func text(_ value: Double) -> String { String(format: "%.0f", value) }
-    private func commit() {
-        if let number = Double(draft.trimmingCharacters(in: .whitespacesAndNewlines)), number.isFinite {
-            value = min(100, max(0, number.rounded())); invalid = false
-        } else { invalid = true }
-        draft = text(value)
     }
 }

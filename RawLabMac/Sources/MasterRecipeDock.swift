@@ -44,8 +44,8 @@ struct MasterRecipeDock: View {
                 VStack(spacing: 2) {
                     Text(recipe?.name ?? L10n.text("无配方"))
                         .font(.system(size: 11, weight: selected ? .semibold : .regular))
-                        .lineLimit(1)
-                        .frame(width: 112, height: 14)
+                        .lineLimit(2).multilineTextAlignment(.center)
+                        .frame(width: 112, height: 28)
                     if showsSubtitle {
                         Text(L10n.text(recipe?.subtitle ?? "中性直出"))
                             .font(.system(size: 10))

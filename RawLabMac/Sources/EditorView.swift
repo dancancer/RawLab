@@ -27,7 +27,7 @@ struct EditorView: View {
                 if showFiles {
                     FileBrowser(library: library, selected: model.file, open: model.open,
                                 canApplySettings: model.canApplySettings, applySettings: model.confirmApplySettings)
-                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
+                        .frame(minWidth: 200, idealWidth: 236, maxWidth: 300)
                         .disabled(model.exporting)
                 }
                 VStack(spacing: 0) {
@@ -59,11 +59,12 @@ struct EditorView: View {
                         }
                         return true
                     }
-                  if !adjustmentPanel.collapsed {
-                      panelResizeHandle(available: geometry.size.height)
-                      bottomControls
-                          .frame(height: adjustmentPanel.height(available: geometry.size.height) - 12)
-                  }
+                  panelResizeHandle(available: geometry.size.height)
+                      .frame(height: adjustmentPanel.collapsed ? 0 : 13).clipped()
+                      .allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
+                  bottomControls
+                      .frame(height: adjustmentPanel.collapsed ? 0 : adjustmentPanel.height(available: geometry.size.height) - 13)
+                      .clipped().allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
                   Divider()
                   statusBar
                 }
@@ -119,7 +120,7 @@ struct EditorView: View {
                 Spacer(minLength: 8)
                 Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().frame(width: 260)
+                }.labelsHidden().frame(maxWidth: 210)
                     .id(localizationLocale.identifier)
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
                 Text(model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
@@ -134,8 +135,9 @@ struct EditorView: View {
                 } label: { Image(systemName: "arrow.counterclockwise") }
                 .menuStyle(.borderlessButton).fixedSize().help(L10n.text("重置调整")).accessibilityLabel(L10n.text("重置调整"))
                     .disabled(model.settings.isDefault)
-            }.padding(.horizontal, 20).frame(height: 42)
-            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion)
+            }.padding(.horizontal, 16).font(.system(size: 11)).frame(height: 31).controlSize(.small)
+            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion,
+                           onPreferredHeight: { adjustmentPanel.selectHeight($0) })
         }.background(Color(nsColor: .windowBackgroundColor))
             .disabled(model.file == nil || model.exporting)
     }
@@ -146,16 +148,16 @@ struct EditorView: View {
             Capsule().fill(Color.secondary.opacity(0.5)).frame(width: 32, height: 3)
             HStack {
                 Spacer()
-                Button { adjustmentPanel.collapsed = true } label: {
+                Button { NSApp.keyWindow?.makeFirstResponder(nil); adjustmentPanel.collapsed = true } label: {
                     Image(systemName: "chevron.down").font(.system(size: 9))
-                }.buttonStyle(.plain).frame(width: 28, height: 12)
+                }.buttonStyle(.plain).frame(width: 28, height: 13)
                     .help(L10n.text("收起调整栏")).accessibilityLabel(L10n.text("收起调整栏"))
             }.padding(.trailing, 12)
-        }.frame(height: 12).contentShape(Rectangle())
+        }.frame(height: 13).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
                     if resizeStart == nil { resizeStart = adjustmentPanel.height(available: available) }
-                    adjustmentPanel.resize(to: (resizeStart ?? 260) - value.translation.height, available: available)
+                    adjustmentPanel.resize(to: (resizeStart ?? 252) - value.translation.height, available: available)
                 }.onEnded { _ in resizeStart = nil })
             .onHover { inside in (inside ? NSCursor.resizeUpDown : NSCursor.arrow).set() }
             .accessibilityElement(children: .contain)
@@ -169,8 +171,8 @@ struct EditorView: View {
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
             HStack(spacing: 1) {
-                if compare, let base = model.neutral { imagePane(base, title: L10n.text("原图"), showMask: false) }
-                imagePane(result, title: model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping)
+                if compare, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
+                imagePane(result, title: model.selectedMasterRecipe?.name ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping)
             }
         } else {
             VStack(spacing: 16) {
@@ -229,7 +231,7 @@ struct EditorView: View {
         ToolbarItemGroup {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
-                .help(L10n.text("原图与调整后对比")).accessibilityLabel(L10n.text("对比"))
+                .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil)
             Button {
                 if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
@@ -249,22 +251,22 @@ struct EditorView: View {
                 Button(L10n.text("缩小")) { zoom(1 / 1.25) }
             } label: { Image(systemName: "magnifyingglass") }
                 .help(L10n.text("缩放")).accessibilityLabel(L10n.text("缩放")).disabled(model.result == nil)
-            Button { adjustmentPanel.collapsed.toggle() } label: { Image(systemName: "slider.horizontal.3") }
+            Button { NSApp.keyWindow?.makeFirstResponder(nil); adjustmentPanel.collapsed.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                 .tint(adjustmentPanel.collapsed ? nil : .yellow)
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
                 Button("JPEG…") { model.export(png: false) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe)
                 Button(L10n.text("PNG · 16-bit…")) { model.export(png: true) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe)
                 Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe)
                 Divider()
                 Button(L10n.text("使用当前调整批量导出…")) {
                     if model.prepareBatch() { openWindow(id: "batch-export") }
-                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe)
                 if model.batch != nil {
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }
                 }
@@ -274,6 +276,7 @@ struct EditorView: View {
     }
 
     private func reset(_ group: AdjustmentGroup? = nil) {
+        NSApp.keyWindow?.makeFirstResponder(nil)
         if let group { model.settings.reset(group) } else { model.settings.resetAll() }
         resetVersion += 1
     }

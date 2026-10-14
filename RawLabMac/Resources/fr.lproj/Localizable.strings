@@ -395,3 +395,19 @@
 "拉直" = "Redresser";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "La position et la taille du recadrage sont exprimées en pourcentage du canevas après rotation, retournement et redressement.";
 "无效的几何参数" = "Paramètres géométriques non valides";
+
+/* macOS 0.8 compact adjustments */
+"中性显影" = "Développement neutre";
+"中性显影与调整后对比" = "Comparer le développement neutre et les réglages";
+"精细调整" = "Réglages fins";
+"收起精细调整" = "Masquer les réglages fins";
+"降噪已停用，参数会保留。" = "La réduction du bruit est désactivée. Les réglages sont conservés.";
+"强度为 0，其他参数会保留。" = "L’intensité est à 0. Les autres réglages sont conservés.";
+"仅在暗角强度为负值时可用。" = "Disponible uniquement lorsque l’intensité du vignettage est négative.";
+"当前通道 %@，修改仅作用于该颜色。" = "Canal actuel : %@. Les modifications s’appliquent uniquement à cette couleur.";
+"展开精细调整" = "Afficher les réglages fins";
+"展开暗角参数" = "Afficher les réglages du vignettage";
+"收起暗角参数" = "Masquer les réglages du vignettage";
+"颗粒强度" = "Intensité du grain";
+"滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Molette : %@ ; Maj : %@ ; Plage : %@ à %@ %@";
+"调整工具" = "Outils de réglage";

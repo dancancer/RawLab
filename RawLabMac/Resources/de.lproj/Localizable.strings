@@ -395,3 +395,19 @@
 "拉直" = "Begradigen";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Position und Größe des Zuschnitts beziehen sich prozentual auf die Fläche nach Drehen, Spiegeln und Begradigen.";
 "无效的几何参数" = "Ungültige Geometrieparameter";
+
+/* macOS 0.8 compact adjustments */
+"中性显影" = "Neutrale Entwicklung";
+"中性显影与调整后对比" = "Neutrale Entwicklung mit Bearbeitung vergleichen";
+"精细调整" = "Feinabstimmung";
+"收起精细调整" = "Feinabstimmung einklappen";
+"降噪已停用，参数会保留。" = "Rauschreduzierung ist deaktiviert. Die Einstellungen bleiben erhalten.";
+"强度为 0，其他参数会保留。" = "Die Stärke ist 0. Andere Einstellungen bleiben erhalten.";
+"仅在暗角强度为负值时可用。" = "Nur bei negativer Vignettenstärke verfügbar.";
+"当前通道 %@，修改仅作用于该颜色。" = "Aktueller Kanal: %@. Änderungen gelten nur für diese Farbe.";
+"展开精细调整" = "Feinabstimmung ausklappen";
+"展开暗角参数" = "Vignetteneinstellungen ausklappen";
+"收起暗角参数" = "Vignetteneinstellungen einklappen";
+"颗粒强度" = "Kornstärke";
+"滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Mausrad: %@; Umschalt: %@; Bereich: %@ bis %@ %@";
+"调整工具" = "Anpassungswerkzeuge";

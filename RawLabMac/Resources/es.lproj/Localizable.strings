@@ -395,3 +395,19 @@
 "拉直" = "Enderezar";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "La posición y el tamaño del recorte se expresan como porcentaje del lienzo tras girarlo, voltearlo y enderezarlo.";
 "无效的几何参数" = "Parámetros de geometría no válidos";
+
+/* macOS 0.8 compact adjustments */
+"中性显影" = "Revelado neutro";
+"中性显影与调整后对比" = "Comparar el revelado neutro y los ajustes";
+"精细调整" = "Ajustes finos";
+"收起精细调整" = "Ocultar ajustes finos";
+"降噪已停用，参数会保留。" = "La reducción de ruido está desactivada. Los ajustes se conservan.";
+"强度为 0，其他参数会保留。" = "La intensidad es 0. Los demás ajustes se conservan.";
+"仅在暗角强度为负值时可用。" = "Disponible solo cuando la intensidad de la viñeta es negativa.";
+"当前通道 %@，修改仅作用于该颜色。" = "Canal actual: %@. Los cambios solo se aplican a este color.";
+"展开精细调整" = "Mostrar ajustes finos";
+"展开暗角参数" = "Mostrar ajustes de viñeta";
+"收起暗角参数" = "Ocultar ajustes de viñeta";
+"颗粒强度" = "Intensidad del grano";
+"滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Rueda: %@; Mayús: %@; Rango: %@ a %@ %@";
+"调整工具" = "Herramientas de ajuste";

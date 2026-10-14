@@ -281,7 +281,7 @@ struct Adjustments: Equatable, Codable {
     mutating func setEffect(_ parameter: PhotoEffectParameter, to value: Double) {
         guard value.isFinite else { return }
         var state = effectSettings
-        state[keyPath: parameter.keyPath] = min(parameter.range.upperBound, max(parameter.range.lowerBound, value.rounded()))
+        state[keyPath: parameter.keyPath] = min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10))
         photoEffects = state == PhotoEffectsSettings() ? nil : state
     }
 
@@ -341,7 +341,7 @@ struct Adjustments: Equatable, Codable {
     mutating func setDenoiseParameter(_ parameter: DenoiseParameter, to value: Double) {
         guard value.isFinite else { return }
         var state = waveletSettings
-        let value = min(100, max(0, value.rounded()))
+        let value = min(100, max(0, (value * 10).rounded() / 10))
         guard state[keyPath: parameter.keyPath] != value else { return }
         state[keyPath: parameter.keyPath] = value
         state.preset = .custom
@@ -604,7 +604,9 @@ struct AdjustmentSpec {
     }
 
     func text(_ value: Double) -> String {
-        String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, value * multiplier)
+        let displayed = value * multiplier
+        let places = decimals == 1 && abs(displayed - displayed.rounded()) < 0.0000001 ? 0 : decimals
+        return String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), places, displayed == 0 ? 0 : displayed)
     }
 
     func parse(_ text: String) -> Double? {
@@ -652,20 +654,20 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     }
     var spec: AdjustmentSpec {
         switch self {
-        case .strength: return AdjustmentSpec(title: L10n.text("强度"), keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.01, unit: "%", multiplier: 100)
-        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.05, unit: "EV", decimals: 2)
+        case .strength: return AdjustmentSpec(title: L10n.text("强度"), keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.001, unit: "%", multiplier: 100, decimals: 1)
+        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.01, unit: "EV", decimals: 2)
         case .temperature: return AdjustmentSpec(title: L10n.text("色温"), keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
-        case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 1, unit: "")
-        case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .toneCurve: return AdjustmentSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .saturation: return AdjustmentSpec(title: L10n.text("饱和度"), keyPath: \.saturation, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .sharpening: return AdjustmentSpec(title: L10n.text("锐化"), keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 1, unit: "%")
+        case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
+        case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .toneCurve: return AdjustmentSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .saturation: return AdjustmentSpec(title: L10n.text("饱和度"), keyPath: \.saturation, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .sharpening: return AdjustmentSpec(title: L10n.text("锐化"), keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .rawNoiseReduction: return AdjustmentSpec(title: L10n.text("RAW 降噪"), keyPath: \.rawNoiseReduction, range: 0...2, defaultValue: 0, step: 1, unit: "")
         case .denoiseMode: return AdjustmentSpec(title: L10n.text("降噪"), keyPath: \.denoiseMode, range: 0...2, defaultValue: 0, step: 1, unit: "")
-        case .vignetteAmount: return AdjustmentSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, range: -100...100, defaultValue: 0, step: 1, unit: "")
-        case .grainAmount: return AdjustmentSpec(title: L10n.text("颗粒"), keyPath: \.grainAmount, range: 0...100, defaultValue: 0, step: 1, unit: "")
+        case .vignetteAmount: return AdjustmentSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, range: -100...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
+        case .grainAmount: return AdjustmentSpec(title: L10n.text("颗粒"), keyPath: \.grainAmount, range: 0...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
         }
     }
 }
