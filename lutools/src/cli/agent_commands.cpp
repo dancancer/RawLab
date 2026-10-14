@@ -1,4 +1,5 @@
 #include "agent_commands.h"
+#include "raw_info.h"
 #include "sony2fuji/edit_recipe.h"
 #include "nlohmann/json.hpp"
 #include <filesystem>
@@ -51,17 +52,18 @@ private:
 } // namespace
 
 int runAgentCommands(int argc, char* argv[]) {
-    bool jsonOutput = false, capabilities = false, printRecipe = false;
-    std::string recipeFile;
+    bool jsonOutput = false, capabilities = false, printRecipe = false, info = false;
+    std::string recipeFile, infoFile;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         jsonOutput |= arg == "--json";
         capabilities |= arg == "--capabilities";
         printRecipe |= arg == "--print-recipe";
+        info |= arg == "--info";
     }
-    const std::string command = capabilities ? "capabilities" : printRecipe ? "validate_recipe" : "export";
+    const std::string command = capabilities ? "capabilities" : info ? "info" : printRecipe ? "validate_recipe" : "export";
     auto fail = [&](const std::string& code, const std::string& message, const Json& status = nullptr) {
-        if (jsonOutput || capabilities)
+        if (jsonOutput || capabilities || info)
             std::cout << machineJson(envelope(command, nullptr, {{"code", code}, {"message", message}, {"status", status}})) << '\n';
         else std::cerr << message << '\n';
         return 1;
@@ -75,13 +77,29 @@ int runAgentCommands(int argc, char* argv[]) {
             else if (arg == "--print-recipe" && !seenPrint) seenPrint = true;
             else if (arg == "--recipe" && recipeFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
                 recipeFile = argv[++i];
+            else if (arg == "--info" && infoFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
+                infoFile = argv[++i];
             else return fail("invalid_argument", "Unexpected, duplicate or incomplete argument: " + arg);
         }
         if (capabilities) {
-            if (!recipeFile.empty() || printRecipe) return fail("invalid_argument", "Capabilities cannot be combined with a recipe");
+            if (!recipeFile.empty() || printRecipe || info) return fail("invalid_argument", "Capabilities cannot be combined with another command");
             std::cout << machineJson(envelope(command, {{"recipe_versions", {1}},
-                {"commands", {"capabilities", "validate_recipe", "export"}}, {"input_types", {"raw"}},
+                {"commands", {"capabilities", "validate_recipe", "info", "export"}}, {"input_types", {"raw"}},
                 {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}}})) << '\n';
+            return 0;
+        }
+        if (info) {
+            if (infoFile.empty() || !recipeFile.empty() || printRecipe)
+                return fail("invalid_argument", "--info <RAW> requires one input and no recipe");
+            const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
+            RawInfoResult inspected;
+            {
+                DiagnosticsToStderr diagnostics;
+                inspected = inspectRawInfo(absolute);
+            }
+            if (inspected.status != SONY2FUJI_STATUS_OK)
+                return fail(statusCode(inspected.status), inspected.message, inspected.status);
+            std::cout << machineJson(envelope(command, inspected.result)) << '\n';
             return 0;
         }
         if (recipeFile.empty()) return fail("invalid_argument", "--recipe <file> is required");

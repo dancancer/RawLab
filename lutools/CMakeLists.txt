@@ -273,7 +273,7 @@ if(BUILD_CLI OR (BUILD_TESTING AND NOT IOS AND NOT ANDROID))
     target_include_directories(rawlab_edit_protocol PUBLIC include PRIVATE third_party)
 endif()
 if(BUILD_CLI)
-    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp)
+    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/raw_info.cpp)
     target_include_directories(sony2fuji_cli PRIVATE third_party)
     target_link_libraries(sony2fuji_cli sony2fuji_core rawlab_edit_protocol)
     set_target_properties(sony2fuji_cli PROPERTIES OUTPUT_NAME sony2fuji)
@@ -303,6 +303,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     if(BUILD_CLI)
         find_package(Python3 QUIET COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
+            add_test(NAME raw_info_cli COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_raw_info_cli.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+                --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME agent_commands COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_commands.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>

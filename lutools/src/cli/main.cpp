@@ -19,6 +19,7 @@ void printUsage(const char* programName) {
     std::cout << "  " << programName << " --recipe <编辑JSON文件> [--print-recipe]\n";
     std::cout << "  " << programName << " --capabilities --json\n";
     std::cout << "  --json 输出结构化结果和错误 (与 --recipe 配合)\n";
+    std::cout << "  " << programName << " --info <RAW> --json\n";
     std::cout << "  --print-recipe 校验并输出补全默认值的配方，不处理图片\n\n";
     std::cout << "必需参数:\n";
     std::cout << "  <输入RAW文件>        Sony RAW 文件路径 (.ARW)\n";
@@ -192,7 +193,7 @@ int processRequest(const sony2fuji_request& request, sony2fuji_raw_exposure_mode
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        if (arg == "--json" || arg == "--capabilities" || (i == 1 && arg == "--recipe"))
+        if (arg == "--json" || arg == "--capabilities" || arg == "--info" || (i == 1 && arg == "--recipe"))
             return runAgentCommands(argc, argv);
         // Legacy option values may themselves be filenames such as "--json".
         if (arg == "-o" || arg == "--output" || arg == "-l" || arg == "--lut" ||
