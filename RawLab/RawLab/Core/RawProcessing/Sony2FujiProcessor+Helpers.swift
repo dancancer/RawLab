@@ -39,6 +39,7 @@ extension Sony2FujiProcessor {
 
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
+        try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
         guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK,
@@ -90,6 +91,30 @@ extension Sony2FujiProcessor {
         guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
         let viewportStatus = sony2fuji_session_set_viewport_preview(session, viewportPreview ? 1 : 0)
         guard viewportStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(viewportStatus)) }
+    }
+
+    func geometrySize(_ session: OpaquePointer) -> CGSize? {
+        var width: UInt32 = 0, height: UInt32 = 0
+        guard sony2fuji_session_get_geometry_size(session, &width, &height) == SONY2FUJI_STATUS_OK,
+              width > 0, height > 0 else { return nil }
+        return CGSize(width: Int(width), height: Int(height))
+    }
+
+    func configureGeometry(_ session: OpaquePointer, settings: GeometrySettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid geometry parameters.")) }
+        var config = sony2fuji_geometry_config()
+        config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)
+        config.crop_x = Float(settings.cropX)
+        config.crop_y = Float(settings.cropY)
+        config.crop_width = Float(settings.cropWidth)
+        config.crop_height = Float(settings.cropHeight)
+        config.quarter_turns = Int32(settings.quarterTurns)
+        config.flip_horizontal = settings.flipHorizontal ? 1 : 0
+        config.flip_vertical = settings.flipVertical ? 1 : 0
+        config.straighten_degrees = Float(settings.straightenDegrees)
+        let status = sony2fuji_session_set_geometry(session, &config)
+        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
     }
 
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {

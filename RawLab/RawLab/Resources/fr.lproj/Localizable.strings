@@ -315,3 +315,17 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG créé, mais le suivi de la tâche n’a pas été mis à jour. Vérifiez d’abord le fichier enregistré.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Impossible d'écrire sur la tranche, veuillez vérifier l'emplacement de sortie et l'espace restant.";
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
+"几何" = "Géométrie";
+"裁切与旋转" = "Recadrer et pivoter";
+"重置几何调整" = "Réinitialiser la géométrie";
+"顺时针 90°" = "90° vers la droite";
+"逆时针 90°" = "90° vers la gauche";
+"水平翻转" = "Retournement horizontal";
+"垂直翻转" = "Retournement vertical";
+"拉直" = "Redresser";
+"裁切左侧" = "Recadrage gauche";
+"裁切顶部" = "Recadrage haut";
+"裁切宽度" = "Largeur du recadrage";
+"裁切高度" = "Hauteur du recadrage";
+"裁切百分比基于旋转、翻转和拉直后的画面。" = "Les pourcentages se réfèrent à l’image après rotation, retournement et redressement.";
+"Invalid geometry parameters." = "Paramètres géométriques non valides.";

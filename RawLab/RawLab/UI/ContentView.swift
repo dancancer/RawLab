@@ -15,6 +15,7 @@ struct ContentView: View {
     @State var showingBefore = false
     @State var selectedAdjustment: AdjustmentKind? = .exposure
     @State var lensSelected = false
+    @State var geometrySelected = false
     @State var choosingMasterRecipe = false
     @State var adjustmentsExpanded = true
     @State var histogramExpanded = false
@@ -55,7 +56,7 @@ struct ContentView: View {
                         }
                         .accessibilityIdentifier("editor.panel")
                         .frame(width: landscape ? min(360, geometry.size.width * 0.44) : nil,
-                               height: landscape ? nil : min(panelHeight + (lensSelected ? 220 : selectedAdjustment == nil ? 32 : selectedAdjustment == .hsl ? 120 : selectedAdjustment == .noiseReduction ? 80 : 0),
+                               height: landscape ? nil : min(panelHeight + (geometrySelected ? 360 : lensSelected ? 220 : selectedAdjustment == nil ? 32 : selectedAdjustment == .hsl ? 120 : selectedAdjustment == .noiseReduction ? 80 : 0),
                                                             geometry.size.height * 0.6))
                         .background(Color(.secondarySystemBackground))
                     }
@@ -126,6 +127,9 @@ struct ContentView: View {
         }
         .onChange(of: adjustmentsExpanded) { _, expanded in
             if !expanded && isAdjustingSlider { setSliderEditing(false) }
+        }
+        .onChange(of: geometrySelected) { _, _ in
+            if isAdjustingSlider { setSliderEditing(false) }
         }
         .onChange(of: selectedAdjustment) { _, _ in
             if isAdjustingSlider { setSliderEditing(false) }

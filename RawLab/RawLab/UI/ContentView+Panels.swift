@@ -210,36 +210,42 @@ extension ContentView {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    Button { lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
-                        AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected,
+                    Button { geometrySelected = false; lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                        AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected,
                                             progress: 0, width: toolWidth, height: toolHeight)
                     }
                     .accessibilityValue(selectedFilmName)
-                    .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected ? .isSelected : [])
+                    .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? .isSelected : [])
                     .accessibilityIdentifier("tool.film")
                     .id("film")
-                    Button { lensSelected = false; choosingMasterRecipe = true; selectedAdjustment = nil } label: {
+                    Button { geometrySelected = false; lensSelected = false; choosingMasterRecipe = true; selectedAdjustment = nil } label: {
                         AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "photo.stack", selected: choosingMasterRecipe,
                                             progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: toolHeight)
                     }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? L10n.text("无配方"))
                         .id("masterRecipe")
-                    Button { lensSelected = true; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                    Button { geometrySelected = false; lensSelected = true; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
                         AdjustmentToolLabel(title: L10n.text("镜头"), symbol: "viewfinder", selected: lensSelected,
                                             progress: settings.lensSettings.isEnabled ? 1 : 0,
                                             width: toolWidth, height: toolHeight)
                     }.disabled(viewModel.sourceKind != .raw)
                         .accessibilityIdentifier("tool.lens")
                         .accessibilityAddTraits(lensSelected ? .isSelected : []).id("lens")
+                    Button { geometrySelected = true; lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                        AdjustmentToolLabel(title: L10n.text("几何"), symbol: "crop.rotate", selected: geometrySelected,
+                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: toolHeight)
+                    }
+                    .accessibilityIdentifier("tool.geometry")
+                    .accessibilityAddTraits(geometrySelected ? .isSelected : []).id("geometry")
                     ForEach(AdjustmentKind.allCases) { adjustment in
-                        Button { lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = adjustment } label: {
+                        Button { geometrySelected = false; lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = adjustment } label: {
                             AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
-                                                selected: selectedAdjustment == adjustment && !lensSelected,
+                                                selected: selectedAdjustment == adjustment && !lensSelected && !geometrySelected,
                                                 progress: adjustmentProgress(adjustment),
                                                 width: toolWidth, height: toolHeight)
                         }
                         .disabled(adjustment == .strength && !settings.hasLook)
                         .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
-                        .accessibilityAddTraits(selectedAdjustment == adjustment && !lensSelected ? .isSelected : [])
+                        .accessibilityAddTraits(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? .isSelected : [])
                         .accessibilityIdentifier("tool.\(adjustment.rawValue)")
                         .contextMenu {
                             Button(L10n.format("重置%@", String(describing: adjustment.title))) { reset(adjustment) }
@@ -252,13 +258,16 @@ extension ContentView {
             }
             .frame(height: toolHeight)
             .onGeometryChange(for: CGFloat.self) { geometry in geometry.size.width } action: { _ in
-                proxy.scrollTo(lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
+                proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
             }
             .onChange(of: selectedAdjustment) { _, adjustment in
-                proxy.scrollTo(lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : adjustment?.rawValue ?? "film", anchor: .center)
+                proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : adjustment?.rawValue ?? "film", anchor: .center)
             }
             .onChange(of: lensSelected) { _, selected in
                 if selected { proxy.scrollTo("lens", anchor: .center) }
+            }
+            .onChange(of: geometrySelected) { _, selected in
+                if selected { proxy.scrollTo("geometry", anchor: .center) }
             }
             .onChange(of: choosingMasterRecipe) { _, selected in
                 if selected { proxy.scrollTo("masterRecipe", anchor: .center) }
@@ -269,7 +278,11 @@ extension ContentView {
 
     @ViewBuilder
     var valuePanel: some View {
-        if lensSelected {
+        if geometrySelected {
+            IOSGeometryControls(settings: $settings.geometry, onEditingChanged: setSliderEditing)
+                .padding(.horizontal, 16)
+                .disabled(!viewModel.hasImage || editingLocked)
+        } else if lensSelected {
             IOSLensControls(settings: $settings, info: viewModel.lensInfo)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)

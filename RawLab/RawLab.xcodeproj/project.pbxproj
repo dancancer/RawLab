@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D00300000000000000000001 /* GeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000011; };
+        D00300000000000000000002 /* GeometryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000012; };
 		D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000011; };
 		D00200000000000000000002 /* LensControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000012; };
         AB2000000000000000000001 /* master-recipes.json in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000011; };
@@ -74,6 +76,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        D00300000000000000000011 /* GeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometrySettings.swift; path = "../Shared/GeometrySettings.swift"; sourceTree = SOURCE_ROOT; };
+        D00300000000000000000012 /* GeometryControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryControls.swift; sourceTree = "<group>"; };
 		D00200000000000000000011 /* Sony2FujiProcessor+Lens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sony2FujiProcessor+Lens.swift"; sourceTree = "<group>"; };
 		D00200000000000000000012 /* LensControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LensControls.swift; sourceTree = "<group>"; };
         AB2000000000000000000011 /* master-recipes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../Shared/master-recipes.json"; sourceTree = SOURCE_ROOT; };
@@ -214,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				AB1700000000000000000002 /* ExportMetadata.swift */,
+                D00300000000000000000011 /* GeometrySettings.swift */,
                 AB1900000000000000000011 /* HSLSettings.swift */,
                 AB1900000000000000000012 /* HSLMixer.swift */,
                 AB1900000000000000000013 /* HSLNative.swift */,
@@ -247,6 +252,7 @@
 			children = (
 				AB1200000000000000000011 /* EditorComponents.swift */,
 				D00200000000000000000012 /* LensControls.swift */,
+                D00300000000000000000012 /* GeometryControls.swift */,
 				AB1800000000000000000011 /* PhotoZoomGeometry.swift */,
 				AB1800000000000000000012 /* ZoomablePhoto.swift */,
 				7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */,
@@ -487,6 +493,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB1700000000000000000001 /* ExportMetadata.swift in Sources */,
+                D00300000000000000000001 /* GeometrySettings.swift in Sources */,
+                D00300000000000000000002 /* GeometryControls.swift in Sources */,
                 AB1900000000000000000001 /* HSLSettings.swift in Sources */,
                 AB1900000000000000000002 /* HSLMixer.swift in Sources */,
                 AB1900000000000000000003 /* HSLNative.swift in Sources */,

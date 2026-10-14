@@ -315,3 +315,17 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG Created, but the Task Record Was Not Updated. Verify the Saved File First.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write to the slice, please check the output location and remaining space.";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
+"几何" = "Geometry";
+"裁切与旋转" = "Crop and Rotate";
+"重置几何调整" = "Reset Geometry";
+"顺时针 90°" = "90° Clockwise";
+"逆时针 90°" = "90° Counterclockwise";
+"水平翻转" = "Flip Horizontal";
+"垂直翻转" = "Flip Vertical";
+"拉直" = "Straighten";
+"裁切左侧" = "Crop Left";
+"裁切顶部" = "Crop Top";
+"裁切宽度" = "Crop Width";
+"裁切高度" = "Crop Height";
+"裁切百分比基于旋转、翻转和拉直后的画面。" = "Crop percentages use the canvas after rotation, flipping and straightening.";
+"Invalid geometry parameters." = "Invalid geometry parameters.";

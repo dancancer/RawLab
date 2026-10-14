@@ -23,6 +23,13 @@ struct EditMemoryTests {
         try Data("second".utf8).write(to: sameNameB)
         let store = try EditPersistence(directory: root)
         var changed = RawSettings.default
+        changed.geometry.cropX = 0.125
+        changed.geometry.cropY = 0.25
+        changed.geometry.cropWidth = 0.75
+        changed.geometry.cropHeight = 0.5
+        changed.geometry.quarterTurns = 1
+        changed.geometry.flipHorizontal = true
+        changed.geometry.straightenDegrees = -4.2
         changed.exposure = 0.75
         changed.exposureMode = .sensor
         changed.hsl.set(.saturation, channel: 0, value: -60)
@@ -39,6 +46,15 @@ struct EditMemoryTests {
         check(reopened.state(for: first)?.settings.exposure == 0.75, "edit survives restart")
         check(reopened.state(for: first)?.settings.hsl == changed.hsl && reopened.state(for: first)?.settings.exposureMode == .sensor,
               "HSL and the selected exposure mode survive restart")
+        check(reopened.state(for: first)?.settings.geometry == changed.geometry, "geometry survives restart")
+        check(RawSettings.default.geometry.isIdentity, "new photos default to identity geometry")
+        var invalidGeometry = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
+        invalidGeometry["geometry"] = ["cropX": 0.5, "cropWidth": 0.75]
+        do {
+            _ = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: invalidGeometry))
+            fatalError("invalid crop was accepted")
+        } catch is DecodingError { }
+        check(true, "saved geometry rejects crop outside the canvas")
         check(reopened.state(for: first)?.settings.denoise == changed.denoise, "denoise survives restart")
         check(reopened.state(for: first)?.settings.lensCorrection == changed.lensCorrection, "lens configuration survives restart")
         check(LensCorrectionSettings(mode: .manual).coreProfileID == "__rawlab_manual_selection_required__", "manual mode never falls back to automatic")
@@ -47,6 +63,7 @@ struct EditMemoryTests {
         check(reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
         check(reopened.state(for: second) == nil, "unseen photo uses no previous record")
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
+        legacy.removeValue(forKey: "geometry")
         legacy.removeValue(forKey: "denoise")
         legacy.removeValue(forKey: "photoEffects")
         legacy.removeValue(forKey: "displayChromaDenoise")
@@ -54,6 +71,7 @@ struct EditMemoryTests {
         legacy.removeValue(forKey: "exposureMode")
         legacy.removeValue(forKey: "lensCorrection")
         let legacySettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+        check(legacySettings.geometry.isIdentity, "older records default to identity geometry")
         check(legacySettings.denoise == RawDenoiseSettings(), "older records default to disabled denoise")
         check(!legacySettings.lensSettings.isEnabled, "older records default to disabled lens correction")
         check(legacySettings.photoEffects == PhotoEffectsSettings(), "older records default to disabled photo effects")

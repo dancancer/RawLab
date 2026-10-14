@@ -315,3 +315,17 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "Se creó el DNG, pero no se actualizó el registro de la tarea. Verifique primero el archivo guardado.";
 "无法写入成片，请检查输出位置和剩余空间。" = "No se puede escribir en el segmento. Verifique la ubicación de salida y el espacio restante.";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
+"几何" = "Geometría";
+"裁切与旋转" = "Recortar y girar";
+"重置几何调整" = "Restablecer geometría";
+"顺时针 90°" = "90° a la derecha";
+"逆时针 90°" = "90° a la izquierda";
+"水平翻转" = "Voltear horizontalmente";
+"垂直翻转" = "Voltear verticalmente";
+"拉直" = "Enderezar";
+"裁切左侧" = "Recorte izquierdo";
+"裁切顶部" = "Recorte superior";
+"裁切宽度" = "Anchura del recorte";
+"裁切高度" = "Altura del recorte";
+"裁切百分比基于旋转、翻转和拉直后的画面。" = "Los porcentajes se basan en la imagen después de girar, voltear y enderezar.";
+"Invalid geometry parameters." = "Parámetros de geometría no válidos.";

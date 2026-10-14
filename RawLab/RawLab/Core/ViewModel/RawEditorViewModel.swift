@@ -10,6 +10,7 @@ final class RawEditorViewModel: ObservableObject {
     }
 
     @Published var previewImage: UIImage?
+    @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
     @Published var statusMessage: String?
@@ -50,6 +51,7 @@ final class RawEditorViewModel: ObservableObject {
     var pendingSettings: RawSettings?
     var editSaveWork: DispatchWorkItem?
     var editNoticeID = UUID()
+    var basePreviewGeometry = GeometrySettings()
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
