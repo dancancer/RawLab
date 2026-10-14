@@ -12,7 +12,7 @@ ERROR_CODES = {
     "invalid_argument", "invalid_recipe", "io_error", "processing_error",
     "unsupported", "out_of_memory", "output_io_error",
 }
-COMMANDS = {"capabilities", "validate_recipe", "info", "export"}
+COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
 
 
 class AgentCommands(unittest.TestCase):
@@ -86,7 +86,7 @@ class AgentCommands(unittest.TestCase):
     def test_capabilities_and_flag_order(self):
         expected = {
             "recipe_versions": [1],
-            "commands": ["capabilities", "validate_recipe", "info", "export"],
+            "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": ["raw"],
             "output_formats": ["jpeg", "png", "dng"],
             "exposure_modes": ["scene", "preview", "sensor"],
