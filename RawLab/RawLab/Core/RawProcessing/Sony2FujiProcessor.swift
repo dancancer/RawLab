@@ -59,6 +59,7 @@ struct Sony2FujiProcessor {
         let height: Int
         let stride: Int
         let pixelFormat: sony2fuji_pixel_format
+        var nativeSize: CGSize? = nil
 
         func withCBuffer<T>(_ body: (inout sony2fuji_buffer) -> T) -> T? {
             data.withUnsafeBytes { bytes in
@@ -213,7 +214,8 @@ struct Sony2FujiProcessor {
                 throw ProcessorError.processFailed(statusMessage(status))
             }
 
-            let output = try copyBuffer(buffer)
+            var output = try copyBuffer(buffer)
+            output.nativeSize = geometrySize(session)
             let rawWhiteBalance = readRawWhiteBalance(from: session)
             return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: try readLens(session, url: url))
         }
@@ -263,7 +265,8 @@ struct Sony2FujiProcessor {
             throw ProcessorError.processFailed(statusMessage(status))
         }
 
-        let output = try copyBuffer(outBuffer)
+        var output = try copyBuffer(outBuffer)
+        output.nativeSize = geometrySize(session)
         sony2fuji_release_buffer(&outBuffer)
         return output
     }

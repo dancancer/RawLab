@@ -29,6 +29,11 @@ struct BatchExportTests {
         try Data("source".utf8).write(to: sourceURL)
         var settings = RawSettings.default
         settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
+        settings.geometry.cropX = 0.2
+        settings.geometry.cropWidth = 0.6
+        settings.geometry.quarterTurns = 3
+        settings.geometry.flipVertical = true
+        settings.geometry.straightenDegrees = 6
         settings.lutStrength = 0.5
         settings.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
         settings.photoEffects.vignetteMidpoint = 62
@@ -49,6 +54,7 @@ struct BatchExportTests {
         try journal.save(job)
         let reopenedJob = try journal.load(id: job.id)
         let pendingJobs = try journal.pendingJobs()
+        check(reopenedJob?.source.settings.geometry == settings.geometry, "journal freezes geometry settings")
         check(reopenedJob?.targets.count == 6, "journal round-trips the selected rows")
         check(reopenedJob?.source.settings.lensCorrection == settings.lensCorrection &&
               reopenedJob?.source.settings.lensSettings.coreProfileID.isEmpty == true,
@@ -101,6 +107,7 @@ struct BatchExportTests {
         job = try BatchExportRunner.run(job: job, journalStore: journal,
                                         render: { target, settings in
                                             renderCount += 1
+                                            check(settings.geometry == source.settings.geometry, "batch uses frozen geometry settings")
                                             check(settings.denoise == source.settings.denoise, "batch uses frozen denoise settings")
                                             check(settings.photoEffects == source.settings.photoEffects,
                                                   "batch uses frozen photo effects settings")
@@ -155,6 +162,7 @@ struct BatchExportTests {
                                                    render: { _, _ in Data([9]) },
                                                    write: { data, name, _, _ in try data.write(to: root.appendingPathComponent(name)) })
         check(retry.targets.filter { $0.status == .succeeded }.count == 6, "retry only reruns the failed row")
+        check(retry.source.settings.geometry == source.settings.geometry, "retry retains frozen geometry settings")
         check(retry.longEdge == 3000, "retry retains the frozen export long edge")
         check(retry.targets.first(where: { $0.id == successfulID })?.status == .succeeded,
               "retry preserves the original successful row")

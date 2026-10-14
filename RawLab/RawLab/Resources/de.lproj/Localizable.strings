@@ -315,3 +315,17 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG erstellt, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst die gespeicherte Datei.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Auf das Slice kann nicht geschrieben werden. Bitte überprüfen Sie den Ausgabeort und den verbleibenden Speicherplatz.";
 "无效的视口预览模式" = "Ungültiger Modus für die Ausschnittvorschau";
+"几何" = "Geometrie";
+"裁切与旋转" = "Zuschneiden und Drehen";
+"重置几何调整" = "Geometrie zurücksetzen";
+"顺时针 90°" = "90° im Uhrzeigersinn";
+"逆时针 90°" = "90° gegen Uhrzeigersinn";
+"水平翻转" = "Horizontal spiegeln";
+"垂直翻转" = "Vertikal spiegeln";
+"拉直" = "Begradigen";
+"裁切左侧" = "Zuschnitt links";
+"裁切顶部" = "Zuschnitt oben";
+"裁切宽度" = "Zuschnittbreite";
+"裁切高度" = "Zuschnitthöhe";
+"裁切百分比基于旋转、翻转和拉直后的画面。" = "Die Zuschnittprozente beziehen sich auf das Bild nach Drehen, Spiegeln und Begradigen.";
+"Invalid geometry parameters." = "Ungültige Geometrieparameter.";

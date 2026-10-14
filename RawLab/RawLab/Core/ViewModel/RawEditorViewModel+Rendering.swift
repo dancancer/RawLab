@@ -69,6 +69,7 @@ extension RawEditorViewModel {
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
         let sourceURL = self.sourceURL
+        let comparisonChanged = basePreviewGeometry != settings.geometry
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -87,6 +88,8 @@ extension RawEditorViewModel {
                 }
 
                 do {
+                    let comparison = comparisonChanged ? try self.renderComparison(
+                        url: sourceURL, buffer: nil, geometry: settings.geometry) : nil
                     let result = try self.processor.processRaw(
                         url: sourceURL,
                         settings: settings,
@@ -105,6 +108,8 @@ extension RawEditorViewModel {
                             return
                         }
                         self.previewImage = previewImage
+                        self.nativeImageSize = result.buffer.nativeSize
+                        if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
                         self.lensInfo = result.lensInfo
                         if self.sourceOrientation == nil {
                             self.sourceOrientation = result.orientation
@@ -135,7 +140,10 @@ extension RawEditorViewModel {
             }
 
             let outputBuffer: Sony2FujiProcessor.Buffer
+            let comparison: (UIImage?, [CGFloat])?
             do {
+                comparison = comparisonChanged ? try self.renderComparison(
+                    url: nil, buffer: inputBuffer, geometry: settings.geometry) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,
@@ -154,13 +162,15 @@ extension RawEditorViewModel {
                 return
             }
 
-            let previewImage = self.processor.makeUIImage(from: outputBuffer, orientation: existingOrientation)
+            let previewImage = self.processor.makeUIImage(from: outputBuffer, orientation: .up)
 
             DispatchQueue.main.async {
                 guard self.isLatestRenderID(renderID) else {
                     return
                 }
                 self.previewImage = previewImage
+                self.nativeImageSize = outputBuffer.nativeSize
+                if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
                 self.lensInfo = nil
             }
 
@@ -174,6 +184,28 @@ extension RawEditorViewModel {
         }
         previewWorkItem = workItem
         renderQueue.async(execute: workItem)
+    }
+
+    func renderComparison(url: URL?, buffer: Sony2FujiProcessor.Buffer?,
+                          geometry: GeometrySettings) throws -> (UIImage?, [CGFloat]) {
+        var neutral = RawSettings.default
+        neutral.geometry = geometry
+        let output: Sony2FujiProcessor.Buffer
+        if let url {
+            output = try processor.processRaw(url: url, settings: neutral,
+                previewLongEdge: previewMaxDimension, lutURL: nil).buffer
+        } else if let buffer {
+            output = try processor.processBuffer(buffer: buffer, settings: neutral,
+                previewLongEdge: previewMaxDimension, lutURL: nil)
+        } else { throw EditorError.noImageLoaded }
+        return (processor.makeUIImage(from: output, orientation: .up),
+                processor.computeHistogram(from: output, bins: histogramBins))
+    }
+
+    func applyComparison(_ comparison: (UIImage?, [CGFloat]), geometry: GeometrySettings) {
+        basePreviewImage = comparison.0
+        baseHistogram = comparison.1
+        basePreviewGeometry = geometry
     }
 
     func schedulePreviewUpdate(
