@@ -267,9 +267,14 @@ if(BUILD_SHARED_LIB)
 endif()
 
 # 命令行工具
+if(BUILD_CLI OR (BUILD_TESTING AND NOT IOS AND NOT ANDROID))
+    # Opt-in protocol adapter: native C ABI and client builds stay unchanged.
+    add_library(rawlab_edit_protocol STATIC src/cli/edit_recipe.cpp)
+    target_include_directories(rawlab_edit_protocol PUBLIC include PRIVATE third_party)
+endif()
 if(BUILD_CLI)
     add_executable(sony2fuji_cli src/cli/main.cpp)
-    target_link_libraries(sony2fuji_cli sony2fuji_core)
+    target_link_libraries(sony2fuji_cli sony2fuji_core rawlab_edit_protocol)
     set_target_properties(sony2fuji_cli PROPERTIES OUTPUT_NAME sony2fuji)
 endif()
 
@@ -291,6 +296,18 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set(SONY2FUJI_TEST_LENS_WAVELET_RAW "" CACHE FILEPATH "External RAW with calibrated Lens and applied wavelet NR")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_LENS_WAVELET_RAW}" SONY2FUJI_TEST_LENS_WAVELET_RAW)
     find_package(Threads REQUIRED)
+    add_executable(edit_recipe_tests tests/edit_recipe_tests.cpp)
+    target_link_libraries(edit_recipe_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe COMMAND edit_recipe_tests)
+    if(BUILD_CLI)
+        find_package(Python3 QUIET COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME edit_recipe_cli COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_cli.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+        endif()
+    endif()
     add_executable(rendered_dng_tests tests/rendered_dng_tests.cpp)
     target_link_libraries(rendered_dng_tests sony2fuji_core)
     if(SONY2FUJI_ENABLE_DNGSDK AND SONY2FUJI_ENABLE_LENSFUN)
@@ -529,6 +546,8 @@ if(BUILD_CLI)
     install(TARGETS sony2fuji_cli
         RUNTIME DESTINATION bin
     )
+    install(TARGETS rawlab_edit_protocol ARCHIVE DESTINATION lib)
+    install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION share/licenses/rawlab-edit-protocol)
 endif()
 
 install(DIRECTORY include/sony2fuji
