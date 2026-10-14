@@ -10,8 +10,8 @@ native processing sources are unchanged by that update. Isolated checkout:
 `build/ios-adjustment-performance`. The user's original checkout and its
 uncommitted work were not edited. No UX redesign, main/release update or public
 comment is part of this change. Development PR/review/integration was subsequently
-authorized; the full SwiftUI interaction validation is being completed separately
-from the processor measurements below.
+authorized; manual full SwiftUI interaction validation is reported separately from the
+processor measurements below.
 
 The user's Mac browser exposed the [RawLab 0.7 post](https://www.xiaohongshu.com/explore/6acee385000000001203531f).
 Seafood reported ARW parameter changes taking about three seconds, with the
@@ -181,19 +181,51 @@ the complete app itself signed, built, installed and launched successfully using
 its existing independent test profile. No provisioning-update flag or credential
 change was used.
 
-The app-only scheme subsequently built and launched the full SwiftUI app. The
-initial tinted-recipe request published in 2041.7 ms, with the same image object
-assigned to the window-attached image view about 4 ms later. This verifies the
-real import/setup/display-view path, not continuous slider behavior by itself.
-The user has been asked to make three actual slow exposure drags, holding briefly
-before each release. That manual interaction evidence is **pending**; no XCTest
-pass or complete UI latency claim is made. Its events are stored in the test
-app's `Documents/SwiftUIValidation/manual-20261014-31637a15/events.jsonl` and the
-local launch log. Image-view assignment is an observable boundary, not a measured
-physical display-present timestamp.
+The app-only scheme subsequently built, signed, installed and launched the full
+SwiftUI app. Its initial tinted-recipe request published in 2041.7 ms, with the
+same image object assigned to the window-attached image view about 4 ms later.
+This setup request is excluded from the manual-interaction measurements.
 
-The main task also completed a separate Solo read-only review at PR head
-`5c70ac5f6a01b07d5bc58981b7788d52f7276179`: all five changed files and the
+The user performed the requested gestures and reported **“已拖动，预览正常”**.
+The saved device log contains 18 closed editing intervals: 17 actual exposure
+drags and one additional chroma-denoise slider edit. The user also enabled denoise
+between the first 14 and last three exposure drags; these are classified separately
+rather than presented as identical configurations. Hamada, strength 0.65 and tint
+20 remained set. All observed canvas images were 853 × 1280, and all recorded
+thermal snapshots were nominal (0).
+
+| Actual manual input | Count | Release → main publication | Release → actual UIImageView update |
+| --- | --- | --- | --- |
+| Exposure, original preset / denoise off | 14 | median 34.44 ms; 22.70–43.01 ms | median 40.52 ms; 27.28–51.11 ms |
+| Exposure, after extra denoise-on edit | 3 | median 29.05 ms; 24.08–42.20 ms | median 34.25 ms; 29.09–50.04 ms |
+
+Across the 17 exposure drags there were 69 interactive publications, all matched
+to the actual window-attached UIImageView by image identity. Including the extra
+denoise gesture, all 18 release-final chains passed: final request/publication
+settings were fully equal, current/latest render ID flags and events matched,
+completion was observed, and the exact published UIImage reached the image view.
+All 91 publications, including setup and extra edits, passed latest-ID and
+full-settings integrity checks; no stale publication was observed. The additional
+non-release final request when denoise was enabled took 96.82 ms and is excluded
+from the exposure release table.
+
+Events are retained in
+`build/performance/swiftui-validation/device-events-01/manual-20261014-31637a15/events.jsonl`;
+`manual-ui-analysis-classified.json` records every chain and the classifications.
+The analysis requires real editing events; setup-only or incomplete logs produce
+PENDING, and stale-ID/settings mismatches produce FAIL. The result is a manual
+full-app interaction validation, **not an XCTest pass**. It measures release and
+image-view assignment using monotonic event timestamps, not physical display
+presentation, a randomized latency distribution or UI-before/after benchmarking.
+The processor before/after experiment is reported separately above.
+
+After capturing the manual logs, the complete optimized app without temporary UI
+instrumentation was reinstalled and launched under the same independent test ID,
+preserving its data. No further phone operation is required for this validation.
+
+The main task also completed a separate Solo read-only review of the production
+change at PR head `5c70ac5f6a01b07d5bc58981b7788d52f7276179` and its subsequent
+documentation-only updates: all five changed files and the
 RAW/FINAL/DNG/auto-exposure/caller queues were covered, with no Must-fix or
 Should-fix findings. The one-slot metadata cache does not retain image buffers;
 unknown or changed file identities reload; failures do not install stale keys;
@@ -272,6 +304,10 @@ Changed production files: `Sony2FujiProcessor.swift` and
 
 Local evidence (ignored files, not for commit):
 
+- [Full SwiftUI classified manual results](../build/performance/swiftui-validation/manual-ui-analysis-classified.json)
+- [Full SwiftUI device events](../build/performance/swiftui-validation/device-events-01/manual-20261014-31637a15/events.jsonl)
+- [Final app restoration](../build/performance/swiftui-validation/final-stock-install.log)
+- [Final restored app launch](../build/performance/swiftui-validation/final-stock-launch.log)
 - [Full SwiftUI signed app build](../build/performance/swiftui-validation/app-build.log)
 - [Full SwiftUI actual launch/setup log](../build/performance/swiftui-validation/app-run-manual.log)
 - [UI-test runner signing failure](../build/performance/swiftui-validation/build-for-testing.log)
