@@ -36,6 +36,7 @@ static class Program
         try
         {
             Loc.Initialize("zh-Hans");
+            if(args.Length==3 && args[0]=="--geometry") { GeometryChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--lens") { LensChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--rendered-dng") { RenderedDngChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--master-recipes") { MasterRecipeChecks.Run(args[1],args[2]);return 0; }

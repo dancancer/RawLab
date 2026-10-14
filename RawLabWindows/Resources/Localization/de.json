@@ -412,5 +412,21 @@
   "已生成 {0} 个渲染型 DNG，未另存到所选位置": "{0} entwickelte DNG-Dateien erstellt, aber nicht am gewählten Ort gespeichert",
   "DNG 只能保存到文件": "DNG kann nur in Dateien gespeichert werden",
   "请等待预览完成后导出。": "Warten Sie vor dem Export, bis die Vorschau fertig ist.",
-  "请选择 {0} 文件扩展名。": "Wählen Sie eine Dateierweiterung für {0}."
+  "请选择 {0} 文件扩展名。": "Wählen Sie eine Dateierweiterung für {0}.",
+  "几何": "Geometrie",
+  "几何调整无效。": "Ungültige Geometrieeinstellungen.",
+  "几何：左边 {0:0.##}% · 顶边 {1:0.##}% · 宽度 {2:0.##}% · 高度 {3:0.##}% · 旋转 {4}° · 拉直 {5:0.##}°": "Geometrie: links {0:0.##}% · oben {1:0.##}% · Breite {2:0.##}% · Höhe {3:0.##}% · Drehung {4}° · Ausrichtung {5:0.##}°",
+  "向右旋转": "Nach rechts drehen",
+  "向左旋转": "Nach links drehen",
+  "垂直翻转": "Vertikal spiegeln",
+  "宽度 (%)": "Breite (%)",
+  "左边 (%)": "Links (%)",
+  "拉直": "Gerade ausrichten",
+  "拉直角度": "Ausrichtungswinkel",
+  "水平翻转": "Horizontal spiegeln",
+  "裁切": "Zuschnitt",
+  "裁切与旋转": "Zuschneiden und drehen",
+  "重置几何": "Geometrie zurücksetzen",
+  "顶边 (%)": "Oben (%)",
+  "高度 (%)": "Höhe (%)"
 }

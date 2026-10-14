@@ -57,6 +57,11 @@ public partial class BatchExportWindow : Window
             $"{Loc.Text("横向色差")}  {(state.Lens.Tca ? Loc.Text("开启") : Loc.Text("关闭"))}",
             $"{Loc.Text("自动裁边")}  {(state.Lens.AutoCrop ? Loc.Text("开启") : Loc.Text("关闭"))}"
         });
+        var geometry = state.Geometry;
+        AllSettings.Text += "\n" + Loc.Format("几何：左边 {0:0.##}% · 顶边 {1:0.##}% · 宽度 {2:0.##}% · 高度 {3:0.##}% · 旋转 {4}° · 拉直 {5:0.##}°",
+            geometry.CropX * 100, geometry.CropY * 100, geometry.CropWidth * 100, geometry.CropHeight * 100,
+            geometry.QuarterTurns * 90, geometry.StraightenDegrees);
+        AllSettings.Text += $"\n{Loc.Text("水平翻转")}  {(geometry.FlipHorizontal ? Loc.Text("开启") : Loc.Text("关闭"))} · {Loc.Text("垂直翻转")}  {(geometry.FlipVertical ? Loc.Text("开启") : Loc.Text("关闭"))}";
         var effects = state.Effects;
         var chroma = state.DisplayChromaDenoise switch { 1 => Loc.Text("细节优先"), 2 => Loc.Text("去噪优先"), _ => Loc.Text("关闭") };
         AllSettings.Text += Loc.Format("\n显示色彩降噪  {0}\n暗角  强度 {1:+0;-0;0} · 中点 {2:0} · 圆度 {3:+0;-0;0} · 羽化 {4:0} · 高光保护 {5:0}\n颗粒  强度 {6:0} · 大小 {7:0} · 粗糙度 {8:0}", chroma, effects.VignetteAmount, effects.VignetteMidpoint, effects.VignetteRoundness, effects.VignetteFeather, effects.VignetteHighlights, effects.GrainAmount, effects.GrainSize, effects.GrainRoughness);
