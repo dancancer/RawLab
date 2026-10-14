@@ -96,7 +96,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         fields(root, "recipe", {"schema_version", "input", "edits", "output"});
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (version != 1 && version != 2) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version < 1 || version > 3) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
 
         EditRecipe parsed;
         parsed.schemaVersion = version;
@@ -145,13 +145,22 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         if (edits.contains("geometry")) {
             const auto& geometry = edits.at("geometry");
             const std::string geoPath = "edits.geometry";
-            fields(geometry, geoPath, {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees"});
+            if (version == 2)
+                fields(geometry, geoPath, {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees"});
+            else fields(geometry, geoPath, {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees", "perspective"});
             auto& config = parsed.geometry;
             if (geometry.contains("quarter_turns"))
                 config.quarter_turns = integer(geometry.at("quarter_turns"), 0, 3, geoPath + ".quarter_turns");
             config.flip_horizontal = boolean(geometry, "flip_horizontal", geoPath);
             config.flip_vertical = boolean(geometry, "flip_vertical", geoPath);
             config.straighten_degrees = number(geometry, "straighten_degrees", 0, -45, 45, geoPath);
+            if (geometry.contains("perspective")) {
+                const auto& perspective = geometry.at("perspective");
+                const auto perspectivePath = geoPath + ".perspective";
+                fields(perspective, perspectivePath, {"horizontal", "vertical"});
+                parsed.perspective.horizontal = number(perspective, "horizontal", 0, -1, 1, perspectivePath);
+                parsed.perspective.vertical = number(perspective, "vertical", 0, -1, 1, perspectivePath);
+            }
             if (geometry.contains("crop")) {
                 const auto& crop = geometry.at("crop");
                 const std::string cropPath = geoPath + ".crop";
@@ -201,7 +210,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
-    if (recipe.schemaVersion != 1 && recipe.schemaVersion != 2)
+    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 3)
         throw std::invalid_argument("Unsupported schema_version");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
@@ -225,12 +234,15 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
                              {"strength", recipe.lookStrength}}}}},
         {"output", {{"path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)},
                     {"jpeg_quality", recipe.jpegQuality}, {"size", size}}}};
-    if (recipe.schemaVersion == 2) {
+    if (recipe.schemaVersion >= 2) {
         const auto& geo = recipe.geometry;
         document["edits"]["geometry"] = {{"crop", {{"x", geo.crop_x}, {"y", geo.crop_y},
             {"width", geo.crop_width}, {"height", geo.crop_height}}}, {"quarter_turns", geo.quarter_turns},
             {"flip_horizontal", geo.flip_horizontal != 0}, {"flip_vertical", geo.flip_vertical != 0},
             {"straighten_degrees", geo.straighten_degrees}};
+        if (recipe.schemaVersion == 3)
+            document["edits"]["geometry"]["perspective"] = {{"horizontal", recipe.perspective.horizontal},
+                {"vertical", recipe.perspective.vertical}};
     }
     return document.dump(2) + "\n";
 }

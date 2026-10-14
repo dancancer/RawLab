@@ -1258,12 +1258,31 @@ sony2fuji_status sony2fuji_session_set_geometry(
         config->struct_size != sizeof(*config) || config->flip_horizontal < 0 ||
         config->flip_horizontal > 1 || config->flip_vertical < 0 || config->flip_vertical > 1)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    sony2fuji::GeometryOptions options{config->crop_x, config->crop_y,
-        config->crop_width, config->crop_height, config->quarter_turns,
-        config->flip_horizontal != 0, config->flip_vertical != 0, config->straighten_degrees};
+    auto options = session->geometry;
+    options.crop_x = config->crop_x; options.crop_y = config->crop_y;
+    options.crop_width = config->crop_width; options.crop_height = config->crop_height;
+    options.quarter_turns = config->quarter_turns;
+    options.flip_horizontal = config->flip_horizontal != 0;
+    options.flip_vertical = config->flip_vertical != 0;
+    options.straighten_degrees = config->straighten_degrees;
     if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     options.crop_width = std::min(options.crop_width, 1.0f - options.crop_x);
     options.crop_height = std::min(options.crop_height, 1.0f - options.crop_y);
+    session->geometry = options;
+    session->geometry_width = session->geometry_height = 0;
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_set_perspective(
+    sony2fuji_session* session, const sony2fuji_perspective_config* config
+) {
+    static_assert(sizeof(sony2fuji_perspective_config) == 16, "Perspective C ABI layout");
+    if (!session || !config || config->version != SONY2FUJI_PERSPECTIVE_CONFIG_VERSION ||
+        config->struct_size != sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto options = session->geometry;
+    options.perspective_horizontal = config->horizontal;
+    options.perspective_vertical = config->vertical;
+    if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     session->geometry = options;
     session->geometry_width = session->geometry_height = 0;
     return SONY2FUJI_STATUS_OK;

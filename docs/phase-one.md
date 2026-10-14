@@ -10,8 +10,8 @@
 | --- | --- | --- |
 | 1 | 编辑 JSON v1、显式曝光模式、默认值、输出设置、CLI 导出闭环 | [PR #33](https://github.com/dancancer/RawLab/pull/33) 已合入，`9980bdf`；定向审查无必须/应当修复项 |
 | 2 | 能力查询、图片信息、预览、最终导出、结构化结果与错误、配方示例 | [PR #34](https://github.com/dancancer/RawLab/pull/34)、[PR #35](https://github.com/dancancer/RawLab/pull/35)、[PR #36](https://github.com/dancancer/RawLab/pull/36) 已合入 |
-| 3 | 共用裁切、旋转、拉直、翻转；相关 UI 增量接入 | 当前交付共用几何 API 与 JSON v2；四端 UI 分别接入 |
-| 4 | 透视校正 | 依赖基础几何，第一阶段范围内 |
+| 3 | 共用裁切、旋转、拉直、翻转；相关 UI 增量接入 | [PR #37](https://github.com/dancancer/RawLab/pull/37) 共用 API/JSON v2 与 [#38](https://github.com/dancancer/RawLab/pull/38)、[#39](https://github.com/dancancer/RawLab/pull/39)、[#40](https://github.com/dancancer/RawLab/pull/40)、[#41](https://github.com/dancancer/RawLab/pull/41) 四端接入已合入 |
+| 4 | 透视校正 | 当前交付共用水平/垂直透视和 JSON v3；随后四端控件增量 |
 
 依赖顺序：协议 → Agent 命令 → 基础几何 → 透视。各 PR 小步交付到
 development；本阶段已获授权，在定向审查与相关测试通过后按依赖顺序合入。

@@ -85,12 +85,12 @@ class AgentCommands(unittest.TestCase):
 
     def test_capabilities_and_flag_order(self):
         expected = {
-            "recipe_versions": [1, 2],
+            "recipe_versions": [1, 2, 3],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": ["raw"],
             "output_formats": ["jpeg", "png", "dng"],
             "exposure_modes": ["scene", "preview", "sensor"],
-            "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten"],
+            "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
         }
         for arguments in (("--capabilities", "--json"), ("--json", "--capabilities")):
             with self.subTest(arguments=arguments):
