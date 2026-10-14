@@ -18,6 +18,7 @@ final class BatchExportModel: ObservableObject {
     @Published private(set) var previewing = false
     @Published private(set) var validating = false
     @Published var previewFile: URL?
+    @Published var sourceEditingGeometry = false
     var onActivity: (Bool) -> Void = { _ in }
     var onDiscard: () -> Void = { }
     private let journal: BatchJournal
@@ -32,7 +33,7 @@ final class BatchExportModel: ObservableObject {
         error = job.failure
     }
 
-    var canRun: Bool { !running && !validating && job.selectedCount > 0 && job.outputDirectory != nil }
+    var canRun: Bool { !running && !validating && !sourceEditingGeometry && job.selectedCount > 0 && job.outputDirectory != nil }
     var title: String {
         if stopping { return L10n.text("正在停止…") }
         if running { return L10n.text("正在导出") }

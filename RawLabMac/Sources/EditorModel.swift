@@ -2,6 +2,35 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum MacGeometryTab: String, CaseIterable {
+    case crop, perspective, lens
+
+    var title: String {
+        L10n.text(self == .crop ? "裁切" : self == .perspective ? "透视" : "镜头")
+    }
+}
+
+struct MacGeometryDraft: Equatable {
+    let originalGeometry: GeometrySettings
+    let originalLens: LensCorrectionSettings
+    var geometry: GeometrySettings
+    var lens: LensCorrectionSettings
+
+    init(geometry: GeometrySettings, lens: LensCorrectionSettings) {
+        originalGeometry = geometry; originalLens = lens
+        self.geometry = geometry; self.lens = lens
+    }
+
+    var hasChanges: Bool { geometry != originalGeometry || lens != originalLens }
+    var previewGeometry: GeometrySettings {
+        var full = geometry
+        full.cropX = 0; full.cropY = 0; full.cropWidth = 1; full.cropHeight = 1
+        return full
+    }
+}
+
+enum MacGeometryDeparture { case apply, discard, stay }
+
 final class EditorModel: ObservableObject {
     private struct RenderWork: Equatable {
         let file: URL
@@ -9,9 +38,45 @@ final class EditorModel: ObservableObject {
         let lut: URL?
         let edge: Int?
         let pass: RenderPass
+        let draftEpoch: UUID
+        let editingGeometry: Bool
     }
 
     @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { edited() } } }
+    @Published private(set) var geometryDraft: MacGeometryDraft?
+    @Published private(set) var geometryDraftPreviewReady = false
+    @Published private(set) var geometryDraftTab = MacGeometryTab.crop
+    @Published private(set) var cropAspectPreset = CropAspectPreset.free
+    @Published private(set) var cropAspectSwapped = false
+    @Published var cropGridEnabled = true
+    @Published private(set) var geometryDraftDeparturePending = false
+    @Published private(set) var invalidGeometryDraftInputs = Set<String>()
+    @Published private(set) var geometryCropInteracting = false
+    @Published private(set) var geometryDraftRevision = 0
+    private var geometryDraftEpoch = UUID()
+    private var geometryDepartureAction: (() -> Void)?
+    private var geometryDepartureStay: (() -> Void)?
+    var geometryDraftSettings: GeometrySettings { geometryDraft?.geometry ?? settings.geometrySettings }
+    var lensDraftSettings: LensCorrectionSettings { geometryDraft?.lens ?? settings.lensSettings }
+    var geometryDraftHasChanges: Bool { geometryDraft?.hasChanges == true || !invalidGeometryDraftInputs.isEmpty }
+    var geometryDraftCanApply: Bool {
+        geometryDraft != nil && geometryDraftSettings.isValid && invalidGeometryDraftInputs.isEmpty &&
+            geometryDraftPreviewReady && !busy && !geometryCropInteracting && !exporting
+    }
+    var lensDraftPreviewIsCurrent: Bool { geometryDraftPreviewReady && !busy }
+    var geometryCanvasSize: CGSize {
+        guard let result else { return CGSize(width: 1, height: 1) }
+        return CGSize(width: CGFloat(result.nativeWidth ?? result.image.width),
+                      height: CGFloat(result.nativeHeight ?? result.image.height))
+    }
+    var cropAspectRatio: Double? { cropAspectPreset.ratio(for: geometryCanvasSize, swapped: cropAspectSwapped) }
+    var geometryPreviewSettings: Adjustments {
+        guard let draft = geometryDraft else { return settings }
+        var preview = settings
+        preview.geometry = draft.previewGeometry.isIdentity ? nil : draft.previewGeometry
+        preview.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
+        return preview
+    }
     private var updatingMetadata = false
     @Published var films = Film.bundled()
     @Published var selectedFilmID = "" {
@@ -83,9 +148,165 @@ final class EditorModel: ObservableObject {
         guard let recipe = selectedMasterRecipe else { return false }
         return recipe.lutURL() == nil
     }
-    var canApplySettings: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm && !missingMasterRecipe }
+    var canApplySettings: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
+
+    @discardableResult func beginGeometryDraft(tab: MacGeometryTab = .crop) -> Bool {
+        if geometryDraft != nil { return selectGeometryDraftTab(tab) }
+        guard file != nil, result != nil, !exporting, !lookLibraryBusy, saveEdits() else { return false }
+        geometryDraftEpoch = UUID(); editRevision = UUID()
+        geometryDraft = MacGeometryDraft(geometry: settings.geometrySettings, lens: settings.lensSettings)
+        geometryDraftTab = tab; geometryDraftPreviewReady = false
+        cropAspectPreset = .free; cropAspectSwapped = false
+        invalidGeometryDraftInputs.removeAll()
+        batch?.sourceEditingGeometry = true
+        scheduler.setInteracting(false)
+        schedule(forceExact: true)
+        return true
+    }
+
+    @discardableResult func selectGeometryDraftTab(_ tab: MacGeometryTab) -> Bool {
+        guard geometryDraft != nil, invalidGeometryDraftInputs.isEmpty else { return false }
+        geometryDraftTab = tab
+        return true
+    }
+
+    func updateGeometryDraft(_ edit: (inout GeometrySettings) -> Void) {
+        guard var draft = geometryDraft else { return }
+        let before = draft.previewGeometry
+        edit(&draft.geometry)
+        guard draft.geometry.isValid, draft != geometryDraft else { return }
+        geometryDraft = draft
+        // Crop selection is an overlay on the already rendered, transformed canvas.
+        if before != draft.previewGeometry {
+            geometryDraftPreviewReady = false
+            schedule()
+        }
+    }
+
+    func updateLensDraft(_ edit: (inout LensCorrectionSettings) -> Void) {
+        guard var draft = geometryDraft else { return }
+        edit(&draft.lens)
+        guard draft != geometryDraft else { return }
+        geometryDraft = draft; geometryDraftPreviewReady = false
+        schedule()
+    }
+
+    func setGeometryDraftParameter(_ parameter: GeometryParameter, to value: Double) {
+        guard value.isFinite else { return }
+        updateGeometryDraft { geometry in
+            let range = parameter.range(for: geometry)
+            geometry[keyPath: parameter.keyPath] = min(range.upperBound, max(range.lowerBound, value))
+            if (parameter == .cropWidth || parameter == .cropHeight), let ratio = cropAspectRatio {
+                if parameter == .cropHeight {
+                    geometry.cropWidth = min(1 - geometry.cropX,
+                        geometry.cropHeight * ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width))
+                }
+                let rect = CropInteraction.dragging(CropInteraction.rect(from: geometry), handle: .bottomRight,
+                    translation: .zero, canvasSize: geometryCanvasSize, ratio: ratio)
+                geometry = CropInteraction.applying(rect: rect, to: geometry)
+            }
+        }
+    }
+
+    func setGeometryDraftInputValidity(identifier: String, isValid: Bool) {
+        guard geometryDraft != nil else { return }
+        if isValid { invalidGeometryDraftInputs.remove(identifier) }
+        else { invalidGeometryDraftInputs.insert(identifier) }
+    }
+
+    func setGeometryCropInteracting(_ interacting: Bool) { geometryCropInteracting = interacting }
+
+    func selectCropAspect(_ preset: CropAspectPreset) {
+        guard geometryDraftPreviewReady else { return }
+        cropAspectPreset = preset
+        fitDraftCropAspect()
+    }
+
+    func swapCropAspect() {
+        guard geometryDraftPreviewReady, cropAspectRatio != nil else { return }
+        cropAspectSwapped.toggle(); fitDraftCropAspect()
+    }
+
+    private func fitDraftCropAspect() {
+        let rect = CropInteraction.fitting(ratio: cropAspectRatio, in: geometryCanvasSize,
+                                          around: CropInteraction.rect(from: geometryDraftSettings))
+        updateGeometryDraft { $0 = CropInteraction.applying(rect: rect, to: $0) }
+    }
+
+    func resetGeometryDraft() {
+        cropAspectPreset = .free; cropAspectSwapped = false
+        geometryDraftRevision &+= 1
+        invalidGeometryDraftInputs.removeAll()
+        updateGeometryDraft { $0 = GeometrySettings() }
+    }
+
+    func resetLensDraft() {
+        geometryDraftRevision &+= 1
+        updateLensDraft { $0 = LensCorrectionSettings() }
+    }
+
+    @discardableResult func applyGeometryDraft() -> Bool {
+        guard geometryDraftCanApply, let draft = geometryDraft, let file else { return false }
+        var committed = settings
+        committed.geometry = draft.geometry.isIdentity ? nil : draft.geometry
+        committed.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
+        do {
+            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+            try editStore!.save(file, state: editState(settings: committed))
+        } catch {
+            saveError = L10n.format("调整未保存：%@", error.localizedDescription)
+            return false
+        }
+        saveWork?.cancel()
+        updatingMetadata = true; settings = committed; updatingMetadata = false
+        dirty = false; saveError = nil; saveStatusKey = "调整已保存"
+        clearSaveStatusLater(); endGeometryDraft(); schedule(forceExact: true)
+        return true
+    }
+
+    func cancelGeometryDraft() {
+        guard geometryDraft != nil else { return }
+        endGeometryDraft(); schedule(forceExact: true)
+    }
+
+    private func endGeometryDraft() {
+        geometryDraft = nil; geometryDraftPreviewReady = false
+        geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
+        geometryDraftEpoch = UUID(); editRevision = UUID()
+        scheduler.setInteracting(false)
+        batch?.sourceEditingGeometry = false
+    }
+
+    func requestLeavingGeometryDraft(_ action: @escaping () -> Void, onStay: @escaping () -> Void = {}) {
+        guard !geometryDraftDeparturePending else { return }
+        // A valid text draft can still be uncommitted when a file is dropped.
+        // Resolve the native field before deciding whether the task has changes.
+        NSApp?.keyWindow?.makeFirstResponder(nil)
+        if geometryDraftHasChanges {
+            geometryDepartureAction = action; geometryDepartureStay = onStay
+            geometryDraftDeparturePending = true
+        } else {
+            cancelGeometryDraft(); action()
+        }
+    }
+
+    func resolveGeometryDraftDeparture(_ choice: MacGeometryDeparture) {
+        guard geometryDraftDeparturePending else { return }
+        if choice == .apply && !applyGeometryDraft() { return }
+        if choice == .discard { cancelGeometryDraft() }
+        let action = choice == .stay ? geometryDepartureStay : geometryDepartureAction
+        geometryDepartureAction = nil; geometryDepartureStay = nil
+        geometryDraftDeparturePending = false
+        action?()
+    }
+
+    private func editState(settings: Adjustments) -> PhotoEditState {
+        let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
+        return PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID)
+    }
 
     func selectMasterRecipe(_ recipe: MasterRecipe?) {
+        guard geometryDraft == nil else { return }
         guard recipe != nil || settings.masterRecipeID != nil else { return }
         updatingMetadata = true
         if let recipe {
@@ -142,10 +363,7 @@ final class EditorModel: ObservableObject {
         guard let file, dirty else { return true }
         do {
             if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-            let filmID = selectedFilm.map { film in
-                film.managedID ?? "builtin:\(film.url.lastPathComponent)"
-            } ?? selectedFilmID
-            try editStore!.save(file, state: PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID))
+            try editStore!.save(file, state: editState(settings: settings))
             dirty = false; saveError = nil; saveStatusKey = "调整已保存"
             clearSaveStatusLater()
             return true
@@ -163,7 +381,7 @@ final class EditorModel: ObservableObject {
     }
 
     @discardableResult func applyCurrentSettings(to urls: [URL]) throws -> Int {
-        guard file != nil, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe else {
+        guard file != nil, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, geometryDraft == nil else {
             throw RenderError.failed(L10n.text("当前照片的设置尚不可用。"))
         }
         let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL }))
@@ -190,7 +408,7 @@ final class EditorModel: ObservableObject {
     }
 
     func prepareBatch() -> Bool {
-        guard !busy, !exporting, !lookLibraryBusy, result != nil, !missingFilm, !missingMasterRecipe, let file else { return false }
+        guard !busy, !exporting, !lookLibraryBusy, result != nil, !missingFilm, !missingMasterRecipe, geometryDraft == nil, let file else { return false }
         if batch?.validating == true || batch?.previewing == true { return true }
         if let batch, batch.job.started && batch.job.succeededCount < batch.job.selectedCount {
             let alert = NSAlert()
@@ -214,6 +432,7 @@ final class EditorModel: ObservableObject {
 
     private func attachBatch(_ job: BatchExportJob) {
         let model = BatchExportModel(job: job, journal: batchJournal)
+        model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
         batch = model
@@ -228,6 +447,10 @@ final class EditorModel: ObservableObject {
     func open(_ url: URL) {
         guard !exporting else { return }
         if file == url && result != nil { return }
+        if geometryDraft != nil {
+            requestLeavingGeometryDraft { [weak self] in self?.open(url) }
+            return
+        }
         guard saveEdits() else { return }
         cancelViewportResize()
         editRevision = UUID()
@@ -254,7 +477,7 @@ final class EditorModel: ObservableObject {
         schedule()
     }
     func autoExposure() {
-        guard let file, result != nil, !autoExposing, !exporting else { return }
+        guard let file, result != nil, !autoExposing, !exporting, geometryDraft == nil else { return }
         let snapshot = settings, revision = editRevision
         autoExposing = true
         queue.async { [weak self] in
@@ -272,7 +495,7 @@ final class EditorModel: ObservableObject {
     }
 
     func importLUT() {
-        guard !lookLibraryBusy, !exporting else { return }
+        guard !lookLibraryBusy, !exporting, geometryDraft == nil else { return }
         let panel = NSOpenPanel()
         panel.title = L10n.text("导入外观")
         panel.allowedContentTypes = ["cube", "rlook"].map { UTType(filenameExtension: $0) ?? .data }
@@ -371,6 +594,13 @@ final class EditorModel: ObservableObject {
         guard scheduler.interacting != value else { return }
         scheduler.setInteracting(value)
         guard file != nil else { refreshBusy(); return }
+        if geometryDraft != nil {
+            // Focus and crop-only edits reuse the transformed canvas. Transform
+            // updates schedule their own exact pass; ending a gesture flushes it.
+            if !value && !geometryDraftPreviewReady { schedule(forceExact: true) }
+            refreshBusy()
+            return
+        }
         if value { schedule() } else { schedule(forceExact: true) }
     }
     func schedule() {
@@ -413,11 +643,13 @@ final class EditorModel: ObservableObject {
             error = missingMasterRecipe ? L10n.text("大师配方外观文件不可用。") : L10n.text("上次使用的外观不可用，请重新选择或导入外观。")
             return
         }
-        let interactive = scheduler.interacting && !forceExact && settings.geometrySettings.isIdentity
+        let preview = geometryPreviewSettings
+        let interactive = geometryDraft == nil && scheduler.interacting && !forceExact && preview.geometrySettings.isIdentity
         let effectiveLUT = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
-        let work = RenderWork(file: file, settings: settings, lut: effectiveLUT,
+        let work = RenderWork(file: file, settings: preview, lut: effectiveLUT,
                               edge: interactive || !fullResolution ? renderPreviewLongEdge : nil,
-                              pass: interactive ? .interactive : .exact)
+                              pass: interactive ? .interactive : .exact,
+                              draftEpoch: geometryDraftEpoch, editingGeometry: geometryDraft != nil)
         _ = scheduler.submit(work, fileID: file.standardizedFileURL.path, pass: work.pass)
         busy = true
         error = nil
@@ -449,7 +681,7 @@ final class EditorModel: ObservableObject {
                     }
                 }
                 let neutral: RenderedImage?
-                if work.settings.geometrySettings.isIdentity {
+                if work.editingGeometry || work.settings.geometrySettings.isIdentity {
                     neutral = self.originalCache?.frame
                 } else if let cached = self.geometryReferenceCache, cached.file == work.file,
                           cached.geometry == work.settings.geometrySettings, cached.lens == work.settings.lensSettings {
@@ -483,7 +715,8 @@ final class EditorModel: ObservableObject {
         let sameFile = request.value.file.standardizedFileURL == file?.standardizedFileURL
         switch completion {
         case .publishInteractive, .publishExact:
-            guard sameFile, !missingFilm, !missingMasterRecipe else { break }
+            guard sameFile, request.value.draftEpoch == geometryDraftEpoch,
+                  !missingFilm, !missingMasterRecipe else { break }
             // 拖动仍可显示较早参数，但窗口尺寸变化后不能发布旧尺寸。
             if completion == .publishInteractive && request.value.edge != renderPreviewLongEdge { break }
             if let failure {
@@ -492,8 +725,21 @@ final class EditorModel: ObservableObject {
                     self.error = failure.localizedDescription
                 }
             } else if let neutral, let result {
+                let previousCanvas = geometryCanvasSize
                 self.neutral = neutral
                 self.result = result
+                if let draft = geometryDraft,
+                   request.value.settings.geometrySettings == draft.previewGeometry,
+                   request.value.settings.lensSettings == draft.lens {
+                    // A new orientation/perspective/lens canvas can change its
+                    // physical aspect. Keep the user's chosen ratio in that canvas.
+                    if previousCanvas != geometryCanvasSize, let ratio = cropAspectRatio {
+                        let rect = CropInteraction.dragging(CropInteraction.rect(from: draft.geometry), handle: .bottomRight,
+                            translation: .zero, canvasSize: geometryCanvasSize, ratio: ratio)
+                        updateGeometryDraft { $0 = CropInteraction.applying(rect: rect, to: $0) }
+                    }
+                    geometryDraftPreviewReady = true
+                }
                 updatingMetadata = true
                 settings.resolveWhiteBalance(result.asShotWhiteBalance)
                 settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
@@ -519,7 +765,7 @@ final class EditorModel: ObservableObject {
     }
 
     func export(format: ExportFormat) {
-        guard !busy, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, let file else { return }
+        guard !busy, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, geometryDraft == nil, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.contentType]
         let lookName = settings.masterRecipe?.name ?? selectedFilm?.name ?? "neutral"
