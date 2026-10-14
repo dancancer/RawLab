@@ -354,3 +354,12 @@
 "此默认值不可达，请重置裁切组。" = "Cette valeur par défaut ne peut pas être atteinte. Réinitialisez les réglages de recadrage.";
 "调整触觉反馈" = "Retour haptique lors des réglages";
 "继续编辑" = "Continuer la modification";
+"水平透视" = "Perspective horizontale";
+"垂直透视" = "Perspective verticale";
+"画幅比例" = "Format";
+"自由" = "Libre";
+"原始比例" = "Format d’origine";
+"1:1" = "1:1";
+"3:2" = "3:2";
+"4:3" = "4:3";
+"16:9" = "16:9";

@@ -99,7 +99,7 @@ private struct WholeValuePicker: UIViewRepresentable {
         let index = values.indices.min { abs(values[$0] - value) < abs(values[$1] - value) } ?? 0
         if picker.selectedRow(inComponent: 0) != index { picker.selectRow(index, inComponent: 0, animated: false) }
         picker.accessibilityLabel = title
-        picker.accessibilityValue = "\(formatter(value)) \(unit)"
+        picker.accessibilityValue = "\(formatter(value)) \(unit)".trimmingCharacters(in: .whitespaces)
     }
 
     final class Coordinator: NSObject, UIPickerViewDataSource, UIPickerViewDelegate {
@@ -120,7 +120,7 @@ private struct WholeValuePicker: UIViewRepresentable {
             label.textColor = .label
             label.textAlignment = .center
             label.text = parent.formatter(parent.values[row])
-            label.accessibilityLabel = "\(parent.title), \(label.text ?? "") \(parent.unit)"
+            label.accessibilityLabel = "\(parent.title), \(label.text ?? "") \(parent.unit)".trimmingCharacters(in: .whitespaces)
             return label
         }
 

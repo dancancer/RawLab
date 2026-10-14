@@ -63,6 +63,7 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(ruler.isHittable)
         XCTAssertGreaterThan(ruler.frame.width, ruler.frame.height, "The adjustment ruler must run horizontally")
         dragRuler(ruler, from: 0.75, to: 0.25)
+        capture("v4-ruler-after-standard-drag", in: app)
         waitUntil { (try? self.number(app.buttons["adjustment.value"])) != 0 }
         let standard = try number(app.buttons["adjustment.value"])
         assertExposureGrid(standard)
@@ -201,6 +202,7 @@ final class EditorV4UITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
+        waitForLandscapeSidePanel(in: app)
         XCTAssertTrue(app.buttons["editor.draft.cancel"].waitForExistence(timeout: 5))
         for (index, id) in cropIDs.enumerated() {
             XCTAssertEqual(try number(app.buttons["geometry.\(id).value"]), portraitValues[index], accuracy: 0.1,
@@ -266,9 +268,10 @@ final class EditorV4UITests: XCTestCase {
         let app = try launchImportedEditor()
         try selectTool("vignette", in: app)
         resetIfEnabled("effects.vignette.reset", in: app)
-        let advanced = app.descendants(matching: .any)["effects.vignette.advanced"]
+        let advanced = app.buttons["effects.vignette.advanced"].firstMatch
         try revealInPanel(advanced, in: app)
         advanced.tap()
+        capture("v4-vignette-after-expand", in: app)
         let highlights = app.buttons["effects.vignette.vignetteHighlights.value"]
         XCTAssertTrue(highlights.waitForExistence(timeout: 5))
         XCTAssertFalse(highlights.isEnabled)
@@ -312,6 +315,7 @@ final class EditorV4UITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
+        waitForLandscapeSidePanel(in: app)
         let picker = app.descendants(matching: .any)["adjustment.wheel"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["adjustment.wheel.draft"].label.contains("+0.75"))
@@ -322,6 +326,7 @@ final class EditorV4UITests: XCTestCase {
         capture("v4-ipad-wheel-landscape", in: app)
         app.buttons["adjustment.wheel.apply"].tap()
         waitUntil { app.buttons["adjustment.value"].isHittable }
+        waitForLandscapeSidePanel(in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.75, accuracy: 0.0001)
         XCTAssertNotEqual(app.scrollViews["editor.panel"].frame, portraitPanel)
         XCTAssertTrue(app.frame.contains(app.scrollViews["editor.panel"].frame))
@@ -337,6 +342,103 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.75, accuracy: 0.0001)
     }
 
+    func testAccessibilityLargeTextEmptyEditorAndNativeWheelsInBothOrientations() throws {
+        let app = XCUIApplication()
+        launchEnglish(app, additionalArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        let emptyImport = app.buttons["editor.import.empty"]
+        XCTAssertTrue(emptyImport.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.adjustments"].isEnabled)
+        XCTAssertTrue(emptyImport.isHittable)
+        capture("v4-large-text-empty-portrait", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        for _ in 0..<3 where !emptyImport.isHittable {
+            app.scrollViews.containing(.button, identifier: "editor.import.empty").firstMatch.swipeUp()
+        }
+        XCTAssertTrue(emptyImport.isHittable)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled)
+        capture("v4-large-text-empty-landscape", in: app)
+        XCUIDevice.shared.orientation = .portrait
+        waitUntil { app.frame.height > app.frame.width }
+        try importFirstVisiblePhoto(in: app)
+        try selectTool("exposure", in: app)
+        resetIfEnabled("adjustment.reset", in: app)
+        let value = app.buttons["adjustment.value"]
+        try openWheel("adjustment.value", in: app)
+        try selectWheelValue("+0.50", title: "Exposure", unit: "EV", in: app)
+        capture("v4-large-text-wheel-portrait", in: app)
+        app.buttons["adjustment.wheel.cancel"].tap()
+        waitUntil { !app.descendants(matching: .any)["adjustment.wheel"].exists }
+        XCTAssertEqual(try number(value), 0, accuracy: 0.0001)
+        try setValue("-0.25", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        XCTAssertEqual(try number(value), -0.25, accuracy: 0.0001)
+        try revealInPanel(app.descendants(matching: .any)["adjustment.ruler"], in: app)
+        capture("v4-large-text-editor-portrait", in: app)
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        try revealInPanel(value, in: app)
+        XCTAssertTrue(value.isHittable)
+        XCTAssertEqual(try number(value), -0.25, accuracy: 0.0001)
+        try openWheel("adjustment.value", in: app)
+        try selectWheelValue("+0.75", title: "Exposure", unit: "EV", in: app)
+        capture("v4-large-text-wheel-landscape", in: app)
+        app.buttons["adjustment.wheel.cancel"].tap()
+        waitUntil { !app.descendants(matching: .any)["adjustment.wheel"].exists }
+        XCTAssertEqual(try number(value), -0.25, accuracy: 0.0001)
+        try setValue("+1.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        XCTAssertEqual(try number(value), 1, accuracy: 0.0001)
+        try revealInPanel(app.descendants(matching: .any)["adjustment.ruler"], in: app)
+        capture("v4-large-text-editor-landscape", in: app)
+    }
+
+    func testRasterJPEGExportConfirmationUsesCommittedValuesAndBlocksDirtyGeometry() throws {
+        let app = try launchImportedEditor()
+        try selectTool("exposure", in: app)
+        try setValue("+0.40", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        try selectTool("geometry", in: app)
+        if app.buttons["geometry.reset"].isEnabled {
+            resetIfEnabled("geometry.reset", in: app)
+            applyDraft(in: app)
+            try selectTool("geometry", in: app)
+        }
+        try setValue("1.2", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Unapplied geometry must block export")
+        applyDraft(in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001)
+        XCTAssertTrue(app.buttons["editor.export"].isEnabled)
+        app.buttons["editor.export"].tap()
+        let save = app.buttons["Save Current Photo"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
+        waitUntil(timeout: 60) { save.isEnabled }
+        XCTAssertFalse(app.buttons["editor.batchExport"].isEnabled, "Batch RAW export is unavailable for the raster fixture")
+        XCTAssertTrue(app.buttons["Export Rendered DNG…"].isEnabled, "Rendered DNG supports the raster buffer")
+        save.tap()
+        let confirm = app.buttons["editor.export.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(confirm.isEnabled)
+        XCTAssertTrue(confirm.isHittable)
+        let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Export Size'")).firstMatch
+        XCTAssertTrue(size.waitForExistence(timeout: 5))
+        XCTAssertTrue(size.label.contains("Original Resolution") || (size.value as? String)?.contains("Original Resolution") == true,
+                      size.debugDescription)
+        capture("v4-jpeg-export-confirmation-portrait", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height && confirm.isHittable }
+        XCTAssertTrue(confirm.isEnabled)
+        XCTAssertTrue(size.isHittable)
+        capture("v4-jpeg-export-confirmation-landscape", in: app)
+        app.navigationBars["Save Current Photo"].buttons["Cancel"].tap()
+        waitUntil { !confirm.exists }
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001)
+        try selectTool("geometry", in: app)
+        XCTAssertEqual(try number(app.buttons["geometry.straighten.value"]), 1.2, accuracy: 0.0001,
+                       "Canceling the export sheet preserves the committed geometry")
+        XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
+        app.buttons["editor.draft.cancel"].tap()
+    }
+
     private func launchImportedEditor() throws -> XCUIApplication {
         let app = XCUIApplication()
         launchEnglish(app)
@@ -344,8 +446,8 @@ final class EditorV4UITests: XCTestCase {
         return app
     }
 
-    private func launchEnglish(_ app: XCUIApplication) {
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+    private func launchEnglish(_ app: XCUIApplication, additionalArguments: [String] = []) {
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"] + additionalArguments
         app.launch()
         XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10))
     }
@@ -401,12 +503,20 @@ final class EditorV4UITests: XCTestCase {
         let panel = app.scrollViews["editor.panel"]
         for _ in 0..<12 {
             let frame = element.frame
-            if element.isHittable && panel.frame.insetBy(dx: 0, dy: 8).contains(CGPoint(x: frame.midX, y: frame.midY)) { return }
-            let up = frame.midY > panel.frame.midY
-            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: up ? 0.82 : 0.18))
-                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: up ? 0.18 : 0.82)))
+            let panelFrame = panel.frame
+            let visible = panelFrame.insetBy(dx: 0, dy: min(40, panelFrame.height * 0.2))
+            if element.isHittable && visible.contains(CGPoint(x: frame.midX, y: frame.midY)) { return }
+            let up = frame.isEmpty || frame.midY > visible.midY
+            let distance = frame.isEmpty ? panelFrame.height * 0.6
+                : up ? max(0, frame.midY - visible.maxY) : max(0, visible.minY - frame.midY)
+            let amount = min(0.6, max(0.12, distance / max(1, panelFrame.height)))
+            let startY: CGFloat = up ? 0.82 : 0.18
+            let endY = startY + (up ? -amount : amount)
+            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: startY))
+                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: endY)))
         }
-        XCTFail("Could not reveal \(element.identifier) in the editor panel")
+        capture("v4-unreachable-" + element.identifier, in: app)
+        XCTFail("Could not reveal \(element.identifier): element \(element.frame), panel \(panel.frame)")
     }
 
     private func openWheel(_ identifier: String, in app: XCUIApplication) throws {
@@ -479,8 +589,20 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: timeout), .completed, file: file, line: line)
     }
 
+    private func waitForLandscapeSidePanel(in app: XCUIApplication) {
+        let panel = app.scrollViews["editor.panel"]
+        waitUntil {
+            let frame = panel.frame
+            return app.frame.width > app.frame.height && frame.width > 0
+                && frame.minX > app.frame.midX && frame.maxX <= app.frame.maxX + 1
+                && app.frame.insetBy(dx: -1, dy: -1).contains(frame)
+        }
+        let settled = panel.frame
+        waitUntil { panel.frame == settled }
+    }
+
     private func capture(_ name: String, in app: XCUIApplication) {
-        capture(name, screenshot: app.screenshot())
+        capture(name, screenshot: XCUIScreen.main.screenshot())
     }
 
     private func capture(_ name: String, screenshot: XCUIScreenshot) {

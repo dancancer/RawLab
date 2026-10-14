@@ -72,7 +72,7 @@ struct AdjustmentControl: View {
             showingWheel = true
         } label: {
             Text(completeValue).font(.body.weight(.semibold)).monospacedDigit()
-                .fixedSize(horizontal: true, vertical: false).frame(minHeight: 44)
+                .fixedSize(horizontal: true, vertical: false).frame(minWidth: 44, minHeight: 44)
         }
         .accessibilityLabel(L10n.format("%@数值", title))
         .accessibilityValue(completeValue)

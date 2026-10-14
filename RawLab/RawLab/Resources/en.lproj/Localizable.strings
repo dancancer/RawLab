@@ -354,3 +354,12 @@
 "此默认值不可达，请重置裁切组。" = "This default value cannot be reached. Reset the crop settings.";
 "调整触觉反馈" = "Adjustment Haptics";
 "继续编辑" = "Continue Editing";
+"水平透视" = "Horizontal Perspective";
+"垂直透视" = "Vertical Perspective";
+"画幅比例" = "Aspect Ratio";
+"自由" = "Free";
+"原始比例" = "Original Ratio";
+"1:1" = "1:1";
+"3:2" = "3:2";
+"4:3" = "4:3";
+"16:9" = "16:9";

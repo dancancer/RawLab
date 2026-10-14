@@ -102,21 +102,30 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === pan else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
         let translation = pan.translation(in: self)
-        return AdjustmentScale.hasHorizontalIntent(x: translation.x, y: translation.y)
+        let direction = translation == .zero ? pan.velocity(in: self) : translation
+        return abs(direction.x) > abs(direction.y) * 1.4
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === pan, let scroll = other.view as? UIScrollView else { return false }
+        return other === scroll.panGestureRecognizer && isDescendant(of: scroll)
     }
 
     @objc private func drag(_ gesture: UIPanGestureRecognizer) {
         switch gesture.state {
-        case .began:
-            settlement = nil
-            motion.clear()
-            lastTranslation = 0
-            editing = true
-            becomeFirstResponder()
-            onEditingChanged(true)
-            moveTape(translation: gesture.translation(in: self).x)
-        case .changed:
-            moveTape(translation: gesture.translation(in: self).x)
+        case .began, .changed:
+            let translation = gesture.translation(in: self)
+            if !editing {
+                guard AdjustmentScale.hasHorizontalIntent(x: translation.x, y: translation.y) else { return }
+                settlement = nil
+                motion.clear()
+                lastTranslation = 0
+                editing = true
+                becomeFirstResponder()
+                onEditingChanged(true)
+            }
+            moveTape(translation: translation.x)
         case .ended:
             finishDrag()
         case .cancelled, .failed:

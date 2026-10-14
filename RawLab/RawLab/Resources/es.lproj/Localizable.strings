@@ -354,3 +354,12 @@
 "此默认值不可达，请重置裁切组。" = "No se puede alcanzar este valor predeterminado. Restablece los ajustes de recorte.";
 "调整触觉反馈" = "Respuesta háptica al ajustar";
 "继续编辑" = "Seguir editando";
+"水平透视" = "Perspectiva horizontal";
+"垂直透视" = "Perspectiva vertical";
+"画幅比例" = "Relación de aspecto";
+"自由" = "Libre";
+"原始比例" = "Proporción original";
+"1:1" = "1:1";
+"3:2" = "3:2";
+"4:3" = "4:3";
+"16:9" = "16:9";

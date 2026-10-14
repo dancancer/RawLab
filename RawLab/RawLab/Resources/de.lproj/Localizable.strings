@@ -354,3 +354,12 @@
 "此默认值不可达，请重置裁切组。" = "Dieser Standardwert lässt sich nicht einstellen. Setze die Zuschnitteinstellungen zurück.";
 "调整触觉反馈" = "Haptisches Feedback bei Anpassungen";
 "继续编辑" = "Weiter bearbeiten";
+"水平透视" = "Horizontale Perspektive";
+"垂直透视" = "Vertikale Perspektive";
+"画幅比例" = "Seitenverhältnis";
+"自由" = "Frei";
+"原始比例" = "Originalformat";
+"1:1" = "1:1";
+"3:2" = "3:2";
+"4:3" = "4:3";
+"16:9" = "16:9";

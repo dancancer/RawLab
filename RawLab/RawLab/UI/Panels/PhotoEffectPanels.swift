@@ -50,8 +50,8 @@ struct IOSDenoiseControls: View {
                 Text(L10n.text("高级参数"))
                     .font(.subheadline)
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("denoise.advanced")
             }
-            .accessibilityIdentifier("denoise.advanced")
         }
     }
 
@@ -110,8 +110,8 @@ struct IOSPhotoEffectsControls: View {
                 Text(L10n.text("高级参数"))
                     .font(.subheadline)
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("effects.\(effect.rawValue).advanced")
             }
-            .accessibilityIdentifier("effects.\(effect.rawValue).advanced")
         }
         .id(effect.rawValue)
     }
