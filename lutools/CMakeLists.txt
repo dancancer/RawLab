@@ -303,6 +303,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     if(BUILD_CLI)
         find_package(Python3 QUIET COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
+            add_test(NAME agent_preview COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_preview.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+                --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME raw_info_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_raw_info_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>

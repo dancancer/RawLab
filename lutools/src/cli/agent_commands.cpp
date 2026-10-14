@@ -3,6 +3,7 @@
 #include "sony2fuji/edit_recipe.h"
 #include "nlohmann/json.hpp"
 #include <filesystem>
+#include <charconv>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -52,16 +53,18 @@ private:
 } // namespace
 
 int runAgentCommands(int argc, char* argv[]) {
-    bool jsonOutput = false, capabilities = false, printRecipe = false, info = false;
-    std::string recipeFile, infoFile;
+    bool jsonOutput = false, capabilities = false, printRecipe = false, info = false, preview = false;
+    std::string recipeFile, infoFile, previewFile;
+    uint32_t previewEdge = 1280;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         jsonOutput |= arg == "--json";
         capabilities |= arg == "--capabilities";
         printRecipe |= arg == "--print-recipe";
         info |= arg == "--info";
+        preview |= arg == "--preview";
     }
-    const std::string command = capabilities ? "capabilities" : info ? "info" : printRecipe ? "validate_recipe" : "export";
+    const std::string command = capabilities ? "capabilities" : info ? "info" : printRecipe ? "validate_recipe" : preview ? "preview" : "export";
     auto fail = [&](const std::string& code, const std::string& message, const Json& status = nullptr) {
         if (jsonOutput || capabilities || info)
             std::cout << machineJson(envelope(command, nullptr, {{"code", code}, {"message", message}, {"status", status}})) << '\n';
@@ -69,7 +72,7 @@ int runAgentCommands(int argc, char* argv[]) {
         return 1;
     };
     try {
-        bool seenJson = false, seenCapabilities = false, seenPrint = false;
+        bool seenJson = false, seenCapabilities = false, seenPrint = false, seenEdge = false;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--json" && !seenJson) seenJson = true;
@@ -79,17 +82,26 @@ int runAgentCommands(int argc, char* argv[]) {
                 recipeFile = argv[++i];
             else if (arg == "--info" && infoFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
                 infoFile = argv[++i];
+            else if (arg == "--preview" && previewFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
+                previewFile = argv[++i];
+            else if (arg == "--long-edge" && !seenEdge && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), previewEdge);
+                if (parsed.ec != std::errc() || parsed.ptr != value.data() + value.size() || previewEdge == 0)
+                    return fail("invalid_argument", "--long-edge must be a positive uint32 integer");
+                seenEdge = true;
+            }
             else return fail("invalid_argument", "Unexpected, duplicate or incomplete argument: " + arg);
         }
         if (capabilities) {
-            if (!recipeFile.empty() || printRecipe || info) return fail("invalid_argument", "Capabilities cannot be combined with another command");
+            if (!recipeFile.empty() || printRecipe || info || preview || seenEdge) return fail("invalid_argument", "Capabilities cannot be combined with another command");
             std::cout << machineJson(envelope(command, {{"recipe_versions", {1}},
-                {"commands", {"capabilities", "validate_recipe", "info", "export"}}, {"input_types", {"raw"}},
+                {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", {"raw"}},
                 {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}}})) << '\n';
             return 0;
         }
         if (info) {
-            if (infoFile.empty() || !recipeFile.empty() || printRecipe)
+            if (infoFile.empty() || !recipeFile.empty() || printRecipe || preview || seenEdge)
                 return fail("invalid_argument", "--info <RAW> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
             RawInfoResult inspected;
@@ -102,6 +114,8 @@ int runAgentCommands(int argc, char* argv[]) {
             std::cout << machineJson(envelope(command, inspected.result)) << '\n';
             return 0;
         }
+        if ((preview && (previewFile.empty() || printRecipe)) || (seenEdge && !preview))
+            return fail("invalid_argument", "Preview requires --preview <file> and cannot be combined with validation");
         if (recipeFile.empty()) return fail("invalid_argument", "--recipe <file> is required");
         const auto path = std::filesystem::u8path(recipeFile);
         std::ifstream file(path, std::ios::binary);
@@ -125,6 +139,16 @@ int runAgentCommands(int argc, char* argv[]) {
         resolve(recipe.inputPath);
         resolve(recipe.outputPath);
         resolve(recipe.lookPath);
+        if (preview) {
+            recipe.outputPath = std::filesystem::absolute(std::filesystem::u8path(previewFile)).lexically_normal().u8string();
+            recipe.outputFormat = SONY2FUJI_OUTPUT_PNG;
+            recipe.outputLongEdge = previewEdge;
+        }
+        const auto output = std::filesystem::u8path(recipe.outputPath);
+        std::error_code identityError;
+        if (std::filesystem::equivalent(path, output, identityError) ||
+            std::filesystem::weakly_canonical(path) == std::filesystem::weakly_canonical(output))
+            return fail("invalid_argument", "Output must not overwrite the recipe", SONY2FUJI_STATUS_INVALID_ARGUMENT);
         sony2fuji_status status;
         {
             DiagnosticsToStderr diagnostics;
@@ -138,8 +162,24 @@ int runAgentCommands(int argc, char* argv[]) {
             if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session.get(), &request, nullptr);
         }
         if (status != SONY2FUJI_STATUS_OK) return fail(statusCode(status), sony2fuji_status_message(status), status);
-        if (jsonOutput) std::cout << machineJson(envelope(command, {{"output_path", recipe.outputPath},
-            {"format", formatName(recipe.outputFormat)}})) << '\n';
+        Json result = {{"output_path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)}};
+        if (preview) {
+            // Use exact FINAL + no-upscale sizing, so the preview is the final
+            // result at the requested size, without interactive approximations.
+            std::ifstream png(std::filesystem::u8path(recipe.outputPath), std::ios::binary);
+            unsigned char header[24]{};
+            png.read(reinterpret_cast<char*>(header), sizeof(header));
+            if (png.gcount() != sizeof(header)) return fail("output_io_error", "Cannot inspect written preview", SONY2FUJI_STATUS_OUTPUT_IO_ERROR);
+            auto dimension = [&](int offset) {
+                return (uint32_t(header[offset]) << 24) | (uint32_t(header[offset + 1]) << 16) |
+                    (uint32_t(header[offset + 2]) << 8) | uint32_t(header[offset + 3]);
+            };
+            result["width"] = dimension(16);
+            result["height"] = dimension(20);
+            result["long_edge"] = previewEdge;
+            result["quality"] = "exact";
+        }
+        if (jsonOutput) std::cout << machineJson(envelope(command, result)) << '\n';
         else std::cout << "Saved: " << recipe.outputPath << '\n';
         return 0;
     } catch (const std::bad_alloc&) {

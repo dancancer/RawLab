@@ -144,6 +144,26 @@ EXIF exposure bias and calibrated as-shot Kelvin/tint are currently unavailable.
 The input path is relative to the working directory. No recipe or output file
 is needed; mixing info with recipe/capability commands fails explicitly.
 
-Previews and geometry follow in dependent PRs.
+## Exact preview
+
+```sh
+sony2fuji --recipe edit.json --preview preview.png --long-edge 1280 --json
+sony2fuji --recipe edit.json --json
+```
+
+The first command writes a 16-bit PNG capped to the requested long edge, without
+upscaling (default 1280 pixels). It uses the exact FINAL processing path with a
+temporary output-size override. No interactive/viewport approximation is used.
+The JSON result includes actual `width`/`height`, `quality:"exact"`, format and
+absolute output path. The preview path is relative to the working directory;
+paths stored in the recipe keep their recipe-relative meaning.
+
+The recipe file and its FINAL settings are preserved. Running the second command
+uses the original output path, format and size. `--long-edge` requires a positive
+uint32 and is accepted only with `--preview`. Preview cannot be combined with
+info, capability query or recipe normalization. Original RAWs remain protected
+by the existing C API input/output identity check.
+
+Geometry follows in dependent PRs.
 Unsupported adjustment fields fail explicitly; they never become silent
 no-ops. New edit fields will require an updated supported schema version.

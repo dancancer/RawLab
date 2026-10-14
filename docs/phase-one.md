@@ -9,7 +9,7 @@
 | 顺序 | 最小交付 | 状态 / 前置 |
 | --- | --- | --- |
 | 1 | 编辑 JSON v1、显式曝光模式、默认值、输出设置、CLI 导出闭环 | [PR #33](https://github.com/dancancer/RawLab/pull/33) 已合入，`9980bdf`；定向审查无必须/应当修复项 |
-| 2 | 能力查询、图片信息、预览、最终导出、结构化结果与错误、配方示例 | [PR #34](https://github.com/dancancer/RawLab/pull/34) 已合入 `89cdc5b`；图片信息待合入，随后接预览 |
+| 2 | 能力查询、图片信息、预览、最终导出、结构化结果与错误、配方示例 | [PR #34](https://github.com/dancancer/RawLab/pull/34)、[PR #35](https://github.com/dancancer/RawLab/pull/35) 已合入；当前交付精确预览闭环 |
 | 3 | 共用裁切、旋转、拉直、翻转；相关 UI 增量接入 | 依赖 JSON 命令闭环和共用几何接口 |
 | 4 | 透视校正 | 依赖基础几何，第一阶段范围内 |
 
