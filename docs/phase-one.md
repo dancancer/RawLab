@@ -8,7 +8,7 @@
 
 | 顺序 | 最小交付 | 状态 / 前置 |
 | --- | --- | --- |
-| 1 | 编辑 JSON v1、显式曝光模式、默认值、输出设置、CLI 导出闭环 | 当前 `feature/edit-json-protocol`；draft PR 指向 development |
+| 1 | 编辑 JSON v1、显式曝光模式、默认值、输出设置、CLI 导出闭环 | [Draft PR #33](https://github.com/dancancer/RawLab/pull/33)，`feature/edit-json-protocol` → development；定向审查无必须/应当修复项 |
 | 2 | 能力查询、图片信息、预览、最终导出、结构化结果与错误、配方示例 | 前置 PR 审查修复并合入后开始 |
 | 3 | 共用裁切、旋转、拉直、翻转；相关 UI 增量接入 | 依赖 JSON 命令闭环和共用几何接口 |
 | 4 | 透视校正 | 依赖基础几何，第一阶段范围内 |
