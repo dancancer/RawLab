@@ -49,6 +49,11 @@ the iOS GLib availability-probe adjustment and complete rebuild commands live in
 [the native platform notes](lens-correction-platforms.md). Preserve those sources
 and the application's corresponding source when redistributing a binary.
 
+The optional edit JSON CLI adapter uses unmodified nlohmann JSON 3.12.0 (MIT).
+Its source and license are retained in
+[the dependency directory](../lutools/third_party/nlohmann/README.md).
+CLI installations include its MIT license; native clients do not link this adapter.
+
 ## Historical MIT Notice
 
 Earlier RawLab releases were published under MIT. Their published license is
