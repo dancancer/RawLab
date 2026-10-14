@@ -95,9 +95,10 @@ int runAgentCommands(int argc, char* argv[]) {
         }
         if (capabilities) {
             if (!recipeFile.empty() || printRecipe || info || preview || seenEdge) return fail("invalid_argument", "Capabilities cannot be combined with another command");
-            std::cout << machineJson(envelope(command, {{"recipe_versions", {1}},
+            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2}},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", {"raw"}},
-                {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}}})) << '\n';
+                {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}},
+                {"geometry_operations", {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten"}}})) << '\n';
             return 0;
         }
         if (info) {
@@ -158,6 +159,8 @@ int runAgentCommands(int argc, char* argv[]) {
             const std::unique_ptr<sony2fuji_session, decltype(destroy)> session(pointer, destroy);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_raw_exposure_mode(session.get(), recipe.exposureMode);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_geometry(session.get(), &recipe.geometry);
             const auto request = recipe.toRequest();
             if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session.get(), &request, nullptr);
         }

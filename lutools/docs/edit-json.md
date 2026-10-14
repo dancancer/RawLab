@@ -167,3 +167,46 @@ by the existing C API input/output identity check.
 Geometry follows in dependent PRs.
 Unsupported adjustment fields fail explicitly; they never become silent
 no-ops. New edit fields will require an updated supported schema version.
+
+## Geometry in recipe v2
+
+Version 1 remains supported and rejects geometry fields. Set `schema_version: 2`
+to use the optional `edits.geometry` object. Omitted fields mean identity, and
+normalization preserves the recipe version. See [schema v2](edit-json-v2.schema.json)
+and the [reusable example](../examples/edit-recipes/geometry-v2.json).
+
+```json
+"geometry": {
+  "quarter_turns": 1,
+  "flip_horizontal": false,
+  "flip_vertical": false,
+  "straighten_degrees": 2,
+  "crop": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8}
+}
+```
+
+`quarter_turns` is an integer from 0 to 3, clockwise. Flips operate in the rotated
+canvas. Straightening is clockwise in degrees, from -45 to 45; it keeps a centered
+rectangle inside the rotated image. Crop coordinates are fractions of that
+straightened canvas, with top-left origin, positive width/height, and both end
+coordinates at most 1. The native float boundary allows 1e-6 rounding tolerance
+and clamps it to 1. Crop starts round down and ends round up to retain all covered
+pixels. Output resizing happens afterward and never upscales.
+
+The common order is source orientation and lens processing → color/photo effects
+(including existing grain/vignette) → quarter turns → flips → straightening → crop
+→ requested output size. Vignette retains its source-centered semantics; rotated
+or straightened grain is sampled with the image. Integer turns/flips/crop copy
+pixels exactly. Straightening uses one bilinear sample and extends edge pixels at
+the half-pixel boundary; it preserves linear negative/highlight values for DNG.
+Identity bypasses geometry without changing existing pixels.
+
+Native clients use the additive 40-byte `sony2fuji_geometry_config` v1 and
+`sony2fuji_session_set_geometry`; the existing request v2 layout is unchanged.
+Set the complete configuration before each render, including identity to reset.
+`sony2fuji_session_get_geometry_size` reports the full edited canvas before output
+resizing only after a successful process; successful setters and newly failed
+processes clear it. Invalid setters preserve the last configuration and result.
+Active geometry uses the full source even for interactive previews, so crop and
+aspect agree with FINAL. GPU Auto may use GPU color plus CPU geometry and reports
+CPU for the mixed result; GPU Force with active geometry returns `unsupported`.
