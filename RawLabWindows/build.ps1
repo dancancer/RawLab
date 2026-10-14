@@ -84,6 +84,7 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $testOut)) { throw 'Cannot resolve the WPF test output directory.' }
     Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll", "$($openmp.FullName)/*.dll" $testOut -Force
     Copy-Item "$output/ExifTool" $testOut -Recurse -Force
+    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--about')
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)
 }
 Write-Host "Built: $output/RawLab.exe"
