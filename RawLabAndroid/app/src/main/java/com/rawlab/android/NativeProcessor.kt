@@ -15,6 +15,10 @@ class NativeProcessingException(val status: Int, message: String) : IOException(
 class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int) {
     var lens: LensInfo? = null
         internal set
+    var geometryWidth: Int = width
+        internal set
+    var geometryHeight: Int = height
+        internal set
     fun bitmap(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
         it.copyPixelsFromBuffer(ByteBuffer.wrap(pixels))
     }
@@ -40,6 +44,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean): NativeFrame {
         check(handle != 0L) { "Processor is closed" }
         configureLens(settings.lens)
+        configureGeometry(settings.geometry)
         val frame = checkNotNull(nativeProcess(handle, input.path, lut?.path, null, settings.strength,
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
@@ -49,6 +54,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             settings.effects.vignetteRoundness, settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
             settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
             settings.exposureMode, settings.renderHsl.packed(), settings.recipeID != null))
+        val dimensions = nativeGeometrySize(handle)
+        require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
+        frame.geometryWidth = dimensions[0]
+        frame.geometryHeight = dimensions[1]
         frame.lens = readLens(input)
         return frame
     }
@@ -59,6 +68,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
         configureLens(settings.lens)
+        configureGeometry(settings.geometry)
         nativeProcess(handle, input.path, lut?.path, output.path, settings.strength,
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
@@ -75,6 +85,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     fun autoExposure(input: File, settings: EditSettings): Float {
         check(handle != 0L) { "Processor is closed" }
         configureLens(settings.lens)
+        configureGeometry(settings.geometry)
         return nativeAutoExposure(handle, input.path, settings.customWb, settings.temperature, settings.tint, settings.exposureMode, settings.recipeID != null, settings.strength)
     }
 
@@ -85,6 +96,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     private fun configureLens(settings: LensSettings) = nativeSetLensCorrection(handle,
         settings.distortion, settings.tca, settings.autoCrop, settings.coreProfileId.toByteArray(Charsets.UTF_8))
+
+    private fun configureGeometry(settings: GeometrySettings) = nativeSetGeometry(handle,
+        settings.cropX, settings.cropY, settings.cropWidth, settings.cropHeight, settings.quarterTurns,
+        settings.flipHorizontal, settings.flipVertical, settings.straightenDegrees)
 
     private fun readLens(input: File): LensInfo {
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
@@ -103,6 +118,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
+    private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
+        cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float)
+    private external fun nativeGeometrySize(handle: Long): IntArray
     private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
     private external fun nativeDestroy(handle: Long)

@@ -326,6 +326,14 @@ private fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.lens_distortion_short), if (settings.lens.distortion) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.lens_tca), if (settings.lens.tca) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.lens_auto_crop), if (settings.lens.autoCrop) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
+        Text(AppStrings.text(R.string.geometry), style = MaterialTheme.typography.labelLarge)
+        Text(AppStrings.format(R.string.geometry_summary,
+            settings.geometry.cropX * 100f, settings.geometry.cropY * 100f,
+            settings.geometry.cropWidth * 100f, settings.geometry.cropHeight * 100f,
+            settings.geometry.quarterTurns * 90, settings.geometry.straightenDegrees),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingLine(AppStrings.text(R.string.geometry_flip_horizontal), if (settings.geometry.flipHorizontal) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
+        SettingLine(AppStrings.text(R.string.geometry_flip_vertical), if (settings.geometry.flipVertical) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.display_chroma_denoise), AppStrings.text(when (settings.displayChromaDenoise) {
             1 -> R.string.denoise_detail
             2 -> R.string.denoise_clean

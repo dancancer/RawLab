@@ -305,4 +305,19 @@
     <string name="dng_generated_not_saved_count">%1$s fichiers DNG développés créés, mais non enregistrés à l’emplacement choisi</string>
     <string name="dng_file_only">Le DNG ne peut être enregistré que dans Fichiers</string>
     <string name="preview_wait_export">Attendez la fin de l’aperçu avant d’exporter.</string>
+    <string name="geometry">Géométrie</string>
+    <string name="geometry_reset">Réinitialiser la géométrie</string>
+    <string name="geometry_rotate_left">Tourner à gauche</string>
+    <string name="geometry_rotate_right">Tourner à droite</string>
+    <string name="geometry_flip_horizontal">Retourner horizontalement</string>
+    <string name="geometry_flip_vertical">Retourner verticalement</string>
+    <string name="geometry_straighten">Redresser</string>
+    <string name="geometry_crop_x">Gauche</string>
+    <string name="geometry_crop_y">Haut</string>
+    <string name="geometry_crop_width">Largeur</string>
+    <string name="geometry_crop_height">Hauteur</string>
+    <string name="geometry_crop_hint">Les pourcentages de recadrage suivent la rotation, les retournements et le redressement.</string>
+    <string name="geometry_crop_error" formatted="false">Saisissez un recadrage de dimensions positives dans le cadre de 0–100%.</string>
+    <string name="geometry_apply_crop">Appliquer le recadrage</string>
+    <string name="geometry_summary">Recadrage %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Rotation %5$d° · Redressement %6$+.1f°</string>
 </resources>

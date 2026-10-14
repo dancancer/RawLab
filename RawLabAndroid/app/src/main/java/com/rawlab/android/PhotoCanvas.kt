@@ -91,7 +91,7 @@ internal fun PhotoCanvas(
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 8.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         // Keep exact-preview geometry while a smaller interactive preview is displayed.
-        val viewport = PhotoViewport(pair.neutral.width.toFloat(), pair.neutral.height.toFloat(),
+        val viewport = PhotoViewport(pair.comparisonWidth, pair.comparisonHeight,
             constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         val zoom = state.zoom?.resize(state.viewport ?: viewport, viewport) ?: PhotoZoom(viewport.fitScale)
         SideEffect { if (state.viewport != viewport) state.resize(viewport) }

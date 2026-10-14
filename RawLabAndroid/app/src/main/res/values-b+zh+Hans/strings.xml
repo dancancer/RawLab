@@ -305,4 +305,19 @@
     <string name="dng_generated_not_saved_count">已生成 %1$s 个渲染型 DNG，未另存到所选位置</string>
     <string name="dng_file_only">DNG 只能保存到文件</string>
     <string name="preview_wait_export">请等待预览完成后导出。</string>
+    <string name="geometry">几何</string>
+    <string name="geometry_reset">重置几何</string>
+    <string name="geometry_rotate_left">向左旋转</string>
+    <string name="geometry_rotate_right">向右旋转</string>
+    <string name="geometry_flip_horizontal">水平翻转</string>
+    <string name="geometry_flip_vertical">垂直翻转</string>
+    <string name="geometry_straighten">拉直</string>
+    <string name="geometry_crop_x">左边</string>
+    <string name="geometry_crop_y">顶部</string>
+    <string name="geometry_crop_width">宽度</string>
+    <string name="geometry_crop_height">高度</string>
+    <string name="geometry_crop_hint">裁切百分比基于旋转、翻转和拉直后的画面。</string>
+    <string name="geometry_crop_error" formatted="false">请输入 0–100% 画面内的裁切区域，宽高须大于零。</string>
+    <string name="geometry_apply_crop">应用裁切</string>
+    <string name="geometry_summary">裁切 %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · 旋转 %5$d° · 拉直 %6$+.1f°</string>
 </resources>

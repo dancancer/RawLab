@@ -10,16 +10,18 @@ class BatchExportTest {
         val lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000")
         val settings = EditSettings(exposureMode = 2, hsl = HslSettings().withValue(1, 0, -60f),
             recipeID = "recipe", displayChromaDenoise = 2,
-            effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f), lens = lens)
+            effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f), lens = lens,
+            geometry = GeometrySettings(.2f, .1f, .8f, .75f, 3, true, true, -8.5f))
         val fields = SettingsCodec.encode(settings).split('|')
-        assertEquals(52, fields.size)
+        assertEquals(53, fields.size)
         assertEquals(settings, SettingsCodec.decode(fields.joinToString("|")))
-        for (count in listOf(12, 16, 25, 50, 51)) {
+        for (count in listOf(12, 16, 25, 50, 51, 52)) {
             val legacy = SettingsCodec.decode(fields.take(count).joinToString("|"))
-            assertEquals(LensSettings(), legacy.lens)
+            assertEquals(if (count == 52) lens else LensSettings(), legacy.lens)
+            assertEquals(GeometrySettings(), legacy.geometry)
             if (count >= 25) assertEquals(settings.effects, legacy.effects)
             if (count >= 50) assertEquals(settings.hsl, legacy.hsl)
-            if (count == 51) assertEquals(settings.recipeID, legacy.recipeID)
+            if (count >= 51) assertEquals(settings.recipeID, legacy.recipeID)
         }
         assertEquals("", lens.copy(manual = false).coreProfileId)
         assertEquals("__rawlab_manual_selection_required__", LensSettings(manual = true).coreProfileId)
@@ -191,13 +193,15 @@ class BatchExportTest {
         val root = Files.createTempDirectory("rawlab-batch").toFile()
         try {
             val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"),
-                EditSettings(exposure = .75f, denoise = DenoiseSettings(true, 10f, 72f, 100f)))
+                EditSettings(exposure = .75f, denoise = DenoiseSettings(true, 10f, 72f, 100f),
+                    geometry = GeometrySettings(.1f, .2f, .6f, .8f, 1, true, false, 4.5f)))
             val targets = (1..6).map { BatchTarget(PhotoIdentity("target-$it"), File(root, "same.raw"), "same.raw") }
             var job = BatchJob(source, targets)
             var settingsSeen = EditSettings()
             job = BatchRunner.run(job, render = { _, settings -> settingsSeen = settings; ByteArray(1) }, write = { _, _, _ -> })
             assertEquals(.75f, settingsSeen.exposure)
             assertEquals(source.settings.denoise, settingsSeen.denoise)
+            assertEquals(source.settings.geometry, settingsSeen.geometry)
             assertEquals(6, job.rows.count { it.status == BatchRowStatus.SUCCESS })
             assertEquals(6, job.rows.map { it.outputName }.toSet().size)
         } finally { root.deleteRecursively() }

@@ -194,11 +194,11 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     onAutoExposure: () -> Unit) {
     val titles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights, R.string.shadows,
         R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.temperature, R.string.tint, R.string.sharpening,
-        R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl, R.string.master_recipes, R.string.info_lens)
+        R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl, R.string.master_recipes, R.string.info_lens, R.string.geometry)
     val icons = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune, Icons.Outlined.Exposure, Icons.Outlined.WbSunny,
         Icons.Outlined.DarkMode, Icons.Outlined.Contrast, Icons.Outlined.ShowChart, Icons.Outlined.WaterDrop,
         Icons.Outlined.Thermostat, Icons.Outlined.Palette, Icons.Outlined.Deblur, Icons.Outlined.Grain,
-        Icons.Outlined.Circle, Icons.Outlined.Grain, Icons.Outlined.Tune, Icons.Outlined.PhotoLibrary, Icons.Outlined.CenterFocusStrong)
+        Icons.Outlined.Circle, Icons.Outlined.Grain, Icons.Outlined.Tune, Icons.Outlined.PhotoLibrary, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate)
     val edits = state.edits
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
@@ -341,6 +341,9 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             16 -> LensControls(edits.lens, state.preview?.lens, state.controlsEnabled) { value ->
                 onEdit(edits.copy(lens = value), false)
             }
+            17 -> GeometryControls(edits.geometry, state.controlsEnabled) { value, dragging ->
+                onEdit(edits.copy(geometry = value), dragging)
+            }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
                 onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
             }
@@ -349,7 +352,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
         }
         }
         LazyRow(Modifier.fillMaxWidth().height(64.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
-            items(listOf(0, 15) + (1 until 15).toList() + listOf(16), key = { it }) { index ->
+            items(listOf(0, 15, 17) + (1 until 15).toList() + listOf(16), key = { it }) { index ->
                 val title = titles[index]
                 val color = if (tool == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 Column(Modifier.width(76.dp).fillMaxHeight().selectable(tool == index, enabled = state.controlsEnabled, role = Role.Tab,
@@ -384,8 +387,13 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     clampInput: Boolean = false) {
     var editing by remember { mutableStateOf(false) }
     var latestValue by remember(value) { mutableStateOf(value) }
-    val formatted = if (unit == "EV") String.format(Locale.ROOT, "%.2f", value) else value.roundToInt().toString()
+    val formatted = when {
+        unit == "EV" -> String.format(Locale.ROOT, "%.2f", value)
+        label == R.string.geometry_straighten -> String.format(Locale.ROOT, "%.1f", value)
+        else -> value.roundToInt().toString()
+    }
     var input by remember { mutableStateOf("") }
+    val controlDescription = stringResource(label)
     val parsed = input.toFloatOrNull()?.takeIf { it.isFinite() }?.let { entered ->
         if (clampInput) entered.coerceIn(range) else entered.takeIf { it in range }
     }
@@ -396,10 +404,13 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
             ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_value, enabled, onReset)
         }
         val sliderRange = if (reciprocal) (-1f / range.start)..(-1f / range.endInclusive) else range
-        Slider(modifier = Modifier.testTag("adjustment-slider").semantics { stateDescription = "${formatted} ${unit}" },
+        Slider(modifier = Modifier.testTag("adjustment-slider").semantics {
+            contentDescription = controlDescription
+            stateDescription = "${formatted} ${unit}"
+        },
             value = if (reciprocal) -1f / value else value, onValueChange = {
             val raw = if (reciprocal) (-1f / it).coerceIn(range) else it
-            val step = when (label) { R.string.exposure -> .05f; R.string.temperature -> 10f; else -> 1f }
+            val step = when (label) { R.string.exposure -> .05f; R.string.temperature -> 10f; R.string.geometry_straighten -> .1f; else -> 1f }
             latestValue = (kotlin.math.round(raw / step) * step).coerceIn(range)
             onValue(latestValue, true)
         }, onValueChangeFinished = { onValue(latestValue, false) }, valueRange = sliderRange, enabled = enabled)

@@ -15,6 +15,36 @@ import java.nio.ByteOrder
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun geometryReachesExactInteractivePreviewFinalExportAndSessionReset() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File(context.cacheDir, "geometry-test.RAW")
+        val output = File(context.cacheDir, "geometry-test.png")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val original = processor.preview(input, null, EditSettings(), 300, false)
+                val settings = EditSettings(geometry = GeometrySettings(.15f, .1f, .75f, .8f, 1, true, false, 8f))
+                val exact = processor.preview(input, null, settings, 300, false)
+                val interactive = processor.preview(input, null, settings, 300, true)
+                assertEquals(exact.width, interactive.width)
+                assertEquals(exact.height, interactive.height)
+                assertEquals(exact.geometryWidth, interactive.geometryWidth)
+                assertEquals(exact.geometryHeight, interactive.geometryHeight)
+                assertArrayEquals(exact.pixels, interactive.pixels)
+                assertTrue(maxOf(exact.geometryWidth, exact.geometryHeight) >= maxOf(exact.width, exact.height))
+                processor.export(input, null, settings, output, ExportFormat.PNG, 300)
+                val exported = checkNotNull(android.graphics.BitmapFactory.decodeFile(output.path))
+                assertEquals(exact.width, exported.width)
+                assertEquals(exact.height, exported.height)
+                val reset = processor.preview(input, null, EditSettings(), 300, false)
+                assertEquals(original.width, reset.width)
+                assertEquals(original.height, reset.height)
+                assertArrayEquals(original.pixels, reset.pixels)
+            }
+        } finally { input.delete(); output.delete() }
+    }
+
     @Test fun lensCorrectionReachesPreviewExportAndReset() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

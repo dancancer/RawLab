@@ -305,4 +305,19 @@
     <string name="dng_generated_not_saved_count">現像済みDNGを%1$s個生成しましたが選択した場所には保存していません</string>
     <string name="dng_file_only">DNGはファイルにのみ保存できます</string>
     <string name="preview_wait_export">プレビューの完了後に書き出してください。</string>
+    <string name="geometry">ジオメトリ</string>
+    <string name="geometry_reset">ジオメトリをリセット</string>
+    <string name="geometry_rotate_left">左に回転</string>
+    <string name="geometry_rotate_right">右に回転</string>
+    <string name="geometry_flip_horizontal">左右反転</string>
+    <string name="geometry_flip_vertical">上下反転</string>
+    <string name="geometry_straighten">傾き補正</string>
+    <string name="geometry_crop_x">左</string>
+    <string name="geometry_crop_y">上</string>
+    <string name="geometry_crop_width">幅</string>
+    <string name="geometry_crop_height">高さ</string>
+    <string name="geometry_crop_hint">切り抜きの割合は、回転・反転・傾き補正後の画像に適用されます。</string>
+    <string name="geometry_crop_error" formatted="false">0–100% の画像内で、幅と高さが正の切り抜き範囲を入力してください。</string>
+    <string name="geometry_apply_crop">切り抜きを適用</string>
+    <string name="geometry_summary">切り抜き %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · 回転 %5$d° · 傾き %6$+.1f°</string>
 </resources>
