@@ -34,7 +34,7 @@ struct AdjustmentDock: View {
                         } label: {
                             let active = selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .film
                             let changed = !model.selectedFilmID.isEmpty
-                            VStack(spacing: 2) {
+                            VStack(spacing: 0) {
                                 Image(systemName: "film").font(.system(size: 19))
                                     .frame(width: 40, height: 40)
                                     .background(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
@@ -58,7 +58,7 @@ struct AdjustmentDock: View {
                         } label: {
                             let active = selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe
                             let changed = model.settings.masterRecipeID != nil
-                            VStack(spacing: 2) {
+                            VStack(spacing: 0) {
                                 Image(systemName: "photo.stack").font(.system(size: 19))
                                     .frame(width: 40, height: 40)
                                     .background(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
@@ -72,7 +72,7 @@ struct AdjustmentDock: View {
                             .accessibilityAddTraits(selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe ? .isSelected : [])
                         ForEach([AdjustmentParameter.strength, .exposure, .highlights, .shadows, .contrast, .toneCurve, .saturation]) { tool($0) }
                         Button { finishCurrentInput(); hslSelected = true; lensSelected = false; geometrySelected = false; onPreferredHeight(288) } label: {
-                            VStack(spacing: 2) {
+                            VStack(spacing: 0) {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 19))
                                     .frame(width: 40, height: 40)
                                     .background(hslSelected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
@@ -113,7 +113,8 @@ struct AdjustmentDock: View {
 
     private func toolCaption(_ title: String) -> some View {
         Text(title).font(.system(size: 11)).lineLimit(2)
-            .multilineTextAlignment(.center).frame(height: 22, alignment: .top)
+            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            .frame(height: 27, alignment: .top)
     }
 
     @ViewBuilder private var editorContent: some View {
@@ -185,7 +186,7 @@ struct AdjustmentDock: View {
         let valueText = parameter == .denoiseMode ?
             model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
         return Button { finishCurrentInput(); selected = parameter; hslSelected = false; lensSelected = false; geometrySelected = false; onPreferredHeight(parameter == .grainAmount ? 288 : 252) } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
                     Circle().strokeBorder(active ? Color.yellow.opacity(0.5) : Color.white.opacity(0.25), lineWidth: 1)
@@ -220,7 +221,7 @@ struct AdjustmentDock: View {
     private var lensTool: some View {
         let changed = !model.settings.isDefault(.lens)
         return Button { finishCurrentInput(); selected = nil; lensSelected = true; hslSelected = false; geometrySelected = false; onPreferredHeight(288) } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 0) {
                 Image(systemName: "viewfinder").font(.system(size: 19))
                     .frame(width: 40, height: 40)
                     .background(lensSelected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
@@ -236,7 +237,7 @@ struct AdjustmentDock: View {
     private var geometryTool: some View {
         let changed = !model.settings.isDefault(.geometry)
         return Button { finishCurrentInput(); selected = nil; geometrySelected = true; lensSelected = false; hslSelected = false; onPreferredHeight(288) } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 0) {
                 Image(systemName: "crop.rotate").font(.system(size: 19))
                     .frame(width: 40, height: 40)
                     .background(geometrySelected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
