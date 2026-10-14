@@ -77,20 +77,26 @@ import SwiftUI
             aspectRatio: nil, previewIdentity: identity), "rotated native dimensions invalidate active drag")
 
         for discreteEdit in ["keyboard", "accessibility"] {
+          for refreshed in [false, true] {
             var pointer = MacCropPointerState()
             let entry = MacCropDragSession(handle: .move, settings: settings, imageBounds: bounds,
                 canvasSize: source, aspectRatio: nil, previewIdentity: identity)
             try check(pointer.begin(entry), "\(discreteEdit): pointer drag starts")
-            guard var current = pointer.applying(translation: CGSize(width: 20, height: 10)) else {
+            guard let latest = pointer.applying(translation: CGSize(width: 20, height: 10)) else {
                 throw Failure.message("\(discreteEdit): pointer update missing")
             }
-            try check(pointer.interrupt() && pointer.ignoresCurrentGesture,
-                "\(discreteEdit): discrete adjustment interrupts active pointer exactly once")
+            if refreshed { pointer.session?.observeAppliedSettings() }
             let discreteDelta = discreteEdit == "keyboard" ?
                 MacCropInteraction.keyboardTranslation(for: .move, direction: .right, fine: true, imageBounds: bounds) :
                 CGSize(width: 0.01, height: 0)
-            current = MacCropInteraction.applying(rect: MacCropInteraction.dragging(MacCropInteraction.rect(from: current),
-                handle: .move, translation: discreteDelta, canvasSize: source, ratio: nil), to: current)
+            var current = pointer.discreteAdjustment(settings: refreshed ? latest : settings,
+                imageBounds: bounds, canvasSize: source, aspectRatio: nil, previewIdentity: identity,
+                handle: .move, translation: discreteDelta)
+            try check(pointer.ignoresCurrentGesture && pointer.session == nil,
+                "\(discreteEdit): production discrete adjustment interrupts active pointer")
+            try check(abs(current.cropX - settings.cropX - 20 / bounds.width - discreteDelta.width) < 1e-9 &&
+                abs(current.cropY - settings.cropY - 10 / bounds.height) < 1e-9,
+                "\(discreteEdit): \(refreshed ? "refreshed" : "stale") view preserves latest pointer position before discrete delta")
             let afterDiscreteEdit = current
             let staleEntry = MacCropDragSession(handle: .move, settings: current, imageBounds: bounds,
                 canvasSize: source, aspectRatio: nil, previewIdentity: identity)
@@ -106,6 +112,28 @@ import SwiftUI
             try check(abs(next.cropX - afterDiscreteEdit.cropX - 10 / bounds.width) < 1e-9 &&
                 abs(next.cropY - afterDiscreteEdit.cropY - 5 / bounds.height) < 1e-9,
                 "\(discreteEdit): independent drag uses its own current baseline")
+          }
+        }
+
+        for invalidation in ["acknowledged rollback", "external reset", "preview replacement", "bounds replacement"] {
+            var pointer = MacCropPointerState()
+            let entry = MacCropDragSession(handle: .move, settings: settings, imageBounds: bounds,
+                canvasSize: source, aspectRatio: nil, previewIdentity: identity)
+            _ = pointer.begin(entry)
+            _ = pointer.applying(translation: CGSize(width: 20, height: 10))
+            if invalidation == "acknowledged rollback" { pointer.session?.observeAppliedSettings() }
+            let external = invalidation == "external reset" ? GeometrySettings() : settings
+            let newBounds = invalidation == "bounds replacement" ? bounds.offsetBy(dx: 10, dy: 0) : bounds
+            let newIdentity = invalidation == "preview replacement" ? ObjectIdentifier(replacement) : identity
+            let result = pointer.discreteAdjustment(settings: external, imageBounds: newBounds, canvasSize: source,
+                aspectRatio: nil, previewIdentity: newIdentity, handle: .move, translation: CGSize(width: 0.01, height: 0))
+            let expectedX = min(1 - external.cropWidth, external.cropX + 0.01)
+            try check(abs(result.cropX - expectedX) < 1e-9 && result.cropY == external.cropY &&
+                result.cropWidth == external.cropWidth && result.cropHeight == external.cropHeight,
+                "\(invalidation): production discrete edit uses external settings without reviving old pointer position")
+            try check(pointer.ignoresCurrentGesture && pointer.session == nil &&
+                pointer.applying(translation: CGSize(width: 40, height: 20)) == nil,
+                "\(invalidation): invalidated old gesture remains blocked")
         }
 
         let baseline = try await snapshot(CropFixture(image: image, bounds: bounds, source: source,

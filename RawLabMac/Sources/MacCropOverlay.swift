@@ -65,6 +65,21 @@ struct MacCropPointerState {
         return result
     }
 
+    mutating func discreteAdjustment(settings: GeometrySettings, imageBounds: CGRect, canvasSize: CGSize,
+        aspectRatio: Double?, previewIdentity: ObjectIdentifier, handle: MacCropHandle,
+        translation: CGSize) -> GeometrySettings {
+        var base = settings
+        if let current = session, current.lastApplied.isValid,
+           current.canContinue(settings: settings, imageBounds: imageBounds, canvasSize: canvasSize,
+                aspectRatio: aspectRatio, previewIdentity: previewIdentity, allowingUnrefreshedSettings: true) {
+            base = current.lastApplied
+        }
+        interrupt()
+        let rect = MacCropInteraction.dragging(MacCropInteraction.rect(from: base), handle: handle,
+            translation: translation, canvasSize: canvasSize, ratio: aspectRatio)
+        return MacCropInteraction.applying(rect: rect, to: base)
+    }
+
     @discardableResult mutating func interrupt() -> Bool {
         let wasEditing = session != nil
         if wasEditing { ignoresCurrentGesture = true }
@@ -225,10 +240,9 @@ struct MacCropOverlay: View {
     }
 
     private func adjust(_ handle: MacCropHandle, translation: CGSize) {
-        if pointer.interrupt() { onEditingChanged?(false) }
-        let rect = MacCropInteraction.dragging(crop, handle: handle, translation: translation,
-            canvasSize: canvasSize, ratio: aspectRatio)
-        onChange?(MacCropInteraction.applying(rect: rect, to: settings))
+        let result = pointer.discreteAdjustment(settings: settings, imageBounds: imageBounds, canvasSize: canvasSize,
+            aspectRatio: aspectRatio, previewIdentity: previewIdentity, handle: handle, translation: translation)
+        onChange?(result)
         // Keyboard and accessibility adjustments are discrete exact edits.
         onEditingChanged?(false)
     }
