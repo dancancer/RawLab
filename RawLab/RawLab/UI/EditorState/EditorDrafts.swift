@@ -30,11 +30,19 @@ extension ContentView {
     }
 
     var geometryDraftBinding: Binding<GeometrySettings> {
-        Binding(get: { geometryDraft ?? settings.geometry }, set: { geometryDraft = $0 })
+        let sourceRevision = viewModel.sourceRevision
+        return Binding(get: { geometryDraft ?? settings.geometry }, set: { value in
+            guard !editorBusy, geometrySelected, viewModel.sourceRevision == sourceRevision else { return }
+            geometryDraft = value
+        })
     }
 
     var lensDraftBinding: Binding<RawSettings> {
-        Binding(get: { lensDraft ?? settings }, set: { lensDraft = $0 })
+        let sourceRevision = viewModel.sourceRevision
+        return Binding(get: { lensDraft ?? settings }, set: { value in
+            guard !editorBusy, lensSelected, viewModel.sourceRevision == sourceRevision else { return }
+            lensDraft = value
+        })
     }
 
     var isEditorDraftActive: Bool { geometrySelected || lensSelected }
@@ -49,7 +57,7 @@ extension ContentView {
     }
 
     func selectEditorTool(_ selection: EditorToolSelection) {
-        guard selection != currentEditorTool else { return }
+        guard !editorBusy, selection != currentEditorTool else { return }
         if isEditorDraftChanged {
             pendingToolSelection = selection
             draftExitPresented = true
@@ -113,6 +121,7 @@ extension ContentView {
     }
 
     func previewEditorDraft() {
+        guard !editorBusy, viewModel.hasImage else { return }
         showingBefore = false
         if isAdjustingSlider {
             viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,

@@ -34,6 +34,8 @@ struct ContentView: View {
     @State var autoExposing = false
     @State var settingsRevision = UUID()
     @State var selectedPhotoItem: PhotosPickerItem?
+    @State var photoImportTask: Task<Void, Never>?
+    @State var photoImportRequestID: UUID?
     @State private var checkedBatchRecovery = false
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
@@ -100,8 +102,12 @@ struct ContentView: View {
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
-            Task {
-                await importFromPhotoItem(newItem)
+            photoImportTask?.cancel()
+            let requestID = UUID()
+            photoImportRequestID = requestID
+            viewModel.cancelImageImport()
+            photoImportTask = Task {
+                await importFromPhotoItem(newItem, requestID: requestID)
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -125,7 +131,10 @@ struct ContentView: View {
             cancelRulerFocus()
         }
         .onChange(of: viewModel.isBusy) { _, busy in
-            if !busy { isImporting = false }
+            if !busy && photoImportTask == nil {
+                isImporting = false
+                photoImportRequestID = nil
+            }
         }
         .onChange(of: viewModel.hasImage) { _, hasImage in
             if hasImage { adjustmentsExpanded = true }
@@ -179,7 +188,7 @@ struct ContentView: View {
             Button(L10n.text("放弃调整"), role: .destructive) { finishDraftNavigation(apply: false) }
             Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }
         }
-        .onDisappear { cancelRulerFocus() }
+        .onDisappear { cancelRulerFocus(); cancelPhotoImport() }
     }
 }
 

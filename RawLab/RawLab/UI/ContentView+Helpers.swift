@@ -73,7 +73,7 @@ extension ContentView {
         }
     }
 
-    var editingLocked: Bool { isImporting || isSaving || batchModel?.isRunning == true }
+    var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
     var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || editingLocked }
     var selectedFilmName: String {
         settings.masterRecipe?.name ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
@@ -247,6 +247,11 @@ extension ContentView {
     }
 
     func setSliderEditing(_ editing: Bool) {
+        guard !editorBusy else {
+            isAdjustingSlider = false
+            cancelRulerFocus()
+            return
+        }
         let wasEditing = isAdjustingSlider
         isAdjustingSlider = editing
         updateRulerFocus(editing: editing, wasEditing: wasEditing)
@@ -265,27 +270,49 @@ extension ContentView {
         .disabled(!isEnabled)
     }
 
-    func importFromPhotoItem(_ item: PhotosPickerItem) async {
-        guard viewModel.saveCurrentSettings(settings) else { selectedPhotoItem = nil; return }
+    @MainActor
+    func importFromPhotoItem(_ item: PhotosPickerItem, requestID: UUID) async {
+        guard photoImportRequestID == requestID, !Task.isCancelled else { return }
+        guard viewModel.saveCurrentSettings(settings) else {
+            selectedPhotoItem = nil
+            photoImportTask = nil
+            photoImportRequestID = nil
+            return
+        }
         isImporting = true
         showingBefore = false
         do {
             let source = try await loadPhotoSource(from: item)
+            guard photoImportRequestID == requestID, !Task.isCancelled else {
+                PhotoImportFile.release(source.url)
+                return
+            }
             let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
                 ?? (try? PhotoIdentity.fallback(for: source.url))
-            await MainActor.run {
-                viewModel.importImage(from: source, identity: identity, settings: .default) { restored in
-                    settings = restored
-                }
-                selectedPhotoItem = nil
+            viewModel.importImage(from: source, identity: identity, settings: .default) { restored in
+                guard photoImportRequestID == requestID else { return }
+                settings = restored
             }
+            selectedPhotoItem = nil
+            photoImportTask = nil
         } catch {
-            await MainActor.run {
-                isImporting = false
+            guard photoImportRequestID == requestID else { return }
+            photoImportTask = nil
+            photoImportRequestID = nil
+            isImporting = false
+            selectedPhotoItem = nil
+            if !Task.isCancelled && !(error is CancellationError) {
                 viewModel.statusMessage = error.localizedDescription
-                selectedPhotoItem = nil
             }
         }
+    }
+
+    func cancelPhotoImport() {
+        photoImportRequestID = nil
+        photoImportTask?.cancel()
+        photoImportTask = nil
+        viewModel.cancelImageImport()
+        isImporting = false
     }
 
     func openBatchExport() {
@@ -315,7 +342,7 @@ extension ContentView {
     }
 
     func loadPhotoSource(from item: PhotosPickerItem) async throws -> PhotoImportSource {
-        try await PhotoImportFile.load(from: item)
+        try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }
     }
 
     func saveToPhotoLibrary(_ data: Data) {

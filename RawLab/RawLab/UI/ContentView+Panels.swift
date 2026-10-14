@@ -83,7 +83,10 @@ extension ContentView {
                             if geometrySelected && !showingBefore {
                                 EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,
                                                   aspectRatio: geometryDraftAspectRatio,
+                                                  isEnabled: !editorBusy && viewModel.hasImage,
+                                                  sourceRevision: viewModel.sourceRevision,
                                                   onEditingChanged: setSliderEditing)
+                                    .id(viewModel.sourceRevision)
                             }
                         }
                 } else {
@@ -309,6 +312,7 @@ extension ContentView {
             }
         }
         .buttonStyle(.plain)
+        .disabled(editorBusy)
     }
 
 }

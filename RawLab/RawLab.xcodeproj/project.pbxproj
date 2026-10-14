@@ -84,6 +84,7 @@
 		6BD98E141C695971B42798C6 /* EditorDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */; };
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
 		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
+		D00900000000000000000001 /* CropLockUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00900000000000000000011 /* CropLockUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -178,6 +179,7 @@
 		2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorDrafts.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
 		BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/EditorV4UITests.swift"; sourceTree = SOURCE_ROOT; };
+		D00900000000000000000011 /* CropLockUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/CropLockUITests.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -400,6 +402,7 @@
 			children = (
 				AB1300000000000000000002 /* EditorUITests.swift */,
 				BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */,
+				D00900000000000000000011 /* CropLockUITests.swift */,
 				2F6D48C6086EC660301E288B /* Products */,
 				0DAA7689F37A5648D3C8F238 /* Frameworks */,
 				2F109479FD08681A1F30E85C /* RawLab */,
@@ -518,7 +521,7 @@
 		AB1300000000000000000006 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (AB1300000000000000000001, 39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */, );
+			files = (AB1300000000000000000001, 39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */, D00900000000000000000001 /* CropLockUITests.swift in Sources */, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E20DD483661FD62C27502C63 /* Sources */ = {
