@@ -378,3 +378,20 @@
 "渲染型 DNG 未生成。" = "Le DNG rendu n’a pas été créé.";
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG créé, mais le suivi de la tâche n’a pas été mis à jour. Vérifiez d’abord le fichier enregistré.";
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
+
+/* Basic geometry editing */
+"几何编辑" = "Réglages géométriques";
+"几何" = "Géométrie";
+"裁切、旋转、翻转和拉直" = "Recadrer, pivoter, retourner et redresser";
+"水平翻转" = "Retourner horizontalement";
+"垂直翻转" = "Retourner verticalement";
+"重置几何编辑" = "Réinitialiser la géométrie";
+"向右旋转 90°" = "Pivoter de 90° à droite";
+"向左旋转 90°" = "Pivoter de 90° à gauche";
+"裁切左边" = "Bord gauche";
+"裁切上边" = "Bord supérieur";
+"裁切宽度" = "Largeur du recadrage";
+"裁切高度" = "Hauteur du recadrage";
+"拉直" = "Redresser";
+"裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "La position et la taille du recadrage sont exprimées en pourcentage du canevas après rotation, retournement et redressement.";
+"无效的几何参数" = "Paramètres géométriques non valides";

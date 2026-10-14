@@ -220,6 +220,7 @@ struct Adjustments: Equatable, Codable {
     var photoEffects: PhotoEffectsSettings?
     var hsl: HSLSettings?
     var lensCorrection: LensCorrectionSettings?
+    var geometry: GeometrySettings?
     private(set) var supportsRawNoiseReduction = false
     var masterRecipeID: String? = nil
     private var masterRecipeSettingsVersion: Int? = 3
@@ -238,6 +239,36 @@ struct Adjustments: Equatable, Codable {
         hsl = state.isIdentity ? nil : state
     }
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
+    var geometrySettings: GeometrySettings { geometry ?? GeometrySettings() }
+
+    mutating func setGeometry(_ parameter: GeometryParameter, to value: Double) {
+        guard value.isFinite else { return }
+        var state = geometrySettings
+        let range = parameter.range(for: state)
+        state[keyPath: parameter.keyPath] = min(range.upperBound, max(range.lowerBound, value))
+        geometry = state.isIdentity ? nil : state
+    }
+
+    mutating func rotateGeometry(clockwise: Bool) {
+        var state = geometrySettings
+        state.quarterTurns = (state.quarterTurns + (clockwise ? 1 : 3)) % 4
+        geometry = state.isIdentity ? nil : state
+    }
+
+    mutating func flipGeometry(horizontal: Bool) {
+        var state = geometrySettings
+        if horizontal { state.flipHorizontal.toggle() } else { state.flipVertical.toggle() }
+        geometry = state.isIdentity ? nil : state
+    }
+
+    // Compare the color edit on the same geometric canvas without changing the
+    // immutable original cached by EditorModel.
+    var neutralGeometrySettings: Adjustments {
+        var neutral = Adjustments()
+        neutral.geometry = geometry
+        neutral.lensCorrection = lensCorrection
+        return neutral
+    }
     var vignetteAmount: Double {
         get { effectSettings.vignetteAmount }
         set { setEffect(.vignetteAmount, to: newValue) }
@@ -390,6 +421,7 @@ struct Adjustments: Equatable, Codable {
         if group == .color { hsl = nil }
         if group == .effects { photoEffects = nil }
         if group == .lens { lensCorrection = nil }
+        if group == .geometry { geometry = nil }
     }
 
     func isDefault(_ group: AdjustmentGroup) -> Bool {
@@ -400,6 +432,7 @@ struct Adjustments: Equatable, Codable {
             && (group != .effects || effectSettings == PhotoEffectsSettings())
             && (group != .film || masterRecipeID == nil)
             && (group != .lens || lensSettings == LensCorrectionSettings())
+            && (group != .geometry || geometrySettings.isIdentity)
     }
 
     mutating func resolveWhiteBalance(_ camera: WhiteBalance?) {
@@ -468,6 +501,10 @@ extension Adjustments {
         photoEffects = try values.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects)
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl)
         lensCorrection = try values.decodeIfPresent(LensCorrectionSettings.self, forKey: .lensCorrection)
+        geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry)
+        guard geometrySettings.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
+        }
         supportsRawNoiseReduction = try values.decodeIfPresent(Bool.self, forKey: .supportsRawNoiseReduction) ?? false
         guard hslSettings.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .hsl, in: values, debugDescription: "Invalid HSL parameters")
@@ -491,7 +528,7 @@ extension Adjustments {
 }
 
 enum AdjustmentGroup: String, CaseIterable, Identifiable {
-    case film = "胶片模拟", input = "输入调整", tone = "明暗", color = "色彩", detail = "细节", effects = "效果", lens = "镜头校正"
+    case film = "胶片模拟", input = "输入调整", tone = "明暗", color = "色彩", detail = "细节", effects = "效果", lens = "镜头校正", geometry = "几何编辑"
     var id: String { rawValue }
     var title: String { L10n.text(rawValue) }
     var parameters: [AdjustmentParameter] {
@@ -502,7 +539,41 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
         case .color: return [.saturation]
         case .detail: return [.denoiseMode, .sharpening]
         case .effects: return [.vignetteAmount, .grainAmount]
-        case .lens: return []
+        case .lens, .geometry: return []
+        }
+    }
+}
+
+enum GeometryParameter: String, CaseIterable, Identifiable {
+    case cropX, cropY, cropWidth, cropHeight, straightenDegrees
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .cropX: return L10n.text("裁切左边")
+        case .cropY: return L10n.text("裁切上边")
+        case .cropWidth: return L10n.text("裁切宽度")
+        case .cropHeight: return L10n.text("裁切高度")
+        case .straightenDegrees: return L10n.text("拉直")
+        }
+    }
+    var keyPath: WritableKeyPath<GeometrySettings, Double> {
+        switch self {
+        case .cropX: return \.cropX
+        case .cropY: return \.cropY
+        case .cropWidth: return \.cropWidth
+        case .cropHeight: return \.cropHeight
+        case .straightenDegrees: return \.straightenDegrees
+        }
+    }
+    var multiplier: Double { self == .straightenDegrees ? 1 : 100 }
+    var unit: String { self == .straightenDegrees ? "°" : "%" }
+    func range(for state: GeometrySettings) -> ClosedRange<Double> {
+        switch self {
+        case .cropX: return 0...max(0, 1 - state.cropWidth)
+        case .cropY: return 0...max(0, 1 - state.cropHeight)
+        case .cropWidth: return min(0.001, 1 - state.cropX)...(1 - state.cropX)
+        case .cropHeight: return min(0.001, 1 - state.cropY)...(1 - state.cropY)
+        case .straightenDegrees: return -45...45
         }
     }
 }

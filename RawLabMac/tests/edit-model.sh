@@ -6,7 +6,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-edit-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/RawLabMac/Sources/EditPersistence.swift" "$ROOT/RawLabMac/Sources/BatchExport.swift" "$ROOT/RawLabMac/Sources/EditorModel.swift" "$ROOT/RawLabMac/Sources/LookLibrary.swift" "$ROOT/RawLabMac/Sources/RenderScheduling.swift" "$ROOT/RawLabMac/Sources/FileLibrary.swift")
+SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/RawLabMac/Sources/EditPersistence.swift" "$ROOT/RawLabMac/Sources/BatchExport.swift" "$ROOT/RawLabMac/Sources/EditorModel.swift" "$ROOT/RawLabMac/Sources/LookLibrary.swift" "$ROOT/RawLabMac/Sources/RenderScheduling.swift" "$ROOT/RawLabMac/Sources/FileLibrary.swift")
 if [ -f "$ROOT/RawLabMac/Sources/BatchExportModel.swift" ]; then SOURCES+=("$ROOT/RawLabMac/Sources/BatchExportModel.swift"); fi
 SOURCES+=("$ROOT/RawLabMac/Sources/ExportSizePicker.swift")
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
