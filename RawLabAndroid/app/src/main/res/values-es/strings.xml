@@ -305,4 +305,19 @@
     <string name="dng_generated_not_saved_count">Se crearon %1$s archivos DNG revelados, pero no se guardaron en la ubicación elegida</string>
     <string name="dng_file_only">El DNG solo se puede guardar en Archivos</string>
     <string name="preview_wait_export">Espera a que termine la vista previa antes de exportar.</string>
+    <string name="geometry">Geometría</string>
+    <string name="geometry_reset">Restablecer geometría</string>
+    <string name="geometry_rotate_left">Girar a la izquierda</string>
+    <string name="geometry_rotate_right">Girar a la derecha</string>
+    <string name="geometry_flip_horizontal">Voltear horizontalmente</string>
+    <string name="geometry_flip_vertical">Voltear verticalmente</string>
+    <string name="geometry_straighten">Enderezar</string>
+    <string name="geometry_crop_x">Izquierda</string>
+    <string name="geometry_crop_y">Arriba</string>
+    <string name="geometry_crop_width">Anchura</string>
+    <string name="geometry_crop_height">Altura</string>
+    <string name="geometry_crop_hint">El recorte se aplica después del giro, los volteos y el enderezado.</string>
+    <string name="geometry_crop_error" formatted="false">Introduce un recorte con dimensiones positivas dentro del lienzo de 0–100%.</string>
+    <string name="geometry_apply_crop">Aplicar recorte</string>
+    <string name="geometry_summary">Recorte %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Giro %5$d° · Enderezado %6$+.1f°</string>
 </resources>

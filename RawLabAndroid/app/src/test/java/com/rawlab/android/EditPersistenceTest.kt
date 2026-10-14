@@ -30,7 +30,8 @@ class EditPersistenceTest {
                 effects = PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f,
                     grainAmount = 65f, grainSize = 70f),
                 recipeID = "recipe",
-                lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000"))
+                lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000"),
+                geometry = GeometrySettings(.2f, .1f, .8f, .7f, 3, true, true, -10f))
             EditStore(directory).save(identity, changed)
             val reopened = EditStore(directory)
             assertEquals(changed, reopened.load(identity))
@@ -39,11 +40,13 @@ class EditPersistenceTest {
             val key = properties.stringPropertyNames().first { it.endsWith(".values") }
             properties.setProperty(key, properties.getProperty(key).split(',').take(24).joinToString(","))
             properties.remove(key.removeSuffix(".values") + ".lens")
+            properties.remove(key.removeSuffix(".values") + ".geometry")
             file.outputStream().use { properties.store(it, null) }
             val legacy = EditStore(directory).load(identity)!!
             assertEquals(0, legacy.exposureMode)
             assertTrue(legacy.hsl.isIdentity)
             assertEquals(LensSettings(), legacy.lens)
+            assertEquals(GeometrySettings(), legacy.geometry)
             assertNull(reopened.load(PhotoIdentity("content://media/external/images/media/8")))
             reopened.reset(identity)
             assertNull(EditStore(directory).load(identity))

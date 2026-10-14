@@ -12,6 +12,8 @@
 
 static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
     "Photo effects config ABI must remain a versioned 40-byte struct");
+static_assert(sizeof(sony2fuji_geometry_config) == 40,
+    "Geometry config ABI must remain a versioned 40-byte struct");
 
 namespace {
 struct SessionDeleter {
@@ -146,6 +148,35 @@ Java_com_rawlab_android_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, job
             sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()};
         check(sony2fuji_session_set_lens_correction(sessionFor(id), &config));
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
+    jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
+    jboolean horizontal, jboolean vertical, jfloat straighten) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_geometry_config config{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(config),
+            x, y, width, height, turns, horizontal ? 1 : 0, vertical ? 1 : 0, straighten};
+        check(sony2fuji_session_set_geometry(sessionFor(id), &config));
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeGeometrySize(JNIEnv* env, jobject, jlong id) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        uint32_t width = 0, height = 0;
+        check(sony2fuji_session_get_geometry_size(sessionFor(id), &width, &height));
+        if (!width || !height || width > INT32_MAX || height > INT32_MAX)
+            throw std::runtime_error("Invalid geometry dimensions");
+        auto result = env->NewIntArray(2);
+        if (!result) return nullptr;
+        const jint dimensions[] = {static_cast<jint>(width), static_cast<jint>(height)};
+        env->SetIntArrayRegion(result, 0, 2, dimensions);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL

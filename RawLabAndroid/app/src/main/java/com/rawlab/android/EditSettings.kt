@@ -23,6 +23,7 @@ data class EditSettings(
     val hsl: HslSettings = HslSettings(),
     val recipeID: String? = null,
     val lens: LensSettings = LensSettings(),
+    val geometry: GeometrySettings = GeometrySettings(),
 ) {
     init {
         require(exposureMode in 0..2)

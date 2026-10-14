@@ -67,6 +67,10 @@ internal object AppStrings {
     }
 
     private fun fallback(id: Int): String = when (id) {
+        R.string.geometry -> "几何"
+        R.string.geometry_flip_horizontal -> "水平翻转"
+        R.string.geometry_flip_vertical -> "垂直翻转"
+        R.string.geometry_summary -> "裁切 %1\$.1f,%2\$.1f · %3\$.1f × %4\$.1f%% · 旋转 %5\$d° · 拉直 %6\$+.1f°"
         R.string.master_recipes -> "大师配方"
         R.string.no_recipe -> "无配方"
         R.string.hsl_reset_channel -> "重置当前颜色"

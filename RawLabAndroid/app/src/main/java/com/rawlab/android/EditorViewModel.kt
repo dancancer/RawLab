@@ -14,7 +14,9 @@ import java.io.File
 
 enum class Operation { NONE, IMPORT, IMPORT_LOOK, PICK_EXPORT, EXPORT }
 enum class EditSaveState { NONE, RESTORED, SAVED, FAILED }
-data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float, val lens: LensInfo? = null)
+data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
+    val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
+    val comparisonHeight: Float = neutral.height.toFloat())
 data class EditorState(
     val photo: ImportedPhoto? = null,
     val edits: EditSettings = EditSettings(),
@@ -72,6 +74,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val pendingBatch = mutablePendingBatch.asStateFlow()
     private var processor: NativeProcessor? = null
     private var original: Pair<java.io.File, Bitmap>? = null
+    private var transformedNeutral: Pair<ComparisonPreviewKey, Bitmap>? = null
     private var currentRevision = 0L
     private var previewLongEdge = 1600
     private var requestedPreviewLongEdge = 1600
@@ -121,11 +124,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             native.setGpuMode(work.gpuMode)
             if (original?.first != work.photo.file) {
                 original = null
+                transformedNeutral = null
                 original = work.photo.file to native.preview(work.photo.file, null, EditSettings(), 1600, false).bitmap()
+            }
+            val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
+                val key = ComparisonPreviewKey(work.photo.file.path, work.edits.geometry, work.edits.lens, edge, work.interactive)
+                if (transformedNeutral?.first != key) {
+                    transformedNeutral = null
+                    val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens)
+                    transformedNeutral = key to native.preview(work.photo.file, null, comparison, edge, work.interactive).bitmap()
+                }
+                transformedNeutral!!.second
             }
             val lut = storage.lookPath(work.edits)
             val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
-            WorkResult.Preview(work, PreviewPair(original!!.second, film.bitmap(), film.temperature, film.tint, film.lens))
+            val dimensions = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled)
+                original!!.second.width.toFloat() to original!!.second.height.toFloat()
+            else comparisonDimensions(film.geometryWidth, film.geometryHeight)
+            WorkResult.Preview(work, PreviewPair(neutral, film.bitmap(), film.temperature, film.tint, film.lens,
+                dimensions.first, dimensions.second))
         }
         is Work.Export -> {
             val output = storage.temporaryOutput(work.format)
