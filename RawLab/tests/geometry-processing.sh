@@ -3,7 +3,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FRAMEWORK="${1:?Pass the built arm64-simulator sony2fuji.framework path}"
 DEVICE="${2:?Pass the task-owned simulator UDID}"
-OUT="$(mktemp -d /tmp/rawlab-ios-geometry.XXXXXX)"
+RAW="${3:-${RAWLAB_TEST_RAW:-}}"
+BASE="$ROOT/build/geometry-processing"
+mkdir -p "$BASE"
+OUT="$(mktemp -d "$BASE/run.XXXXXX")"
+if [[ -n "$RAW" ]]; then
+    test -f "$RAW" || { echo "Missing RAW fixture: $RAW" >&2; exit 1; }
+    RAW="$(cd "$(dirname "$RAW")" && pwd)/$(basename "$RAW")"
+fi
 HARNESS="$OUT/GeometryProcessingTests.app"
 mkdir -p "$HARNESS/Frameworks"
 cat > "$HARNESS/Info.plist" <<'PLIST'
@@ -20,12 +27,16 @@ cp -R "$FRAMEWORK" "$HARNESS/Frameworks/sony2fuji.framework"
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TARGET=arm64-apple-ios18.0-simulator
 xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
+    -fmodules-cache-path="$OUT/module-cache" \
     -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
 xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+    -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/BatchExportCore.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \
@@ -33,5 +44,6 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/geometry-processing"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
-xcrun simctl spawn "$DEVICE" "$HARNESS/geometry-processing" "$OUT" "$ROOT"
+SIMCTL_CHILD_RAWLAB_MASTER_RECIPE_CATALOG="$ROOT/Shared/master-recipes.json" \
+    xcrun simctl spawn "$DEVICE" "$HARNESS/geometry-processing" "$OUT" "$ROOT" "$RAW"
 echo "Artifacts: $OUT"
