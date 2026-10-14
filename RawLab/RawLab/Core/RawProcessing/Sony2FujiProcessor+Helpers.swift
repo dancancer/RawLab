@@ -148,6 +148,15 @@ extension Sony2FujiProcessor {
         config.straighten_degrees = Float(settings.straightenDegrees)
         let status = sony2fuji_session_set_geometry(session, &config)
         guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
+        var perspective = sony2fuji_perspective_config()
+        perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
+        perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
+        perspective.horizontal = Float(settings.perspectiveHorizontal)
+        perspective.vertical = Float(settings.perspectiveVertical)
+        let perspectiveStatus = sony2fuji_session_set_perspective(session, &perspective)
+        guard perspectiveStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(statusMessage(perspectiveStatus))
+        }
     }
 
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {

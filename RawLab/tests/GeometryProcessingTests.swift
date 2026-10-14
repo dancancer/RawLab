@@ -58,6 +58,163 @@ struct GeometryProcessingTests {
         try (data as Data).write(to: url)
     }
 
+    static func same(_ first: Sony2FujiProcessor.Buffer, _ second: Sony2FujiProcessor.Buffer) -> Bool {
+        first.width == second.width && first.height == second.height &&
+            first.nativeSize == second.nativeSize && first.data == second.data
+    }
+
+    // =========================================================================
+    // Independent C setter reference catches omitted, swapped or signed axes.
+    // =========================================================================
+    static func perspectiveReference(_ source: Sony2FujiProcessor.Buffer, settings: RawSettings,
+                                     mode: sony2fuji_gpu_mode) throws -> Sony2FujiProcessor.Buffer {
+        let processor = Sony2FujiProcessor(gpuMode: mode)
+        let session = try processor.createSession()
+        defer { processor.destroySession(session) }
+        var neutralPerspective = settings
+        neutralPerspective.geometry.perspectiveHorizontal = 0
+        neutralPerspective.geometry.perspectiveVertical = 0
+        try processor.configureSession(session, settings: neutralPerspective, interactive: false)
+        var perspective = sony2fuji_perspective_config()
+        perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
+        perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
+        perspective.horizontal = Float(settings.geometry.perspectiveHorizontal)
+        perspective.vertical = Float(settings.geometry.perspectiveVertical)
+        check(sony2fuji_session_set_perspective(session, &perspective) == SONY2FUJI_STATUS_OK,
+              "direct C perspective reference accepts both axes")
+        var request = processor.makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_BUFFER)
+        request.input_type = SONY2FUJI_INPUT_BUFFER
+        request.input_width = UInt32(source.width)
+        request.input_height = UInt32(source.height)
+        request.input_pixel_format = source.pixelFormat
+        request.input_color_space = SONY2FUJI_COLOR_SRGB
+        processor.applySize(&request, width: request.input_width, height: request.input_height,
+                            previewLongEdge: nil, exportLongEdge: nil)
+        var output = sony2fuji_buffer()
+        defer { sony2fuji_release_buffer(&output) }
+        check(processor.processBuffer(session: session, request: &request, buffer: source,
+                                      lutPath: nil, outBuffer: &output) == SONY2FUJI_STATUS_OK,
+              "direct C perspective reference renders")
+        if mode == SONY2FUJI_GPU_AUTO {
+            check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+                  "active perspective reports CPU for the mixed Auto geometry result")
+        } else if mode == SONY2FUJI_GPU_FORCE {
+            check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL,
+                  "identity Force confirms Metal hardware is available")
+        }
+        var result = try processor.copyBuffer(output)
+        result.nativeSize = processor.geometrySize(session)
+        return result
+    }
+
+    static func perspectiveBuffers(_ source: Sony2FujiProcessor.Buffer, processor: Sony2FujiProcessor,
+                                   geometry: RawSettings, output: URL) throws {
+        _ = try perspectiveReference(source, settings: .default, mode: SONY2FUJI_GPU_FORCE)
+        for (horizontal, vertical) in [(0.5, 0.0), (0.0, -0.25), (0.5, -0.25)] {
+            var settings = RawSettings.default
+            settings.geometry.perspectiveHorizontal = horizontal
+            settings.geometry.perspectiveVertical = vertical
+            let final = try processor.processBuffer(buffer: source, settings: settings,
+                                                    previewLongEdge: nil, lutURL: nil)
+            let reference = try perspectiveReference(source, settings: settings, mode: SONY2FUJI_GPU_OFF)
+            check(same(final, reference), "iOS H=\(horizontal) V=\(vertical) matches direct C pixels and dimensions")
+            let edge = Int(floor(256 / (1 + 0.25 * (abs(horizontal) + abs(vertical)))))
+            check(final.width == edge && final.height == edge, "nonzero perspective uses the inscribed canvas")
+            let preview = try processor.processBuffer(buffer: source, settings: settings,
+                                                      previewLongEdge: CGFloat(edge), lutURL: nil,
+                                                      interactive: true, viewportPreview: true)
+            check(same(preview, final), "active perspective bypasses proxies and matches FINAL")
+            let auto = try perspectiveReference(source, settings: settings, mode: SONY2FUJI_GPU_AUTO)
+            check(auto.width == final.width && auto.height == final.height &&
+                  zip(auto.data, final.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 },
+                  "Auto and CPU perspective agree within two RGB8 values")
+        }
+        var combined = geometry
+        combined.geometry.perspectiveHorizontal = 0.5
+        combined.geometry.perspectiveVertical = -0.25
+        let final = try processor.processBuffer(buffer: source, settings: combined,
+                                                previewLongEdge: nil, lutURL: nil)
+        let reference = try perspectiveReference(source, settings: combined, mode: SONY2FUJI_GPU_OFF)
+        check(same(final, reference), "perspective preserves rotation, flip, straighten and crop")
+        let limited = try processor.processBuffer(buffer: source, settings: combined,
+                                                  previewLongEdge: nil, lutURL: nil, exportLongEdge: 48)
+        let dng = output.appendingPathComponent("perspective.dng")
+        try processor.exportDNG(buffer: source, settings: combined, lutURL: nil,
+                                outputURL: dng, exportLongEdge: 48)
+        check(try tiffDimensions(Data(contentsOf: dng)) == CGSize(width: limited.width, height: limited.height),
+              "DNG FINAL receives perspective with the same capped dimensions")
+        try frozenBatch(source, processor: processor, settings: combined, output: output, reference: limited)
+        try legacySettings(source, processor: processor, settings: geometry)
+    }
+
+    static func frozenBatch(_ buffer: Sony2FujiProcessor.Buffer, processor: Sony2FujiProcessor,
+                            settings: RawSettings, output: URL, reference: Sony2FujiProcessor.Buffer) throws {
+        var editable = settings
+        let url = output.appendingPathComponent("oriented.jpg")
+        let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
+                                         sourceURL: url, displayName: "source.jpg", sourceKind: .raster,
+                                         settings: editable)
+        let target = BatchTarget(identity: PhotoIdentity(resourceIdentifier: "target"),
+                                 sourceURL: url, displayName: "target.jpg", sourceKind: .raster)
+        let job = BatchExportJob(source: source, targets: [target], longEdge: 48)
+        let restored = try JSONDecoder().decode(BatchExportJob.self, from: JSONEncoder().encode(job))
+        editable.geometry = GeometrySettings()
+        check(restored.source.settings.geometry == settings.geometry &&
+              restored.source.settings.geometry != editable.geometry, "batch journal freezes both perspective axes")
+        var writes = 0
+        let completed = try BatchExportRunner.run(job: restored, journalStore: nil, render: { _, frozen in
+            let result = try processor.processBuffer(buffer: buffer, settings: frozen,
+                                                       previewLongEdge: nil, lutURL: nil, exportLongEdge: restored.longEdge)
+            check(same(result, reference), "batch FINAL renders the frozen perspective pixels")
+            return result.data
+        }, write: { _, _, _, _ in writes += 1 })
+        check(completed.status == .completed && writes == 1, "frozen perspective batch completes once")
+    }
+
+    static func legacySettings(_ source: Sony2FujiProcessor.Buffer, processor: Sony2FujiProcessor,
+                               settings: RawSettings) throws {
+        var document = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        var geometry = document["geometry"] as! [String: Any]
+        geometry.removeValue(forKey: "perspectiveHorizontal")
+        geometry.removeValue(forKey: "perspectiveVertical")
+        document["geometry"] = geometry
+        let old = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: document))
+        check(old.geometry == settings.geometry, "old records retain geometry and default both perspective axes to zero")
+        let legacy = try processor.processBuffer(buffer: source, settings: old, previewLongEdge: nil, lutURL: nil)
+        let explicit = try processor.processBuffer(buffer: source, settings: settings, previewLongEdge: nil, lutURL: nil)
+        check(same(legacy, explicit), "old geometry records retain their rendered pixels")
+    }
+
+    static func perspectiveRaw(_ url: URL, lensDatabase: URL) throws {
+        let processor = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: lensDatabase)
+        var settings = RawSettings.default
+        settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
+        settings.tint = 20
+        settings.lutStrength = 0.65
+        settings.geometry.perspectiveHorizontal = 0.5
+        settings.geometry.perspectiveVertical = -0.25
+        let preview = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128,
+                                               lutURL: nil, interactive: true, viewportPreview: true).buffer
+        let final = try processor.processRaw(url: url, settings: settings, previewLongEdge: nil,
+                                             lutURL: nil, exportLongEdge: 128).buffer
+        check(same(preview, final), "real RAW tinted recipe perspective preview equals FINAL after cold WB lookup")
+        settings.geometry = GeometrySettings()
+        let reset = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128, lutURL: nil).buffer
+        let fresh = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: lensDatabase)
+        let identity = try fresh.processRaw(url: url, settings: settings, previewLongEdge: 128, lutURL: nil).buffer
+        check(same(reset, identity), "reused RAW preview session resets both perspective axes to identity pixels")
+        check(preview.nativeSize != identity.nativeSize && preview.data != identity.data,
+              "nonzero RAW perspective changes canvas and pixels")
+        let auto = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_AUTO, lensDatabaseURL: lensDatabase)
+        settings.geometry.perspectiveHorizontal = 0.5
+        settings.geometry.perspectiveVertical = -0.25
+        let gpu = try auto.processRaw(url: url, settings: settings, previewLongEdge: 128,
+                                      lutURL: nil, interactive: true, viewportPreview: true).buffer
+        check(gpu.width == preview.width && gpu.height == preview.height && gpu.nativeSize == preview.nativeSize &&
+              zip(gpu.data, preview.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 },
+              "real RAW perspective Auto and CPU agree within two RGB8 values")
+    }
+
     static func main() throws {
         let output = URL(fileURLWithPath: CommandLine.arguments[1])
         let root = URL(fileURLWithPath: CommandLine.arguments[2])
@@ -129,5 +286,11 @@ struct GeometryProcessingTests {
               "iOS DNG stores the cropped geometry and final size cap")
         check(processor.makeUIImage(from: geometryFinal, orientation: .up)?.imageOrientation == .up,
               "iOS geometry preview does not apply EXIF orientation again")
+        try perspectiveBuffers(source, processor: processor, geometry: geometry, output: output)
+        if CommandLine.arguments.count > 3 && !CommandLine.arguments[3].isEmpty {
+            try perspectiveRaw(URL(fileURLWithPath: CommandLine.arguments[3]), lensDatabase: lensDatabase)
+        } else {
+            print("UNVERIFIED: real RAW perspective/session reset; pass RAWLAB_TEST_RAW or the third script argument")
+        }
     }
 }
