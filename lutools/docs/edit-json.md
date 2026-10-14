@@ -96,7 +96,37 @@ builds and the C header acquire no new dependency. Reusing a session requires
 resetting any other session-level effects; this first CLI path creates a fresh
 session per recipe.
 
-V1 intentionally covers the existing CLI loop. Capabilities, image inspection,
-structured command results/errors, previews and geometry follow in dependent
-PRs. Unsupported adjustment fields fail explicitly; they never become silent
+## Agent command results
+
+```sh
+sony2fuji --capabilities --json
+sony2fuji --recipe edit.json --print-recipe --json
+sony2fuji --recipe edit.json --json
+```
+
+`--json` emits one UTF-8 JSON document to stdout. Diagnostics use stderr.
+The result protocol has its own version, separate from the edit schema:
+
+```json
+{"protocol_version":1,"command":"export","ok":true,"result":{"output_path":"/photos/edited.jpg","format":"jpeg"},"error":null}
+```
+
+Failures return nonzero and `ok:false`, `result:null`, and an `error` object
+containing `code`, `message` and `status`. Native status values 1–6 map to
+`invalid_argument`, `unsupported`, `io_error`, `processing_error`, `out_of_memory`
+and `output_io_error`. `invalid_recipe` identifies a JSON schema/parser failure.
+Argument/parser failures have `status:null`; backend failures retain the actual
+native status. A backend error is never relabeled as success or another status.
+The existing DNG writer reports output storage failures as status 6; legacy
+JPEG/PNG encoding can report status 4 for such a failure. Results preserve that
+distinction. Paths in successful exports are absolute, without requiring symlink
+canonicalization.
+
+Capability results list only currently supported commands, recipe versions,
+input types, file formats and exposure modes. Querying requires no photo or
+configured service. Validation returns the normalized recipe without opening
+its source. Legacy rendering flags remain separate from recipe commands.
+
+Image inspection, previews and geometry follow in dependent PRs.
+Unsupported adjustment fields fail explicitly; they never become silent
 no-ops. New edit fields will require an updated supported schema version.
