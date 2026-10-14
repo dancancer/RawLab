@@ -195,6 +195,10 @@ struct CompactControlsPresentationTests {
                 .frame(width: 650, height: 200, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "grain-workspace-650", language: language, size: NSSize(width: 650, height: 200),
                 expectedFields: 3, output: output))
+            snapshots.append(try await snapshot(MasterRecipeDock(model: model)
+                .frame(width: 650, height: 124).background(Color(nsColor: .windowBackgroundColor)),
+                name: "recipes-workspace-650", language: language, size: NSSize(width: 650, height: 124),
+                expectedFields: 0, output: output))
             model.settings.setGeometry(.perspectiveHorizontal, to: 0.3)
             model.settings.setGeometry(.perspectiveVertical, to: -0.2)
             try await waitForRender(model)

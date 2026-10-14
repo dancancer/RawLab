@@ -9,7 +9,7 @@ struct MasterRecipeDock: View {
             // 留出水平滚动条的位置，避免覆盖底部文字。
             let height = max(54, geometry.size.height - 16)
             let showsSubtitle = height >= 90
-            let imageSize = max(32, min(96, height - (showsSubtitle ? 50 : 22)))
+            let imageSize = max(32, min(96, height - (showsSubtitle ? 64 : 36)))
             HorizontalPicker(selectedID: model.settings.masterRecipeID ?? "", name: L10n.text("大师配方")) {
                 HStack(spacing: 8) {
                     recipeButton(recipe: nil, imageSize: imageSize, height: height, showsSubtitle: showsSubtitle)
