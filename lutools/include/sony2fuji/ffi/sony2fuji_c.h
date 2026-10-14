@@ -205,6 +205,20 @@ typedef struct sony2fuji_hsl_config {
     float lightness[SONY2FUJI_HSL_CHANNELS];  // +/-0.5 display-HSL lightness.
 } sony2fuji_hsl_config;
 
+#define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
+typedef struct sony2fuji_geometry_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float crop_x;                // Normalized left; default 0.
+    float crop_y;                // Normalized top; default 0.
+    float crop_width;            // Positive normalized width; default 1.
+    float crop_height;           // Positive normalized height; default 1.
+    int32_t quarter_turns;       // 0..3 clockwise turns; default 0.
+    int32_t flip_horizontal;     // 0 or 1 in the rotated canvas; default 0.
+    int32_t flip_vertical;       // 0 or 1 in the rotated canvas; default 0.
+    float straighten_degrees;   // -45..45 clockwise; default 0.
+} sony2fuji_geometry_config;
+
 #define SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION 1u
 typedef struct sony2fuji_lens_correction_config {
     uint32_t version;
@@ -343,6 +357,29 @@ sony2fuji_status sony2fuji_session_set_photo_effects(
 // Force requires GPU success, as with the other photo adjustments.
 sony2fuji_status sony2fuji_session_set_hsl(
     sony2fuji_session* session, const sony2fuji_hsl_config* config
+);
+
+// Additive API; request v2 is unchanged. Identity is an exact bypass.
+// Already-oriented pixels rotate, flip, straighten within a centered same-aspect
+// canvas, then crop (floor start/ceil end) before request output resizing.
+// Crop coordinates refer to that transformed canvas. Invalid values preserve
+// the previous configuration. Normalized ends tolerate at most 1e-6 beyond
+// one for Float UI rounding and clamp to the canvas. Active geometry uses an
+// exact RAW source even for interactive/viewport previews. Geometry is CPU-only:
+// GPU Auto may render
+// color on GPU, but the mixed result reports CPU; Force returns UNSUPPORTED.
+sony2fuji_status sony2fuji_session_set_geometry(
+    sony2fuji_session* session, const sony2fuji_geometry_config* config
+);
+
+// Native canvas from the last successful process, after geometry and before
+// output resizing. Identity records the decoded input dimensions even when
+// its preview is reduced later. Active geometry always uses the exact source.
+// Successful geometry setters and every new process clear the previous size.
+// Failed processes, including output I/O failures, leave the size unavailable.
+// Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.
+sony2fuji_status sony2fuji_session_get_geometry_size(
+    const sony2fuji_session* session, uint32_t* width, uint32_t* height
 );
 
 // One-shot absolute user EV in [-4,4], not a delta from current exposure.

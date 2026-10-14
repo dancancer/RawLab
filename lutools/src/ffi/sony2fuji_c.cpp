@@ -8,6 +8,7 @@
 #include "core/wavelet_cache.h"
 #include "core/photo_effects.h"
 #include "core/photo_color.h"
+#include "core/photo_geometry.h"
 #include "core/photo_lut.h"
 #include "gpu/image_stats.h"
 #if defined(SONY2FUJI_ENABLE_D3D11)
@@ -44,6 +45,8 @@ struct sony2fuji_session {
     sony2fuji::WaveletDenoiseOptions wavelet_denoise;
     sony2fuji::PhotoEffectsOptions photo_effects;
     sony2fuji::HslOptions hsl;
+    sony2fuji::GeometryOptions geometry;
+    uint32_t geometry_width = 0, geometry_height = 0;
     sony2fuji::WaveletRenderCache wavelet_cache;
     sony2fuji::LensCorrectionOptions lens_correction;
     std::shared_ptr<sony2fuji::LensCorrectionDatabase> lens_database;
@@ -966,6 +969,33 @@ sony2fuji_status writeOutputBuffer(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status finishOutput(
+    sony2fuji_session* session,
+    const sony2fuji_request& request,
+    sony2fuji::ImageData& image,
+    sony2fuji_buffer* out_buffer,
+    uint32_t native_width,
+    uint32_t native_height
+) {
+    const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
+    if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
+    if (session->geometry.active()) {
+        session->last_backend = SONY2FUJI_BACKEND_CPU;
+        native_width = image.width; native_height = image.height;
+    }
+    uint32_t width, height;
+    const auto status = computeTargetSize(request, image.width, image.height, &width, &height);
+    if (status != SONY2FUJI_STATUS_OK) return status;
+    if (width != static_cast<uint32_t>(image.width) || height != static_cast<uint32_t>(image.height))
+        image = resizeBilinear(image, width, height);
+    const auto written = request.output_target == SONY2FUJI_TARGET_FILE ?
+        writeOutputFile(request, image) : writeOutputBuffer(request, image, out_buffer);
+    if (written == SONY2FUJI_STATUS_OK) {
+        session->geometry_width = native_width; session->geometry_height = native_height;
+    }
+    return written;
+}
+
 } // namespace
 
 sony2fuji_status sony2fuji_validate_look(
@@ -1220,6 +1250,37 @@ sony2fuji_status sony2fuji_session_set_hsl(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status sony2fuji_session_set_geometry(
+    sony2fuji_session* session, const sony2fuji_geometry_config* config
+) {
+    static_assert(sizeof(sony2fuji_geometry_config) == 40, "Geometry C ABI layout");
+    if (!session || !config || config->version != SONY2FUJI_GEOMETRY_CONFIG_VERSION ||
+        config->struct_size != sizeof(*config) || config->flip_horizontal < 0 ||
+        config->flip_horizontal > 1 || config->flip_vertical < 0 || config->flip_vertical > 1)
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji::GeometryOptions options{config->crop_x, config->crop_y,
+        config->crop_width, config->crop_height, config->quarter_turns,
+        config->flip_horizontal != 0, config->flip_vertical != 0, config->straighten_degrees};
+    if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    options.crop_width = std::min(options.crop_width, 1.0f - options.crop_x);
+    options.crop_height = std::min(options.crop_height, 1.0f - options.crop_y);
+    session->geometry = options;
+    session->geometry_width = session->geometry_height = 0;
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_get_geometry_size(
+    const sony2fuji_session* session, uint32_t* width, uint32_t* height
+) {
+    if (width) *width = 0;
+    if (height) *height = 0;
+    if (!session || !width || !height) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (session->geometry_width == 0 || session->geometry_height == 0)
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    *width = session->geometry_width; *height = session->geometry_height;
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status sony2fuji_session_estimate_auto_exposure(
     sony2fuji_session* session, const sony2fuji_request* request, float* exposure_ev
 ) {
@@ -1278,6 +1339,7 @@ static sony2fuji_status processImpl(
     if (!session) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
+    session->geometry_width = session->geometry_height = 0;
 
     sony2fuji_status status = validateRequest(request, out_buffer);
     if (status != SONY2FUJI_STATUS_OK) {
@@ -1299,14 +1361,17 @@ static sony2fuji_status processImpl(
     const bool waveletActive = session->wavelet_denoise.active();
     const bool effectsActive = session->photo_effects.active();
     const bool hslActive = session->hsl.active();
-    const bool viewportPreview = session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
+    const bool geometryActive = session->geometry.active();
+    if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    const bool viewportPreview = !geometryActive && session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
         local.output_target == SONY2FUJI_TARGET_BUFFER;
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool cpuOnlyStages = false;
 #else
     const bool cpuOnlyStages = hslActive || effectsActive || waveletActive || session->chroma_denoise != 0;
 #endif
-    const bool fastWavelet = waveletActive && !effectsActive && session->chroma_denoise == 0 && session->interactive_preview &&
+    const bool fastWavelet = !geometryActive && waveletActive && !effectsActive && session->chroma_denoise == 0 && session->interactive_preview &&
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
     if (cpuOnlyStages && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
@@ -1338,7 +1403,9 @@ static sony2fuji_status processImpl(
     sony2fuji_color_space color_space = SONY2FUJI_COLOR_SRGB;
     bool is_linear = false;
     if (local.input_type == SONY2FUJI_INPUT_RAW) {
-        status = loadRawImage(session, local, image, &color_space, &is_linear,
+        auto raw_request = local;
+        if (geometryActive) raw_request.intent = SONY2FUJI_INTENT_FINAL;
+        status = loadRawImage(session, raw_request, image, &color_space, &is_linear,
             !viewportPreview && (!gpuPipeline || waveletActive));
     } else {
         status = loadBufferImage(local, image, &color_space, &is_linear);
@@ -1347,6 +1414,7 @@ static sony2fuji_status processImpl(
     status = ensureLinear(image, color_space, &is_linear);
     if (status != SONY2FUJI_STATUS_OK) return status;
     if (color_space == SONY2FUJI_COLOR_SONY_NATIVE) return SONY2FUJI_STATUS_UNSUPPORTED;
+    const uint32_t native_width = image.width, native_height = image.height;
 
     if (viewportPreview) {
         uint32_t width, height;
@@ -1434,16 +1502,17 @@ static sony2fuji_status processImpl(
     }
 #if defined(SONY2FUJI_ENABLE_METAL)
     if (gpuPipeline) {
-        uint32_t width, height;
-        status = computeTargetSize(local, image.width, image.height, &width, &height);
-        if (status != SONY2FUJI_STATUS_OK) return status;
+        uint32_t width = image.width, height = image.height;
+        if (!geometryActive) {
+            status = computeTargetSize(local, image.width, image.height, &width, &height);
+            if (status != SONY2FUJI_STATUS_OK) return status;
+        }
         const auto& source = local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (sony2fuji::renderPhotoMetal(source, toCoreColorSpace(color_space), local, lut, wb, width, height, rendered,
-                dcp, session->photo_effects, session->chroma_denoise, waveletActive, session->hsl)) {
+                dcp, session->photo_effects, session->chroma_denoise, waveletActive || geometryActive, session->hsl)) {
             session->last_backend = SONY2FUJI_BACKEND_METAL;
-            if (local.output_target == SONY2FUJI_TARGET_FILE) return writeOutputFile(local, rendered);
-            return writeOutputBuffer(local, rendered, out_buffer);
+            return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         if (local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview) image = session->raw_cache;
@@ -1451,19 +1520,20 @@ static sony2fuji_status processImpl(
 #endif
 #if defined(SONY2FUJI_ENABLE_GLES)
     if (gpuPipeline) {
-        uint32_t width, height;
-        status = computeTargetSize(local, image.width, image.height, &width, &height);
-        if (status != SONY2FUJI_STATUS_OK) return status;
+        uint32_t width = image.width, height = image.height;
+        if (!geometryActive) {
+            status = computeTargetSize(local, image.width, image.height, &width, &height);
+            if (status != SONY2FUJI_STATUS_OK) return status;
+        }
         if (!session->gles_renderer) session->gles_renderer = std::make_unique<sony2fuji::GlesPhotoRenderer>();
         const bool raw = local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview;
         const auto& source = raw && !waveletActive ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (session->gles_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
                 width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
-                session->photo_effects, session->chroma_denoise, waveletActive, session->hsl)) {
+                session->photo_effects, session->chroma_denoise, waveletActive || geometryActive, session->hsl)) {
             session->last_backend = SONY2FUJI_BACKEND_GLES;
-            if (local.output_target == SONY2FUJI_TARGET_FILE) return writeOutputFile(local, rendered);
-            return writeOutputBuffer(local, rendered, out_buffer);
+            return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         if (raw && !waveletActive) image = session->raw_cache;
@@ -1471,26 +1541,27 @@ static sony2fuji_status processImpl(
 #endif
 #if defined(SONY2FUJI_ENABLE_D3D11)
     if (gpuPipeline) {
-        uint32_t width, height;
-        status = computeTargetSize(local, image.width, image.height, &width, &height);
-        if (status != SONY2FUJI_STATUS_OK) return status;
+        uint32_t width = image.width, height = image.height;
+        if (!geometryActive) {
+            status = computeTargetSize(local, image.width, image.height, &width, &height);
+            if (status != SONY2FUJI_STATUS_OK) return status;
+        }
         if (!session->d3d_renderer) session->d3d_renderer = std::make_unique<sony2fuji::D3D11PhotoRenderer>();
         const bool raw = local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview;
         const auto& source = raw && !waveletActive ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (session->d3d_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
                 width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
-                session->photo_effects, session->chroma_denoise, waveletActive, session->hsl)) {
+                session->photo_effects, session->chroma_denoise, waveletActive || geometryActive, session->hsl)) {
             session->last_backend = SONY2FUJI_BACKEND_D3D11;
-            if (local.output_target == SONY2FUJI_TARGET_FILE) return writeOutputFile(local, rendered);
-            return writeOutputBuffer(local, rendered, out_buffer);
+            return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         if (raw && !waveletActive) image = session->raw_cache;
     }
 #endif
     // A pixel-radius filter must run at source resolution for preview/export parity.
-    if (local.intent == SONY2FUJI_INTENT_PREVIEW && local.sharpening <= 0 && session->chroma_denoise == 0 && !effectsActive &&
+    if (!geometryActive && local.intent == SONY2FUJI_INTENT_PREVIEW && local.sharpening <= 0 && session->chroma_denoise == 0 && !effectsActive &&
         (!waveletActive || fastWavelet)) {
         uint32_t width, height;
         status = computeTargetSize(local, image.width, image.height, &width, &height);
@@ -1545,23 +1616,7 @@ static sony2fuji_status processImpl(
     applyDetailAdjustments(image, local);
     sony2fuji::applyPhotoEffects(image, session->photo_effects);
 
-    uint32_t target_width = static_cast<uint32_t>(image.width);
-    uint32_t target_height = static_cast<uint32_t>(image.height);
-    status = computeTargetSize(local, target_width, target_height, &target_width, &target_height);
-    if (status != SONY2FUJI_STATUS_OK) {
-        return status;
-    }
-
-    if (target_width != static_cast<uint32_t>(image.width) ||
-        target_height != static_cast<uint32_t>(image.height)) {
-        image = resizeBilinear(image, target_width, target_height);
-    }
-
-    if (local.output_target == SONY2FUJI_TARGET_FILE) {
-        return writeOutputFile(local, image);
-    }
-
-    return writeOutputBuffer(local, image, out_buffer);
+    return finishOutput(session, local, image, out_buffer, native_width, native_height);
 }
 
 sony2fuji_status sony2fuji_process(sony2fuji_session* session,

@@ -1,5 +1,6 @@
 #include "sony2fuji/edit_recipe.h"
 #include "nlohmann/json.hpp"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -52,6 +53,12 @@ uint32_t integer(const Json& value, uint32_t minimum, uint32_t maximum, const st
     return static_cast<uint32_t>(result);
 }
 
+int32_t boolean(const Json& object, const char* key, const std::string& path) {
+    if (!object.contains(key)) return 0;
+    if (!object.at(key).is_boolean()) throw std::invalid_argument(path + "." + key + " must be a boolean");
+    return object.at(key).get<bool>() ? 1 : 0;
+}
+
 const char* exposureName(sony2fuji_raw_exposure_mode mode) {
     switch (mode) {
         case SONY2FUJI_EXPOSURE_SCENE: return "scene";
@@ -89,15 +96,17 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         fields(root, "recipe", {"schema_version", "input", "edits", "output"});
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (version != 1) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version != 1 && version != 2) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
 
         EditRecipe parsed;
+        parsed.schemaVersion = version;
         const auto& input = required(root, "input", "recipe");
         fields(input, "input", {"path"});
         parsed.inputPath = text(required(input, "path", "input"), "input.path");
 
         const auto& edits = required(root, "edits", "recipe");
-        fields(edits, "edits", {"exposure", "white_balance", "look"});
+        if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
+        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
         const auto& exposure = required(edits, "exposure", "edits");
         fields(exposure, "edits.exposure", {"mode", "ev", "brightness"});
         const auto mode = text(required(exposure, "mode", "edits.exposure"), "edits.exposure.mode");
@@ -133,6 +142,33 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             parsed.lookStrength = number(look, "strength", 1, 0, 1, "edits.look");
         }
 
+        if (edits.contains("geometry")) {
+            const auto& geometry = edits.at("geometry");
+            const std::string geoPath = "edits.geometry";
+            fields(geometry, geoPath, {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees"});
+            auto& config = parsed.geometry;
+            if (geometry.contains("quarter_turns"))
+                config.quarter_turns = integer(geometry.at("quarter_turns"), 0, 3, geoPath + ".quarter_turns");
+            config.flip_horizontal = boolean(geometry, "flip_horizontal", geoPath);
+            config.flip_vertical = boolean(geometry, "flip_vertical", geoPath);
+            config.straighten_degrees = number(geometry, "straighten_degrees", 0, -45, 45, geoPath);
+            if (geometry.contains("crop")) {
+                const auto& crop = geometry.at("crop");
+                const std::string cropPath = geoPath + ".crop";
+                fields(crop, cropPath, {"x", "y", "width", "height"});
+                config.crop_x = number(crop, "x", 0, 0, 1, cropPath);
+                config.crop_y = number(crop, "y", 0, 0, 1, cropPath);
+                config.crop_width = number(crop, "width", 1, std::numeric_limits<float>::min(), 1, cropPath);
+                config.crop_height = number(crop, "height", 1, std::numeric_limits<float>::min(), 1, cropPath);
+                if (double(config.crop_x) + config.crop_width > 1 + 1e-6 ||
+                    double(config.crop_y) + config.crop_height > 1 + 1e-6 ||
+                    config.crop_x >= 1 || config.crop_y >= 1)
+                    throw std::invalid_argument(cropPath + " must fit inside the normalized canvas");
+                config.crop_width = std::min(config.crop_width, 1 - config.crop_x);
+                config.crop_height = std::min(config.crop_height, 1 - config.crop_y);
+            }
+        }
+
         const auto& output = required(root, "output", "recipe");
         fields(output, "output", {"path", "format", "jpeg_quality", "size"});
         parsed.outputPath = text(required(output, "path", "output"), "output.path");
@@ -165,6 +201,8 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
+    if (recipe.schemaVersion != 1 && recipe.schemaVersion != 2)
+        throw std::invalid_argument("Unsupported schema_version");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
         case SONY2FUJI_WB_CAMERA: wbMode = "camera"; break;
@@ -179,14 +217,22 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     }
     Json size = {{"mode", "native"}};
     if (recipe.outputLongEdge) size = {{"mode", "limit_long_edge"}, {"long_edge", recipe.outputLongEdge}};
-    return Json({{"schema_version", 1}, {"input", {{"path", recipe.inputPath}}},
+    Json document = {{"schema_version", recipe.schemaVersion}, {"input", {{"path", recipe.inputPath}}},
         {"edits", {{"exposure", {{"mode", exposureName(recipe.exposureMode)}, {"ev", recipe.exposureEv},
                                  {"brightness", recipe.brightness}}},
                    {"white_balance", wb},
                    {"look", {{"path", recipe.lookPath.empty() ? Json(nullptr) : Json(recipe.lookPath)},
                              {"strength", recipe.lookStrength}}}}},
         {"output", {{"path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)},
-                    {"jpeg_quality", recipe.jpegQuality}, {"size", size}}}}).dump(2) + "\n";
+                    {"jpeg_quality", recipe.jpegQuality}, {"size", size}}}};
+    if (recipe.schemaVersion == 2) {
+        const auto& geo = recipe.geometry;
+        document["edits"]["geometry"] = {{"crop", {{"x", geo.crop_x}, {"y", geo.crop_y},
+            {"width", geo.crop_width}, {"height", geo.crop_height}}}, {"quarter_turns", geo.quarter_turns},
+            {"flip_horizontal", geo.flip_horizontal != 0}, {"flip_vertical", geo.flip_vertical != 0},
+            {"straighten_degrees", geo.straighten_degrees}};
+    }
+    return document.dump(2) + "\n";
 }
 
 sony2fuji_request EditRecipe::toRequest() const {

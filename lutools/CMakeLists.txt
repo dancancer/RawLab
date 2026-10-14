@@ -153,6 +153,7 @@ set(CORE_SOURCES
     src/core/chroma_denoise.cpp
     src/core/wavelet_denoise.cpp
     src/core/photo_effects.cpp
+    src/core/photo_geometry.cpp
     src/core/photo_color.cpp
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
@@ -297,12 +298,28 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set(SONY2FUJI_TEST_LENS_WAVELET_RAW "" CACHE FILEPATH "External RAW with calibrated Lens and applied wavelet NR")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_LENS_WAVELET_RAW}" SONY2FUJI_TEST_LENS_WAVELET_RAW)
     find_package(Threads REQUIRED)
+    add_executable(photo_geometry_tests tests/photo_geometry_tests.cpp src/core/photo_geometry.cpp)
+    add_test(NAME photo_geometry COMMAND photo_geometry_tests)
+    add_executable(geometry_api_tests tests/geometry_api_tests.cpp)
+    target_link_libraries(geometry_api_tests sony2fuji_core)
+    add_test(NAME geometry_api COMMAND geometry_api_tests)
+    if(EXISTS "${SONY2FUJI_TEST_RAW}")
+        add_test(NAME geometry_raw COMMAND geometry_api_tests "${SONY2FUJI_TEST_RAW}")
+    endif()
     add_executable(edit_recipe_tests tests/edit_recipe_tests.cpp)
     target_link_libraries(edit_recipe_tests rawlab_edit_protocol)
     add_test(NAME edit_recipe COMMAND edit_recipe_tests)
+    add_executable(edit_recipe_geometry_tests tests/edit_recipe_geometry_tests.cpp)
+    target_link_libraries(edit_recipe_geometry_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe_geometry COMMAND edit_recipe_geometry_tests)
     if(BUILD_CLI)
         find_package(Python3 QUIET COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
+            add_test(NAME geometry_cli COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_geometry_cli.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+                --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME agent_preview COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_preview.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>

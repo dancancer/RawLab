@@ -5,9 +5,10 @@
 
 namespace sony2fuji {
 
-// JSON schema v1 is independent of the existing binary request v2.
+// JSON recipe versions are independent of the existing binary request v2.
 // Paths are UTF-8; callers resolve relative paths against the recipe directory.
 struct EditRecipe {
+    uint32_t schemaVersion = 1;
     std::string inputPath;
     std::string outputPath;
     std::string lookPath;
@@ -23,6 +24,9 @@ struct EditRecipe {
     uint32_t jpegQuality = 95;
     // Zero preserves source dimensions; otherwise a no-upscale pixel ceiling.
     uint32_t outputLongEdge = 0;
+    // v2: normalized crop after clockwise turns, flips and straightening.
+    sony2fuji_geometry_config geometry{SONY2FUJI_GEOMETRY_CONFIG_VERSION,
+        sizeof(sony2fuji_geometry_config), 0, 0, 1, 1, 0, 0, 0, 0};
 
     // String pointers borrow this recipe; keep it alive and unchanged while used.
     sony2fuji_request toRequest() const;
