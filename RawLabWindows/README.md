@@ -152,6 +152,17 @@ Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路�
 `-DSONY2FUJI_TEST_RAW=/path/to/sample.ARW`；未指定时跳过真实 RAW 相关测试。
 测试也生成 WPF 窗口截图供布局检查；人工使用时仍应检查不同显示缩放、多屏与大目录。
 
+空编辑器主窗口的关于回归不需要 RAW 或 native DLL，可在 Windows 上单独运行：
+
+```powershell
+dotnet build RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release
+dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --about
+```
+
+该入口覆盖打开、关闭、再次打开关于窗口，以及版本显示和六语刷新；使用临时更新设置，
+不写用户语言偏好。测试账户须没有待恢复的批量任务，否则测试会停止以保留原任务。
+`build.ps1 -Test` 也包含此回归。
+
 当前 Windows 回归还覆盖内嵌预览尺寸与方向、精确缓存上限及失效、预览不能启用导出、原尺寸几何和不重绘图像的平移。
 几何处理复用共享核心，依次执行旋转、翻转、居中内接拉直、归一化裁切，最后调整输出尺寸。
 裁切百分比以旋转和拉直后的画布为基准；超出边界的数值收回画布内。中性对比图使用同一套几何参数，原 RAW 保持不变。
