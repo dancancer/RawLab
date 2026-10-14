@@ -7,7 +7,9 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(\.locale) var localizationLocale
     @AppStorage(L10n.preferenceKey) var languagePreference = AppLanguage.system.rawValue
+    @AppStorage("rawlab.adjustmentHaptics.enabled") var adjustmentHapticsEnabled = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
     @State var settings = RawSettings.default
@@ -22,6 +24,13 @@ struct ContentView: View {
     @State var isImporting = false
     @State var isSaving = false
     @State var isAdjustingSlider = false
+    @State var rulerFocusPhase = RulerFocusPhase.idle
+    @State var rulerFocusTask: Task<Void, Never>?
+    @State var geometryDraft: GeometrySettings?
+    @State var geometryAspectPreset: CropAspectPreset = .free
+    @State var lensDraft: RawSettings?
+    @State var draftExitPresented = false
+    @State var pendingToolSelection: EditorToolSelection?
     @State var autoExposing = false
     @State var settingsRevision = UUID()
     @State var selectedPhotoItem: PhotosPickerItem?
@@ -35,7 +44,7 @@ struct ContentView: View {
     @State var singleExportFormat: BatchOutputFormat = .jpeg
     @State var fileExportRequest: FileExportRequest?
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
-    @ScaledMetric(relativeTo: .caption) var toolHeight = 82.0
+    @ScaledMetric(relativeTo: .caption) var toolHeight = 92.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
     @ScaledMetric(relativeTo: .body) var panelHeight = 256.0
 
@@ -43,25 +52,7 @@ struct ContentView: View {
         let _ = localizationLocale
         NavigationStack {
             GeometryReader { geometry in
-                let landscape = EditorLayoutPolicy.usesSidePanel(width: geometry.size.width, height: geometry.size.height,
-                                                                 accessibility: dynamicTypeSize.isAccessibilitySize)
-                let layout = landscape ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-                layout {
-                    previewSection
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if viewModel.hasImage && adjustmentsExpanded {
-                        Divider()
-                        ScrollView(.vertical) {
-                            adjustmentPanel
-                        }
-                        .accessibilityIdentifier("editor.panel")
-                        .frame(width: landscape ? min(360, geometry.size.width * 0.44) : nil,
-                               height: landscape ? nil : min(panelHeight + (geometrySelected ? 360 : lensSelected ? 220 : selectedAdjustment == nil ? 32 : selectedAdjustment == .hsl ? 120 : selectedAdjustment == .noiseReduction ? 80 : 0),
-                                                            geometry.size.height * 0.6))
-                        .background(Color(.secondarySystemBackground))
-                    }
-                }
-                .background(Color(.systemBackground))
+                editorWorkspace(size: geometry.size, accessibility: dynamicTypeSize.isAccessibilitySize)
             }
             .safeAreaInset(edge: .top) {
                 if let batchModel, !showingBatchExport {
@@ -98,13 +89,13 @@ struct ContentView: View {
             viewModel.queueSettingsSave(newValue)
             if isAdjustingSlider {
                 viewModel.schedulePreviewUpdate(
-                    settings: newValue,
+                    settings: draftPreviewSettings,
                     delay: 0.08,
                     includeHistogram: false,
                     quality: .interactive
                 )
             } else {
-                viewModel.updatePreview(settings: newValue, includeHistogram: true, quality: .final)
+                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
             }
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
@@ -118,6 +109,20 @@ struct ContentView: View {
                 viewModel.saveCurrentSettings(settings)
             }
             if phase == .background { batchModel?.cancel(forBackground: true) }
+            if phase != .active { cancelRulerFocus() }
+        }
+        .onChange(of: geometryDraft) { _, draft in
+            if draft != nil { previewEditorDraft() }
+        }
+        .onChange(of: lensDraft) { _, draft in
+            if draft != nil { previewEditorDraft() }
+        }
+        .onChange(of: viewModel.sourceRevision) { _, _ in
+            geometryDraft = nil
+            lensDraft = nil
+            pendingToolSelection = nil
+            draftExitPresented = false
+            cancelRulerFocus()
         }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy { isImporting = false }
@@ -133,6 +138,7 @@ struct ContentView: View {
         }
         .onChange(of: selectedAdjustment) { _, _ in
             if isAdjustingSlider { setSliderEditing(false) }
+            cancelRulerFocus()
         }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
@@ -168,6 +174,12 @@ struct ContentView: View {
                 viewModel.statusMessage = exported ? request.successMessage : request.cancelMessage
             }
         }
+        .confirmationDialog(L10n.text("未应用的调整"), isPresented: $draftExitPresented) {
+            Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
+            Button(L10n.text("放弃调整"), role: .destructive) { finishDraftNavigation(apply: false) }
+            Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }
+        }
+        .onDisappear { cancelRulerFocus() }
     }
 }
 

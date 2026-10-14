@@ -739,29 +739,37 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         let canvas = app.descendants(matching: .any)["editor.photo"]
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         canvas.doubleTap()
         XCTAssertEqual(canvas.value as? String, "100%")
         capture("photo-actual-pixels")
         app.buttons["editor.compare"].tap()
         XCTAssertEqual(canvas.value as? String, "100%")
         canvas.doubleTap()
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         canvas.pinch(withScale: 3, velocity: 1)
-        XCTAssertFalse((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertFalse(isFittedPhoto(canvas))
         canvas.swipeLeft()
         capture("photo-pinched-and-panned")
         canvas.doubleTap()
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         app.buttons["editor.adjustments"].tap()
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         canvas.doubleTap()
         XCTAssertEqual(canvas.value as? String, "100%")
         app.buttons["editor.adjustments"].tap()
         XCTAssertEqual(canvas.value as? String, "100%")
         capture("photo-actual-pixels-resized")
         importPhoto(in: app)
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
+    }
+
+    private func isFittedPhoto(_ canvas: XCUIElement) -> Bool {
+        guard let value = canvas.value as? String else { return false }
+        let parts = value.split(separator: " ")
+        guard parts.count > 1, let percentage = parts.last, percentage.hasSuffix("%"),
+              let number = Int(percentage.dropLast()), number >= 0 else { return false }
+        return parts.dropLast().joined(separator: " ").rangeOfCharacter(from: .letters) != nil
     }
 
     private func importPhoto(in app: XCUIApplication) {

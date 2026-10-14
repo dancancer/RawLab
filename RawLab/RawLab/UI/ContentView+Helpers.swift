@@ -245,9 +245,11 @@ extension ContentView {
     }
 
     func setSliderEditing(_ editing: Bool) {
+        let wasEditing = isAdjustingSlider
         isAdjustingSlider = editing
+        updateRulerFocus(editing: editing, wasEditing: wasEditing)
         if !editing {
-            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
+            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
         }
     }
 
