@@ -127,6 +127,23 @@ input types, file formats and exposure modes. Querying requires no photo or
 configured service. Validation returns the normalized recipe without opening
 its source. Legacy rendering flags remain separate from recipe commands.
 
-Image inspection, previews and geometry follow in dependent PRs.
+## Image information
+
+```sh
+sony2fuji --info photo.ARW --json
+```
+
+This reads LibRaw identification metadata without unpacking or developing RAW
+pixels. The result includes camera/lens, capture ISO/aperture/shutter, an absolute
+input path, DNG baseline exposure when the tag exists, and `identified_size`.
+Its `orientation` is LibRaw's flip code (0–7), not the EXIF Orientation number.
+These dimensions precede decoding, SDK Stage3 and user geometry;
+`rendered_size` remains `null`. An info success does not certify compressed
+pixel data or predict final output dimensions. Unavailable values use `null`;
+EXIF exposure bias and calibrated as-shot Kelvin/tint are currently unavailable.
+The input path is relative to the working directory. No recipe or output file
+is needed; mixing info with recipe/capability commands fails explicitly.
+
+Previews and geometry follow in dependent PRs.
 Unsupported adjustment fields fail explicitly; they never become silent
 no-ops. New edit fields will require an updated supported schema version.
