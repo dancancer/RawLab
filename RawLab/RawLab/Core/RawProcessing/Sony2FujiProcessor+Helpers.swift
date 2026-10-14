@@ -3,6 +3,39 @@ import Foundation
 import ImageIO
 import UIKit
 
+// =========================================================================
+// Immutable as-shot metadata, independent of the current render settings.
+// =========================================================================
+final class RecipeWhiteBalanceCache {
+    private struct Key: Equatable {
+        let url: URL
+        let size: Int
+        let modified: Date
+    }
+
+    private let lock = NSLock()
+    private var key: Key?
+    private var camera: Sony2FujiProcessor.RawWhiteBalance?
+
+    func resolve(url: URL, load: () throws -> Sony2FujiProcessor.RawWhiteBalance) throws -> Sony2FujiProcessor.RawWhiteBalance {
+        lock.lock()
+        defer { lock.unlock() }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        guard let size = (attributes?[.size] as? NSNumber)?.intValue,
+              let modified = attributes?[.modificationDate] as? Date else {
+            key = nil
+            camera = nil
+            return try load()
+        }
+        let next = Key(url: url.standardizedFileURL, size: size, modified: modified)
+        if key == next, let camera { return camera }
+        let loaded = try load()
+        key = next
+        camera = loaded
+        return loaded
+    }
+}
+
 extension Sony2FujiProcessor {
     func loadMetadata(from url: URL) throws -> ImageMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -123,9 +156,17 @@ extension Sony2FujiProcessor {
         if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
             return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
         }
-        // 相机基线必须来自本次目标 RAW，而非源照片的保存记录。
+        let camera = try recipeWhiteBalance.resolve(url: url) {
+            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode)
+        }
+        return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+    }
+
+    func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
+                               exposureMode: RawExposureMode) throws -> RawWhiteBalance {
+        // Read the target RAW once; saved recipe values are not its as-shot WB.
         var neutral = RawSettings.default
-        neutral.exposureMode = settings.exposureMode
+        neutral.exposureMode = exposureMode
         try configureSession(session, settings: neutral, interactive: false)
         var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)
         request.preview_long_edge = 32
@@ -135,7 +176,7 @@ extension Sony2FujiProcessor {
         guard status == SONY2FUJI_STATUS_OK, let camera = readRawWhiteBalance(from: session), camera.isCalibrated else {
             throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
         }
-        return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+        return camera
     }
 
     func makeBaseRequest(settings: RawSettings, inputType: sony2fuji_input_type) -> sony2fuji_request {

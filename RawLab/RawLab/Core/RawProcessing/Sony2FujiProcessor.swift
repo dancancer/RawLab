@@ -8,6 +8,7 @@ struct Sony2FujiProcessor {
     let gpuMode: sony2fuji_gpu_mode
     let lensDatabaseURL: URL?
     let lensCatalog = LensCatalogCache()
+    let recipeWhiteBalance = RecipeWhiteBalanceCache()
 
     init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil) {
         self.gpuMode = gpuMode
