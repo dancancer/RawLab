@@ -1,6 +1,6 @@
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
-#include "sony2fuji/edit_recipe.h"
+#include "agent_commands.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -8,8 +8,6 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
-#include <fstream>
 
 using namespace sony2fuji;
 
@@ -19,6 +17,8 @@ void printUsage(const char* programName) {
     std::cout << "用法:\n";
     std::cout << "  " << programName << " <输入RAW文件> -o <输出文件> [选项]\n\n";
     std::cout << "  " << programName << " --recipe <编辑JSON文件> [--print-recipe]\n";
+    std::cout << "  " << programName << " --capabilities --json\n";
+    std::cout << "  --json 输出结构化结果和错误 (与 --recipe 配合)\n";
     std::cout << "  --print-recipe 校验并输出补全默认值的配方，不处理图片\n\n";
     std::cout << "必需参数:\n";
     std::cout << "  <输入RAW文件>        Sony RAW 文件路径 (.ARW)\n";
@@ -189,48 +189,18 @@ int processRequest(const sony2fuji_request& request, sony2fuji_raw_exposure_mode
     return 0;
 }
 
-int runRecipe(int argc, char* argv[]) {
-    if (argc < 3 || argc > 4 || (argc == 4 && std::string(argv[3]) != "--print-recipe")) {
-        std::cerr << "Usage: " << argv[0] << " --recipe <file> [--print-recipe]\n";
-        return 1;
-    }
-    const auto path = std::filesystem::u8path(argv[2]);
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        std::cerr << "Cannot read recipe: " << argv[2] << '\n';
-        return 1;
-    }
-    // Read one byte past the protocol limit to reject oversized files early.
-    std::string document(1024 * 1024 + 1, '\0');
-    file.read(document.data(), static_cast<std::streamsize>(document.size()));
-    document.resize(static_cast<size_t>(file.gcount()));
-    if (file.bad()) {
-        std::cerr << "Cannot read recipe: " << argv[2] << '\n';
-        return 1;
-    }
-    EditRecipe recipe;
-    std::string error;
-    if (!parseEditRecipe(document, recipe, error)) {
-        std::cerr << "Invalid recipe: " << error << '\n';
-        return 1;
-    }
-    if (argc == 4) {
-        std::cout << serializeEditRecipe(recipe);
-        return 0;
-    }
-    // A recipe keeps the same meaning when invoked from another directory.
-    const auto directory = std::filesystem::absolute(path).parent_path();
-    auto resolve = [&](std::string& value) {
-        if (!value.empty()) value = (directory / std::filesystem::u8path(value)).lexically_normal().u8string();
-    };
-    resolve(recipe.inputPath);
-    resolve(recipe.outputPath);
-    resolve(recipe.lookPath);
-    return processRequest(recipe.toRequest(), recipe.exposureMode);
-}
-
 int main(int argc, char* argv[]) {
-    if (argc >= 2 && std::string(argv[1]) == "--recipe") return runRecipe(argc, argv);
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--json" || arg == "--capabilities" || (i == 1 && arg == "--recipe"))
+            return runAgentCommands(argc, argv);
+        // Legacy option values may themselves be filenames such as "--json".
+        if (arg == "-o" || arg == "--output" || arg == "-l" || arg == "--lut" ||
+            arg == "-q" || arg == "--quality" || arg == "--raw-exposure" ||
+            arg == "--exposure" || arg == "--brightness") {
+            if (i + 1 < argc) ++i;
+        }
+    }
     Options options;
 
     if (!parseArguments(argc, argv, options)) {
