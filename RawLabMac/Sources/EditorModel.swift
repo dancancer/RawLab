@@ -69,6 +69,7 @@ final class EditorModel: ObservableObject {
     private var workerActive = false
     private var engine: RenderEngine?
     private var originalCache: (file: URL, frame: RenderedImage)?
+    private var geometryReferenceCache: (file: URL, geometry: GeometrySettings, lens: LensCorrectionSettings, frame: RenderedImage)?
     private var editStore: EditPersistence?
     private let editDirectory: URL
     private let batchJournal: BatchJournal
@@ -412,7 +413,7 @@ final class EditorModel: ObservableObject {
             error = missingMasterRecipe ? L10n.text("大师配方外观文件不可用。") : L10n.text("上次使用的外观不可用，请重新选择或导入外观。")
             return
         }
-        let interactive = scheduler.interacting && !forceExact
+        let interactive = scheduler.interacting && !forceExact && settings.geometrySettings.isIdentity
         let effectiveLUT = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
         let work = RenderWork(file: file, settings: settings, lut: effectiveLUT,
                               edge: interactive || !fullResolution ? renderPreviewLongEdge : nil,
@@ -442,11 +443,24 @@ final class EditorModel: ObservableObject {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 if self.originalCache?.file != work.file {
                     self.originalCache = nil
+                    self.geometryReferenceCache = nil
                     if let original = try self.engine!.render(work.file, settings: Adjustments(), lut: nil, edge: nil) {
                         self.originalCache = (work.file, original)
                     }
                 }
-                let neutral = self.originalCache?.frame
+                let neutral: RenderedImage?
+                if work.settings.geometrySettings.isIdentity {
+                    neutral = self.originalCache?.frame
+                } else if let cached = self.geometryReferenceCache, cached.file == work.file,
+                          cached.geometry == work.settings.geometrySettings, cached.lens == work.settings.lensSettings {
+                    neutral = cached.frame
+                } else {
+                    neutral = try self.engine!.render(work.file, settings: work.settings.neutralGeometrySettings,
+                                                      lut: nil, edge: nil)
+                    if let neutral {
+                        self.geometryReferenceCache = (work.file, work.settings.geometrySettings, work.settings.lensSettings, neutral)
+                    }
+                }
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
                                                      edge: work.edge, output: nil,
                                                      interactive: work.pass == .interactive,

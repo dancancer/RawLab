@@ -378,3 +378,20 @@
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG Created, but the Task Record Was Not Updated. Verify the Saved File First.";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
+
+/* Basic geometry editing */
+"几何编辑" = "Geometry edits";
+"几何" = "Geometry";
+"裁切、旋转、翻转和拉直" = "Crop, rotate, flip and straighten";
+"水平翻转" = "Flip horizontal";
+"垂直翻转" = "Flip vertical";
+"重置几何编辑" = "Reset geometry edits";
+"向右旋转 90°" = "Rotate right 90°";
+"向左旋转 90°" = "Rotate left 90°";
+"裁切左边" = "Crop left";
+"裁切上边" = "Crop top";
+"裁切宽度" = "Crop width";
+"裁切高度" = "Crop height";
+"拉直" = "Straighten";
+"裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Crop position and size use a percentage of the canvas after rotation, flips and straightening.";
+"无效的几何参数" = "Invalid geometry parameters";

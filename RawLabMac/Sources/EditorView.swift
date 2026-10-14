@@ -72,6 +72,7 @@ struct EditorView: View {
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
         .onChange(of: model.file) { _, _ in fit() }
+        .onChange(of: model.settings.geometrySettings) { _, _ in pan = .zero }
         .task(id: model.file) {
             photoInformation = nil
             guard let file = model.file else { return }
@@ -289,8 +290,8 @@ struct EditorView: View {
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
-        PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.neutral?.image.width ?? frame.image.width,
-                    pan: $pan, clipping: showMask, sourceHeight: model.neutral?.image.height,
+        PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.result?.nativeWidth ?? model.neutral?.image.width ?? frame.image.width,
+                    pan: $pan, clipping: showMask, sourceHeight: model.result?.nativeHeight ?? model.neutral?.image.height,
                     onPreviewSizeChange: model.updatePreviewLongEdge)
             .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() })
             .accessibilityLabel(title)

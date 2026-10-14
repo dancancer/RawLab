@@ -52,6 +52,8 @@ struct RenderedImage {
     let asShotWhiteBalance: WhiteBalance?
     let supportsRawNoiseReduction: Bool
     var lensInfo: LensInfo? = nil
+    var nativeWidth: Int? = nil
+    var nativeHeight: Int? = nil
 }
 
 enum RenderError: LocalizedError {
@@ -125,6 +127,7 @@ final class RenderEngine {
 
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
         try configureLens(settings.lensSettings)
+        try configureGeometry(settings.geometrySettings)
         guard sony2fuji_session_set_raw_exposure_mode(session, settings.exposureMode.core) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的曝光基准"))
         }
@@ -170,10 +173,11 @@ final class RenderEngine {
             }
             settings.resolveWhiteBalance(camera)
         }
-        guard sony2fuji_session_set_interactive_preview(session, interactive && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
+        let allowsProxy = settings.geometrySettings.isIdentity
+        guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
         }
-        guard sony2fuji_session_set_viewport_preview(session, viewportPreview && edge != nil && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
+        guard sony2fuji_session_set_viewport_preview(session, viewportPreview && allowsProxy && edge != nil && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的视口预览模式"))
         }
         guard sony2fuji_session_set_raw_exposure_mode(session, settings.exposureMode.core) == SONY2FUJI_STATUS_OK else {
@@ -185,6 +189,7 @@ final class RenderEngine {
             throw RenderError.failed(L10n.text("无效的 HSL 参数"))
         }
         try configureLens(settings.lensSettings)
+        try configureGeometry(settings.geometrySettings)
         let wavelet = settings.waveletNoiseReduction
         var effectsConfig = settings.photoEffectsConfig
         guard sony2fuji_session_set_photo_effects(session, &effectsConfig) == SONY2FUJI_STATUS_OK else {
@@ -275,6 +280,10 @@ final class RenderEngine {
         let cameraWhiteBalance = calibrated ? WhiteBalance(temperature: Double(temperature).rounded(), tint: Double(tint).rounded()) : nil
         whiteBalanceCache = key.map { ($0, cameraWhiteBalance) }
         let width = Int(buffer.width), height = Int(buffer.height)
+        var nativeWidth: UInt32 = 0, nativeHeight: UInt32 = 0
+        guard sony2fuji_session_get_geometry_size(session, &nativeWidth, &nativeHeight) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的几何参数"))
+        }
         let data = Data(bytes: pointer, count: buffer.size_bytes)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let bitmap = CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue)
@@ -297,7 +306,26 @@ final class RenderEngine {
         return RenderedImage(image: image, isFullResolution: edge == nil, clipping: mask, histogram: histogram,
             shadows: Double(black)/Double(width*height), highlights: Double(white)/Double(width*height),
             baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance,
-            supportsRawNoiseReduction: noiseReductionSupported == 1, lensInfo: lensInfo(for: url))
+            supportsRawNoiseReduction: noiseReductionSupported == 1, lensInfo: lensInfo(for: url),
+            nativeWidth: Int(nativeWidth), nativeHeight: Int(nativeHeight))
+    }
+
+    private func configureGeometry(_ settings: GeometrySettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的几何参数")) }
+        var config = sony2fuji_geometry_config()
+        config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)
+        config.crop_x = Float(settings.cropX)
+        config.crop_y = Float(settings.cropY)
+        config.crop_width = Float(settings.cropWidth)
+        config.crop_height = Float(settings.cropHeight)
+        config.quarter_turns = Int32(settings.quarterTurns)
+        config.flip_horizontal = settings.flipHorizontal ? 1 : 0
+        config.flip_vertical = settings.flipVertical ? 1 : 0
+        config.straighten_degrees = Float(settings.straightenDegrees)
+        guard sony2fuji_session_set_geometry(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的几何参数"))
+        }
     }
 
     private func configureLens(_ lens: LensCorrectionSettings) throws {

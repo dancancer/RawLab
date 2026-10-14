@@ -23,9 +23,18 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         hsl.set(.saturation, channel: 5, value: -65)
         settings.hsl = hsl
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        settings.setGeometry(.cropWidth, to: 0.6)
+        settings.setGeometry(.cropX, to: 0.2)
+        settings.setGeometry(.cropHeight, to: 0.75)
+        settings.rotateGeometry(clockwise: true)
+        settings.flipGeometry(horizontal: true)
+        settings.setGeometry(.straightenDegrees, to: 4.5)
+        let frozenGeometry = settings.geometrySettings
         var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Velvia")
         job.longEdge = 2048
         let encodedJob = try JSONEncoder().encode(job)
+        try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).settings.geometrySettings == frozenGeometry,
+                  "batch journal round-trip preserves geometry")
         var dngRecord = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
         dngRecord["outputFormat"] = "dng"
         dngRecord["version"] = 2
@@ -89,6 +98,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(job.items.allSatisfy { !$0.selected }, "candidates start unselected")
         for index in job.items.indices { job.items[index].selected = true }
         settings.exposure = -1
+        settings.reset(.geometry)
         settings.hsl = nil
         settings.exposureMode = .scene
         settings.lensCorrection = LensCorrectionSettings(distortion: true, mode: .manual, profileID: "live-profile")
@@ -115,6 +125,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) { input, snapshot, _, destination in
             calls.append(input.lastPathComponent)
             try check(snapshot.exposure == 0.75, "snapshot must not follow live edits")
+            try check(snapshot.geometrySettings == frozenGeometry, "batch freezes crop, rotation, flips and straightening")
             try check(snapshot.lensSettings == LensCorrectionSettings(distortion: true, tca: true) && snapshot.lensSettings.coreProfileID.isEmpty,
                       "batch freezes automatic mode, not a resolved source lens")
             try check(snapshot.waveletSettings == WaveletDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100), "batch keeps frozen denoise settings")

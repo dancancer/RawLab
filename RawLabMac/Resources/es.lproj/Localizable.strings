@@ -378,3 +378,20 @@
 "渲染型 DNG 未生成。" = "No se creó el DNG renderizado.";
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "Se creó el DNG, pero no se actualizó el registro de la tarea. Verifique primero el archivo guardado.";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
+
+/* Basic geometry editing */
+"几何编辑" = "Edición de geometría";
+"几何" = "Geometría";
+"裁切、旋转、翻转和拉直" = "Recortar, girar, voltear y enderezar";
+"水平翻转" = "Voltear horizontalmente";
+"垂直翻转" = "Voltear verticalmente";
+"重置几何编辑" = "Restablecer geometría";
+"向右旋转 90°" = "Girar 90° a la derecha";
+"向左旋转 90°" = "Girar 90° a la izquierda";
+"裁切左边" = "Borde izquierdo";
+"裁切上边" = "Borde superior";
+"裁切宽度" = "Ancho del recorte";
+"裁切高度" = "Alto del recorte";
+"拉直" = "Enderezar";
+"裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "La posición y el tamaño del recorte se expresan como porcentaje del lienzo tras girarlo, voltearlo y enderezarlo.";
+"无效的几何参数" = "Parámetros de geometría no válidos";

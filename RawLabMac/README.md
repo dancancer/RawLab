@@ -148,6 +148,9 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 每项支持滑杆、直接输入数字、单项重置；另有分组和全部调整重置。黄色进度环以默认值为起点，正向顺时针、负向逆时针，两侧按各自可调范围归一化。重置不会更换当前 RAW 或选中的 LUT。
 
   Each adjustment has a slider, numeric input and individual reset, alongside group/global resets. Yellow rings start at the default: positive values fill clockwise, negative values counterclockwise, normalized separately for each side of the range. Resets do not change the RAW or selected LUT.
+- 几何工具支持左右 90° 旋转、水平/垂直翻转、±45° 拉直，以及按百分比输入裁切左边、上边、宽度和高度。顺序为旋转、翻转、中心内接拉直、裁切；参数随编辑记录保存，并冻结到批量任务。旧记录保持完整画布。开启几何编辑后，预览使用完整质量处理再缩小，原图对比使用同一几何画布；100% 显示和导出由共享核心报告的成片尺寸驱动。几何阶段目前使用 CPU，GPU Auto 正常回退，Force 明确拒绝不支持的几何加速。
+
+  Geometry tools provide left/right 90° rotation, horizontal/vertical flips, ±45° straightening, and percentage crop left/top/width/height. The order is rotation, flips, centered inscribed straightening, then crop. Edits persist and batch jobs freeze them; older records retain the full canvas. Active geometry previews process at full quality before resizing, with the original comparison aligned to the same canvas. Native output dimensions drive 100% display and export. Geometry currently uses CPU; GPU Auto falls back and Force reports unsupported acceleration.
 - 每张照片的参数和胶片选择在本机自动保存，重开同一原始文件可恢复；新照片使用默认调整。保存失败可重试，不写回 RAW，也不创建 sidecar。
 
   Per-photo adjustments and look identities persist locally across launches. New photos start with defaults; failed saves are retryable. No RAW modifications or sidecars are created.
