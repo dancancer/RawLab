@@ -37,6 +37,7 @@ public partial class MainWindow
     }
     private void MasterRecipeCategoryClicked(object sender, RoutedEventArgs e)
     {
+        CancelGeometryDraft();
         choosingRecipes = true; choosingFilm = choosingDenoise = choosingPhotoEffects = choosingHsl = choosingLens = choosingGeometry = false; RefreshControls();
     }
     private void RecipeScrollLeftClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset - RecipeScroller.ViewportWidth * .8);

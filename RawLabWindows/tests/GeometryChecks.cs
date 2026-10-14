@@ -7,6 +7,10 @@ internal static class GeometryChecks
 {
     internal static void Run(string repo, string raw, Action<bool, string> check)
     {
+        check(System.Runtime.InteropServices.Marshal.SizeOf<Native.GeometryConfig>() == 40 &&
+              System.Runtime.InteropServices.Marshal.SizeOf<Native.PerspectiveConfig>() == 16 &&
+              new GeometrySettings().NativePerspectiveConfig() is { Version: 1, StructSize: 16, Horizontal: 0, Vertical: 0 },
+            "Perspective uses its additive 16-byte configuration beside the unchanged geometry ABI");
         var originalHash = SHA256.HashData(File.ReadAllBytes(raw));
         using var engine = new RenderEngine(0, Path.Combine(repo, "lutools", "third_party", "lensfun", "version_1"));
         var settings = new Adjustments();
@@ -22,7 +26,16 @@ internal static class GeometryChecks
         check(Pixels(original.Image).SequenceEqual(Pixels(engine.Render(raw, settings, null, 0, clipping: false)!.Image)),
             "Returning to identity replaces the complete session geometry");
 
-        settings.Geometry = new(.2, .1, .6, .8, 1, true, false, 12.5);
+        settings.Geometry = new(PerspectiveHorizontal: .4, PerspectiveVertical: -.25);
+        var perspectiveOnly = engine.Render(raw, settings, null, 0, clipping: false)!;
+        check(perspectiveOnly.NativeWidth > 0 && perspectiveOnly.NativeHeight > 0 &&
+              !Pixels(original.Image).SequenceEqual(Pixels(perspectiveOnly.Image)),
+            "Perspective alone activates native geometry and changes the output");
+        settings.Geometry = new();
+        check(Pixels(original.Image).SequenceEqual(Pixels(engine.Render(raw, settings, null, 0, clipping: false)!.Image)),
+            "Reset sends zero perspective and restores exact identity pixels");
+
+        settings.Geometry = new(.2, .1, .6, .8, 1, true, false, 12.5, .35, -.2);
         var exact = engine.Render(raw, settings, null, 256, clipping: false)!;
         var interactive = engine.Render(raw, settings, null, 256, interactive: true, clipping: false, viewportPreview: true)!;
         check(exact.NativeWidth == interactive.NativeWidth && exact.NativeHeight == interactive.NativeHeight &&
@@ -37,9 +50,17 @@ internal static class GeometryChecks
             "Reference comparison uses the edited geometry canvas");
         check(ReferenceEquals(frame, engine.RenderPreview(raw, settings, null, 256, false, true, false)),
             "Unchanged geometry reuses its exact preview");
+        settings.Geometry = settings.Geometry with { PerspectiveHorizontal = -.15 };
+        var horizontalChanged = engine.RenderPreview(raw, settings, null, 256, false, true, false);
+        check(!ReferenceEquals(frame, horizontalChanged) && !ReferenceEquals(frame.Neutral, horizontalChanged.Neutral),
+            "Horizontal perspective invalidates edited and reference caches");
+        settings.Geometry = settings.Geometry with { PerspectiveVertical = .1 };
+        var verticalChanged = engine.RenderPreview(raw, settings, null, 256, false, true, false);
+        check(!ReferenceEquals(horizontalChanged, verticalChanged) && !ReferenceEquals(horizontalChanged.Neutral, verticalChanged.Neutral),
+            "Vertical perspective invalidates edited and reference caches");
         settings.Geometry = settings.Geometry with { FlipVertical = true };
         var changed = engine.RenderPreview(raw, settings, null, 256, false, true, false);
-        check(!ReferenceEquals(frame, changed) && !ReferenceEquals(frame.Neutral, changed.Neutral),
+        check(!ReferenceEquals(verticalChanged, changed) && !ReferenceEquals(verticalChanged.Neutral, changed.Neutral),
             "Geometry changes invalidate edited and reference caches");
         settings.Geometry = new();
         var reset = engine.RenderPreview(raw, settings, null, 256, false, true, false);

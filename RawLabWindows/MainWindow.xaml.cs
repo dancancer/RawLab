@@ -16,7 +16,7 @@ namespace RawLab.Windows;
 public partial class MainWindow : Window
 {
     private record Film(string Name,string? Path,string? Artwork);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long GeometryGeneration);
     private readonly Library library=new();
     private readonly Viewport viewport=new();
     private readonly List<Film> films=[];
@@ -60,7 +60,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         void RefreshLanguage()
         {
-            Tools.Children.Clear(); toolButtons.Clear();
+            foreach(var button in toolButtons.Values.Select(item=>item.Button).Concat(effectToolButtons.Values.Select(item=>item.Button)).ToArray())
+                Tools.Children.Remove(button);
+            toolButtons.Clear(); effectToolButtons.Clear();
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
             BuildTools(); BuildFilms(); BuildMasterRecipes(); HslEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu();
@@ -117,10 +119,11 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting)return;
             settings.Lens=value;RefreshControls();MarkEdited();Schedule();
         };
-        GeometryEditor.Changed+=(value,dragging)=>{
-            if(!ready || syncing || exporting)return;
-            settings.Geometry=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
-        };
+        GeometryEditor.Changed += UpdateGeometryDraft;
+        GeometryEditor.ApplyRequested += ApplyGeometryDraft;
+        GeometryEditor.CancelRequested += () => CancelGeometryDraft();
+        GeometryEditor.GridChanged += RefreshCropOverlay;
+        ResultCanvas.CropChanged += rect => UpdateGeometryDraft(CropInteraction.Applying(rect, geometrySession.Draft), false);
         ValueSlider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{interacting=true;}));
         ValueSlider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{interacting=false; Schedule();}));
         ready=true; RefreshControls();
@@ -151,7 +154,7 @@ public partial class MainWindow : Window
             var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=Loc.Text(spec.Title),FontSize=11,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
             AutomationProperties.SetName(button,Loc.Text(spec.Title));
-            button.Click+=(_,_)=>{choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
+            button.Click+=(_,_)=>{CancelGeometryDraft();choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
         foreach(var (tool,title,icon) in new[] {
@@ -164,15 +167,15 @@ public partial class MainWindow : Window
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? Loc.Text("Vignette / 暗角") : Loc.Text("Grain / 颗粒")};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
-            button.Click+=(_,_)=>{if(exporting)return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
+            button.Click+=(_,_)=>{if(exporting)return;CancelGeometryDraft();choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
     }
-    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void HslCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=false;choosingHsl=true;choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void LensCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=false;choosingHsl=false;choosingLens=true;choosingGeometry=false;choosingFilm=choosingDenoise=choosingPhotoEffects=false;RefreshControls(); }
-    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=choosingHsl=choosingLens=choosingFilm=choosingDenoise=choosingPhotoEffects=false;choosingGeometry=true;RefreshControls(); }
+    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { CancelGeometryDraft();choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { CancelGeometryDraft();choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void HslCategoryClicked(object sender,RoutedEventArgs e) { CancelGeometryDraft();choosingRecipes=false;choosingHsl=true;choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void LensCategoryClicked(object sender,RoutedEventArgs e) { CancelGeometryDraft();choosingRecipes=false;choosingHsl=false;choosingLens=true;choosingGeometry=false;choosingFilm=choosingDenoise=choosingPhotoEffects=false;RefreshControls(); }
+    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) => BeginGeometryDraft();
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear();
@@ -219,9 +222,9 @@ public partial class MainWindow : Window
             LensCategory.Tag=choosingLens ? "selected" : null;
             LensCategoryRing.Selected=choosingLens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
             GeometrySurface.Visibility=choosingGeometry ? Visibility.Visible : Visibility.Collapsed;
-            GeometryEditor.IsEnabled=file!=null && !exporting;GeometryEditor.Refresh(settings.Geometry);
+            GeometryEditor.IsEnabled=file!=null && !exporting;GeometryEditor.Refresh(geometrySession.IsActive ? geometrySession.Draft : settings.Geometry);
             GeometryCategory.IsEnabled=file!=null && !exporting;GeometryCategory.Tag=choosingGeometry ? "selected" : null;
-            GeometryCategoryRing.Selected=choosingGeometry;GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
+            GeometryCategoryRing.Selected=choosingGeometry;GeometryCategoryRing.Progress=(geometrySession.IsActive ? geometrySession.Draft : settings.Geometry).IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
             HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
             HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);
             HslCategory.Tag=choosingHsl ? "selected" : null;
@@ -246,9 +249,9 @@ public partial class MainWindow : Window
                 controls.Ring.InvalidateVisual();
             }
             ExposureMode.SelectedIndex=settings.ExposureMode;
-            ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
+            ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting && !geometrySession.IsActive;
             ResetParameterButton.IsEnabled=ResetGroupButton.IsEnabled=canAdjust;
-            AsShotButton.IsEnabled=file!=null && !exporting && settings.AsShot!=null;
+            AsShotButton.IsEnabled=file!=null && !exporting && !geometrySession.IsActive && settings.AsShot!=null;
             foreach(var (id,controls) in toolButtons)
             {
                 var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingLens && !choosingGeometry && id==selectedParameter;
@@ -260,7 +263,7 @@ public partial class MainWindow : Window
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
             var filmName=settings.Recipe?.Name ?? films.FirstOrDefault(f=>f.Path==lut)?.Name ?? Loc.Text("中性");
             ActiveFilm.Text=filmName;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : filmName;ActiveFilm.ToolTip=filmName;
-            NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
+            NeutralLabel.Visibility=FilmLabel.Visibility=compare && !geometrySession.IsActive && result!=null ? Visibility.Visible : Visibility.Collapsed;
             CompareButton.Tag=compare ? "selected" : null;
             ClippingButton.Tag=clipping ? "selected" : null;
             InfoButton.Tag=photoInfoMode == PhotoInfoMode.Hidden ? null : "selected";
@@ -274,13 +277,14 @@ public partial class MainWindow : Window
     private static SolidColorBrush Brush(string color)=>(SolidColorBrush)new BrushConverter().ConvertFromString(color)!;
     private void UpdateBusy()
     {
-        ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable;
+        ZoomButton.IsEnabled=CompareButton.IsEnabled=!geometrySession.IsActive;
+        ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=!geometrySession.IsActive && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable;
         ViewBatchMenu.IsEnabled=CurrentBatch!=null;
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting;
         BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
-        ExportButton.ToolTip=file==null ? Loc.Text("打开 RAW 照片后导出") : scheduler.Busy ? Loc.Text("精确预览完成后可导出") : Loc.Text("导出照片（尺寸可选）");
+        ExportButton.ToolTip=geometrySession.IsActive ? Loc.Text("先应用或取消几何调整，再导出。") : file==null ? Loc.Text("打开 RAW 照片后导出") : scheduler.Busy ? Loc.Text("精确预览完成后可导出") : Loc.Text("导出照片（尺寸可选）");
         ToolTipService.SetShowOnDisabled(ExportButton,true);
         ToolTipService.SetShowOnDisabled(ExportJpeg,true);ToolTipService.SetShowOnDisabled(ExportPng,true);ToolTipService.SetShowOnDisabled(ExportDng,true);
     }
@@ -304,7 +308,8 @@ public partial class MainWindow : Window
         {
             path=Path.GetFullPath(path);
             if(!LibraryEntry.IsRaw(path))throw new InvalidOperationException(Loc.Text("请选择支持的 RAW 文件。"));
-            if(!SaveEdits())return;
+            CancelGeometryDraft(false);
+            if(!SaveEdits()){if(geometryRenderPending)Schedule();return;}
             RestoreEdits(path);
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;
             file=path; interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
@@ -360,7 +365,7 @@ public partial class MainWindow : Window
         catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
         var current=embeddedScheduler.Finish(ticket);
         if(closing)return;
-        if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && settings.Geometry.IsIdentity)
+        if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && !geometrySession.IsActive && settings.Geometry.IsIdentity)
         {
             if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
             if(result==null && !renderFailed && preview.Image!=null)
@@ -392,7 +397,9 @@ public partial class MainWindow : Window
         if(!LookAvailable){exactReady=false;result=null;renderFailed=true;SetStatus(() => Loc.Text("上次使用的外观不可用，请重新导入或选择外观。"),true);UpdateBusy();return;}
         renderFailed=false;
         var proxy=interacting || initialPreview;
-        scheduler.Submit(new(file,settings.Clone(),lut,RenderEdge(proxy),proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,compare,clipping,initialPreview));
+        if(!geometrySession.IsActive)geometryRenderPending=false;
+        var renderSettings=settings.Clone(); renderSettings.Geometry=PreviewGeometry;
+        scheduler.Submit(new(file,renderSettings,lut,RenderEdge(proxy),proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,compare,clipping,initialPreview,geometryGeneration));
         exactReady=false; SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…")); UpdateBusy();
         Pump();
     }
@@ -413,7 +420,7 @@ public partial class MainWindow : Window
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         // A current-file proxy may publish while dragging; stale exact work never publishes.
-        if(work.File==file && work.Lut==lut && work.Settings.Geometry==settings.Geometry && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
+        if(work.File==file && work.Lut==lut && work.GeometryGeneration==geometryGeneration && work.Settings.Geometry==PreviewGeometry && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
             if(failure!=null) { if(current){result=null;exactReady=false;renderFailed=true;Report(failure);} }
             else if(rendered!=null && neutral!=null)
@@ -423,6 +430,11 @@ public partial class MainWindow : Window
                 syncing=true;
                 try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }
                 finally { syncing=false; }
+                if (geometrySession.IsActive) {
+                    geometryPreviewReady=true;
+                    GeometryEditor.SetCanvasSize(rendered.NativeWidth,rendered.NativeHeight);
+                    RefreshCropOverlay();
+                }
                 renderedGpuMode=work.GpuMode;
                 NeutralCanvas.SetImage(neutral.Image,neutral.Clipping); ResultCanvas.SetImage(rendered.Image,rendered.Clipping);
                 ResultCanvas.SetComparison(neutral.Image,neutral.Clipping);
@@ -435,7 +447,7 @@ public partial class MainWindow : Window
             }
         }
         // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
-        if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
+        if(current && work.GeometryGeneration==geometryGeneration && work.Refine && failure==null && work.File==file && !interacting)Schedule();
         UpdateBusy(); Pump();
     }
     private void SliderChanged(object sender,RoutedPropertyChangedEventArgs<double> e)
@@ -571,7 +583,7 @@ public partial class MainWindow : Window
         RemoveRootMenu.IsEnabled=isRoot; RefreshRootMenu.IsEnabled=isRoot;
         ApplyTreeEntryMenu.IsEnabled=CanApplyCurrentSettings;
     }
-    private bool CanApplyCurrentSettings => file != null && result != null && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && LookAvailable;
+    private bool CanApplyCurrentSettings => !geometrySession.IsActive && file != null && result != null && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && LookAvailable;
     private void PhotoContextMenuOpened(object sender, RoutedEventArgs e)
     {
         if(sender is not ContextMenu menu) return;
@@ -661,7 +673,7 @@ public partial class MainWindow : Window
         var entry=ResolveContextEntry(sender);
         if (entry == null || string.IsNullOrEmpty(entry.Path)) return;
         if (file == null) { SetStatus(() => Loc.Text("请先打开一张照片作为调整来源。"),true); return; }
-        if (exporting || scheduler.Busy || previewResize.IsEnabled || !exactReady || result == null)
+        if (geometrySession.IsActive || exporting || scheduler.Busy || previewResize.IsEnabled || !exactReady || result == null)
         {
             SetStatus(() => Loc.Text("精确显影完成后才能应用当前设置。"),true); return;
         }
@@ -720,8 +732,9 @@ public partial class MainWindow : Window
     private void CompareOffClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(false,false);
     private void CompareSideClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,false);
     private void CompareSwipeClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,true);
-    internal void SetComparisonMode(bool enabled,bool sliding)
+    internal void SetComparisonMode(bool enabled,bool sliding,bool render=true)
     {
+        if (geometrySession.IsActive) return;
         var changed=compare!=enabled;
         compare=enabled;swipe=enabled && sliding;
         NeutralCanvas.Visibility=compare && !swipe ? Visibility.Visible : Visibility.Collapsed;
@@ -732,12 +745,13 @@ public partial class MainWindow : Window
         FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
         CompareOff.IsChecked=!enabled;CompareSide.IsChecked=enabled && !sliding;CompareSwipe.IsChecked=swipe;
         RefreshControls();
-        if(changed)Schedule();
+        if(changed && render)Schedule();
     }
-    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
+    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=geometrySession.IsActive ? Loc.Text("拖动四角调整裁切，拖动框内移动。") : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
     private void DockToggle(object sender,RoutedEventArgs e)
     {
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
+        if(visible)CancelGeometryDraft();
         if(visible)dockHeight=DockRow.ActualHeight;
         AdjustmentPanel.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
         DockRow.MinHeight=visible ? 0 : 216; DockRow.Height=new(visible ? 0 : dockHeight);SplitterRow.Height=new(visible ? 0 : 6);
@@ -753,11 +767,15 @@ public partial class MainWindow : Window
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.IsOpen=true;} }
     private void FitClicked(object sender,RoutedEventArgs e)=>viewport.Fit();
-    private void ActualClicked(object sender,RoutedEventArgs e)=>viewport.Actual();
-    private void ZoomInClicked(object sender,RoutedEventArgs e)=>viewport.Magnify(1.25);
-    private void ZoomOutClicked(object sender,RoutedEventArgs e)=>viewport.Magnify(.8);
+    private void ActualClicked(object sender,RoutedEventArgs e) { if(!geometrySession.IsActive)viewport.Actual(); }
+    private void ZoomInClicked(object sender,RoutedEventArgs e) { if(!geometrySession.IsActive)viewport.Magnify(1.25); }
+    private void ZoomOutClicked(object sender,RoutedEventArgs e) { if(!geometrySession.IsActive)viewport.Magnify(.8); }
     private void KeyPressed(object sender,KeyEventArgs e)
     {
+        if (geometrySession.IsActive && e.Key is Key.Enter or Key.Escape) {
+            if(e.Key==Key.Enter) { GeometryEditor.CommitFocusedValue();ApplyGeometryDraft(); } else CancelGeometryDraft();
+            e.Handled=true;return;
+        }
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
@@ -793,7 +811,7 @@ public partial class MainWindow : Window
     }
     private async void Export(ExportFormat format)
     {
-        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
+        if(geometrySession.IsActive || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
         var suffix=format.Suffix();
         var dialog=new SaveFileDialog{Title=Loc.Text("全分辨率导出"),Filter=format switch {
                 ExportFormat.Jpeg => Loc.Text("导出 JPEG")+"|*.jpg;*.jpeg",
@@ -840,7 +858,8 @@ public partial class MainWindow : Window
     }
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
-        if(!SaveEdits()){e.Cancel=true;return;}
+        CancelGeometryDraft(false);
+        if(!SaveEdits()){e.Cancel=true;if(geometryRenderPending)Schedule();return;}
         closing=true;
         previewResize.Stop();
         if(batchWindow?.Running==true)batchWindow.CancelExecution();

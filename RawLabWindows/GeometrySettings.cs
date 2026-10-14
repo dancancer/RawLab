@@ -4,10 +4,11 @@ namespace RawLab.Windows;
 
 public enum CropComponent { X, Y, Width, Height }
 
-// Coordinates refer to the oriented canvas after rotation, flipping and straightening.
+// Coordinates refer to the canvas after rotation, flipping, perspective and straightening.
 public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double CropWidth = 1,
     double CropHeight = 1, int QuarterTurns = 0, bool FlipHorizontal = false,
-    bool FlipVertical = false, double StraightenDegrees = 0)
+    bool FlipVertical = false, double StraightenDegrees = 0,
+    double PerspectiveHorizontal = 0, double PerspectiveVertical = 0)
 {
     public bool IsIdentity => this == new GeometrySettings();
     public GeometrySettings Rotate(int turns) => this with { QuarterTurns = ((QuarterTurns + turns) % 4 + 4) % 4 };
@@ -30,14 +31,28 @@ public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double
 
     internal Native.GeometryConfig NativeConfig()
     {
-        if (!double.IsFinite(CropX) || !double.IsFinite(CropY) || !double.IsFinite(CropWidth) ||
-            !double.IsFinite(CropHeight) || (float)CropWidth <= 0 || (float)CropHeight <= 0 || CropX < 0 || CropY < 0 || CropWidth <= 0 || CropHeight <= 0 ||
-            CropX + CropWidth > 1 + 1e-12 || CropY + CropHeight > 1 + 1e-12 || QuarterTurns is < 0 or > 3 ||
-            !double.IsFinite(StraightenDegrees) || StraightenDegrees is < -45 or > 45)
-            throw new ArgumentOutOfRangeException(nameof(GeometrySettings), Loc.Text("几何调整无效。"));
+        Validate();
         return new() { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.GeometryConfig>(),
             CropX = (float)CropX, CropY = (float)CropY, CropWidth = (float)CropWidth, CropHeight = (float)CropHeight,
             QuarterTurns = QuarterTurns, FlipHorizontal = FlipHorizontal ? 1 : 0,
             FlipVertical = FlipVertical ? 1 : 0, StraightenDegrees = (float)StraightenDegrees };
+    }
+
+    internal Native.PerspectiveConfig NativePerspectiveConfig()
+    {
+        Validate();
+        return new() { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.PerspectiveConfig>(),
+            Horizontal = (float)PerspectiveHorizontal, Vertical = (float)PerspectiveVertical };
+    }
+
+    private void Validate()
+    {
+        if (!double.IsFinite(CropX) || !double.IsFinite(CropY) || !double.IsFinite(CropWidth) ||
+            !double.IsFinite(CropHeight) || (float)CropWidth <= 0 || (float)CropHeight <= 0 || CropX < 0 || CropY < 0 || CropWidth <= 0 || CropHeight <= 0 ||
+            CropX + CropWidth > 1 + 1e-12 || CropY + CropHeight > 1 + 1e-12 || QuarterTurns is < 0 or > 3 ||
+            !double.IsFinite(StraightenDegrees) || StraightenDegrees is < -45 or > 45 ||
+            !double.IsFinite(PerspectiveHorizontal) || PerspectiveHorizontal is < -1 or > 1 ||
+            !double.IsFinite(PerspectiveVertical) || PerspectiveVertical is < -1 or > 1)
+            throw new ArgumentOutOfRangeException(nameof(GeometrySettings), Loc.Text("几何调整无效。"));
     }
 }

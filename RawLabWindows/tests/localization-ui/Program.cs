@@ -14,10 +14,12 @@ internal static class Program
     private static bool hadPreference;
     private static byte[]? originalPreference;
     private static int changedCount;
+    private static string[] arguments = [];
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        arguments = args;
         try
         {
             var field = typeof(Loc).GetField("preferenceFile", BindingFlags.NonPublic | BindingFlags.Static)
@@ -71,7 +73,7 @@ internal static class Program
             var effects = new PhotoEffectsSettings(-12, 42, 7, 63, 8, 17, 33, 71);
             adjustments.Effects = effects;
             adjustments.Lens = new LensSettings(true, true, true, true, "profile-id");
-            adjustments.Geometry = new(.1, .2, .8, .7, 1, true, false, 3.5);
+            adjustments.Geometry = new(.1, .2, .8, .7, 1, true, false, 3.5, .35, -.2);
             var snapshot = JsonSerializer.Serialize(adjustments.Capture());
             var toolsBefore = (Panel)window.FindName("Tools");
             var effectButton = toolsBefore.Children.OfType<Button>()
@@ -106,6 +108,8 @@ internal static class Program
                 Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), $"Dynamic catalog resource {language}");
 
                 var tools = (Panel?)window.FindName("Tools");
+                Check(tools?.Children.Contains((Button)window.FindName("GeometryCategory")) == true,
+                    $"Geometry tool remains reachable after changing language {language}");
                 var vignette = tools?.Children.OfType<Button>()
                     .FirstOrDefault(button => AutomationProperties.GetAutomationId(button) == "Vignette");
                 Check(vignette != null, $"Vignette tool exists {language}");
@@ -121,12 +125,28 @@ internal static class Program
 
                 Check(Math.Abs(adjustments[Parameter.Exposure] - 1.25) < .0001, $"Exposure preserved {language}");
                 Check(adjustments.Effects == effects, $"Photo effects preserved {language}");
-                Check(adjustments.Geometry is { CropX: .1, QuarterTurns: 1, FlipHorizontal: true, StraightenDegrees: 3.5 },
+                Check(adjustments.Geometry is { CropX: .1, QuarterTurns: 1, FlipHorizontal: true, StraightenDegrees: 3.5,
+                      PerspectiveHorizontal: .35, PerspectiveVertical: -.2 },
                     $"Geometry survives language changes {language}");
-                Check(AutomationProperties.GetName((CheckBox)geometryPanel.FindName("HorizontalFlip")!) == Loc.Text("水平翻转") &&
+                Check(AutomationProperties.GetName((Button)geometryPanel.FindName("HorizontalFlip")!) == Loc.Text("水平翻转") &&
                       AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("宽度 (%)") &&
                       AutomationProperties.GetName((Slider)geometryPanel.FindName("StraightenSlider")!) == Loc.Text("拉直"),
                     $"Geometry controls have localized automation names {language}");
+                Check(AutomationProperties.GetName((ComboBox)geometryPanel.FindName("AspectPreset")!) == Loc.Text("裁切比例") &&
+                      AutomationProperties.GetName((Button)geometryPanel.FindName("SwapAspect")!) == Loc.Text("交换宽高比例") &&
+                      AutomationProperties.GetName((Button)geometryPanel.FindName("ApplyGeometry")!) == Loc.Text("应用几何调整") &&
+                      AutomationProperties.GetName((Button)geometryPanel.FindName("CancelGeometry")!) == Loc.Text("取消几何调整"),
+                    $"Draft geometry actions have localized automation names {language}");
+                var horizontalPerspective = (Slider)geometryPanel.FindName("PerspectiveHorizontalSlider")!;
+                var verticalPerspective = (Slider)geometryPanel.FindName("PerspectiveVerticalSlider")!;
+                Check(AutomationProperties.GetName(horizontalPerspective) == Loc.Text("水平透视 (%)") &&
+                      AutomationProperties.GetName(verticalPerspective) == Loc.Text("垂直透视 (%)") &&
+                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("PerspectiveHorizontalText")!) == Loc.Text("水平透视 (%)") &&
+                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("PerspectiveVerticalText")!) == Loc.Text("垂直透视 (%)"),
+                    $"Perspective controls have localized automation names {language}");
+                Check(horizontalPerspective.Minimum == -100 && horizontalPerspective.Maximum == 100 && horizontalPerspective.Value == 35 &&
+                      verticalPerspective.Minimum == -100 && verticalPerspective.Maximum == 100 && verticalPerspective.Value == -20,
+                    $"Perspective controls show normalized settings as percentages {language}");
                 Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");
                 Check(JsonSerializer.Serialize(adjustments.Capture()) == snapshot, $"Recipe, HSL and editor snapshot preserved {language}");
                 var hslPanel = (HslPanel)window.FindName("HslEditor");
@@ -175,11 +195,15 @@ internal static class Program
                       AutomationProperties.GetName((RadioButton)batch.FindName("Dng")!) == Loc.Text("DNG · 渲染型") &&
                       ((TextBlock)batch.FindName("AllSettings")!).Text.Contains(Loc.Text("镜头匹配"), StringComparison.Ordinal),
                     $"Batch format, destination and full settings preserved {language}");
+                Check(((TextBlock)batch.FindName("AllSettings")!).Text.Contains(
+                      Loc.Format("透视：水平 {0:+0.##;-0.##;0}% · 垂直 {1:+0.##;-0.##;0}%", 35, -20), StringComparison.Ordinal),
+                    $"Batch perspective summary uses active language {language}");
             }
 
             Check(changedCount == 6, "Changed raised once for each language selection");
             batch.Close();
             try { Directory.Delete(batchDirectory, recursive: true); } catch (IOException) { }
+            if(arguments.Length == 3 && arguments[0] == "--geometry-ui") GeometryUiChecks.Run(window, arguments[1], arguments[2]);
             window.Close();
             app.Shutdown();
         }

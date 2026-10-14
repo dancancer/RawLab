@@ -6,6 +6,8 @@
   <ItemGroup>
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../GeometrySettings.cs" Link="GeometrySettings.cs" />
+    <Compile Include="../../CropInteraction.cs" Link="CropInteraction.cs" />
+    <Compile Include="../../GeometryEditSession.cs" Link="GeometryEditSession.cs" />
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
     <Compile Include="../../MasterRecipe.cs" Link="MasterRecipe.cs" />
     <Compile Include="../../HslSettings.cs" Link="HslSettings.cs" />

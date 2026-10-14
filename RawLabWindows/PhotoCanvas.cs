@@ -36,6 +36,22 @@ public sealed class PhotoCanvas : FrameworkElement
     private Viewport? viewport;
     private Point? drag;
     private bool draggingDivider,comparisonEnabled;
+    private bool geometryEditing;
+    private GeometrySettings? cropDraft;
+    private CropHandle? cropHandle;
+    private CropRect cropBaseline;
+    private Point cropStart;
+    private double? cropRatio;
+    private bool correctionGrid;
+    public bool GeometryEditing {
+        get => geometryEditing;
+        set { geometryEditing=value; drag=null;draggingDivider=false;cropHandle=null;if(IsMouseCaptured)ReleaseMouseCapture();UpdateComparison(); }
+    }
+    public event Action<CropRect>? CropChanged;
+    public void SetCropDraft(GeometrySettings? value, double? ratio, bool denseGrid)
+    {
+        cropDraft=value;cropRatio=ratio;correctionGrid=denseGrid;UpdateComparison();
+    }
     private bool showClipping;
     private readonly VisualCollection layers;
     private readonly ContainerVisual referenceLayer=new(),editedLayer=new();
@@ -51,6 +67,7 @@ public sealed class PhotoCanvas : FrameworkElement
     public double Divider { get=>divider; set { if(!double.IsFinite(value))throw new ArgumentOutOfRangeException(nameof(value));divider=Math.Clamp(value,0,1);UpdateComparison(); } }
     public bool ShowClipping { get=>showClipping; set {if(showClipping==value)return;showClipping=value;DrawImages();} }
     public Viewport? Viewport { get => viewport; set { if(viewport!=null) viewport.Changed-=UpdateTransform; viewport=value; if(value!=null)value.Changed+=UpdateTransform;UpdateTransform(); } }
+    internal (BitmapSource? Image, BitmapSource? Clipping) CurrentImage => (image,mask);
     public void SetImage(BitmapSource? source,BitmapSource? clipping) { image=source; mask=clipping;DrawImages();UpdateTransform(); }
     public void SetComparison(BitmapSource? source,BitmapSource? clipping) { comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
     public PhotoCanvas()
@@ -60,9 +77,16 @@ public sealed class PhotoCanvas : FrameworkElement
         referenceDrawing.Transform=editedDrawing.Transform=imageTransform;
         RenderOptions.SetBitmapScalingMode(this,BitmapScalingMode.LowQuality);
         ClipToBounds=true; Focusable=true; Cursor=Cursors.Hand;
-        MouseWheel+=(_,e)=> { Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=true; };
+        MouseWheel+=(_,e)=> { if(GeometryEditing){e.Handled=true;return;} Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=true; };
         MouseLeftButtonDown+=(_,e)=> {
             Focus();var point=e.GetPosition(this);
+            if (GeometryEditing) {
+                if(cropDraft!=null && ImageBounds.Width>0 && ImageBounds.Height>0) {
+                    cropHandle=HitCrop(point);
+                    if(cropHandle!=null) { cropBaseline=CropInteraction.FromGeometry(cropDraft);cropStart=point;CaptureMouse(); }
+                }
+                e.Handled=true;return;
+            }
             draggingDivider=ComparisonEnabled && Math.Abs(point.X-ActualWidth*Divider)<=18;
             if(e.ClickCount==2 && !draggingDivider && image!=null)
             {
@@ -73,13 +97,31 @@ public sealed class PhotoCanvas : FrameworkElement
         };
         MouseMove+=(_,e)=> {
             var next=e.GetPosition(this);
+            if(GeometryEditing) {
+                var handle=cropHandle ?? HitCrop(next);
+                Cursor=handle switch { CropHandle.Move=>Cursors.SizeAll, CropHandle.TopLeft or CropHandle.BottomRight=>Cursors.SizeNWSE, CropHandle.TopRight or CropHandle.BottomLeft=>Cursors.SizeNESW, _=>Cursors.Arrow };
+                if(cropHandle is {} selected && ImageBounds.Width>0 && ImageBounds.Height>0) {
+                    var size=Viewport?.SourceSize ?? default;
+                    CropChanged?.Invoke(CropInteraction.Dragging(cropBaseline,selected,(next.X-cropStart.X)/ImageBounds.Width,
+                        (next.Y-cropStart.Y)/ImageBounds.Height,size.Width,size.Height,cropRatio));
+                }
+                e.Handled=true;return;
+            }
             Cursor=ComparisonEnabled && (draggingDivider || Math.Abs(next.X-ActualWidth*Divider)<=18) ? Cursors.SizeWE : Cursors.Hand;
             if(draggingDivider){if(ActualWidth>0)Divider=next.X/ActualWidth;return;}
             if(drag is not {} point)return;Viewport?.Move(next-point);drag=next;
         };
-        MouseLeftButtonUp+=(_,_)=> { drag=null;draggingDivider=false;ReleaseMouseCapture(); };
-        LostMouseCapture+=(_,_)=>{drag=null;draggingDivider=false;};
-        KeyDown+=(_,e)=> { if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        MouseLeftButtonUp+=(_,_)=> { drag=null;draggingDivider=false;cropHandle=null;ReleaseMouseCapture(); };
+        LostMouseCapture+=(_,_)=>{drag=null;draggingDivider=false;cropHandle=null;};
+        KeyDown+=(_,e)=> {
+            if(GeometryEditing && cropDraft!=null && e.Key is Key.Left or Key.Right or Key.Up or Key.Down) {
+                var step=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? .02 : .005;
+                CropChanged?.Invoke(CropInteraction.Dragging(CropInteraction.FromGeometry(cropDraft),CropHandle.Move,
+                    e.Key==Key.Left ? -step : e.Key==Key.Right ? step : 0,
+                    e.Key==Key.Up ? -step : e.Key==Key.Down ? step : 0,1,1,null));
+                e.Handled=true;return;
+            }
+            if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{UpdateTransform();UpdateComparison();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
@@ -117,16 +159,18 @@ public sealed class PhotoCanvas : FrameworkElement
             // Keep image drawing commands and bitmap resources resident while panning.
             imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
         }
+        UpdateComparison();
         var edge=Viewport.PreviewLongEdge(RenderSize,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
     }
     private void UpdateComparison()
     {
-        var wipe=ComparisonEnabled && comparison!=null;
+        var wipe=!GeometryEditing && ComparisonEnabled && comparison!=null;
         referenceLayer.Opacity=wipe ? 1 : 0;
         wipeClip.Rect=new Rect(ActualWidth*Divider,0,ActualWidth*(1-Divider),ActualHeight);
         editedLayer.Clip=wipe ? wipeClip : null;
         using var dc=overlay.RenderOpen();
+        if(GeometryEditing && cropDraft!=null && ImageBounds.Width>0 && ImageBounds.Height>0) DrawCrop(dc);
         if(wipe)
         {
             var x=ActualWidth*Divider;var y=ActualHeight/2;
@@ -139,11 +183,47 @@ public sealed class PhotoCanvas : FrameworkElement
             if(IsKeyboardFocused)dc.DrawEllipse(null,new Pen(new SolidColorBrush(Color.FromRgb(242,210,89)),2),new Point(x,y),19,19);
         }
     }
+    private Rect CropBounds => cropDraft is {} value ? new(ImageBounds.X+value.CropX*ImageBounds.Width,
+        ImageBounds.Y+value.CropY*ImageBounds.Height,value.CropWidth*ImageBounds.Width,value.CropHeight*ImageBounds.Height) : Rect.Empty;
+    private CropHandle? HitCrop(Point point)
+    {
+        if(cropDraft==null)return null;
+        var crop=CropBounds;
+        var corners=new[] { (crop.TopLeft,CropHandle.TopLeft), (crop.TopRight,CropHandle.TopRight),
+            (crop.BottomLeft,CropHandle.BottomLeft), (crop.BottomRight,CropHandle.BottomRight) };
+        foreach(var (corner,handle) in corners) if(Math.Abs(point.X-corner.X)<=18 && Math.Abs(point.Y-corner.Y)<=18)return handle;
+        return crop.Contains(point) ? CropHandle.Move : null;
+    }
+    private void DrawCrop(DrawingContext dc)
+    {
+        var crop=CropBounds;var full=ImageBounds;
+        dc.PushClip(new RectangleGeometry(full));
+        var shade=new SolidColorBrush(Color.FromArgb(150,0,0,0));
+        dc.DrawRectangle(shade,null,new Rect(full.Left,full.Top,full.Width,Math.Max(0,crop.Top-full.Top)));
+        dc.DrawRectangle(shade,null,new Rect(full.Left,crop.Bottom,full.Width,Math.Max(0,full.Bottom-crop.Bottom)));
+        dc.DrawRectangle(shade,null,new Rect(full.Left,crop.Top,Math.Max(0,crop.Left-full.Left),crop.Height));
+        dc.DrawRectangle(shade,null,new Rect(crop.Right,crop.Top,Math.Max(0,full.Right-crop.Right),crop.Height));
+        var gridPen=new Pen(new SolidColorBrush(Color.FromArgb(155,255,255,255)),1);
+        var divisions=correctionGrid ? 6 : 3;
+        for(var i=1;i<divisions;i++) {
+            var x=crop.Left+crop.Width*i/divisions;var y=crop.Top+crop.Height*i/divisions;
+            dc.DrawLine(gridPen,new(x,crop.Top),new(x,crop.Bottom));dc.DrawLine(gridPen,new(crop.Left,y),new(crop.Right,y));
+        }
+        dc.DrawRectangle(null,new Pen(Brushes.White,1),crop);
+        dc.Pop();
+        var handles=new Pen(Brushes.White,3){StartLineCap=PenLineCap.Square,EndLineCap=PenLineCap.Square};
+        foreach(var (point,dx,dy) in new[] { (crop.TopLeft,1,1),(crop.TopRight,-1,1),(crop.BottomLeft,1,-1),(crop.BottomRight,-1,-1) }) {
+            dc.DrawLine(new Pen(Brushes.Black,5),new(point.X+dx*16,point.Y),point);
+            dc.DrawLine(new Pen(Brushes.Black,5),point,new(point.X,point.Y+dy*16));
+            dc.DrawLine(handles,new(point.X+dx*16,point.Y),point);dc.DrawLine(handles,point,new(point.X,point.Y+dy*16));
+        }
+        if(IsKeyboardFocused)dc.DrawRectangle(null,new Pen(new SolidColorBrush(Color.FromRgb(242,210,89)),1),new Rect(crop.Left-3,crop.Top-3,crop.Width+6,crop.Height+6));
+    }
     protected override AutomationPeer OnCreateAutomationPeer()=>new ComparisonPeer(this);
     private sealed class ComparisonPeer(PhotoCanvas owner) : FrameworkElementAutomationPeer(owner),IRangeValueProvider
     {
         protected override string GetClassNameCore()=>nameof(PhotoCanvas);
-        protected override string GetNameCore()=>owner.ComparisonEnabled ? Loc.Text("滑动对比，左侧中性，右侧修改后") : Loc.Text("照片预览");
+        protected override string GetNameCore()=>owner.GeometryEditing ? Loc.Text("裁切框：拖动四角调整，方向键移动。Enter 应用，Escape 取消。") : owner.ComparisonEnabled ? Loc.Text("滑动对比，左侧中性，右侧修改后") : Loc.Text("照片预览");
         public override object? GetPattern(PatternInterface pattern)=>pattern==PatternInterface.RangeValue && owner.ComparisonEnabled ? this : base.GetPattern(pattern);
         public bool IsReadOnly=>false;
         public double LargeChange=>10;

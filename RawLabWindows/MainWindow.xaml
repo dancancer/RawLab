@@ -23,7 +23,7 @@
             <local:EditorIcon Kind="Compare" Width="22" Height="22"/>
             <Button.ContextMenu><ContextMenu><MenuItem x:Name="CompareOff" Header="{DynamicResource '关闭对比'}" IsCheckable="True" Click="CompareOffClicked"/><MenuItem x:Name="CompareSide" Header="{DynamicResource '并排对比'}" IsCheckable="True" IsChecked="True" Click="CompareSideClicked"/><MenuItem x:Name="CompareSwipe" Header="{DynamicResource '滑动对比'}" IsCheckable="True" Click="CompareSwipeClicked"/></ContextMenu></Button.ContextMenu>
           </Button>
-          <Button Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '缩放与适合窗口'}" AutomationProperties.Name="{DynamicResource '缩放'}"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '100% 实际像素'}" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="{DynamicResource '放大'}" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
+          <Button x:Name="ZoomButton" Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '缩放与适合窗口'}" AutomationProperties.Name="{DynamicResource '缩放'}"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '100% 实际像素'}" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="{DynamicResource '放大'}" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
           <Button x:Name="ClippingButton" Click="ClippingClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示高光与暗部裁切提示'}" AutomationProperties.Name="{DynamicResource '裁切提示'}"><local:EditorIcon Kind="Clipping" Width="22" Height="22"/></Button>
           <Button x:Name="InfoButton" Click="InfoClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '照片信息：隐藏 / 文件信息 / 拍摄参数（I）'}" AutomationProperties.Name="{DynamicResource '照片信息'}"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
           <Button x:Name="AdjustToggleButton" Click="DockToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示或隐藏调整栏'}" AutomationProperties.Name="{DynamicResource '调整栏'}"><local:EditorIcon Kind="Adjust" Width="22" Height="22"/></Button>
@@ -128,7 +128,7 @@
               <Button x:Name="LensCategory" Click="LensCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '镜头匹配'}" AutomationProperties.Name="{DynamicResource '镜头'}">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="LensCategoryRing"/><local:EditorIcon Kind="Lens" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '镜头'}" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
-              <Button x:Name="GeometryCategory" Click="GeometryCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '裁切与旋转'}" AutomationProperties.Name="{DynamicResource '几何'}">
+              <Button x:Name="GeometryCategory" Click="GeometryCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '裁切、旋转与透视'}" AutomationProperties.Name="{DynamicResource '几何'}">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '几何'}" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
@@ -158,7 +158,7 @@
             </Grid>
             <local:DenoisePanel x:Name="DenoiseEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
             <local:LensPanel x:Name="LensEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
-            <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
+            <Grid x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed"><local:GeometryPanel x:Name="GeometryEditor"/></Grid>
             <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
             <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <local:PhotoEffectsPanel x:Name="PhotoEffectsEditor" VerticalAlignment="Center"/>

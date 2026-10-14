@@ -104,7 +104,7 @@ public partial class MainWindow
 
     private void BatchExportClicked(object sender, RoutedEventArgs e)
     {
-        if (file == null || !exactReady || scheduler.Busy || exporting || !LookAvailable) return;
+        if (geometrySession.IsActive || file == null || !exactReady || scheduler.Busy || exporting || !LookAvailable) return;
         var previous = CurrentBatch;
         if (previous is { Started: true } && previous.SucceededCount < previous.SelectedCount)
         {
@@ -134,7 +134,9 @@ public partial class MainWindow
         var window = new BatchExportWindow(job, batchJournal) { Owner = this };
         batchWindow = window;
         window.RunningChanged += active => {
+            if(active)CancelGeometryDraft(false);
             exporting = active; RefreshControls(); RefreshBatchNotice();
+            if (!active && geometryRenderPending && !closing) Schedule();
             if (!active && closing && !scheduler.Busy) FinishClose();
         };
         window.Closed += (_, _) => {
