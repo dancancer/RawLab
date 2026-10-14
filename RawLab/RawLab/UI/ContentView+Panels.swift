@@ -46,15 +46,15 @@ extension ContentView {
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                 Button(L10n.text("导出渲染型 DNG…")) {
                     singleExportFormat = .renderedDNG
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                 Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                     .accessibilityIdentifier("editor.batchExport")
                 if batchModel != nil { Button(L10n.text("查看批量任务")) { showingBatchExport = true } }
             } label: {
@@ -62,7 +62,7 @@ extension ContentView {
             }
             .accessibilityLabel(L10n.text("导出"))
             .help(L10n.text("导出照片"))
-            .disabled(isEditorDraftChanged || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
+            .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
             .accessibilityIdentifier("editor.export")
             .opacity(rulerFocusOpacity)
         }

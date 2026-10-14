@@ -37,6 +37,8 @@ extension ContentView {
         Binding(get: { lensDraft ?? settings }, set: { lensDraft = $0 })
     }
 
+    var isEditorDraftActive: Bool { geometrySelected || lensSelected }
+
     var isEditorDraftChanged: Bool {
         geometryDraft.map { $0 != settings.geometry } ?? lensDraft.map { $0.lensSettings != settings.lensSettings } ?? false
     }

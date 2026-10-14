@@ -85,14 +85,27 @@ struct AdjustmentControl: View {
             @unknown default: break
             }
         }
-        .popover(isPresented: $showingWheel) {
-            NativeValueWheel(title: title, original: wheelOriginal, scale: scale,
-                             defaultValue: validDefault, unit: unit, formatter: formatter,
-                             onCancel: { showingWheel = false }, onApply: { draft in
-                if draft != wheelOriginal { commit(draft) }
-                showingWheel = false
-            })
-        }
+        .sheet(isPresented: wheelSheetPresented) { wheelEditor }
+        .popover(isPresented: wheelPopoverPresented) { wheelEditor }
+    }
+
+    private var wheelSheetPresented: Binding<Bool> {
+        Binding(get: { showingWheel && UIDevice.current.userInterfaceIdiom != .pad },
+                set: { showingWheel = $0 })
+    }
+
+    private var wheelPopoverPresented: Binding<Bool> {
+        Binding(get: { showingWheel && UIDevice.current.userInterfaceIdiom == .pad },
+                set: { showingWheel = $0 })
+    }
+
+    private var wheelEditor: some View {
+        NativeValueWheel(title: title, original: wheelOriginal, scale: scale,
+                         defaultValue: validDefault, unit: unit, formatter: formatter,
+                         onCancel: { showingWheel = false }, onApply: { draft in
+            if draft != wheelOriginal { commit(draft) }
+            showingWheel = false
+        })
     }
 
     private var resetButton: some View {

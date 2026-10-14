@@ -114,6 +114,7 @@ extension ContentView {
     }
 
     func exportJPEG(longEdge: Int? = nil) {
+        guard !isEditorDraftActive else { return }
         isSaving = true
         viewModel.exportJPEG(settings: settings, longEdge: longEdge) { result in
             switch result {
@@ -127,6 +128,7 @@ extension ContentView {
     }
 
     func exportDNG(longEdge: Int? = nil) {
+        guard !isEditorDraftActive else { return }
         isSaving = true
         viewModel.exportDNG(settings: settings, longEdge: longEdge) { result in
             switch result {
@@ -287,6 +289,7 @@ extension ContentView {
     }
 
     func openBatchExport() {
+        guard !isEditorDraftActive else { return }
         if batchModel != nil { showingBatchExport = true; return }
         guard let source = viewModel.currentBatchSource(settings: settings) else {
             viewModel.statusMessage = L10n.text("请先导入一张 RAW 照片。")

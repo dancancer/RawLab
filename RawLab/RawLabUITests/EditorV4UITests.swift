@@ -105,6 +105,7 @@ final class EditorV4UITests: XCTestCase {
     func testGeometryDraftCancelApplyAndToolExitPreserveCommittedValue() throws {
         let app = try launchImportedEditor()
         try selectTool("geometry", in: app)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Entering an unchanged geometry draft must block export")
         if app.buttons["geometry.reset"].isEnabled {
             resetIfEnabled("geometry.reset", in: app)
             applyDraft(in: app)
@@ -324,6 +325,7 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         assertNativeWheelVisible(in: app)
         XCTAssertTrue(app.staticTexts["adjustment.wheel.draft"].label.contains("+0.75"))
+        assertWheelContextVisible(in: app)
         XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].isHittable)
         XCTAssertTrue(app.buttons["adjustment.wheel.apply"].isHittable)
         XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(picker.frame), "The rotated wheel must remain within the iPad window")
@@ -405,6 +407,7 @@ final class EditorV4UITests: XCTestCase {
         try selectTool("exposure", in: app)
         try setValue("+0.40", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try selectTool("geometry", in: app)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "An unchanged geometry draft must block every export entry")
         if app.buttons["geometry.reset"].isEnabled {
             resetIfEnabled("geometry.reset", in: app)
             applyDraft(in: app)
@@ -443,7 +446,10 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertEqual(try number(app.buttons["geometry.straighten.value"]), 1.2, accuracy: 0.0001,
                        "Canceling the export sheet preserves the committed geometry")
         XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Returning to a committed geometry value remains an active draft")
         app.buttons["editor.draft.cancel"].tap()
+        XCTAssertFalse(app.buttons["tool.lens"].isEnabled, "Lens correction is unavailable for the raster fixture")
+        XCTAssertTrue(app.buttons["editor.export"].isEnabled)
     }
 
     private func launchImportedEditor() throws -> XCUIApplication {
@@ -536,6 +542,7 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertEqual(picker.pickerWheels.count, 1, "The value editor must expose one native picker wheel")
         XCTAssertEqual(picker.pickerWheels.firstMatch.elementType, .pickerWheel)
         assertNativeWheelVisible(in: app)
+        assertWheelContextVisible(in: app)
         XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].isHittable)
         XCTAssertTrue(app.buttons["adjustment.wheel.apply"].isHittable)
     }
@@ -625,6 +632,15 @@ final class EditorV4UITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(picker.frame.height, 200, "The iPad popover must show the selection wheel")
             XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(picker.frame),
                           "The iPad selection wheel must fit within the window")
+        }
+    }
+
+    private func assertWheelContextVisible(in app: XCUIApplication) {
+        for identifier in ["adjustment.wheel.title", "adjustment.wheel.draft", "adjustment.wheel.range", "adjustment.wheel.default"] {
+            let element = app.descendants(matching: .any)[identifier]
+            waitUntil { element.isHittable && app.frame.insetBy(dx: -1, dy: -1).contains(element.frame) }
+            XCTAssertTrue(element.isHittable, "Wheel context must be visible when opened: \(identifier)")
+            XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(element.frame), "Complete wheel context must fit in the window")
         }
     }
 

@@ -40,7 +40,7 @@ struct NativeValueWheel: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             HStack {
                 Button(L10n.text("取消"), action: onCancel)
                     .frame(minWidth: 44, minHeight: 44)
@@ -51,36 +51,69 @@ struct NativeValueWheel: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityIdentifier("adjustment.wheel.apply")
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 12) {
-                        Text(title).font(.headline).multilineTextAlignment(.center)
-                        Text(rangeLabel).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        Text("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)")
-                            .font(.body).monospacedDigit().multilineTextAlignment(.center)
-                            .accessibilityIdentifier("adjustment.wheel.draft")
-                        WholeValuePicker(value: $draft, values: values, title: title, unit: unit, formatter: formatter)
-                            .frame(height: dynamicTypeSize.isAccessibilitySize ? 264 : 220)
-                            .id("native-value-wheel")
-                        if let defaultValue {
-                            Button("\(L10n.text("默认")) \(formatter(defaultValue)) \(unit)") { draft = defaultValue }
-                                .frame(minHeight: 44)
-                                .accessibilityIdentifier("adjustment.wheel.default")
+            GeometryReader { geometry in
+                if geometry.size.width > 480 && geometry.size.height < 400 {
+                    HStack(spacing: 24) {
+                        ScrollView {
+                            valueContext
+                                .frame(maxWidth: .infinity)
+                        }
+                        .frame(width: geometry.size.width * 0.44)
+                        VStack(spacing: 8) {
+                            picker
+                            defaultButton
                         }
                     }
+                } else {
+                    VStack(spacing: 8) {
+                        valueContext
+                        picker
+                        defaultButton
+                    }
                 }
-                .onAppear { proxy.scrollTo("native-value-wheel", anchor: .center) }
-                .onChange(of: presentationSpace) { _, _ in proxy.scrollTo("native-value-wheel", anchor: .center) }
             }
         }
         .padding(16)
-        .frame(minWidth: 280, idealWidth: 360, maxWidth: 480)
+        .frame(minWidth: 280, idealWidth: 360, maxWidth: presentationSpace.regularPopover ? 480 : .infinity)
         .frame(height: popoverHeight)
         .background(WheelPresentationSpaceReader(space: $presentationSpace).allowsHitTesting(false))
         .interactiveDismissDisabled(draft != original)
         .presentationCompactAdaptation(.sheet)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    private var valueContext: some View {
+        VStack(spacing: 8) {
+            Text(title).font(.headline)
+                .accessibilityIdentifier("adjustment.wheel.title")
+            Text("\(formatter(draft)) \(unit)".trimmingCharacters(in: .whitespaces))
+                .font(.body).monospacedDigit()
+                .accessibilityLabel("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)")
+                .accessibilityIdentifier("adjustment.wheel.draft")
+            Text(rangeLabel).font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("adjustment.wheel.range")
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var picker: some View {
+        WholeValuePicker(value: $draft, values: values, title: title, unit: unit, formatter: formatter)
+            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 100 : 200,
+                   maxHeight: dynamicTypeSize.isAccessibilitySize ? 264 : 220)
+            .frame(maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var defaultButton: some View {
+        if let defaultValue {
+            Button("\(L10n.text("默认")) \(formatter(defaultValue)) \(unit)") { draft = defaultValue }
+                .font(.caption)
+                .frame(minHeight: 44)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("adjustment.wheel.default")
+        }
     }
 }
 
