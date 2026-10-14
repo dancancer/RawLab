@@ -67,7 +67,7 @@ struct CompactControlsPresentationTests {
 
     @MainActor private static func snapshot<V: View>(
         _ view: V, name: String, language: AppLanguage, size: NSSize,
-        expectedFields: Int, output: URL
+        expectedFields: Int, output: URL, renderModel: EditorModel? = nil
     ) async throws -> SnapshotEvidence {
         let host = NSHostingView(rootView: view.environment(\.locale, Locale(identifier: language.rawValue))
             .preferredColorScheme(.dark))
@@ -81,6 +81,7 @@ struct CompactControlsPresentationTests {
         defer { window.contentView = nil; window.close() }
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(250))
+        if let renderModel { try await waitForRender(renderModel) }
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
 
@@ -185,7 +186,7 @@ struct CompactControlsPresentationTests {
             for (name, size) in [("editor-minimum", NSSize(width: 950, height: 620)),
                                  ("editor-wide", NSSize(width: 1440, height: 900))] {
                 snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
-                    size: size, expectedFields: 1, output: output))
+                    size: size, expectedFields: 1, output: output, renderModel: model))
             }
             snapshots.append(try await snapshot(MacHSLMixer(settings: .constant(hsl)).padding(16)
                 .frame(width: 650, height: 220, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
@@ -199,14 +200,44 @@ struct CompactControlsPresentationTests {
                 .frame(width: 650, height: 124).background(Color(nsColor: .windowBackgroundColor)),
                 name: "recipes-workspace-650", language: language, size: NSSize(width: 650, height: 124),
                 expectedFields: 0, output: output))
-            model.settings.setGeometry(.perspectiveHorizontal, to: 0.3)
-            model.settings.setGeometry(.perspectiveVertical, to: -0.2)
+            guard model.beginGeometryDraft() else { throw RenderError.failed("Could not begin geometry draft") }
+            model.updateGeometryDraft { geometry in
+                geometry.cropX = 0.08; geometry.cropY = 0.12
+                geometry.cropWidth = 0.72; geometry.cropHeight = 0.68
+                geometry.straightenDegrees = -1.2
+                geometry.perspectiveHorizontal = 0.3; geometry.perspectiveVertical = -0.2
+            }
             try await waitForRender(model)
             snapshots.append(try await snapshot(GeometryControls(model: model)
+                .frame(width: 650, height: 180).background(Color(nsColor: .windowBackgroundColor)),
+                name: "crop-workspace-650", language: language, size: NSSize(width: 650, height: 180),
+                expectedFields: 1, output: output))
+            snapshots.append(try await snapshot(GeometryControls(model: model, showsPreciseCrop: true)
+                .frame(width: 650, height: 310).background(Color(nsColor: .windowBackgroundColor)),
+                name: "crop-precise-workspace-650", language: language, size: NSSize(width: 650, height: 310),
+                expectedFields: 5, output: output))
+            for (name, size) in [("geometry-editor-minimum", NSSize(width: 950, height: 620)),
+                                 ("geometry-editor-wide", NSSize(width: 1440, height: 900))] {
+                snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
+                    size: size, expectedFields: 1, output: output, renderModel: model))
+            }
+            _ = model.selectGeometryDraftTab(.perspective)
+            snapshots.append(try await snapshot(MacGeometryWorkspace(model: model)
                 .frame(width: 650, height: 260).background(Color(nsColor: .windowBackgroundColor)),
-                name: "geometry-workspace-650", language: language, size: NSSize(width: 650, height: 260),
-                expectedFields: 2, output: output))
-            model.settings.reset(.geometry)
+                name: "perspective-draft-workspace-650", language: language, size: NSSize(width: 650, height: 260),
+                expectedFields: 2, output: output, renderModel: model))
+            _ = model.selectGeometryDraftTab(.lens)
+            snapshots.append(try await snapshot(MacGeometryWorkspace(model: model)
+                .frame(width: 650, height: 290).background(Color(nsColor: .windowBackgroundColor)),
+                name: "lens-draft-workspace-650", language: language, size: NSSize(width: 650, height: 290),
+                expectedFields: 0, output: output, renderModel: model))
+            model.requestLeavingGeometryDraft {}
+            snapshots.append(try await snapshot(MacGeometryDeparturePrompt(model: model)
+                .frame(width: 540, height: 290).background(Color(nsColor: .windowBackgroundColor)),
+                name: "draft-departure", language: language, size: NSSize(width: 540, height: 290),
+                expectedFields: 0, output: output))
+            model.resolveGeometryDraftDeparture(.stay)
+            model.cancelGeometryDraft()
             try await waitForRender(model)
         }
         let attributesAfter = try FileManager.default.attributesOfItem(atPath: fixture.path)

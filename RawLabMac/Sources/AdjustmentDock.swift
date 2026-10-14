@@ -8,8 +8,8 @@ struct AdjustmentDock: View {
     let resetVersion: Int
     var onPreferredHeight: (CGFloat) -> Void = { _ in }
     @State private var hslSelected = false
-    @State private var lensSelected = false
-    @State private var geometrySelected = false
+    private var lensSelected: Bool { model.geometryDraft != nil && model.geometryDraftTab == .lens }
+    private var geometrySelected: Bool { model.geometryDraft != nil && model.geometryDraftTab != .lens }
 
     enum DockCategory: Equatable {
         case film
@@ -21,14 +21,15 @@ struct AdjustmentDock: View {
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
+          if model.geometryDraft != nil {
+            MacGeometryWorkspace(model: model)
+          } else {
             HorizontalPicker(selectedID: activeToolID, name: L10n.text("调整工具"), showsScrollIndicators: false) {
                     HStack(spacing: 6) {
                         Button {
                             finishCurrentInput()
                             selected = nil
                             hslSelected = false
-                            lensSelected = false
-                            geometrySelected = false
                             dockCategory = .film
                             onPreferredHeight(252)
                         } label: {
@@ -52,8 +53,6 @@ struct AdjustmentDock: View {
                             selected = nil
                             hslSelected = false
                             dockCategory = .masterRecipe
-                            lensSelected = false
-                            geometrySelected = false
                             onPreferredHeight(252)
                         } label: {
                             let active = selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe
@@ -71,7 +70,7 @@ struct AdjustmentDock: View {
                             .accessibilityValue(model.settings.masterRecipe?.name ?? L10n.text("无配方"))
                             .accessibilityAddTraits(selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe ? .isSelected : [])
                         ForEach([AdjustmentParameter.strength, .exposure, .highlights, .shadows, .contrast, .toneCurve, .saturation]) { tool($0) }
-                        Button { finishCurrentInput(); hslSelected = true; lensSelected = false; geometrySelected = false; onPreferredHeight(288) } label: {
+                        Button { finishCurrentInput(); hslSelected = true; onPreferredHeight(288) } label: {
                             VStack(spacing: 0) {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 19))
                                     .frame(width: 40, height: 40)
@@ -94,6 +93,7 @@ struct AdjustmentDock: View {
                     .frame(maxWidth: .infinity, minHeight: editor.size.height)
               }
             }
+          }
         }
         .frame(maxWidth: .infinity)
         .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
@@ -119,11 +119,7 @@ struct AdjustmentDock: View {
 
     @ViewBuilder private var editorContent: some View {
             Group {
-                if geometrySelected {
-                    GeometryControls(model: model).id(resetVersion).disabled(model.result == nil)
-                } else if lensSelected {
-                    LensControls(model: model).id(resetVersion).disabled(model.result == nil)
-                } else if hslSelected {
+                if hslSelected {
                     MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
                                 onEditingChanged: model.setInteracting)
                         .disabled(model.result == nil)
@@ -185,7 +181,7 @@ struct AdjustmentDock: View {
         let progress = parameter == .denoiseMode ? (changed ? 1.0 : 0.0) : spec.progress(for: value)
         let valueText = parameter == .denoiseMode ?
             model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
-        return Button { finishCurrentInput(); selected = parameter; hslSelected = false; lensSelected = false; geometrySelected = false; onPreferredHeight(parameter == .grainAmount ? 288 : 252) } label: {
+        return Button { finishCurrentInput(); selected = parameter; hslSelected = false; onPreferredHeight(parameter == .grainAmount ? 288 : 252) } label: {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
@@ -220,7 +216,7 @@ struct AdjustmentDock: View {
 
     private var lensTool: some View {
         let changed = !model.settings.isDefault(.lens)
-        return Button { finishCurrentInput(); selected = nil; lensSelected = true; hslSelected = false; geometrySelected = false; onPreferredHeight(288) } label: {
+        return Button { finishCurrentInput(); model.beginGeometryDraft(tab: .lens) } label: {
             VStack(spacing: 0) {
                 Image(systemName: "viewfinder").font(.system(size: 19))
                     .frame(width: 40, height: 40)
@@ -236,7 +232,7 @@ struct AdjustmentDock: View {
 
     private var geometryTool: some View {
         let changed = !model.settings.isDefault(.geometry)
-        return Button { finishCurrentInput(); selected = nil; geometrySelected = true; lensSelected = false; hslSelected = false; onPreferredHeight(288) } label: {
+        return Button { finishCurrentInput(); model.beginGeometryDraft(tab: .crop) } label: {
             VStack(spacing: 0) {
                 Image(systemName: "crop.rotate").font(.system(size: 19))
                     .frame(width: 40, height: 40)
