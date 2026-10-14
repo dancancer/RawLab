@@ -164,6 +164,44 @@ reinstalled under the independent test ID and launched successfully. Its data
 container, including benchmark evidence, was retained. The automated benchmark
 host is no longer the installed app.
 
+## Full SwiftUI interaction validation
+
+An ignored copy of the **complete** RawLab SwiftUI app was prepared in
+`build/performance/swiftui-validation/`. It uses the same physical device,
+native framework and ARW, the normal `importImage` path and original settings/
+debounce/render queues. Test-only initialization assigns Hamada, strength 0.65
+and tint 20 through the real SwiftUI settings binding. Test-only logging records
+slider editing events, requested settings/render IDs, main-queue image publication
+and the actual `UIImageView` assignment in `ZoomablePhoto.updateUIView`.
+
+The XCTest `build-for-testing` action failed before execution because the existing
+configuration has no development provisioning profile for
+`com.example.RawLabUITests.xctrunner`. This is an automation-runner signing gap;
+the complete app itself signed, built, installed and launched successfully using
+its existing independent test profile. No provisioning-update flag or credential
+change was used.
+
+The app-only scheme subsequently built and launched the full SwiftUI app. The
+initial tinted-recipe request published in 2041.7 ms, with the same image object
+assigned to the window-attached image view about 4 ms later. This verifies the
+real import/setup/display-view path, not continuous slider behavior by itself.
+The user has been asked to make three actual slow exposure drags, holding briefly
+before each release. That manual interaction evidence is **pending**; no XCTest
+pass or complete UI latency claim is made. Its events are stored in the test
+app's `Documents/SwiftUIValidation/manual-20261014-31637a15/events.jsonl` and the
+local launch log. Image-view assignment is an observable boundary, not a measured
+physical display-present timestamp.
+
+The main task also completed a separate Solo read-only review at PR head
+`5c70ac5f6a01b07d5bc58981b7788d52f7276179`: all five changed files and the
+RAW/FINAL/DNG/auto-exposure/caller queues were covered, with no Must-fix or
+Should-fix findings. The one-slot metadata cache does not retain image buffers;
+unknown or changed file identities reload; failures do not install stale keys;
+the existing preview-lock → metadata-lock ordering has no reverse reachable path;
+true Kelvin/tint changes still enter the native RAW key. Hosted checks/reviews
+were empty in the captured snapshot, which is not CI success. No remote review,
+approval or discussion comment was posted.
+
 ## Controlled simulator comparison
 
 Dedicated iPhone 18 Pro Max simulator, iOS 27.0 build 24A434, UUID
@@ -234,6 +272,9 @@ Changed production files: `Sony2FujiProcessor.swift` and
 
 Local evidence (ignored files, not for commit):
 
+- [Full SwiftUI signed app build](../build/performance/swiftui-validation/app-build.log)
+- [Full SwiftUI actual launch/setup log](../build/performance/swiftui-validation/app-run-manual.log)
+- [UI-test runner signing failure](../build/performance/swiftui-validation/build-for-testing.log)
 - [Device comparison summary](../build/performance/device-benchmark/same-thermal-grade-summary.json)
 - [Device baseline JSONL](../build/performance/device-benchmark/device-results-all/baseline-1791985401553-E1B0BDE6/metrics.jsonl)
 - [Device optimized JSONL](../build/performance/device-benchmark/device-results-all/optimized-1791985302906-76186861/metrics.jsonl)
