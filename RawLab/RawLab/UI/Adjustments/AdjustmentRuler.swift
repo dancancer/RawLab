@@ -35,6 +35,8 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     private var position = 0.0
     private var lastTranslation = 0.0
     private var editing = false
+    private var gestureActive = false
+    private var gestureValueEchoes: Set<Double> = []
     private var fine = false
     private var haptics = true
     private var reduceMotion = false
@@ -66,11 +68,13 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
                    haptics: Bool, reduceMotion: Bool, title: String, formatter: @escaping (Double) -> String,
                    identifier: String, onChange: @escaping (Double) -> Void,
                    onEditingChanged: @escaping (Bool) -> Void) {
-        let replaced = self.scale != scale || abs(self.value - value) > scale.step * 1e-8
-        if replaced { cancel() }
+        let gestureEcho = gestureActive && self.scale == scale && gestureValueEchoes.contains(value)
+        let replaced = self.scale != scale || (!gestureEcho && abs(self.value - value) > scale.step * 1e-8)
+        let endedEditing = replaced && editing
+        if replaced { cancelState(notify: false) }
         if self.scale != scale || ticks.isEmpty { ticks = scale.ticks }
         self.scale = scale
-        self.value = value
+        if !gestureEcho { self.value = value }
         self.defaultValue = defaultValue
         self.fine = fine
         self.haptics = haptics
@@ -80,13 +84,16 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         self.onEditingChanged = onEditingChanged
         accessibilityLabel = title
         accessibilityIdentifier = identifier
-        accessibilityValue = formatter(value)
+        accessibilityValue = formatter(self.value)
         accessibilityHint = "\(L10n.text("范围")) \(formatter(scale.range.lowerBound)) – \(formatter(scale.range.upperBound))"
         accessibilityCustomActions = defaultValue.map { _ in
             [UIAccessibilityCustomAction(name: L10n.text("恢复默认"), target: self, selector: #selector(resetDefault))]
         }
         if !editing && settlement == nil { position = scale.position(for: value) }
         if reduceMotion { motion.clear(); settlement = nil; stopDisplayLink() }
+        if endedEditing {
+            DispatchQueue.main.async { [weak self] in self?.onEditingChanged(false) }
+        }
         setNeedsDisplay()
     }
 
@@ -115,6 +122,12 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     @objc private func drag(_ gesture: UIPanGestureRecognizer) {
         switch gesture.state {
         case .began, .changed:
+            if gesture.state == .began {
+                becomeFirstResponder()
+                gestureActive = true
+                gestureValueEchoes = [value]
+            }
+            guard gestureActive else { return }
             let translation = gesture.translation(in: self)
             if !editing {
                 guard AdjustmentScale.hasHorizontalIntent(x: translation.x, y: translation.y) else { return }
@@ -122,11 +135,12 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
                 motion.clear()
                 lastTranslation = 0
                 editing = true
-                becomeFirstResponder()
                 onEditingChanged(true)
             }
+            guard gestureActive else { return }
             moveTape(translation: translation.x)
         case .ended:
+            gestureActive = false
             finishDrag()
         case .cancelled, .failed:
             cancel()
@@ -157,6 +171,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         guard newValue != value else { return }
         let old = value
         value = newValue
+        if gestureActive { gestureValueEchoes.insert(newValue) }
         accessibilityValue = formatter(newValue)
         onChange(newValue)
         if feedback { AdjustmentFeedback.change(from: old, to: newValue, scale: scale, defaultValue: defaultValue, enabled: haptics) }
@@ -165,6 +180,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     private func finishDrag() {
         guard editing else { return }
         editing = false
+        gestureValueEchoes.removeAll(keepingCapacity: true)
         onEditingChanged(false)
         let target = scale.position(for: value)
         if !reduceMotion && abs(target - position) > 1e-8 {
@@ -175,7 +191,16 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc func cancel() {
-        if editing { editing = false; onEditingChanged(false) }
+        cancelState(notify: true)
+    }
+
+    private func cancelState(notify: Bool) {
+        gestureActive = false
+        gestureValueEchoes.removeAll(keepingCapacity: true)
+        if editing {
+            editing = false
+            if notify { onEditingChanged(false) }
+        }
         settlement = nil
         motion.clear()
         stopDisplayLink()

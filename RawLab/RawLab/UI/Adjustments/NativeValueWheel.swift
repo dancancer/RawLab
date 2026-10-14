@@ -12,6 +12,7 @@ struct NativeValueWheel: View {
     let onApply: (Double) -> Void
     @State private var draft: Double
     @State private var values: [Double]
+    @State private var presentationSpace = WheelPresentationSpace.current
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(title: String, original: Double, scale: AdjustmentScale, defaultValue: Double?, unit: String,
@@ -33,6 +34,11 @@ struct NativeValueWheel: View {
         "\(L10n.text("范围")) \(formatter(scale.range.lowerBound)) – \(formatter(scale.range.upperBound)) \(unit)"
     }
 
+    private var popoverHeight: CGFloat? {
+        guard presentationSpace.regularPopover else { return nil }
+        return min(dynamicTypeSize.isAccessibilitySize ? 600 : 440, presentationSpace.availableHeight)
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             HStack {
@@ -45,30 +51,91 @@ struct NativeValueWheel: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityIdentifier("adjustment.wheel.apply")
             }
-            ScrollView {
-                VStack(spacing: 12) {
-                    Text(title).font(.headline).multilineTextAlignment(.center)
-                    Text(rangeLabel).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Text("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)")
-                        .font(.body).monospacedDigit().multilineTextAlignment(.center)
-                        .accessibilityIdentifier("adjustment.wheel.draft")
-                    WholeValuePicker(value: $draft, values: values, title: title, unit: unit, formatter: formatter)
-                        .frame(height: dynamicTypeSize.isAccessibilitySize ? 264 : 220)
-                    if let defaultValue {
-                        Button("\(L10n.text("默认")) \(formatter(defaultValue)) \(unit)") { draft = defaultValue }
-                            .frame(minHeight: 44)
-                            .accessibilityIdentifier("adjustment.wheel.default")
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Text(title).font(.headline).multilineTextAlignment(.center)
+                        Text(rangeLabel).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Text("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)")
+                            .font(.body).monospacedDigit().multilineTextAlignment(.center)
+                            .accessibilityIdentifier("adjustment.wheel.draft")
+                        WholeValuePicker(value: $draft, values: values, title: title, unit: unit, formatter: formatter)
+                            .frame(height: dynamicTypeSize.isAccessibilitySize ? 264 : 220)
+                            .id("native-value-wheel")
+                        if let defaultValue {
+                            Button("\(L10n.text("默认")) \(formatter(defaultValue)) \(unit)") { draft = defaultValue }
+                                .frame(minHeight: 44)
+                                .accessibilityIdentifier("adjustment.wheel.default")
+                        }
                     }
                 }
+                .onAppear { proxy.scrollTo("native-value-wheel", anchor: .center) }
+                .onChange(of: presentationSpace) { _, _ in proxy.scrollTo("native-value-wheel", anchor: .center) }
             }
         }
         .padding(16)
         .frame(minWidth: 280, idealWidth: 360, maxWidth: 480)
-        .frame(idealHeight: dynamicTypeSize.isAccessibilitySize ? 600 : 440)
+        .frame(height: popoverHeight)
+        .background(WheelPresentationSpaceReader(space: $presentationSpace).allowsHitTesting(false))
         .interactiveDismissDisabled(draft != original)
         .presentationCompactAdaptation(.sheet)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Measure the presenting window rather than the popover content
+
+private struct WheelPresentationSpace: Equatable {
+    let availableHeight: CGFloat
+    let regularPopover: Bool
+
+    init(window: UIWindow) {
+        availableHeight = max(0, window.bounds.height - window.safeAreaInsets.top - window.safeAreaInsets.bottom - 40)
+        regularPopover = window.traitCollection.userInterfaceIdiom == .pad &&
+            window.traitCollection.horizontalSizeClass == .regular
+    }
+
+    static var current: Self {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.filter { $0.activationState == .foregroundActive }.flatMap(\.windows)
+        if let window = windows.first(where: \.isKeyWindow) ?? windows.first(where: { !$0.isHidden }) {
+            return Self(window: window)
+        }
+        return Self(availableHeight: 440, regularPopover: false)
+    }
+
+    private init(availableHeight: CGFloat, regularPopover: Bool) {
+        self.availableHeight = availableHeight
+        self.regularPopover = regularPopover
+    }
+}
+
+private struct WheelPresentationSpaceReader: UIViewRepresentable {
+    @Binding var space: WheelPresentationSpace
+
+    func makeUIView(context: Context) -> WindowReaderView { WindowReaderView() }
+
+    func updateUIView(_ view: WindowReaderView, context: Context) {
+        view.onChange = { space = $0 }
+        view.reportSpace()
+    }
+
+    final class WindowReaderView: UIView {
+        var onChange: (WheelPresentationSpace) -> Void = { _ in }
+        private var lastSpace: WheelPresentationSpace?
+
+        override func didMoveToWindow() { super.didMoveToWindow(); reportSpace() }
+        override func layoutSubviews() { super.layoutSubviews(); reportSpace() }
+        override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); reportSpace() }
+
+        func reportSpace() {
+            guard let window, window.bounds.height > 0 else { return }
+            let space = WheelPresentationSpace(window: window)
+            guard space != lastSpace else { return }
+            lastSpace = space
+            DispatchQueue.main.async { [weak self] in self?.onChange(space) }
+        }
     }
 }
 

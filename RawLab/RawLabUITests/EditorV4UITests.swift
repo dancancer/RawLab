@@ -310,6 +310,10 @@ final class EditorV4UITests: XCTestCase {
         capture("v4-ipad-editor-portrait", in: app)
         try openWheel("adjustment.value", in: app)
         try selectWheelValue("+0.75", title: "Exposure", unit: "EV", in: app)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.3)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["adjustment.wheel"].exists,
+                      "A changed popover draft must remain open when tapping outside")
+        XCTAssertTrue(app.staticTexts["adjustment.wheel.draft"].label.contains("+0.75"))
         let portraitWheel = app.descendants(matching: .any)["adjustment.wheel"].frame
         capture("v4-ipad-wheel-portrait", in: app)
 
@@ -318,6 +322,7 @@ final class EditorV4UITests: XCTestCase {
         waitForLandscapeSidePanel(in: app)
         let picker = app.descendants(matching: .any)["adjustment.wheel"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        assertNativeWheelVisible(in: app)
         XCTAssertTrue(app.staticTexts["adjustment.wheel.draft"].label.contains("+0.75"))
         XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].isHittable)
         XCTAssertTrue(app.buttons["adjustment.wheel.apply"].isHittable)
@@ -374,6 +379,7 @@ final class EditorV4UITests: XCTestCase {
         try setValue("-0.25", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         XCTAssertEqual(try number(value), -0.25, accuracy: 0.0001)
         try revealInPanel(app.descendants(matching: .any)["adjustment.ruler"], in: app)
+        assertLargeTextPhotoVisible(in: app)
         capture("v4-large-text-editor-portrait", in: app)
 
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -390,6 +396,7 @@ final class EditorV4UITests: XCTestCase {
         try setValue("+1.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         XCTAssertEqual(try number(value), 1, accuracy: 0.0001)
         try revealInPanel(app.descendants(matching: .any)["adjustment.ruler"], in: app)
+        assertLargeTextPhotoVisible(in: app)
         capture("v4-large-text-editor-landscape", in: app)
     }
 
@@ -507,13 +514,14 @@ final class EditorV4UITests: XCTestCase {
             let visible = panelFrame.insetBy(dx: 0, dy: min(40, panelFrame.height * 0.2))
             if element.isHittable && visible.contains(CGPoint(x: frame.midX, y: frame.midY)) { return }
             let up = frame.isEmpty || frame.midY > visible.midY
-            let distance = frame.isEmpty ? panelFrame.height * 0.6
-                : up ? max(0, frame.midY - visible.maxY) : max(0, visible.minY - frame.midY)
+            let distance = frame.isEmpty ? panelFrame.height * 0.6 : abs(frame.midY - panelFrame.midY)
             let amount = min(0.6, max(0.12, distance / max(1, panelFrame.height)))
             let startY: CGFloat = up ? 0.82 : 0.18
             let endY = startY + (up ? -amount : amount)
-            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: startY))
-                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: endY)))
+            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: startY))
+                .press(forDuration: 0.1,
+                       thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: endY)),
+                       withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         capture("v4-unreachable-" + element.identifier, in: app)
         XCTFail("Could not reveal \(element.identifier): element \(element.frame), panel \(panel.frame)")
@@ -527,6 +535,7 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(picker.pickerWheels.count, 1, "The value editor must expose one native picker wheel")
         XCTAssertEqual(picker.pickerWheels.firstMatch.elementType, .pickerWheel)
+        assertNativeWheelVisible(in: app)
         XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].isHittable)
         XCTAssertTrue(app.buttons["adjustment.wheel.apply"].isHittable)
     }
@@ -599,6 +608,32 @@ final class EditorV4UITests: XCTestCase {
         }
         let settled = panel.frame
         waitUntil { panel.frame == settled }
+    }
+
+    private func assertNativeWheelVisible(in app: XCUIApplication) {
+        let picker = app.descendants(matching: .any)["adjustment.wheel"]
+        let wheel = picker.pickerWheels.firstMatch
+        let standardIPad = min(app.frame.width, app.frame.height) >= 700
+            && !app.launchArguments.contains("UICTContentSizeCategoryAccessibilityXXXL")
+        waitUntil {
+            guard wheel.isHittable else { return false }
+            return !standardIPad || (picker.frame.height >= 200
+                && app.frame.insetBy(dx: -1, dy: -1).contains(picker.frame))
+        }
+        XCTAssertTrue(wheel.isHittable, "The native selection wheel must remain reachable")
+        if standardIPad {
+            XCTAssertGreaterThanOrEqual(picker.frame.height, 200, "The iPad popover must show the selection wheel")
+            XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(picker.frame),
+                          "The iPad selection wheel must fit within the window")
+        }
+    }
+
+    private func assertLargeTextPhotoVisible(in app: XCUIApplication) {
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        waitUntil {
+            photo.frame.height >= 80 && app.frame.insetBy(dx: -1, dy: -1).contains(photo.frame)
+        }
+        XCTAssertGreaterThanOrEqual(photo.frame.height, 80, "Large text must preserve a visible photo region")
     }
 
     private func capture(_ name: String, in app: XCUIApplication) {

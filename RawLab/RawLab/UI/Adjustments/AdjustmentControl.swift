@@ -85,7 +85,7 @@ struct AdjustmentControl: View {
             @unknown default: break
             }
         }
-        .popover(isPresented: $showingWheel, arrowEdge: .bottom) {
+        .popover(isPresented: $showingWheel) {
             NativeValueWheel(title: title, original: wheelOriginal, scale: scale,
                              defaultValue: validDefault, unit: unit, formatter: formatter,
                              onCancel: { showingWheel = false }, onApply: { draft in
