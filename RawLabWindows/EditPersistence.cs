@@ -14,14 +14,16 @@ public sealed record AdjustmentSnapshot(
     int DisplayChromaDenoise = 0,
     HslSettings? Hsl = null,
     string? MasterRecipeID = null,
-    LensSettings? Lens = null)
+    LensSettings? Lens = null,
+    GeometrySettings? Geometry = null)
 {
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
     public bool SameAs(AdjustmentSnapshot other) => MasterRecipeID == other.MasterRecipeID && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
         AsShotTemperature == other.AsShotTemperature && AsShotTint == other.AsShotTint && Values.SequenceEqual(other.Values) &&
         (Denoise ?? new()) == (other.Denoise ?? new()) &&
         (Effects ?? new()) == (other.Effects ?? new()) && DisplayChromaDenoise == other.DisplayChromaDenoise &&
-        (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new());
+        (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new()) &&
+        (Geometry ?? new()) == (other.Geometry ?? new());
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

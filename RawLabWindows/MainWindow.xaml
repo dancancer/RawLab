@@ -128,6 +128,9 @@
               <Button x:Name="LensCategory" Click="LensCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '镜头匹配'}" AutomationProperties.Name="{DynamicResource '镜头'}">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="LensCategoryRing"/><local:EditorIcon Kind="Lens" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '镜头'}" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
+              <Button x:Name="GeometryCategory" Click="GeometryCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '裁切与旋转'}" AutomationProperties.Name="{DynamicResource '几何'}">
+                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '几何'}" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+              </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
@@ -155,6 +158,7 @@
             </Grid>
             <local:DenoisePanel x:Name="DenoiseEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
             <local:LensPanel x:Name="LensEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
+            <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
             <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <local:PhotoEffectsPanel x:Name="PhotoEffectsEditor" VerticalAlignment="Center"/>

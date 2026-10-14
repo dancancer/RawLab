@@ -71,6 +71,7 @@ internal static class Program
             var effects = new PhotoEffectsSettings(-12, 42, 7, 63, 8, 17, 33, 71);
             adjustments.Effects = effects;
             adjustments.Lens = new LensSettings(true, true, true, true, "profile-id");
+            adjustments.Geometry = new(.1, .2, .8, .7, 1, true, false, 3.5);
             var snapshot = JsonSerializer.Serialize(adjustments.Capture());
             var toolsBefore = (Panel)window.FindName("Tools");
             var effectButton = toolsBefore.Children.OfType<Button>()
@@ -80,6 +81,8 @@ internal static class Program
                 ?? throw new InvalidOperationException("Photo effects panel is missing.");
             var lensPanel = (LensPanel?)window.FindName("LensEditor")
                 ?? throw new InvalidOperationException("Lens panel is missing.");
+            var geometryPanel = (GeometryPanel?)window.FindName("GeometryEditor")
+                ?? throw new InvalidOperationException("Geometry panel is missing.");
             var lensInfo = new LensInfo(1, "Maker Camera Lens", "24mm", true, true, 1.25f,
                 [new LensCandidate("profile-id", "Maker", "24mm", true, true, true)]);
             var batchDirectory = Path.Combine(Path.GetTempPath(), "rawlab-localization-batch-" + Guid.NewGuid().ToString("N"));
@@ -97,6 +100,7 @@ internal static class Program
                 Loc.SetPreference(language);
                 Pump();
                 lensPanel.Refresh(adjustments.Lens, lensInfo);
+                geometryPanel.Refresh(adjustments.Geometry);
                 Check(Loc.Language == language, $"Resolved language {language}");
                 Check(File.ReadAllText(preferencePath).Trim() == language, $"Persisted preference {language}");
                 Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), $"Dynamic catalog resource {language}");
@@ -117,6 +121,12 @@ internal static class Program
 
                 Check(Math.Abs(adjustments[Parameter.Exposure] - 1.25) < .0001, $"Exposure preserved {language}");
                 Check(adjustments.Effects == effects, $"Photo effects preserved {language}");
+                Check(adjustments.Geometry is { CropX: .1, QuarterTurns: 1, FlipHorizontal: true, StraightenDegrees: 3.5 },
+                    $"Geometry survives language changes {language}");
+                Check(AutomationProperties.GetName((CheckBox)geometryPanel.FindName("HorizontalFlip")!) == Loc.Text("水平翻转") &&
+                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("宽度 (%)") &&
+                      AutomationProperties.GetName((Slider)geometryPanel.FindName("StraightenSlider")!) == Loc.Text("拉直"),
+                    $"Geometry controls have localized automation names {language}");
                 Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");
                 Check(JsonSerializer.Serialize(adjustments.Capture()) == snapshot, $"Recipe, HSL and editor snapshot preserved {language}");
                 var hslPanel = (HslPanel)window.FindName("HslEditor");

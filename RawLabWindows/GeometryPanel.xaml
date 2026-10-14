@@ -1,0 +1,29 @@
+<UserControl x:Class="RawLab.Windows.GeometryPanel" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <StackPanel Margin="8,3">
+  <WrapPanel Margin="0,0,0,6">
+   <TextBlock Text="{DynamicResource '几何'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+   <Button Content="{DynamicResource '向左旋转'}" Click="RotateLeftClicked" AutomationProperties.Name="{DynamicResource '向左旋转'}" Margin="0,0,6,0" Padding="8,4"/>
+   <Button Content="{DynamicResource '向右旋转'}" Click="RotateRightClicked" AutomationProperties.Name="{DynamicResource '向右旋转'}" Margin="0,0,12,0" Padding="8,4"/>
+   <CheckBox x:Name="HorizontalFlip" Content="{DynamicResource '水平翻转'}" Checked="FlipChanged" Unchecked="FlipChanged" AutomationProperties.Name="{DynamicResource '水平翻转'}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+   <CheckBox x:Name="VerticalFlip" Content="{DynamicResource '垂直翻转'}" Checked="FlipChanged" Unchecked="FlipChanged" AutomationProperties.Name="{DynamicResource '垂直翻转'}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+   <Button x:Name="ResetGeometry" Content="{DynamicResource '重置几何'}" Click="ResetClicked" AutomationProperties.Name="{DynamicResource '重置几何'}" Padding="8,4"/>
+  </WrapPanel>
+  <WrapPanel Margin="0,0,0,6">
+   <TextBlock Text="{DynamicResource '裁切'}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+   <TextBlock Text="{DynamicResource '左边 (%)'}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+   <TextBox x:Name="CropX" Tag="X" Width="65" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="{DynamicResource '左边 (%)'}" Margin="0,0,10,0"/>
+   <TextBlock Text="{DynamicResource '顶边 (%)'}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+   <TextBox x:Name="CropY" Tag="Y" Width="65" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="{DynamicResource '顶边 (%)'}" Margin="0,0,10,0"/>
+   <TextBlock Text="{DynamicResource '宽度 (%)'}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+   <TextBox x:Name="CropWidth" Tag="Width" Width="65" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="{DynamicResource '宽度 (%)'}" Margin="0,0,10,0"/>
+   <TextBlock Text="{DynamicResource '高度 (%)'}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+   <TextBox x:Name="CropHeight" Tag="Height" Width="65" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="{DynamicResource '高度 (%)'}"/>
+  </WrapPanel>
+  <WrapPanel>
+   <TextBlock Text="{DynamicResource '拉直'}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+   <Slider x:Name="StraightenSlider" Minimum="-45" Maximum="45" Width="210" ValueChanged="StraightenChanged" AutomationProperties.Name="{DynamicResource '拉直'}"/>
+   <TextBox x:Name="StraightenText" Tag="Straighten" Width="65" Margin="10,0,4,0" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="{DynamicResource '拉直角度'}"/>
+   <TextBlock Text="°" VerticalAlignment="Center"/>
+  </WrapPanel>
+ </StackPanel>
+</UserControl>
