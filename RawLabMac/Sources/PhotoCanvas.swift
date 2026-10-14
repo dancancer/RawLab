@@ -8,6 +8,11 @@ struct PhotoCanvas: View {
     let clipping: Bool
     var sourceHeight: Int? = nil
     var onPreviewSizeChange: ((Int) -> Void)? = nil
+    var cropSettings: Binding<GeometrySettings>? = nil
+    var cropAspectRatio: Double? = nil
+    var cropShowsGrid = true
+    var cropCanvasSize: CGSize? = nil
+    var allowsPanning = true
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGSize?
 
@@ -20,6 +25,10 @@ struct PhotoCanvas: View {
             let previewEdge = viewport.previewLongEdge(canvas: geometry.size, displayScale: displayScale,
                 source: CGSize(width: CGFloat(sourceWidth), height: sourceHeight.map(CGFloat.init) ??
                     CGFloat(sourceWidth) * CGFloat(frame.image.height) / CGFloat(frame.image.width)))
+            let imageSize = CGSize(width: CGFloat(frame.image.width) * factor, height: CGFloat(frame.image.height) * factor)
+            let imageBounds = CGRect(x: (geometry.size.width - imageSize.width) / 2 + pan.width,
+                                     y: (geometry.size.height - imageSize.height) / 2 + pan.height,
+                                     width: imageSize.width, height: imageSize.height)
             ZStack {
                 Color.clear
                 Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)
@@ -27,12 +36,16 @@ struct PhotoCanvas: View {
                     .overlay {
                         if clipping { Image(decorative: frame.clipping, scale: 1).resizable().interpolation(.none) }
                     }.offset(x: pan.width, y: pan.height)
+                if let cropSettings {
+                    CropOverlay(settings: cropSettings, imageBounds: imageBounds,
+                                aspectRatio: cropAspectRatio, showsGrid: cropShowsGrid, canvasSize: cropCanvasSize)
+                }
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped().contentShape(Rectangle())
                 .gesture(DragGesture().onChanged { value in
                     if dragOrigin == nil { dragOrigin = pan }
                     pan = CGSize(width: dragOrigin!.width + value.translation.width,
                                  height: dragOrigin!.height + value.translation.height)
-                }.onEnded { _ in dragOrigin = nil })
+                }.onEnded { _ in dragOrigin = nil }, including: allowsPanning && cropSettings == nil ? .all : .subviews)
                 .onChange(of: previewEdge, initial: true) { _, edge in onPreviewSizeChange?(edge) }
         }
     }

@@ -19,6 +19,15 @@ struct EditorView: View {
     @State private var resizeStart: CGFloat?
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
+    @State private var geometryViewState: GeometryViewState?
+
+    private struct GeometryViewState {
+        let file: URL?
+        let compare: Bool
+        let viewport: PhotoViewport
+        let pan: CGSize
+        let fullResolution: Bool
+    }
 
     var body: some View {
         let _ = localizationLocale
@@ -34,10 +43,12 @@ struct EditorView: View {
                   workspace.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
                     .overlay(alignment: .topTrailing) {
-                        FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                        if !model.isEditingGeometry {
+                            FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                        }
                     }
                     .overlay(alignment: .topLeading) {
-                        if infoMode != .hidden, let photoInformation {
+                        if !model.isEditingGeometry, infoMode != .hidden, let photoInformation {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(photoInformation.lines(for: infoMode).enumerated()), id: \.offset) { index, line in
                                     Text(line).font(.system(size: index == 0 ? 14 : 12, weight: index == 0 ? .semibold : .regular))
@@ -73,6 +84,7 @@ struct EditorView: View {
         .preferredColorScheme(.dark)
         .onChange(of: model.file) { _, _ in fit() }
         .onChange(of: model.settings.geometrySettings) { _, _ in pan = .zero }
+        .onChange(of: model.isEditingGeometry) { _, editing in geometryEditingChanged(editing) }
         .task(id: model.file) {
             photoInformation = nil
             guard let file = model.file else { return }
@@ -134,7 +146,7 @@ struct EditorView: View {
                 } label: { Image(systemName: "arrow.counterclockwise") }
                 .menuStyle(.borderlessButton).fixedSize().help(L10n.text("重置调整")).accessibilityLabel(L10n.text("重置调整"))
                     .disabled(model.settings.isDefault)
-            }.padding(.horizontal, 20).frame(height: 42)
+            }.padding(.horizontal, 20).frame(height: 42).disabled(model.isEditingGeometry)
             AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion)
         }.background(Color(nsColor: .windowBackgroundColor))
             .disabled(model.file == nil || model.exporting)
@@ -169,7 +181,7 @@ struct EditorView: View {
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
             HStack(spacing: 1) {
-                if compare, let base = model.neutral { imagePane(base, title: L10n.text("原图"), showMask: false) }
+                if compare && !model.isEditingGeometry, let base = model.neutral { imagePane(base, title: L10n.text("原图"), showMask: false) }
                 imagePane(result, title: model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping)
             }
         } else {
@@ -207,7 +219,7 @@ struct EditorView: View {
                 Label(model.saveStatus, systemImage: "checkmark").foregroundStyle(.secondary)
             }
             if model.batch?.job.interrupted == true {
-                Button(L10n.text("继续上次批量任务")) { openWindow(id: "batch-export") }
+                Button(L10n.text("继续上次批量任务")) { openWindow(id: "batch-export") }.disabled(model.isEditingGeometry)
             }
             if model.busy || model.exporting {
                 ProgressView().controlSize(.mini)
@@ -230,7 +242,7 @@ struct EditorView: View {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
                 .help(L10n.text("原图与调整后对比")).accessibilityLabel(L10n.text("对比"))
-                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil)
+                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || model.isEditingGeometry)
             Button {
                 if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
                 infoMode = infoMode.next
@@ -248,7 +260,7 @@ struct EditorView: View {
                 Button(L10n.text("放大")) { zoom(1.25) }
                 Button(L10n.text("缩小")) { zoom(1 / 1.25) }
             } label: { Image(systemName: "magnifyingglass") }
-                .help(L10n.text("缩放")).accessibilityLabel(L10n.text("缩放")).disabled(model.result == nil)
+                .help(L10n.text("缩放")).accessibilityLabel(L10n.text("缩放")).disabled(model.result == nil || model.isEditingGeometry)
             Button { adjustmentPanel.collapsed.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                 .tint(adjustmentPanel.collapsed ? nil : .yellow)
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
@@ -269,7 +281,7 @@ struct EditorView: View {
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }
                 }
             } label: { Label(L10n.text("导出"), systemImage: "square.and.arrow.up") }
-            .disabled(model.file == nil && model.batch == nil)
+            .disabled((model.file == nil && model.batch == nil) || model.isEditingGeometry)
         }
     }
 
@@ -285,23 +297,47 @@ struct EditorView: View {
         viewport.zoom(by: multiplier)
     }
     private func toggleActualPixels() {
+        guard !model.isEditingGeometry else { return }
         viewport.toggleActualPixels()
         pan = .zero
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
         PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.result?.nativeWidth ?? model.neutral?.image.width ?? frame.image.width,
-                    pan: $pan, clipping: showMask, sourceHeight: model.result?.nativeHeight ?? model.neutral?.image.height,
-                    onPreviewSizeChange: model.updatePreviewLongEdge)
-            .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() })
+                    pan: $pan, clipping: showMask && !model.isEditingGeometry, sourceHeight: model.result?.nativeHeight ?? model.neutral?.image.height,
+                    onPreviewSizeChange: model.updatePreviewLongEdge,
+                    cropSettings: model.isEditingGeometry && model.geometryPreviewReady ? Binding(
+                        get: { model.geometryDraft }, set: model.updateGeometryDraft) : nil,
+                    cropAspectRatio: model.geometryAspectRatio, cropShowsGrid: model.geometryShowsGrid,
+                    cropCanvasSize: model.geometryCanvasSize,
+                    allowsPanning: !model.isEditingGeometry)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() },
+                                 including: model.isEditingGeometry ? .subviews : .all)
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {
-                if compare {
+                if compare && !model.isEditingGeometry {
                     Text(title).font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
                         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 4)).padding(10)
                         .allowsHitTesting(false)
                 }
             }
+    }
+
+    private func geometryEditingChanged(_ editing: Bool) {
+        if editing {
+            geometryViewState = GeometryViewState(file: model.file, compare: compare, viewport: viewport,
+                                                  pan: pan, fullResolution: model.fullResolution)
+            compare = false
+            fit()
+        } else if let previous = geometryViewState {
+            geometryViewState = nil
+            compare = previous.compare
+            if previous.file == model.file {
+                viewport = previous.viewport
+                pan = previous.pan
+                model.fullResolution = previous.fullResolution
+            } else { fit() }
+        }
     }
 }
 

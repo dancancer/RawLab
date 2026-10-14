@@ -379,10 +379,10 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG Created, but the Task Record Was Not Updated. Verify the Saved File First.";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 
-/* Basic geometry editing */
+/* Geometry editing */
 "几何编辑" = "Geometry edits";
 "几何" = "Geometry";
-"裁切、旋转、翻转和拉直" = "Crop, rotate, flip and straighten";
+"裁切、旋转、翻转、透视和拉直" = "Crop, rotate, flip, adjust perspective and straighten";
 "水平翻转" = "Flip horizontal";
 "垂直翻转" = "Flip vertical";
 "重置几何编辑" = "Reset geometry edits";
@@ -393,5 +393,27 @@
 "裁切宽度" = "Crop width";
 "裁切高度" = "Crop height";
 "拉直" = "Straighten";
-"裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Crop position and size use a percentage of the canvas after rotation, flips and straightening.";
+"水平透视" = "Horizontal perspective";
+"垂直透视" = "Vertical perspective";
+"裁切百分比基于旋转、翻转、透视和拉直后的画面。" = "Crop percentages use the canvas after rotation, flips, perspective and straightening.";
 "无效的几何参数" = "Invalid geometry parameters";
+
+/* Geometry draft and crop selection */
+"裁切" = "Crop";
+"校正" = "Correction";
+"裁切比例" = "Crop aspect ratio";
+"自由" = "Free";
+"原始比例" = "Original aspect ratio";
+"交换宽高" = "Swap width and height";
+"显示网格" = "Show grid";
+"精确裁切" = "Precise crop";
+"拖动边角裁切，拖动画面内移动选区。" = "Drag the edges or corners to crop. Drag inside the image to move the selection.";
+"应用几何编辑" = "Apply geometry edits";
+"取消几何编辑" = "Cancel geometry edits";
+"重置几何草稿" = "Reset geometry draft";
+"未应用的几何编辑" = "Unapplied geometry edits";
+"应用" = "Apply";
+"裁切选区" = "Crop selection";
+"调整裁切边角" = "Adjust crop edges and corners";
+"裁切尺寸" = "Crop dimensions";
+"请先应用或取消几何编辑。" = "Apply or cancel the geometry edits first.";

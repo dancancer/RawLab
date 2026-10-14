@@ -26,6 +26,12 @@ struct BatchExportView: View {
                 HStack { ProgressView().controlSize(.small); Text(L10n.text("正在检查 RAW 照片…")) }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 12)
             }
+            if model.sourceEditingGeometry {
+                Text(L10n.text("请先应用或取消几何编辑。"))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.bottom, 12)
+            }
             if model.job.started {
                 ProgressView(value: Double(model.job.succeededCount + model.job.failedCount),
                              total: Double(max(1, model.job.selectedCount)))

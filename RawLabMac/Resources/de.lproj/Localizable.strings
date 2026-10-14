@@ -379,10 +379,10 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG erstellt, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst die gespeicherte Datei.";
 "无效的视口预览模式" = "Ungültiger Modus für die Ausschnittvorschau";
 
-/* Basic geometry editing */
+/* Geometry editing */
 "几何编辑" = "Geometrie bearbeiten";
 "几何" = "Geometrie";
-"裁切、旋转、翻转和拉直" = "Zuschneiden, drehen, spiegeln und begradigen";
+"裁切、旋转、翻转、透视和拉直" = "Zuschneiden, drehen, spiegeln, Perspektive anpassen und begradigen";
 "水平翻转" = "Horizontal spiegeln";
 "垂直翻转" = "Vertikal spiegeln";
 "重置几何编辑" = "Geometrie zurücksetzen";
@@ -393,5 +393,27 @@
 "裁切宽度" = "Zuschnittbreite";
 "裁切高度" = "Zuschnitthöhe";
 "拉直" = "Begradigen";
-"裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Position und Größe des Zuschnitts beziehen sich prozentual auf die Fläche nach Drehen, Spiegeln und Begradigen.";
+"水平透视" = "Horizontale Perspektive";
+"垂直透视" = "Vertikale Perspektive";
+"裁切百分比基于旋转、翻转、透视和拉直后的画面。" = "Die Zuschnittprozente beziehen sich auf die Fläche nach Drehen, Spiegeln, Perspektivkorrektur und Begradigen.";
 "无效的几何参数" = "Ungültige Geometrieparameter";
+
+/* Geometry draft and crop selection */
+"裁切" = "Zuschneiden";
+"校正" = "Korrektur";
+"裁切比例" = "Seitenverhältnis des Zuschnitts";
+"自由" = "Frei";
+"原始比例" = "Originales Seitenverhältnis";
+"交换宽高" = "Breite und Höhe tauschen";
+"显示网格" = "Raster anzeigen";
+"精确裁切" = "Exakter Zuschnitt";
+"拖动边角裁切，拖动画面内移动选区。" = "Ziehen Sie die Kanten oder Ecken zum Zuschneiden. Ziehen Sie im Bild, um den Ausschnitt zu verschieben.";
+"应用几何编辑" = "Geometrieänderungen anwenden";
+"取消几何编辑" = "Geometrieänderungen abbrechen";
+"重置几何草稿" = "Geometrieentwurf zurücksetzen";
+"未应用的几何编辑" = "Nicht angewendete Geometrieänderungen";
+"应用" = "Anwenden";
+"裁切选区" = "Zuschnittbereich";
+"调整裁切边角" = "Zuschnittkanten und -ecken anpassen";
+"裁切尺寸" = "Zuschnittgröße";
+"请先应用或取消几何编辑。" = "Wenden Sie zuerst die Geometrieänderungen an oder brechen Sie sie ab.";

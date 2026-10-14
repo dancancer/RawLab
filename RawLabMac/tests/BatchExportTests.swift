@@ -29,6 +29,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         settings.rotateGeometry(clockwise: true)
         settings.flipGeometry(horizontal: true)
         settings.setGeometry(.straightenDegrees, to: 4.5)
+        settings.setGeometry(.perspectiveHorizontal, to: 0.3)
+        settings.setGeometry(.perspectiveVertical, to: -0.2)
         let frozenGeometry = settings.geometrySettings
         var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Velvia")
         job.longEdge = 2048
@@ -125,7 +127,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) { input, snapshot, _, destination in
             calls.append(input.lastPathComponent)
             try check(snapshot.exposure == 0.75, "snapshot must not follow live edits")
-            try check(snapshot.geometrySettings == frozenGeometry, "batch freezes crop, rotation, flips and straightening")
+            try check(snapshot.geometrySettings == frozenGeometry, "batch freezes crop, rotation, flips, perspective and straightening")
             try check(snapshot.lensSettings == LensCorrectionSettings(distortion: true, tca: true) && snapshot.lensSettings.coreProfileID.isEmpty,
                       "batch freezes automatic mode, not a resolved source lens")
             try check(snapshot.waveletSettings == WaveletDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100), "batch keeps frozen denoise settings")

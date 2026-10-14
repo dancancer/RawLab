@@ -326,6 +326,16 @@ final class RenderEngine {
         guard sony2fuji_session_set_geometry(session, &config) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的几何参数"))
         }
+        // The two native settings persist independently, so identity renders
+        // must send zero perspective as well as the complete basic geometry.
+        var perspective = sony2fuji_perspective_config()
+        perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
+        perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
+        perspective.horizontal = Float(settings.perspectiveHorizontal)
+        perspective.vertical = Float(settings.perspectiveVertical)
+        guard sony2fuji_session_set_perspective(session, &perspective) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的几何参数"))
+        }
     }
 
     private func configureLens(_ lens: LensCorrectionSettings) throws {

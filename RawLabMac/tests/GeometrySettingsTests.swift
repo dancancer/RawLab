@@ -15,8 +15,12 @@ import Foundation
               "old records retain their exposure interpretation and identity geometry")
         let partial = try JSONDecoder().decode(Adjustments.self, from: Data("{\"geometry\":{\"quarterTurns\":1}}".utf8))
         check(partial.geometrySettings.quarterTurns == 1 && partial.geometrySettings.cropWidth == 1 &&
-              partial.geometrySettings.cropHeight == 1 && !partial.geometrySettings.flipHorizontal,
-              "missing geometry fields use identity values")
+              partial.geometrySettings.cropHeight == 1 && !partial.geometrySettings.flipHorizontal &&
+              partial.geometrySettings.perspectiveHorizontal == 0 && partial.geometrySettings.perspectiveVertical == 0,
+              "missing geometry and perspective fields use identity values")
+        check(MemoryLayout<sony2fuji_geometry_config>.size == 40 &&
+              MemoryLayout<sony2fuji_perspective_config>.size == 16,
+              "perspective adds its own config without changing the basic geometry ABI")
         settings.setGeometry(.cropWidth, to: 0.6)
         settings.setGeometry(.cropHeight, to: 0.7)
         settings.setGeometry(.cropX, to: 0.2)
@@ -25,6 +29,8 @@ import Foundation
         settings.flipGeometry(horizontal: true)
         settings.flipGeometry(horizontal: false)
         settings.setGeometry(.straightenDegrees, to: -7.5)
+        settings.setGeometry(.perspectiveHorizontal, to: 0.3)
+        settings.setGeometry(.perspectiveVertical, to: -0.2)
         let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(settings))
         check(restored == settings && !restored.isDefault(.geometry), "every geometry setting survives JSON")
         let neutral = settings.neutralGeometrySettings
@@ -42,12 +48,24 @@ import Foundation
               "crop height stays positive at the lower and upper boundaries")
         settings.setGeometry(.straightenDegrees, to: 100)
         check(settings.geometrySettings.straightenDegrees == 45, "straightening uses the core angle range")
+        settings.setGeometry(.perspectiveHorizontal, to: 100)
+        settings.setGeometry(.perspectiveVertical, to: -100)
+        check(settings.geometrySettings.perspectiveHorizontal == 1 && settings.geometrySettings.perspectiveVertical == -1 &&
+              GeometryParameter.perspectiveHorizontal.multiplier == 100 && GeometryParameter.perspectiveVertical.unit == "%",
+              "perspective controls show percent and clamp to the normalized core range")
         let finite = settings
         settings.setGeometry(.cropX, to: .nan)
         settings.setGeometry(.straightenDegrees, to: .infinity)
+        settings.setGeometry(.perspectiveHorizontal, to: .nan)
+        settings.setGeometry(.perspectiveVertical, to: .infinity)
         check(settings == finite, "nonfinite numeric edits leave the current crop unchanged")
         settings.reset(.geometry)
         check(settings.geometry == nil && settings.isDefault(.geometry), "group reset restores identity")
+        settings.setGeometry(.perspectiveVertical, to: 0.4)
+        check(!settings.geometrySettings.isIdentity && !settings.isDefault(.geometry),
+              "perspective alone changes geometry identity and cache equality")
+        settings.setGeometry(.perspectiveVertical, to: 0)
+        check(settings.geometry == nil, "zero perspective restores canonical identity")
         for _ in 0..<4 { settings.rotateGeometry(clockwise: false) }
         check(settings.geometry == nil, "four left turns return to identity")
         settings.rotateGeometry(clockwise: true)
@@ -60,15 +78,16 @@ import Foundation
         settings.resetAll()
         check(settings.geometry == nil && settings.isDefault, "reset all includes geometry")
         for record in ["{\"cropX\":0.8,\"cropWidth\":0.5}", "{\"cropWidth\":0}",
-                       "{\"quarterTurns\":4}", "{\"straightenDegrees\":46}"] {
+                       "{\"quarterTurns\":4}", "{\"straightenDegrees\":46}",
+                       "{\"perspectiveHorizontal\":1.1}", "{\"perspectiveVertical\":-1.1}"] {
             do {
                 _ = try JSONDecoder().decode(Adjustments.self, from: Data("{\"geometry\":\(record)}".utf8))
                 preconditionFailure("Invalid saved geometry accepted: \(record)")
             } catch DecodingError.dataCorrupted { checks += 1 }
         }
-        let keys = ["几何编辑", "几何", "裁切、旋转、翻转和拉直", "水平翻转", "垂直翻转", "重置几何编辑",
+        let keys = ["几何编辑", "几何", "裁切、旋转、翻转、透视和拉直", "水平翻转", "垂直翻转", "重置几何编辑",
                     "向右旋转 90°", "向左旋转 90°", "裁切左边", "裁切上边", "裁切宽度", "裁切高度", "拉直",
-                    "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。", "无效的几何参数"]
+                    "水平透视", "垂直透视", "裁切百分比基于旋转、翻转、透视和拉直后的画面。", "无效的几何参数"]
         let resources = URL(fileURLWithPath: CommandLine.arguments[1])
         for language in ["en", "zh-Hans", "de", "fr", "ja", "es"] {
             let url = resources.appendingPathComponent("\(language).lproj/Localizable.strings")

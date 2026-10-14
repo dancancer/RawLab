@@ -23,6 +23,7 @@ struct AdjustmentDock: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {
                         Button {
+                            model.cancelGeometryEditing()
                             selected = nil
                             hslSelected = false
                             lensSelected = false
@@ -45,6 +46,7 @@ struct AdjustmentDock: View {
                             .accessibilityAddTraits(selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .film ? .isSelected : [])
 
                         Button {
+                            model.cancelGeometryEditing()
                             selected = nil
                             hslSelected = false
                             dockCategory = .masterRecipe
@@ -66,7 +68,7 @@ struct AdjustmentDock: View {
                             .accessibilityValue(model.settings.masterRecipe?.name ?? L10n.text("无配方"))
                             .accessibilityAddTraits(selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe ? .isSelected : [])
                         ForEach([AdjustmentParameter.strength] + AdjustmentParameter.photoTools) { parameter in tool(parameter) }
-                        Button { hslSelected = true; lensSelected = false; geometrySelected = false } label: {
+                        Button { model.cancelGeometryEditing(); hslSelected = true; lensSelected = false; geometrySelected = false } label: {
                             VStack(spacing: 5) {
                                 Image(systemName: "slider.horizontal.3").font(.system(size: 19))
                                     .frame(width: 40, height: 40)
@@ -131,6 +133,11 @@ struct AdjustmentDock: View {
         }
         .frame(maxWidth: .infinity).padding(.top, 6).padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
+        .onChange(of: model.isEditingGeometry) { _, editing in
+            if !editing && geometrySelected { geometrySelected = false; selected = .exposure }
+        }
+        .onChange(of: model.file) { _, _ in geometrySelected = false }
+        .onDisappear { model.cancelGeometryEditing() }
     }
 
     private func tool(_ parameter: AdjustmentParameter) -> some View {
@@ -142,7 +149,7 @@ struct AdjustmentDock: View {
         let progress = parameter == .denoiseMode ? (changed ? 1.0 : 0.0) : spec.progress(for: value)
         let valueText = parameter == .denoiseMode ?
             model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
-        return Button { selected = parameter; hslSelected = false; lensSelected = false; geometrySelected = false } label: {
+        return Button { model.cancelGeometryEditing(); selected = parameter; hslSelected = false; lensSelected = false; geometrySelected = false } label: {
             VStack(spacing: 5) {
                 ZStack {
                     Circle().fill(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
@@ -172,13 +179,13 @@ struct AdjustmentDock: View {
             Button(L10n.format("重置%@", String(describing: spec.title))) {
                 if parameter.isPhotoEffect { model.settings.resetEffect(parameter) }
                 else { model.settings.set(parameter, to: spec.defaultValue) }
-            }.disabled(!changed)
+            }.disabled(!changed || model.isEditingGeometry)
         }
     }
 
     private var lensTool: some View {
         let changed = !model.settings.isDefault(.lens)
-        return Button { selected = nil; lensSelected = true; hslSelected = false; geometrySelected = false } label: {
+        return Button { model.cancelGeometryEditing(); selected = nil; lensSelected = true; hslSelected = false; geometrySelected = false } label: {
             VStack(spacing: 5) {
                 Image(systemName: "viewfinder").font(.system(size: 19))
                     .frame(width: 40, height: 40)
@@ -194,7 +201,11 @@ struct AdjustmentDock: View {
 
     private var geometryTool: some View {
         let changed = !model.settings.isDefault(.geometry)
-        return Button { selected = nil; geometrySelected = true; lensSelected = false; hslSelected = false } label: {
+        return Button {
+            model.beginGeometryEditing()
+            guard model.isEditingGeometry else { return }
+            selected = nil; geometrySelected = true; lensSelected = false; hslSelected = false
+        } label: {
             VStack(spacing: 5) {
                 Image(systemName: "crop.rotate").font(.system(size: 19))
                     .frame(width: 40, height: 40)
@@ -204,7 +215,7 @@ struct AdjustmentDock: View {
                 Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 3, height: 3)
             }.frame(width: 72, height: 70).foregroundStyle(geometrySelected ? Color.yellow : Color.primary)
         }.buttonStyle(.plain).disabled(model.result == nil)
-            .help(L10n.text("裁切、旋转、翻转和拉直")).accessibilityLabel(L10n.text("几何编辑"))
+            .help(L10n.text("裁切、旋转、翻转、透视和拉直")).accessibilityLabel(L10n.text("几何编辑"))
             .accessibilityIdentifier("tool.geometry").accessibilityAddTraits(geometrySelected ? .isSelected : [])
     }
 

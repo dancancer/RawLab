@@ -544,8 +544,36 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
     }
 }
 
+/// A geometry edit remains local until the user applies it. Crop movement only
+/// changes the overlay; preview rendering uses the complete transformed canvas.
+struct GeometryEditSession: Equatable {
+    let original: GeometrySettings
+    private(set) var draft: GeometrySettings
+
+    init(_ settings: GeometrySettings) {
+        original = settings
+        draft = settings
+    }
+
+    var hasChanges: Bool { draft != original }
+    var previewGeometry: GeometrySettings {
+        var geometry = draft
+        geometry.cropX = 0; geometry.cropY = 0
+        geometry.cropWidth = 1; geometry.cropHeight = 1
+        return geometry
+    }
+
+    /// Returns whether the transformed canvas needs a new render.
+    @discardableResult mutating func update(_ geometry: GeometrySettings) -> Bool {
+        guard geometry.isValid, draft != geometry else { return false }
+        let previous = previewGeometry
+        draft = geometry
+        return previous != previewGeometry
+    }
+}
+
 enum GeometryParameter: String, CaseIterable, Identifiable {
-    case cropX, cropY, cropWidth, cropHeight, straightenDegrees
+    case cropX, cropY, cropWidth, cropHeight, straightenDegrees, perspectiveHorizontal, perspectiveVertical
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -554,6 +582,8 @@ enum GeometryParameter: String, CaseIterable, Identifiable {
         case .cropWidth: return L10n.text("裁切宽度")
         case .cropHeight: return L10n.text("裁切高度")
         case .straightenDegrees: return L10n.text("拉直")
+        case .perspectiveHorizontal: return L10n.text("水平透视")
+        case .perspectiveVertical: return L10n.text("垂直透视")
         }
     }
     var keyPath: WritableKeyPath<GeometrySettings, Double> {
@@ -563,6 +593,8 @@ enum GeometryParameter: String, CaseIterable, Identifiable {
         case .cropWidth: return \.cropWidth
         case .cropHeight: return \.cropHeight
         case .straightenDegrees: return \.straightenDegrees
+        case .perspectiveHorizontal: return \.perspectiveHorizontal
+        case .perspectiveVertical: return \.perspectiveVertical
         }
     }
     var multiplier: Double { self == .straightenDegrees ? 1 : 100 }
@@ -574,6 +606,7 @@ enum GeometryParameter: String, CaseIterable, Identifiable {
         case .cropWidth: return min(0.001, 1 - state.cropX)...(1 - state.cropX)
         case .cropHeight: return min(0.001, 1 - state.cropY)...(1 - state.cropY)
         case .straightenDegrees: return -45...45
+        case .perspectiveHorizontal, .perspectiveVertical: return -1...1
         }
     }
 }

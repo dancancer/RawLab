@@ -35,13 +35,16 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         settings.rotateGeometry(clockwise: true)
         settings.flipGeometry(horizontal: true)
         settings.setGeometry(.straightenDegrees, to: -7.5)
+        settings.setGeometry(.perspectiveHorizontal, to: 0.3)
+        settings.setGeometry(.perspectiveVertical, to: -0.2)
         settings.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
         settings.set(.temperature, to: 6000)
         try store.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))
         let reopened = try EditPersistence(directory: directory)
         let restored = try reopened.state(for: a)
         try check(restored?.settings == settings, "all settings survive reopening the store")
-        try check(restored?.settings.geometrySettings == settings.geometrySettings, "geometry survives persistence restart")
+        try check(restored?.settings.geometrySettings == settings.geometrySettings,
+                  "crop, rotation, flips, perspective and straightening survive persistence restart")
         try check(restored?.filmID == "look-id", "look identity survives restart")
         try check(try reopened.state(for: b) == nil, "same basename must not share edits")
         settings.denoiseMode = 2
@@ -59,7 +62,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
                   "disabled custom wavelet settings survive restart without reviving old algorithms")
         settings.resetAll()
         try reopened.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))
-        try check(try EditPersistence(directory: directory).state(for: a)?.settings.exposure == 0,
+        try check(try EditPersistence(directory: directory).state(for: a)?.settings.exposure == 0 &&
+                  EditPersistence(directory: directory).state(for: a)?.settings.geometrySettings.isIdentity == true,
                   "reset must persist, not resurrect old values")
         try Data("replacement raw".utf8).write(to: a)
         try check(try reopened.state(for: a) == nil, "a replaced file must not inherit prior edits")

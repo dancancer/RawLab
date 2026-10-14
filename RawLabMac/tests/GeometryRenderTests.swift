@@ -64,8 +64,15 @@ import Darwin
         }
         try check(mapped, "Mac rotation, flip and crop preserve the exact mapped pixels")
         settings.setGeometry(.straightenDegrees, to: 7.5)
+        let basicSettings = settings
         let edge = min(512, max(width, height))
+        let basicPreview = try cpu.render(raw, settings: basicSettings, lut: nil, edge: edge)!
+        settings.setGeometry(.perspectiveHorizontal, to: 0.3)
+        settings.setGeometry(.perspectiveVertical, to: -0.2)
         let preview = try cpu.render(raw, settings: settings, lut: nil, edge: edge)!
+        try check(bytes(preview.image) != bytes(basicPreview.image) &&
+                  preview.nativeWidth! < basicPreview.nativeWidth! && preview.nativeHeight! < basicPreview.nativeHeight!,
+                  "both perspective controls reach the shared native transform")
         let requestedProxy = try cpu.render(raw, settings: settings, lut: nil, edge: edge,
                                             interactive: true, viewportPreview: true)!
         try check(bytes(preview.image) == bytes(requestedProxy.image),
@@ -84,7 +91,7 @@ import Darwin
         let exact = try cpu.render(raw, settings: settings, lut: nil, edge: nil)!
         try check(exact.image.width == preview.nativeWidth && exact.image.height == preview.nativeHeight &&
                   exact.image.width < width && exact.image.height < height,
-                  "straightened preview retains the exact inscribed native canvas dimensions")
+                  "perspective and straightening retain the exact inscribed native canvas dimensions")
         let destination = output.appendingPathComponent("geometry.png")
         _ = try cpu.render(raw, settings: settings, lut: nil, edge: nil, output: destination, exportLongEdge: edge)
         let imageSource = CGImageSourceCreateWithURL(destination as CFURL, nil)!
@@ -97,7 +104,11 @@ import Darwin
         let direct = try fresh.render(raw, settings: settings, lut: nil, edge: edge)!
         try check(bytes(preview.image) == bytes(direct.image), "geometry result does not depend on prior session edits")
         let reset = try cpu.render(raw, settings: Adjustments(), lut: nil, edge: nil)!
-        try check(bytes(reset.image) == bytes(baseline.image), "rendering identity clears all prior session geometry")
+        try check(bytes(reset.image) == bytes(baseline.image), "rendering identity clears all prior session geometry and perspective")
+        _ = try cpu.render(raw, settings: settings, lut: nil, edge: edge)
+        let clearedPerspective = try cpu.render(raw, settings: basicSettings, lut: nil, edge: edge)!
+        try check(bytes(clearedPerspective.image) == bytes(basicPreview.image),
+                  "zero perspective clears both axes while preserving the other geometry settings")
         try modelChecks(raw: raw, output: output)
     }
 
@@ -113,6 +124,7 @@ import Darwin
         geometry.quarterTurns = 1; geometry.flipVertical = true
         geometry.cropWidth = 0.75; geometry.cropX = 0.125
         geometry.cropHeight = 0.5; geometry.cropY = 0.25; geometry.straightenDegrees = -4
+        geometry.perspectiveHorizontal = 0.3; geometry.perspectiveVertical = -0.2
         model.settings.geometry = geometry
         try wait("geometry reference and preview") { !model.busy && model.result?.nativeWidth == model.neutral?.image.width }
         let neutral = model.neutral!.image
@@ -124,9 +136,13 @@ import Darwin
         model.settings.exposure = 0.5
         try wait("color change on transformed canvas") { !model.busy }
         try check(model.neutral!.image === neutral, "color adjustments reuse the geometric neutral cache")
+        geometry.perspectiveHorizontal = -0.3
+        model.settings.geometry = geometry
+        try wait("perspective cache invalidation") { !model.busy && model.neutral?.image !== neutral }
+        try check(bytes(model.neutral!.image) != bytes(neutral), "perspective-only edits refresh the geometric neutral cache")
         model.fullResolution = true
         try wait("100 percent geometry view") { !model.busy && model.result?.isFullResolution == true }
-        try check(model.result!.image.width == neutral.width && model.result!.image.height == neutral.height,
+        try check(model.result!.image.width == model.neutral!.image.width && model.result!.image.height == model.neutral!.image.height,
                   "100 percent uses geometric native dimensions")
         try check(model.prepareBatch() && model.batch?.job.settings.geometrySettings == geometry,
                   "editor freezes current geometry in its batch snapshot")
