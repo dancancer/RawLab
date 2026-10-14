@@ -19,10 +19,13 @@ struct ParameterValueTests {
     }
 
     static func fixture(_ value: Double, precision: ParameterPrecision = .exposure,
-                        range: ClosedRange<Double> = -4...4) -> (ValueBox, NumericTextField, ParameterValueField.Coordinator) {
+                        range: ClosedRange<Double> = -4...4,
+                        invalidInputPolicy: ParameterInvalidInputPolicy = .restore,
+                        onValidityChange: @escaping (Bool) -> Void = { _ in }) -> (ValueBox, NumericTextField, ParameterValueField.Coordinator) {
         let box = ValueBox(value)
         let parent = ParameterValueField(value: Binding(get: { box.value }, set: { box.value = $0 }),
-                                         range: range, precision: precision, title: "Exposure", unit: "EV", identifier: "value.exposure")
+                                         range: range, precision: precision, title: "Exposure", unit: "EV", identifier: "value.exposure",
+                                         invalidInputPolicy: invalidInputPolicy, onValidityChange: onValidityChange)
         let coordinator = ParameterValueField.Coordinator(parent)
         let field = NumericTextField()
         field.cell = NumericTextFieldCell(textCell: "")
@@ -32,6 +35,20 @@ struct ParameterValueTests {
         field.isEditable = true
         coordinator.field = field
         return (box, field, coordinator)
+    }
+
+    static func change(_ text: String, field: NumericTextField, coordinator: ParameterValueField.Coordinator) {
+        field.stringValue = text
+        coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+    }
+
+    static func blur(_ field: NumericTextField, coordinator: ParameterValueField.Coordinator) {
+        coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+    }
+
+    static func drainDeferredValidity() {
+        let deadline = Date().addingTimeInterval(0.02)
+        while RunLoop.main.run(mode: .default, before: deadline), Date() < deadline {}
     }
 
     static func main() {
@@ -88,7 +105,8 @@ struct ParameterValueTests {
         check(wheelState.handle(verticalPixels: 800, timestamp: 3, fine: false, editable: true, validValue: true, momentum: true) == .consume,
               "Momentum cannot replay an adjustment")
 
-        let (box, field, coordinator) = fixture(0.3)
+        var restoreValidityEvents: [Bool] = []
+        let (box, field, coordinator) = fixture(0.3, onValidityChange: { restoreValidityEvents.append($0) })
         field.stringValue = ".455"
         coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         check(coordinator.wheel(wheel(40, time: 10)) && box.value == 0.3 && field.stringValue == ".455",
@@ -108,6 +126,7 @@ struct ParameterValueTests {
         coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
         check(box.value == 1.23 && field.invalid && field.stringValue == "+1.23", "Invalid blur restores the current value with an error border")
+        check(restoreValidityEvents.isEmpty, "Ordinary fields keep their existing restored-value error behavior without draft validity changes")
         check(field.toolTip == L10n.text("请输入有效数字") && field.accessibilityHelp() == field.toolTip,
               "Rejected input exposes a localized tooltip and accessible error explanation")
         field.invalid = false
@@ -126,6 +145,86 @@ struct ParameterValueTests {
         cameraCoordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: cameraField))
         cameraCoordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: cameraField))
         check(cameraBox.value == 5274, "Focus and blur preserve an exact off-grid camera default")
+
+        var validityEvents: [Bool] = []
+        let (draftBox, draftField, draftCoordinator) = fixture(0.3, invalidInputPolicy: .retain,
+                                                               onValidityChange: { validityEvents.append($0) })
+        draftCoordinator.update(draftCoordinator.parent, isEnabled: true)
+        check(validityEvents.isEmpty, "Creating and updating a valid draft field does not publish validity")
+        draftCoordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: draftField))
+        change("-", field: draftField, coordinator: draftCoordinator)
+        check(validityEvents == [false] && draftField.invalid && !draftCoordinator.isValid && draftBox.value == 0.3,
+              "Retained invalid typing reports invalidity immediately without changing the setting")
+        change("abc", field: draftField, coordinator: draftCoordinator)
+        check(validityEvents == [false], "Repeated invalid typing does not repeat the validity callback")
+        check(draftCoordinator.control(draftField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))),
+              "The retained draft field handles Enter")
+        check(draftField.stringValue == "abc" && draftField.invalid && draftCoordinator.dirty && draftBox.value == 0.3,
+              "Invalid Enter preserves the marked draft and the last valid setting")
+        blur(draftField, coordinator: draftCoordinator)
+        check(!draftCoordinator.editing && draftField.stringValue == "abc" && draftField.invalid && draftCoordinator.dirty,
+              "Invalid blur preserves the draft after native editing ends")
+        draftCoordinator.update(draftCoordinator.parent, isEnabled: true)
+        check(draftField.stringValue == "abc" && draftField.invalid && validityEvents == [false],
+              "A representable refresh keeps a blurred invalid draft for correction")
+        check(draftField.toolTip == L10n.text("请输入有效数字") && draftField.accessibilityHelp() == draftField.toolTip,
+              "Retained errors expose the existing tooltip and accessibility explanation")
+        check(!draftCoordinator.wheel(wheel(80, time: 30)) && draftBox.value == 0.3 && draftField.stringValue == "abc",
+              "An invalid retained draft passes wheel input without consuming or restoring it")
+        draftCoordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: draftField))
+        change("1.234", field: draftField, coordinator: draftCoordinator)
+        check(validityEvents == [false, true] && !draftField.invalid && draftBox.value == 0.3,
+              "Correcting the draft clears its invalidity before committing a value")
+        blur(draftField, coordinator: draftCoordinator)
+        check(draftBox.value == 1.23 && draftField.stringValue == "+1.23" && !draftCoordinator.dirty && draftCoordinator.isValid,
+              "A corrected retained draft commits and snaps normally on blur")
+        change("nan", field: draftField, coordinator: draftCoordinator)
+        blur(draftField, coordinator: draftCoordinator)
+        check(draftCoordinator.control(draftField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))),
+              "Escape is handled for a retained invalid draft")
+        blur(draftField, coordinator: draftCoordinator)
+        check(draftField.stringValue == "+1.23" && !draftField.invalid && !draftCoordinator.dirty &&
+              draftCoordinator.isValid && validityEvents == [false, true, false, true] && draftBox.value == 1.23,
+              "Escape restores only the field draft and reports recovery without changing the setting")
+
+        change("incomplete", field: draftField, coordinator: draftCoordinator)
+        blur(draftField, coordinator: draftCoordinator)
+        var resetParent = draftCoordinator.parent
+        resetParent.resetRevision += 1
+        let beforeReset = validityEvents.count
+        draftCoordinator.update(resetParent, isEnabled: true)
+        check(draftField.stringValue == "+1.23" && !draftField.invalid && !draftCoordinator.dirty &&
+              draftCoordinator.isValid && validityEvents.count == beforeReset,
+              "A same-value reset clears the retained draft without publishing during the representable update")
+        drainDeferredValidity()
+        check(validityEvents.last == true && validityEvents.count == beforeReset + 1,
+              "A same-value reset reports recovered validity after the native update")
+        change("bad", field: draftField, coordinator: draftCoordinator)
+        blur(draftField, coordinator: draftCoordinator)
+        draftBox.value = -2.4
+        let beforeExternal = validityEvents.count
+        draftCoordinator.update(draftCoordinator.parent, isEnabled: true)
+        check(draftField.stringValue == "-2.40" && !draftField.invalid && !draftCoordinator.dirty &&
+              draftCoordinator.isValid && validityEvents.count == beforeExternal,
+              "An external setting change replaces an invalid draft and defers its recovery notification")
+        drainDeferredValidity()
+        check(validityEvents.last == true && validityEvents.count == beforeExternal + 1,
+              "External changes report recovered validity after the representable update")
+
+        change("bad", field: draftField, coordinator: draftCoordinator)
+        draftField.stringValue = "-1.1"
+        check(draftCoordinator.wheel(wheel(80, time: 31)) && draftBox.value == -1 && !draftField.invalid &&
+              !draftCoordinator.dirty && draftCoordinator.isValid && validityEvents.last == true,
+              "An accepted wheel step commits a corrected draft and clears retained invalidity")
+        change("bad", field: draftField, coordinator: draftCoordinator)
+        resetParent = draftCoordinator.parent
+        resetParent.resetRevision += 1
+        draftCoordinator.update(resetParent, isEnabled: true)
+        change("still bad", field: draftField, coordinator: draftCoordinator)
+        let afterNewDraft = validityEvents.count
+        drainDeferredValidity()
+        check(!draftCoordinator.isValid && draftField.invalid && validityEvents.last == false && validityEvents.count == afterNewDraft,
+              "A deferred reset recovery cannot re-enable Apply after a newer invalid edit")
 
         let (focusedBox, focusedField, _) = fixture(0.3)
         let focusedCoordinator = ParameterValueField.Coordinator(ParameterValueField(

@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+enum ParameterInvalidInputPolicy {
+    case restore, retain
+}
+
 struct ParameterValueField: NSViewRepresentable {
     @Environment(\.isEnabled) private var isEnabled
     @Binding var value: Double
@@ -11,6 +15,8 @@ struct ParameterValueField: NSViewRepresentable {
     let identifier: String
     var resetRevision = 0
     var onEditingChanged: (Bool) -> Void = { _ in }
+    var invalidInputPolicy: ParameterInvalidInputPolicy = .restore
+    var onValidityChange: (Bool) -> Void = { _ in }
 
     private var signed: Bool { range.lowerBound < 0 }
 
@@ -45,24 +51,8 @@ struct ParameterValueField: NSViewRepresentable {
 
     func updateNSView(_ field: NumericTextField, context: Context) {
         let coordinator = context.coordinator
-        let externalChange = coordinator.lastValue != value
-        let reset = coordinator.resetRevision != resetRevision
-        coordinator.parent = self
-        coordinator.lastValue = value
-        coordinator.resetRevision = resetRevision
-        field.isEnabled = isEnabled
-        field.isEditable = isEnabled
-        field.setAccessibilityIdentifier(identifier)
-        field.setAccessibilityLabel(L10n.format("%@数值", title))
-        field.normalHelp = L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
-                                   precision.text(precision.normalStep), precision.text(precision.fineStep),
-                                   precision.text(range.lowerBound), precision.text(range.upperBound), unit)
-        if !coordinator.editing || externalChange || reset {
-            coordinator.write(precision.text(value, signed: signed))
-            coordinator.dirty = false
-            if externalChange || reset { field.invalid = false }
-        }
-        field.needsDisplay = true
+        coordinator.field = field
+        coordinator.update(self, isEnabled: isEnabled)
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
@@ -72,12 +62,59 @@ struct ParameterValueField: NSViewRepresentable {
         var dirty = false
         var lastValue: Double
         var resetRevision: Int
+        private(set) var isValid = true
+        private var retainedInvalidDraft = false
+        private var validityRevision = 0
         private var wheelState = ParameterWheelAccumulator()
 
         init(_ parent: ParameterValueField) {
             self.parent = parent
             lastValue = parent.value
             resetRevision = parent.resetRevision
+        }
+
+        func update(_ parent: ParameterValueField, isEnabled: Bool) {
+            guard let field else { return }
+            let externalChange = lastValue != parent.value
+            let reset = resetRevision != parent.resetRevision
+            self.parent = parent
+            lastValue = parent.value
+            resetRevision = parent.resetRevision
+            field.isEnabled = isEnabled
+            field.isEditable = isEnabled
+            field.setAccessibilityIdentifier(parent.identifier)
+            field.setAccessibilityLabel(L10n.format("%@数值", parent.title))
+            field.normalHelp = L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
+                                           parent.precision.text(parent.precision.normalStep),
+                                           parent.precision.text(parent.precision.fineStep),
+                                           parent.precision.text(parent.range.lowerBound),
+                                           parent.precision.text(parent.range.upperBound), parent.unit)
+            if externalChange || reset || (!editing && !retainedInvalidDraft) {
+                write(parent.precision.text(parent.value, signed: parent.signed))
+                dirty = false
+                if externalChange || reset {
+                    retainedInvalidDraft = false
+                    field.invalid = false
+                    // A representable update must not publish SwiftUI state synchronously.
+                    setValidity(true, deferred: true)
+                }
+            }
+            field.needsDisplay = true
+        }
+
+        private func setValidity(_ valid: Bool, deferred: Bool = false) {
+            guard isValid != valid else { return }
+            isValid = valid
+            validityRevision += 1
+            if deferred {
+                let revision = validityRevision
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.validityRevision == revision else { return }
+                    self.parent.onValidityChange(valid)
+                }
+            } else {
+                parent.onValidityChange(valid)
+            }
         }
 
         func write(_ text: String) {
@@ -94,7 +131,14 @@ struct ParameterValueField: NSViewRepresentable {
 
         func controlTextDidChange(_ notification: Notification) {
             dirty = true
-            field?.invalid = false
+            if parent.invalidInputPolicy == .retain, let field {
+                let valid = parent.precision.parse(field.currentEditor()?.string ?? field.stringValue) != nil
+                retainedInvalidDraft = !valid
+                field.invalid = !valid
+                setValidity(valid)
+            } else {
+                field?.invalid = false
+            }
         }
 
         func controlTextDidEndEditing(_ notification: Notification) {
@@ -109,7 +153,9 @@ struct ParameterValueField: NSViewRepresentable {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
                 write(parent.precision.text(parent.value, signed: parent.signed))
                 dirty = false
+                retainedInvalidDraft = false
                 field?.invalid = false
+                setValidity(true)
                 field?.window?.makeFirstResponder(nil)
                 return true
             }
@@ -128,14 +174,25 @@ struct ParameterValueField: NSViewRepresentable {
                 if let parsed = parent.precision.parse(field.currentEditor()?.string ?? field.stringValue) {
                     parent.value = parent.precision.snapped(parsed, in: parent.range)
                     lastValue = parent.value
+                    retainedInvalidDraft = false
                     field.invalid = false
+                    setValidity(true)
                 } else {
                     field.invalid = true
+                    if parent.invalidInputPolicy == .retain {
+                        retainedInvalidDraft = true
+                        setValidity(false)
+                    }
                     if let app = NSApp {
                         NSAccessibility.post(element: app, notification: .announcementRequested, userInfo: [
                             .announcement: L10n.text("请输入有效数字"),
                             .priority: NSAccessibilityPriorityLevel.high.rawValue
                         ])
+                    }
+                    if parent.invalidInputPolicy == .retain {
+                        write(field.currentEditor()?.string ?? field.stringValue)
+                        field.needsDisplay = true
+                        return
                     }
                 }
             }
@@ -163,7 +220,9 @@ struct ParameterValueField: NSViewRepresentable {
                 lastValue = parent.value
                 write(parent.precision.text(parent.value, signed: parent.signed))
                 dirty = false
+                retainedInvalidDraft = false
                 field.invalid = false
+                setValidity(true)
                 field.acceptedUntil = event.timestamp + 0.18
                 field.needsDisplay = true
                 // This only clears the transient border; it never schedules a value change.

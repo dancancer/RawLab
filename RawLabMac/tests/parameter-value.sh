@@ -11,6 +11,7 @@ swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" \
     "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" \
     "$ROOT/RawLabMac/Sources/ParameterPrecision.swift" "$ROOT/RawLabMac/Sources/ParameterValueField.swift" \
+    "$ROOT/RawLabMac/Sources/AdjustmentRow.swift" \
     "$ROOT/RawLabMac/tests/ParameterValueTests.swift" \
     -framework SwiftUI -framework AppKit -o "$OUT/parameter-value"
 cd "$ROOT"

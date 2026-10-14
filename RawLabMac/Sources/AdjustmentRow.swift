@@ -10,6 +10,9 @@ struct ParameterRow: View {
     var precision = ParameterPrecision.standard
     let identifier: String
     var onEditingChanged: (Bool) -> Void = { _ in }
+    var invalidInputPolicy: ParameterInvalidInputPolicy = .restore
+    var onValidityChange: (Bool) -> Void = { _ in }
+    var externalResetRevision = 0
     var sliderMapping = ParameterSliderMapping.linear
     @State private var resetRevision = 0
 
@@ -42,8 +45,9 @@ struct ParameterRow: View {
                     }.allowsHitTesting(false).accessibilityHidden(true)
                 }
             ParameterValueField(value: $value, range: range, precision: precision, title: title,
-                                unit: unit, identifier: identifier, resetRevision: resetRevision,
-                                onEditingChanged: onEditingChanged)
+                                unit: unit, identifier: identifier, resetRevision: resetRevision &+ externalResetRevision,
+                                onEditingChanged: onEditingChanged, invalidInputPolicy: invalidInputPolicy,
+                                onValidityChange: onValidityChange)
                 .frame(width: 72, height: 26)
             Text(unit).font(.system(size: 13)).foregroundStyle(.secondary)
                 .frame(width: 22, alignment: .leading).accessibilityHidden(true)
