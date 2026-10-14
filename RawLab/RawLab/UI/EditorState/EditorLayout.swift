@@ -1,6 +1,12 @@
 import SwiftUI
+import UIKit
 
 extension ContentView {
+    var editorToolHeight: CGFloat {
+        guard UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory else { return toolHeight }
+        return max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16)
+    }
+
     func editorWorkspace(size: CGSize, accessibility: Bool) -> some View {
         let side = EditorLayoutPolicy.usesSidePanel(width: size.width, height: size.height,
                                                    accessibility: accessibility)
@@ -34,6 +40,9 @@ extension ContentView {
 
     private func adjustmentRegionHeight(size: CGSize, accessibility: Bool) -> CGFloat {
         let extra: CGFloat = geometrySelected ? 160 : lensSelected ? 100 : selectedAdjustment == .hsl ? 130 : 0
-        return min(panelHeight + extra, size.height * (accessibility ? 0.64 : 0.52))
+        let preferred = min(panelHeight + extra, size.height * (accessibility ? 0.64 : 0.52))
+        guard accessibility else { return preferred }
+        let available = max(0, size.height - editorToolHeight - 2)
+        return min(preferred, max(0, available - min(96, available)))
     }
 }

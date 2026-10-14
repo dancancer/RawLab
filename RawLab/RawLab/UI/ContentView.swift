@@ -174,7 +174,7 @@ struct ContentView: View {
                 viewModel.statusMessage = exported ? request.successMessage : request.cancelMessage
             }
         }
-        .confirmationDialog(L10n.text("未应用的调整"), isPresented: $draftExitPresented) {
+        .alert(L10n.text("未应用的调整"), isPresented: $draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
             Button(L10n.text("放弃调整"), role: .destructive) { finishDraftNavigation(apply: false) }
             Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }

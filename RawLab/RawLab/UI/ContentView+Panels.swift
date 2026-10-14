@@ -240,7 +240,7 @@ extension ContentView {
                 HStack(spacing: 4) {
                     Button { selectEditorTool(.film) } label: {
                         AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected,
-                                            progress: 0, width: toolWidth, height: toolHeight)
+                                            progress: 0, width: toolWidth, height: editorToolHeight)
                     }
                     .accessibilityValue(selectedFilmName)
                     .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? .isSelected : [])
@@ -249,7 +249,7 @@ extension ContentView {
                     .id("film")
                     Button { selectEditorTool(.recipe) } label: {
                         AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "square.stack.3d.up", selected: choosingMasterRecipe,
-                                            progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: toolHeight)
+                                            progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: editorToolHeight)
                     }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? L10n.text("无配方"))
                         .accessibilityAddTraits(choosingMasterRecipe ? .isSelected : [])
                         .opacity(choosingMasterRecipe ? 1 : rulerFocusOpacity)
@@ -257,14 +257,14 @@ extension ContentView {
                     Button { selectEditorTool(.lens) } label: {
                         AdjustmentToolLabel(title: L10n.text("镜头"), symbol: "viewfinder", selected: lensSelected,
                                             progress: settings.lensSettings.isEnabled ? 1 : 0,
-                                            width: toolWidth, height: toolHeight)
+                                            width: toolWidth, height: editorToolHeight)
                     }.disabled(viewModel.sourceKind != .raw)
                         .accessibilityIdentifier("tool.lens")
                         .opacity(lensSelected ? 1 : rulerFocusOpacity)
                         .accessibilityAddTraits(lensSelected ? .isSelected : []).id("lens")
                     Button { selectEditorTool(.geometry) } label: {
                         AdjustmentToolLabel(title: L10n.text("几何"), symbol: "crop.rotate", selected: geometrySelected,
-                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: toolHeight)
+                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: editorToolHeight)
                     }
                     .accessibilityIdentifier("tool.geometry")
                     .opacity(geometrySelected ? 1 : rulerFocusOpacity)
@@ -274,7 +274,7 @@ extension ContentView {
                             AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
                                                 selected: selectedAdjustment == adjustment && !lensSelected && !geometrySelected,
                                                 progress: adjustmentProgress(adjustment),
-                                                width: toolWidth, height: toolHeight,
+                                                width: toolWidth, height: editorToolHeight,
                                                 currentValue: selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? selectedScalarBadge(adjustment) : nil)
                         }
                         .disabled(adjustment == .strength && !settings.hasLook)
@@ -291,7 +291,7 @@ extension ContentView {
                 }
                 .padding(.horizontal, 12)
             }
-            .frame(height: toolHeight)
+            .frame(height: editorToolHeight)
             .onGeometryChange(for: CGFloat.self) { geometry in geometry.size.width } action: { _ in
                 proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
             }
