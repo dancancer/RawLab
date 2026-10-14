@@ -1,6 +1,6 @@
 import Foundation
 
-// Normalized crop on the canvas after rotation, flips and centered straightening.
+// Normalized crop after rotation, flips, perspective and centered straightening.
 struct GeometrySettings: Codable, Equatable {
     var cropX: Double = 0
     var cropY: Double = 0
@@ -10,13 +10,17 @@ struct GeometrySettings: Codable, Equatable {
     var flipHorizontal: Bool = false
     var flipVertical: Bool = false
     var straightenDegrees: Double = 0
+    var perspectiveHorizontal: Double = 0
+    var perspectiveVertical: Double = 0
 
     var isIdentity: Bool { self == GeometrySettings() }
     var isValid: Bool {
-        [cropX, cropY, cropWidth, cropHeight, straightenDegrees].allSatisfy { $0.isFinite } &&
+        [cropX, cropY, cropWidth, cropHeight, straightenDegrees,
+         perspectiveHorizontal, perspectiveVertical].allSatisfy { $0.isFinite } &&
         cropX >= 0 && cropY >= 0 && cropWidth > 0 && cropHeight > 0 &&
         cropX + cropWidth <= 1 && cropY + cropHeight <= 1 &&
-        (0...3).contains(quarterTurns) && (-45...45).contains(straightenDegrees)
+        (0...3).contains(quarterTurns) && (-45...45).contains(straightenDegrees) &&
+        (-1...1).contains(perspectiveHorizontal) && (-1...1).contains(perspectiveVertical)
     }
 
     init() {}
@@ -24,6 +28,7 @@ struct GeometrySettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case cropX, cropY, cropWidth, cropHeight, quarterTurns
         case flipHorizontal, flipVertical, straightenDegrees
+        case perspectiveHorizontal, perspectiveVertical
     }
 
     init(from decoder: Decoder) throws {
@@ -36,5 +41,7 @@ struct GeometrySettings: Codable, Equatable {
         flipHorizontal = try values.decodeIfPresent(Bool.self, forKey: .flipHorizontal) ?? false
         flipVertical = try values.decodeIfPresent(Bool.self, forKey: .flipVertical) ?? false
         straightenDegrees = try values.decodeIfPresent(Double.self, forKey: .straightenDegrees) ?? 0
+        perspectiveHorizontal = try values.decodeIfPresent(Double.self, forKey: .perspectiveHorizontal) ?? 0
+        perspectiveVertical = try values.decodeIfPresent(Double.self, forKey: .perspectiveVertical) ?? 0
     }
 }

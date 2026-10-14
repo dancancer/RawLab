@@ -219,6 +219,14 @@ typedef struct sony2fuji_geometry_config {
     float straighten_degrees;   // -45..45 clockwise; default 0.
 } sony2fuji_geometry_config;
 
+#define SONY2FUJI_PERSPECTIVE_CONFIG_VERSION 1u
+typedef struct sony2fuji_perspective_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float horizontal; // -1..1 in the rotated/flipped canvas; default 0.
+    float vertical;   // -1..1 in the rotated/flipped canvas; default 0.
+} sony2fuji_perspective_config;
+
 #define SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION 1u
 typedef struct sony2fuji_lens_correction_config {
     uint32_t version;
@@ -360,8 +368,8 @@ sony2fuji_status sony2fuji_session_set_hsl(
 );
 
 // Additive API; request v2 is unchanged. Identity is an exact bypass.
-// Already-oriented pixels rotate, flip, straighten within a centered same-aspect
-// canvas, then crop (floor start/ceil end) before request output resizing.
+// Already-oriented pixels rotate, flip, apply perspective, straighten within a
+// centered inscribed canvas, then crop (floor start/ceil end) before output resizing.
 // Crop coordinates refer to that transformed canvas. Invalid values preserve
 // the previous configuration. Normalized ends tolerate at most 1e-6 beyond
 // one for Float UI rounding and clamp to the canvas. Active geometry uses an
@@ -372,10 +380,24 @@ sony2fuji_status sony2fuji_session_set_geometry(
     sony2fuji_session* session, const sony2fuji_geometry_config* config
 );
 
+// Additive API; request v2 and geometry config v1 are unchanged. Changes only
+// perspective, preserving crop/turns/flips/straightening. The geometry setter
+// likewise preserves perspective. Finite -1..1 controls default to zero.
+// Inverse centered offsets are divided by 1 + .25*horizontal*u + .25*vertical*v,
+// where u/v are normalized using the original rotated width/height. The safe
+// centered canvas is scaled by 1/(1 + .25*abs(horizontal) + .25*abs(vertical))
+// before straightening and crop. Perspective and straightening sample once
+// bilinearly; zero perspective retains the exact existing geometry path.
+// Invalid values preserve all state. Success clears the last geometry size.
+// Active perspective has the same exact-source and GPU semantics as geometry.
+sony2fuji_status sony2fuji_session_set_perspective(
+    sony2fuji_session* session, const sony2fuji_perspective_config* config
+);
+
 // Native canvas from the last successful process, after geometry and before
 // output resizing. Identity records the decoded input dimensions even when
 // its preview is reduced later. Active geometry always uses the exact source.
-// Successful geometry setters and every new process clear the previous size.
+// Successful geometry/perspective setters and every new process clear the size.
 // Failed processes, including output I/O failures, leave the size unavailable.
 // Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.
 sony2fuji_status sony2fuji_session_get_geometry_size(

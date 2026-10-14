@@ -66,7 +66,9 @@ reuse. The SDK allocation-failure hook verifies the C ABI memory status.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, optional geometry, and final resizing.
 
 Geometry uses the oriented, lens-processed full source: clockwise quarter turns,
-flips in that canvas, centered inscribed straightening, then normalized crop.
+flips in that canvas, centered horizontal/vertical perspective, centered inscribed
+straightening, then normalized crop. Perspective and straightening share one
+bilinear sampling pass; zero perspective preserves basic geometry exactly.
 It bypasses interactive proxies and early resizing while active. Integer geometry
 copies pixels; straightening samples once with bilinear edge extension, without
 clipping linear values. Identity preserves existing rendering. The common CPU

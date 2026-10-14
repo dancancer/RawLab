@@ -206,7 +206,7 @@ void invalidFields() {
              {replaceOnce(minimal, R"("edits":{"exposure":{"mode":"scene"}},)", ""), "recipe.edits"},
              {replaceOnce(minimal, R"("output":{"path":"out.jpg","format":"jpeg"})", R"("output":{})"), "output.path"},
              {replaceOnce(minimal, R"("format":"jpeg")", R"("format":null)"), "output.format"},
-             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":3)"), "schema_version"},
+             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":4)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":1.0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":"1")"), "schema_version"},

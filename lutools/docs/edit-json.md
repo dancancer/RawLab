@@ -210,3 +210,30 @@ processes clear it. Invalid setters preserve the last configuration and result.
 Active geometry uses the full source even for interactive previews, so crop and
 aspect agree with FINAL. GPU Auto may use GPU color plus CPU geometry and reports
 CPU for the mixed result; GPU Force with active geometry returns `unsupported`.
+
+## Perspective in recipe v3
+
+Use `schema_version: 3` to add the optional
+`edits.geometry.perspective: {"horizontal": 0.3, "vertical": -0.2}`.
+Both fields are unitless numbers from -1 to 1, defaulting to 0; native UIs show
+-100% to 100%. Versions 1/2 remain supported and keep zero perspective. Version 2
+rejects perspective fields, so existing recipes retain their contract. See
+[schema v3](edit-json-v3.schema.json) and [example](../examples/edit-recipes/perspective-v3.json).
+
+Perspective follows turns/flips and precedes straightening/crop. The transform is
+centered: for original rotated canvas width W and height H, let u=2dx/W, v=2dy/H,
+a=0.25·horizontal and b=0.25·vertical. The inverse source offset is
+(dx,dy)/(1+a·u+b·v). Positive horizontal expands the right side, and positive
+vertical expands the bottom side. A centered rectangle scaled by
+1/(1+|a|+|b|) keeps sampling inside the source; dimensions round down, at least
+one pixel. Straightening uses this reduced canvas, then crop and final size apply.
+Perspective and straightening share one bilinear sampling pass, without black
+borders or linear highlight clipping. Both perspective values at zero preserve
+basic geometry exactly. This is horizontal/vertical keystone editing; four-corner
+handles and automatic line detection are outside this increment.
+
+The additive 16-byte `sony2fuji_perspective_config` v1 and
+`sony2fuji_session_set_perspective` keep the basic 40-byte geometry config and
+binary request v2 unchanged. The two setters preserve each other's settings.
+Set both complete configs, including zero values to reset, before every render.
+They share the same native-canvas query lifecycle and CPU geometry policy.

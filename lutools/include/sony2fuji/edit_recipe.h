@@ -27,6 +27,9 @@ struct EditRecipe {
     // v2: normalized crop after clockwise turns, flips and straightening.
     sony2fuji_geometry_config geometry{SONY2FUJI_GEOMETRY_CONFIG_VERSION,
         sizeof(sony2fuji_geometry_config), 0, 0, 1, 1, 0, 0, 0, 0};
+    // v3: unitless centered projective coefficients, each -1..1.
+    sony2fuji_perspective_config perspective{SONY2FUJI_PERSPECTIVE_CONFIG_VERSION,
+        sizeof(sony2fuji_perspective_config), 0, 0};
 
     // String pointers borrow this recipe; keep it alive and unchanged while used.
     sony2fuji_request toRequest() const;

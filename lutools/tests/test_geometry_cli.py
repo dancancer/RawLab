@@ -106,6 +106,32 @@ class GeometryCLI(unittest.TestCase):
                 self.assertIsNone(value["error"]["status"])
                 self.assertEqual(final.read_bytes(), b"keep output")
 
+    def test_perspective_v3_canvas_and_exact_preview(self):
+        self.document["schema_version"] = 3
+        self.document["edits"]["geometry"] = {
+            "quarter_turns": 1, "flip_horizontal": True,
+            "perspective": {"horizontal": .5, "vertical": -.5},
+            "crop": {"x": .25, "y": .25, "width": .5, "height": .5},
+        }
+        # The two-axis perspective limit keeps 1/(1+.125+.125) of 32x24.
+        canvas = (math.floor(32 / 1.25), math.floor(24 / 1.25))
+        expected = tuple(math.ceil(n * .75) - math.floor(n * .25) for n in canvas)
+        _, size, _ = self.render()
+        self.assertEqual(size, expected)
+        preview, _, _ = self.render("perspective.png", edge=8)
+        self.document["output"]["size"] = {"mode": "limit_long_edge", "long_edge": 8}
+        final, _, _ = self.render()
+        self.assertEqual(preview.read_bytes(), final.read_bytes())
+
+    def test_v3_zero_perspective_preserves_v2_pixels(self):
+        self.document["edits"]["geometry"] = {"quarter_turns": 3, "straighten_degrees": -3}
+        final, _, _ = self.render()
+        original = final.read_bytes()
+        self.document["schema_version"] = 3
+        self.document["edits"]["geometry"]["perspective"] = {"horizontal": 0, "vertical": 0}
+        final, _, _ = self.render()
+        self.assertEqual(final.read_bytes(), original)
+
     def test_real_raw_reusable_geometry_recipe(self):
         if RAW is None or not RAW.is_file():
             self.skipTest("real RAW fixture not provided")

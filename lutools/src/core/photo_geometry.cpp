@@ -26,7 +26,10 @@ Canvas canvasFor(int width, int height, const GeometryOptions& options) {
     canvas.cosine = std::cos(options.straighten_degrees * radians);
     canvas.sine = std::sin(options.straighten_degrees * radians);
     const double sine = std::abs(canvas.sine);
-    const double w = canvas.rotated_width, h = canvas.rotated_height;
+    const double perspective_scale = 1 / (1 + .25 * std::abs(options.perspective_horizontal) +
+        .25 * std::abs(options.perspective_vertical));
+    const double w = std::max(1, static_cast<int>(std::floor(canvas.rotated_width * perspective_scale)));
+    const double h = std::max(1, static_cast<int>(std::floor(canvas.rotated_height * perspective_scale)));
     const double scale = std::min(w / (w * canvas.cosine + h * sine),
         h / (w * sine + h * canvas.cosine));
     canvas.width = std::max(1, static_cast<int>(std::floor(w * scale)));
@@ -74,11 +77,15 @@ RGB sampleBilinear(const ImageData& image, Point point) {
         interpolate(image.at(left, bottom), image.at(right, bottom), dx), dy);
 }
 
-Point straightenedPoint(int x, int y, const Canvas& canvas) {
+Point transformedPoint(int x, int y, const Canvas& canvas, const GeometryOptions& options) {
     const double dx = x - (canvas.width - 1) * .5;
     const double dy = y - (canvas.height - 1) * .5;
-    return {(canvas.rotated_width - 1) * .5 + canvas.cosine * dx + canvas.sine * dy,
-        (canvas.rotated_height - 1) * .5 - canvas.sine * dx + canvas.cosine * dy};
+    const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
+    const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
+    const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
+        .25 * options.perspective_vertical * (2 * rotated_y / canvas.rotated_height);
+    return {(canvas.rotated_width - 1) * .5 + rotated_x / denominator,
+        (canvas.rotated_height - 1) * .5 + rotated_y / denominator};
 }
 
 } // namespace
@@ -86,15 +93,19 @@ Point straightenedPoint(int x, int y, const Canvas& canvas) {
 bool GeometryOptions::valid() const {
     return std::isfinite(crop_x) && std::isfinite(crop_y) && std::isfinite(crop_width) &&
         std::isfinite(crop_height) && std::isfinite(straighten_degrees) &&
+        std::isfinite(perspective_horizontal) && std::isfinite(perspective_vertical) &&
         crop_x >= 0 && crop_y >= 0 && crop_x < 1 && crop_y < 1 &&
         crop_width > 0 && crop_height > 0 && double(crop_x) + crop_width <= 1.000001 &&
         double(crop_y) + crop_height <= 1.000001 && quarter_turns >= 0 && quarter_turns <= 3 &&
-        straighten_degrees >= -45 && straighten_degrees <= 45;
+        straighten_degrees >= -45 && straighten_degrees <= 45 &&
+        perspective_horizontal >= -1 && perspective_horizontal <= 1 &&
+        perspective_vertical >= -1 && perspective_vertical <= 1;
 }
 
 bool GeometryOptions::active() const {
     return crop_x != 0 || crop_y != 0 || crop_width != 1 || crop_height != 1 ||
-        quarter_turns != 0 || flip_horizontal || flip_vertical || straighten_degrees != 0;
+        quarter_turns != 0 || flip_horizontal || flip_vertical || straighten_degrees != 0 ||
+        perspective_horizontal != 0 || perspective_vertical != 0;
 }
 
 ErrorCode applyGeometry(ImageData& image, const GeometryOptions& options) {
@@ -108,14 +119,16 @@ ErrorCode applyGeometry(ImageData& image, const GeometryOptions& options) {
         result.width = canvas.right - canvas.left;
         result.height = canvas.bottom - canvas.top;
         result.pixels.resize(static_cast<size_t>(result.width) * result.height);
+        const bool interpolate = options.straighten_degrees != 0 ||
+            options.perspective_horizontal != 0 || options.perspective_vertical != 0;
         for (int y = 0; y < result.height; ++y) {
             for (int x = 0; x < result.width; ++x) {
-                const Point rotated = options.straighten_degrees == 0 ?
-                    Point{double(canvas.left + x), double(canvas.top + y)} :
-                    straightenedPoint(canvas.left + x, canvas.top + y, canvas);
+                const Point rotated = interpolate ?
+                    transformedPoint(canvas.left + x, canvas.top + y, canvas, options) :
+                    Point{double(canvas.left + x), double(canvas.top + y)};
                 const Point source = sourcePoint(rotated, canvas, options, image.width, image.height);
-                result.at(x, y) = options.straighten_degrees == 0 ?
-                    image.at(static_cast<int>(source.x), static_cast<int>(source.y)) : sampleBilinear(image, source);
+                result.at(x, y) = interpolate ? sampleBilinear(image, source) :
+                    image.at(static_cast<int>(source.x), static_cast<int>(source.y));
             }
         }
         image = std::move(result);
