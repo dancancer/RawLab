@@ -311,13 +311,30 @@
     <string name="geometry_rotate_right">右に回転</string>
     <string name="geometry_flip_horizontal">左右反転</string>
     <string name="geometry_flip_vertical">上下反転</string>
+    <string name="geometry_perspective_horizontal">水平方向の遠近補正</string>
+    <string name="geometry_perspective_vertical">垂直方向の遠近補正</string>
+    <string name="geometry_perspective_hint">遠近補正は回転・反転の後、傾き補正・切り抜きの前に適用されます。黒い縁を避けるため画像を自動で切り詰めます。</string>
     <string name="geometry_straighten">傾き補正</string>
     <string name="geometry_crop_x">左</string>
     <string name="geometry_crop_y">上</string>
     <string name="geometry_crop_width">幅</string>
     <string name="geometry_crop_height">高さ</string>
-    <string name="geometry_crop_hint">切り抜きの割合は、回転・反転・傾き補正後の画像に適用されます。</string>
+    <string name="geometry_crop_hint">切り抜きの割合は、回転・反転・遠近補正・傾き補正後の画像に適用されます。</string>
     <string name="geometry_crop_error" formatted="false">0–100% の画像内で、幅と高さが正の切り抜き範囲を入力してください。</string>
     <string name="geometry_apply_crop">切り抜きを適用</string>
     <string name="geometry_summary">切り抜き %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · 回転 %5$d° · 傾き %6$+.1f°</string>
+    <string name="geometry_apply">適用</string>
+    <string name="geometry_crop_mode">切り抜き</string>
+    <string name="geometry_correct_mode">補正</string>
+    <string name="geometry_swap_ratio">切り抜きの縦横を切り替え</string>
+    <string name="geometry_drag_hint">四隅でサイズ調整、枠内で移動。</string>
+    <string name="geometry_precise_crop">精密な切り抜き</string>
+    <string name="geometry_grid">グリッド</string>
+    <string name="geometry_update_crop">切り抜きを更新</string>
+    <string name="geometry_ratio_free">自由</string>
+    <string name="geometry_ratio_original">元の比率</string>
+    <string name="geometry_move_left">切り抜きを左へ移動</string>
+    <string name="geometry_move_right">切り抜きを右へ移動</string>
+    <string name="geometry_move_up">切り抜きを上へ移動</string>
+    <string name="geometry_move_down">切り抜きを下へ移動</string>
 </resources>

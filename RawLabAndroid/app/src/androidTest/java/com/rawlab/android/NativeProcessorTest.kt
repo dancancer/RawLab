@@ -24,7 +24,7 @@ class NativeProcessorTest {
         try {
             NativeProcessor(NativeProcessor.CPU).use { processor ->
                 val original = processor.preview(input, null, EditSettings(), 300, false)
-                val settings = EditSettings(geometry = GeometrySettings(.15f, .1f, .75f, .8f, 1, true, false, 8f))
+                val settings = EditSettings(geometry = GeometrySettings(.15f, .1f, .75f, .8f, 1, true, false, 8f, .35f, -.25f))
                 val exact = processor.preview(input, null, settings, 300, false)
                 val interactive = processor.preview(input, null, settings, 300, true)
                 assertEquals(exact.width, interactive.width)
@@ -37,12 +37,38 @@ class NativeProcessorTest {
                 val exported = checkNotNull(android.graphics.BitmapFactory.decodeFile(output.path))
                 assertEquals(exact.width, exported.width)
                 assertEquals(exact.height, exported.height)
+                assertTrue(processor.autoExposure(input, settings).isFinite())
                 val reset = processor.preview(input, null, EditSettings(), 300, false)
                 assertEquals(original.width, reset.width)
                 assertEquals(original.height, reset.height)
                 assertArrayEquals(original.pixels, reset.pixels)
             }
         } finally { input.delete(); output.delete() }
+    }
+
+    @Test fun perspectiveAloneChangesNeutralCanvasAndZeroValuesClearReusedSession() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val input = File(instrumentation.targetContext.cacheDir, "perspective-test.RAW")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val identity = EditSettings()
+                val original = processor.preview(input, null, identity, 300, false)
+                val settings = identity.copy(geometry = GeometrySettings(perspectiveHorizontal = -.4f, perspectiveVertical = .3f))
+                val transformed = processor.preview(input, null, settings, 300, false)
+                assertFalse(original.pixels.contentEquals(transformed.pixels))
+                assertTrue(transformed.geometryWidth < original.geometryWidth || transformed.geometryHeight < original.geometryHeight)
+                val interactive = processor.preview(input, null, settings, 300, true)
+                assertEquals(transformed.geometryWidth, interactive.geometryWidth)
+                assertEquals(transformed.geometryHeight, interactive.geometryHeight)
+                assertArrayEquals(transformed.pixels, interactive.pixels)
+                assertEquals(processor.autoExposure(input, settings), processor.autoExposure(input, identity), .000001f)
+                val reset = processor.preview(input, null, identity, 300, false)
+                assertEquals(original.geometryWidth, reset.geometryWidth)
+                assertEquals(original.geometryHeight, reset.geometryHeight)
+                assertArrayEquals(original.pixels, reset.pixels)
+            }
+        } finally { input.delete() }
     }
 
     @Test fun lensCorrectionReachesPreviewExportAndReset() {

@@ -1,5 +1,6 @@
 package com.rawlab.android
 
+import androidx.activity.compose.BackHandler
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
@@ -57,12 +58,23 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
-    onPreviewSizeChange: (Int) -> Unit = {}) {
+    onPreviewSizeChange: (Int) -> Unit = {},
+    onBeginGeometry: () -> Unit = {}, onGeometryChange: (GeometrySettings, Boolean) -> Unit = { _, _ -> },
+    onApplyGeometry: () -> Unit = {}, onCancelGeometry: () -> Unit = {}, onResetGeometry: () -> Unit = {},
+    onGeometryAspectChange: (Float?) -> Unit = {}) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
     var infoMode by rememberSaveable(state.photo?.file?.absolutePath) { mutableIntStateOf(0) }
+    val geometryActive = state.geometryDraft != null
+    var geometryRatio by rememberSaveable(state.photo?.identity?.value, geometryActive) { mutableStateOf(GeometryRatio.FREE) }
+    var geometryPortrait by rememberSaveable(state.photo?.identity?.value, geometryActive) { mutableStateOf((state.preview?.originalAspect ?: 1f) < 1f) }
+    var geometryCorrect by rememberSaveable(state.photo?.identity?.value, geometryActive) { mutableStateOf(false) }
+    var geometryGrid by rememberSaveable { mutableStateOf(true) }
+    val selectedAspect = state.geometryAspect
+    BackHandler(enabled = geometryActive, onBack = onCancelGeometry)
+    val chooseTool: (Int) -> Unit = { index -> if (index == 17) onBeginGeometry() else tool = index }
     val photoCanvas = rememberSaveable(state.photo?.file?.absolutePath, saver = PhotoCanvasState.Saver) { PhotoCanvasState() }
     val photoInfo by produceState<PhotoInfo?>(null, state.photo?.file?.absolutePath) {
         value = null
@@ -81,7 +93,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             text = { Text(report, Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },
             confirmButton = { TextButton(onClick = onLookImportReportDismiss) { Text(stringResource(R.string.confirm)) } })
     }
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+    Scaffold(modifier = if (geometryActive) Modifier.imePadding() else Modifier, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         TopAppBar(title = {
             Column {
                 Text("RawLab", style = MaterialTheme.typography.titleMedium)
@@ -89,19 +101,19 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             }
         }, actions = {
             if (updateVersion != null) ToolIcon(Icons.Outlined.SystemUpdate, R.string.view_update, onClick = onAbout)
-            ToolIcon(Icons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE, onAlbum)
+            ToolIcon(Icons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE, { onCancelGeometry(); onAlbum() })
             ToolIcon(Icons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
             ToolIcon(Icons.Outlined.Layers, R.string.batch_export, state.canExport, onBatchExport)
             Box {
                 ToolIcon(Icons.Outlined.MoreVert, R.string.more) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.open_file)) }, enabled = state.operation == Operation.NONE,
-                        leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; onFile() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.gpu_auto)) }, enabled = state.operation == Operation.NONE,
+                        leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; onCancelGeometry(); onFile() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.gpu_auto)) }, enabled = state.operation == Operation.NONE && !geometryActive,
                         trailingIcon = { Checkbox(state.gpuEnabled, null) }, onClick = { menu = false; onGpuChange(!state.gpuEnabled) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) }, onClick = { menu = false; onLicenses() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) }, onClick = { menu = false; onCancelGeometry(); onLicenses() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.about_rawlab)) },
-                        leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; onAbout() })
+                        leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; onCancelGeometry(); onAbout() })
                 }
             }
         })
@@ -109,11 +121,32 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val dockHeight = if (expanded) (maxHeight * .33f).coerceIn(200.dp, 280.dp) else 48.dp
             val wide = maxWidth >= 600.dp && maxWidth > maxHeight
+            val geometryDockHeight = (maxHeight * .44f).coerceIn(260.dp, 360.dp)
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().height(4.dp)) {
                     if (state.rendering || state.previewResizePending || state.operation == Operation.EXPORT) LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-                if (wide && state.photo != null) {
+                if (geometryActive) {
+                    EditorCanvas(state, false, photoCanvas, photoInfo, 0, {}, Modifier.weight(1f),
+                        onAlbum, onFile, onLicenses, {}, selectedAspect, geometryGrid,
+                        !geometryCorrect && state.geometryPreviewReady && !state.rendering, onGeometryChange)
+                    RenderError(state, onRetry)
+                    HorizontalDivider()
+                    GeometryControls(state.geometryDraft!!, state.controlsEnabled,
+                        geometryRatio, geometryPortrait, geometryCorrect, geometryGrid,
+                        onRatio = {
+                            geometryRatio = it
+                            onGeometryAspectChange(it.ratio(state.preview?.originalAspect ?: 1f, geometryPortrait))
+                        }, onPortrait = {
+                            geometryPortrait = !geometryPortrait
+                            onGeometryAspectChange(geometryRatio.ratio(state.preview?.originalAspect ?: 1f, geometryPortrait))
+                        },
+                        onCorrect = { geometryCorrect = it }, onGrid = { geometryGrid = !geometryGrid },
+                        onApply = onApplyGeometry, onCancel = onCancelGeometry,
+                        onReset = { geometryRatio = GeometryRatio.FREE; onResetGeometry() },
+                        onChange = onGeometryChange, modifier = Modifier.fillMaxWidth().height(geometryDockHeight),
+                        cropEnabled = state.canApplyGeometry, applyEnabled = state.canApplyGeometry)
+                } else if (wide && state.photo != null) {
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
                             EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
@@ -121,7 +154,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             RenderError(state, onRetry)
                         }
                         VerticalDivider()
-                        AdjustmentDock(state, Modifier.width(320.dp).fillMaxHeight(), tool, { tool = it }, expanded,
+                        AdjustmentDock(state, Modifier.width(320.dp).fillMaxHeight(), tool, chooseTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset, onSaveRetry,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure)
                     }
@@ -131,7 +164,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     RenderError(state, onRetry)
                     if (state.photo != null) {
                         HorizontalDivider()
-                        AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, { tool = it }, expanded,
+                        AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, chooseTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset, onSaveRetry,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure)
                     }
@@ -144,9 +177,16 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
 @Composable
 private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, photoInfo: PhotoInfo?, infoMode: Int,
     onInfoClick: () -> Unit, modifier: Modifier,
-    onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit) {
+    onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
+    geometryAspect: Float? = null, geometryGrid: Boolean = true, geometryCropEnabled: Boolean = false,
+    onGeometryChange: (GeometrySettings, Boolean) -> Unit = { _, _ -> }) {
     Box(modifier.fillMaxWidth().background(Color(0xFF18191A)), contentAlignment = Alignment.Center) {
-        state.preview?.let { PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange) }
+        state.preview?.let {
+            if (state.geometryDraft != null && state.geometryCanvasAspect != null)
+                GeometryCropCanvas(it, state.geometryDraft, geometryAspect, geometryGrid, geometryCropEnabled, onGeometryChange)
+            else if (state.geometryDraft != null) Image(it.result.asImageBitmap(), null, Modifier.fillMaxSize().padding(16.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+            else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange)
+        }
             ?: if (!state.rendering) EmptyEditor(onAlbum, onFile, onLicenses) else Unit
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
@@ -341,9 +381,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             16 -> LensControls(edits.lens, state.preview?.lens, state.controlsEnabled) { value ->
                 onEdit(edits.copy(lens = value), false)
             }
-            17 -> GeometryControls(edits.geometry, state.controlsEnabled) { value, dragging ->
-                onEdit(edits.copy(geometry = value), dragging)
-            }
+            17 -> Text(stringResource(R.string.geometry_drag_hint), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
                 onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
             }
@@ -355,7 +393,8 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             items(listOf(0, 15, 17) + (1 until 15).toList() + listOf(16), key = { it }) { index ->
                 val title = titles[index]
                 val color = if (tool == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                Column(Modifier.width(76.dp).fillMaxHeight().selectable(tool == index, enabled = state.controlsEnabled, role = Role.Tab,
+                Column(Modifier.width(76.dp).fillMaxHeight().testTag("editor.tool-$index").selectable(tool == index,
+                    enabled = state.controlsEnabled && (index != 17 || (state.exact && !state.rendering && !state.previewResizePending)), role = Role.Tab,
                     onClick = { selectTool(index) }), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center) {
                     Icon(icons[index], null, Modifier.size(24.dp), tint = color)

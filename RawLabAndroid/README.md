@@ -13,8 +13,8 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 
 ## 功能 / Features
 
-- 几何面板支持百分比裁切、90° 旋转、水平/垂直翻转及 ±45° 拉直；拉直自动保留中心无黑边画面。所有操作在 RAW 方向校正之后、输出缩放之前执行，裁切坐标基于旋转/翻转/拉直后的画面。参数接入逐照片记忆与批量快照，旧记录保持原图。原图对比使用同一几何，原始 RAW 不写回。当前几何在 CPU 执行，Auto 可回退，Force 不隐藏 CPU 混合处理。
-  Geometry controls support normalized cropping, clockwise quarter-turns, horizontal/vertical flips and ±45° straightening within an inscribed centered canvas. Geometry follows RAW orientation and precedes output resizing; crop percentages refer to the rotated/flipped/straightened canvas. Edit memory and batch snapshots retain the full settings, while legacy records default to identity. Neutral comparison uses the same geometry; source RAWs remain unchanged. Geometry currently executes on CPU; Auto retains fallback and Force rejects mixed CPU processing.
+- 几何面板支持百分比裁切、90° 旋转、水平/垂直翻转、±100% 水平/垂直透视及 ±45° 拉直；透视和拉直自动保留中心无黑边画面。所有操作在 RAW 方向校正之后、输出缩放之前执行，顺序为旋转/翻转→透视→拉直→裁切，裁切坐标基于变换后的画面。参数接入逐照片记忆与批量快照；旧基础几何记录保留原有设置并将透视设为零，无几何记录保持原图。原图对比使用同一几何，原始 RAW 不写回。当前几何在 CPU 执行，Auto 可回退，Force 不隐藏 CPU 混合处理。
+  Geometry controls support normalized cropping, clockwise quarter-turns, horizontal/vertical flips, ±100% horizontal/vertical perspective and ±45° straightening within an inscribed centered canvas. Geometry follows RAW orientation and precedes output resizing, in the order turns/flips → perspective → straightening → crop. Crop percentages refer to the transformed canvas. Edit memory and batch snapshots retain the full settings; legacy basic geometry records keep their settings with zero perspective, and records without geometry default to identity. Neutral comparison uses the same geometry; source RAWs remain unchanged. Geometry currently executes on CPU; Auto retains fallback and Force rejects mixed CPU processing.
 
 v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 

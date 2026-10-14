@@ -311,13 +311,30 @@
     <string name="geometry_rotate_right">Tourner à droite</string>
     <string name="geometry_flip_horizontal">Retourner horizontalement</string>
     <string name="geometry_flip_vertical">Retourner verticalement</string>
+    <string name="geometry_perspective_horizontal">Perspective horizontale</string>
+    <string name="geometry_perspective_vertical">Perspective verticale</string>
+    <string name="geometry_perspective_hint">La perspective suit la rotation et les retournements, avant le redressement et le recadrage. Le cadre est réduit pour éviter les bords noirs.</string>
     <string name="geometry_straighten">Redresser</string>
     <string name="geometry_crop_x">Gauche</string>
     <string name="geometry_crop_y">Haut</string>
     <string name="geometry_crop_width">Largeur</string>
     <string name="geometry_crop_height">Hauteur</string>
-    <string name="geometry_crop_hint">Les pourcentages de recadrage suivent la rotation, les retournements et le redressement.</string>
+    <string name="geometry_crop_hint">Les pourcentages de recadrage suivent la rotation, les retournements, la perspective et le redressement.</string>
     <string name="geometry_crop_error" formatted="false">Saisissez un recadrage de dimensions positives dans le cadre de 0–100%.</string>
     <string name="geometry_apply_crop">Appliquer le recadrage</string>
     <string name="geometry_summary">Recadrage %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Rotation %5$d° · Redressement %6$+.1f°</string>
+    <string name="geometry_apply">Appliquer</string>
+    <string name="geometry_crop_mode">Recadrer</string>
+    <string name="geometry_correct_mode">Corriger</string>
+    <string name="geometry_swap_ratio">Inverser le format du recadrage</string>
+    <string name="geometry_drag_hint">Glissez un coin pour ajuster, le cadre pour déplacer.</string>
+    <string name="geometry_precise_crop">Recadrage précis</string>
+    <string name="geometry_grid">Grille</string>
+    <string name="geometry_update_crop">Actualiser le recadrage</string>
+    <string name="geometry_ratio_free">Libre</string>
+    <string name="geometry_ratio_original">Original</string>
+    <string name="geometry_move_left">Déplacer à gauche</string>
+    <string name="geometry_move_right">Déplacer à droite</string>
+    <string name="geometry_move_up">Déplacer vers le haut</string>
+    <string name="geometry_move_down">Déplacer vers le bas</string>
 </resources>

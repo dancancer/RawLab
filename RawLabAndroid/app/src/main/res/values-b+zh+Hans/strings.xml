@@ -311,13 +311,30 @@
     <string name="geometry_rotate_right">向右旋转</string>
     <string name="geometry_flip_horizontal">水平翻转</string>
     <string name="geometry_flip_vertical">垂直翻转</string>
+    <string name="geometry_perspective_horizontal">水平透视</string>
+    <string name="geometry_perspective_vertical">垂直透视</string>
+    <string name="geometry_perspective_hint">透视校正在旋转和翻转之后、拉直和裁切之前应用，画面自动裁边以避免黑边。</string>
     <string name="geometry_straighten">拉直</string>
     <string name="geometry_crop_x">左边</string>
     <string name="geometry_crop_y">顶部</string>
     <string name="geometry_crop_width">宽度</string>
     <string name="geometry_crop_height">高度</string>
-    <string name="geometry_crop_hint">裁切百分比基于旋转、翻转和拉直后的画面。</string>
+    <string name="geometry_crop_hint">裁切百分比基于旋转、翻转、透视校正和拉直后的画面。</string>
     <string name="geometry_crop_error" formatted="false">请输入 0–100% 画面内的裁切区域，宽高须大于零。</string>
     <string name="geometry_apply_crop">应用裁切</string>
     <string name="geometry_summary">裁切 %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · 旋转 %5$d° · 拉直 %6$+.1f°</string>
+    <string name="geometry_apply">应用</string>
+    <string name="geometry_crop_mode">裁切</string>
+    <string name="geometry_correct_mode">校正</string>
+    <string name="geometry_swap_ratio">切换裁切横竖方向</string>
+    <string name="geometry_drag_hint">拖动四角调整大小，拖动框内移动裁切。</string>
+    <string name="geometry_precise_crop">精确裁切</string>
+    <string name="geometry_grid">网格</string>
+    <string name="geometry_update_crop">更新裁切</string>
+    <string name="geometry_ratio_free">自由</string>
+    <string name="geometry_ratio_original">原始</string>
+    <string name="geometry_move_left">向左移动裁切</string>
+    <string name="geometry_move_right">向右移动裁切</string>
+    <string name="geometry_move_up">向上移动裁切</string>
+    <string name="geometry_move_down">向下移动裁切</string>
 </resources>

@@ -14,6 +14,8 @@ static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
     "Photo effects config ABI must remain a versioned 40-byte struct");
 static_assert(sizeof(sony2fuji_geometry_config) == 40,
     "Geometry config ABI must remain a versioned 40-byte struct");
+static_assert(sizeof(sony2fuji_perspective_config) == 16,
+    "Perspective config ABI must remain a versioned 16-byte struct");
 
 namespace {
 struct SessionDeleter {
@@ -153,12 +155,17 @@ Java_com_rawlab_android_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, job
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
     jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
-    jboolean horizontal, jboolean vertical, jfloat straighten) {
+    jboolean horizontal, jboolean vertical, jfloat straighten,
+    jfloat perspectiveHorizontal, jfloat perspectiveVertical) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         sony2fuji_geometry_config config{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(config),
             x, y, width, height, turns, horizontal ? 1 : 0, vertical ? 1 : 0, straighten};
-        check(sony2fuji_session_set_geometry(sessionFor(id), &config));
+        auto* session = sessionFor(id);
+        check(sony2fuji_session_set_geometry(session, &config));
+        sony2fuji_perspective_config perspective{SONY2FUJI_PERSPECTIVE_CONFIG_VERSION, sizeof(perspective),
+            perspectiveHorizontal, perspectiveVertical};
+        check(sony2fuji_session_set_perspective(session, &perspective));
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 

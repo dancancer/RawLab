@@ -104,7 +104,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
         pendingBatch.firstOrNull()?.let { job ->
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text(AppStrings.text(R.string.message_unfinished_batch_export), Modifier.weight(1f))
-                TextButton(onClick = { model.resumeBatch(job) }) { Text(AppStrings.text(R.string.message_view_task)) }
+                TextButton(onClick = { model.resumeBatch(job) }, enabled = state.geometryDraft == null) { Text(AppStrings.text(R.string.message_view_task)) }
             }
         }
         Box(Modifier.weight(1f)) {
@@ -123,7 +123,10 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
-            onPreviewSizeChange = model::updatePreviewSize)
+            onPreviewSizeChange = model::updatePreviewSize,
+            onBeginGeometry = model::beginGeometry, onGeometryChange = model::changeGeometry,
+            onApplyGeometry = model::applyGeometry, onCancelGeometry = model::cancelGeometry,
+            onResetGeometry = model::resetGeometry, onGeometryAspectChange = model::chooseGeometryAspect)
         }
         }
     }

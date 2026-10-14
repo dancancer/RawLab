@@ -3,6 +3,42 @@ package com.rawlab.android
 internal data class EditorMutation(val state: EditorState, val preview: EditSettings?)
 
 internal object EditorStateReducer {
+    fun geometryChanged(current: EditorState, value: GeometrySettings): EditorMutation {
+        val previous = current.geometryDraft ?: return EditorMutation(current, null)
+        val render = if (previous.uncropped() != value.uncropped()) current.edits.copy(geometry = value.uncropped()) else null
+        return EditorMutation(current.copy(geometryDraft = value,
+            geometryPreviewReady = if (render == null) current.geometryPreviewReady else false,
+            rendering = current.rendering || render != null), render)
+    }
+
+    fun geometryPresetSelected(current: EditorState, physicalAspect: Float?): EditorState {
+        if (!current.canApplyGeometry) return current
+        return current.copy(geometryAspect = physicalAspect,
+            geometryDraft = GeometryCropMath.preset(current.geometryDraft!!, physicalAspect, current.geometryCanvasAspect!!))
+    }
+
+    fun geometryPreviewAccepted(current: EditorState, canvasAspect: Float): EditorState {
+        val draft = current.geometryDraft ?: return current
+        val refitted = if (current.geometryCanvasAspect != canvasAspect)
+            GeometryCropMath.refit(draft, current.geometryAspect, canvasAspect) else draft
+        return renderFinished(current).copy(geometryDraft = refitted, geometryCanvasAspect = canvasAspect,
+            geometryPreviewReady = true)
+    }
+
+    fun geometryApplied(current: EditorState): EditorMutation {
+        if (!current.canApplyGeometry) return EditorMutation(current, null)
+        val draft = current.geometryDraft ?: return EditorMutation(current, null)
+        val edits = current.edits.copy(geometry = draft)
+        return EditorMutation(current.copy(edits = edits, geometryDraft = null, geometryPreviewReady = false,
+            geometryAspect = null, geometryCanvasAspect = null, rendering = true, exact = false, error = null), edits)
+    }
+
+    fun geometryCancelled(current: EditorState, baseline: EditorState): EditorState = current.copy(
+        geometryDraft = null, geometryPreviewReady = false, geometryAspect = null, geometryCanvasAspect = null,
+        preview = baseline.preview,
+        exact = baseline.exact, rendering = false, previewResizePending = false, error = baseline.error)
+
+
     fun renderFinished(current: EditorState): EditorState = current.copy(
         operation = if (current.operation == Operation.IMPORT_LOOK) Operation.IMPORT_LOOK else Operation.NONE,
         rendering = false,

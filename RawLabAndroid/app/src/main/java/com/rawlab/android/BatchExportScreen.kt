@@ -334,6 +334,8 @@ private fun SettingsSummary(settings: EditSettings, lookName: String) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingLine(AppStrings.text(R.string.geometry_flip_horizontal), if (settings.geometry.flipHorizontal) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.geometry_flip_vertical), if (settings.geometry.flipVertical) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
+        SettingLine(AppStrings.text(R.string.geometry_perspective_horizontal), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.geometry.perspectiveHorizontal * 100f))
+        SettingLine(AppStrings.text(R.string.geometry_perspective_vertical), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.geometry.perspectiveVertical * 100f))
         SettingLine(AppStrings.text(R.string.display_chroma_denoise), AppStrings.text(when (settings.displayChromaDenoise) {
             1 -> R.string.denoise_detail
             2 -> R.string.denoise_clean

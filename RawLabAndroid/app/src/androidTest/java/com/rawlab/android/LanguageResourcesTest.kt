@@ -18,6 +18,12 @@ class LanguageResourcesTest {
             "fr" to "Recettes maîtres", "ja" to "マスターレシピ", "es" to "Recetas maestras")
         val automatic = mapOf("en" to "Automatic", "zh-Hans" to "自动", "de" to "Automatisch",
             "fr" to "Automatique", "ja" to "自動", "es" to "Automático")
+        val perspectiveHorizontal = mapOf("en" to "Horizontal perspective", "zh-Hans" to "水平透视",
+            "de" to "Horizontale Perspektive", "fr" to "Perspective horizontale",
+            "ja" to "水平方向の遠近補正", "es" to "Perspectiva horizontal")
+        val perspectiveVertical = mapOf("en" to "Vertical perspective", "zh-Hans" to "垂直透视",
+            "de" to "Vertikale Perspektive", "fr" to "Perspective verticale",
+            "ja" to "垂直方向の遠近補正", "es" to "Perspectiva vertical")
         expected.forEach { (language, value) ->
             val config = Configuration(context.resources.configuration)
             config.setLocale(Locale.forLanguageTag(language))
@@ -26,6 +32,9 @@ class LanguageResourcesTest {
             assertEquals(hue[language], localized.getString(R.string.hsl_hue))
             assertEquals(recipes[language], localized.getString(R.string.master_recipes))
             assertEquals(automatic[language], localized.getString(R.string.lens_automatic))
+            assertEquals(perspectiveHorizontal[language], localized.getString(R.string.geometry_perspective_horizontal))
+            assertEquals(perspectiveVertical[language], localized.getString(R.string.geometry_perspective_vertical))
+            assertFalse(localized.getString(R.string.geometry_perspective_hint).isBlank())
             localized.getString(R.string.vignette_summary, 1.0, 50.0, 0.0, 50.0, 0.0)
             localized.getString(R.string.grain_summary, 1.0, 25.0, 50.0)
         }
@@ -49,6 +58,7 @@ class LanguageResourcesTest {
             displayChromaDenoise = 2, exposureMode = 2,
             hsl = HslSettings().withValue(1, 0, -60f), recipeID = "recipe",
             lens = LensSettings(true, true, false, true, "fixture-profile"),
+            geometry = GeometrySettings(perspectiveHorizontal = .45f, perspectiveVertical = -.3f),
         )
         val encoded = SettingsCodec.encode(settings)
         try {
