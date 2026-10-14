@@ -108,6 +108,15 @@ struct ParameterValueTests {
         coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
         check(box.value == 1.23 && field.invalid && field.stringValue == "+1.23", "Invalid blur restores the current value with an error border")
+        check(field.toolTip == L10n.text("请输入有效数字") && field.accessibilityHelp() == field.toolTip,
+              "Rejected input exposes a localized tooltip and accessible error explanation")
+        field.invalid = false
+        check(field.accessibilityHelp() != L10n.text("请输入有效数字"),
+              "A corrected input clears the accessible error explanation")
+        check(field.intrinsicContentSize == NSSize(width: 72, height: 26),
+              "Native value field requests the designed 72 by 26 point bounds")
+        check(field.alignmentRectInsets.left == 0 && field.alignmentRectInsets.right == 0,
+              "Native alignment adds no width outside the value field border")
         field.stringValue = "2.5"
         coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         check(coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))), "Escape is handled by the native field delegate")

@@ -39,6 +39,10 @@ struct ParameterValueField: NSViewRepresentable {
         return field
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NumericTextField, context: Context) -> CGSize? {
+        CGSize(width: 72, height: 26)
+    }
+
     func updateNSView(_ field: NumericTextField, context: Context) {
         let coordinator = context.coordinator
         let externalChange = coordinator.lastValue != value
@@ -50,7 +54,7 @@ struct ParameterValueField: NSViewRepresentable {
         field.isEditable = isEnabled
         field.setAccessibilityIdentifier(identifier)
         field.setAccessibilityLabel(L10n.format("%@数值", title))
-        field.toolTip = L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
+        field.normalHelp = L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
                                    precision.text(precision.normalStep), precision.text(precision.fineStep),
                                    precision.text(range.lowerBound), precision.text(range.upperBound), unit)
         if !coordinator.editing || externalChange || reset {
@@ -127,6 +131,12 @@ struct ParameterValueField: NSViewRepresentable {
                     field.invalid = false
                 } else {
                     field.invalid = true
+                    if let app = NSApp {
+                        NSAccessibility.post(element: app, notification: .announcementRequested, userInfo: [
+                            .announcement: L10n.text("请输入有效数字"),
+                            .priority: NSAccessibilityPriorityLevel.high.rawValue
+                        ])
+                    }
                 }
             }
             write(parent.precision.text(parent.value, signed: parent.signed))
@@ -167,10 +177,25 @@ struct ParameterValueField: NSViewRepresentable {
 final class NumericTextField: NSTextField {
     var wheelHandler: ((NSEvent) -> Bool)?
     var editing = false
-    var invalid = false
+    var invalid = false {
+        didSet { updateHelp(); needsDisplay = true }
+    }
+    var normalHelp = "" {
+        didSet { updateHelp() }
+    }
     var acceptedUntil: TimeInterval = 0
     private var hovering = false
     private var hoverArea: NSTrackingArea?
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 72, height: 26) }
+    // This border is drawn in bounds; NSTextField's default alignment insets would add four points.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0) }
+
+    private func updateHelp() {
+        let message = invalid ? L10n.text("请输入有效数字") : normalHelp
+        toolTip = message
+        setAccessibilityHelp(message)
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -196,6 +221,9 @@ final class NumericTextField: NSTextField {
         shape.lineWidth = editing ? 2 : 1
         shape.stroke()
         super.draw(dirtyRect)
+        if invalid, let icon = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil) {
+            icon.draw(in: NSRect(x: 4, y: (bounds.height - 10) / 2, width: 10, height: 10))
+        }
     }
 }
 
