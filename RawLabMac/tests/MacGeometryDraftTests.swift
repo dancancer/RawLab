@@ -201,6 +201,8 @@ import Darwin
         try invalidAndDepartureChecks(model, raw: a, edits: edits)
         try fileSwitchChecks(model, a: a, b: b, edits: edits)
         try saveFailureChecks(model, a: a, b: b, edits: edits, output: output)
+        try failedApplyCancellationChecks(model, a: a, b: b, edits: edits, output: output)
+        try preexistingReadErrorChecks(raw: a, output: output)
         try check(try OriginalFileIdentity(source) == sourceIdentity && Data(contentsOf: source) == original &&
                   Data(contentsOf: a) == original && Data(contentsOf: b) == original, "all draft operations leave the original and copied RAW bytes unchanged")
         print("PASS: \(checks) macOS geometry/lens draft transaction checks")
@@ -375,5 +377,92 @@ import Darwin
         try check(model.applyGeometryDraft() && saved(a, directory: edits).geometrySettings.isIdentity &&
                   saved(a, directory: edits).lensSettings == lens, "applying geometry reset persists identity and the independent lens draft")
         try wait(model, "geometry reset committed")
+    }
+
+    static func withBlockedEditStore(_ edits: URL, output: URL, action: (URL) throws -> Void) throws {
+        let backup = output.appendingPathComponent("blocked-edit-backup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.moveItem(at: edits, to: backup)
+        defer {
+            try? FileManager.default.removeItem(at: edits)
+            try? FileManager.default.moveItem(at: backup, to: edits)
+        }
+        try Data("blocked edit store".utf8).write(to: edits)
+        try action(backup)
+    }
+
+    static func failedApplyCancellationChecks(_ model: EditorModel, a: URL, b: URL, edits: URL, output: URL) throws {
+        let committed = model.settings
+        let record = try Data(contentsOf: edits.appendingPathComponent("edits.json"))
+        try check(model.file == a && model.saveError == nil, "failed-Apply cancellation starts from a healthy saved source")
+        try check(model.beginGeometryDraft(tab: .crop), "failed-Apply Cancel transaction opens")
+        try wait(model, draft: true, "failed-Apply Cancel draft")
+        model.setGeometryDraftParameter(.cropWidth, to: 0.8)
+        let cancelDraft = model.geometryDraft
+        try withBlockedEditStore(edits, output: output) { backup in
+            try check(!model.applyGeometryDraft() && model.saveError != nil && model.geometryDraft == cancelDraft &&
+                      model.settings == committed && model.file == a, "failed Apply retains the source transaction before Cancel")
+            model.cancelGeometryDraft()
+            try wait(model, "failed Apply then Cancel")
+            try check(model.geometryDraft == nil && model.settings == committed && model.file == a && model.saveError == nil &&
+                      !model.geometryDraftDeparturePending, "Cancel restores the entry error state and committed source after failed Apply")
+            try check(model.saveEdits() && model.saveError == nil && Data(contentsOf: backup.appendingPathComponent("edits.json")) == record,
+                      "dirty-false save after Cancel has no stale error and the committed disk record is unchanged")
+        }
+        try check(saved(a, directory: edits) == committed && Data(contentsOf: edits.appendingPathComponent("edits.json")) == record,
+                  "restoring storage after Cancel reveals the unchanged committed edit")
+
+        let target = try EditPersistence(directory: edits).state(for: b)?.settings ?? Adjustments()
+        try check(model.beginGeometryDraft(tab: .crop), "failed pending Apply then Discard transaction opens")
+        try wait(model, draft: true, "failed pending Apply then Discard draft")
+        model.setGeometryDraftParameter(.cropWidth, to: 0.75)
+        let discardDraft = model.geometryDraft
+        var departures = 0
+        try withBlockedEditStore(edits, output: output) { backup in
+            model.requestLeavingGeometryDraft({ departures += 1; model.open(b) })
+            model.resolveGeometryDraftDeparture(.apply)
+            try check(model.geometryDraftDeparturePending && departures == 0 && model.saveError != nil &&
+                      model.geometryDraft == discardDraft && model.settings == committed && model.file == a,
+                      "failed pending Apply keeps the draft, source and deferred photo switch")
+            model.resolveGeometryDraftDeparture(.discard)
+            model.resolveGeometryDraftDeparture(.discard)
+            try wait(model, "failed pending Apply then Discard")
+            try check(departures == 1 && model.file == b && model.geometryDraft == nil && !model.geometryDraftDeparturePending &&
+                      model.saveError == nil && model.settings.geometrySettings == target.geometrySettings &&
+                      model.settings.lensSettings == target.lensSettings && model.settings.exposure == target.exposure,
+                      "Discard clears only the draft-save error and opens the target with its own settings exactly once")
+            try check(Data(contentsOf: backup.appendingPathComponent("edits.json")) == record,
+                      "failed Apply then Discard leaves the complete edit registry unchanged")
+        }
+        model.open(a)
+        try wait(model, "discarded failed Apply source reopened")
+        try check(model.settings == committed && model.saveError == nil && saved(a, directory: edits) == committed &&
+                  Data(contentsOf: edits.appendingPathComponent("edits.json")) == record,
+                  "the source reopens with its unchanged committed settings and no discarded failure message")
+    }
+
+    static func preexistingReadErrorChecks(raw: URL, output: URL) throws {
+        let directory = output.appendingPathComponent("unreadable-edits-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let registry = directory.appendingPathComponent("edits.json")
+        let corruptRecord = Data("unreadable edit registry".utf8)
+        try corruptRecord.write(to: registry)
+        let model = EditorModel(lookDirectory: output.appendingPathComponent("read-error-looks"), editDirectory: directory,
+                                batchDirectory: output.appendingPathComponent("read-error-batch"))
+        model.films = []; model.selectedFilmID = ""
+        model.updatePreviewLongEdge(240)
+        guard let entryError = model.saveError else { throw Failure(description: "missing preexisting registry read error") }
+        model.open(raw)
+        try wait(model, "preexisting read-error source")
+        let committed = model.settings
+        try check(model.saveError == entryError && model.beginGeometryDraft(tab: .crop),
+                  "a dirty-false source enters a draft while retaining its preexisting registry read error")
+        try wait(model, draft: true, "preexisting read-error draft")
+        model.setGeometryDraftParameter(.cropWidth, to: 0.8)
+        try check(!model.applyGeometryDraft() && model.saveError != nil && model.saveError != entryError,
+                  "failed draft Apply reports its failure separately from the preexisting read error")
+        model.cancelGeometryDraft()
+        try wait(model, "preexisting read-error draft cancelled")
+        try check(model.saveError == entryError && model.settings == committed && model.file == raw && model.geometryDraft == nil &&
+                  Data(contentsOf: registry) == corruptRecord, "Cancel restores the exact preexisting read error rather than clearing unrelated feedback")
     }
 }

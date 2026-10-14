@@ -56,6 +56,8 @@ final class EditorModel: ObservableObject {
     private var geometryDraftEpoch = UUID()
     private var geometryDepartureAction: (() -> Void)?
     private var geometryDepartureStay: (() -> Void)?
+    private var geometryDraftEntrySaveError: String?
+    private var geometryDraftSaveFailed = false
     var geometryDraftSettings: GeometrySettings { geometryDraft?.geometry ?? settings.geometrySettings }
     var lensDraftSettings: LensCorrectionSettings { geometryDraft?.lens ?? settings.lensSettings }
     var geometryDraftHasChanges: Bool { geometryDraft?.hasChanges == true || !invalidGeometryDraftInputs.isEmpty }
@@ -153,6 +155,8 @@ final class EditorModel: ObservableObject {
     @discardableResult func beginGeometryDraft(tab: MacGeometryTab = .crop) -> Bool {
         if geometryDraft != nil { return selectGeometryDraftTab(tab) }
         guard file != nil, result != nil, !exporting, !lookLibraryBusy, saveEdits() else { return false }
+        geometryDraftEntrySaveError = saveError
+        geometryDraftSaveFailed = false
         geometryDraftEpoch = UUID(); editRevision = UUID()
         geometryDraft = MacGeometryDraft(geometry: settings.geometrySettings, lens: settings.lensSettings)
         geometryDraftTab = tab; geometryDraftPreviewReady = false
@@ -254,6 +258,7 @@ final class EditorModel: ObservableObject {
             if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
             try editStore!.save(file, state: editState(settings: committed))
         } catch {
+            geometryDraftSaveFailed = true
             saveError = L10n.format("调整未保存：%@", error.localizedDescription)
             return false
         }
@@ -266,12 +271,16 @@ final class EditorModel: ObservableObject {
 
     func cancelGeometryDraft() {
         guard geometryDraft != nil else { return }
+        // Discarding an unsaved draft restores the saved entry state, including
+        // its feedback. Do not clear an unrelated error that predated the task.
+        if geometryDraftSaveFailed { saveError = geometryDraftEntrySaveError }
         endGeometryDraft(); schedule(forceExact: true)
     }
 
     private func endGeometryDraft() {
         geometryDraft = nil; geometryDraftPreviewReady = false
         geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
+        geometryDraftEntrySaveError = nil; geometryDraftSaveFailed = false
         geometryDraftEpoch = UUID(); editRevision = UUID()
         scheduler.setInteracting(false)
         batch?.sourceEditingGeometry = false
