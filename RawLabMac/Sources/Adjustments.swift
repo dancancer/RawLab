@@ -546,6 +546,7 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
 
 enum GeometryParameter: String, CaseIterable, Identifiable {
     case cropX, cropY, cropWidth, cropHeight, straightenDegrees
+    case perspectiveHorizontal, perspectiveVertical
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -554,6 +555,8 @@ enum GeometryParameter: String, CaseIterable, Identifiable {
         case .cropWidth: return L10n.text("裁切宽度")
         case .cropHeight: return L10n.text("裁切高度")
         case .straightenDegrees: return L10n.text("拉直")
+        case .perspectiveHorizontal: return L10n.text("水平透视")
+        case .perspectiveVertical: return L10n.text("垂直透视")
         }
     }
     var keyPath: WritableKeyPath<GeometrySettings, Double> {
@@ -563,10 +566,19 @@ enum GeometryParameter: String, CaseIterable, Identifiable {
         case .cropWidth: return \.cropWidth
         case .cropHeight: return \.cropHeight
         case .straightenDegrees: return \.straightenDegrees
+        case .perspectiveHorizontal: return \.perspectiveHorizontal
+        case .perspectiveVertical: return \.perspectiveVertical
         }
     }
     var multiplier: Double { self == .straightenDegrees ? 1 : 100 }
-    var unit: String { self == .straightenDegrees ? "°" : "%" }
+    var defaultValue: Double { GeometrySettings()[keyPath: keyPath] }
+    var unit: String {
+        switch self {
+        case .straightenDegrees: return "°"
+        case .perspectiveHorizontal, .perspectiveVertical: return ""
+        default: return "%"
+        }
+    }
     func range(for state: GeometrySettings) -> ClosedRange<Double> {
         switch self {
         case .cropX: return 0...max(0, 1 - state.cropWidth)
@@ -574,6 +586,7 @@ enum GeometryParameter: String, CaseIterable, Identifiable {
         case .cropWidth: return min(0.001, 1 - state.cropX)...(1 - state.cropX)
         case .cropHeight: return min(0.001, 1 - state.cropY)...(1 - state.cropY)
         case .straightenDegrees: return -45...45
+        case .perspectiveHorizontal, .perspectiveVertical: return -1...1
         }
     }
 }

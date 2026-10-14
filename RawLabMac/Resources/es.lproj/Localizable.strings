@@ -411,3 +411,6 @@
 "颗粒强度" = "Intensidad del grano";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Rueda: %@; Mayús: %@; Rango: %@ a %@ %@";
 "调整工具" = "Herramientas de ajuste";
+"水平透视" = "Perspectiva horizontal";
+"垂直透视" = "Perspectiva vertical";
+"无效的透视参数" = "Los parámetros de perspectiva no son válidos";

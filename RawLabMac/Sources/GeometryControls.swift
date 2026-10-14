@@ -38,6 +38,9 @@ struct GeometryControls: View {
                         .accessibilityValue(String(format: "%.1f°", settings.straightenDegrees))
                         .accessibilityIdentifier("geometry.straighten.slider")
                 }
+                ForEach([GeometryParameter.perspectiveHorizontal, .perspectiveVertical]) { parameter in
+                    perspectiveRow(parameter)
+                }
                 Text(L10n.text("裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,6 +60,16 @@ struct GeometryControls: View {
     private func value(_ parameter: GeometryParameter) -> Binding<Double> {
         Binding(get: { settings[keyPath: parameter.keyPath] },
                 set: { model.settings.setGeometry(parameter, to: $0) })
+    }
+
+    private func perspectiveRow(_ parameter: GeometryParameter) -> some View {
+        let range = parameter.range(for: settings)
+        return ParameterRow(title: parameter.title,
+                            value: Binding(get: { settings[keyPath: parameter.keyPath] * parameter.multiplier },
+                                           set: { model.settings.setGeometry(parameter, to: $0 / parameter.multiplier) }),
+                            range: (range.lowerBound * parameter.multiplier)...(range.upperBound * parameter.multiplier),
+                            defaultValue: parameter.defaultValue * parameter.multiplier, unit: parameter.unit,
+                            identifier: "geometry.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)
     }
 
     private func flip(horizontal: Bool) -> Binding<Bool> {

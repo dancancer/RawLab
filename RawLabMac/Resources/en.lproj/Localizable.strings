@@ -411,3 +411,6 @@
 "颗粒强度" = "Grain Intensity";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Wheel: %@; Shift: %@; Range: %@ to %@ %@";
 "调整工具" = "Adjustment Tools";
+"水平透视" = "Horizontal perspective";
+"垂直透视" = "Vertical perspective";
+"无效的透视参数" = "Invalid perspective settings";

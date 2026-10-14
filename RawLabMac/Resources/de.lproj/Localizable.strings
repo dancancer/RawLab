@@ -411,3 +411,6 @@
 "颗粒强度" = "Kornstärke";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Mausrad: %@; Umschalt: %@; Bereich: %@ bis %@ %@";
 "调整工具" = "Anpassungswerkzeuge";
+"水平透视" = "Horizontale Perspektive";
+"垂直透视" = "Vertikale Perspektive";
+"无效的透视参数" = "Ungültige Perspektivwerte";

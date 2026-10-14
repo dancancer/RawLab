@@ -411,3 +411,6 @@
 "颗粒强度" = "Intensité du grain";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Molette : %@ ; Maj : %@ ; Plage : %@ à %@ %@";
 "调整工具" = "Outils de réglage";
+"水平透视" = "Perspective horizontale";
+"垂直透视" = "Perspective verticale";
+"无效的透视参数" = "Paramètres de perspective non valides";
