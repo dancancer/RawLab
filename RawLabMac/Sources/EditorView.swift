@@ -329,6 +329,7 @@ struct EditorView: View {
                     onCropChange: model.geometryDraftTab == .crop ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
                     onCropEditingChanged: model.geometryDraftTab == .crop ? model.setGeometryCropInteracting : nil)
             .simultaneousGesture(TapGesture(count: 2).onEnded { if model.geometryDraft == nil { toggleActualPixels() } })
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {
                 if compare && model.geometryDraft == nil {

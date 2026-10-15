@@ -56,8 +56,8 @@ struct GeometryControls: View {
                 }.padding(.top, 4)
             } label: {
                 Text(L10n.text("精确调整")).font(.system(size: 13))
+                    .accessibilityIdentifier("geometry.preciseCrop")
             }
-            .accessibilityIdentifier("geometry.preciseCrop")
         }
     }
 
