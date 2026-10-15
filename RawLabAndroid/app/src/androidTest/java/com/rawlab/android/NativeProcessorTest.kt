@@ -251,6 +251,26 @@ class NativeProcessorTest {
             }
         } finally { input.delete() }
     }
+
+    @Test fun fileExportsReportActualCpuGlesAndAutoFallbackBackend() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val root = File(instrumentation.targetContext.cacheDir, "export-backend-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val input = File(root, "source.arw")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            for (mode in listOf(NativeProcessor.CPU, NativeProcessor.FORCE, NativeProcessor.AUTO)) {
+                NativeProcessor(mode).use { processor ->
+                    val backend: Any = processor.export(input, null, EditSettings(customWb = true), File(root, "$mode.png"), ExportFormat.PNG, 300)
+                    assertEquals("File export must report its actual backend", if (mode == NativeProcessor.CPU) 0 else 2, backend)
+                }
+            }
+            val look = File(root, "cpu-only.rlook").apply { writeBytes(syntheticRlook()) }
+            NativeProcessor(NativeProcessor.AUTO).use { processor ->
+                val backend: Any = processor.export(input, look, EditSettings(customWb = true), File(root, "fallback.png"), ExportFormat.PNG, 300)
+                assertEquals("AUTO file export must report actual CPU fallback", 0, backend)
+            }
+        } finally { root.deleteRecursively() }
+    }
     @Test fun realRawPreviewAndFullResolutionExport() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

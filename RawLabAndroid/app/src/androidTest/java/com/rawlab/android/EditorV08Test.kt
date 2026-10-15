@@ -90,6 +90,9 @@ class EditorV08ControlsTest {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
                 setLocale(Locale.forLanguageTag(locale))
             })
+            val exports = mapOf("en" to "Export", "zh-Hans" to "导出", "de" to "Exportieren", "fr" to "Exporter", "ja" to "書き出し", "es" to "Exportar")
+            assertEquals("The resource locale must really change: requested=$locale actual=${localized.resources.configuration.locales.toLanguageTags()} app=${AppStrings.preference(context)} base=${context.resources.configuration.locales.toLanguageTags()}",
+                exports.getValue(locale), localized.getString(R.string.export))
             compose.onNodeWithText(localized.getString(R.string.dng)).assertIsDisplayed()
             val textLayouts = mutableListOf<TextLayoutResult>()
             compose.onNodeWithText(localized.getString(R.string.dng_description), useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) {

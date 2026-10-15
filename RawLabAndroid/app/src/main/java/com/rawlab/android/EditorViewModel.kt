@@ -118,7 +118,11 @@ class EditorViewModel @JvmOverloads constructor(
             val restored = editStore?.load(photo.identity)
             try {
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
-                    engine().preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false)
+                    val native = engine()
+                    native.setGpuMode(work.gpuMode)
+                    val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false)
+                    if ((getApplication<Application>().applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+                        android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
                     WorkResult.MissingLook(photo, restored)
                 } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
                     importing = true, restored = restored != null))

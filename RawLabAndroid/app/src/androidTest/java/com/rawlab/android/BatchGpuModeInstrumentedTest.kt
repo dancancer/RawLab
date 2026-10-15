@@ -22,7 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class BatchGpuModeInstrumentedTest {
     val compose = createAndroidComposeRule<MainActivity>()
     private val cleanup = BatchTestCleanup(InstrumentationRegistry.getInstrumentation().targetContext)
-    @get:Rule val isolatedCompose = RuleChain.outerRule(cleanup).around(compose)
+    @get:Rule val isolatedCompose = RuleChain.outerRule(cleanup).around(ForegroundTestRule()).around(compose)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
@@ -76,6 +76,18 @@ class BatchGpuModeInstrumentedTest {
         }
     }
 
+    @Test fun enabledNewAndResumedBatchesExportOriginalSizeCleanWithAuto() {
+        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
+            denoise = DenoiseSettings(true, 10f, 72f, 100f))
+        for (resumed in listOf(true, false)) {
+            withBatch(gpuEnabled = true, settings = settings, resumed = resumed, format = ExportFormat.JPEG) { batch ->
+                assertPreviewMatchesMode(batch, NativeProcessor.FORCE)
+                exportAndCompare(batch, NativeProcessor.FORCE, "${if (resumed) "resumed" else "new"}-auto-original-clean",
+                    ExportFormat.JPEG, null)
+            }
+        }
+    }
+
     @Test fun enabledNewAndResumedBatchesFallBackForCpuOnlyRlookWhileForceExportFails() {
         val settings = EditSettings(film = "synthetic-fallback", customWb = true, exposure = .5f)
         for (resumed in listOf(true, false)) {
@@ -123,7 +135,18 @@ class BatchGpuModeInstrumentedTest {
         try {
             val effectiveSettings = if (look != null && !resumed) {
                 cleanup.trackLookImport(look.name)
-                val imported = PhotoStorage(context).use { it.importLook(Uri.fromFile(look)) }
+                val imported = PhotoStorage(context, lookValidator = LookValidator { staged ->
+                    cleanup.trackLookStage(staged)
+                    val validated = NativeLookValidator.validate(staged)
+                    if (InstrumentationRegistry.getArguments().getString("batchLookStageAbortProbe") == "true") {
+                        val importId = staged.name.removePrefix(".").substringBefore(".stage")
+                        assertTrue(File(staged.parentFile, ".import-$importId.pending").isFile)
+                        status("lookImportStage nativeValidated=true id=$importId staged=${staged.name} beforeCommit=true")
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                        throw AssertionError("Injected death during a real look import")
+                    }
+                    validated
+                }).use { it.importLook(Uri.fromFile(look)) }
                 if (InstrumentationRegistry.getArguments().getString("batchLookAbortProbe") == "true") {
                     status("injectedFailure importedLook=${imported.id} beforeBatch=true")
                     android.os.Process.killProcess(android.os.Process.myPid())
@@ -205,6 +228,13 @@ class BatchGpuModeInstrumentedTest {
         assertEquals(batch.state.value.error, BatchPhase.COMPLETE, batch.state.value.phase)
         assertEquals(1, batch.state.value.successCount)
         val completed = batch.state.value.job
+        val backendLog = android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
+            "logcat -d --pid=${android.os.Process.myPid()} -v raw -s RawLabBatch:I")).use { it.bufferedReader().readText() }
+        val reports = backendLog.lineSequence().filter { it.startsWith("job=${completed.id} exportBackend=") }.toList()
+        val expectedBackend = if (referenceMode == NativeProcessor.FORCE) 2 else 0
+        assertEquals("The actual batch render must report its own backend exactly once",
+            listOf("job=${completed.id} exportBackend=$expectedBackend"), reports)
+        status("$label actualBatchExportBackend=$expectedBackend job=${completed.id}")
         assertEquals(format, completed.outputFormat)
         assertEquals(longEdge, completed.outputLongEdge)
         val output = Uri.parse(requireNotNull(completed.rows.single().outputUri))
@@ -225,7 +255,11 @@ class BatchGpuModeInstrumentedTest {
     private fun referenceExport(job: BatchJob, mode: Int, name: String): Bitmap {
         val target = job.rows.single().target.sourceFile
         val file = File(target.parentFile, name)
-        NativeProcessor(mode).use { it.export(target, job.source.lookFile, job.source.settings, file, job.outputFormat, job.outputLongEdge) }
+        NativeProcessor(mode).use {
+            val backend = it.export(target, job.source.lookFile, job.source.settings, file, job.outputFormat, job.outputLongEdge)
+            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.FORCE) 2 else 0, backend)
+            status("reference mode=$mode actualExportBackend=$backend")
+        }
         return requireNotNull(BitmapFactory.decodeFile(file.path))
     }
 

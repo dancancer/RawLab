@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -176,22 +177,22 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
                             EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit)
+                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, onSaveRetry)
                             RenderError(state, onRetry)
                         }
                         VerticalDivider()
                         AdjustmentDock(state, Modifier.width(sideDockWidth).fillMaxHeight(), tool, selectTool, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset, onSaveRetry,
+                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit, { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 })
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit)
+                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, onSaveRetry)
                     RenderError(state, onRetry)
                     if (state.photo != null) {
                         HorizontalDivider()
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, selectTool, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset, onSaveRetry,
+                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit, { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 })
                     }
                 }
@@ -205,12 +206,20 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
 private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, photoInfo: PhotoInfo?, infoMode: Int,
     onInfoClick: () -> Unit, modifier: Modifier,
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
-    onDraftEdit: (EditSettings, Boolean) -> Unit) {
-    Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+    onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit) {
+    val comparisonInset = if (compare) with(LocalDensity.current) {
+        MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
+    } else 12.dp
+    Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
             if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
                 enabled = state.canApplyDraft) { value -> onDraftEdit(state.visibleEdits.copy(geometry = value), false) }
-            else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange)
+            else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
+                bottomOverlayInset = comparisonInset, bottomOverlay = {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
+                    }
+                })
         } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE)
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
@@ -221,6 +230,30 @@ private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Phot
         }
         status?.let { Text(it, Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f)).padding(6.dp),
             color = Color.White, style = MaterialTheme.typography.labelSmall) }
+        if (state.preview == null) EditorSaveNotice(state, onSaveRetry, Modifier.align(Alignment.BottomCenter)
+            .padding(start = 12.dp, end = 12.dp, bottom = comparisonInset))
+    }
+}
+
+@Composable
+private fun EditorSaveNotice(state: EditorState, onRetry: () -> Unit, modifier: Modifier) {
+    if (state.photo == null || state.draft != null || state.saveState == EditSaveState.NONE) return
+    val failed = state.saveState == EditSaveState.FAILED
+    val text = stringResource(when (state.saveState) {
+        EditSaveState.SAVED -> R.string.edit_saved
+        EditSaveState.RESTORED -> R.string.edit_restored
+        else -> R.string.edit_unsaved
+    })
+    // 瞬时状态只叠加在照片上，不参与工具栏和调节区域的测量。
+    Surface(modifier.widthIn(max = 400.dp).testTag("edit-save-notice"),
+        shape = MaterialTheme.shapes.small,
+        color = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant) {
+        if (failed) TextButton(onClick = onRetry, modifier = Modifier.testTag("edit-save-retry").semantics { liveRegion = LiveRegionMode.Polite }) {
+            Text(text, color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.labelSmall)
+        } else Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }, maxLines = 3,
+            overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -251,7 +284,6 @@ private fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolea
 private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, selectTool: (Int) -> Unit,
     expanded: Boolean, toggleExpanded: () -> Unit, compare: Boolean, toggleCompare: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit,
-    onSaveRetry: () -> Unit,
     onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit,
     onAutoExposure: () -> Unit, onDraftEdit: (EditSettings, Boolean) -> Unit,
     onApplyDraft: () -> Unit, onDiscardDraft: () -> Unit) {
@@ -265,7 +297,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     var renameText by remember { mutableStateOf("") }
     var allTools by rememberSaveable { mutableStateOf(false) }
     var reset by rememberSaveable { mutableStateOf(false) }
-    Column(modifier.background(MaterialTheme.colorScheme.surface)) {
+    Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (expanded && (tool == 8 || tool == 9)) {
                 TextButton(onClick = { onEdit(edits.copy(customWb = false, tint = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f), false) }, enabled = state.controlsEnabled && calibrated,
@@ -282,16 +314,6 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             ToolIcon(Icons.Outlined.GridView, R.string.all_tools) { allTools = true }
             ToolIcon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
                 if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments, onClick = toggleExpanded)
-        }
-        if (state.draft == null) when (state.saveState) {
-            EditSaveState.RESTORED -> Text(stringResource(R.string.edit_restored), Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            EditSaveState.SAVED -> Text(stringResource(R.string.edit_saved), Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            EditSaveState.FAILED -> TextButton(onClick = onSaveRetry, modifier = Modifier.padding(horizontal = 8.dp)) {
-                Text(stringResource(R.string.edit_unsaved), color = MaterialTheme.colorScheme.error)
-            }
-            EditSaveState.NONE -> Unit
         }
         if (!expanded) return@Column
         EditorToolStrip(state, tool, selectTool)

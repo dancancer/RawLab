@@ -376,8 +376,9 @@ class BatchExportModel(
                     val render: (BatchTarget, EditSettings) -> File = { target, settings ->
                         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
                         try {
-                            processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, format,
+                            val backend = processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, format,
                                 materialized.outputLongEdge)
+                            android.util.Log.i("RawLabBatch", "job=${materialized.id} exportBackend=$backend")
                             temporary
                         } catch (error: Throwable) {
                             temporary.delete()

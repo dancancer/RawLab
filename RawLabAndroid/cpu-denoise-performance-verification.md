@@ -67,10 +67,22 @@ unsafe math/hidden response files. The unmodified databases fail on 169 arm64 an
 including core objects. Six parser tests pass, including a RED/GREEN check for a
 required source hidden under an unknown target.
 
-`compile-command-delta.json` compares all original 782 commands per ABI. The only
-changes are one added `-O3` on the expected 169/215 objects; there are no removed
-objects or unexpected token changes. One extra command builds the existing native
-numerical test as an Android `EXCLUDE_FROM_ALL` target. It is not packaged into the APK.
+The initial `compile-command-delta.json` counted unique source files, not all compilation
+records. It is retained as historical evidence and superseded by
+`compile-command-delta-arm64-objects.json` and `compile-command-delta-x86-objects.json`.
+The corrected comparison uses the source and complete output object paths, normalized
+against each entry's build directory, without dropping repeated sources:
+
+| ABI | Compile Records Before / After | Unique Sources Before / After | Changed Objects |
+| --- | --- | --- | ---: |
+| arm64-v8a | 783 / 784 | 782 / 783 | 169 |
+| x86_64 | 782 / 783 | 782 / 783 | 215 |
+
+On arm64, `hal/carotene/src/dummy.cpp` is compiled into two different objects. Both are
+now retained and checked. Only one `-O3` is added to each of the expected 169/215 dependency
+commands, preserving the order of all other tokens. There are no removed objects or
+unexpected changes. One extra object builds the existing native numerical test as an
+Android `EXCLUDE_FROM_ALL` target; that executable is not packaged into the APK.
 
 ## Quality Verification
 
@@ -163,10 +175,11 @@ invocation remains failed and `final-extra-wrapper.log` exits 1; only its fresh 
 passes. The earlier natural 90-second contention probe is not rerun: faster native work
 may finish before that deadline, and this record does not claim that branch was reached.
 
-An independent read-only review finds no P1/P2 in the build correction, compile-policy
-checks or the traced GPU validation/preview/retry/export path. It confirms 90/240 waits,
-CPU/AUTO/Force behavior and temporary-source restoration. The main thread separately
-checks the subsequently completed additional AUTO and crash/recovery logs above.
+The initial independent read-only review found no P1/P2 in its covered cases and confirmed
+90/240 waits, CPU/AUTO/Force behavior and temporary-source restoration. The main thread
+separately checked the subsequently completed additional AUTO and crash/recovery logs.
+The later `5a9774b` review found additional checker and counting gaps, addressed below;
+the original review conclusion does not supersede those later findings.
 
 ### Host Dependency Check
 
@@ -218,3 +231,89 @@ suites are not restarted for this documentation/staging-only step.
 RAW samples, APKs, float binaries, build directories, logs, temporary profiling and
 mutation artifacts remain outside the commit. Both native source files still compare
 exactly with their pre-profile copies. No push, PR, merge or original-app operation occurs.
+
+## Checker and Counting Follow-up
+
+The user subsequently requested fixes for the P2/P3 findings in the review of `5a9774b`.
+This follow-up changes only the Python checker/tests and related documentation. It does
+not change CMake optimization, rendering/native/Kotlin code, GPU mode, quality settings,
+the 240-second export waits or the 90-second preview wait. It is local uncommitted work,
+not a new commit, build, device run or hosted CI result.
+
+The checker now rejects individual finite-only, NaN/Inf, signed-zero, approximation and
+reassociation options in addition to fast-math umbrella flags. FP-model, contraction,
+denormal and reciprocal mode values use explicit safe sets; unknown values fail closed.
+Response/config files and compiler/frontend forwarding are rejected for checked CPU
+targets rather than silently hiding options. This is a conservative no-unsafe-options
+policy, not an emulation of all Clang flag overrides. Safe standard modes and unrelated
+targets have positive controls.
+
+The original six test behaviors remain, with eighteen additional methods covering these negative
+cases and object-level comparison, including a change to the first of two objects sharing
+one source. CLI tests exercise JSON output and nonzero statuses for duplicate/missing or
+conflicting output identity, unknown-target changes, unexpected additions, removal and
+option reordering. Object-change, reorder and removal negatives each make a single change,
+keep the CPU policy valid, and require the specific comparison error, so a separate policy
+failure cannot mask a missing comparison guard. An intermediate unknown-target reporting
+error was reproduced and fixed without weakening its assertion.
+
+The final independent review also found that suffix-only required-source matching could
+accept a same-named source in a different directory, and that the numerical-test addition
+allowed more than one object. Both were reproduced before correction. Required sources
+now use normalized full paths: repository sources belong to the current checkout and
+dependency sources to the ABI build directory's default CMake layout. A comparison allows
+at most one added object from the exact repository numerical-test source. Relative paths
+have a positive control. This checks database metadata, not file-content provenance or
+whether the compiler actually ran; it intentionally does not require historical sources
+to remain on disk. Test fixtures use independent, explicit paths and targets rather than
+deriving their expected source list from the checker.
+
+- `p2-p3-tests-red.log`: the old checker fails the new expectations (38 failed assertions
+  across 15 methods, including the then-missing comparison CLI).
+- `p3-object-boundaries-red.log`: the additional unknown-target reporting test fails.
+- `p2-p3-tests-final.log`: the initial 20 methods pass before the final review additions.
+- `p2-p3-review-boundaries-red.log`: the four added methods reproduce 9 failures before
+  correction (six source substitutions, two numerical-test addition cases and relative
+  source normalization). `p2-p3-review-fixture-error.log` records one incomplete fixture
+  missing its build directory; that fixture is completed without weakening its assertion.
+- `p2-p3-review-boundaries-green.log`: the final 24 methods pass.
+- `p2-p3-real-negative.log`: three in-memory, single-option mutations in each actual ABI
+  database pass the old committed checker incorrectly and fail the corrected checker
+  (finite-only core, fast contraction in imgproc, forwarded NaN assumption in wavelib).
+  Neither the saved databases nor compiler/native source files are mutated.
+- The original databases are still rejected for 169/215 unoptimized objects; both final
+  WIP databases pass the strengthened policy. Both object comparisons exit 0, with the
+  exact corrected counts above and no unexpected changes.
+- `p2-p3-final-recheck.log`: the final checker repeats all six actual-ABI unsafe-FP
+  controls, twelve source-path substitutions and four numerical-object negatives in
+  memory. Every expected rejection is observed, and both full object reports still match
+  the saved JSON exactly. The final independent review confirms both additional guards
+  are closed and finds no remaining actionable defect in the five-file correction scope.
+
+The historical 212-entry WIP manifest is not rewritten. Only its two checker/test entries
+now differ; the other 210 source/config entries and recorded APK/native hashes remain
+unchanged. Four before/after float-output pairs still match their saved hashes. These are
+integrity checks of previous WIP evidence, not new pixel tests of an exact commit tree.
+No APK, device or long-running rendering suite is rerun for this checker-only correction.
+The final local review is recorded in
+`reviews/self-android-v08-editor-20261015-2304.md`; no commit, push or PR is made.
+
+## Subsequent Delivery Authorization
+
+After the local reviews, the user authorized commit, push, a PR into `development`, and
+merge only after the remaining checks are clear. They explicitly included the previously
+verified batch recovery, GPU/backend, Look import and save-feedback WIP in this delivery.
+Earlier no-push and uncommitted statements above describe their historical checkpoints.
+
+Before packaging, all 210 non-checker entries of the frozen 212-entry runtime manifest
+still match; only the two intentionally corrected Python files differ. Thus packaging
+includes the executable source underlying the recorded full-WIP tests, rather than
+silently omitting the earlier recovery fixes. This source-equivalence check is not a new
+device experiment or a retroactive exact-tree device run of `5a9774b`.
+
+Fresh local delivery gates pass: the 24 Python tests, an explicitly rerun 88-test JVM
+suite, lint with 0 errors and 32 existing warnings, Debug app and instrumentation APK
+assembly, both ABI compile-policy checks, shell syntax and APK/native 16 KB alignment.
+The delivery build uses the normal application ID and no RAW fixture; its instrumentation
+APK is compile-checked, not installed or used as new device evidence. Frozen physical-test
+APKs remain separately preserved. Logs are under the sibling `delivery` evidence directory.

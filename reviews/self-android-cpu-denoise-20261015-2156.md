@@ -2,8 +2,10 @@
 
 ## Findings
 
-No confirmed P1/P2 in this iteration. The original physical CPU timeout is addressed
-without extending waits, changing quality or bypassing GPU-off. No deferred code finding.
+No confirmed P1/P2 was found in this initial review's covered cases. The original physical
+CPU timeout is addressed without extending waits, changing quality or bypassing GPU-off.
+The later `5a9774b` review found a checker P2 and counting P3; this historical conclusion
+does not supersede that review or its subsequent local corrections.
 
 ## Snapshot and Scope
 
@@ -25,8 +27,10 @@ without extending waits, changing quality or bypassing GPU-off. No deferred code
 ## Checks
 
 1. The additional option is Debug-only on exactly `wavelib`, `opencv_core` and
-   `opencv_imgproc`. All original 782 commands per ABI were compared structurally:
-   only 169/215 dependency commands gain `-O3`, with one new numerical-test command.
+   `opencv_imgproc`. Corrected object-level comparison covers arm64 783 -> 784 records
+   (782 -> 783 unique sources) and x86_64 782 -> 783 records/sources. The original count
+   of 782 per ABI conflated records with unique sources. Only 169/215 dependency objects
+   gain `-O3`, with one new numerical-test object and no unexpected changes.
    No fast-math, algorithm, tile/halo, threading or memory-policy change is present.
 2. The compile-policy validator checks the last effective optimization option, mandatory
    source/target identity and every object of affected targets. Missing, duplicate,
@@ -85,3 +89,12 @@ The later local commit packages only this CPU iteration; the earlier batch/GPU/J
 stays uncommitted. Runtime results and line references above describe the frozen full WIP
 snapshot, not an exact-tree device run of the CPU-only commit. Packaging changes documentation
 wording and staging only; source/APK hashes and compile-policy regressions are rechecked.
+
+## Later Checker Corrections
+
+The P2/P3 follow-up after `5a9774b` adds unsafe-FP negative cases and a source/output-object
+comparison CLI. Its final 24 test methods pass, including the independent review's full-path
+source and single numerical-test-object guards; the saved WIP databases produce the corrected
+counts above. The original source manifest and runtime results are preserved as historical
+evidence, not relabeled as exact-commit or newly rerun device validation. See the follow-up
+section in `RawLabAndroid/cpu-denoise-performance-verification.md` for RED/GREEN logs and scope.

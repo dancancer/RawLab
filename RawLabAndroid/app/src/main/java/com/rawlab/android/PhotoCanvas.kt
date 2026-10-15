@@ -8,6 +8,8 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -85,6 +88,8 @@ internal fun PhotoCanvas(
     infoMode: Int = 0,
     onInfoClick: () -> Unit = {},
     onPreviewSizeChange: (Int) -> Unit = {},
+    bottomOverlayInset: Dp = 0.dp,
+    bottomOverlay: @Composable () -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.comparison_wipe)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -135,13 +140,19 @@ internal fun PhotoCanvas(
                         color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
             }
-            PhotoInfoOverlay(info, infoMode, onInfoClick)
+            // 两种反馈共享叠加层的可用高度，首帧测量也不会互相遮挡。
+            Column(Modifier.fillMaxSize().padding(bottom = bottomOverlayInset)) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight)
+                }
+                bottomOverlay()
+            }
         }
     }
 }
 
 @Composable
-private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit) {
+private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp) {
     val modeDescription = when (mode) {
         1 -> stringResource(R.string.info_file)
         2 -> stringResource(R.string.info_capture)
@@ -158,9 +169,10 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
     }
     if (mode != 0 && info != null) {
         Column(
-            Modifier.padding(start = 60.dp, top = 12.dp).widthIn(max = 360.dp)
+            Modifier.heightIn(max = availableHeight).padding(start = 60.dp, top = 12.dp).widthIn(max = 360.dp)
                 .background(Color.Black.copy(alpha = .72f))
                 .padding(horizontal = 10.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
                 .testTag("photo-info-panel"),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

@@ -2,6 +2,9 @@ package com.rawlab.android
 
 import android.content.ContentUris
 import android.content.Context
+import android.app.LocaleManager
+import android.os.Build
+import android.os.LocaleList
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
@@ -18,8 +21,9 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
     private val manifest = File(context.filesDir, "batch-gpu-test-cleanup.properties")
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
     private var owned = Properties()
+    private var originalLocales: String? = null
 
-    override fun before() { recover() }
+    override fun before() { recover(); originalLocales = appLocales() }
 
     fun begin(id: String) {
         check(!manifest.exists()) { "Previous batch test has not been cleaned" }
@@ -28,6 +32,7 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
             setProperty("pid", Process.myPid().toString())
             setProperty("fixture", id)
             setProperty("job", id)
+            setProperty("originalLocales", originalLocales ?: appLocales())
             setProperty("existingRenders", renderFiles().joinToString(",") { it.name })
         }
         persist()
@@ -37,9 +42,21 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
     fun trackLookImport(name: String) {
         check(name == "batch-gpu-${owned.getProperty("fixture")}.rlook")
         owned.setProperty("lookSource", name)
+        owned.setProperty("existingLookIds", LookLibrary(File(context.filesDir, "looks")).list().joinToString(",") { it.id })
         persist()
     }
     fun targetName(id: String) = "batch-gpu-$id.dng"
+
+    fun trackLookStage(file: File) {
+        check(owned.getProperty("lookSource") != null)
+        check(file.parentFile!!.canonicalFile == File(context.filesDir, "looks").canonicalFile)
+        val id = file.name.removePrefix(".").substringBefore(".stage.")
+        UUID.fromString(id)
+        check(file.name in listOf(".$id.stage.cube", ".$id.stage.rlook"))
+        check(id !in owned.getProperty("existingLookIds", "").split(','))
+        owned.setProperty("lookId", id)
+        persist()
+    }
 
     fun finish(active: Boolean, cancel: () -> Unit, close: () -> Unit,
                abort: () -> Nothing = ::abortProcess) {
@@ -57,6 +74,15 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
         val oldPid = owned.getProperty("pid").toInt()
         check(!File("/proc/$oldPid").exists()) { "Batch test owner $oldPid is still alive; refusing cleanup" }
         status("recover oldPid=$oldPid newPid=${Process.myPid()}")
+        owned.getProperty("originalLocales")?.let { locales ->
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(locales)
+            } else {
+                check(context.getSharedPreferences("language", Context.MODE_PRIVATE).edit().putString("choice", locales).commit())
+            }
+            check(appLocales() == locales)
+            status("recoveredAppLocales=$locales")
+        }
         clean()
     }
 
@@ -85,10 +111,19 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
         journalRoot.listFiles().orEmpty().filter {
             it.extension == "tmp" && (it.name.startsWith("$job.") || it.name.startsWith("$fixture."))
         }.forEach { check(it.delete()) }
-        owned.getProperty("lookSource")?.let { name ->
+        owned.getProperty("lookSource")?.let {
             val library = LookLibrary(File(context.filesDir, "looks"))
-            library.list().filter { it.originalName == name }.forEach { library.remove(it.id) }
-            check(library.list().none { it.originalName == name })
+            val imports = library.list()
+            owned.getProperty("lookId")?.let { id ->
+                UUID.fromString(id)
+                if (imports.any { it.id == id }) library.remove(id)
+                // 清理进程也可能死在 remove 已写索引、尚未删文件的窗口；只补删已登记的 exact ID。
+                for (extension in listOf("cube", "rlook")) {
+                    val file = File(context.filesDir, "looks/$id.$extension")
+                    if (file.exists()) check(file.delete())
+                }
+                check(library.list().none { it.id == id })
+            }
         }
         val existing = owned.getProperty("existingRenders", "").split(',').toSet()
         renderFiles().filterNot { it.name in existing }.forEach { check(it.delete()) }
@@ -105,6 +140,10 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
     }
 
     private fun renderFiles() = context.filesDir.listFiles().orEmpty().filter { it.name.startsWith("render-") && it.isFile }
+
+    private fun appLocales() = if (Build.VERSION.SDK_INT >= 33)
+        context.getSystemService(LocaleManager::class.java).applicationLocales.toLanguageTags()
+        else context.getSharedPreferences("language", Context.MODE_PRIVATE).getString("choice", "system")!!
 
     private fun abortProcess(): Nothing {
         status("cleanupDeferred=true active=true pid=${Process.myPid()} fixture=${owned.getProperty("fixture")} job=${owned.getProperty("job")}; terminating failed test process")
