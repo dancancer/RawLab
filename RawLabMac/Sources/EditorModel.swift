@@ -65,6 +65,7 @@ final class EditorModel: ObservableObject {
     var geometryDraftSettings: GeometrySettings { geometryDraft?.geometry ?? settings.geometrySettings }
     var lensDraftSettings: LensCorrectionSettings { geometryDraft?.lens ?? settings.lensSettings }
     var geometryDraftHasChanges: Bool { geometryDraft?.hasChanges == true || !invalidGeometryDraftInputs.isEmpty }
+    var geometryCropInputEnabled: Bool { geometryDraft != nil && geometryDraftTab == .crop }
     var geometryDraftCanApply: Bool {
         geometryDraft != nil && geometryDraftSettings.isValid && invalidGeometryDraftInputs.isEmpty &&
             geometryDraftPreviewReady && !busy && !geometryCropInteracting && !exporting

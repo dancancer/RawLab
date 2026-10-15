@@ -327,8 +327,8 @@ struct EditorView: View {
                     cropSettings: model.geometryDraftPreviewReady ? model.geometryDraft?.geometry : nil,
                     pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,
                     cropAspectRatio: model.cropAspectRatio, cropGrid: model.cropGridEnabled,
-                    onCropChange: model.geometryDraftTab == .crop ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
-                    onCropEditingChanged: model.geometryDraftTab == .crop ? model.setGeometryCropInteracting : nil)
+                    onCropChange: model.geometryCropInputEnabled ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
+                    onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil)
             .simultaneousGesture(TapGesture(count: 2).onEnded { if model.geometryDraft == nil { toggleActualPixels() } })
             .accessibilityElement(children: .contain)
             .accessibilityLabel(title)

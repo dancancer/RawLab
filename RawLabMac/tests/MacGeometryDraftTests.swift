@@ -77,6 +77,33 @@ import SwiftUI
         model.setGeometryCropInteracting(false)
     }
 
+    static func cropInputRoutingChecks(_ model: EditorModel) throws {
+        try check(model.geometryDraft == nil && model.geometryDraftTab == .crop && !model.geometryCropInputEnabled,
+                  "ordinary preview does not receive crop input callbacks from its remembered crop tab")
+        try check(model.beginGeometryDraft(tab: .crop) && model.geometryCropInputEnabled && !model.geometryDraftPreviewReady,
+                  "a preparing crop draft owns input before its reference image is ready")
+        try wait(model, draft: true, "crop input reference")
+        try check(model.geometryCropInputEnabled, "a ready crop draft retains crop input ownership")
+        for tab in [MacGeometryTab.perspective, .lens] {
+            try check(model.selectGeometryDraftTab(tab) && !model.geometryCropInputEnabled,
+                      "\(tab) does not install crop input callbacks")
+        }
+        try check(model.selectGeometryDraftTab(.crop) && model.geometryCropInputEnabled,
+                  "returning to the crop tab restores crop input ownership")
+        model.cancelGeometryDraft()
+        try check(model.geometryDraft == nil && model.geometryDraftTab == .crop && !model.geometryCropInputEnabled,
+                  "Cancel releases crop input while retaining the user's remembered tab")
+        try wait(model, "crop input Cancel cleanup")
+        try check(model.beginGeometryDraft(tab: .crop), "crop input Apply draft opens")
+        try wait(model, draft: true, "crop input Apply reference")
+        model.setGeometryDraftParameter(.straightenDegrees, to: 1)
+        try check(model.applyGeometryDraft() && model.geometryDraft == nil && model.pendingGeometryPresentation != nil &&
+                  !model.geometryCropInputEnabled,
+                  "Apply releases crop input even while exact presentation is pending")
+        try wait(model, "crop input Apply cleanup")
+        try check(!model.geometryCropInputEnabled, "ordinary input remains released after exact completion")
+    }
+
     static func straightenPreviewChecks(_ model: EditorModel) throws {
         try check(model.beginGeometryDraft(tab: .crop), "straighten preview opens a crop draft")
         try wait(model, draft: true, "straighten reference canvas")
@@ -153,6 +180,11 @@ import SwiftUI
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "crop-input-routing" {
+            try cropInputRoutingChecks(model)
+            print("PASS: \(checks) focused crop input routing checks")
+            return
+        }
         if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "straighten-preview" {
             try straightenPreviewChecks(model)
             print("PASS: \(checks) focused straighten preview checks")
@@ -168,6 +200,7 @@ import SwiftUI
             try cropApplyPublicationChecks(model)
             return
         }
+        try cropInputRoutingChecks(model)
         try straightenPreviewChecks(model)
         try windowCloseChecks(model)
         model.settings.geometry = committed
