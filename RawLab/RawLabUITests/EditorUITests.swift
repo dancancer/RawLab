@@ -5,6 +5,60 @@ final class EditorUITests: XCTestCase {
     private let seedPhotoBase = "DJI_20250602164503_0444_D"
     private var verifiedSeedPickerIndex: Int?
 
+    func testSaveNoticeKeepsPortraitControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .portrait)
+    }
+
+    func testSaveNoticeKeepsLandscapeControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .landscapeLeft)
+    }
+
+    func testSaveNoticeKeepsLargeTextControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .portrait, contentSizeCategory: "UICTContentSizeCategoryAccessibilityM")
+    }
+
+    func testSaveNoticeKeepsSmallTextControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .portrait, contentSizeCategory: "UICTContentSizeCategoryXS")
+    }
+
+    private func checkSaveNoticeLayout(orientation: UIDeviceOrientation, contentSizeCategory: String? = nil) {
+        XCUIDevice.shared.orientation = orientation
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        if let contentSizeCategory {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSizeCategory]
+        }
+        app.launch()
+        let importer = app.buttons["editor.import.empty"]
+        XCTAssertTrue(importer.waitForExistence(timeout: 10))
+        importer.tap()
+        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15), "Seed one photo with simctl addmedia before running")
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForImportedPhoto(in: app)
+        let panel = app.scrollViews["editor.panel"]
+        let reset = app.buttons["Reset Adjustments"]
+        XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
+        XCTAssertTrue(panel.frame.contains(reset.frame), "The reset target must remain inside the panel at every text size")
+        let slider = app.sliders["adjustment.slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 10))
+        slider.adjust(toNormalizedSliderPosition: 0.35)
+        slider.adjust(toNormalizedSliderPosition: 0.65)
+        let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        let tool = app.buttons["tool.exposure"]
+        let savedFrames = [panel.frame, tool.frame, slider.frame]
+        capture("save-notice-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+        expectation(for: NSPredicate { _, _ in !notice.exists }, evaluatedWith: app)
+        waitForExpectations(timeout: 8)
+        for (saved, idle) in zip(savedFrames, [panel.frame, tool.frame, slider.frame]) {
+            XCTAssertEqual(saved.origin.y, idle.origin.y, accuracy: 0.5, "Save feedback must not move editing controls")
+            XCTAssertEqual(saved.height, idle.height, accuracy: 0.5, "Save feedback must not resize editing controls")
+        }
+        capture("save-notice-dismissed-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+    }
+
     func testSixLanguageLensAndDngBatchControlsPreserveState() {
         print("Six-language Lens/DNG integration: native Photos completion and Files save v7")
         let app = XCUIApplication()
@@ -381,7 +435,7 @@ final class EditorUITests: XCTestCase {
         app.sliders["adjustment.slider"].adjust(toNormalizedSliderPosition: 0.6)
         let savedExposure = app.buttons["tool.exposure"].value as? String
         XCTAssertNotEqual(savedExposure, "+0.0 EV")
-        XCTAssertTrue(app.staticTexts["调整已保存"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "调整已保存")).firstMatch.waitForExistence(timeout: 10))
         app.terminate()
         app.launch()
         importPhoto(in: app)
