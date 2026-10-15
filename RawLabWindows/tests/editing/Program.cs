@@ -5,6 +5,23 @@ var root = Path.Combine(Path.GetTempPath(), "rawlab-edit-" + Guid.NewGuid());
 Directory.CreateDirectory(root);
 try
 {
+    var exposureSpec = ParameterSpec.All[(int)Parameter.Exposure];
+    Check(exposureSpec.Value(exposureSpec.Position(.13)) == .13, "v08 exposure slider uses 0.01 fine grid");
+    Check(Math.Abs(ParameterSpec.All[(int)Parameter.Tint].Value(ParameterSpec.All[(int)Parameter.Tint].Position(.3)) - .3) < 1e-10,
+        "v08 tint slider retains tenths");
+    var wheel = new ParameterWheel();
+    Check(wheel.Feed(40,0,false,0,true) == (true,0) && wheel.Feed(40,0,false,1,true) == (true,1), "wheel threshold accumulates to 80 pixels");
+    Check(wheel.Feed(800,0,false,126,true) == (true,1) && wheel.Feed(800,0,false,130,true) == (true,0), "wheel limits each event and 125 ms interval");
+    Check(wheel.Feed(-40,0,false,260,true) == (true,0) && wheel.Feed(40,0,false,261,true) == (true,0), "reversing clears wheel remainder");
+    Check(wheel.Feed(40,0,true,262,true) == (true,0) && wheel.Feed(40,0,true,263,true) == (true,1), "Shift resets remainder without changing direction");
+    Check(wheel.Feed(40,0,true,500,true) == (true,0) && wheel.Feed(40,0,true,701,true) == (true,0), "200ms idle clears remainder");
+    Check(wheel.Feed(120,0,false,900,false) == (false,0) && wheel.Feed(0,100,false,901,true) == (false,0) &&
+          wheel.Feed(double.NaN,0,false,902,true) == (false,0), "disabled, horizontal and invalid events bubble");
+    var temperatureRange = NumericRange.For(ParameterSpec.All[(int)Parameter.Temperature]);
+    Check(temperatureRange.Position(50000) == 1 && temperatureRange.Position(2000) == 0 &&
+          temperatureRange.Value(temperatureRange.Position(5200)) == 5200, "inverse temperature warms to the right and roundtrips");
+    Check(new NumericRange(-100,100).Parse("999") == 100 && new NumericRange(-100,100).Parse("NaN") == null,
+        "numeric commit clamps finite values and rejects invalid input");
     Check(typeof(Adjustments).GetProperty("MasterRecipeID") != null, "master recipes must be part of persisted adjustments");
     Check(MasterRecipe.All.Count == 14, "all fourteen shared recipes load");
     foreach (var recipe in MasterRecipe.All) {

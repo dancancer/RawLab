@@ -42,16 +42,16 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
     {
         position = Math.Clamp(position, 0, 1);
         var v = Id == Parameter.Temperature ? 1 / (1 / Min - position * (1 / Min - 1 / Max)) : Min + position * (Max - Min);
-        return Math.Clamp(Math.Round(v / Step) * Step, Min, Max);
+        return Math.Clamp(Math.Round(v / Step, MidpointRounding.AwayFromZero) * Step, Min, Max);
     }
     public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) && double.IsFinite(value)
-        ? Math.Clamp(value, Min, Max) : null;
+        ? Math.Clamp(Math.Round(value / Step, MidpointRounding.AwayFromZero) * Step, Min, Max) : null;
     public static readonly ParameterSpec[] All = [
-        new(Parameter.Strength,"强度","胶片",0,200,1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.05,"EV",2),
-        new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,1,""),
-        new(Parameter.Contrast,"对比度","明暗",-100,100,1,"%"), new(Parameter.Highlights,"高光","明暗",-100,100,1,"%"),
-        new(Parameter.Shadows,"阴影","明暗",-100,100,1,"%"), new(Parameter.ToneCurve,"S 曲线","明暗",-100,100,1,"%"),
-        new(Parameter.Saturation,"饱和度","色彩",-100,100,1,"%"), new(Parameter.Sharpening,"锐化","细节",0,200,1,"%")];
+        new(Parameter.Strength,"强度","胶片",0,200,.1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.01,"EV",2),
+        new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,.1,"",1),
+        new(Parameter.Contrast,"对比度","明暗",-100,100,.1,"%",1), new(Parameter.Highlights,"高光","明暗",-100,100,.1,"%",1),
+        new(Parameter.Shadows,"阴影","明暗",-100,100,.1,"%",1), new(Parameter.ToneCurve,"S 曲线","明暗",-100,100,.1,"%",1),
+        new(Parameter.Saturation,"饱和度","色彩",-100,100,.1,"%",1), new(Parameter.Sharpening,"锐化","细节",0,200,.1,"%",1)];
 }
 
 public sealed class Adjustments

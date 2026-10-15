@@ -15,6 +15,9 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow : Window
 {
+    internal Slider ValueSlider => OrdinaryParameter.Slider;
+    internal TextBox ValueText => OrdinaryParameter.Number;
+    private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork);
     private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine);
     private readonly Library library=new();
@@ -121,8 +124,11 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting)return;
             settings.Geometry=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
-        ValueSlider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{interacting=true;}));
-        ValueSlider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{interacting=false; Schedule();}));
+        OrdinaryParameter.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting)return;
+            interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
+        };
+        OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有限数值。"),true);
         ready=true; RefreshControls();
         InitializeEditWorkflow();
         Closing+=WindowClosing;
@@ -201,9 +207,7 @@ public partial class MainWindow : Window
         try
         {
             var spec=ParameterSpec.All[(int)selectedParameter];
-            ParameterTitle.Text=Loc.Text(spec.Title); ParameterUnit.Text=spec.Unit;
-            ValueText.Text=settings[selectedParameter].ToString("F"+spec.Decimals);
-            ValueSlider.Value=spec.Position(settings[selectedParameter]);
+            OrdinaryParameter.Refresh(Loc.Text(spec.Title),NumericRange.For(spec),settings[selectedParameter],settings.Default(selectedParameter),spec.Unit);
             AutomationProperties.SetName(ValueSlider,Loc.Text(spec.Title));
             AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(spec.Title),spec.Unit));
             var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);

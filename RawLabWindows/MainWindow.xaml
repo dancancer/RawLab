@@ -135,15 +135,13 @@
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
             </StackPanel></ScrollViewer>
-            <WrapPanel x:Name="ParameterPanel" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,5">
-              <TextBlock x:Name="ParameterTitle" Width="105" TextWrapping="Wrap" VerticalAlignment="Center" FontWeight="SemiBold"/>
-              <Slider x:Name="ValueSlider" Width="210" Minimum="0" Maximum="1" ValueChanged="SliderChanged" AutomationProperties.Name="{DynamicResource '调整值'}"/>
-              <TextBox x:Name="ValueText" Width="78" Margin="10,0,3,0" LostKeyboardFocus="ValueCommitted" KeyDown="ValueKeyDown" AutomationProperties.Name="{DynamicResource '调整数值'}" Typography.NumeralAlignment="Tabular"/>
-              <TextBlock x:Name="ParameterUnit" Width="24" VerticalAlignment="Center"/>
+            <StackPanel x:Name="ParameterPanel" Grid.Row="2" VerticalAlignment="Center" Margin="0,5">
+              <local:ParameterRow x:Name="OrdinaryParameter"/>
+              <WrapPanel HorizontalAlignment="Center">
               <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Adjust" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
-              <Button x:Name="ResetParameterButton" Click="ResetParameterClicked" ToolTip="{DynamicResource '重置当前参数'}" AutomationProperties.Name="{DynamicResource '重置当前参数'}" Padding="8,3" Style="{StaticResource QuietButton}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
-            </WrapPanel>
+              </WrapPanel>
+            </StackPanel>
             <Grid x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,3,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <Button x:Name="FilmScrollLeft" Click="FilmScrollLeftClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '向左滚动胶片'}" AutomationProperties.Name="{DynamicResource '向左滚动胶片'}"><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>

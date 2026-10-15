@@ -7,6 +7,7 @@
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../GeometrySettings.cs" Link="GeometrySettings.cs" />
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
+    <Compile Include="../../ParameterInteraction.cs" Link="ParameterInteraction.cs" />
     <Compile Include="../../MasterRecipe.cs" Link="MasterRecipe.cs" />
     <Compile Include="../../HslSettings.cs" Link="HslSettings.cs" />
     <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
