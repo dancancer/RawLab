@@ -33,6 +33,7 @@ foreach ($line in $environment) {
 if (!$Python) { $Python = & "$PSScriptRoot/build-host-python.ps1" -Directory "$repo/build/tools/python-lens" }
 $fixture = ''
 if ($Test) {
+    & "$PSScriptRoot/tests/BuildScriptChecks.ps1"
     Invoke-Checked $DotNet @('run','--project',"$PSScriptRoot/tests/updates/UpdateChecks.csproj",'-c','Release')
     if (!$RawPath) { $RawPath = (Get-ChildItem -LiteralPath $RawDirectory -File -Filter '*.ARW' | Sort-Object Name | Select-Object -First 1).FullName }
     if (!$RawPath -or !(Test-Path -LiteralPath $RawPath)) { throw 'Supply -RawPath pointing to an external RAW fixture.' }
@@ -78,7 +79,7 @@ if ($Test) {
     $env:PATH = "$output;$env:PATH"
     $ctest = Join-Path (Split-Path $CMake) 'ctest.exe'
     Invoke-Checked $ctest @('--test-dir',$native,'-C','Release','--output-on-failure','--no-tests=error')
-    # 远端归档保留源文件时间，验证时强制重编译，避免运行旧的测试程序集。
+    # Archives preserve timestamps; force a fresh managed test assembly.
     Invoke-Checked $DotNet @('build',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-incremental')
     $testOut = (& $DotNet msbuild "$PSScriptRoot/tests/RawLabWindows.Tests.csproj" -getProperty:TargetDir -p:Configuration=Release).Trim()
     if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $testOut)) { throw 'Cannot resolve the WPF test output directory.' }

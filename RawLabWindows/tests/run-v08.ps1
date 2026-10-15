@@ -2,10 +2,12 @@
 param([Parameter(Mandatory=$true)][string]$RawPath,
       [Parameter(Mandatory=$true)][string]$NativeArtifacts,
       [string]$DotNet='dotnet',
+      [string]$DenoiseRaw='',
       [string]$Only='')
 $ErrorActionPreference='Stop'
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $results=Join-Path $repo 'build/windows-v08-results'
+if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng'}
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@($Only.Split(',',[StringSplitOptions]::RemoveEmptyEntries))
@@ -41,7 +43,9 @@ Invoke-Check 'localization' @('run','--project',"$PSScriptRoot/localization/Loca
 Invoke-Check 'about' @($runner,'--about')
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
 foreach($name in @('geometry','transform-ui','photo-features','master-recipes','rendered-dng','denoise','lens')){
-    Invoke-Check $name @($runner,('--'+$name),$repo,$RawPath)
+    $arguments=@($runner,('--'+$name),$repo,$RawPath)
+    if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
+    Invoke-Check $name $arguments
 }
 $summary | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $results 'summary.json') -Encoding utf8
 if(@($summary | Where-Object {$_.exitCode -ne 0}).Count -gt 0){throw 'Some checks failed; inspect summary.json and individual logs.'}

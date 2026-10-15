@@ -45,6 +45,6 @@
 ## Progress
 
 - Implementation commits are local to `feature/windows-v08-editor`; no shared or other-platform source changed.
-- Managed editing, denoise-model, localization and Windows cross-build pass. The isolated Windows core run passed 33/33 CTest; its legacy wrapper then stopped before WPF tests on test-output discovery.
+- Managed editing, denoise-model, localization and Windows cross-build pass. The isolated Windows full `build.ps1 -Test` follow-up passes 33/33 CTest, About and 152 default WPF checks; the test-output discovery failure is fixed and covered by a PowerShell parser regression.
 - Native targeted checks and final affected-check reruns are recorded separately in `VERIFICATION-v08.md`. Programmatic WPF composition is not physical DPI, Snap, Narrator, touchpad or multi-monitor acceptance.
-- Implementation and owned verification are complete; release acceptance remains non-green because of the recorded legacy wrapper discovery failure, existing real-RAW denoise assertion and physical acceptance gaps. No claim of complete hardware/release verification is made.
+- The real-RAW denoise assertion is corrected with an active-filter controlled RAW and retained real-photo cache/export/hash regressions; the final denoise rerun passes 42 checks. The fixture's five-flat-tile no-op is confirmed without shared changes. Implementation and owned verification are complete; physical acceptance gaps still keep release acceptance non-green. No claim of complete hardware/release verification is made.

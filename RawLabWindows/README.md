@@ -171,6 +171,23 @@ dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --
 托管设置检查覆盖 40 字节几何 ABI、旧记录默认值、快照与批量恢复；Windows 原生定向入口为
 `dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --geometry <repo> <RAW>`。
 macOS 上的 WPF 交叉编译及托管测试不代表 Windows 原生或 D3D11 运行验证。
+
+`--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的
+八个平坦图块，不能假定每张照片在每个视口都一定改变像素；受控输入负责验证实际滤波效果。
+先在安装了 NumPy、tifffile 的测试 Python 环境生成 fixture，再运行专项：
+
+```powershell
+python lutools/tests/make_denoise_fixture.py build/windows-fixtures/denoise.dng
+./RawLabWindows/tests/run-v08.ps1 -RawPath 'C:/samples/photo.ARW' -NativeArtifacts 'build/RawLab-Windows' -Only denoise
+# fixture 位于其他位置时，显式传入 -DenoiseRaw 'C:/samples/denoise.dng'
+```
+
+直接调用测试程序时，可使用 `--denoise <repo> <RAW> <controlled-DNG>`；省略最后一个参数时，
+使用 `<repo>/build/windows-fixtures/denoise.dng`，缺少文件会报错，不会跳过滤波断言。
+生成的 DNG 属于忽略的测试产物，不提交，也不会被 `build-remote.py` 自动发送；远程专项前须
+单独生成或传送到任务自己的构建目录。`build.ps1` 保持 ASCII，以免 Windows PowerShell 5.1
+按系统 ANSI 编码读取时吞掉命令；`tests/BuildScriptChecks.ps1` 检查这一约束及测试构建命令的 AST。
+
 完成 `build.ps1 -Test` 后，可单独运行以下可见窗口测量；它会打开测试窗口并自动缩放、平移，输出首次画面、原尺寸细节和合成回调间隔：
 
 ```powershell
