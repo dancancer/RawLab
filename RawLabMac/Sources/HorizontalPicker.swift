@@ -24,14 +24,16 @@ struct HorizontalPicker<Content: View>: View {
     @Environment(\.locale) private var localizationLocale
     let selectedID: String
     let name: String
+    let showsScrollIndicators: Bool
     private let content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var position = ScrollPosition(idType: String.self)
     @State private var scrollState = HorizontalPickerScrollState()
 
-    init(selectedID: String, name: String, @ViewBuilder content: () -> Content) {
+    init(selectedID: String, name: String, showsScrollIndicators: Bool = true, @ViewBuilder content: () -> Content) {
         self.selectedID = selectedID
         self.name = name
+        self.showsScrollIndicators = showsScrollIndicators
         self.content = content()
     }
 
@@ -44,10 +46,10 @@ struct HorizontalPicker<Content: View>: View {
                 if showsControls { scrollButton(towardTrailing: false) }
                 ScrollView(.horizontal) {
                     content
-                        .padding(.bottom, 12)
+                        .padding(.bottom, showsScrollIndicators ? 12 : 0)
                         .frame(minWidth: viewportWidth)
                 }
-                .scrollIndicators(.visible)
+                .scrollIndicators(showsScrollIndicators ? .visible : .hidden)
                 .scrollPosition($position)
                 .onScrollGeometryChange(for: HorizontalPickerScrollState.self) { value in
                     HorizontalPickerScrollState(contentWidth: value.contentSize.width,

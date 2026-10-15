@@ -19,6 +19,14 @@ struct EditorView: View {
     @State private var resizeStart: CGFloat?
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
+    @State private var geometryViewState: GeometryViewState?
+    private struct GeometryViewState {
+        let file: URL?
+        let viewport: PhotoViewport
+        let pan: CGSize
+        let fullResolution: Bool
+        let panel: AdjustmentPanelLayout
+    }
 
     var body: some View {
         let _ = localizationLocale
@@ -27,14 +35,16 @@ struct EditorView: View {
                 if showFiles {
                     FileBrowser(library: library, selected: model.file, open: model.open,
                                 canApplySettings: model.canApplySettings, applySettings: model.confirmApplySettings)
-                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
+                        .frame(minWidth: 200, idealWidth: 236, maxWidth: 300)
                         .disabled(model.exporting)
                 }
                 VStack(spacing: 0) {
                   workspace.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
                     .overlay(alignment: .topTrailing) {
-                        FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                        if model.geometryDraft == nil {
+                            FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                        }
                     }
                     .overlay(alignment: .topLeading) {
                         if infoMode != .hidden, let photoInformation {
@@ -59,11 +69,12 @@ struct EditorView: View {
                         }
                         return true
                     }
-                  if !adjustmentPanel.collapsed {
-                      panelResizeHandle(available: geometry.size.height)
-                      bottomControls
-                          .frame(height: adjustmentPanel.height(available: geometry.size.height) - 12)
-                  }
+                  panelResizeHandle(available: geometry.size.height)
+                      .frame(height: adjustmentPanel.collapsed ? 0 : 13).clipped()
+                      .allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
+                  bottomControls
+                      .frame(height: adjustmentPanel.collapsed ? 0 : adjustmentPanel.height(available: geometry.size.height) - 13)
+                      .clipped().allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
                   Divider()
                   statusBar
                 }
@@ -72,6 +83,10 @@ struct EditorView: View {
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
         .onChange(of: model.file) { _, _ in fit() }
+        .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
+        .onChange(of: model.geometryDraftTab) { _, tab in
+            if geometryViewState != nil { adjustmentPanel.selectHeight(tab == .lens ? 330 : 252) }
+        }
         .onChange(of: model.settings.geometrySettings) { _, _ in pan = .zero }
         .task(id: model.file) {
             photoInformation = nil
@@ -82,6 +97,10 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
+        .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
+        .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
+            MacGeometryDeparturePrompt(model: model)
+        }
         .onAppear {
             let args = CommandLine.arguments
             if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
@@ -119,7 +138,7 @@ struct EditorView: View {
                 Spacer(minLength: 8)
                 Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().frame(width: 260)
+                }.labelsHidden().frame(maxWidth: 210)
                     .id(localizationLocale.identifier)
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
                 Text(model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
@@ -134,8 +153,11 @@ struct EditorView: View {
                 } label: { Image(systemName: "arrow.counterclockwise") }
                 .menuStyle(.borderlessButton).fixedSize().help(L10n.text("重置调整")).accessibilityLabel(L10n.text("重置调整"))
                     .disabled(model.settings.isDefault)
-            }.padding(.horizontal, 20).frame(height: 42)
-            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion)
+            }.padding(.horizontal, 16).font(.system(size: 11))
+                .frame(height: model.geometryDraft == nil ? 31 : 0).clipped().controlSize(.small)
+                .allowsHitTesting(model.geometryDraft == nil).accessibilityHidden(model.geometryDraft != nil)
+            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion,
+                           onPreferredHeight: { adjustmentPanel.selectHeight($0) })
         }.background(Color(nsColor: .windowBackgroundColor))
             .disabled(model.file == nil || model.exporting)
     }
@@ -146,16 +168,16 @@ struct EditorView: View {
             Capsule().fill(Color.secondary.opacity(0.5)).frame(width: 32, height: 3)
             HStack {
                 Spacer()
-                Button { adjustmentPanel.collapsed = true } label: {
+                Button { collapsePanel() } label: {
                     Image(systemName: "chevron.down").font(.system(size: 9))
-                }.buttonStyle(.plain).frame(width: 28, height: 12)
+                }.buttonStyle(.plain).frame(width: 28, height: 13)
                     .help(L10n.text("收起调整栏")).accessibilityLabel(L10n.text("收起调整栏"))
             }.padding(.trailing, 12)
-        }.frame(height: 12).contentShape(Rectangle())
+        }.frame(height: 13).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
                     if resizeStart == nil { resizeStart = adjustmentPanel.height(available: available) }
-                    adjustmentPanel.resize(to: (resizeStart ?? 260) - value.translation.height, available: available)
+                    adjustmentPanel.resize(to: (resizeStart ?? 252) - value.translation.height, available: available)
                 }.onEnded { _ in resizeStart = nil })
             .onHover { inside in (inside ? NSCursor.resizeUpDown : NSCursor.arrow).set() }
             .accessibilityElement(children: .contain)
@@ -169,8 +191,8 @@ struct EditorView: View {
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
             HStack(spacing: 1) {
-                if compare, let base = model.neutral { imagePane(base, title: L10n.text("原图"), showMask: false) }
-                imagePane(result, title: model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping)
+                if compare, model.canComparePreview, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
+                imagePane(result, title: model.selectedMasterRecipe?.name ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
             }
         } else {
             VStack(spacing: 16) {
@@ -188,8 +210,8 @@ struct EditorView: View {
                     }
                 } else {
                     Image(systemName: "photo.on.rectangle.angled").font(.system(size: 36)).foregroundStyle(.secondary)
-                    Text(L10n.text("RAW 照片")).font(.title3)
                     Button(action: model.openPanel) { Label(L10n.text("打开 RAW…"), systemImage: "folder") }.controlSize(.large)
+                        .accessibilityIdentifier("editor.empty.openRAW")
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -201,7 +223,10 @@ struct EditorView: View {
                 .help(model.file?.path ?? L10n.text("未打开照片"))
             Spacer(minLength: 8)
             if let failure = model.saveError {
-                Button { model.saveEdits() } label: { Label(L10n.text("调整未保存 · 重试"), systemImage: "exclamationmark.triangle") }
+                Button {
+                    if model.geometryDraft != nil { _ = model.applyGeometryDraft() }
+                    else { _ = model.saveEdits() }
+                } label: { Label(L10n.text("调整未保存 · 重试"), systemImage: "exclamationmark.triangle") }
                     .buttonStyle(.plain).foregroundStyle(.yellow).help(failure)
             } else if !model.saveStatus.isEmpty {
                 Label(model.saveStatus, systemImage: "checkmark").foregroundStyle(.secondary)
@@ -229,8 +254,8 @@ struct EditorView: View {
         ToolbarItemGroup {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
-                .help(L10n.text("原图与调整后对比")).accessibilityLabel(L10n.text("对比"))
-                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil)
+                .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
+                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || !model.canComparePreview)
             Button {
                 if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
                 infoMode = infoMode.next
@@ -248,32 +273,38 @@ struct EditorView: View {
                 Button(L10n.text("放大")) { zoom(1.25) }
                 Button(L10n.text("缩小")) { zoom(1 / 1.25) }
             } label: { Image(systemName: "magnifyingglass") }
-                .help(L10n.text("缩放")).accessibilityLabel(L10n.text("缩放")).disabled(model.result == nil)
-            Button { adjustmentPanel.collapsed.toggle() } label: { Image(systemName: "slider.horizontal.3") }
+                .help(L10n.text("缩放")).accessibilityLabel(L10n.text("缩放")).disabled(model.result == nil || model.geometryDraft != nil)
+            Button {
+                if adjustmentPanel.collapsed { adjustmentPanel.collapsed = false }
+                else { collapsePanel() }
+            } label: { Image(systemName: "slider.horizontal.3") }
                 .tint(adjustmentPanel.collapsed ? nil : .yellow)
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
                 Button("JPEG…") { model.export(png: false) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                 Button(L10n.text("PNG · 16-bit…")) { model.export(png: true) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                 Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                 Divider()
                 Button(L10n.text("使用当前调整批量导出…")) {
                     if model.prepareBatch() { openWindow(id: "batch-export") }
-                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                 if model.batch != nil {
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }
                 }
             } label: { Label(L10n.text("导出"), systemImage: "square.and.arrow.up") }
             .disabled(model.file == nil && model.batch == nil)
+            .help(model.geometryDraft != nil ? L10n.text("草稿未应用，无法导出或复制设置。") : L10n.text("导出"))
         }
     }
 
     private func reset(_ group: AdjustmentGroup? = nil) {
+        guard model.geometryDraft == nil else { return }
+        NSApp.keyWindow?.makeFirstResponder(nil)
         if let group { model.settings.reset(group) } else { model.settings.resetAll() }
         resetVersion += 1
     }
@@ -292,16 +323,46 @@ struct EditorView: View {
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
         PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.result?.nativeWidth ?? model.neutral?.image.width ?? frame.image.width,
                     pan: $pan, clipping: showMask, sourceHeight: model.result?.nativeHeight ?? model.neutral?.image.height,
-                    onPreviewSizeChange: model.updatePreviewLongEdge)
-            .simultaneousGesture(TapGesture(count: 2).onEnded { toggleActualPixels() })
+                    onPreviewSizeChange: model.updatePreviewLongEdge,
+                    cropSettings: model.geometryDraftPreviewReady ? model.geometryDraft?.geometry : nil,
+                    pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,
+                    cropAspectRatio: model.cropAspectRatio, cropGrid: model.cropGridEnabled,
+                    onCropChange: model.geometryCropInputEnabled ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
+                    onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { if model.geometryDraft == nil { toggleActualPixels() } })
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {
-                if compare {
+                if compare && model.canComparePreview {
                     Text(title).font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
                         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 4)).padding(10)
                         .allowsHitTesting(false)
                 }
             }
+    }
+
+    private func collapsePanel() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        model.requestLeavingGeometryDraft { adjustmentPanel.collapsed = true }
+    }
+
+    private func geometryEditingChanged(_ editing: Bool) {
+        if editing {
+            geometryViewState = GeometryViewState(file: model.file, viewport: viewport, pan: pan,
+                fullResolution: model.fullResolution, panel: adjustmentPanel)
+            adjustmentPanel.collapsed = false
+            adjustmentPanel.selectHeight(model.geometryDraftTab == .lens ? 330 : 252)
+            fit()
+        } else if let previous = geometryViewState {
+            geometryViewState = nil
+            let requestedCollapse = adjustmentPanel.collapsed
+            adjustmentPanel = previous.panel
+            if requestedCollapse { adjustmentPanel.collapsed = true }
+            if previous.file == model.file {
+                viewport = previous.viewport; pan = previous.pan
+                if model.fullResolution != previous.fullResolution { model.fullResolution = previous.fullResolution }
+            } else { fit() }
+        }
     }
 }
 
