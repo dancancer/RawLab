@@ -31,7 +31,7 @@ The worktree build completed with exit 0 and `PASS: all non-system dynamic depen
 
 The generated app was copied to `build/native-acceptance/RawLab Mac Acceptance.app`, with only bundle identity/name, `LSEnvironment.CFFIXED_USER_HOME` and ad-hoc signatures changed. `codesign --verify --deep --strict` passed. The original and acceptance executables have identical `__TEXT,__text` dumps (SHA-256 `54bf5e1e17c07316eb650389c24fdf2ab53278fce812693909dfc9a757001fa5`). Whole-file hashes differ because of re-signing. No app source has been modified.
 
-Native acceptance is partial. The app launched and returned live AX state and window screenshots; no lock-screen or approval blocker was returned. CUA button actions, file-list interaction, Tab traversal and focused typing worked. Coordinate drags, wheel input, several native menu selections and close/global shortcut actions did not produce the expected transition. The cause has not been established, so these are not recorded as app defects or passes. The optional documented `cua.computer.launch_app` method is unavailable in this runtime (`is not a function`). A foreground-state question was sent once; no security setting, permission reset or other application's focus was changed to work around this.
+Native acceptance is in progress. The app launched and returned live AX state and window screenshots; no lock-screen or approval blocker was returned. Initial background-app attempts at coordinate drags, wheel input, several native menu selections and global shortcuts did not produce the expected transition. The user subsequently confirmed bringing the acceptance app to the foreground. Shortcuts, menus, pointer drags and wheel input then worked; the initial failures are not classified as application defects. The optional documented `cua.computer.launch_app` method is unavailable in this runtime (`is not a function`). No security setting or permission was reset.
 
 ## Native-input matrix
 
@@ -39,16 +39,16 @@ Native acceptance is partial. The app launched and returned live AX state and wi
 | --- | --- | --- |
 | Open button, File menu, Command-O and cancel | PARTIAL | Button/menu opened the system panel; button and Escape cancel returned to empty state. Command-O opened once, but later attempts had no effect; repeatability is not accepted. |
 | RAW import and drag/drop | PARTIAL | A imported by native file-list double click; B imported by selected row + Return; A reopened by selected row + Open. Drag/drop NOT REACHED. |
-| Eight crop handles and in-frame move | PARTIAL | All nine regions reached by Tab and changed by actual direction keys; Shift-Up fine resize observed. Pointer drags remain unverified. |
-| Aspect presets and orientation swap | NOT REACHED | Crop retains selected physical ratio and swaps orientation |
-| Rotation ruler and wheel | NOT REACHED | Real drag/wheel updates angle; precision behavior checked |
+| Eight crop handles and in-frame move | PARTIAL / issue under diagnosis | All nine regions changed correctly with actual pointer drags and Tab/direction keys. Shift-Up fine resize observed. Apply remained disabled after pointer drags until aspect change; this post-drag path is not accepted. |
+| Aspect presets and orientation swap | PASS for exercised path | Native 16:9 selection produced W/H 99.0/55.7 percent on square canvas; swap produced 55.7/99.0 percent with portrait selection visibly confirmed. Other presets not repeated. |
+| Rotation ruler and wheel | PASS for exercised path | Actual ruler drag changed 3 to 0 degrees; Right changed 0 to 0.1; wheel up 1 over numeric field changed 0.1 to 1.1. Shift-wheel and full-range traversal not claimed. |
 | Draft Apply and Cancel | PASS for exercised path | Apply saved crop +3 degree rotation; Cancel discarded subsequent nine-region keyboard edits. Reentry restored the applied geometry. |
-| Leave Apply/Discard/Stay | PARTIAL | Collapsing adjustment panel displayed the native three-choice sheet. Stay retained the flipped draft; Discard dismissed draft and collapsed panel. Apply-and-leave NOT REACHED. |
-| Window close and application quit protection | NOT REACHED | Native close button, Command-W and File Close attempts did not close or show a prompt. Quit still pending; this does not prove protection works. |
-| Save and reopen recovery | PASS for exercised path | A -> B -> A displayed restored-adjustments feedback; crop and +3 degree rotation were confirmed on reentry. Private registry matches these values. Relaunch recovery still pending. |
-| Comparison | PARTIAL | Native toolbar toggle changed AX value from enabled to disabled and removed neutral-view label. Final two-way visual check pending. |
-| Single export | NOT REACHED | JPEG menu was exposed and selected, but no save panel or output appeared. |
-| Batch export | NOT REACHED | Native selection/destination/start produces valid private outputs |
+| Leave Apply/Discard/Stay | PASS for panel-collapse path | Native three-choice sheet: Stay retained draft; Discard discarded and collapsed panel; Apply-and-leave saved horizontal flip and collapsed panel. Other departure triggers remain separately scoped. |
+| Window close and application quit protection | PARTIAL | Foreground Command-W displayed prompt and Stay retained draft. Discard ended draft, but CUA still exposed editor afterward; actual close completion needs diagnosis. Native application Quit/Stay/Discard succeeded, process exit confirmed. Quit/Apply not exercised. |
+| Save and reopen recovery | PASS for exercised path | A -> B -> A and full Quit/relaunch/open restored crop X/Y 3.0 percent, W/H 97.0 percent, +3 degree rotation and horizontal flip. Discarded vertical flip remained off. |
+| Comparison | PASS | Live screenshots confirmed side-by-side neutral/PROVIA and return to single-image presentation using the toolbar control. |
+| Single export | PASS for JPEG original size | Foreground Command-Shift-E opened save-panel; private destination chosen and Save clicked; native success feedback and valid JPEG confirmed independently. PNG/DNG not exercised. |
+| Batch export | PASS for two-photo JPEG path | Native batch window, Add RAW twice, destination panel, All/None selection and Export 2; UI completed with 2 success, 0 failed, 0 remaining. Independent decode and pixel comparison passed. Cancel/retry/interruption not exercised. |
 | Tab focus and available accessibility | PARTIAL | All crop handles, move region and rotation field reached with real Tab; direction keys and typing worked. Crop AX Decrement shrank top-left by 1 percent. Full app/VoiceOver coverage not claimed. |
 
 VoiceOver, increased contrast or global keyboard-access settings will not be enabled or changed as part of this task. Unavailable coverage will be recorded rather than inferred from snapshots or model tests.
@@ -69,4 +69,25 @@ The CUA calls and live screenshots are retained in this session's tool transcrip
 10. `Test keyboard resize on all eight crop handles and move region`: each keyboard action visibly changed its expected coordinate/dimension. `Check fine crop key input and cancel the geometry draft`: fine input changed height 88.8 to 88.6 percent, then Cancel returned to ordinary editor. Reentry returned to committed 3.0/97.0 percent geometry.
 11. `Trigger geometry departure prompt by collapsing adjustment panel`, `Stay in the native geometry draft`, `Discard draft and leave the geometry workspace`: native sheet and observed decisions.
 
-Private and original RAW SHA-256 at setup: `0ecdc8087d566c5ba39f9bd40eef4dfc5f3884ccb016f311a606508751c79eaf`. The user's existing `~/Library/Application Support/RawLab/Edits/edits.json` remained `1bc106526236f30b335af381446385ea4b0a8fc3131abad4bc2fceda55ad6e52` after Apply. The private registry hash after Apply, Cancel and Discard was `7c766c81bbfcd5c5c70f03a57a8272c670b519e319a0a3311db5b0ec8274e1a3`.
+Private and original RAW SHA-256 at setup and after export: `0ecdc8087d566c5ba39f9bd40eef4dfc5f3884ccb016f311a606508751c79eaf`. The user's existing `~/Library/Application Support/RawLab/Edits/edits.json` remained `1bc106526236f30b335af381446385ea4b0a8fc3131abad4bc2fceda55ad6e52`. The private registry hash at the first Apply/Cancel/Discard checkpoint was `7c766c81bbfcd5c5c70f03a57a8272c670b519e319a0a3311db5b0ec8274e1a3`; after the later Apply-and-leave of horizontal flip it became `90f0b4376758c9b671669d1fc6a64e01279aed2b1d26befd9015f58a7ec599ac`, unchanged by Quit/Discard, relaunch or batch export.
+
+## Foreground phase evidence
+
+- `Apply draft and leave via native confirmation sheet`: saved horizontal flip and collapsed panel.
+- `Verify visible before-and-after comparison view` and `Verify comparison returns to single-image presentation`: live two-pane and one-pane screenshots.
+- `Invoke native Quit with unapplied geometry changes`, `Cancel native Quit by choosing Continue Editing`, `Discard unapplied draft and finish native Quit`: native prompt, retention and process exit. CUA reported `procNotFound` after successful Quit; `pgrep -x RawLabMac` returned no process. Relaunch and `Verify crop, rotation and flip state survived application restart` confirmed saved geometry and no discarded vertical flip.
+- User foreground confirmation preceded `Open JPEG save panel from foreground keyboard shortcut`. `Save native JPEG export to private output directory` returned native exported feedback.
+- `Verify batch selection controls and run the two-photo export` and `Verify native batch export completion status`: actual batch run, completed 2/0/0.
+- `Verify foreground top-left crop handle pointer drag`, `Check whether a second crop-edge drag starts after release`, and the subsequent paired handle-drag calls: all eight handles and move changed the expected values. The retained disabled Apply state is under investigation, not a pass.
+- `Apply native 16:9 crop preset`, `Verify committed aspect preset and orientation control`, `Swap the native crop aspect from landscape to portrait`: preset and swap confirmed in live AX state and screenshot.
+- `Drag the native rotation ruler`, `Test ruler keyboard step and native rotation numeric wheel`, `Apply one native wheel scroll over the rotation value`: actual angle changes.
+
+Independent output checks (read-only subagent; no UI automation or model calls):
+
+| Output under `build/native-acceptance/exports` | Bytes | SHA-256 |
+| --- | --- | --- |
+| `single/acceptance-a-PROVIA.jpg` | 3977500 | `fb45c6b988dc0a67baa081e334a5845f81de3de31824241a3163124db4aa9c93` |
+| `batch/acceptance-a-PROVIA.jpg` | 3977500 | `9d812984d666bd041f3d1ebac72c775e090631767bd208f89b137cc865891c56` |
+| `batch/acceptance-b-PROVIA.jpg` | 3977500 | `fb45c6b988dc0a67baa081e334a5845f81de3de31824241a3163124db4aa9c93` |
+
+All three decode as 2835x2835, 8-bit JPEG. FFmpeg decoded-pixel comparison of each batch output against the single output gave MSE 0, PSNR inf and SSIM 1.000000. Nonblank decoded luminance: min 1, max 240, average 111.238. File bytes may differ because of metadata; pixel equivalence is the asserted contract.
