@@ -4,11 +4,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -37,7 +39,13 @@ internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.Ph
 
 @Composable
 internal fun EditorToolStrip(state: EditorState, selected: Int, select: (Int) -> Unit) {
-    LazyRow(Modifier.fillMaxWidth().testTag("editor-tools"), contentPadding = PaddingValues(horizontal = 8.dp),
+    val list = rememberLazyListState()
+    LaunchedEffect(selected) {
+        val index = editorToolOrder.indexOf(selected)
+        if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
+            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem((index - 2).coerceAtLeast(0))
+    }
+    LazyRow(Modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(editorToolOrder, key = { it }) { index -> EditorTool(state, index, selected == index) { select(index) } }
     }

@@ -16,6 +16,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.Locale
@@ -66,6 +68,16 @@ class EditorV08ControlsTest {
         listOf("en", "zh-Hans", "de", "fr", "ja", "es").forEach { locale ->
             compose.runOnIdle { language = locale }
             compose.onNodeWithTag("export-format-DNG").performScrollTo().performClick().assertIsSelected()
+            val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
+                setLocale(Locale.forLanguageTag(locale))
+            })
+            compose.onNodeWithText(localized.getString(R.string.dng)).assertIsDisplayed()
+            val textLayouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(localized.getString(R.string.dng_description), useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
+                it(textLayouts)
+            }
+            assertTrue("$locale text must wrap without clipping: ${textLayouts.map { "${it.size}/${it.lineCount}/${it.hasVisualOverflow}" }}",
+                textLayouts.isNotEmpty() && textLayouts.none { it.hasVisualOverflow })
             val jpeg = compose.onNodeWithTag("export-format-JPEG").fetchSemanticsNode().boundsInRoot
             val png = compose.onNodeWithTag("export-format-PNG").fetchSemanticsNode().boundsInRoot
             val dng = compose.onNodeWithTag("export-format-DNG").fetchSemanticsNode().boundsInRoot
@@ -89,7 +101,8 @@ class EditorV08DraftTest {
         fun ready() = compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         fun capture(name: String) {
             val dir = File(context.getExternalFilesDir(null), "v08-layout").apply { mkdirs() }
-            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+            compose.waitForIdle()
+            val bitmap = instrumentation.uiAutomation.takeScreenshot()
             File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         try {
@@ -109,6 +122,7 @@ class EditorV08DraftTest {
             compose.onNodeWithContentDescription("全部工具").performClick()
             compose.onNodeWithTag("editor-tool-17").performScrollTo().performClick()
             compose.waitUntil(30_000) { model.state.value.draft != null && model.state.value.canApplyDraft }
+            compose.onNodeWithTag("editor-tool-17").assertIsDisplayed()
             compose.onNodeWithTag("draft.cancel").assertIsDisplayed()
             compose.onNodeWithTag("draft.apply").assertIsDisplayed()
             compose.onNodeWithTag("geometry.rotate-right").performScrollTo().performClick()
@@ -145,7 +159,15 @@ class EditorV08DraftTest {
             assertEquals(original, stored())
             assertEquals(original, model.state.value.edits)
             assertEquals(.75f, model.state.value.visibleEdits.geometry.cropWidth, 0f)
-            compose.runOnUiThread { assertFalse(model.beginExport()); model.beginBatch() }
+            compose.runOnUiThread {
+                assertFalse(model.beginExport())
+                model.beginBatch()
+                model.importLooks(listOf(Uri.parse("file:///missing.cube")))
+                model.renameLook("missing", "Renamed")
+                model.deleteLook("missing")
+                assertEquals(Operation.NONE, model.state.value.operation)
+                model.resumeBatch(BatchJob(BatchSourceSnapshot(photo.identity, photo.file, original), emptyList()))
+            }
             assertNull(model.batch.value)
             compose.activityRule.scenario.recreate()
             compose.activityRule.scenario.onActivity { model = it.model }

@@ -306,7 +306,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun importLooks(uris: List<Uri>) {
-        if (uris.isEmpty() || mutable.value.operation != Operation.NONE) return
+        if (uris.isEmpty() || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null, lookImportReport = null)
         lookRevision = lookQueue.submit(LookWork.Import(uris.toList()))
     }
@@ -314,13 +314,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun dismissLookImportReport() { mutable.value = mutable.value.copy(lookImportReport = null) }
 
     fun renameLook(id: String, name: String) {
-        if (mutable.value.operation != Operation.NONE) return
+        if (mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
         lookRevision = lookQueue.submit(LookWork.Rename(id, name))
     }
 
     fun deleteLook(id: String) {
-        if (mutable.value.operation != Operation.NONE) return
+        if (mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
         lookRevision = lookQueue.submit(LookWork.Delete(id))
     }
@@ -375,7 +375,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (!current.canExport) return
         previewResizeJob?.cancel()
         previewResizeJob = null
-        mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits), previewResizePending = false)
+        mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits), previewResizePending = false, error = null)
         if (group == AdjustmentGroup.GEOMETRY && current.edits.geometry != current.edits.geometry.uncropped()) renderDraft(false)
     }
 

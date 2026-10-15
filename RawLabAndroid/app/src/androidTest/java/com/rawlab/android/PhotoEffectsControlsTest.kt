@@ -21,7 +21,8 @@ import org.junit.Test
 import java.io.File
 
 class PhotoEffectsControlsTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
     @Test fun vignetteToolShowsFullParameterSetAndGroupReset() {
         var value by mutableStateOf(PhotoEffectsSettings(
@@ -48,13 +49,13 @@ class PhotoEffectsControlsTest {
     @Test fun grainToolShowsIndependentParameterSet() {
         compose.setContent {
             RawLabTheme {
-                Surface(Modifier.width(600.dp).testTag("effects-controls")) {
+                Surface(Modifier.width(600.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
                     PhotoEffectsControls(PhotoEffectsSettings(), vignette = false, enabled = true) { _, _ -> }
                 }
             }
         }
         listOf("强度", "大小", "粗糙度").forEach {
-            compose.onNodeWithText(it).assertIsDisplayed()
+            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
         }
         compose.onNodeWithText("高光保护").assertDoesNotExist()
         capture("grain")

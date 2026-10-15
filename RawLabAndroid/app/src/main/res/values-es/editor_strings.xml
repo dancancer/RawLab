@@ -1,4 +1,6 @@
 <resources>
+    <string name="batch_confirmation_count">%1$d resultados pendientes de verificación</string>
+    <string name="info_unavailable">No disponible</string>
     <string name="adjustment_normal">Normal</string>
     <string name="adjustment_fine">Preciso</string>
     <string name="adjustment_apply">Aplicar</string>

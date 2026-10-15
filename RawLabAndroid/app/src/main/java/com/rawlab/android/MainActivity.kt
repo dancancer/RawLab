@@ -49,6 +49,8 @@ class MainActivity : ComponentActivity() {
 fun RawLabTheme(content: @Composable () -> Unit) {
     val scheme = darkColorScheme(
         primary = Color(0xFFF2CE48), onPrimary = Color(0xFF252110), secondary = Color(0xFF63CDD6),
+        primaryContainer = Color(0xFF3D351C), onPrimaryContainer = Color(0xFFF2CE48),
+        secondaryContainer = Color(0xFF3D351C), onSecondaryContainer = Color(0xFFF2CE48),
         surface = Color(0xFF272729), surfaceContainer = Color(0xFF272729),
         surfaceContainerHigh = Color(0xFF303033), surfaceContainerLow = Color(0xFF212124),
         surfaceContainerHighest = Color(0xFF303033), background = Color(0xFF1C1C1E),
@@ -141,6 +143,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
         onDismissRequest = { exportDialog = false; model.cancelExport() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
+        EditorSheetSystemBars()
         Column(Modifier.fillMaxWidth().fillMaxHeight(.94f).imePadding().padding(horizontal = 24.dp)) {
             Text(stringResource(R.string.export), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
             val selectedSize = ExportSizeChoice.fromKey(exportSizeKey)

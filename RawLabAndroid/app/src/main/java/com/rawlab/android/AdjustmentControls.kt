@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -43,6 +44,7 @@ import kotlin.math.roundToInt
 
 internal val LocalEditorHaptics = staticCompositionLocalOf { true }
 internal val LocalAdjustmentFocus = staticCompositionLocalOf<(Boolean) -> Unit> { {} }
+internal val LocalAdjustmentHapticGate = staticCompositionLocalOf { AdjustmentHapticGate() }
 
 @Composable
 internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
@@ -68,13 +70,17 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     var input by rememberSaveable(label) { mutableStateOf("") }
     val formatted = formatAdjustment(value, step)
     val title = stringResource(label)
-    val parsed = scale.parse(input)
+    val parsed = scale.parse(input, LocalConfiguration.current.locales[0], value)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            if (LocalDensity.current.fontScale <= 1.3f) TextButton(onClick = { input = formatted; editing = true }, enabled = enabled,
+                modifier = Modifier.testTag("adjustment-value-$label")) {
+                Text(listOf(formatted, unit).filter { it.isNotBlank() }.joinToString(" "), fontFamily = FontFamily.Monospace)
+            }
             ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_value, enabled && resetEnabled, onReset)
         }
-        TextButton(onClick = { input = formatted; editing = true }, enabled = enabled,
+        if (LocalDensity.current.fontScale > 1.3f) TextButton(onClick = { input = formatted; editing = true }, enabled = enabled,
             modifier = Modifier.testTag("adjustment-value-$label")) {
             Text(listOf(formatted, unit).filter { it.isNotBlank() }.joinToString(" "),
                 fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleMedium)
@@ -91,7 +97,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
         text = {
             Column(Modifier.imePadding().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(input, { input = it }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("adjustment-input"),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = parsed == null,
+                    keyboardOptions = KeyboardOptions(keyboardType = if (range.start < 0f) KeyboardType.Text else KeyboardType.Decimal), isError = parsed == null,
                     label = { Text("${formatAdjustment(range.start, step)} ... ${formatAdjustment(range.endInclusive, step)} $unit") },
                     supportingText = { if (parsed == null) Text(stringResource(R.string.invalid_value)) })
             }
@@ -117,6 +123,7 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
     val accessibility = remember(context) { context.getSystemService(AccessibilityManager::class.java) }
     val haptics = LocalEditorHaptics.current
     val focus = LocalAdjustmentFocus.current
+    val gate = LocalAdjustmentHapticGate.current
     val reduceMotion = android.provider.Settings.Global.getFloat(context.contentResolver,
         android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     val primary = MaterialTheme.colorScheme.primary
@@ -139,7 +146,6 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
             val start = current
             var latest = start
             var boundary = false
-            var feedbackAt = 0L
             val captured = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                 ?: return@awaitEachGesture
             active = true
@@ -155,10 +161,9 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
                         val isDefault = abs(next - scale.default) < scale.step / 2f
                         val isBoundary = next == scale.range.start || next == scale.range.endInclusive
                         val major = (next / (scale.step * 10)).roundToInt() != (latest / (scale.step * 10)).roundToInt()
-                        if (haptics && accessibility?.isTouchExplorationEnabled != true && now - feedbackAt >= 125L &&
-                            (isDefault || (isBoundary && !boundary) || major)) {
+                        if (haptics && accessibility?.isTouchExplorationEnabled != true &&
+                            (isDefault || (isBoundary && !boundary) || major) && gate.accept(now)) {
                             view.performHapticFeedback(if (isDefault) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.KEYBOARD_TAP)
-                            feedbackAt = now
                         }
                         boundary = isBoundary
                         latest = next

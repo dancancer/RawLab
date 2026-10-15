@@ -166,11 +166,10 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
         ) {
             if (mode == 1) {
                 InfoLine(stringResource(R.string.info_filename), info.fileName)
-                info.captureTime?.let { InfoLine(stringResource(R.string.info_capture_time), it) }
-                info.orientationCorrection?.let { InfoLine(stringResource(R.string.info_orientation), it) }
-                if (info.originalWidth != null && info.originalHeight != null) {
-                    InfoLine(stringResource(R.string.info_original_dimensions), "${info.originalWidth} × ${info.originalHeight}")
-                }
+                InfoLine(stringResource(R.string.info_capture_time), info.captureTime)
+                InfoLine(stringResource(R.string.info_orientation), info.orientationCorrection)
+                InfoLine(stringResource(R.string.info_original_dimensions),
+                    if (info.originalWidth != null && info.originalHeight != null) "${info.originalWidth} × ${info.originalHeight}" else null)
             } else {
                 InfoLine(stringResource(R.string.info_filename), info.fileName)
                 val hasCaptureParameters = info.camera != null || info.lens != null || info.shutter != null ||
@@ -178,21 +177,21 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
                 if (!hasCaptureParameters) {
                     Text(stringResource(R.string.info_capture_missing), color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
-                info.camera?.let { InfoLine(stringResource(R.string.info_camera), it) }
-                info.lens?.let { InfoLine(stringResource(R.string.info_lens), it) }
-                info.shutter?.let { InfoLine(stringResource(R.string.info_shutter), it) }
-                info.aperture?.let { InfoLine(stringResource(R.string.info_aperture), "f/${it}") }
-                info.iso?.let { InfoLine(stringResource(R.string.info_iso), it) }
-                info.focalLength?.let { InfoLine(stringResource(R.string.info_focal_length), it) }
+                InfoLine(stringResource(R.string.info_camera), info.camera)
+                InfoLine(stringResource(R.string.info_lens), info.lens)
+                InfoLine(stringResource(R.string.info_shutter), info.shutter)
+                InfoLine(stringResource(R.string.info_aperture), info.aperture?.let { "f/$it" })
+                InfoLine(stringResource(R.string.info_iso), info.iso)
+                InfoLine(stringResource(R.string.info_focal_length), info.focalLength)
             }
         }
     }
 }
 
 @Composable
-private fun InfoLine(title: String, value: String) {
+private fun InfoLine(title: String, value: String?) {
     Text(
-        "${title}  ${value}",
+        "${title}  ${value ?: stringResource(R.string.info_unavailable)}",
         color = Color.White,
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier.fillMaxWidth(),

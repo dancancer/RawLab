@@ -131,7 +131,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             text = { Text(report, Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },
             confirmButton = { TextButton(onClick = onLookImportReportDismiss) { Text(stringResource(R.string.confirm)) } })
     }
-    CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it }) {
+    val hapticGate = remember { AdjustmentHapticGate() }
+    CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it },
+        LocalAdjustmentHapticGate provides hapticGate) {
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         TopAppBar(modifier = Modifier.alpha(surroundingAlpha), title = {
             Column {
@@ -209,7 +211,7 @@ private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Phot
             if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
                 enabled = state.canApplyDraft) { value -> onDraftEdit(state.visibleEdits.copy(geometry = value), false) }
             else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange)
-        } ?: EmptyEditor(onAlbum, onFile, onLicenses)
+        } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE)
         val status = when {
             state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
             state.operation == Operation.IMPORT -> stringResource(R.string.importing)
@@ -235,11 +237,11 @@ private fun RenderError(state: EditorState, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit) {
+private fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolean) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = onAlbum) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
-        TextButton(onClick = onFile) { Text(stringResource(R.string.open_file), color = Color(0xFFE9CE55)) }
+        Button(onClick = onAlbum, enabled = enabled) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
+        TextButton(onClick = onFile, enabled = enabled) { Text(stringResource(R.string.open_file)) }
         Text(stringResource(R.string.empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
 }
@@ -281,7 +283,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             ToolIcon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
                 if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments, onClick = toggleExpanded)
         }
-        when (state.saveState) {
+        if (state.draft == null) when (state.saveState) {
             EditSaveState.RESTORED -> Text(stringResource(R.string.edit_restored), Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             EditSaveState.SAVED -> Text(stringResource(R.string.edit_saved), Modifier.padding(horizontal = 16.dp),
@@ -339,18 +341,12 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
                 { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
             2 -> Column {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering,
-                        modifier = Modifier.testTag("exposure.auto")) {
-                        Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.auto_exposure))
-                    }
-                }
                 NumericControl(R.string.exposure, edits.exposure, -4f..4f, "EV", state.controlsEnabled,
                     { value, dragging -> onEdit(edits.copy(exposure = value), dragging) }, { onEdit(edits.copy(exposure = 0f), false) })
                 var modeMenu by remember { mutableStateOf(false) }
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
-                Box {
+                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
                     TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled) { Text(stringResource(modes[edits.exposureMode])) }
                     DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                         modes.forEachIndexed { index, title ->
@@ -359,6 +355,12 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                             })
                         }
                     }
+                }
+                TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering,
+                    modifier = Modifier.testTag("exposure.auto")) {
+                    Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.auto_exposure))
+                }
                 }
             }
             3 -> NumericControl(R.string.highlights, edits.highlights * 100, -100f..100f, "%", state.controlsEnabled,
@@ -420,6 +422,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     }
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        EditorSheetSystemBars()
         Text(stringResource(R.string.all_tools), Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
         LazyVerticalGrid(columns = GridCells.Adaptive(96.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
             contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

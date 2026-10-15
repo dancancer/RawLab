@@ -278,6 +278,8 @@ data class BatchExportState(
     val selectedCount: Int get() = job.rows.size
     val successCount: Int get() = job.rows.count { it.status == BatchRowStatus.SUCCESS }
     val failedCount: Int get() = job.rows.count { it.status == BatchRowStatus.FAILED }
+    val confirmationCount: Int get() = job.rows.count { it.status == BatchRowStatus.NEEDS_CONFIRMATION }
+    val completionFraction: Float get() = successCount.toFloat() / selectedCount.coerceAtLeast(1)
     val unfinishedCount: Int get() = job.rows.count { it.status !in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION) }
 }
 

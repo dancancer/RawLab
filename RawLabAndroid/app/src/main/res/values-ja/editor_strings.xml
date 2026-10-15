@@ -1,4 +1,6 @@
 <resources>
+    <string name="batch_confirmation_count">%1$d 件の出力は確認が必要です</string>
+    <string name="info_unavailable">利用不可</string>
     <string name="adjustment_normal">通常</string>
     <string name="adjustment_fine">微調整</string>
     <string name="adjustment_apply">適用</string>

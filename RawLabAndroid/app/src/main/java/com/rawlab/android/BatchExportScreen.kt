@@ -238,7 +238,7 @@ private fun exportSizeChoice(longEdge: Int?): ExportSizeChoice = when (longEdge)
 private fun BatchProgressContent(state: BatchExportState, onCancel: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else if (state.phase == BatchPhase.PREPARING) AppStrings.text(R.string.message_preparing) else AppStrings.text(R.string.message_exporting), style = MaterialTheme.typography.titleLarge)
-        LinearProgressIndicator(progress = { (state.successCount + state.failedCount).toFloat() / state.job.rows.size.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth())
+        LinearProgressIndicator(progress = { state.completionFraction }, modifier = Modifier.fillMaxWidth())
         Text(AppStrings.format(R.string.message_completed, state.successCount.toString(), state.job.rows.size.toString()))
         LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row -> BatchRowLine(row) } }
         OutlinedButton(onClick = onCancel, enabled = !state.stopping, modifier = Modifier.fillMaxWidth()) { Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else stringResource(R.string.cancel)) }
@@ -251,6 +251,7 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (state.phase == BatchPhase.COMPLETE) AppStrings.text(R.string.message_export_complete) else if (state.failedCount > 0) AppStrings.text(R.string.message_some_exports_failed) else AppStrings.text(R.string.message_export_result), style = MaterialTheme.typography.titleLarge)
         Text(AppStrings.format(R.string.message_succeeded_failed_not_processed, state.successCount.toString(), state.failedCount.toString(), (state.unfinishedCount - state.failedCount).toString()))
+        if (state.confirmationCount > 0) Text(stringResource(R.string.batch_confirmation_count, state.confirmationCount))
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row ->
             BatchRowLine(row)
