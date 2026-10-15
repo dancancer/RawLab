@@ -3,6 +3,7 @@ import SwiftUI
 struct FileBrowser: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var library: PhotoLibrary
+    @State private var directoryDropTarget = false
     let selected: URL?
     let open: (URL) -> Void
     var canApplySettings = false
@@ -34,6 +35,15 @@ struct FileBrowser: View {
                 }.listStyle(.plain).scrollContentBackground(.hidden)
             }
         }.background(Color(nsColor: .windowBackgroundColor))
+            .contentShape(Rectangle())
+            .dropDestination(for: URL.self) { urls, _ in
+                library.addDirectories(urls)
+            } isTargeted: { directoryDropTarget = $0 }
+            .overlay {
+                if directoryDropTarget {
+                    Rectangle().stroke(Color.accentColor, lineWidth: 3).allowsHitTesting(false)
+                }
+            }
     }
 
     @ViewBuilder private func browserRow(_ row: FileBrowserRow) -> some View {
