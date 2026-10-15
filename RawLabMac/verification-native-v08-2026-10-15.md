@@ -112,3 +112,18 @@ Native lifecycle verification used temporary logging only, built in `build/nativ
 All temporary logging was removed. Both generated bundles were restored to the non-instrumented final-build executable and re-signed/verified. Their `__TEXT,__text` dump hashes match: `b90c293e2c63724b1ffdbc1fd49aa3a222a597e1b093227baf2a58c1d8e22888`. No generated artifact is staged.
 
 Final crop replay evidence: `Replay all nine native crop drags and inspect Apply after every release`, followed by focused-numeric-field pointer checks. All nine releases preserved enabled Apply. An intentionally invalid numeric entry (`4+3`) correctly disabled Apply, preserved the draft on Stay and allowed Discard; it is not the earlier unexplained observation.
+
+## Remaining coverage and handoff
+
+- External RAW drag/drop is still NOT REACHED. A separate Finder window was opened at the private fixtures folder; no photo was moved or deleted. The available CUA coordinates are bound to one app window, with no reliable cross-window coordinate inventory exposed in this runtime. Rather than guess a destination over another app, a one-time human drop of `acceptance-b.DNG` into the empty acceptance editor was requested. It is not an approval request, and it is not yet a pass.
+- Shift-wheel, VoiceOver announcements, complete application-wide Tab traversal, PNG/DNG exports and batch cancel/retry/interruption were not exercised. No global accessibility or security setting was changed.
+- The initial disabled-Apply observation after crop dragging remains unexplained. Final native replay passed all nine regions without changing crop production code; no claim is made that this historical observation has been fixed.
+- A broader action-deferral hypothesis was rejected after the window lifecycle evidence. Its temporary assertion intentionally failed in `build/native-acceptance/dismissal-regression-red.log`; that assertion was removed, not counted as an established product failure or part of the 154-check suite. `EditorModel` and `EditorView` have no diff.
+- Independent final audit confirmed the old worktree is still clean at `0856eadf165129eeed276f473ce7f38588c56866`; original RAW/private fixture hashes and the user's original registry hash remain unchanged. The only committed production source change is the macOS window guard.
+
+Local phase commits (no push, PR, merge or release):
+
+1. `d382db15a742f3ad4b36f6a961bdbd97e6425226`: isolated audit and build baseline.
+2. `28b77d22dafbbb9df0833e15806dca38fb9ebcd8`: native import, draft and keyboard evidence.
+3. `65f45bb9340163fc348dd86b6a233b8f1d705dbf`: foreground geometry and export evidence.
+4. `6ac075320e4708ea6c116121f682376baa897b2c`: window-close repair, affected regression and native lifecycle verification.
