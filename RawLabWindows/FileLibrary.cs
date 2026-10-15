@@ -60,14 +60,14 @@ public sealed class LibraryEntry : INotifyPropertyChanged
 public sealed record PhotoGroup(IReadOnlyList<LibraryEntry> Photos);
 internal sealed class Library
 {
-    private static readonly string SettingsPath=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","folders.json");
+    private readonly string settingsPath=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","folders.json");
     public ObservableCollection<LibraryEntry> Roots { get; }=[];
     public Library()
     {
-        try { foreach(var path in JsonSerializer.Deserialize<string[]>(File.ReadAllText(SettingsPath)) ?? [])Roots.Add(new(path,true)); }
+        try { foreach(var path in JsonSerializer.Deserialize<string[]>(File.ReadAllText(settingsPath)) ?? [])Roots.Add(new(path,true)); }
         catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or JsonException) { }
     }
-    public void Add(string path) { path=System.IO.Path.GetFullPath(path); if(!Roots.Any(r=>r.Path.Equals(path,StringComparison.OrdinalIgnoreCase)))Roots.Add(new(path,true)); Save(); }
+    public void Add(string path) { path=System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); if(!Roots.Any(r=>System.IO.Path.TrimEndingDirectorySeparator(r.Path).Equals(path,StringComparison.OrdinalIgnoreCase)))Roots.Add(new(path,true)); Save(); }
     public void Remove(LibraryEntry entry) { Roots.Remove(entry); Save(); }
-    private void Save() { Directory.CreateDirectory(System.IO.Path.GetDirectoryName(SettingsPath)!); var temp=SettingsPath+".tmp"; File.WriteAllText(temp,JsonSerializer.Serialize(Roots.Select(r=>r.Path))); File.Move(temp,SettingsPath,true); }
+    private void Save() { Directory.CreateDirectory(System.IO.Path.GetDirectoryName(settingsPath)!); var temp=settingsPath+".tmp"; File.WriteAllText(temp,JsonSerializer.Serialize(Roots.Select(r=>r.Path))); File.Move(temp,settingsPath,true); }
 }

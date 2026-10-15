@@ -64,11 +64,12 @@
     </Border>
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions><ColumnDefinition x:Name="LibraryColumn" Width="244" MinWidth="180" MaxWidth="520"/><ColumnDefinition x:Name="LibrarySplitterColumn" Width="5"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Border x:Name="LibraryPanel" Background="{DynamicResource TreeSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,1,0">
+      <Border x:Name="LibraryPanel" Background="{DynamicResource TreeSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,1,0"
+          AllowDrop="True" PreviewDragEnter="LibraryDragOver" PreviewDragOver="LibraryDragOver" PreviewDrop="LibraryDropped">
         <DockPanel Margin="8">
           <StackPanel DockPanel.Dock="Top"><TextBlock Text="{DynamicResource '照片目录'}" FontWeight="SemiBold" Margin="10,14,0,8"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked"/></StackPanel>
           <TextBlock x:Name="LibraryHint" DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="#95979F" FontSize="{DynamicResource EditorCaptionSize}" Margin="7" TextWrapping="Wrap" Visibility="Collapsed"/>
-          <TreeView x:Name="Files" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" PreviewMouseRightButtonDown="FilesPreviewMouseRightButtonDown" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+          <TreeView x:Name="Files" AllowDrop="True" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" PreviewMouseRightButtonDown="FilesPreviewMouseRightButtonDown" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
             <TreeView.Resources>
               <ResourceDictionary>
               <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#494332"/>

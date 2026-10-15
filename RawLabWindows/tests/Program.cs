@@ -179,6 +179,8 @@ static class Program
             foreach(var pair in Loc.Strings) app.Resources[pair.Key]=pair.Value;
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             var window=new MainWindow {Width=1440,Height=920};
+            typeof(MainWindow).GetField("editStore",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(window,new EditStore(Path.Combine(output,"edits",Guid.NewGuid().ToString("N"))));
             window.Show();
             var folder=new LibraryEntry(Path.GetDirectoryName(raw)!,true);
             window.Files.ItemsSource=new[]{folder};

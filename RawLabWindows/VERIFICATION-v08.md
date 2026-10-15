@@ -127,6 +127,41 @@ The complete production/test patch was uploaded to a fresh task-owned workspace 
 
 Final logs and summary are retained under `build/windows-pr53-review/final-20261015-145822/`. These are isolated Windows/local results, not hosted CI, physical desktop acceptance or release acceptance.
 
+## Recovery Coverage And Folder Drops
+
+This follow-up starts at `0d782da16bf3b158d4879cd1b081c0b5394e92ca` and stays within `RawLabWindows/**`. It adds the three requested recovery regressions, direct folder drops on the left file tree, and an isolated default-suite edit store. No shared core, C ABI, rendering contract, other platform or version is changed.
+
+- Journal cleanup failure uses the real MainWindow/ShowBatch wiring and a locked task-local `job.json`. It verifies deferred close, error propagation, restored `closing`/IsEnabled state, a retained engine, the pending viewport's dimensions and pixels, actual adjustment/photo switching, and successful cleanup/close after releasing the lock.
+- Running batch close pauses the actual worker at its first journaled Running progress post, before rendering that item. Closing requests stop-after-current-item; releasing the gate executes the real native PNG render and metadata/publication path. The first output and journal survive, the second item stays Waiting, staging is absent, and the owner/engine live until completion. The gate is test-only Dispatcher instrumentation, not a new product hook or a native-kernel interruption/performance test.
+- Pending resize covers import and single export with both completion orders. It uses actual WPF layout changes, including a real pending denoise debounce, and checks both final dimensions and byte-identical pixels against a separate CPU engine in the same viewport mode. The journal recovery case also resumes a genuinely changed viewport request.
+- Folder drops use the real WPF preview/bubble event route on the empty tree and an existing row. Multiple directories persist as roots; case/trailing-separator duplicates are ignored. Folder-plus-RAW data does not switch the photo; RAW-only data retains the existing open behavior. Unsupported data, move-only transfers, busy and closing states are rejected. Source directories and RAW bytes remain intact. The normal folder-list location is unchanged; tests redirect only their library instance to a task-owned JSON file.
+
+The editor-review suite now has **90 checks**: the previous 45, 34 recovery/resize checks and 11 folder-drop checks. Synthetic negative controls independently remove owner recovery, running-close cancellation, preview resubmission or folder-path normalization; each exits 1 at its intended assertion. The pre-implementation folder-drag test also exits 1 at the missing copy-feedback assertion. These task-local variants are not committed. Logs are retained under `gap-mutation-journal-20261015-155105`, `gap-mutation-running-20261015-154136`, `gap-mutation-resize-20261015-154137`, `gap-mutation-dedup-20261015-161041` and `gap-folder-red-20261015-160715` in `build/windows-pr53-review/`.
+
+### Intermediate Failures And Isolation
+
+The initial `gap-probe-20261015-153641` found two test-fixture mistakes: a normalized Slider position was mistaken for an exposure value, and a denoised viewport was compared with a non-viewport render. The Slider input and independent oracle mode were corrected without weakening pixel equality. The superseded probe was stopped only after auditing its own runner/child processes; its failures are retained, not counted as passes. The journal preflight also gained an explicit test-local enumeration barrier so completion capture does not depend on RAW processing speed.
+
+`gap-final-20261015-154206` completed all eleven targeted entries successfully, including the earlier 79-check editor-review suite and 42 denoise checks, but its separate default run failed at `WPF film strength starts at 100% in the middle of its slider`. `gap-affected-20261015-155018` passed the hardened 79-check suite but hit the same default failure. Investigation confirmed that earlier default runs had saved Strength=200 for the external fixture in the real default Edits store; the next run correctly restored it. The default fixture now injects a fresh GUID-scoped EditStore before showing MainWindow instead of resetting/deleting existing records or changing product restore behavior. The final full/default-UI repeat below verifies the isolation. Neither earlier overall run is represented as an all-green run.
+
+### Final Related Windows Results
+
+The final source archive is `build/windows-pr53-review/gap-delivery-20261015-161042/source.zip`, SHA-256 `2421b4737b9fd7e6bacbf252d7431899814f66a6c746fbffce3ae243e306a633`. All 112 Windows file hashes matched on Windows and locally before this record was appended. No production or test source changed after that snapshot; only this verification document was appended afterward.
+
+```powershell
+./RawLabWindows/tests/BuildScriptChecks.ps1
+./RawLabWindows/tests/run-v08.ps1 -RawPath <external-RAW> -NativeArtifacts <unchanged-native-artifacts> -Only 'editing,localization,about,editor-shell,geometry,transform-ui,editor-review,photo-features'
+dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW>
+dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW> --ui-only
+```
+
+- PowerShell parser/AST regression passes. Fresh managed WPF build has **0 warnings and 0 errors**. All **nine** final summary entries exit 0: build and the eight selected suites above.
+- Editor-review passes **90 checks**. Geometry passes 15, transform-ui 19, photo-features 52 and About 40. Photo-features again reports Explorer desktop interaction **NOT REACHED** in SSH session 0.
+- The separate, unfiltered default executable completes **152 checks**, exit 0. The subsequent `--ui-only` repeat completes **98 checks**, exit 0, including the same default-strength assertions after the preceding run saved its private state.
+- Final logs and summary are under `build/windows-pr53-review/gap-delivery-20261015-161042/windows-v08-results/`. These are isolated Windows results, not hosted CI or physical desktop acceptance.
+- Denoise-model and 42-check native denoise results from the earlier broad run are retained for unchanged model/render code; they were not repeated after the folder-drop addition. No new CTest, native DLL build, self-contained package or release artifact is claimed. Earlier 33/33 CTest remains baseline evidence.
+- Physical Explorer/OLE folder dragging has **NOT REACHED** acceptance: the new tests exercise genuine WPF routed handlers programmatically, not pointer interaction with Explorer. Existing DPI/multi-monitor/Snap/Narrator/high-contrast/text-size/input-device and physical-GPU limits below remain in force.
+
 ## Acceptance Limits
 
 - WPF layout images are native RenderTargetBitmap client-area compositions. The SSH desktop can clamp the HWND below the requested window size; the test records both actual HWND size and exact arranged client DIP dimensions. These are not physical-monitor screenshots or proof of Snap behavior.

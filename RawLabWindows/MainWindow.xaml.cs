@@ -749,6 +749,28 @@ public partial class MainWindow : Window
         var entry=ResolveContextEntry(sender) ?? Files.SelectedItem as LibraryEntry;
         if(entry != null && library.Roots.Contains(entry)) { var index=library.Roots.IndexOf(entry);library.Roots[index]=new(entry.Path,true); }
     }
+    private void LibraryDragOver(object sender,DragEventArgs e)
+    {
+        e.Handled=true;e.Effects=DragDropEffects.None;
+        if(exporting || closing || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
+        if(paths.Any(path=>Directory.Exists(path) || (File.Exists(path) && LibraryEntry.IsRaw(path))))
+            e.Effects=e.AllowedEffects & DragDropEffects.Copy;
+    }
+    private void LibraryDropped(object sender,DragEventArgs e)
+    {
+        e.Handled=true;e.Effects=DragDropEffects.None;
+        if(exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
+        var folders=paths.Where(Directory.Exists).ToArray();
+        if(folders.Length>0)
+        {
+            try{foreach(var folder in folders)library.Add(folder);e.Effects=DragDropEffects.Copy;}
+            catch(Exception error){Report(error);}
+        }
+        else if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsRaw(path)) is {} raw)
+        {
+            OpenFile(raw);e.Effects=DragDropEffects.Copy;
+        }
+    }
     private void FilesDropped(object sender,DragEventArgs e)
     {
         if(exporting || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
