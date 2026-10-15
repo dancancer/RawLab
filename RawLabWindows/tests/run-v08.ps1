@@ -42,7 +42,7 @@ Invoke-Check 'denoise-model' @('run','--project',"$PSScriptRoot/denoise/DenoiseS
 Invoke-Check 'localization' @('run','--project',"$PSScriptRoot/localization/LocalizationChecks.csproj",'-c','Release')
 Invoke-Check 'about' @($runner,'--about')
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
-foreach($name in @('geometry','transform-ui','photo-features','master-recipes','rendered-dng','denoise','lens')){
+foreach($name in @('geometry','transform-ui','editor-review','photo-features','master-recipes','rendered-dng','denoise','lens')){
     $arguments=@($runner,('--'+$name),$repo,$RawPath)
     if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
     Invoke-Check $name $arguments

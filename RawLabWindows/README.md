@@ -172,6 +172,13 @@ dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --
 `dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --geometry <repo> <RAW>`。
 macOS 上的 WPF 交叉编译及托管测试不代表 Windows 原生或 D3D11 运行验证。
 
+`run-v08.ps1` 包含 `editor-review` 回归，也可直接运行
+`RawLabWindows.Tests.dll --editor-review <repo> <RAW>`。它通过真实主窗口的批量接线，
+控制单张导出/外观导入与预检的两种完成顺序，检查编辑、切图、延迟关闭及实际 PNG 发布；
+并检查几何/镜头离开对话框在精确预览完成后启用“应用并离开”。任务只暂停 dispatcher
+完成回调来固定时序，仍执行真实 native 工作，不依赖机器速度或物理文件选择器。
+边界裁框旋转的模型回归在 editing 中，水平/垂直翻转的真实控件回归在 transform-ui 中。
+
 `--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的
 八个平坦图块，不能假定每张照片在每个视口都一定改变像素；受控输入负责验证实际滤波效果。
 先在安装了 NumPy、tifffile 的测试 Python 环境生成 fixture，再运行专项：

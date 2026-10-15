@@ -34,7 +34,9 @@ public partial class MainWindow : Window
     private Parameter selectedParameter=Parameter.Exposure;
     private string? file,lut;
     private RenderEngine? engine;
-    private bool ready,syncing,interacting,exporting,closing,closeFinished,exactReady;
+    private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
+    // The modeless batch owns its lifetime; foreground completion must not clear it.
+    private bool exporting=>foregroundBusy || batchWindow?.Busy==true;
     private bool compare=true,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,swipe;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
@@ -512,7 +514,7 @@ public partial class MainWindow : Window
     {
         if(exporting || file==null || transform.Active)return [];
         var input=file;var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        exporting=true;RefreshControls();SetStatus(()=>Loc.Text("正在显影…"));
+        foregroundBusy=true;RefreshControls();SetStatus(()=>Loc.Text("正在显影…"));
         var errors=new List<string>();var accepted=new List<string>();
         try
         {
@@ -532,7 +534,7 @@ public partial class MainWindow : Window
             }
         }
         catch(Exception error){errors.Add(error.Message);}
-        finally{exporting=false;RefreshControls();if(closing)FinishClose();else Schedule();}
+        finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();else Schedule();}
         return errors;
     }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
@@ -872,33 +874,37 @@ public partial class MainWindow : Window
             }
         };
         if(dialog.ShowDialog(this)!=true)return;
-        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || closing)return;
-        if(Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始 RAW。"),true);return;}
-        exporting=true;RefreshControls();SetStatus(() => Loc.Text("正在全分辨率导出…"));
+        await ExportPhoto(format,dialog.FileName);
+    }
+    internal async Task ExportPhoto(ExportFormat format,string destination)
+    {
+        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
+        if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始 RAW。"),true);return;}
         var input=file;var adjustment=settings.Clone();var film=lut;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
-        var temp=Path.Combine(Path.GetDirectoryName(dialog.FileName)!,".rawlab-"+Guid.NewGuid().ToString("N")+"."+suffix);
+        var temp=Path.Combine(Path.GetDirectoryName(destination)!,".rawlab-"+Guid.NewGuid().ToString("N")+"."+format.Suffix());
         var size=exportLongEdge;
+        foregroundBusy=true;RefreshControls();SetStatus(() => Loc.Text("正在全分辨率导出…"));
         try
         {
             using var sourceLock = WindowsFileIdentity.OpenReadLock(input);
-            if (WindowsFileIdentity.IsSameFile(sourceLock, dialog.FileName))
+            if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
                 SetStatus(() => Loc.Text("不能覆盖原始 RAW。"), true);
                 return;
             }
             await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size));
-            if (WindowsFileIdentity.IsSameFile(sourceLock, dialog.FileName))
+            if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
                 SetStatus(() => Loc.Text("不能覆盖原始 RAW。"), true);
                 return;
             }
-            File.Move(temp,dialog.FileName,true);
-            lastExportedPath=dialog.FileName;ExportRevealButton.Visibility=Visibility.Visible;
-            SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), dialog.FileName));
+            File.Move(temp,destination,true);
+            lastExportedPath=destination;ExportRevealButton.Visibility=Visibility.Visible;
+            SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
         catch(Exception ex){Report(ex);}
-        finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} exporting=false;RefreshControls();if(closing)FinishClose();else UpdatePreviewSize(requestedPreviewLongEdge);}
+        finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else UpdatePreviewSize(requestedPreviewLongEdge);}
     }
     private void WindowClosing(object? sender,CancelEventArgs e)
     {

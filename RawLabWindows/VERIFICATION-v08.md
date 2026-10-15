@@ -92,6 +92,41 @@ The external source and the native DNG test's fixture/source hash agree: SHA-256
 
 The earlier master-recipes, DNG and lens results are retained evidence for unchanged render behavior, not a claim that every suite was repeated at the final source. The first-run failures, intermediate screenshot-fixture failures and denoise failure are not hidden by the narrower successful summaries.
 
+## PR 53 Review Follow-Up
+
+Scope remains `RawLabWindows/**`, on top of `37f82273bdc86c4622bdf87355430611518d1c68`. The user authorized fixing the two P1 findings and one P2, committing, pushing and updating PR #53 to `development`, but not merging. No shared core, C ABI or other-platform source is changed.
+
+### Regressions And Corrections
+
+- Boundary crop transforms: moving a 10% crop to the right/bottom edge produces `.9` origins; the following mirror subtraction can yield `-2.7755575615628914e-17`. The editing model regression failed with `ArgumentOutOfRangeException`, and the Windows checkbox regression failed in `GeometryPanel.FlipChanged -> Publish -> NativeConfig`. Rotation and flip now clamp these derived origins to zero without relaxing NativeConfig's validation of invalid input. Model coverage includes four crop extents and five turn counts; the WPF check exercises both real flip controls.
+- Busy ownership: `foregroundBusy` is owned only by the single-export/import workflow. The existing gates read its union with the modeless batch's own Busy state; a batch notification no longer assigns another operation's flag. `ExportPhoto` is the production path used after SaveFileDialog and by the regression, retaining the source lock, temporary file, final publication and cleanup. Path/format preparation occurs before claiming busy. Independent batch engines can still work alongside foreground operations; this is not a new admission policy forbidding overlap.
+- Both import/preflight completion orders failed the Windows red regression at the main-window editing/export gate. The final regression also covers actual single PNG export in both orders, blocks photo switching, requests owner close while one owner remains active, and verifies that publication and deferred close finish without releasing the render engine early. It uses actual ShowBatch wiring, not a separate listener attached only to a child window.
+- A second red regression showed that an import finishing first could leave the old preview after the last batch owner ended. The batch callback now commits the current preview size and resubmits preview after all owners are idle, but not while closing. The regression compares the displayed image against an independent CPU render of the newly imported Velvia look before allowing export. A separate viewport-resize interaction is not claimed by this pixel test.
+- Apply-and-leave: both Geometry and Lens red regressions observed a disabled dialog button after the current exact preview became ready. The dialog now uses a live one-way binding to the main Apply gate and retains the final ApplyTransformDraft recheck. Tests keep the actual dialog open across preview completion and then apply/end the draft.
+
+The deterministic timing helper holds dispatcher completions while native work still runs normally. It proves ownership through completion/publication and close ordering, not a native-concurrency stress or performance claim. The single-export test invokes the same production body used after SaveFileDialog; it does not automate physical picker interaction. Tests use task-owned stores/journals and refuse to start with a recoverable default batch journal because MainWindow construction can clean up recovered staging files before a test replaces the journal.
+
+Red evidence is retained in `build/windows-pr53-review/red-20261015-143921/review-red/`: five selected runs exit 1 at the intended crop, busy or dialog assertion. The final preview-resumption red is in `resume-red-20261015-145357/review-red/`. The preceding `145032` probe hit a test path-normalization problem; the fixture now normalizes paths and waits for Loaded before selecting its private photo. The initial green matrix passed the three original fixes, then was deliberately stopped in an unchanged native recipe suite while the extra preview-resumption regression was added. A subsequent invocation failed before tests because the task-local command passed a PowerShell array to the string Only parameter; the corrected command quotes the comma-separated list. Neither attempt is counted as a complete final pass; their logs are retained.
+
+### Final Related Windows Results
+
+The complete production/test patch was uploaded to a fresh task-owned workspace for the final run. Source archive `build/windows-pr53-review/final-20261015-145822/source.zip` has SHA-256 `21a86e629409463473486418ebd586127fe61beb2f9ae5e2df2c872f325af4c6`. All 112 Windows file hashes matched the uploaded manifest on Windows; local rechecking also matches, excluding only this verification record appended after the run began. No production or test source changed after that snapshot.
+
+```powershell
+./RawLabWindows/tests/BuildScriptChecks.ps1
+./RawLabWindows/tests/run-v08.ps1 -RawPath <external-RAW> -NativeArtifacts <unchanged-native-artifacts> -DenoiseRaw <controlled-DNG> -Only 'editing,denoise-model,localization,about,editor-shell,geometry,transform-ui,editor-review,photo-features,denoise'
+```
+
+- The actual Windows PowerShell file-parser/AST regression passes. Fresh Windows managed build has zero warnings/errors. All eleven summary entries, including build and ten selected suites, exit 0.
+- Geometry passes 15 checks; transform-ui passes 19 including the two real flip controls; the new editor-review suite passes 45 checks including both foreground kinds, both completion orders, close/publication, preview resumption and both actual leave dialogs.
+- Photo-features passes 52 checks, including actual frozen batch export, invalid RAW exclusion, failed journal cleanup and retry, metadata, sizes and RAW hashes. Explorer desktop interaction is explicitly NOT REACHED in SSH session 0, not silently counted as a pass.
+- Denoise passes all 42 checks again, including actual controlled CPU/Auto/Force filtering and parity, real-RAW FINAL PNG/JPEG comparisons, cache/fallback checks and unchanged input hashes. Existing Lensfun warnings remain in the log. The real Sony viewport no-op and physical-GPU limits are unchanged.
+- The separate, unfiltered default Windows executable run also exits 0 and completes all 152 checks, including real RAW/native rendering, full-resolution export and the asynchronous WPF editor. Its complete log is `windows-v08-results/default.log`; the task runner records `default exit=0`. This finished after the targeted summary; both use the same frozen source and fresh managed output.
+- Local editing, denoise-model and six-language localization checks pass; the local WPF cross-build has zero warnings/errors. The macOS hard-link check remains explicitly skipped; Windows editing execution covers the platform helper.
+- No C++ source/build inputs changed in this follow-up. The task reuses the previously built, task-owned native artifacts; the earlier 33/33 CTest result is retained baseline evidence, not a claim of a new CTest run. No new self-contained distributable or release artifact is claimed by this managed workflow.
+
+Final logs and summary are retained under `build/windows-pr53-review/final-20261015-145822/`. These are isolated Windows/local results, not hosted CI, physical desktop acceptance or release acceptance.
+
 ## Acceptance Limits
 
 - WPF layout images are native RenderTargetBitmap client-area compositions. The SSH desktop can clamp the HWND below the requested window size; the test records both actual HWND size and exact arranged client DIP dimensions. These are not physical-monitor screenshots or proof of Snap behavior.

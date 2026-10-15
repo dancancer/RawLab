@@ -36,6 +36,7 @@ static class Program
         try
         {
             Loc.Initialize("zh-Hans");
+            if(args.Length is 3 or 4 && args[0]=="--editor-review") { EditorReviewChecks.Run(args[1],args[2],Check,args.Length==4 ? args[3] : "all");return 0; }
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==1 && args[0]=="--about") { AboutChecks.Run(Check);Console.WriteLine($"PASS {checks} about checks");return 0; }

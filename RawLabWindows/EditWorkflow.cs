@@ -138,12 +138,12 @@ public partial class MainWindow
         var window = new BatchExportWindow(job, batchJournal) { Owner = this };
         batchWindow = window;
         window.BusyChanged += active => {
-            exporting = active; RefreshControls(); RefreshBatchNotice();
-            if (!active && closing)
-            {
-                if(window.CloseFailed){closing=false;IsEnabled=true;SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);}
-                else if(!scheduler.Busy)FinishClose();
-            }
+            var closeFailed=!active && closing && window.CloseFailed;
+            if(closeFailed){closing=false;IsEnabled=true;}
+            if(!active && !exporting && !closing)CommitPreviewSize();
+            RefreshControls(); RefreshBatchNotice();
+            if(closeFailed)SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);
+            else if(!active && closing && !scheduler.Busy)FinishClose();
         };
         window.Closed += (_, _) => {
             previousBatch = window.Discarded ? null : window.Job;

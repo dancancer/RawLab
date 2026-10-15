@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 
 namespace RawLab.Windows;
@@ -78,7 +79,9 @@ public partial class MainWindow
         var choice=0;
         var stay=new Button{Content=Loc.Text("继续编辑"),IsCancel=true};stay.Click+=(_,_)=>dialog.Close();
         var discard=new Button{Content=Loc.Text("放弃草稿")};discard.Click+=(_,_)=>{choice=1;dialog.Close();};
-        var apply=new Button{Content=Loc.Text("应用并离开"),IsEnabled=CanApplyTransform};apply.Click+=(_,_)=>{choice=2;dialog.Close();};
+        var apply=new Button{Content=Loc.Text("应用并离开")};
+        apply.SetBinding(IsEnabledProperty,new Binding(nameof(Button.IsEnabled)){Source=ApplyDraftButton,Mode=BindingMode.OneWay});
+        apply.Click+=(_,_)=>{choice=2;dialog.Close();};
         actions.Children.Add(stay);actions.Children.Add(discard);actions.Children.Add(apply);panel.Children.Add(actions);dialog.Content=panel;
         dialog.ShowDialog();if(focus is UIElement control && control.IsVisible)control.Focus();
         if(choice==1){CancelTransformDraft();return true;}return choice==2 && ApplyTransformDraft();

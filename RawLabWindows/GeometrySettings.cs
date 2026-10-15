@@ -15,7 +15,7 @@ public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double
     {
         var next=this;
         for(var i=0;i<((turns%4+4)%4);++i)next=next with {
-            QuarterTurns=(next.QuarterTurns+1)%4,CropX=1-next.CropY-next.CropHeight,CropY=next.CropX,
+            QuarterTurns=(next.QuarterTurns+1)%4,CropX=Math.Max(0,1-next.CropY-next.CropHeight),CropY=next.CropX,
             CropWidth=next.CropHeight,CropHeight=next.CropWidth };
         return next;
     }

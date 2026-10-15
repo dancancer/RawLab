@@ -93,8 +93,8 @@ public partial class GeometryPanel : UserControl
     {
         if(syncing)return;
         var x=HorizontalFlip.IsChecked==true;var y=VerticalFlip.IsChecked==true;
-        Publish(value with{FlipHorizontal=x,FlipVertical=y,CropX=x!=value.FlipHorizontal ? 1-value.CropX-value.CropWidth : value.CropX,
-            CropY=y!=value.FlipVertical ? 1-value.CropY-value.CropHeight : value.CropY});
+        Publish(value with{FlipHorizontal=x,FlipVertical=y,CropX=x!=value.FlipHorizontal ? Math.Max(0,1-value.CropX-value.CropWidth) : value.CropX,
+            CropY=y!=value.FlipVertical ? Math.Max(0,1-value.CropY-value.CropHeight) : value.CropY});
     }
     private void ResetClicked(object sender,RoutedEventArgs e)=>ResetDraft();
     private void AspectChanged(object sender,SelectionChangedEventArgs e)

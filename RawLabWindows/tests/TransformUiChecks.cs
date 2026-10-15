@@ -44,6 +44,17 @@ internal static class TransformUiChecks
             var draft=Get<TransformDraft>(window,"transform");
             check(draft.Active && !window.ExportPng.IsEnabled,"Real WPF geometry workspace gates export");
             check(Get<Adjustments>(window,"settings").Capture().SameAs(original),"Draft native WB result cannot overwrite deliberately different committed calibration");
+            foreach(var horizontal in new[]{true,false})
+            {
+                var edge=CropInteraction.Dragging(new(0,0,.1,.1),CropHandle.Move,2,2,6000,4000,null);
+                window.GeometryEditor.Refresh(CropInteraction.Applying(edge,new()));
+                ((CheckBox)window.GeometryEditor.FindName(horizontal ? "HorizontalFlip" : "VerticalFlip")).IsChecked=true;
+                _=draft.Geometry.NativeConfig();
+                check((horizontal ? draft.Geometry.CropX : draft.Geometry.CropY)==0 && draft.Geometry.CropWidth==.1 && draft.Geometry.CropHeight==.1,
+                    "Real geometry flip keeps a boundary-moved 10 percent crop valid: "+horizontal);
+                InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
+            }
+            Click((Button)window.GeometryEditor.FindName("ResetGeometry"));InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             var previousLook=Get<string>(window,"lut");Set(window,"lut",Path.Combine(directory,"missing.cube"));
             typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false]);
             check(!window.ApplyDraftButton.IsEnabled && draft.Active,"Failed draft preview invalidates a previously ready Apply gate");

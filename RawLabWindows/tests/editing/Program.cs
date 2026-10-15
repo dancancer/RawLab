@@ -84,6 +84,14 @@ try
     var rotated=(perspective with{CropX=.1,CropY=.2,CropWidth=.3,CropHeight=.4}).Rotate(1);
     Check(Math.Abs(rotated.CropX-.4)<1e-10 && rotated.CropY==.1 && rotated.CropWidth==.4 && rotated.CropHeight==.3,
         "quarter turn transforms crop coordinates instead of stretching selection");
+    foreach(var extent in new[]{.1,.2,.3,.01})foreach(var turns in new[]{-1,1,2,3,4})
+    {
+        var edge=CropInteraction.Dragging(new(0,0,extent,extent),CropHandle.Move,2,2,6000,4000,null);
+        var turned=CropInteraction.Applying(edge,new()).Rotate(turns);
+        _=turned.NativeConfig();
+        Check(turned.CropX>=0 && turned.CropY>=0 && turned.CropWidth==extent && turned.CropHeight==extent,
+            "boundary crop remains valid after quarter turns: "+extent+" / "+turns);
+    }
     Check(identityGeometry.IsIdentity && identityGeometry.NativeConfig() is { Version: 1, StructSize: 40, CropWidth: 1, CropHeight: 1 }, "geometry defaults and v1 ABI");
     Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.GeometryConfig>() == 40 &&
           System.Runtime.InteropServices.Marshal.OffsetOf<Native.GeometryConfig>(nameof(Native.GeometryConfig.QuarterTurns)).ToInt32() == 24 &&
