@@ -6,7 +6,7 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
-    @State private var compare = true
+    @State private var compare = false
     @State private var clipping = false
     @State private var histogramExpanded = true
     @State private var showFiles = true
@@ -82,7 +82,10 @@ struct EditorView: View {
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
-        .onChange(of: model.file) { _, _ in fit() }
+        .onChange(of: model.file) { _, _ in
+            compare = false
+            fit()
+        }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.geometryDraftTab) { _, tab in
             if geometryViewState != nil { adjustmentPanel.selectHeight(tab == .lens ? 330 : 252) }
