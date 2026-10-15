@@ -349,6 +349,47 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.75, accuracy: 0.0001)
     }
 
+    func testEmptyEditorUsesOnlyFunctionalCopyInAllLanguages() {
+        let languages = [
+            ("zh-Hans", "导入照片"), ("en", "Import Photo"),
+            ("de", "Foto importieren"), ("fr", "Importer une photo"),
+            ("ja", "写真を読み込む"), ("es", "Importar foto")
+        ]
+        for (language, importLabel) in languages {
+            let app = XCUIApplication()
+            app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", language]
+            app.launch()
+            for portrait in [true, false] {
+                XCUIDevice.shared.orientation = portrait ? .portrait : .landscapeLeft
+                waitUntil { (app.frame.height > app.frame.width) == portrait }
+                assertFunctionalEmptyEditor(in: app, importLabel: importLabel)
+                let orientation = portrait ? "portrait" : "landscape"
+                capture("empty-functional-\(language)-\(orientation)", in: app)
+                openAndCancelPhotoPicker(portrait ? "editor.import.empty" : "editor.import", in: app)
+                assertFunctionalEmptyEditor(in: app, importLabel: importLabel)
+            }
+            app.terminate()
+        }
+    }
+
+    func testFunctionalEmptyEditorAtLargestTextSizeInBothOrientations() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "de",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        for portrait in [true, false] {
+            XCUIDevice.shared.orientation = portrait ? .portrait : .landscapeLeft
+            waitUntil { (app.frame.height > app.frame.width) == portrait }
+            let emptyImport = app.buttons["editor.import.empty"]
+            for _ in 0..<3 where !emptyImport.isHittable {
+                app.scrollViews.containing(.button, identifier: "editor.import.empty").firstMatch.swipeUp()
+            }
+            assertFunctionalEmptyEditor(in: app, importLabel: "Foto importieren")
+            capture("empty-functional-ax-de-\(portrait ? "portrait" : "landscape")", in: app)
+            openAndCancelPhotoPicker("editor.import.empty", in: app)
+        }
+    }
+
     func testAccessibilityLargeTextEmptyEditorAndNativeWheelsInBothOrientations() throws {
         let app = XCUIApplication()
         launchEnglish(app, additionalArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
@@ -450,6 +491,30 @@ final class EditorV4UITests: XCTestCase {
         app.buttons["editor.draft.cancel"].tap()
         XCTAssertFalse(app.buttons["tool.lens"].isEnabled, "Lens correction is unavailable for the raster fixture")
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
+    }
+
+    private func assertFunctionalEmptyEditor(in app: XCUIApplication, importLabel: String) {
+        let emptyImport = app.buttons["editor.import.empty"]
+        XCTAssertTrue(emptyImport.waitForExistence(timeout: 5))
+        XCTAssertEqual(emptyImport.label, importLabel)
+        XCTAssertTrue(emptyImport.isEnabled && emptyImport.isHittable)
+        XCTAssertGreaterThanOrEqual(emptyImport.frame.height, 44)
+        XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(emptyImport.frame))
+        XCTAssertTrue(app.buttons["editor.import"].isEnabled && app.buttons["editor.import"].isHittable)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.adjustments"].isEnabled)
+        XCTAssertFalse(app.buttons["tool.film"].exists)
+        let labels = Set(app.staticTexts.allElementsBoundByIndex.map(\.label).filter { !$0.isEmpty })
+        XCTAssertTrue(labels.isSubset(of: Set(["RawLab", importLabel])), "The empty editor must show only functional copy and its optional navigation title")
+    }
+
+    private func openAndCancelPhotoPicker(_ identifier: String, in app: XCUIApplication) {
+        app.buttons[identifier].tap()
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(cancel.isHittable)
+        cancel.tap()
+        waitUntil { !cancel.exists && app.buttons["editor.import.empty"].isHittable }
     }
 
     private func launchImportedEditor() throws -> XCUIApplication {

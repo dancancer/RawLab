@@ -57,3 +57,24 @@ Simulator 不能证明物理震动品质、实际设备帧率或输入延迟。�
 ## 后续导入锁修复
 
 针对精确 `3f87abb` 独立 RAW 路径审查提出的加载期裁剪锁缺口，后续增加了 iOS 编辑锁、请求/来源身份保护及确定性异步回归。原 UI 视觉与 macOS 文档保持不变；该修复包含 iOS ViewModel 与照片获取保护，范围见 [导入锁验证记录](../../../docs/ios-v4-import-lock-verification-2026-10-14.md)。本页前述实现提交及截图是历史 UI 证据，后续提交的测试与源码以该记录为准。
+
+## 2026-10-15 空状态文案精简
+
+从本地基线 `e63a30f52ac4b6c6be2c81eb18a19d56004cd9b2` 继续。当前 iOS 实现没有“让照片先说话”；按本次反馈移除同一空状态中多余的“RAW 照片”标题，保留“导入照片”操作及原有系统照片选择器。iPhone/iPad 共用该展示分支，简中、英语、德语、法语、日语和西班牙语同时生效。功能状态、权限、错误和批量任务提示保留。
+
+首轮 8 张原生截图复核发现，iPhone 最大 AX 字号的德语按钮被横排图标挤压，出现碎裂断词。因此同一空状态按钮改用居中的完整文字，去掉按钮内重复图标，保留 `.headline` 动态字号和原 PhotosPicker 行为。产品修改仅在 `ContentView+Panels.swift`；未改 Shared、Core、语言资源或编辑/导出路径。
+
+`EditorV4UITests` 新增 `testEmptyEditorUsesOnlyFunctionalCopyInAllLanguages` 和 `testFunctionalEmptyEditorAtLargestTextSizeInBothOrientations`。检查完整的本地化按钮标签、44 pt 高度、按钮完整位于窗口、参数区隐藏及导出禁用；实际打开/取消系统 PhotosPicker 后再次核对空状态。额外静态文字只允许应用名和导入操作；系统可以省略导航标题，也可以将文字合并为按钮的无障碍标签。首轮对这两种系统行为的错误测试假设已修正。
+
+最终确认范围：24 个普通语言/方向组合、4 个最大字号组合及 28 次照片选择器打开/取消。最终日志与 `.xcresult`：`/tmp/rawlab-ios-v4-empty-copy-confirm-phone.*`、`/tmp/rawlab-ios-v4-empty-copy-confirm-ipad.*`；构建日志 `/tmp/rawlab-ios-v4-empty-copy-confirm-build.log`。
+
+| 新增验证 | iPhone | iPad |
+|---|---|---|
+| 六语言 × 横竖屏，中部/顶部入口打开并取消 | PASS，127.279 s | PASS，131.250 s |
+| 最大 AX 字号德语 × 横竖屏，中部入口打开并取消 | PASS，16.947 s | PASS，18.971 s |
+
+最终确认两端均为 2 tests、0 failures，`TEST EXECUTE SUCCEEDED`；构建 `TEST BUILD SUCCEEDED`。这是本次新增两用例在两类设备上的定向运行。
+
+唯一一次原生视觉收尾确认已读取更新后的 8 张代表截图：最大字号德语竖屏现为完整单词 `Foto / importieren` 两行，未见断词、裁切或越界，其余方向和 iPad 状态可读；首轮发现已关闭，无待修问题。
+
+原生截图保留在对应 `/tmp/rawlab-ios-v4-empty-copy-*-attachments`。本目录选存 8 张代表截图（忽略文件，不进入 Git）：`iphone-empty-functional-*`、`ipad-empty-functional-*`，覆盖中文竖屏、德语横屏和德语最大字号两个方向。仍使用本会话 iOS 27 的两台专用模拟器。本次为文案移除与打开入口验证，不重跑此前编辑/导出全套。

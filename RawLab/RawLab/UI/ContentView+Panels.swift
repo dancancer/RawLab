@@ -96,14 +96,11 @@ extension ContentView {
                                 .font(.largeTitle)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
-                            Text(L10n.text("RAW 照片")).font(.title2.weight(.semibold))
                             PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
-                                Label {
-                                    Text(L10n.text("导入照片"))
-                                } icon: {
-                                    Image(systemName: "photo.badge.plus").accessibilityHidden(true)
-                                }
+                                Text(L10n.text("导入照片"))
                                     .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
                                     .padding(.horizontal, 16)
                                     .frame(minHeight: 44)
                             }
