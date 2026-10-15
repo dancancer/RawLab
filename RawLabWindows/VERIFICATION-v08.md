@@ -162,6 +162,43 @@ dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW> --ui-only
 - Denoise-model and 42-check native denoise results from the earlier broad run are retained for unchanged model/render code; they were not repeated after the folder-drop addition. No new CTest, native DLL build, self-contained package or release artifact is claimed. Earlier 33/33 CTest remains baseline evidence.
 - Physical Explorer/OLE folder dragging has **NOT REACHED** acceptance: the new tests exercise genuine WPF routed handlers programmatically, not pointer interaction with Explorer. Existing DPI/multi-monitor/Snap/Narrator/high-contrast/text-size/input-device and physical-GPU limits below remain in force.
 
+## Default Suite Journal Admission
+
+This follow-up starts at `0758d7a3106f6de277dcda95de042abba7ce1b2b`. It changes only the Windows test executable, its runner and documentation. No production window, persistence/recovery behavior, shared core, C ABI or other platform is changed.
+
+The earlier private EditStore fixed edit-record contamination but did not protect batch state: constructing MainWindow calls BatchJournal.Load, which can delete Running/Publishing staging files. Main now forwards to the common test entry with the real BatchJournal.DefaultDirectory. That entry rejects an existing job.json before localization, mode dispatch, fixture output, native work or WPF initialization. This also protects photo-features and interactions, so run-v08 continuing after another failed suite cannot bypass admission. The default body rechecks immediately before creating App after its native checks. Rejection does not parse, recover, rename or delete the journal.
+
+The new `--default-isolation <output>` suite exercises that same common entry, injecting only a task-private journal path into the test executable, not into production code or Windows Known Folders. The normal CLI has no journal-path override. Its **34 checks** cover Running/Publishing with default/full, UI-only, photo-features and interactions arguments, plus an exclusively locked record and malformed JSON. Each refusal must return 1 with the journal-specific error, preserve the complete file-list/SHA-256/last-write-time snapshot (journal, staging, source and published fixture), and create neither suite output nor WPF Application. Separate private controls invoke the real BatchJournal.Load and prove that both status fixtures actually trigger staging cleanup. No fixture is placed in the user's real default directory.
+
+### Red Controls And Intermediate Runs
+
+- `isolation-red-20261015-165227`: fresh build passes; the pre-fix default path enters fixture work and exits 1 at the expected refusal assertion. The invalid private repo/RAW deliberately prevents reaching a real window; the preceding native initialization error is not claimed as a product regression. The private recovery control already demonstrates the actual cleanup side effect.
+- The initial default-only implementation passed 22 isolation checks in `isolation-green-20261015-165337`. A preliminary broader matrix at `isolation-delivery-20261015-165429` used that version. Independent review then found the photo-features/interactions dispatch bypass; this snapshot is superseded, not the final fix evidence.
+- `isolation-red-20261015-170003` exposed an intermediate test expectation error: the common entry converts exceptions to an exit code, while the test still expected a thrown exception. The regression now checks the real return-code/stderr contract. That intermediate red run is not treated as proof of the dispatch bypass.
+- Task-private `isolation-bypass-red-20261015-170327` removes the common admission call. Build exits 0 and isolation exits 1 at `--photo-features-Running-False-False-False`, proving the bypass is detected. An earlier equivalent mutation at `170214` had incomplete recursive artifact retrieval because its generated fixture directories exceeded the Windows OpenSSH path limit; short private GUID/case directories fix retrieval. Both records remain retained; the failed retrieval is not called a clean verification run.
+
+### Final Source And Commands
+
+The final archive is `build/windows-pr53-review/isolation-delivery-20261015-170532/source.zip`, SHA-256 `d40296b3eb236aff4fd30af044c6b30e29af6599803ba15b9324e224a3c96e23`. All 113 Windows file hashes matched on Windows and locally before this record was appended. Only this verification record was appended after upload; no production/test source changed afterward.
+
+```powershell
+./RawLabWindows/tests/BuildScriptChecks.ps1
+./RawLabWindows/tests/run-v08.ps1 -RawPath <external-RAW> -NativeArtifacts <unchanged-native-artifacts> -Only 'editing,localization,about,default-isolation,editor-shell,geometry,transform-ui,editor-review,photo-features'
+dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW>
+dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW> --ui-only
+```
+
+### Final Windows Results
+
+- The PowerShell parser/AST regression passes. Fresh managed WPF build has **0 warnings and 0 errors**. The final summary contains **10/10 entries with exit 0**: build and all nine selected suites above.
+- **34 default-isolation**, **90 editor-review**, **15 geometry**, **19 transform UI**, **52 photo-feature** and **40 About** checks pass. The editor-review suite still covers folder drops and the three owner-recovery/running-close/pending-resize combinations, including unchanged RAW hashes.
+- The separate unfiltered default run passes **152 checks**, exit 0. Its subsequent UI-only repeat passes **98 checks**, exit 0, including the initial-strength assertions. Final logs are retained under `build/windows-pr53-review/isolation-delivery-20261015-170532/windows-v08-results/`.
+- An independent code review confirmed that all modes of the main test executable pass through common admission. The negative control removes that admission and fails at photo-features; the final suite preserves the journal/staging/output snapshots for all ten refusal cases.
+- No new denoise-model/native denoise, CTest, native DLL build, self-contained package or release artifact is claimed. Those inputs are unchanged; their earlier evidence keeps its original source/scope. The current task reuses the prior task-owned native artifacts.
+- Photo-features reports Explorer desktop interaction **NOT REACHED** in SSH session 0. No physical OLE folder dragging, SaveFileDialog, DPI/multi-monitor/Snap/Narrator/system-accessibility/input-device or physical GPU acceptance is added by this test-only fix. These Windows results are not hosted CI.
+
+Admission is a data-preservation precondition, not profile virtualization or a cross-process lock. Use an exclusive test account with no product process creating a job concurrently. This coverage applies to RawLabWindows.Tests.dll/run-v08; the separate localization-ui executable is outside this entry and this verification. Existing physical acceptance limits below remain unchanged.
+
 ## Acceptance Limits
 
 - WPF layout images are native RenderTargetBitmap client-area compositions. The SSH desktop can clamp the HWND below the requested window size; the test records both actual HWND size and exact arranged client DIP dimensions. These are not physical-monitor screenshots or proof of Snap behavior.

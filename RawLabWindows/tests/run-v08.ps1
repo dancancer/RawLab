@@ -41,6 +41,7 @@ Invoke-Check 'editing' @('run','--project',"$PSScriptRoot/editing/EditWorkflow.T
 Invoke-Check 'denoise-model' @('run','--project',"$PSScriptRoot/denoise/DenoiseSettingsTests.csproj",'-c','Release')
 Invoke-Check 'localization' @('run','--project',"$PSScriptRoot/localization/LocalizationChecks.csproj",'-c','Release')
 Invoke-Check 'about' @($runner,'--about')
+Invoke-Check 'default-isolation' @($runner,'--default-isolation',"$results/default-isolation")
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
 foreach($name in @('geometry','transform-ui','editor-review','photo-features','master-recipes','rendered-dng','denoise','lens')){
     $arguments=@($runner,('--'+$name),$repo,$RawPath)

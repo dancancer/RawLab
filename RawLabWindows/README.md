@@ -182,6 +182,15 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 工作，不依赖机器速度或物理文件选择器，也不向产品代码增加测试控制入口。
 边界裁框旋转的模型回归在 editing 中，水平/垂直翻转的真实控件回归在 transform-ui 中。
 
+主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
+存在即拒绝运行；默认套件完成 native 检查后、WPF 初始化前再检查一次。使用没有产品任务并发运行的独立测试账号，
+不要为运行测试删除或移动已有 journal。默认窗口的 EditStore 仍使用每次运行独立的目录。
+`run-v08.ps1` 的 `default-isolation` 回归也可直接运行
+`RawLabWindows.Tests.dll --default-isolation <output>`，不需要 RAW 或系统目录重定向。
+它对同一共同入口传入任务私有的 journal 路径，覆盖 Running/Publishing、完整与 UI-only
+参数、photo-features/interactions 分派、文件锁和损坏 JSON，检查拒绝后 journal、staging、成片的文件列表、字节和修改时间不变，
+且不创建输出或 WPF Application。另一个私有对照调用真实恢复清理，证明 fixture 确实能触发风险。
+
 `--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的
 八个平坦图块，不能假定每张照片在每个视口都一定改变像素；受控输入负责验证实际滤波效果。
 先在安装了 NumPy、tifffile 的测试 Python 环境生成 fixture，再运行专项：
