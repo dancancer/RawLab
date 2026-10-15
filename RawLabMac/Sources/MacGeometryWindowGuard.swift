@@ -37,18 +37,35 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
     final class CloseDelegate: NSObject, NSWindowDelegate {
         weak var model: EditorModel?
         weak var previous: NSWindowDelegate?
+        private weak var closeAfterSheet: NSWindow?
         init(model: EditorModel) { self.model = model }
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
             guard let model else { return previous?.windowShouldClose?(sender) ?? true }
             NSApp.keyWindow?.makeFirstResponder(nil)
             if model.geometryDraftHasChanges {
-                model.requestLeavingGeometryDraft { [weak sender] in sender?.performClose(nil) }
+                model.requestLeavingGeometryDraft { [weak self, weak sender] in
+                    guard let self, let sender else { return }
+                    // SwiftUI 尚未移除确认表单时，AppKit 会忽略关闭操作。
+                    if sender.attachedSheet != nil { self.closeAfterSheet = sender }
+                    else { sender.performClose(nil) }
+                }
                 return false
             }
             guard model.saveEdits() else { return false }
             model.cancelGeometryDraft()
             return previous?.windowShouldClose?(sender) ?? true
+        }
+
+        func windowDidEndSheet(_ notification: Notification) {
+            previous?.windowDidEndSheet?(notification)
+            guard let window = notification.object as? NSWindow, closeAfterSheet === window else { return }
+            closeAfterSheet = nil
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self, let window, window.delegate === self, window.attachedSheet == nil,
+                      self.model?.geometryDraftDeparturePending != true else { return }
+                window.performClose(nil)
+            }
         }
 
         override func responds(to selector: Selector!) -> Bool {

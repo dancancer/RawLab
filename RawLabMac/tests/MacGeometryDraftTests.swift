@@ -95,6 +95,7 @@ import Darwin
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        try windowCloseChecks(model)
         model.settings.geometry = committed
         model.settings.lensCorrection = lens
         model.settings.exposure = 0.35
@@ -206,6 +207,57 @@ import Darwin
         try check(try OriginalFileIdentity(source) == sourceIdentity && Data(contentsOf: source) == original &&
                   Data(contentsOf: a) == original && Data(contentsOf: b) == original, "all draft operations leave the original and copied RAW bytes unchanged")
         print("PASS: \(checks) macOS geometry/lens draft transaction checks")
+    }
+
+    final class WindowDelegateProbe: NSObject, NSWindowDelegate {
+        var closeChecks = 0
+        var endedSheets = 0
+        func windowShouldClose(_ sender: NSWindow) -> Bool { closeChecks += 1; return true }
+        func windowDidEndSheet(_ notification: Notification) { endedSheets += 1 }
+    }
+
+    static func windowCloseChecks(_ model: EditorModel) throws {
+        _ = NSApplication.shared
+        for choice in [MacGeometryDeparture.discard, .apply, .stay] {
+            try check(model.beginGeometryDraft(tab: .crop), "window-close draft opens")
+            try wait(model, draft: true, "window-close draft")
+            model.updateGeometryDraft { $0.cropX += 0.02; $0.cropWidth -= 0.04 }
+            let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 320, height: 200),
+                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let proxy = MacGeometryWindowGuard.CloseDelegate(model: model)
+            let previous = WindowDelegateProbe()
+            proxy.previous = previous
+            window.delegate = proxy
+            window.orderFront(nil)
+            defer { window.delegate = nil; window.close() }
+            window.performClose(nil)
+            try check(model.geometryDraftDeparturePending && window.isVisible,
+                      "native close waits for the draft choice")
+            let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 100),
+                                 styleMask: [.titled], backing: .buffered, defer: false)
+            sheet.isReleasedWhenClosed = false
+            window.beginSheet(sheet)
+            settle(0.1)
+            model.resolveGeometryDraftDeparture(choice)
+            try check(window.isVisible && window.attachedSheet === sheet,
+                      "draft resolution does not close a window with its sheet attached")
+            window.endSheet(sheet)
+            settle(0.5)
+            try check(window.isVisible == (choice == .stay),
+                      "native close completes after sheet dismissal except for Stay (\(choice))")
+            try check(previous.endedSheets == 1 && previous.closeChecks == (choice == .stay ? 0 : 1),
+                      "the previous window delegate receives each applicable callback once")
+            if choice == .stay {
+                window.beginSheet(sheet)
+                window.endSheet(sheet)
+                settle(0.5)
+                try check(window.isVisible && previous.endedSheets == 2 && previous.closeChecks == 0,
+                          "an unrelated sheet after Stay never retries the old close request")
+            }
+            model.cancelGeometryDraft()
+            try wait(model, "window-close cleanup")
+        }
     }
 
     static func valueChecks(geometry: GeometrySettings, lens: LensCorrectionSettings) throws {

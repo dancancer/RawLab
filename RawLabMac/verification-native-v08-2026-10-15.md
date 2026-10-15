@@ -29,7 +29,7 @@ The old tree's `build/local-verification.json` and `build/empty-state-copy-verif
 
 The worktree build completed with exit 0 and `PASS: all non-system dynamic dependencies are bundled and signed`, logged in `build/native-acceptance/build.log`. The build script's built-in DNG check also passed; the 132/50/snapshot suites were not rerun.
 
-The generated app was copied to `build/native-acceptance/RawLab Mac Acceptance.app`, with only bundle identity/name, `LSEnvironment.CFFIXED_USER_HOME` and ad-hoc signatures changed. `codesign --verify --deep --strict` passed. The original and acceptance executables have identical `__TEXT,__text` dumps (SHA-256 `54bf5e1e17c07316eb650389c24fdf2ab53278fce812693909dfc9a757001fa5`). Whole-file hashes differ because of re-signing. No app source has been modified.
+The initial generated app was copied to `build/native-acceptance/RawLab Mac Acceptance.app`, with only bundle identity/name, `LSEnvironment.CFFIXED_USER_HOME` and ad-hoc signatures changed. `codesign --verify --deep --strict` passed. The initial original and acceptance executables had identical `__TEXT,__text` dumps (SHA-256 `54bf5e1e17c07316eb650389c24fdf2ab53278fce812693909dfc9a757001fa5`). Whole-file hashes differ because of re-signing. The later window-close fix and final build are recorded below.
 
 Native acceptance is in progress. The app launched and returned live AX state and window screenshots; no lock-screen or approval blocker was returned. Initial background-app attempts at coordinate drags, wheel input, several native menu selections and global shortcuts did not produce the expected transition. The user subsequently confirmed bringing the acceptance app to the foreground. Shortcuts, menus, pointer drags and wheel input then worked; the initial failures are not classified as application defects. The optional documented `cua.computer.launch_app` method is unavailable in this runtime (`is not a function`). No security setting or permission was reset.
 
@@ -37,14 +37,14 @@ Native acceptance is in progress. The app launched and returned live AX state an
 
 | Item | Status | Required observation |
 | --- | --- | --- |
-| Open button, File menu, Command-O and cancel | PARTIAL | Button/menu opened the system panel; button and Escape cancel returned to empty state. Command-O opened once, but later attempts had no effect; repeatability is not accepted. |
+| Open button, File menu, Command-O and cancel | PASS for exercised paths | Button/menu opened the system panel; button and Escape cancel returned to empty state. Foreground Command-O was repeated successfully across diagnostic and final builds, including Escape then reopen. Earlier background attempts are not app failures. |
 | RAW import and drag/drop | PARTIAL | A imported by native file-list double click; B imported by selected row + Return; A reopened by selected row + Open. Drag/drop NOT REACHED. |
-| Eight crop handles and in-frame move | PARTIAL / issue under diagnosis | All nine regions changed correctly with actual pointer drags and Tab/direction keys. Shift-Up fine resize observed. Apply remained disabled after pointer drags until aspect change; this post-drag path is not accepted. |
+| Eight crop handles and in-frame move | PASS on final replay; historical warning | All nine regions changed correctly with actual pointer drags and Tab/direction keys. Shift-Up fine resize observed. Final non-instrumented build replay checked Apply after every release: all nine remained enabled. Earlier disabled-Apply observation was not reproduced or explained; it remains a residual risk, not a claimed code fix. |
 | Aspect presets and orientation swap | PASS for exercised path | Native 16:9 selection produced W/H 99.0/55.7 percent on square canvas; swap produced 55.7/99.0 percent with portrait selection visibly confirmed. Other presets not repeated. |
 | Rotation ruler and wheel | PASS for exercised path | Actual ruler drag changed 3 to 0 degrees; Right changed 0 to 0.1; wheel up 1 over numeric field changed 0.1 to 1.1. Shift-wheel and full-range traversal not claimed. |
 | Draft Apply and Cancel | PASS for exercised path | Apply saved crop +3 degree rotation; Cancel discarded subsequent nine-region keyboard edits. Reentry restored the applied geometry. |
 | Leave Apply/Discard/Stay | PASS for panel-collapse path | Native three-choice sheet: Stay retained draft; Discard discarded and collapsed panel; Apply-and-leave saved horizontal flip and collapsed panel. Other departure triggers remain separately scoped. |
-| Window close and application quit protection | PARTIAL | Foreground Command-W displayed prompt and Stay retained draft. Discard ended draft, but CUA still exposed editor afterward; actual close completion needs diagnosis. Native application Quit/Stay/Discard succeeded, process exit confirmed. Quit/Apply not exercised. |
+| Window close and application quit protection | PASS for exercised paths after fix | Foreground Command-W displayed prompt and Stay retained draft. Native Discard and Apply closed the actual window, proven by same-window lifecycle callbacks and `isVisible=false` before another CUA state query. Native Quit/Stay/Discard/Apply succeeded; both completed Quit paths have process-exit evidence. |
 | Save and reopen recovery | PASS for exercised path | A -> B -> A and full Quit/relaunch/open restored crop X/Y 3.0 percent, W/H 97.0 percent, +3 degree rotation and horizontal flip. Discarded vertical flip remained off. |
 | Comparison | PASS | Live screenshots confirmed side-by-side neutral/PROVIA and return to single-image presentation using the toolbar control. |
 | Single export | PASS for JPEG original size | Foreground Command-Shift-E opened save-panel; private destination chosen and Save clicked; native success feedback and valid JPEG confirmed independently. PNG/DNG not exercised. |
@@ -91,3 +91,24 @@ Independent output checks (read-only subagent; no UI automation or model calls):
 | `batch/acceptance-b-PROVIA.jpg` | 3977500 | `fb45c6b988dc0a67baa081e334a5845f81de3de31824241a3163124db4aa9c93` |
 
 All three decode as 2835x2835, 8-bit JPEG. FFmpeg decoded-pixel comparison of each batch output against the single output gave MSE 0, PSNR inf and SSIM 1.000000. Nonblank decoded luminance: min 1, max 240, average 111.238. File bytes may differ because of metadata; pixel equivalence is the asserted contract.
+
+## Window-close repair and verification
+
+- Confirmed defect: the old close retry ran while the SwiftUI confirmation sheet was still attached. `build/native-acceptance/home/native-callbacks.log` records `close retry ... sheet=true`, followed by `visible=true` and no later retry.
+- Minimal macOS repair: retain only a weak pending window, forward `windowDidEndSheet` to the prior delegate, then retry on the main queue after checking the window's delegate, sheet and pending-draft state. The model's departure timing and other platforms are unchanged. AppKit defines this callback as notification that the sheet has closed: [Apple documentation](https://developer.apple.com/documentation/appkit/nswindowdelegate/windowdidendsheet(_:)).
+- Regression RED: `build/native-acceptance/close-regression-red.log`, exit 133 from the test's top-level failure, specifically `native close completes after sheet dismissal except for Stay (discard)`. This was a behavioral assertion failure against the old guard, not a compile failure.
+- Regression GREEN: `build/native-acceptance/close-regression-green.log`, exit 0, **154 checks passed**. This is the affected 132-check draft suite plus 22 window checks: Discard/Apply/Stay, prior-delegate callback counts, and an unrelated sheet after Stay. These AppKit integration checks are not counted as real keyboard/mouse acceptance.
+- Build: `build/native-acceptance/final-build.log`, exit 0 and bundled/signature validation passed. The prior 50 perspective and snapshot suites were not rerun because no renderer, layout or localization changed.
+- Independent read-only review found no evidenced code defect in the final guard/test diff. The reviewer identified the SwiftUI lifecycle gap in programmatic tests; the real native checks below address the exercised paths.
+
+Native lifecycle verification used temporary logging only, built in `build/native-acceptance/window-lifecycle-build.log` (exit 0). Real CUA Command-W and native prompt buttons produced:
+
+- `Discard the draft without a follow-up AX query`: window 8304, object `0x0000007972abc600`, `departureAction sheet=true` -> `didEndSheet sheet=false` -> `retryClose` -> `willClose` -> `afterRetryClose visible=false`.
+- `Apply and close without causing a query-driven window reopen`: the same ordered events and `visible=false`; the private registry contained vertical flip `true` afterward.
+- Evidence: `build/native-acceptance/home/window-lifecycle.log`, first 7 lines for Discard and next 7 for Apply. Native input caused the actions; the app's own lifecycle log proves completion without an additional UI automation method.
+- A subsequent CUA `getAXState` re-shows the closed editor window. Thus a visible editor returned by that query alone is not reliable evidence that closing failed. An initial suspected second repair was rejected; no broader model/action deferral was shipped.
+- `Apply the draft and complete native Quit`: the prompt applied vertical flip back to `false`, and `pgrep -x RawLabMac` returned exit 1. Final private geometry is the original saved 3.0/97.0 percent crop, +3 degrees, horizontal flip on, vertical flip off. Private registry SHA-256 is now `a0cdaa46e6ea8354adab553249a211d30085cd41a5ee54ffcbbf21e2284ba63e`; user registry is still `1bc106526236f30b335af381446385ea4b0a8fc3131abad4bc2fceda55ad6e52`.
+
+All temporary logging was removed. Both generated bundles were restored to the non-instrumented final-build executable and re-signed/verified. Their `__TEXT,__text` dump hashes match: `b90c293e2c63724b1ffdbc1fd49aa3a222a597e1b093227baf2a58c1d8e22888`. No generated artifact is staged.
+
+Final crop replay evidence: `Replay all nine native crop drags and inspect Apply after every release`, followed by focused-numeric-field pointer checks. All nine releases preserved enabled Apply. An intentionally invalid numeric entry (`4+3`) correctly disabled Apply, preserved the draft on Stay and allowed Discard; it is not the earlier unexplained observation.
