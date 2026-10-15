@@ -54,7 +54,11 @@ public sealed class ParameterRow : Grid
             if(motion.Steps!=0)Publish(range.Clamp(range.Parse(Number.Text)!.Value+motion.Steps*(fine ? range.FineWheel : range.Wheel)),false);
         };
         ResetButton.Click+=(_,_)=>Publish(defaultValue,false);
-        SizeChanged+=(_,_)=>ColumnDefinitions[0].Width=new GridLength(ActualWidth<600 ? 120 : 130);
+        SizeChanged+=(_,_)=>{
+            ColumnDefinitions[0].Width=new GridLength(ActualWidth<600 ? 120 : 130);
+            var scale=Math.Max(1,TextElement.GetFontSize(this)/13);
+            Number.Width=72*scale;ColumnDefinitions[2].Width=new GridLength(Number.Width+10);ColumnDefinitions[3].Width=new GridLength(22*scale+10);
+        };
     }
 
     public void Refresh(string title, NumericRange limits, double current, double reset, string suffix = "", bool enabled = true)

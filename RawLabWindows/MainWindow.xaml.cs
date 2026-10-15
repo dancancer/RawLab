@@ -278,6 +278,7 @@ public partial class MainWindow : Window
             var filmName=settings.Recipe?.Name ?? films.FirstOrDefault(f=>f.Path==lut)?.Name ?? Loc.Text("中性");
             ActiveFilm.Text=filmName;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : filmName;ActiveFilm.ToolTip=filmName;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
+            RefreshComparisonLayout();
             CompareButton.Tag=compare ? "selected" : null;
             ClippingButton.Tag=clipping ? "selected" : null;
             InfoButton.Tag=photoInfoMode == PhotoInfoMode.Hidden ? null : "selected";
@@ -293,6 +294,9 @@ public partial class MainWindow : Window
     {
         ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable && !transform.Active;
         ViewBatchMenu.IsEnabled=CurrentBatch!=null;
+        MenuViewBatch.IsEnabled=ViewBatchMenu.IsEnabled;
+        AutoExposureButton.IsEnabled=MenuAutoExposure.IsEnabled=file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
+        MenuAsShot.IsEnabled=AsShotButton.IsEnabled;
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
         MenuExport.IsEnabled=ExportJpeg.IsEnabled;MenuBatch.IsEnabled=BatchExportMenu.IsEnabled;
         ApplyDraftButton.IsEnabled=CanApplyTransform;
@@ -327,8 +331,9 @@ public partial class MainWindow : Window
             path=Path.GetFullPath(path);
             if(!LibraryEntry.IsRaw(path))throw new InvalidOperationException(Loc.Text("请选择支持的 RAW 文件。"));
             if(!ResolveTransformDraft() || !SaveEdits())return;
-            if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
             RestoreEdits(path);
+            lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
+            if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;
             file=path; interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
             RefreshComparisonToolTip();
@@ -483,7 +488,7 @@ public partial class MainWindow : Window
         {
             var ev=await Task.Run(()=>{using var meter=new RenderEngine();return meter.AutoExposure(path,snapshot);});
             if(closing || file!=path || openRevision!=photoRevision || editRevision!=revision || !snapshot.Capture().SameAs(settings.Capture()))return;
-            settings.Set(Parameter.Exposure,ev);MarkEdited();Schedule();
+            settings.Set(Parameter.Exposure,NumericRange.For(ParameterSpec.All[(int)Parameter.Exposure]).Clamp(ev));MarkEdited();Schedule();
         }
         catch(Exception error) {if(!closing && file==path && openRevision==photoRevision && editRevision==revision)Report(error);}
         finally {autoExposing=false;if(!closing)RefreshControls();}
@@ -769,15 +774,20 @@ public partial class MainWindow : Window
         if(transform.Active && !ResolveTransformDraft())return;
         var changed=compare!=enabled;
         compare=enabled;swipe=enabled && sliding;
-        NeutralCanvas.Visibility=compare && !swipe ? Visibility.Visible : Visibility.Collapsed;
-        NeutralColumn.Width=compare && !swipe ? new(1,GridUnitType.Star) : new(0);
-        ResultCanvas.ComparisonEnabled=swipe;
+        RefreshComparisonLayout();
         RefreshComparisonToolTip();
         Grid.SetColumnSpan(NeutralLabel,swipe ? 2 : 1);
         FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
         CompareOff.IsChecked=!enabled;CompareSide.IsChecked=enabled && !sliding;CompareSwipe.IsChecked=swipe;
         RefreshControls();
         if(changed)Schedule();
+    }
+    private void RefreshComparisonLayout()
+    {
+        var sideBySide=file!=null && compare && !swipe;
+        NeutralCanvas.Visibility=sideBySide ? Visibility.Visible : Visibility.Collapsed;
+        NeutralColumn.Width=sideBySide ? new(1,GridUnitType.Star) : new(0);
+        ResultCanvas.ComparisonEnabled=file!=null && swipe;
     }
     private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
     private void DockToggle(object sender,RoutedEventArgs e)
@@ -895,7 +905,7 @@ public partial class MainWindow : Window
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
         previewResize.Stop();
-        if(batchWindow?.Running==true)batchWindow.CancelExecution();
+        if(batchWindow?.Busy==true)batchWindow.Close();
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         closeFinished=true;engine?.Dispose();engine=null;

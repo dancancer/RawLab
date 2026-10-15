@@ -28,16 +28,17 @@ internal static class EditorShellChecks
                 window=new MainWindow();window.Show();
                 foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
                 {
-                    window.Width=size.Width;window.Height=size.Height;window.UpdateLayout();
+                    var surface=ArrangeLayout(window,size);
                     var menu=window.FindName("MainMenu") as Menu;
                     check(menu?.Items.Count==5,"Five discoverable native menus: "+language);
                     check(window.WindowStyle==WindowStyle.SingleBorderWindow && window.ResizeMode==ResizeMode.CanResize,"Standard caption and resizable Windows shell");
                     check(window.ResultCanvas.ActualHeight>=160,"Canvas retains 160 DIP at "+size);
                     check(!window.ExportButton.IsEnabled,"Empty editor cannot export");
+                    check(window.NeutralCanvas.Visibility==Visibility.Collapsed && window.NeutralColumn.ActualWidth==0,"Empty editor has a single unbroken canvas");
                     check(window.ResultCanvas.ToolTip==null,"Empty canvas has no zoom instructions");
                     check(Descendants(window.Welcome).OfType<TextBlock>().Any(t=>t.Text==Loc.Text("打开一张 RAW")),"Exact approved empty-state heading");
-                    var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);
-                    bitmap.Render(window);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    var bitmap=new RenderTargetBitmap((int)surface.ActualWidth,(int)surface.ActualHeight,96,96,PixelFormats.Pbgra32);
+                    bitmap.Render(surface);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
                     using var stream=File.Create(Path.Combine(output,$"empty-{language}-{size.Width}.png"));encoder.Save(stream);
                 }
                 window.Close();window=null;
@@ -53,10 +54,24 @@ internal static class EditorShellChecks
             var provider=(IRangeValueProvider)UIElementAutomationPeer.CreatePeerForElement(row.Slider)!.GetPattern(PatternInterface.RangeValue)!;
             check(provider.Minimum==-4 && provider.Maximum==4 && provider.SmallChange==.01 && Math.Abs(provider.Value-.1)<1e-10,"Slider automation reports actual numeric units, not normalized position");
             row.Refresh("Exposure",new(-4,4,.01,.1,.01,false,2),4,0,"EV");check(Wheel(120).Handled,"Boundary wheel remains consumed");
-            host.FontSize=26;host.UpdateLayout();check(row.ActualHeight>=32 && row.Number.ActualHeight>=26,"Enlarged parameter text grows its row naturally");
+            host.FontSize=26;host.UpdateLayout();check(row.ActualHeight>=32 && row.Number.ActualHeight>=26 && row.Number.Width>=144,"Enlarged parameter text grows its row and numeric field naturally");
             host.Close();
         }
         finally{window?.Close();Loc.Initialize(previous);app.Shutdown();}
+    }
+    internal static FrameworkElement ArrangeLayout(Window window,Size requested)
+    {
+        var content=(FrameworkElement)window.Content;
+        content.ClearValue(FrameworkElement.WidthProperty);content.ClearValue(FrameworkElement.HeightProperty);
+        window.Width=requested.Width;window.Height=requested.Height;window.UpdateLayout();
+        var chrome=new Size(window.ActualWidth-content.ActualWidth,window.ActualHeight-content.ActualHeight);
+        var client=new Size(requested.Width-chrome.Width,requested.Height-chrome.Height);
+        Console.WriteLine($"Native window requested={requested}, actual={window.ActualWidth}x{window.ActualHeight}; WPF client layout={client}");
+        // SSH 桌面可能限制 HWND 尺寸；单独验证精确 DIP 客户区，不冒充物理屏幕截图。
+        content.Width=client.Width;content.Height=client.Height;content.Measure(client);content.Arrange(new Rect(client));content.UpdateLayout();
+        if(Math.Abs(content.ActualWidth-client.Width)>.5 || Math.Abs(content.ActualHeight-client.Height)>.5)
+            throw new InvalidOperationException("WPF client layout did not reach the requested DIP size.");
+        return content;
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {

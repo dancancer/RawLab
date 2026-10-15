@@ -25,7 +25,7 @@
             <Border BorderBrush="#35373B" BorderThickness="0,0,0,1" Padding="8,12">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <CheckBox IsChecked="{Binding Selected,Mode=TwoWay}" IsEnabled="{Binding Editable}" VerticalAlignment="Center" Margin="0,0,12,0" AutomationProperties.Name="{Binding Name}"/>
+                <CheckBox IsChecked="{Binding Selected,Mode=TwoWay}" IsEnabled="{Binding Selectable}" VerticalAlignment="Center" Margin="0,0,12,0" AutomationProperties.Name="{Binding Name}"/>
                 <Button Grid.Column="1" Click="InspectClicked" Style="{StaticResource QuietButton}" Padding="0" Width="78" Height="68" ToolTip="{DynamicResource '查看应用后的效果'}" IsEnabled="{Binding CanInspect}">
                   <Image Source="{Binding Thumbnail}" Stretch="Uniform" AutomationProperties.Name="{Binding Name}"/>
                 </Button>
@@ -59,11 +59,11 @@
             <Expander Header="{DynamicResource '全部调整'}" Foreground="{StaticResource Foreground}"><TextBlock x:Name="AllSettings" Margin="0,12,0,0" LineHeight="24" TextWrapping="Wrap"/></Expander>
             <Separator Margin="0,24,0,18"/>
             <TextBlock Text="{DynamicResource '输出'}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14"/>
-            <StackPanel x:Name="FormatOptions" Orientation="Horizontal" Margin="0,0,0,20">
+            <WrapPanel x:Name="FormatOptions" Margin="0,0,0,20">
               <RadioButton x:Name="Jpeg" Content="JPEG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{StaticResource Foreground}"/>
               <RadioButton x:Name="Png" Content="16-bit PNG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{StaticResource Foreground}"/>
               <RadioButton x:Name="Dng" Content="{DynamicResource 'DNG · 渲染型'}" AutomationProperties.Name="{DynamicResource 'DNG · 渲染型'}" GroupName="Format" Checked="FormatChanged" Foreground="{StaticResource Foreground}"/>
-            </StackPanel>
+            </WrapPanel>
             <StackPanel Margin="0,0,0,18">
               <DockPanel><TextBlock Text="{DynamicResource '尺寸'}"/><TextBlock x:Name="SizeHint" Text="{DynamicResource '原尺寸'}" Foreground="{StaticResource Muted}" DockPanel.Dock="Right"/></DockPanel>
               <StackPanel Orientation="Horizontal" Margin="0,8,0,0">

@@ -41,6 +41,10 @@ public partial class GeometryPanel : UserControl
         var valid=true;foreach(var row in new[]{angle,horizontal,vertical}.Concat(crops))valid=row.Commit() && valid;
         return valid;
     }
+    public void ResetDraft()
+    {
+        if(!IsEnabled)return;Begin(new());Changed?.Invoke(value,false);OverlayChanged?.Invoke();
+    }
     public void SetCanvasSize(double width,double height)
     {
         if(width<=0 || height<=0){canvasWidth=canvasHeight=0;return;}
@@ -92,7 +96,7 @@ public partial class GeometryPanel : UserControl
         Publish(value with{FlipHorizontal=x,FlipVertical=y,CropX=x!=value.FlipHorizontal ? 1-value.CropX-value.CropWidth : value.CropX,
             CropY=y!=value.FlipVertical ? 1-value.CropY-value.CropHeight : value.CropY});
     }
-    private void ResetClicked(object sender,RoutedEventArgs e)=>Publish(new());
+    private void ResetClicked(object sender,RoutedEventArgs e)=>ResetDraft();
     private void AspectChanged(object sender,SelectionChangedEventArgs e)
     {
         if(syncing || AspectBox.SelectedIndex<0)return;preset=(CropAspectPreset)AspectBox.SelectedIndex;

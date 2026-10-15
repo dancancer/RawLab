@@ -32,6 +32,7 @@ public partial class MainWindow
         RefreshCropDraft();
         if(previous!=transform.PreviewGeometry){++transformGeneration;transformPreviewReady=false;RefreshCropDraft();interacting=dragging;Schedule();}
         else if(interacting && !dragging){interacting=false;Schedule();}
+        if(transformPreviewReady && result!=null)GeometryEditor.SetCanvasSize(result.NativeWidth,result.NativeHeight);
         RefreshControls();
     }
     private void UpdateLensDraft(LensSettings value)

@@ -171,6 +171,9 @@ try
     var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
     var oldOutput = Path.Combine(output, "same-Velvia.jpg"); File.WriteAllText(oldOutput, "existing");
     var job = BatchJob.Create(a, saved, null, "Velvia");
+    var invalidTarget=BatchItem.Create(a) with{Selected=true,ValidationError="unsupported RAW"};
+    var preflightJob=BatchJob.Create(a,saved,null,"Velvia");preflightJob.Items.Add(invalidTarget);
+    Check(!invalidTarget.CanSelect && preflightJob.SelectedCount==0,"Failed RAW preflight cannot become a selected batch target");
     job.OutputDirectory = output;
     job.Items.Add(BatchItem.Create(a) with { Selected = true });
     job.Items.Add(BatchItem.Create(b) with { Selected = true });

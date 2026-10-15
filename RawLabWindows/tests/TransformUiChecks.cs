@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using RawLab.Windows;
 
 internal static class TransformUiChecks
@@ -18,6 +19,7 @@ internal static class TransformUiChecks
         var photo=Path.Combine(directory,"photo"+Path.GetExtension(raw));var other=Path.Combine(directory,"other"+Path.GetExtension(raw));
         File.Copy(raw,photo);File.Copy(raw,other);
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         Loc.Initialize("zh-Hans");foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
@@ -26,6 +28,9 @@ internal static class TransformUiChecks
         {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            Click(window.AutoExposureButton);InteractionChecks.PumpUntil(()=>!Get<bool>(window,"autoExposing") && window.ExportPng.IsEnabled);
+            var measured=Get<Adjustments>(window,"settings")[Parameter.Exposure];
+            check(Math.Abs(measured*100-Math.Round(measured*100))<1e-6,"Native auto exposure commits to the visible 0.01 EV grid");
             Commit(window.ValueText,"0.13");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             var invalidLook=Path.Combine(directory,"invalid.cube");File.WriteAllText(invalidLook,"not a CUBE");
             var goodLook=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_PROVIA_65grid_V.1.00.cube");
@@ -50,6 +55,8 @@ internal static class TransformUiChecks
             check(draft.Active && width.Text=="60","Escape restores only the current numeric input, not the geometry draft");
             Commit(width,"bad");Click(window.ApplyDraftButton);
             check(draft.Active && width.Text=="bad","Invalid geometry stays available for correction and cannot apply");
+            Click((Button)window.GeometryEditor.FindName("ResetGeometry"));InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
+            check(!window.GeometryEditor.HasInvalidInput && draft.Geometry.IsIdentity,"Geometry reset clears invalid fields and resets the draft");
             Commit(width,"62");Click(window.ApplyDraftButton);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(!draft.Active && store.Find(photo)!.Settings.Geometry?.CropWidth==.62,"Apply writes the draft once to photo memory");
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
@@ -69,9 +76,9 @@ internal static class TransformUiChecks
             check(Get<string>(window,"file")==other,"Retry releases the photo-switch guard after durable save");
             foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
             {
-                window.Width=size.Width;window.Height=size.Height;window.UpdateLayout();
+                var surface=EditorShellChecks.ArrangeLayout(window,size);
                 check(window.ResultCanvas.ActualHeight>=160,"Real RAW layout retains 160 DIP canvas");
-                var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
+                var bitmap=new RenderTargetBitmap((int)surface.ActualWidth,(int)surface.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(surface);
                 var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var stream=File.Create(Path.Combine(output,$"raw-{size.Width}.png"));encoder.Save(stream);
             }
         }

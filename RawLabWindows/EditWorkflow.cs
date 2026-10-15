@@ -106,7 +106,7 @@ public partial class MainWindow
 
     private void BatchExportClicked(object sender, RoutedEventArgs e)
     {
-        if (file == null || !exactReady || scheduler.Busy || exporting || !LookAvailable) return;
+        if (file == null || !exactReady || scheduler.Busy || exporting || batchWindow?.Busy==true || !LookAvailable) return;
         var previous = CurrentBatch;
         if (previous is { Started: true } && previous.SucceededCount < previous.SelectedCount)
         {
@@ -128,6 +128,7 @@ public partial class MainWindow
 
     private void ShowBatchClicked(object sender, RoutedEventArgs e)
     {
+        if(CurrentBatch==null)return;
         if(!ResolveTransformDraft())return;
         if (batchWindow != null) { batchWindow.Activate(); return; }
         if (previousBatch != null) ShowBatch(previousBatch);
@@ -136,7 +137,7 @@ public partial class MainWindow
     {
         var window = new BatchExportWindow(job, batchJournal) { Owner = this };
         batchWindow = window;
-        window.RunningChanged += active => {
+        window.BusyChanged += active => {
             exporting = active; RefreshControls(); RefreshBatchNotice();
             if (!active && closing && !scheduler.Busy) FinishClose();
         };

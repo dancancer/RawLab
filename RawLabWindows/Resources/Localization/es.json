@@ -471,5 +471,9 @@
   "效果": "Efectos",
   "透视：水平 {0:0.###} · 垂直 {1:0.###}": "Perspectiva: horizontal {0:0.###} · vertical {1:0.###}",
   "\n降噪  {0}\n亮度降噪  {1:0.#}\n色彩降噪  {2:0.#}\n粗颗粒降噪  {3:0.#}": "\nReducción de ruido  {0}\nLuminancia  {1:0.#}\nCrominancia  {2:0.#}\nRuido grueso  {3:0.#}",
-  "\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}": "\nReducción de ruido cromático de pantalla  {0}\nViñeta  Intensidad {1:+0.#;-0.#;0} · Punto medio {2:0.#} · Redondez {3:+0.#;-0.#;0} · Desvanecimiento {4:0.#} · Protección de altas luces {5:0.#}\nGrano  Intensidad {6:0.#} · Tamaño {7:0.#} · Rugosidad {8:0.#}"
+  "\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}": "\nReducción de ruido cromático de pantalla  {0}\nViñeta  Intensidad {1:+0.#;-0.#;0} · Punto medio {2:0.#} · Redondez {3:+0.#;-0.#;0} · Desvanecimiento {4:0.#} · Protección de altas luces {5:0.#}\nGrano  Intensidad {6:0.#} · Tamaño {7:0.#} · Rugosidad {8:0.#}",
+  "验证失败": "Error de validación",
+  "正在检查 RAW…": "Comprobando el RAW…",
+  "停止": "Detener",
+  "当前项完成后停止，已完成的输出会保留。": "Detener después de completar el elemento actual; se conservarán las salidas completadas."
 }

@@ -1,7 +1,7 @@
 <Window x:Class="RawLab.Windows.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:RawLab.Windows"
     Title="RawLab · Windows" Width="1440" Height="920" MinWidth="1000" MinHeight="680" Icon="AppIcon.png" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="KeyPressed">
 
-  <Grid TextElement.Foreground="{DynamicResource Foreground}">
+  <Grid TextElement.Foreground="{DynamicResource Foreground}" Background="{DynamicResource CanvasSurface}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Menu x:Name="MainMenu" MinHeight="28" Background="{DynamicResource RaisedSurface}" Padding="8,0" FocusManager.IsFocusScope="True">
       <MenuItem Header="{DynamicResource '文件(_F)'}">
@@ -9,7 +9,7 @@
         <MenuItem Header="{DynamicResource '添加目录'}" Click="AddFolderClicked"/>
         <Separator/><MenuItem x:Name="MenuExport" Header="{DynamicResource '导出'}" Click="MainExportClicked" IsEnabled="False"/>
         <MenuItem x:Name="MenuBatch" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/>
-        <MenuItem Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked"/>
+        <MenuItem x:Name="MenuViewBatch" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>
         <Separator/><MenuItem Header="{DynamicResource '退出'}" Click="ExitClicked"/>
       </MenuItem>
       <MenuItem Header="{DynamicResource '编辑(_E)'}">
@@ -31,7 +31,7 @@
         <Separator/><MenuItem Header="{DynamicResource '对比模式'}"><MenuItem Header="{DynamicResource '关闭对比'}" Click="CompareOffClicked"/><MenuItem Header="{DynamicResource '并排对比'}" Click="CompareSideClicked"/><MenuItem Header="{DynamicResource '滑动对比'}" Click="CompareSwipeClicked"/></MenuItem>
         <MenuItem Header="{DynamicResource '缩放'}"><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '100% 实际像素'}" InputGestureText="1" Click="ActualClicked"/><MenuItem Header="{DynamicResource '放大'}" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" Click="ZoomOutClicked"/></MenuItem>
       </MenuItem>
-      <MenuItem Header="{DynamicResource '工具(_T)'}"><MenuItem Header="{DynamicResource '自动曝光'}" Click="AutoExposureClicked"/><MenuItem Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
+      <MenuItem Header="{DynamicResource '工具(_T)'}"><MenuItem x:Name="MenuAutoExposure" Header="{DynamicResource '自动曝光'}" Click="AutoExposureClicked" IsEnabled="False"/><MenuItem x:Name="MenuAsShot" Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked" IsEnabled="False"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
       <MenuItem Header="{DynamicResource '帮助(_H)'}"><MenuItem Header="{DynamicResource '关于 RawLab'}" Click="AboutClicked"/></MenuItem>
     </Menu>
     <Border Grid.Row="1" MinHeight="48" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,0,1">

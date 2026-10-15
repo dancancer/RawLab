@@ -1,13 +1,16 @@
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$RawPath,
       [Parameter(Mandatory=$true)][string]$NativeArtifacts,
-      [string]$DotNet='dotnet')
+      [string]$DotNet='dotnet',
+      [string]$Only='')
 $ErrorActionPreference='Stop'
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $results=Join-Path $repo 'build/windows-v08-results'
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
+$selected=@($Only.Split(',',[StringSplitOptions]::RemoveEmptyEntries))
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
+    if($Name -ne 'build' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
     $log=Join-Path $results ($Name+'.log')
     $preference=$ErrorActionPreference
     Push-Location $repo

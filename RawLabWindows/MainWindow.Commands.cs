@@ -38,7 +38,7 @@ public partial class MainWindow
     private void ResetCurrentToolClicked(object sender,RoutedEventArgs e)
     {
         if(file==null || exporting)return;
-        if(transform.Active){transform.Reset();transformPreviewReady=false;++transformGeneration;RefreshCropDraft();RefreshControls();Schedule();return;}
+        if(transform.Active){if(transform.Tool==TransformTool.Geometry)GeometryEditor.ResetDraft();else UpdateLensDraft(new());return;}
         if(choosingDenoise)settings.Denoise=new();
         else if(choosingHsl)settings.Hsl=new();
         else if(choosingPhotoEffects)settings.ResetEffects(selectedEffect==PhotoEffectTool.Vignette);
