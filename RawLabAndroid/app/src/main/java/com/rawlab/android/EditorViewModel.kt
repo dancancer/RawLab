@@ -515,10 +515,13 @@ class EditorViewModel @JvmOverloads constructor(
     fun closeBatch() {
         val model = mutableBatch.value ?: return
         if (model.state.value.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) return
-        model.discardDraftOrCompleted()
+        val cleanup = model.discardDraftOrCompleted()
         model.close()
         mutableBatch.value = null
-        refreshPendingBatch()
+        viewModelScope.launch {
+            try { cleanup?.await(); refreshPendingBatch() }
+            catch (error: Exception) { mutable.value = mutable.value.copy(error = error.message) }
+        }
     }
 
     private fun refreshPendingBatch() {

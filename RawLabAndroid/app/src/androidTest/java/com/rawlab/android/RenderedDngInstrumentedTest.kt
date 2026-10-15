@@ -229,6 +229,7 @@ class RenderedDngInstrumentedTest {
                 assertEquals(BatchRowStatus.PENDING, saved.rows.single().status)
                 assertNull(saved.rows.single().outputUri)
                 assertTrue(recovery!!.discard())
+                kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeout(10_000) { recovery!!.discardDraftOrCompleted()?.await() } }
                 assertNull(journal.load(initial.id))
             } finally {
                 recovery?.close()

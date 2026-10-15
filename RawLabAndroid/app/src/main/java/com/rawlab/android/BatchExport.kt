@@ -3,10 +3,13 @@ package com.rawlab.android
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -295,6 +298,7 @@ class BatchExportModel(
     private val resolver = context.contentResolver
     private val cancelRequested = AtomicBoolean(false)
     private var running: Job? = null
+    private var discardCompletion: CompletableDeferred<Unit>? = null
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
     private val initialJob = initial ?: BatchJob(source, emptyList())
     private val mutable = MutableStateFlow(BatchExportState(initialJob, phase = BatchPhase.PREPARING,
@@ -492,9 +496,13 @@ class BatchExportModel(
     }
 
     suspend fun preview(target: BatchTarget): android.graphics.Bitmap = withContext(Dispatchers.IO) {
-        val source = mutable.value.job.source
-        // 效果查看先限长再降噪，避免处理整张 RAW；最终导出仍保留完整质量。
-        processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true).bitmap() }
+        // 取消对话框不能中断 JNI；所有预览仍由 model 持有，关闭后等它们退出再删输入。
+        val work = scope.async(Dispatchers.IO) {
+            val source = mutable.value.job.source
+            // 效果查看先限长再降噪，最终导出仍保留完整质量。
+            processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true) }
+        }
+        try { work.await().bitmap() } finally { work.cancel() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {
@@ -525,14 +533,25 @@ class BatchExportModel(
 
     fun setDestination(destination: Uri?) { mutable.value = mutable.value.copy(destination = destination) }
 
-    fun discardDraftOrCompleted() {
-        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) BatchJournal(journalRoot).discard(initialJob.id)
+    fun discardDraftOrCompleted(): Deferred<Unit>? {
+        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
+        return discardCompletion
     }
 
     fun discard(): Boolean {
         if (mutable.value.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING)) return false
-        return try { BatchJournal(journalRoot).discard(initialJob.id); true }
+        return try { discardAfterWork(); true }
         catch (error: Exception) { mutable.value = mutable.value.copy(error = error.message); false }
+    }
+
+    private fun discardAfterWork() {
+        if (discardCompletion != null) return
+        val completion = CompletableDeferred<Unit>().also { discardCompletion = it }
+        scope.coroutineContext[Job]!!.invokeOnCompletion {
+            try { BatchJournal(journalRoot).discard(initialJob.id); completion.complete(Unit) }
+            catch (error: Exception) { completion.completeExceptionally(error) }
+        }
+        close()
     }
 
     override fun close() {

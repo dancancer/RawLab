@@ -205,6 +205,7 @@ class BatchWorkflowInstrumentedTest {
             assertEquals(BatchRowStatus.PENDING, batch!!.state.value.job.rows.single().status)
             context.contentResolver.query(uri, arrayOf(android.provider.MediaStore.Images.Media._ID), null, null, null)?.use { assertEquals(0, it.count) }
             assertTrue(batch!!.discard())
+            kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeout(10_000) { batch!!.discardDraftOrCompleted()?.await() } }
             assertNull(journal.load(job.id))
         } finally {
             cleanup.finish(batch?.state?.value?.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING),

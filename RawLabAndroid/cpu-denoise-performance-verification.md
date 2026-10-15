@@ -317,3 +317,46 @@ assembly, both ABI compile-policy checks, shell syntax and APK/native 16 KB alig
 The delivery build uses the normal application ID and no RAW fixture; its instrumentation
 APK is compile-checked, not installed or used as new device evidence. Frozen physical-test
 APKs remain separately preserved. Logs are under the sibling `delivery` evidence directory.
+
+### Delivery Review Follow-up
+
+The complete delivery review found an older production close-path race beyond the test
+timeout cleanup: dismissing an in-flight effect preview and immediately closing the
+SELECTING batch could delete its frozen input while synchronous work was still reading.
+The preview now belongs to the model's coroutine scope; closing cancels admission but
+input deletion waits for every child to actually finish. Pending-job refresh waits for
+that deletion completion. Preview size, settings, GPU mode and 90/240-second waits do
+not change. Two existing immediate-discard assertions now await cleanup completion.
+
+On Lenovo TB320FC, the isolated package reproduces three failures before correction
+(`delivery/preview-lifetime-red.log`) and passes five targeted tests after correction
+(`delivery/preview-lifetime-green.log`, 0.611 seconds). These exercise real model/coroutine
+and file ownership with an intentionally blocked processor factory, not actual JNI
+execution or image quality. They cover both discard paths, two simultaneous preview
+owners, close-without-discard, and rejection of new preview after close. The later two
+existing-test await adjustments are compile-checked, not replayed as SAF/full-workflow
+device tests. The five targeted test methods and their production code are unchanged.
+
+Frozen targeted-test APK SHA-256:
+
+- app: `0a261030f787851ae407cb936b69c6cbca2ffac700dd26ac189e6ad03c9dac1c`
+- test: `816b7aec907840c1cac5266dd8e561599c78a2ebd39221d454f81580eb795780`
+
+The original 212-entry physical-performance manifest now has 206 matching entries.
+The six intentional differences are the two Python files, `BatchExport.kt`,
+`EditorViewModel.kt`, and the two updated existing instrumentation tests; the new
+`BatchPreviewLifetimeTest.kt` was not in that old manifest. The historical full CPU/GPU
+workflow, pixel comparisons and timing are not relabeled as new exact-head device runs.
+
+Fresh final host gates pass again with 88 explicitly rerun JVM tests, 24 Python tests,
+lint/build and two-ABI compile-policy/native alignment checks. The independent reviewer
+confirms the production lifetime fix. The gallery cleanup helper's lack of SAF support
+remains a declared test-capability limit: existing SAF tests use separate owned-output
+cleanup, and this delivery does not claim new SAF coverage. See
+`reviews/self-android-v08-editor-20261015-2331.md`.
+
+Only the two initially absent isolated packages are installed and removed. Owned batch
+journals and cache fixtures are empty before uninstall. Private ADB 5063 (PID 85146)
+is stopped; USB returns to shared 5037, whose PID 23749 remains unchanged, as does the
+unrelated server PID 51027. No original app, personal gallery, lock setting or shared
+ADB process is modified.
