@@ -14,7 +14,33 @@
 
 - `python3 RawLabMac/tests/test_single_preview.py`：RED 后 GREEN，3 项源码契约通过。
 - `bash RawLabMac/tests/edit-model.sh`：历史恢复、未编辑默认、reset、失败保存保护通过。
-- 尚未进行原生按钮点击验收；不把源码契约称为交互实测。
+- 2026-10-15 原生按钮验收已通过，详见下节；源码/模型测试仍单独列出，不代替交互证据。
+
+### 原生交互验收
+
+生产源码为普通图像提交 `bd29910`；用 `bash RawLabMac/tests/single-preview-interaction.sh`
+构建单独的 `ComparisonInteraction.app`。复用未修改的生产 `EditorView`/`EditorModel`，
+bundle ID 为 `dev.rawlab.agent.single-preview-interaction`，looks/edits/batch 均在
+`build/single-preview-interaction/`；没有读写用户的 RawLab 偏好或编辑目录，没有添加生产 test hook。
+测试 harness 不读写 compare，既不通过模型调用模拟按钮，也不通过代码自动打开照片。
+
+使用 CUA 实际点击 toolbar Open、NSOpenPanel 的文件行和 Open 按钮、Comparison 按钮，
+通过原生 Exposure 数字框及 Tab 提交编辑。实际 AX 状态和截图均在本次任务工具记录中：
+
+- 新空编辑器：Comparison `Closed`。
+- 打开真实 DJI RAW：一张 PROVIA 结果图，Comparison `Closed`。
+- 点击 Comparison：出现 `Neutral Development` 与 `PROVIA` 两个 pane，状态 `Already turned on`；
+  再点击关闭，只剩一张结果图。
+- 手动开启后修改 RAW Exposure 至 +0.60、+1.10，直方图和异步结果更新，完整 AX 树仍为
+  `Already turned on` 且存在两个 pane。JPEG +0.80 的同样流程也通过。
+- 保持开启后依次切换 RAW -> JPEG -> 未编辑 PNG，每次均重置为 `Closed`；新 PNG Exposure 为 0。
+- 再打开已有 JPEG/RAW，显示 `Previous Adjustments Restored` 并恢复 +0.80/+0.60，
+  Comparison 仍为 `Closed`，历史记录不会替用户开启对比。
+
+辅助只读模型状态日志已保留到 `/tmp/rawlab-single-preview-interaction-model-events.log`，记录实际打开文件、
+busy/完成、结果尺寸和恢复值，不将该日志单独当作按钮证据。截图与日志是生成证据，不入 Git。
+后续 harness 默认生成到系统临时目录，不把唯一证据依赖于 build 目录。
+验收后从应用菜单退出测试 app，并以进程查询确认退出；未启动或终止用户的 RawLab 应用。
 
 ## macOS 完整 RAW 配方
 
@@ -104,5 +130,5 @@ Auto 明确回退 CPU，Force GPU 明确失败；未增加第二套处理算法�
 
 ## 后续里程碑
 
-- 默认比较：必须完成隔离产品、偏好和编辑记录的原生按钮/键鼠交互验收。
-- Windows：尚未开始适配或验证；上述 macOS 三项门槛通过后刷新 development 与 PR #53。
+- macOS 完整 Agent 参数、普通图像独立复核/提交、默认比较原生交互三项门槛已通过。
+- Windows：尚未开始适配或验证；下一步刷新 development 与 PR #53。
