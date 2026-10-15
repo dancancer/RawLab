@@ -131,4 +131,39 @@ Auto 明确回退 CPU，Force GPU 明确失败；未增加第二套处理算法�
 ## 后续里程碑
 
 - macOS 完整 Agent 参数、普通图像独立复核/提交、默认比较原生交互三项门槛已通过。
-- Windows：尚未开始适配或验证；下一步刷新 development 与 PR #53。
+- Windows：已完成下述接入前只读检查，未改动 Windows 实现，未运行 Windows 原生验证。
+
+## Windows 接入前检查
+
+2026-10-15 三项 macOS 门槛完成后再次 fetch：`origin/development` 为
+`6f0dcf09dde2a5fbb9685496d3bb9f4610a2406b`；相对起点只新增 iOS 保存状态修复，
+不影响本轮 Mac 验证源。Windows PR #53 仍 open、未 merged，最新 head 为
+`5c2af9261f6872036e72996f214c7092a4d4d3d9`，不是最初记录的 `a57dd992`。
+
+`git merge-tree --write-tree HEAD origin/pr-53` 仅做合并分析，exit 0，没有文本冲突，
+返回树 `a66df082d368d880ddd822dec72c44e78df17d8a`。没有改变 branch/index/worktree，
+没有创建合并提交，不表示 PR 已合入或联合验证通过。当前两条分支修改路径不重叠；
+下面是 Windows 接入将触及的真实 owner 边界，不冒称已经发生冲突。
+
+| 文件/入口 | 已确认依赖与接入要求 |
+| --- | --- |
+| `RawLabWindows/Adjustments.cs` | `Request` 已是 UI 百分比到 core 的实际映射；#53 增加小数精度，不另写一套换算。 |
+| `RawLabWindows/RenderEngine.cs` | `PrepareRecipe` 解析目标 RAW 白平衡；GUI -> v4 必须复用它，不能冻结错误照片的 as-shot 值。#53 在 `SetGeometry` 接入透视。 |
+| `RawLabWindows/GeometrySettings.cs`、`Native.cs` | #53 提供 `PerspectiveHorizontal/Vertical`、16-byte config 和 setter；不得复制该 owner 实现。 |
+| `RawLabWindows/BatchExport.cs` | #53 的候选验证/可选状态需保留；新回归只验证既有冻结语义，不改写批量状态机。 |
+| `RawLabWindows/MainWindow.xaml.cs`、`MainWindow.xaml` | #53 仍默认 `compare=true`/并排选中；Windows 默认单张与换图重置尚未适配。 |
+| `RawLabWindows/tests/Program.cs`、`TestWindowState.cs`、独立 localization UI 入口 | #53 的 journal admission、私有 stores/偏好和 profile 保持检查是 WPF 测试前置，不运行旧入口冒险恢复用户任务。 |
+
+Agent 的完整 JSON 解析、校验、session setters 和 FINAL 处理已经在共享 C++ CLI 中实现，
+Windows 不应再次用 C# 重写 parser，也不应为迎合协议而把 UI 曝光范围扩到协议范围、
+添加原本没有的 RAW FBDD 控件。Windows 待接入的是实际 UI 有效状态 -> 同一 v4 配方，
+以及 GUI/Agent/Batch 的同条件 FINAL 回归。普通图像在 Windows 尚未适配，capabilities
+不会把 macOS 解码能力宣传到 Windows。
+
+本机没有可执行的 `dotnet`、`pwsh` 或 `powershell`，未把 Mac CTest 或既有 PR #53 结果
+记为本任务 Windows 通过。现有 Python source archive 安全测试 1 项通过，py_compile 通过，
+仅证明源码打包边界，不证明 Windows build/render/UI。Windows 原生验证需要 task-owned
+源码/构建/结果目录、明确的 VM/session/process 及隔离 profile；没有使用或清理其他 owner 资源。
+
+依照仓库单一 owner 约定，已就上述 Windows 接口向协调方请求明确接入/写入权安排。
+等待期间不复制 #53、不修改 owner 工作树、不 merge/rebase 未合 PR，不声明 Windows 完成。
