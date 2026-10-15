@@ -218,7 +218,12 @@ final class EditorModel: ObservableObject {
         else { invalidGeometryDraftInputs.insert(identifier) }
     }
 
-    func setGeometryCropInteracting(_ interacting: Bool) { geometryCropInteracting = interacting }
+    func setGeometryCropInteracting(_ interacting: Bool) {
+        guard geometryCropInteracting != interacting else { return }
+        geometryCropInteracting = interacting
+        // @Published 在赋值前通知；原生手势同步刷新后还需读取已写入的状态。
+        objectWillChange.send()
+    }
 
     func selectCropAspect(_ preset: CropAspectPreset) {
         guard geometryDraftPreviewReady else { return }

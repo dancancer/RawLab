@@ -61,6 +61,22 @@ import SwiftUI
         return crop.cropWidth * Double(canvas.width) / (crop.cropHeight * Double(canvas.height))
     }
 
+    static func cropApplyPublicationChecks(_ model: EditorModel) throws {
+        try check(model.geometryDraftCanApply, "crop publication starts with an applicable draft")
+        model.setGeometryCropInteracting(true)
+        var observed: [Bool] = []
+        let observer = model.objectWillChange.sink { observed.append(model.geometryDraftCanApply) }
+        defer { observer.cancel() }
+        model.setGeometryCropInteracting(false)
+        try check(observed.last == true,
+                  "crop release leaves synchronous Apply observers with the committed interaction state")
+        observed.removeAll()
+        model.setGeometryCropInteracting(true)
+        try check(observed.last == false,
+                  "crop start leaves synchronous Apply observers with the committed interaction state")
+        model.setGeometryCropInteracting(false)
+    }
+
     static func write(_ image: CGImage, to url: URL) throws {
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
             throw Failure(description: "Could not create preview evidence")
@@ -102,6 +118,12 @@ import SwiftUI
             runPreciseCropChecks(model)
             return
         }
+        if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "crop-apply-publication" {
+            try check(model.beginGeometryDraft(tab: .crop), "publication regression opens a crop draft")
+            try wait(model, draft: true, "publication regression canvas")
+            try cropApplyPublicationChecks(model)
+            return
+        }
         try windowCloseChecks(model)
         model.settings.geometry = committed
         model.settings.lensCorrection = lens
@@ -134,6 +156,7 @@ import SwiftUI
         try check(!becameBusy && model.result!.image === canvas && model.geometryDraftCanApply,
                   "twenty-four crop changes and gesture completion enqueue no observable RAW work")
         busyObserver.cancel()
+        try cropApplyPublicationChecks(model)
         model.setInteracting(true)
         settle(0.2)
         try check(model.busy && model.result!.image === canvas,
