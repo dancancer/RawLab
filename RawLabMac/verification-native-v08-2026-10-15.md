@@ -38,7 +38,7 @@ Native acceptance is in progress. The app launched and returned live AX state an
 | Item | Status | Required observation |
 | --- | --- | --- |
 | Open button, File menu, Command-O and cancel | PASS for exercised paths | Button/menu opened the system panel; button and Escape cancel returned to empty state. Foreground Command-O was repeated successfully across diagnostic and final builds, including Escape then reopen. Earlier background attempts are not app failures. |
-| RAW import and drag/drop | PARTIAL | A imported by native file-list double click; B imported by selected row + Return; A reopened by selected row + Open. Drag/drop NOT REACHED. |
+| RAW import and drag/drop | PASS for exercised paths; human-assisted drop | A imported by native file-list double click; B imported by selected row + Return; A reopened by selected row + Open. The user physically dragged private B from Finder into the empty final-build editor; subsequent live CUA AX/screenshot confirmed its full private path, rendered preview and enabled editing controls. Drop during an active draft was not exercised. |
 | Eight crop handles and in-frame move | PASS on final replay; historical warning | All nine regions changed correctly with actual pointer drags and Tab/direction keys. Shift-Up fine resize observed. Final non-instrumented build replay checked Apply after every release: all nine remained enabled. Earlier disabled-Apply observation was not reproduced or explained; it remains a residual risk, not a claimed code fix. |
 | Aspect presets and orientation swap | PASS for exercised path | Native 16:9 selection produced W/H 99.0/55.7 percent on square canvas; swap produced 55.7/99.0 percent with portrait selection visibly confirmed. Other presets not repeated. |
 | Rotation ruler and wheel | PASS for exercised path | Actual ruler drag changed 3 to 0 degrees; Right changed 0 to 0.1; wheel up 1 over numeric field changed 0.1 to 1.1. Shift-wheel and full-range traversal not claimed. |
@@ -113,9 +113,16 @@ All temporary logging was removed. Both generated bundles were restored to the n
 
 Final crop replay evidence: `Replay all nine native crop drags and inspect Apply after every release`, followed by focused-numeric-field pointer checks. All nine releases preserved enabled Apply. An intentionally invalid numeric entry (`4+3`) correctly disabled Apply, preserved the draft on Stay and allowed Discard; it is not the earlier unexplained observation.
 
+## Human-assisted native RAW drop
+
+- On 2026-10-15 the user confirmed `已拖入` after being asked to drag `acceptance-b.DNG` from the task-created private fixtures Finder window into the empty `RawLab Mac Acceptance` editor.
+- `Verify the human-performed private RAW drop in the final app` captured live AX state and a window screenshot. The status line was `acceptance-b.DNG 预览 1024 × 1024 · sRGB`, with Help pointing to `/Users/xupeng/.codex/worktrees/macos-v08-native-acceptance/rawtools/build/native-acceptance/fixtures/acceptance-b.DNG`. The image was visibly rendered, the RGB histogram was populated, and geometry/comparison/export controls were enabled. No error or busy state was present.
+- This is a real human-performed Finder drag followed by CUA result verification, not an automated CUA drag, model function call or offscreen snapshot. The app was the non-instrumented final build from the preceding phase; no source or build change was needed.
+- Independent read-only post-drop audit confirmed all three RAW hashes are still `0ecdc8087d566c5ba39f9bd40eef4dfc5f3884ccb016f311a606508751c79eaf`, each 19,545,856 bytes. User registry remains `1bc106526236f30b335af381446385ea4b0a8fc3131abad4bc2fceda55ad6e52`; private registry remains `a0cdaa46e6ea8354adab553249a211d30085cd41a5ee54ffcbbf21e2284ba63e`, containing only the saved A record. The old implementation worktree remains clean at its original HEAD.
+
 ## Remaining coverage and handoff
 
-- External RAW drag/drop is still NOT REACHED. A separate Finder window was opened at the private fixtures folder; no photo was moved or deleted. The available CUA coordinates are bound to one app window, with no reliable cross-window coordinate inventory exposed in this runtime. Rather than guess a destination over another app, a one-time human drop of `acceptance-b.DNG` into the empty acceptance editor was requested. It is not an approval request, and it is not yet a pass.
+- Basic external RAW drag/drop is now verified as described above. The CUA cross-window targeting limitation was handled by human native input, without security changes or guessing a destination over another app. Active-draft drag/drop departure choices remain outside the exercised drop path.
 - Shift-wheel, VoiceOver announcements, complete application-wide Tab traversal, PNG/DNG exports and batch cancel/retry/interruption were not exercised. No global accessibility or security setting was changed.
 - The initial disabled-Apply observation after crop dragging remains unexplained. Final native replay passed all nine regions without changing crop production code; no claim is made that this historical observation has been fixed.
 - A broader action-deferral hypothesis was rejected after the window lifecycle evidence. Its temporary assertion intentionally failed in `build/native-acceptance/dismissal-regression-red.log`; that assertion was removed, not counted as an established product failure or part of the 154-check suite. `EditorModel` and `EditorView` have no diff.
@@ -127,3 +134,4 @@ Local phase commits (no push, PR, merge or release):
 2. `28b77d22dafbbb9df0833e15806dca38fb9ebcd8`: native import, draft and keyboard evidence.
 3. `65f45bb9340163fc348dd86b6a233b8f1d705dbf`: foreground geometry and export evidence.
 4. `6ac075320e4708ea6c116121f682376baa897b2c`: window-close repair, affected regression and native lifecycle verification.
+5. `3a76f81e2d83711112a81cb75113d8597578918a`: pre-drop final audit and explicitly unexercised coverage.
