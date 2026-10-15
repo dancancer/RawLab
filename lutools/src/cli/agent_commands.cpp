@@ -41,6 +41,18 @@ std::string machineJson(const Json& value) {
     return value.dump(-1, ' ', false, Json::error_handler_t::replace);
 }
 
+Json optionalFeatures() {
+    sony2fuji_session* session = nullptr;
+    if (sony2fuji_session_create(&session) != SONY2FUJI_STATUS_OK) throw std::bad_alloc();
+    const auto destroy = [](sony2fuji_session* value) { sony2fuji_session_destroy(value); };
+    const std::unique_ptr<sony2fuji_session, decltype(destroy)> owned(session, destroy);
+    sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(wavelet), 1, 0, 46, 50};
+    sony2fuji_lens_correction_config lens{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION, sizeof(lens), 1, 0, 1, nullptr};
+    return {{"wavelet_denoise", sony2fuji_session_set_wavelet_denoise(session, &wavelet) == SONY2FUJI_STATUS_OK},
+        {"chroma_denoise", sony2fuji_session_set_chroma_denoise(session, 1) == SONY2FUJI_STATUS_OK},
+        {"lens_correction", sony2fuji_session_set_lens_correction(session, &lens) == SONY2FUJI_STATUS_OK}};
+}
+
 // Core diagnostics must not contaminate the machine-readable stdout document.
 class DiagnosticsToStderr {
 public:
@@ -54,7 +66,7 @@ private:
 
 int runAgentCommands(int argc, char* argv[]) {
     bool jsonOutput = false, capabilities = false, printRecipe = false, info = false, preview = false;
-    std::string recipeFile, infoFile, previewFile;
+    std::string recipeFile, infoFile, previewFile, lensDatabase;
     uint32_t previewEdge = 1280;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -84,6 +96,8 @@ int runAgentCommands(int argc, char* argv[]) {
                 infoFile = argv[++i];
             else if (arg == "--preview" && previewFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
                 previewFile = argv[++i];
+            else if (arg == "--lens-database" && lensDatabase.empty() && i + 1 < argc && argv[i + 1][0] != '-')
+                lensDatabase = argv[++i];
             else if (arg == "--long-edge" && !seenEdge && i + 1 < argc) {
                 const std::string value = argv[++i];
                 const auto parsed = std::from_chars(value.data(), value.data() + value.size(), previewEdge);
@@ -94,15 +108,17 @@ int runAgentCommands(int argc, char* argv[]) {
             else return fail("invalid_argument", "Unexpected, duplicate or incomplete argument: " + arg);
         }
         if (capabilities) {
-            if (!recipeFile.empty() || printRecipe || info || preview || seenEdge) return fail("invalid_argument", "Capabilities cannot be combined with another command");
-            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3}},
+            if (!recipeFile.empty() || printRecipe || info || preview || seenEdge || !lensDatabase.empty()) return fail("invalid_argument", "Capabilities cannot be combined with another command");
+            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4}},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", {"raw"}},
                 {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}},
-                {"geometry_operations", {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"}}})) << '\n';
+                {"geometry_operations", {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"}},
+                {"edit_groups", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"}},
+                {"optional_features", optionalFeatures()}})) << '\n';
             return 0;
         }
         if (info) {
-            if (infoFile.empty() || !recipeFile.empty() || printRecipe || preview || seenEdge)
+            if (infoFile.empty() || !recipeFile.empty() || printRecipe || preview || seenEdge || !lensDatabase.empty())
                 return fail("invalid_argument", "--info <RAW> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
             RawInfoResult inspected;
@@ -146,10 +162,17 @@ int runAgentCommands(int argc, char* argv[]) {
             recipe.outputLongEdge = previewEdge;
         }
         const auto output = std::filesystem::u8path(recipe.outputPath);
-        std::error_code identityError;
-        if (std::filesystem::equivalent(path, output, identityError) ||
-            std::filesystem::weakly_canonical(path) == std::filesystem::weakly_canonical(output))
+        const auto overwrites = [&](const std::filesystem::path& source) {
+            std::error_code identityError;
+            return std::filesystem::equivalent(source, output, identityError) ||
+                std::filesystem::weakly_canonical(source) == std::filesystem::weakly_canonical(output);
+        };
+        if (overwrites(path))
             return fail("invalid_argument", "Output must not overwrite the recipe", SONY2FUJI_STATUS_INVALID_ARGUMENT);
+        if (overwrites(std::filesystem::u8path(recipe.inputPath)))
+            return fail("invalid_argument", "Output must not overwrite the input", SONY2FUJI_STATUS_INVALID_ARGUMENT);
+        if (!recipe.lookPath.empty() && overwrites(std::filesystem::u8path(recipe.lookPath)))
+            return fail("invalid_argument", "Output must not overwrite the look", SONY2FUJI_STATUS_INVALID_ARGUMENT);
         sony2fuji_status status;
         {
             DiagnosticsToStderr diagnostics;
@@ -157,8 +180,25 @@ int runAgentCommands(int argc, char* argv[]) {
             status = sony2fuji_session_create(&pointer);
             auto destroy = [](sony2fuji_session* session) { sony2fuji_session_destroy(session); };
             const std::unique_ptr<sony2fuji_session, decltype(destroy)> session(pointer, destroy);
+            if (status == SONY2FUJI_STATUS_OK && !lensDatabase.empty())
+                status = sony2fuji_session_set_lens_database(session.get(), lensDatabase.c_str());
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_raw_exposure_mode(session.get(), recipe.exposureMode);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_hsl(session.get(), &recipe.hsl);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_photo_effects(session.get(), &recipe.effects);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_wavelet_denoise(session.get(), &recipe.wavelet);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_chroma_denoise(session.get(), recipe.chromaDenoise);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_raw_noise_reduction(session.get(), recipe.rawNoiseReduction);
+            sony2fuji_lens_correction_config lens{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION,
+                sizeof(sony2fuji_lens_correction_config), recipe.lensDistortion, recipe.lensTca,
+                recipe.lensAutoCrop, recipe.lensProfileId.empty() ? nullptr : recipe.lensProfileId.c_str()};
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_lens_correction(session.get(), &lens);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_geometry(session.get(), &recipe.geometry);
             if (status == SONY2FUJI_STATUS_OK)

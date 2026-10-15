@@ -20,6 +20,24 @@ struct EditRecipe {
     float temperatureKelvin = 6500;
     float tint = 0;
     float lookStrength = 1;
+    // v4 stores resolved core values, not UI percentages or preset deltas.
+    float contrast = 1;
+    float saturation = 1;
+    float highlights = 0;
+    float shadows = 0;
+    float sCurve = 0;
+    float sharpening = 0;
+    int32_t rawNoiseReduction = 0;
+    int32_t chromaDenoise = 0;
+    sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
+        sizeof(sony2fuji_wavelet_denoise_config), 0, 0, 46, 50};
+    sony2fuji_hsl_config hsl{SONY2FUJI_HSL_CONFIG_VERSION, sizeof(sony2fuji_hsl_config), {}, {}, {}};
+    sony2fuji_photo_effects_config effects{SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION,
+        sizeof(sony2fuji_photo_effects_config), 0, 50, 0, 50, 0, 0, 25, 50};
+    bool lensDistortion = false;
+    bool lensTca = false;
+    bool lensAutoCrop = true;
+    std::string lensProfileId;
     sony2fuji_output_format outputFormat = SONY2FUJI_OUTPUT_JPEG;
     uint32_t jpegQuality = 95;
     // Zero preserves source dimensions; otherwise a no-upscale pixel ceiling.

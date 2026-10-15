@@ -59,6 +59,82 @@ int32_t boolean(const Json& object, const char* key, const std::string& path) {
     return object.at(key).get<bool>() ? 1 : 0;
 }
 
+void hslAxis(const Json& object, const char* key, float* destination) {
+    if (!object.contains(key)) return;
+    const auto& values = object.at(key);
+    const auto path = std::string("edits.hsl.") + key;
+    if (!values.is_array() || values.size() != SONY2FUJI_HSL_CHANNELS)
+        throw std::invalid_argument(path + " must contain eight numbers");
+    for (size_t i = 0; i < values.size(); ++i) {
+        const auto& value = values[i];
+        if (!value.is_number() || !std::isfinite(value.get<double>()) ||
+            value.get<double>() < -100 || value.get<double>() > 100)
+            throw std::invalid_argument(path + "[" + std::to_string(i) + "] is out of range");
+        destination[i] = value.get<float>();
+    }
+}
+
+void completeEdits(const Json& edits, EditRecipe& parsed) {
+    if (edits.contains("tone")) {
+        const auto& tone = edits.at("tone");
+        fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve"});
+        parsed.contrast = number(tone, "contrast", 1, 0, 2, "edits.tone");
+        parsed.saturation = number(tone, "saturation", 1, 0, 2, "edits.tone");
+        parsed.highlights = number(tone, "highlights", 0, -1, 1, "edits.tone");
+        parsed.shadows = number(tone, "shadows", 0, -1, 1, "edits.tone");
+        parsed.sCurve = number(tone, "s_curve", 0, -1, 1, "edits.tone");
+    }
+    if (edits.contains("detail")) {
+        const auto& detail = edits.at("detail");
+        fields(detail, "edits.detail", {"sharpening"});
+        parsed.sharpening = number(detail, "sharpening", 0, 0, 2, "edits.detail");
+    }
+    if (edits.contains("hsl")) {
+        const auto& hsl = edits.at("hsl");
+        fields(hsl, "edits.hsl", {"hue", "saturation", "lightness"});
+        hslAxis(hsl, "hue", parsed.hsl.hue);
+        hslAxis(hsl, "saturation", parsed.hsl.saturation);
+        hslAxis(hsl, "lightness", parsed.hsl.lightness);
+    }
+    if (edits.contains("effects")) {
+        const auto& fx = edits.at("effects");
+        fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
+            "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness"});
+        auto& config = parsed.effects;
+        config.vignette_amount = number(fx, "vignette_amount", 0, -100, 100, "edits.effects");
+        config.vignette_midpoint = number(fx, "vignette_midpoint", 50, 0, 100, "edits.effects");
+        config.vignette_roundness = number(fx, "vignette_roundness", 0, -100, 100, "edits.effects");
+        config.vignette_feather = number(fx, "vignette_feather", 50, 0, 100, "edits.effects");
+        config.vignette_highlights = number(fx, "vignette_highlights", 0, 0, 100, "edits.effects");
+        config.grain_amount = number(fx, "grain_amount", 0, 0, 100, "edits.effects");
+        config.grain_size = number(fx, "grain_size", 25, 0, 100, "edits.effects");
+        config.grain_roughness = number(fx, "grain_roughness", 50, 0, 100, "edits.effects");
+    }
+    if (edits.contains("denoise")) {
+        const auto& denoise = edits.at("denoise");
+        fields(denoise, "edits.denoise", {"raw_level", "chroma_mode", "wavelet"});
+        if (denoise.contains("raw_level")) parsed.rawNoiseReduction = integer(denoise.at("raw_level"), 0, 2, "edits.denoise.raw_level");
+        if (denoise.contains("chroma_mode")) parsed.chromaDenoise = integer(denoise.at("chroma_mode"), 0, 2, "edits.denoise.chroma_mode");
+        if (denoise.contains("wavelet")) {
+            const auto& wavelet = denoise.at("wavelet");
+            fields(wavelet, "edits.denoise.wavelet", {"enabled", "luma", "chroma", "coarse"});
+            parsed.wavelet.enabled = boolean(wavelet, "enabled", "edits.denoise.wavelet");
+            parsed.wavelet.luma = number(wavelet, "luma", 0, 0, 100, "edits.denoise.wavelet");
+            parsed.wavelet.chroma = number(wavelet, "chroma", 46, 0, 100, "edits.denoise.wavelet");
+            parsed.wavelet.coarse = number(wavelet, "coarse", 50, 0, 100, "edits.denoise.wavelet");
+        }
+    }
+    if (edits.contains("lens_correction")) {
+        const auto& lens = edits.at("lens_correction");
+        fields(lens, "edits.lens_correction", {"distortion", "tca", "auto_crop", "profile_id"});
+        parsed.lensDistortion = boolean(lens, "distortion", "edits.lens_correction");
+        parsed.lensTca = boolean(lens, "tca", "edits.lens_correction");
+        parsed.lensAutoCrop = !lens.contains("auto_crop") || boolean(lens, "auto_crop", "edits.lens_correction");
+        if (lens.contains("profile_id") && !lens.at("profile_id").is_null())
+            parsed.lensProfileId = text(lens.at("profile_id"), "edits.lens_correction.profile_id");
+    }
+}
+
 const char* exposureName(sony2fuji_raw_exposure_mode mode) {
     switch (mode) {
         case SONY2FUJI_EXPOSURE_SCENE: return "scene";
@@ -96,7 +172,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         fields(root, "recipe", {"schema_version", "input", "edits", "output"});
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (version < 1 || version > 3) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version < 1 || version > 4) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
 
         EditRecipe parsed;
         parsed.schemaVersion = version;
@@ -106,7 +182,9 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 
         const auto& edits = required(root, "edits", "recipe");
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
-        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
+        else if (version < 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
+        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
+        if (version >= 4) completeEdits(edits, parsed);
         const auto& exposure = required(edits, "exposure", "edits");
         fields(exposure, "edits.exposure", {"mode", "ev", "brightness"});
         const auto mode = text(required(exposure, "mode", "edits.exposure"), "edits.exposure.mode");
@@ -139,7 +217,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             fields(look, "edits.look", {"path", "strength"});
             const auto& path = required(look, "path", "edits.look");
             if (!path.is_null()) parsed.lookPath = text(path, "edits.look.path");
-            parsed.lookStrength = number(look, "strength", 1, 0, 1, "edits.look");
+            parsed.lookStrength = number(look, "strength", 1, 0, version >= 4 ? 2 : 1, "edits.look");
         }
 
         if (edits.contains("geometry")) {
@@ -210,7 +288,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
-    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 3)
+    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 4)
         throw std::invalid_argument("Unsupported schema_version");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
@@ -240,9 +318,26 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             {"width", geo.crop_width}, {"height", geo.crop_height}}}, {"quarter_turns", geo.quarter_turns},
             {"flip_horizontal", geo.flip_horizontal != 0}, {"flip_vertical", geo.flip_vertical != 0},
             {"straighten_degrees", geo.straighten_degrees}};
-        if (recipe.schemaVersion == 3)
+        if (recipe.schemaVersion >= 3)
             document["edits"]["geometry"]["perspective"] = {{"horizontal", recipe.perspective.horizontal},
                 {"vertical", recipe.perspective.vertical}};
+    }
+    if (recipe.schemaVersion >= 4) {
+        auto& edits = document["edits"];
+        edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
+            {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
+        edits["detail"] = {{"sharpening", recipe.sharpening}};
+        edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
+        const auto& fx = recipe.effects;
+        edits["effects"] = {{"vignette_amount", fx.vignette_amount}, {"vignette_midpoint", fx.vignette_midpoint},
+            {"vignette_roundness", fx.vignette_roundness}, {"vignette_feather", fx.vignette_feather},
+            {"vignette_highlights", fx.vignette_highlights}, {"grain_amount", fx.grain_amount},
+            {"grain_size", fx.grain_size}, {"grain_roughness", fx.grain_roughness}};
+        edits["denoise"] = {{"raw_level", recipe.rawNoiseReduction}, {"chroma_mode", recipe.chromaDenoise},
+            {"wavelet", {{"enabled", recipe.wavelet.enabled != 0}, {"luma", recipe.wavelet.luma},
+                {"chroma", recipe.wavelet.chroma}, {"coarse", recipe.wavelet.coarse}}}};
+        edits["lens_correction"] = {{"distortion", recipe.lensDistortion}, {"tca", recipe.lensTca},
+            {"auto_crop", recipe.lensAutoCrop}, {"profile_id", recipe.lensProfileId.empty() ? Json(nullptr) : Json(recipe.lensProfileId)}};
     }
     return document.dump(2) + "\n";
 }
@@ -258,7 +353,12 @@ sony2fuji_request EditRecipe::toRequest() const {
     request.wb_mode = whiteBalanceMode;
     request.exposure_ev = exposureEv;
     request.brightness = brightness;
-    request.contrast = request.saturation = 1;
+    request.contrast = contrast;
+    request.saturation = saturation;
+    request.highlights = highlights;
+    request.shadows = shadows;
+    request.tone_curve = sCurve;
+    request.sharpening = sharpening;
     request.temperature = temperatureKelvin;
     request.tint = tint;
     request.size_mode = outputLongEdge ? SONY2FUJI_SIZE_LIMIT_LONG_EDGE : SONY2FUJI_SIZE_NATIVE;

@@ -237,3 +237,47 @@ The additive 16-byte `sony2fuji_perspective_config` v1 and
 binary request v2 unchanged. The two setters preserve each other's settings.
 Set both complete configs, including zero values to reset, before every render.
 They share the same native-canvas query lifecycle and CPU geometry policy.
+
+## Complete edits in recipe v4
+
+Use `schema_version: 4` for the complete edit record. Versions 1, 2 and 3
+remain unchanged and reject these fields. The [v4 schema](edit-json-v4.schema.json)
+and [complete example](../examples/edit-recipes/complete-v4.json) show the
+normalized form emitted by the serializer.
+
+All v4 groups are optional in the input. Validation treats omitted controls as
+identity values, while normalization emits every group and every default. The
+recipe stores the final values consumed by the shared core; it does not store a
+master-recipe ID, UI percentage conversion, or another multiplication by look
+strength.
+
+| Group / field | Values / units | Default |
+| --- | --- | --- |
+| `edits.look.strength` | Factor [0,2]; 0 bypasses look loading | 1 |
+| `edits.tone.contrast`, `saturation` | Core multipliers [0,2] | 1 |
+| `edits.tone.highlights`, `shadows`, `s_curve` | Signed core controls [-1,1] | 0 |
+| `edits.detail.sharpening` | Core sharpening amount [0,2] | 0 |
+| `edits.hsl.hue`, `saturation`, `lightness` | Three arrays of eight channel values, each [-100,100] | Eight zeroes per array |
+| `edits.effects.vignette_amount`, `vignette_roundness` | [-100,100] | 0 |
+| `edits.effects.vignette_midpoint`, `vignette_feather`, `vignette_highlights` | [0,100] | 50, 50, 0 |
+| `edits.effects.grain_amount`, `grain_size`, `grain_roughness` | [0,100] | 0, 25, 50 |
+| `edits.denoise.raw_level`, `chroma_mode` | Integer 0, 1 or 2 | 0 |
+| `edits.denoise.wavelet.enabled` | Boolean | `false` |
+| `edits.denoise.wavelet.luma`, `chroma`, `coarse` | [0,100] | 0, 46, 50 |
+| `edits.lens_correction.distortion`, `tca` | Boolean | `false` |
+| `edits.lens_correction.auto_crop` | Boolean | `true` |
+| `edits.lens_correction.profile_id` | Nonempty catalog ID or `null`; `null` selects automatic matching | `null` |
+
+The v4 adapter maps tone and detail to the existing request v2 controls. The
+remaining groups use the additive session setters for HSL, photo effects, raw
+and display denoise, wavelet denoise, and lens correction. These setters must
+be available in the linked shared core before a recipe is rendered; unavailable
+optional capabilities return their existing structured `unsupported` status.
+The macOS path reuses the shared `apply`/HSL stages and preserves the current
+RAW camera white-balance result rather than applying a second UI conversion.
+Ordinary raster input is not part of this recipe increment.
+
+The result protocol remains `protocol_version: 1`; v4 changes only the edit
+schema. `--print-recipe` still validates without opening the RAW and preserves
+recipe-relative paths. The CLI capabilities response must advertise v4 only
+when the v4 parser and serializer are available.

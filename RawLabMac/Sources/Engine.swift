@@ -148,10 +148,7 @@ final class RenderEngine {
         return Double(ev)
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
-        if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
-            throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
-        }
+    func resolvedSettings(_ url: URL, settings: Adjustments) throws -> Adjustments {
         let key = try? RawWhiteBalanceCacheKey(url)
         if let key, let cached = whiteBalanceCache, cached.key.file == key.file,
            cached.key.fileNumber != key.fileNumber {
@@ -173,6 +170,15 @@ final class RenderEngine {
             }
             settings.resolveWhiteBalance(camera)
         }
+        return settings
+    }
+
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+        if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
+            throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
+        }
+        let settings = try resolvedSettings(url, settings: settings)
+        let key = try? RawWhiteBalanceCacheKey(url)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
