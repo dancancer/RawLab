@@ -28,6 +28,19 @@ import org.junit.Test
 class EditorV08ControlsTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun signActionKeepsNegativeDraftLocalUntilApplied() {
+        var value by mutableFloatStateOf(.35f)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.setContent { RawLabTheme { NumericControl(R.string.exposure, value, -4f..4f, "EV", true,
+            { next, _ -> value = next }, { value = 0f }) } }
+        compose.onNodeWithText("+0.35 EV").performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.adjustment_toggle_sign)).performClick()
+        compose.onNodeWithTag("adjustment-input").assertTextContains("-0.35")
+        compose.runOnIdle { assertEquals(.35f, value, 0f) }
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-.35f, value, .00001f) }
+    }
+
     @Test fun bundledFilmLabelsDecodeOnAndroid() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         Film.all.filter { it.file != null }.forEach { film ->

@@ -3,6 +3,7 @@
     <string name="info_unavailable">Nicht verfügbar</string>
     <string name="adjustment_normal">Normal</string>
     <string name="adjustment_fine">Fein</string>
+    <string name="adjustment_toggle_sign">Vorzeichen wechseln</string>
     <string name="adjustment_apply">Anwenden</string>
     <string name="adjustment_draft">Nicht angewendeter Entwurf</string>
     <string name="adjustment_leave">Änderungen vor dem Verlassen anwenden?</string>

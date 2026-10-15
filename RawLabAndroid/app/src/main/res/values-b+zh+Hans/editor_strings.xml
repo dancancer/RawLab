@@ -3,6 +3,7 @@
     <string name="info_unavailable">不可用</string>
     <string name="adjustment_normal">普通</string>
     <string name="adjustment_fine">精细</string>
+    <string name="adjustment_toggle_sign">切换正负号</string>
     <string name="adjustment_apply">应用</string>
     <string name="adjustment_draft">未应用草稿</string>
     <string name="adjustment_leave">离开前应用更改？</string>

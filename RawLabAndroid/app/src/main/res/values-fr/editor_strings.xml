@@ -3,6 +3,7 @@
     <string name="info_unavailable">Indisponible</string>
     <string name="adjustment_normal">Normal</string>
     <string name="adjustment_fine">Précis</string>
+    <string name="adjustment_toggle_sign">Changer de signe</string>
     <string name="adjustment_apply">Appliquer</string>
     <string name="adjustment_draft">Brouillon non appliqué</string>
     <string name="adjustment_leave">Appliquer les modifications avant de quitter ?</string>

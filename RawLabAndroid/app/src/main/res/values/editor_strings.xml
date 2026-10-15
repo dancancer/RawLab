@@ -3,6 +3,7 @@
     <string name="info_unavailable">Unavailable</string>
     <string name="adjustment_normal">Normal</string>
     <string name="adjustment_fine">Fine</string>
+    <string name="adjustment_toggle_sign">Toggle sign</string>
     <string name="adjustment_apply">Apply</string>
     <string name="adjustment_draft">Unapplied draft</string>
     <string name="adjustment_leave">Apply changes before leaving?</string>
