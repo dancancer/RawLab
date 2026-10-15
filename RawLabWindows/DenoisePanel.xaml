@@ -10,7 +10,7 @@
    </ComboBox>
    <Button Click="ResetClicked" ToolTip="{DynamicResource '重置降噪'}" AutomationProperties.Name="{DynamicResource '重置降噪'}" Padding="6,2"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
   </WrapPanel>
-  <TextBlock x:Name="Summary" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,0,0,4"/>
+  <TextBlock x:Name="Summary" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
   <Expander Header="{DynamicResource '精细调整'}" IsExpanded="True"><StackPanel x:Name="Parameters"/></Expander>
  </StackPanel>
 </UserControl>

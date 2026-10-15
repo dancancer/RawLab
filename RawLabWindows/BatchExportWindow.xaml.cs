@@ -327,7 +327,7 @@ public sealed class BatchRow : INotifyPropertyChanged
     public string Input => Item.Input;
     public bool Selected { get => Item.Selected && Item.CanSelect; set { if (Selectable && value != Selected) select(Item.Id, value); } }
     public string Detail => Item.ValidationError!=null ? Loc.Text("验证失败")+"\n"+Item.ValidationError : Editable ? Path.GetDirectoryName(Input)! : Item.StatusText + (Item.Error == null ? "" : "\n" + Item.Error);
-    public Brush DetailColor => Item.ValidationError!=null || Item.Status == BatchStatus.Failed ? Brushes.LightSalmon : Brushes.LightGray;
+    public bool HasError => Item.ValidationError!=null || Item.Status == BatchStatus.Failed;
     public Visibility EditVisibility => Editable ? Visibility.Visible : Visibility.Collapsed;
     public Visibility OutputVisibility => Item.Status == BatchStatus.Succeeded ? Visibility.Visible : Visibility.Collapsed;
     public BatchRow(BatchItem item, Action<Guid, bool> select) { Item = item; this.select = select; }

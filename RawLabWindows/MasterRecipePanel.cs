@@ -22,9 +22,9 @@ public partial class MainWindow
             else content.Children.Add(new EditorIcon { Kind = "Neutral", Width = 32, Height = 64 });
             content.Children.Add(new TextBlock { Text = recipe?.Name ?? Loc.Text("无配方"), FontSize = 13*EditorAppearance.TextScale, MinHeight = 20, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             content.Children.Add(new TextBlock { Text = Loc.Text(recipe?.Subtitle ?? "中性直出"), FontSize = 11*EditorAppearance.TextScale, MinHeight = 32,
-                Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+                TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             var button = new Button { Content = content, Style = (Style)FindResource("QuietButton"), Padding = new Thickness(0),
-                Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = Loc.Text(recipe?.Summary ?? "中性直出") };
+                BorderThickness = new Thickness(0), ToolTip = Loc.Text(recipe?.Summary ?? "中性直出") };
             AutomationProperties.SetName(button, recipe?.Name ?? Loc.Text("无配方"));
             button.Click += (_, _) => {
                 if (exporting || !ResolveTransformDraft()) return;

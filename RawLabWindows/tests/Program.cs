@@ -41,6 +41,7 @@ static class Program
             if(args.Length==2 && args[0]=="--default-isolation") { DefaultIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} default isolation checks");return 0; }
             if(args.Length==2 && args[0]=="--profile-isolation") { ProfileIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} profile isolation checks");return 0; }
             if(args.Length==2 && args[0]=="--status-layout") { StatusLayoutChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} status layout checks");return 0; }
+            if(args.Length==2 && args[0]=="--appearance") { AppearanceChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} appearance checks");return 0; }
             if(args.Length is 3 or 4 && args[0]=="--editor-review") { EditorReviewChecks.Run(args[1],args[2],Check,args.Length==4 ? args[3] : "all");return 0; }
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }

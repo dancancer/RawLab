@@ -6,6 +6,7 @@ using System.Windows.Controls;
 namespace RawLab.Windows;
 public sealed class ParameterSlider : Slider
 {
+    public ParameterSlider()=>SetResourceReference(StyleProperty,typeof(Slider));
     public NumericRange NumericRange { get; set; }=new(0,100);
     protected override AutomationPeer OnCreateAutomationPeer()=>new NumericPeer(this);
     private sealed class NumericPeer(ParameterSlider owner) : FrameworkElementAutomationPeer(owner),IRangeValueProvider

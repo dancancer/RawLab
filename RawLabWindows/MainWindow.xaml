@@ -50,7 +50,7 @@
         <StackPanel Orientation="Horizontal">
           <Button Click="OpenClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '打开 RAW（Ctrl+O）'}" AutomationProperties.Name="{DynamicResource '打开 RAW'}"><local:EditorIcon Kind="Folder" Width="22" Height="22"/></Button>
           <Button x:Name="LibraryToggleButton" Click="LibraryToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示或隐藏照片目录'}" AutomationProperties.Name="{DynamicResource '文件树'}"><local:EditorIcon Kind="Library" Width="22" Height="22"/></Button>
-          <Border Width="1" Background="#474B53" Height="22" Margin="12,0"/>
+          <Border Width="1" Background="{DynamicResource Outline}" Height="22" Margin="12,0"/>
           <Button x:Name="CompareButton" Click="CompareClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '对比模式：并排 / 滑动'}" AutomationProperties.Name="{DynamicResource '对比模式'}">
             <local:EditorIcon Kind="Compare" Width="22" Height="22"/>
             <Button.ContextMenu><ContextMenu><MenuItem x:Name="CompareOff" Header="{DynamicResource '关闭对比'}" IsCheckable="True" Click="CompareOffClicked"/><MenuItem x:Name="CompareSide" Header="{DynamicResource '并排对比'}" IsCheckable="True" IsChecked="True" Click="CompareSideClicked"/><MenuItem x:Name="CompareSwipe" Header="{DynamicResource '滑动对比'}" IsCheckable="True" Click="CompareSwipeClicked"/></ContextMenu></Button.ContextMenu>
@@ -68,14 +68,10 @@
           AllowDrop="True" PreviewDragEnter="LibraryDragOver" PreviewDragOver="LibraryDragOver" PreviewDrop="LibraryDropped">
         <DockPanel Margin="8">
           <StackPanel DockPanel.Dock="Top"><TextBlock Text="{DynamicResource '照片目录'}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="10,14,0,8"/><Button x:Name="AddDirectoryButton" AutomationProperties.Name="{DynamicResource '添加目录'}" Click="AddFolderClicked" HorizontalContentAlignment="Stretch"><TextBlock Text="{DynamicResource '添加目录'}" TextWrapping="Wrap" TextAlignment="Center"/></Button></StackPanel>
-          <TextBlock x:Name="LibraryHint" DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="#95979F" FontSize="{DynamicResource EditorCaptionSize}" Margin="7" TextWrapping="Wrap" Visibility="Collapsed"/>
+          <TextBlock x:Name="LibraryHint" DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="7" TextWrapping="Wrap" Visibility="Collapsed"/>
           <TreeView x:Name="Files" AllowDrop="True" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" PreviewMouseRightButtonDown="FilesPreviewMouseRightButtonDown" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
             <TreeView.Resources>
               <ResourceDictionary>
-              <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#494332"/>
-              <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#F2D259"/>
-              <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#34332D"/>
-              <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#F2D259"/>
               <Style x:Key="PhotoGroupContainer" TargetType="TreeViewItem">
                 <Setter Property="Focusable" Value="False"/>
                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -91,9 +87,9 @@
                   <ItemsControl.ItemTemplate><DataTemplate>
                     <Button Click="PhotoSelected" ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}" Margin="3" Padding="5" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
                       <Button.ContextMenu><ContextMenu Opened="PhotoContextMenuOpened"><MenuItem Header="{DynamicResource '在资源管理器中打开'}" Click="OpenInExplorerClicked"/><MenuItem Header="{DynamicResource '应用当前设置'}" Click="ApplyCurrentSettingsClicked"/></ContextMenu></Button.ContextMenu>
-                      <Button.Style><Style TargetType="Button" BasedOn="{StaticResource QuietButton}"><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource Accent}"/></DataTrigger></Style.Triggers></Style></Button.Style>
+                      <Button.Style><Style TargetType="Button" BasedOn="{StaticResource QuietButton}"><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Tag" Value="selected"/></DataTrigger></Style.Triggers></Style></Button.Style>
                       <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="24"/></Grid.RowDefinitions>
-                        <Border Background="#191B20" CornerRadius="3"><local:EditorIcon Kind="Photo" Width="24" Height="24" TextElement.Foreground="#8E939F"/></Border>
+                        <Border Background="{DynamicResource InputSurface}" CornerRadius="3"><local:EditorIcon Kind="Photo" Width="24" Height="24" TextElement.Foreground="{DynamicResource Muted}"/></Border>
                         <Image Source="{Binding Thumbnail}" Stretch="Uniform" Loaded="ThumbnailLoaded" Unloaded="ThumbnailUnloaded"/>
                         <TextBlock Grid.Row="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" FontSize="{DynamicResource EditorCaptionSize}" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextAlignment="Center" Margin="1,4,1,0"/>
                       </Grid>
@@ -109,7 +105,7 @@
         </DockPanel>
       </Border>
       <GridSplitter x:Name="LibrarySplitter" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Cursor="SizeWE" ToolTip="{DynamicResource '拖动调整文件树宽度'}" AutomationProperties.Name="{DynamicResource '文件树宽度'}">
-        <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Background" Value="#292B30"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#85816A"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="Background" Value="#85816A"/></Trigger></Style.Triggers></Style></GridSplitter.Style>
+        <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Background" Value="{DynamicResource RaisedSurface}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource Indicator}"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="Background" Value="{DynamicResource Indicator}"/></Trigger></Style.Triggers></Style></GridSplitter.Style>
       </GridSplitter>
       <Grid Grid.Column="2" x:Name="EditorArea">
         <Grid.RowDefinitions><RowDefinition Height="*" MinHeight="160"/><RowDefinition x:Name="SplitterRow" Height="6"/><RowDefinition x:Name="DockRow" Height="288" MinHeight="216"/></Grid.RowDefinitions>
@@ -117,24 +113,24 @@
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Margin="0,0,2,0"/>
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Column="1"/>
-          <Border x:Name="NeutralLabel" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock Text="{DynamicResource '原图'}" FontSize="{DynamicResource EditorBodySize}"/></Border>
-          <Border x:Name="FilmLabel" Grid.Column="1" Background="#D923252A" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock x:Name="FilmLabelText" FontSize="{DynamicResource EditorBodySize}"/></Border>
-          <Border x:Name="InfoOverlay" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
+          <Border x:Name="NeutralLabel" Background="{DynamicResource OverlaySurface}" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock Text="{DynamicResource '原图'}" FontSize="{DynamicResource EditorBodySize}"/></Border>
+          <Border x:Name="FilmLabel" Grid.Column="1" Background="{DynamicResource OverlaySurface}" CornerRadius="4" Padding="9,5" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"><TextBlock x:Name="FilmLabelText" FontSize="{DynamicResource EditorBodySize}"/></Border>
+          <Border x:Name="InfoOverlay" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
             <StackPanel><TextBlock x:Name="InfoFileText" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/><TextBlock x:Name="InfoCaptureText" FontSize="{DynamicResource EditorBodySize}" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
           </Border>
           <StackPanel x:Name="Welcome" Grid.ColumnSpan="2" Margin="24" HorizontalAlignment="Stretch" VerticalAlignment="Center">
             <local:EditorIcon Kind="Folder" Width="36" Height="36" HorizontalAlignment="Center" Margin="0,0,0,18" TextElement.Foreground="{DynamicResource Muted}"/>
-            <TextBlock Text="{DynamicResource '打开一张 RAW'}" FontSize="{DynamicResource EditorEmptySize}" Foreground="#EEEEF2" TextWrapping="Wrap" TextAlignment="Center"/>
+            <TextBlock Text="{DynamicResource '打开一张 RAW'}" FontSize="{DynamicResource EditorEmptySize}" Foreground="{DynamicResource Foreground}" TextWrapping="Wrap" TextAlignment="Center"/>
             <TextBlock Text="{DynamicResource '拖入照片，或添加目录开始浏览'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,14"/>
-            <WrapPanel HorizontalAlignment="Center"><Button Content="{DynamicResource '打开 RAW'}" Click="OpenClicked" MinWidth="128" Margin="4,10" Background="{DynamicResource Accent}" Foreground="#252110"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked" Margin="4,10"/></WrapPanel>
+            <WrapPanel HorizontalAlignment="Center"><Button Content="{DynamicResource '打开 RAW'}" Click="OpenClicked" MinWidth="128" Margin="4,10" Style="{StaticResource AccentButton}"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked" Margin="4,10"/></WrapPanel>
           </StackPanel>
-          <Border x:Name="HistogramSurface" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
+          <Border x:Name="HistogramSurface" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
             <StackPanel><Button x:Name="HistogramButton" Click="HistogramClicked" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" Padding="6,2" ToolTip="{DynamicResource '展开或收起直方图'}" AutomationProperties.Name="{DynamicResource '直方图'}"><local:EditorIcon Kind="Histogram" Width="18" Height="18"/></Button>
-              <StackPanel x:Name="HistogramPanel"><local:HistogramView x:Name="Histogram" Height="105" Margin="2,8"/><TextBlock x:Name="ClipStats" FontSize="{DynamicResource EditorCaptionSize}" Foreground="#A8ABB4"/></StackPanel>
+              <StackPanel x:Name="HistogramPanel"><local:HistogramView x:Name="Histogram" Height="105" Margin="2,8"/><TextBlock x:Name="ClipStats" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}"/></StackPanel>
             </StackPanel>
           </Border>
         </Grid>
-        <GridSplitter x:Name="AdjustmentSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="#444449" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" KeyboardIncrement="8" AutomationProperties.Name="{DynamicResource '调整栏'}"/>
+        <GridSplitter x:Name="AdjustmentSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="{DynamicResource Outline}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" KeyboardIncrement="8" AutomationProperties.Name="{DynamicResource '调整栏'}"/>
         <Border x:Name="AdjustmentPanel" Grid.Row="2" Background="{DynamicResource Surface}" Padding="14,5,14,8">
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -143,7 +139,7 @@
               <Button x:Name="ResetAllButton" Click="ResetMenuClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '重置'}" AutomationProperties.Name="{DynamicResource '重置'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
               <WrapPanel VerticalAlignment="Center"><TextBlock x:Name="ActiveFilm" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/><TextBlock Text="{DynamicResource '曝光基准'}" VerticalAlignment="Center" Margin="5,0,8,0"/>
               <ComboBox x:Name="ExposureMode" MinWidth="130" MaxWidth="240" SelectedIndex="0" SelectionChanged="ExposureModeChanged" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
-              <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" VerticalAlignment="Center" Foreground="#A8ABB4" Margin="12,0"/>
+              <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="12,0"/>
               <Button Content="{DynamicResource '拍摄时白平衡'}" x:Name="AsShotButton" Click="AsShotClicked" Padding="8,3" Style="{StaticResource QuietButton}"/></WrapPanel>
             </DockPanel>
             <ScrollViewer x:Name="ToolsScroller" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Tools" Orientation="Horizontal" HorizontalAlignment="Center">
@@ -197,7 +193,7 @@
             </ScrollViewer>
             <DockPanel x:Name="DraftActions" Grid.Row="3" Visibility="Collapsed" Margin="0,4,0,0">
               <WrapPanel DockPanel.Dock="Right"><Button Content="{DynamicResource '取消'}" Click="CancelDraftClicked"/><Button x:Name="ApplyDraftButton" Content="{DynamicResource '应用'}" Click="ApplyDraftClicked"/></WrapPanel>
-              <TextBlock Text="{DynamicResource '草稿预览 · 尚未应用'}" VerticalAlignment="Center" Foreground="{DynamicResource Accent}" TextWrapping="Wrap"/>
+              <TextBlock Text="{DynamicResource '草稿预览 · 尚未应用'}" VerticalAlignment="Center" Foreground="{DynamicResource Indicator}" TextWrapping="Wrap"/>
             </DockPanel>
           </Grid>
         </Border>
@@ -212,7 +208,7 @@
         <ComboBox x:Name="GpuMode" DockPanel.Dock="Right" MinWidth="116" SelectedIndex="0" SelectionChanged="GpuModeChanged" Margin="10,2,0,2" AutomationProperties.Name="{DynamicResource '渲染加速'}"><ComboBoxItem Content="{DynamicResource 'GPU 自动'}"/><ComboBoxItem Content="{DynamicResource '仅 CPU'}"/><ComboBoxItem Content="{DynamicResource '强制 GPU'}"/></ComboBox>
         <TextBlock x:Name="BackendLabel" Text="{DynamicResource 'Windows · GPU 自动 · sRGB'}" MaxWidth="240" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right" VerticalAlignment="Center"/>
         <Button x:Name="RetryButton" ToolTip="{DynamicResource '重新显影'}" AutomationProperties.Name="{DynamicResource '重新显影'}" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2" Margin="6,0"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
-        <ProgressBar x:Name="BusyIndicator" Width="34" Height="3" Margin="0,0,10,0" Foreground="{DynamicResource Accent}" Background="#474B53" IsIndeterminate="True" Visibility="Collapsed"/>
+        <ProgressBar x:Name="BusyIndicator" Width="34" Height="3" Margin="0,0,10,0" Foreground="{DynamicResource Indicator}" Background="{DynamicResource ProgressSurface}" IsIndeterminate="True" Visibility="Collapsed"/>
         <TextBlock x:Name="Status" Text="{DynamicResource '就绪'}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
       </DockPanel>
     </Border>

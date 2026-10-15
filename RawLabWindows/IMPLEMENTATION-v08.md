@@ -44,6 +44,13 @@
 
 ## Progress
 
+### Three P2 Follow-up
+
+- [x] Reproduce synchronous idle-batch journal failure with a real pending denoise resize, with and without foreground work; share owner recovery with the asynchronous path.
+- [x] Audit Windows control/derived-window palettes and retained resource references; use paired runtime colors without changing photo, histogram or rendering semantics.
+- [x] Reject unknown/blank suite selections, normalize CSV, verify requested completion and replace stale summaries on early failures; exercise the actual runner with private external-command fixtures.
+- [x] Complete the 23-entry Windows matrix, default/UI repeats, final 10-entry affected UI recheck, unchanged-profile audit and independent patch review. Deliver one Windows-only commit to PR #53; merging remains prohibited.
+
 ### Test Isolation Follow-up
 
 - [x] Inventory every Windows test executable, MainWindow startup, and default user-state write before final verification.

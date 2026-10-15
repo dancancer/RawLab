@@ -93,7 +93,7 @@ public partial class MainWindow
     private void SetSaveNotice(string key, string detail, bool failed)
     {
         saveNoticeKey=key;SaveState.Text = Loc.Text(key); SaveState.ToolTip = detail;
-        SaveState.Foreground = failed ? Brushes.LightSalmon : (Brush)FindResource("Muted");
+        SaveState.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,failed ? "ErrorForeground" : "Muted");
         RetrySave.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
         editNoticeTimer.Stop(); if (!failed) editNoticeTimer.Start();
     }
@@ -139,11 +139,10 @@ public partial class MainWindow
         batchWindow = window;
         window.BusyChanged += active => {
             var closeFailed=!active && closing && window.CloseFailed;
-            if(closeFailed){closing=false;IsEnabled=true;}
+            if(closeFailed){RecoverFailedClose(window);return;}
             if(!active && !exporting && !closing)CommitPreviewSize();
             RefreshControls(); RefreshBatchNotice();
-            if(closeFailed)SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);
-            else if(!active && closing && !scheduler.Busy)FinishClose();
+            if(!active && closing && !scheduler.Busy)FinishClose();
         };
         window.Closed += (_, _) => {
             previousBatch = window.Discarded ? null : window.Job;
@@ -151,6 +150,13 @@ public partial class MainWindow
             RefreshBatchNotice(); UpdateBusy();
         };
         window.Show(); RefreshBatchNotice(); UpdateBusy();
+    }
+    private void RecoverFailedClose(BatchExportWindow window)
+    {
+        closing=false;IsEnabled=true;
+        if(!exporting)CommitPreviewSize();
+        RefreshControls();RefreshBatchNotice();
+        SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);
     }
     private void RefreshBatchNotice()
     {

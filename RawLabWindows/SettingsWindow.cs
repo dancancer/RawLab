@@ -13,6 +13,7 @@ public sealed class SettingsWindow : Window
     public int Backend=>backend.SelectedIndex;
     public SettingsWindow(int currentBackend)
     {
+        Style=(Style)FindResource(typeof(Window));
         Title=Loc.Text("设置");Width=520;MinWidth=420;SizeToContent=SizeToContent.Height;
         WindowStartupLocation=WindowStartupLocation.CenterOwner;ShowInTaskbar=false;ResizeMode=ResizeMode.NoResize;
         KeyboardNavigation.SetTabNavigation(this,KeyboardNavigationMode.Cycle);

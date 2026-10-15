@@ -31,6 +31,7 @@ internal static class EditorReviewChecks
             if(part is "all" or "busy-export-first")BusyOrder(true,true);
             if(part is "all" or "busy-resume-preview")BusyOrder(true,false,true);
             if(part is "all" or "close-journal-retry")CloseJournalRetry();
+            if(part is "all" or "close-journal-sync"){CloseIdleJournalRetry(false);CloseIdleJournalRetry(true);}
             if(part is "all" or "close-running")CloseRunning();
             if(part is "all" or "resize-import-first")ResizeOrder(true,false);
             if(part is "all" or "resize-batch-before-import")ResizeOrder(false,false);
@@ -166,6 +167,57 @@ internal static class EditorReviewChecks
                 if(window.IsVisible){window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
             }
             IEnumerable<string> BlockedInputs(){releasePreflight.Wait();yield return photo;}
+        }
+        void CloseIdleJournalRetry(bool foreground)
+        {
+            var window=Open("close-idle-"+foreground);var journal=Get<BatchJournal>(window,"batchJournal");
+            var engine=Get<object>(window,"engine");var held=new HeldContext(SynchronizationContext.Current!);Task? import=null;
+            var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;Invoke(window,"Schedule",false);
+            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            var job=BatchJob.Create(photo,adjustment.Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job);
+            var batch=Get<BatchExportWindow>(window,"batchWindow");var previous=Get<int>(window,"previewLongEdge");
+            var look=Get<string?>(window,"lut");var timer=Get<DispatcherTimer>(window,"previewResize");
+            try
+            {
+                using(var locked=new FileStream(Path.Combine(journal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
+                {
+                    window.ResultCanvas.Viewport!.Magnify(.5);var edge=window.ResultCanvas.PreviewLongEdge;
+                    check(timer.IsEnabled && edge!=previous && !window.ExportPng.IsEnabled,"Idle-close fixture has a real pending denoise resize: "+foreground);
+                    if(foreground){look=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_Velvia_65grid_V.1.00.cube");held.Capture(()=>import=window.ImportLookFiles([look]));}
+                    window.Close();
+                    check(window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") && !Get<bool>(window,"closeFinished") &&
+                        batch.IsVisible && batch.CloseFailed && !batch.Busy && !batch.Discarded && ReferenceEquals(engine,Get<object>(window,"engine")),
+                        "Synchronous journal failure cancels owner close without disposing its engine: "+foreground);
+                    var scheduler=Get<object>(window,"scheduler");var rendering=(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!;
+                    if(foreground)check(!timer.IsEnabled && !rendering && Get<int>(window,"requestedPreviewLongEdge")==edge,
+                        "Synchronous close failure retains the pending size without rendering during foreground work");
+                    else check(timer.IsEnabled || rendering,"Synchronous close failure resubmits the pending resize without another input");
+                    check(window.Status.Text==batch.Job.Error,"Synchronous journal failure reaches the main-window error state: "+foreground);
+                    if(foreground)
+                    {
+                        check(!window.AdjustmentPanel.IsEnabled && !window.ExportPng.IsEnabled && window.BusyIndicator.Visibility==Visibility.Visible,
+                            "Cancelled owner close retains the foreground busy gate");
+                        held.Release();InteractionChecks.PumpUntil(()=>import!.IsCompleted);import!.GetAwaiter().GetResult();
+                    }
+                    InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+                    var actual=Get<RenderedImage>(window,"result");using var oracle=new RenderEngine(0);
+                    var expected=oracle.Render(photo,adjustment.Clone(),look,edge,clipping:false,viewportPreview:true)!;
+                    check(Get<int>(window,"previewLongEdge")==edge && !timer.IsEnabled && Math.Max(actual.Image.PixelWidth,actual.Image.PixelHeight)==edge &&
+                        Pixels(actual.Image).SequenceEqual(Pixels(expected.Image)),"Synchronous close failure resumes exact resized pixels: "+foreground);
+                    check(window.AdjustmentPanel.IsEnabled && window.BusyIndicator.Visibility==Visibility.Collapsed && !batch.Job.Started,
+                        "Synchronous close failure restores editing and clears stale busy state: "+foreground);
+                }
+                window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+                check(Get<string>(window,"file")==other,"Synchronous close recovery permits photo switching: "+foreground);
+                window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
+                check(batch.Discarded && journal.Load()==null && Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null,
+                    "Synchronous close retries successfully after releasing the journal: "+foreground);
+            }
+            finally
+            {
+                held.Release();InteractionChecks.PumpUntil(()=>import?.IsCompleted ?? true);
+                if(window.IsVisible){window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+            }
         }
         void CloseRunning()
         {

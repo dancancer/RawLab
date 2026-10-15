@@ -76,9 +76,14 @@ public sealed partial class PhotoCanvas
         dc.DrawRectangle(shade,null,new Rect(bounds.X,r.Bottom,bounds.Width,Math.Max(0,bounds.Bottom-r.Bottom)));
         dc.DrawRectangle(shade,null,new Rect(bounds.X,r.Top,Math.Max(0,r.Left-bounds.Left),r.Height));
         dc.DrawRectangle(shade,null,new Rect(r.Right,r.Top,Math.Max(0,bounds.Right-r.Right),r.Height));
-        if(cropGrid)for(var i=1;i<3;++i){var pen=new Pen(Brushes.White,.6);dc.DrawLine(pen,new(r.Left+r.Width*i/3,r.Top),new(r.Left+r.Width*i/3,r.Bottom));dc.DrawLine(pen,new(r.Left,r.Top+r.Height*i/3),new(r.Right,r.Top+r.Height*i/3));}
+        if(cropGrid)for(var i=1;i<3;++i){
+            var top=new Point(r.Left+r.Width*i/3,r.Top);var bottom=new Point(top.X,r.Bottom);
+            var left=new Point(r.Left,r.Top+r.Height*i/3);var right=new Point(r.Right,left.Y);
+            dc.DrawLine(new Pen(OverlayPaper,2.6),top,bottom);dc.DrawLine(new Pen(OverlayPaper,2.6),left,right);
+            var pen=new Pen(OverlayInk,(double)GetValue(OverlayGridWidthProperty));dc.DrawLine(pen,top,bottom);dc.DrawLine(pen,left,right);
+        }
         dc.Pop();
-        var accent=(Brush)FindResource("Accent");dc.DrawRectangle(null,new Pen(accent,1.5),r);
-        foreach(var (_,p) in Handles(r))dc.DrawRectangle(Brushes.White,new Pen(accent,1),new Rect(p.X-4,p.Y-4,8,8));
+        var accent=(Brush)GetValue(OverlayAccentProperty);dc.DrawRectangle(null,new Pen(OverlayPaper,3.5),r);dc.DrawRectangle(null,new Pen(accent,1.5),r);
+        foreach(var (_,p) in Handles(r))dc.DrawRectangle(OverlayPaper,new Pen(accent,1),new Rect(p.X-4,p.Y-4,8,8));
     }
 }

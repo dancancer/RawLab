@@ -54,7 +54,7 @@ public sealed class HslPanel : StackPanel
         syncing=true;settings=value;
         for(var axis=0;axis<3;++axis)rows[axis].Refresh(Loc.Text(axisKeys[axis]),new(-100,100),value.Value(axis,channel),0,"%");
         for(var i=0;i<8;++i){
-            swatches[i].BorderBrush=i==channel ? (Brush)FindResource("Accent") : Brushes.Transparent;
+            if(i==channel)swatches[i].SetResourceReference(Button.BorderBrushProperty,"Indicator");else swatches[i].ClearValue(Button.BorderBrushProperty);
             AutomationProperties.SetItemStatus(swatches[i],i==channel ? Loc.Text("当前颜色") : "");
         }
         syncing=false;
