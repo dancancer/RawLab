@@ -34,7 +34,7 @@ public partial class MainWindow : Window
     private Parameter selectedParameter=Parameter.Exposure;
     private string? file,lut;
     private RenderEngine? engine;
-    private bool ready,syncing,interacting,exporting,closing,exactReady;
+    private bool ready,syncing,interacting,exporting,closing,closeFinished,exactReady;
     private bool compare=true,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,swipe;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
@@ -898,7 +898,11 @@ public partial class MainWindow : Window
         if(batchWindow?.Running==true)batchWindow.CancelExecution();
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
-        engine?.Dispose();engine=null;
+        closeFinished=true;engine?.Dispose();engine=null;
     }
-    private void FinishClose() { engine?.Dispose();engine=null;Closing-=WindowClosing;Close(); }
+    private void FinishClose()
+    {
+        if(closeFinished || scheduler.Active!=null || exporting)return;
+        closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();
+    }
 }

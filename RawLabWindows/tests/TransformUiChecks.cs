@@ -32,10 +32,13 @@ internal static class TransformUiChecks
             var import=window.ImportLookFiles([invalidLook,goodLook]);InteractionChecks.PumpUntil(()=>import.IsCompleted);
             check(import.GetAwaiter().GetResult().Count==1 && Get<string>(window,"lut")==goodLook,"Partial look import retains validated success and reports the invalid file");
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            // 用不同校准值证明草稿显影回调不会回写 committed WB。
+            Get<Adjustments>(window,"settings").ResolveWhiteBalance((9000,-30));Invoke(window,"MarkEdited");
             Invoke(window,"SaveEdits");var original=Get<Adjustments>(window,"settings").Capture();
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             var draft=Get<TransformDraft>(window,"transform");
             check(draft.Active && !window.ExportPng.IsEnabled,"Real WPF geometry workspace gates export");
+            check(Get<Adjustments>(window,"settings").Capture().SameAs(original),"Draft native WB result cannot overwrite deliberately different committed calibration");
             var previousLook=Get<string>(window,"lut");Set(window,"lut",Path.Combine(directory,"missing.cube"));
             typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false]);
             check(!window.ApplyDraftButton.IsEnabled && draft.Active,"Failed draft preview invalidates a previously ready Apply gate");
@@ -50,9 +53,9 @@ internal static class TransformUiChecks
             Commit(width,"62");Click(window.ApplyDraftButton);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(!draft.Active && store.Find(photo)!.Settings.Geometry?.CropWidth==.62,"Apply writes the draft once to photo memory");
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
-            Commit((TextBox)window.GeometryEditor.FindName("CropWidth"),"40");
+            Commit((TextBox)window.GeometryEditor.FindName("CropWidth"),"bad");
             Invoke(window,"CancelTransformDraft");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(Get<Adjustments>(window,"settings").Geometry.CropWidth==.62,"Cancel restores committed crop");
+            check(Get<Adjustments>(window,"settings").Geometry.CropWidth==.62 && !window.GeometryEditor.HasInvalidInput,"Cancel restores committed crop and clears invalid geometry input");
             Click(window.LensCategory);InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             ((CheckBox)window.LensEditor.FindName("Distortion")).IsChecked=true;
             InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
