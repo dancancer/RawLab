@@ -2,9 +2,12 @@
 
 ## Scope
 
-Local follow-up to the Android v0.8 verification failure. The production
-`BatchWorkflowInstrumentedTest` and its `240_000 ms` export wait remain unchanged.
-No production fix, timeout increase, push, PR, release, shared-device operation or Shared/core edit.
+Historical local investigation of the Android v0.8 verification failure, before the batch GPU
+preference fix. During this investigation the production `BatchWorkflowInstrumentedTest` and its
+`240_000 ms` export wait remained unchanged. No production fix, timeout increase, push, PR, release,
+shared-device operation or Shared/core edit was made in that investigation. The later
+[GPU preference fix and completed CPU batch workflow](batch-gpu-preference-verification.md)
+are recorded separately; the failed runs below retain their original results.
 
 - Baseline: `440b9788ff4cfd8a3f5dfa781b16a33997ccd801`.
 - Current application: `f598c74db28983c393b5560646cd01a77374a1b1`, delivered in `a55be23`.
@@ -96,8 +99,9 @@ alive in the GPU readback path, not terminated by LMK or a reported native excep
 `RawLabGPU` records the actual software renderer in both source versions:
 `ANGLE ... SwiftShader Device ... SwiftShader driver-5.0.0`, GLES 3.1.
 The source confirms AUTO tries GPU wavelet and falls back only on processing failure, not on
-slow successful software execution. Batch creates its own default-AUTO processor; the editor's
-GPU preference does not propagate into batch. That behavior is pre-existing, not a v0.8 change.
+slow successful software execution. At the investigated revisions, batch created its own
+default-AUTO processor; the editor's GPU preference did not propagate into batch. That behavior
+was pre-existing, not a v0.8 change.
 
 File evidence: `current-steady-native-stack.txt`, `baseline-steady-native-stack.txt`,
 `current-steady-perf.txt`, `current-late-perf.txt`, `current-qemu-sample.txt`,
@@ -157,10 +161,11 @@ slow path rather than v0.8 introducing this timeout.
 
 Both original runs are censored at 240 s, so they do not prove equal uncensored GPU throughput or
 exclude every possible smaller performance difference. The original failed production-test gate
-remains failed, not waived or converted to a PASS. CPU control is a diagnostic route, not a product
-fix: batch still defaults to AUTO and does not inherit the editor GPU switch. No production behavior
-was changed. These are emulator measurements, not physical-device GPU, thermal or throughput
-acceptance; they do not establish all-camera or single/batch pixel parity.
+remains failed, not waived or converted to a PASS. At this investigation's revision, CPU control
+was a diagnostic route, not a product fix: batch defaulted to AUTO and did not inherit the editor
+GPU switch. No production behavior was changed in this investigation. These are emulator
+measurements, not physical-device GPU, thermal or throughput acceptance; they do not establish
+all-camera or single/batch pixel parity.
 
 ## Shutdown
 

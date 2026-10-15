@@ -28,6 +28,8 @@ class BatchWorkflowInstrumentedTest {
         val model = compose.activity.model
         var output: Uri? = null
         try {
+            compose.runOnUiThread { model.setGpuEnabled(false) }
+            assertFalse(model.state.value.gpuEnabled)
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(target)) }
             compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
             assertNull(model.state.value.error)
@@ -61,6 +63,7 @@ class BatchWorkflowInstrumentedTest {
             compose.waitUntil(10_000) { compose.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT }
             compose.activityRule.scenario.recreate()
             assertSame(batch, compose.activity.model.batch.value)
+            assertFalse(compose.activity.model.state.value.gpuEnabled)
             compose.onNodeWithText("导出 1 张").assertIsDisplayed()
             compose.onNodeWithText("查看").performClick()
             val previewStarted = android.os.SystemClock.elapsedRealtime()
@@ -70,8 +73,12 @@ class BatchWorkflowInstrumentedTest {
             })
             capture("batch-effect.png")
             compose.onNodeWithText("确定").performClick()
+            val exportStarted = android.os.SystemClock.elapsedRealtime()
             compose.onNodeWithText("导出 1 张").performClick()
             compose.waitUntil(240_000) { batch.state.value.phase !in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING) }
+            instrumentation.sendStatus(2, android.os.Bundle().apply {
+                putString("stream", "Batch original-size export ms=${android.os.SystemClock.elapsedRealtime() - exportStarted}\n")
+            })
             assertEquals(batch.state.value.error, BatchPhase.COMPLETE, batch.state.value.phase)
             assertEquals(1, batch.state.value.successCount)
             output = Uri.parse(batch.state.value.job.rows.single().outputUri!!)
@@ -79,7 +86,7 @@ class BatchWorkflowInstrumentedTest {
             assertEquals(original, EditStore(File(context.filesDir, "edits")).load(identity))
             assertArrayEquals(source.readBytes(), target.readBytes())
             val single = File(root, "single.jpg")
-            NativeProcessor().use { it.export(target, null, settings, single, ExportFormat.JPEG) }
+            NativeProcessor(NativeProcessor.CPU).use { it.export(target, null, settings, single, ExportFormat.JPEG) }
             val singleBitmap = BitmapFactory.decodeFile(single.path)
             val batchBitmap = context.contentResolver.openInputStream(output!!)!!.use(BitmapFactory::decodeStream)
             assertTrue("Single and batch exports have identical pixels", singleBitmap.sameAs(batchBitmap))

@@ -495,12 +495,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (!current.canExport || mutableBatch.value != null) return
         val photo = current.photo ?: return
         mutableBatch.value = BatchExportModel(getApplication(), storage,
-            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name))
+            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name), gpuMode = gpuMode())
     }
 
     fun resumeBatch(job: BatchJob) {
         if (mutableBatch.value != null || mutable.value.draft != null || mutable.value.operation != Operation.NONE) return
-        mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job)
+        mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job, gpuMode = gpuMode())
     }
 
     fun closeBatch() {

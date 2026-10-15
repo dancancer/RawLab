@@ -188,3 +188,15 @@ budget. The evidence points to a pre-existing emulator software-GLES slow path r
 introducing this timeout. Both original runs remain censored at 240 s: this does not prove equal
 uncensored GPU throughput or exclude every smaller regression, change the original test result,
 or replace physical GPU acceptance.
+
+## Batch GPU Preference Follow-Up
+
+Batch target validation, effect preview and export now inherit the editor's GPU switch, including
+new and resumed batch entry points. GPU off selects CPU; GPU on retains AUTO with CPU fallback.
+The [local red/green verification](batch-gpu-preference-verification.md) first reproduced the ignored
+switch and unchanged 240000 ms timeout, then passed the entire existing batch workflow class:
+2/2 tests, 289.022 s total. Original-size Clean export completed in 133402 ms within the original
+240 s wait, with 4672x7008 output and identical CPU single/batch decoded pixels. The class total
+includes the independent single-export reference. No timeout or quality parameter was changed.
+The prior AUTO/SwiftShader failures remain historical failures, not reclassified passes; physical
+GPU acceptance and GPU-on full-resolution Clean completion remain unverified.
