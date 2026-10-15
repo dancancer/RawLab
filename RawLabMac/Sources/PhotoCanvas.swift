@@ -8,27 +8,65 @@ struct PhotoCanvas: View {
     let clipping: Bool
     var sourceHeight: Int? = nil
     var onPreviewSizeChange: ((Int) -> Void)? = nil
+    var cropSettings: GeometrySettings? = nil
+    var pendingGeometry: GeometrySettings? = nil
+    var cropAspectRatio: Double? = nil
+    var cropGrid = true
+    var onCropChange: ((GeometrySettings) -> Void)? = nil
+    var onCropEditingChanged: ((Bool) -> Void)? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGSize?
 
     var body: some View {
         GeometryReader { geometry in
-            let fit = max(0.001, min((geometry.size.width - 24) / CGFloat(frame.image.width),
-                                     (geometry.size.height - 24) / CGFloat(frame.image.height)))
+            let rendered = CGSize(width: frame.image.width, height: frame.image.height)
+            let native = CGSize(width: CGFloat(sourceWidth), height: sourceHeight.map(CGFloat.init) ??
+                CGFloat(sourceWidth) * rendered.height / rendered.width)
+            let displayedGeometry = cropSettings ?? pendingGeometry
+            let straighten = MacStraightenPreview(source: native, degrees: displayedGeometry?.straightenDegrees ?? 0)
+            let safeRendered = straighten.safeRenderedSize(rendered)
+            let selection = pendingGeometry.map {
+                MacCropInteraction.selectionBounds(crop: MacCropInteraction.rect(from: $0),
+                    imageBounds: CGRect(origin: .zero, size: safeRendered))
+            }
+            let fitted = selection?.size ?? straighten.rotatedSize(rendered)
+            let fit = max(0.001, min((geometry.size.width - 24) / fitted.width,
+                                     (geometry.size.height - 24) / fitted.height))
             let factor = viewport.factor(fit: fit, displayScale: displayScale,
                                          sourceWidth: CGFloat(sourceWidth), renderedWidth: CGFloat(frame.image.width))
             let previewEdge = viewport.previewLongEdge(canvas: geometry.size, displayScale: displayScale,
                 source: CGSize(width: CGFloat(sourceWidth), height: sourceHeight.map(CGFloat.init) ??
                     CGFloat(sourceWidth) * CGFloat(frame.image.height) / CGFloat(frame.image.width)))
+            let displayPan = CGSize(width: pan.width + (safeRendered.width / 2 - (selection?.midX ?? safeRendered.width / 2)) * factor,
+                                    height: pan.height + (safeRendered.height / 2 - (selection?.midY ?? safeRendered.height / 2)) * factor)
+            let imageBounds = MacCropInteraction.imageBounds(canvasSize: geometry.size,
+                renderedSize: safeRendered, factor: factor, pan: displayPan)
+            let sourceBounds = MacCropInteraction.imageBounds(canvasSize: geometry.size,
+                renderedSize: rendered, factor: factor, pan: displayPan)
             ZStack {
                 Color.clear
                 Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)
                     .frame(width: CGFloat(frame.image.width) * factor, height: CGFloat(frame.image.height) * factor)
                     .overlay {
                         if clipping { Image(decorative: frame.clipping, scale: 1).resizable().interpolation(.none) }
-                    }.offset(x: pan.width, y: pan.height)
-            }.frame(width: geometry.size.width, height: geometry.size.height).clipped().contentShape(Rectangle())
+                    }.rotationEffect(.degrees(straighten.angle)).offset(x: displayPan.width, y: displayPan.height)
+                if let cropSettings {
+                    MacCropOverlay(settings: cropSettings, imageBounds: imageBounds, canvasSize: straighten.safeCanvas,
+                        previewIdentity: ObjectIdentifier(frame.image), aspectRatio: cropAspectRatio, showsGrid: cropGrid,
+                        imageOutline: straighten.outline(in: sourceBounds),
+                        onChange: onCropChange, onEditingChanged: onCropEditingChanged)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+                .mask {
+                    if let selection {
+                        Rectangle().frame(width: selection.width * factor, height: selection.height * factor)
+                            .offset(x: pan.width, y: pan.height)
+                    } else { Rectangle() }
+                }
+                .clipped().contentShape(Rectangle())
                 .gesture(DragGesture().onChanged { value in
+                    guard onCropChange == nil else { return }
                     if dragOrigin == nil { dragOrigin = pan }
                     pan = CGSize(width: dragOrigin!.width + value.translation.width,
                                  height: dragOrigin!.height + value.translation.height)

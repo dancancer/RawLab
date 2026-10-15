@@ -38,6 +38,7 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .caption) var toolHeight = 82.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
     @ScaledMetric(relativeTo: .body) var panelHeight = 256.0
+    @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
 
     var body: some View {
         let _ = localizationLocale

@@ -68,7 +68,11 @@ struct PresentationTests {
         check(sameWhiteBalance.wb_mode == SONY2FUJI_WB_CAMERA,
               "Choosing Custom at the displayed as-shot values does not shift the image")
         var panel = AdjustmentPanelLayout()
-        check(panel.height(available: 800) == 260, "Adjustment panel starts at its default height")
+        check(panel.height(available: 800) == 252, "Adjustment panel starts at its default height")
+        panel.selectHeight(288)
+        check(panel.height(available: 800) == 288, "Grouped tools request their readable editor height")
+        panel.selectHeight(304)
+        check(panel.height(available: 620) == 304, "Advanced vignette fits within the minimum window bound")
         panel.resize(to: 340, available: 800)
         check(panel.height(available: 800) == 340, "Adjustment panel accepts a dragged height")
         panel.collapsed = true
