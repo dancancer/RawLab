@@ -51,6 +51,9 @@ internal static class TransformUiChecks
             var width=(TextBox)window.GeometryEditor.FindName("CropWidth");Commit(width,"60");
             check(draft.Geometry.CropWidth==.6 && Get<Adjustments>(window,"settings").Capture().SameAs(original) && store.Find(photo)!.Settings.SameAs(original),
                 "Crop preview changes neither committed settings nor saved record");
+            var cropSurface=EditorShellChecks.ArrangeLayout(window,new Size(1000,680));
+            InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
+            EditorShellChecks.CaptureLayout(window,cropSurface,Path.Combine(output,"geometry-draft.png"));
             width.Text="bad";width.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(window),Environment.TickCount,Key.Escape){RoutedEvent=Keyboard.PreviewKeyDownEvent});
             check(draft.Active && width.Text=="60","Escape restores only the current numeric input, not the geometry draft");
             Commit(width,"bad");Click(window.ApplyDraftButton);
