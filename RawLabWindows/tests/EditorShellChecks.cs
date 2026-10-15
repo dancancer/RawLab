@@ -55,6 +55,12 @@ internal static class EditorShellChecks
             check(provider.Minimum==-4 && provider.Maximum==4 && provider.SmallChange==.01 && Math.Abs(provider.Value-.1)<1e-10,"Slider automation reports actual numeric units, not normalized position");
             row.Refresh("Exposure",new(-4,4,.01,.1,.01,false,2),4,0,"EV");check(Wheel(120).Handled,"Boundary wheel remains consumed");
             host.FontSize=26;host.UpdateLayout();check(row.ActualHeight>=32 && row.Number.ActualHeight>=26 && row.Number.Width>=144,"Enlarged parameter text grows its row and numeric field naturally");
+            host.Content=null;var details=new Expander{Content=row,IsExpanded=true};
+            var checkbox=new CheckBox{Content="Enabled"};var radio=new RadioButton{Content="Automatic"};
+            var themed=new StackPanel();themed.Children.Add(details);themed.Children.Add(checkbox);themed.Children.Add(radio);host.Content=themed;host.UpdateLayout();
+            check(ReferenceEquals(row.Children.OfType<TextBlock>().First().Foreground,app.Resources["Foreground"]) &&
+                ReferenceEquals(checkbox.Foreground,app.Resources["Foreground"]) && ReferenceEquals(radio.Foreground,app.Resources["Foreground"]),
+                "Native expanders and binary controls retain readable editor foreground");
             host.Close();
         }
         finally{window?.Close();Loc.Initialize(previous);app.Shutdown();}
