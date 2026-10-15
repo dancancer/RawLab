@@ -1,6 +1,29 @@
 import XCTest
 
 final class EditorV4UITests: XCTestCase {
+    func testGeometrySourceRestorationUsesUncroppedPreview() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else {
+            throw XCTSkip("Run RawLab/tests/geometry-source-ui.sh to enable the separate source-restoration harness.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
+        app.launch()
+        let probe = app.staticTexts["geometry.review.probe"]
+        XCTAssertTrue(probe.waitForExistence(timeout: 15))
+        let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let text = probe.value as? String, let data = text.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+            return json["done"] as? Bool == true
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 120), .completed)
+        let text = try XCTUnwrap(probe.value as? String)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let checks = try XCTUnwrap(json["checks"] as? [String: Bool])
+        print("Geometry source harness result: \(text)")
+        XCTAssertGreaterThanOrEqual(checks.count, 35)
+        let failures = checks.filter { !$0.value }.map(\.key).sorted()
+        XCTAssertTrue(failures.isEmpty, "Failed checks: \(failures)\n\(text)")
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait

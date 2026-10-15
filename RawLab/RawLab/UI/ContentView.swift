@@ -129,6 +129,10 @@ struct ContentView: View {
             pendingToolSelection = nil
             draftExitPresented = false
             cancelRulerFocus()
+            // Import renders the committed crop; the retained geometry tool needs the full image.
+            if geometrySelected && !viewModel.isBusy {
+                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
+            }
         }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy && photoImportTask == nil {
