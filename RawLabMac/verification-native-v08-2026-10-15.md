@@ -27,7 +27,7 @@ The old tree's `build/local-verification.json` and `build/empty-state-copy-verif
 
 ## Current stage
 
-Latest checkpoint: both the precise-crop focus teardown and the separate crop pointer-release notification defect have targeted repairs. The latter is verified by a deterministic publication-order RED/GREEN, the complete affected **174-check** draft suite, a standard build, **22 effective native releases in the clean formal app** and **12 same-probe native releases with getter-order evidence**. A visible native Apply click committed the moved crop. The notification repair adds no thread hop, timer, scheduler reset, crop math or interface change. PNG/DNG and native batch cancel/retry/crash-recovery evidence remains as recorded below; unrelated full suites were not rerun. Accessibility remains PARTIAL, and unexercised cases remain explicit.
+Latest checkpoint: both the precise-crop focus teardown and the separate crop pointer-release notification defect have targeted repairs. The latter is committed in `59101c5dea1c0a831a3865bcea6ec5fe78a1d34c`, verified by a deterministic publication-order RED/GREEN, the complete affected **174-check** draft suite, a standard build, **22 effective native releases in the clean formal app** and **12 same-probe native releases with getter-order evidence**. A visible native Apply click committed the moved crop. The notification repair adds no thread hop, timer, scheduler reset, crop math or interface change. PNG/DNG and native batch cancel/retry/crash-recovery evidence remains as recorded below; unrelated full suites were not rerun. Accessibility remains PARTIAL, and unexercised cases remain explicit.
 
 The initial worktree build completed with exit 0 and `PASS: all non-system dynamic dependencies are bundled and signed`, logged in `build/native-acceptance/build.log`. The build script's built-in DNG check also passed; the inherited 132/50/snapshot suites were not rerun at that initial checkpoint.
 
@@ -243,3 +243,4 @@ Local phase commits (no push, PR, merge or release):
 12. `ec96503a9c26f441bbacc1f0b52c5d2788af28cb`: human physical crop Apply and actual Tab/Shift-Tab focus cycles.
 13. `861d235411a0d52e89a12cd770c0f06f24757c3d`: isolated diagnostic setup, explicit ineffective-input boundary and fresh artifact audit.
 14. `74450548ceacc131d994e43a45813dff69e31d66`: hosted editor crop-release failure, direct visible Apply refusal and preserved private registry evidence.
+15. `59101c5dea1c0a831a3865bcea6ec5fe78a1d34c`: targeted post-write interaction notification, publication RED/GREEN, 174-check regression, standard build, clean-app native verification and same-probe trace comparison.
