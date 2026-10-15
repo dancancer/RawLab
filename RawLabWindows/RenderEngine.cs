@@ -8,7 +8,7 @@ namespace RawLab.Windows;
 internal sealed record RenderedImage(BitmapSource Image, BitmapSource? Clipping, uint[] Histogram, double Shadows, double Highlights, float Baseline, (double Temperature,double Tint)? WhiteBalance, int Backend, LensInfo? Lens = null, int NativeWidth = 0, int NativeHeight = 0);
 internal sealed record PreviewFrame(RenderedImage Neutral,RenderedImage Result);
 internal sealed record EmbeddedPreview(BitmapSource? Image,int Width,int Height);
-internal sealed class RenderEngine : IDisposable
+internal sealed partial class RenderEngine : IDisposable
 {
     private Native.Session session = new();
     private int gpuMode;

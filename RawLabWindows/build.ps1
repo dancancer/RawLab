@@ -51,7 +51,10 @@ $iconPath=Join-Path $native 'RawLab.ico'
 $publish = @('publish',"$PSScriptRoot/RawLabWindows.csproj",'-c','Release','-r','win-x64','-o',$output,'--self-contained',([bool]$SelfContained).ToString().ToLowerInvariant(),"-p:ApplicationIcon=$iconPath")
 Invoke-Checked $DotNet $publish
 & "$PSScriptRoot/build-exiftool.ps1" -Output $output
-Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll" $output -Force
+Copy-Item "$native/core/Release/sony2fuji.dll", "$native/cli/Release/sony2fuji.exe", "$native/Release/raw.dll" $output -Force
+$schemas = Join-Path $output 'AgentSchemas'
+New-Item -ItemType Directory -Force $schemas | Out-Null
+Copy-Item "$repo/lutools/docs/edit-json-v*.schema.json", "$repo/lutools/examples/edit-recipes/complete-v4.json" $schemas -Force
 # Package the compiler runtime app-locally; users do not need Visual Studio.
 $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

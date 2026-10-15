@@ -11,7 +11,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')
+$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
     if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
@@ -74,6 +74,7 @@ foreach($name in @('geometry','transform-ui','editor-review','photo-features','i
     if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
     Invoke-Check $name $arguments
 }
+Invoke-Check 'agent-recipe' @($runner,'--agent-recipe',$repo,$RawPath,(Join-Path $NativeArtifacts 'sony2fuji.exe'))
 $missing=@($selected | Where-Object {$_ -notin $summary.name})
 if($missing.Count -gt 0){throw "Selected suites did not run: $($missing -join ', ')."}
 if(@($summary | Where-Object {$_.exitCode -ne 0}).Count -gt 0){throw 'Some checks failed; inspect summary.json and individual logs.'}

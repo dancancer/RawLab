@@ -23,7 +23,7 @@ if($args[0] -eq 'msbuild'){
 }
 exit 0
 '@)
-$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')
+$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}
@@ -63,7 +63,7 @@ try{
         Check ($last[1] -eq '--about' -and $last[0] -like '*RawLabWindows.Tests.dll') "Selected suite uses its actual DLL mode: $selection"
     }
     $result=Run '' ''
-    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($names -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq 25) 'Empty selection runs the complete declared suite list successfully'
+    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($names -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+2) 'Empty selection runs the complete declared suite list successfully'
     foreach($failure in @('build','msbuild','about','log','missing-command','missing-artifacts')){
         $result=Run 'about,profile-isolation' $failure
         Check ($result.Code -ne 0 -and $result.Text -notmatch 'PASS: Windows v08') "External failure stays nonzero: $failure"

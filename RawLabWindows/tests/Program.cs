@@ -38,6 +38,7 @@ static class Program
         {
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==4 && args[0]=="--agent-recipe") { AgentRecipeChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} Agent recipe checks");return 0; }
             if(args.Length==3 && args[0]=="--entry-selection") { EntrySelectionChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} entry selection checks");return 0; }
             if(args.Length==3 && args[0]=="--resources") { ResourceChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} resource checks");return 0; }
             if(args.Length==2 && args[0]=="--default-isolation") { DefaultIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} default isolation checks");return 0; }

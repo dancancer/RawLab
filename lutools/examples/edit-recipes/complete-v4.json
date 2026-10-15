@@ -1,0 +1,85 @@
+{
+  "schema_version": 4,
+  "input": {
+    "path": "photo.DNG"
+  },
+  "edits": {
+    "exposure": {
+      "mode": "preview",
+      "ev": 0,
+      "brightness": 1
+    },
+    "white_balance": {
+      "mode": "camera"
+    },
+    "look": {
+      "path": null,
+      "strength": 1
+    },
+    "geometry": {
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "quarter_turns": 0,
+      "flip_horizontal": false,
+      "flip_vertical": false,
+      "straighten_degrees": 0,
+      "perspective": {
+        "horizontal": 0,
+        "vertical": 0
+      }
+    },
+    "tone": {
+      "contrast": 1.2,
+      "saturation": 0.9,
+      "highlights": -0.2,
+      "shadows": 0.25,
+      "s_curve": 0.1
+    },
+    "detail": {
+      "sharpening": 0.6
+    },
+    "hsl": {
+      "hue": [0, 4, 0, 0, 0, 0, 0, 0],
+      "saturation": [0, -8, 0, 0, 0, 0, 0, 5],
+      "lightness": [0, 3, 0, 0, 0, 0, 0, 0]
+    },
+    "effects": {
+      "vignette_amount": -20,
+      "vignette_midpoint": 50,
+      "vignette_roundness": 0,
+      "vignette_feather": 60,
+      "vignette_highlights": 15,
+      "grain_amount": 12,
+      "grain_size": 25,
+      "grain_roughness": 50
+    },
+    "denoise": {
+      "raw_level": 1,
+      "chroma_mode": 1,
+      "wavelet": {
+        "enabled": true,
+        "luma": 15,
+        "chroma": 46,
+        "coarse": 50
+      }
+    },
+    "lens_correction": {
+      "distortion": false,
+      "tca": false,
+      "auto_crop": true,
+      "profile_id": null
+    }
+  },
+  "output": {
+    "path": "edited.png",
+    "format": "png",
+    "jpeg_quality": 95,
+    "size": {
+      "mode": "native"
+    }
+  }
+}
