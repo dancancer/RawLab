@@ -61,6 +61,44 @@ import SwiftUI
         return crop.cropWidth * Double(canvas.width) / (crop.cropHeight * Double(canvas.height))
     }
 
+    static func cropAspectBoundaryChecks(_ model: EditorModel, raw: URL, edits: URL) throws {
+        let committed = model.settings
+        try check(model.beginGeometryDraft(tab: .crop), "aspect-boundary draft opens")
+        try wait(model, draft: true, "aspect-boundary reference")
+        let reference = model.result!.image
+        for y in [0.01, 0.84] {
+            model.selectCropAspect(.free)
+            model.updateGeometryDraft {
+                $0.cropX = 0.06; $0.cropY = y; $0.cropWidth = 0.15; $0.cropHeight = 0.15
+            }
+            try check(model.geometryDraftSettings.isValid, "the off-center free crop is valid before fitting")
+            model.selectCropAspect(.threeTwo)
+            try check(model.cropAspectPreset == .threeTwo && !model.cropAspectSwapped,
+                      "the three-two preset is selected at the crop boundary")
+            try check(model.geometryDraftSettings.isValid && abs(physicalRatio(model) - 1.5) < 1e-9,
+                      "the selected three-two preset actually refits the off-center crop within strict bounds")
+            try check(model.geometryDraftPreviewReady && model.geometryDraftCanApply && !model.busy &&
+                      model.result!.image === reference && model.settings == committed,
+                      "bounded aspect fitting reuses the reference without committing the draft")
+            model.swapCropAspect()
+            try check(model.cropAspectSwapped && model.geometryDraftSettings.isValid &&
+                      abs(physicalRatio(model) - 2.0 / 3) < 1e-9,
+                      "aspect swap at the boundary keeps the reciprocal physical crop ratio valid")
+            model.swapCropAspect()
+            try check(!model.cropAspectSwapped && model.geometryDraftSettings.isValid &&
+                      abs(physicalRatio(model) - 1.5) < 1e-9,
+                      "swapping back retains a valid crop matching the selected preset")
+        }
+        let fitted = model.geometryDraftSettings
+        try check(model.applyGeometryDraft() && model.settings.geometrySettings == fitted &&
+                  saved(raw, directory: edits).geometrySettings == fitted,
+                  "Apply persists the fitted boundary crop rather than the preceding free crop")
+        try wait(model, "aspect-boundary Apply")
+        model.settings = committed
+        try check(model.saveEdits(), "aspect-boundary checks restore their private committed baseline")
+        try wait(model, "aspect-boundary cleanup")
+    }
+
     static func cropApplyPublicationChecks(_ model: EditorModel) throws {
         try check(model.geometryDraftCanApply, "crop publication starts with an applicable draft")
         model.setGeometryCropInteracting(true)
@@ -180,6 +218,11 @@ import SwiftUI
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "crop-aspect-boundary" {
+            try cropAspectBoundaryChecks(model, raw: a, edits: edits)
+            print("PASS: \(checks) focused crop aspect boundary checks")
+            return
+        }
         if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "crop-input-routing" {
             try cropInputRoutingChecks(model)
             print("PASS: \(checks) focused crop input routing checks")
@@ -200,6 +243,7 @@ import SwiftUI
             try cropApplyPublicationChecks(model)
             return
         }
+        try cropAspectBoundaryChecks(model, raw: a, edits: edits)
         try cropInputRoutingChecks(model)
         try straightenPreviewChecks(model)
         try windowCloseChecks(model)

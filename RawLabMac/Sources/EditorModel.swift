@@ -253,8 +253,8 @@ final class EditorModel: ObservableObject {
     }
 
     private func fitDraftCropAspect() {
-        let rect = CropInteraction.fitting(ratio: cropAspectRatio, in: geometryCanvasSize,
-                                          around: CropInteraction.rect(from: geometryDraftSettings))
+        let rect = MacCropInteraction.fitting(ratio: cropAspectRatio, in: geometryCanvasSize,
+                                             around: CropInteraction.rect(from: geometryDraftSettings))
         updateGeometryDraft { $0 = CropInteraction.applying(rect: rect, to: $0) }
     }
 
