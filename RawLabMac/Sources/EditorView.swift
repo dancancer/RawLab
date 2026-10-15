@@ -210,8 +210,8 @@ struct EditorView: View {
                     }
                 } else {
                     Image(systemName: "photo.on.rectangle.angled").font(.system(size: 36)).foregroundStyle(.secondary)
-                    Text(L10n.text("RAW 照片")).font(.title3)
                     Button(action: model.openPanel) { Label(L10n.text("打开 RAW…"), systemImage: "folder") }.controlSize(.large)
+                        .accessibilityIdentifier("editor.empty.openRAW")
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
         }

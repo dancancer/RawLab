@@ -150,6 +150,34 @@ struct CompactControlsPresentationTests {
         let model = EditorModel(lookDirectory: state.appendingPathComponent("looks"),
                                 editDirectory: state.appendingPathComponent("edits"),
                                 batchDirectory: state.appendingPathComponent("batch"))
+        if ProcessInfo.processInfo.environment["RAWLAB_SNAPSHOT_EMPTY_ONLY"] == "1" {
+            guard let identifier = ProcessInfo.processInfo.environment["RAWLAB_SNAPSHOT_LANGUAGE"],
+                  let language = AppLanguage(rawValue: identifier), language != .system,
+                  let path = Bundle.main.path(forResource: identifier, ofType: "lproj"),
+                  let localization = Bundle(path: path) else { throw RenderError.failed("Pass a supported empty-state snapshot language") }
+            UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: identifier, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
+            let openTitle = localization.localizedString(forKey: "打开 RAW…", value: "missing", table: nil)
+            guard openTitle != "missing", L10n.text("打开 RAW…") == openTitle else {
+                throw RenderError.failed("Missing localized Open RAW entry: \(identifier)")
+            }
+            var snapshots: [SnapshotEvidence] = []
+            for (name, size) in [("empty-minimum", NSSize(width: 950, height: 620)),
+                                 ("empty-wide", NSSize(width: 1440, height: 900))] {
+                snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
+                    size: size, expectedFields: 1, output: output))
+            }
+            guard model.file == nil, model.result == nil, !model.busy, !model.exporting else {
+                throw RenderError.failed("Empty-state snapshots changed the editor state")
+            }
+            let report = Report(method: "Native NSHostingView.cacheDisplay of an unshown test-owned window; no screen capture or input automation",
+                fixture: "No photo opened", renderedWidth: 0, renderedHeight: 0,
+                limitations: ["Open RAW label is checked against the selected localization bundle and visually inspected in the snapshots.",
+                    "Native file-panel interaction remains pending Mac unlock; its model.openPanel binding and Command-O entry are unchanged."], snapshots: snapshots)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(report).write(to: output.appendingPathComponent("report.json"))
+            print("PASS: 2 empty-state snapshots, localized Open RAW entry: \(openTitle); no photo opened")
+            return
+        }
         model.open(fixture)
         try await waitForRender(model)
         model.settings.exposure = 1.25
