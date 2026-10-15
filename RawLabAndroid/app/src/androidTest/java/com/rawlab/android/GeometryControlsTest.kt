@@ -31,11 +31,14 @@ class GeometryControlsTest {
         compose.onNodeWithTag("geometry.rotate-right").performScrollTo().performClick()
         compose.onNodeWithTag("geometry.flip-horizontal").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, value.quarterTurns); assertTrue(value.flipHorizontal) }
-        compose.onNodeWithTag("geometry.crop-2").performScrollTo().performTextReplacement("110")
-        compose.onNodeWithTag("geometry.apply-crop").assertIsNotEnabled()
-        compose.onNodeWithTag("geometry.crop-2").performTextReplacement("75")
-        compose.onNodeWithTag("geometry.crop-0").performTextReplacement("20")
-        compose.onNodeWithTag("geometry.apply-crop").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").performScrollTo().performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("110")
+        compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("75")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_x}").performScrollTo().performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("20")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(.2f, value.cropX); assertEquals(.75f, value.cropWidth) }
         compose.onNodeWithContentDescription(context.getString(R.string.geometry_reset)).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(GeometrySettings(), value) }

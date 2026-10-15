@@ -67,7 +67,7 @@ fun AboutDialog(state: UpdateState, onAutomatic: (Boolean) -> Unit, onCheck: () 
 }
 
 @Composable
-private fun LanguageMenu() {
+internal fun LanguageMenu() {
     val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }

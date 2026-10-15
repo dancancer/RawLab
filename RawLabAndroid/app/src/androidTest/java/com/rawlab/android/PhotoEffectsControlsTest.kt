@@ -13,6 +13,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -28,16 +30,16 @@ class PhotoEffectsControlsTest {
         ))
         compose.setContent {
             RawLabTheme {
-                Surface(Modifier.width(360.dp).testTag("effects-controls")) {
+                Surface(Modifier.width(360.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
                     PhotoEffectsControls(value, vignette = true, enabled = true) { next, _ -> value = next }
                 }
             }
         }
         listOf("强度", "中点", "圆度", "羽化", "高光保护").forEach {
-            compose.onNodeWithText(it).assertIsDisplayed()
+            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
         }
         capture("vignette")
-        compose.onNodeWithContentDescription("重置暗角").performClick()
+        compose.onNodeWithContentDescription("重置暗角").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(PhotoEffectsSettings().copy(grainAmount = 50f), value)
         }

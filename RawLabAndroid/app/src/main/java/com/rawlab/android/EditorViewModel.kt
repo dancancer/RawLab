@@ -31,16 +31,20 @@ data class EditorState(
     val message: String? = null,
     val lookImportReport: String? = null,
     val gpuEnabled: Boolean = true,
+    val draft: AdjustmentDraft? = null,
 ) {
-    val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending && operation == Operation.NONE
+    val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
+        operation == Operation.NONE && draft == null && saveState != EditSaveState.FAILED
     val controlsEnabled get() = photo != null && operation == Operation.NONE
+    val visibleEdits get() = draft?.project(edits) ?: edits
+    val canApplyDraft get() = draft != null && controlsEnabled && exact && !rendering && error == null
 }
 
 private sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
-        val edge: Int = 1600) : Work
+        val edge: Int = 1600, val draft: Boolean = false) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
         val longEdge: Int?, val gpuMode: Int) : Work
     data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings) : Work
@@ -193,6 +197,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 is WorkResult.Preview -> {
                     val request = value.request
+                    if (request.draft) {
+                        if (mutable.value.draft != null) mutable.value = EditorStateReducer.renderFinished(mutable.value)
+                            .copy(preview = value.pair, exact = !request.interactive, error = null)
+                        return@fold
+                    }
                     if (request.importing) {
                         mutable.value.photo?.file?.takeIf { it != request.photo.file }?.delete()
                     }
@@ -277,7 +286,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun importPhoto(uri: Uri?) {
-        if (uri == null || mutable.value.operation != Operation.NONE) return
+        if (uri == null || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         val current = mutable.value
         if (current.photo != null && persist(current.photo, current.edits) == EditSaveState.FAILED) {
             mutable.value = current.copy(saveState = EditSaveState.FAILED, error = text(R.string.edit_storage_error))
@@ -318,7 +327,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun edit(edits: EditSettings, interactive: Boolean = false) {
         val current = mutable.value
-        if (!current.controlsEnabled) return
+        if (!current.controlsEnabled || current.draft != null) return
         val look = current.looks.firstOrNull { it.id == edits.film }
         if (look?.managed == true && !look.available) {
             mutable.value = current.copy(error = text(R.string.look_unavailable))
@@ -337,7 +346,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updatePreviewSize(edge: Int) {
         val current = mutable.value
-        if (disposed || current.photo == null || edge !in 1..1600 ||
+        if (disposed || current.photo == null || current.draft != null || edge !in 1..1600 ||
             (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null))) return
         requestedPreviewLongEdge = edge
         if (!current.controlsEnabled) return
@@ -361,10 +370,57 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun retry() { edit(mutable.value.edits) }
+    fun beginDraft(group: AdjustmentGroup) {
+        val current = mutable.value
+        if (!current.canExport) return
+        previewResizeJob?.cancel()
+        previewResizeJob = null
+        mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits), previewResizePending = false)
+        if (group == AdjustmentGroup.GEOMETRY && current.edits.geometry != current.edits.geometry.uncropped()) renderDraft(false)
+    }
+
+    fun changeDraft(edits: EditSettings, interactive: Boolean = false) {
+        val current = mutable.value
+        val previous = current.draft ?: return
+        if (!current.controlsEnabled) return
+        val next = previous.update(edits)
+        mutable.value = current.copy(draft = next)
+        // Crop-only edits are an overlay on the full transformed preview, not a RAW render.
+        if (previous.group == AdjustmentGroup.GEOMETRY &&
+            previous.value.geometry.uncropped() == next.value.geometry.uncropped() && (interactive || current.exact)) return
+        renderDraft(interactive)
+    }
+
+    private fun renderDraft(interactive: Boolean) {
+        val current = mutable.value
+        val draft = current.draft ?: return
+        val photo = current.photo ?: return
+        val edits = draft.project(current.edits).let {
+            if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
+        }
+        mutable.value = current.copy(rendering = true, exact = false, error = null)
+        currentRevision = queue.submit(Work.Preview(photo, edits, interactive, gpuMode(), edge = 1600, draft = true))
+    }
+
+    fun applyDraft() {
+        val current = mutable.value
+        if (!current.canApplyDraft) return
+        val edits = current.draft!!.project(current.edits)
+        mutable.value = current.copy(draft = null)
+        edit(edits)
+    }
+
+    fun discardDraft() {
+        val current = mutable.value
+        if (current.draft == null) return
+        mutable.value = current.copy(draft = null)
+        edit(current.edits)
+    }
+
+    fun retry() { if (mutable.value.draft != null) renderDraft(false) else edit(mutable.value.edits) }
     fun autoExposure() {
         val current = mutable.value
-        if (!current.controlsEnabled || current.preview == null || current.rendering) return
+        if (!current.controlsEnabled || current.preview == null || current.rendering || current.draft != null) return
         mutable.value = current.copy(rendering = true, exact = false, error = null)
         currentRevision = queue.submit(Work.AutoExposure(current.photo!!, current.edits))
     }
@@ -399,11 +455,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun setGpuEnabled(enabled: Boolean) {
         if (mutable.value.operation != Operation.NONE) return
         mutable.value = mutable.value.copy(gpuEnabled = enabled)
-        if (mutable.value.photo != null) edit(mutable.value.edits)
+        if (mutable.value.draft != null) renderDraft(false)
+        else if (mutable.value.photo != null) edit(mutable.value.edits)
     }
 
     fun beginExport(): Boolean {
         if (!mutable.value.canExport) return false
+        val photo = mutable.value.photo ?: return false
+        if (persist(photo, mutable.value.edits) == EditSaveState.FAILED) {
+            mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED)
+            return false
+        }
         mutable.value = mutable.value.copy(operation = Operation.PICK_EXPORT, error = null)
         return true
     }
@@ -437,7 +499,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun resumeBatch(job: BatchJob) {
-        if (mutableBatch.value != null) return
+        if (mutableBatch.value != null || mutable.value.draft != null || mutable.value.operation != Operation.NONE) return
         mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job)
     }
 
