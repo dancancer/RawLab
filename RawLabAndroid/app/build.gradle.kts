@@ -45,15 +45,6 @@ val prepareAssets by tasks.registering(Sync::class) {
         includeEmptyDirs = false
     }
 }
-val generatedResources = layout.buildDirectory.dir("generated/rawlabResources")
-val prepareIcon by tasks.registering(Sync::class) {
-    into(generatedResources)
-    from(repo.resolve("RawLabMac/Resources/AppIcon.png")) {
-        into("drawable-nodpi")
-        rename { "rawlab_icon.png" }
-    }
-}
-
 android {
     namespace = "com.rawlab.android"
     compileSdk = 35
@@ -76,13 +67,12 @@ android {
     kotlinOptions { jvmTarget = "17" }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     sourceSets["main"].assets.srcDir(generatedAssets)
-    sourceSets["main"].res.srcDir(generatedResources)
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
-tasks.named("preBuild").configure { dependsOn(prepareAssets, prepareIcon) }
+tasks.named("preBuild").configure { dependsOn(prepareAssets) }
 tasks.matching {
     it.name.endsWith("AndroidTestAssets") || it.name.endsWith("AndroidTestLintModel") ||
         (it.name.startsWith("lintAnalyze") && it.name.endsWith("AndroidTest"))
