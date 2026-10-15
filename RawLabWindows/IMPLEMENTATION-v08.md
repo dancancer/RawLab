@@ -44,6 +44,14 @@
 
 ## Progress
 
+### Test Isolation Follow-up
+
+- [x] Inventory every Windows test executable, MainWindow startup, and default user-state write before final verification.
+- [x] Prove localization admission and automatic-update isolation failures using private fixtures, then protect both executable entries before startup.
+- [x] Give WPF tests private edit/library/batch/update state; localize against a private preference file without backup/restore of user data.
+- [x] Regress conditional status-bar layout changes across language, text size, and notification states; fix confirmed Windows layout instability.
+- [x] Complete the broad Windows matrix and final affected-source recheck, including both isolation suites, real StartupUri localization UI and unchanged-default-state audits. Prepare the authorized commit/PR #53 update; merging remains prohibited.
+
 - Implementation commits are local to `feature/windows-v08-editor`; no shared or other-platform source changed.
 - Managed editing, denoise-model, localization and Windows cross-build pass. The isolated Windows full `build.ps1 -Test` follow-up passes 33/33 CTest, About and 152 default WPF checks; the test-output discovery failure is fixed and covered by a PowerShell parser regression.
 - Native targeted checks and final affected-check reruns are recorded separately in `VERIFICATION-v08.md`. Programmatic WPF composition is not physical DPI, Snap, Narrator, touchpad or multi-monitor acceptance.

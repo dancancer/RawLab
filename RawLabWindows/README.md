@@ -191,6 +191,21 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 参数、photo-features/interactions 分派、文件锁和损坏 JSON，检查拒绝后 journal、staging、成片的文件列表、字节和修改时间不变，
 且不创建输出或 WPF Application。另一个私有对照调用真实恢复清理，证明 fixture 确实能触发风险。
 
+独立 `localization-ui/LocalizationUiChecks.csproj` 也在任何偏好处理或 WPF 启动前执行同一保护。
+其 `--default-isolation <output>` 回归使用私有 Running/Publishing、文件锁和损坏 JSON，
+确认 journal/staging/源文件/成片的文件列表、字节、修改时间保持，且未进入启动或语言处理。
+正常六语测试改用私有语言文件，不再备份、覆盖或恢复真实 `language.txt`。
+测试保留真实 App.OnStartup、StartupUri 自动创建窗口和语言订阅；测试侧的 Loaded 类处理器
+先于窗口的 Loaded 实例处理器注入私有状态，避免自动更新副作用。这仍不是物理桌面或真实 profile 重启验收。
+
+直接构造 WPF 主窗口的测试在 Show 前通过 `TestWindowState` 使用私有 Edits、Batch、目录库和禁用自动更新的配置；
+独立 StartupUri 路径在 Loaded 类处理器中完成同样隔离，先于产品的 Loaded 实例处理器。
+防止 Loaded 写入默认 `updates.json` 或发起后台网络请求。窗口构造仍读取默认配置，所以入口保护和独立账号要求继续有效；
+这不是跨进程锁或完整用户配置虚拟化。`run-v08.ps1` 会构建两种可执行程序，并包含
+`localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
+状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
+不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
+
 `--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的
 八个平坦图块，不能假定每张照片在每个视口都一定改变像素；受控输入负责验证实际滤波效果。
 先在安装了 NumPy、tifffile 的测试 Python 环境生成 fixture，再运行专项：

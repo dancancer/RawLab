@@ -36,9 +36,11 @@ static class Program
     {
         try
         {
-            PreserveExistingBatch(journalDirectory);
+            TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length==2 && args[0]=="--default-isolation") { DefaultIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} default isolation checks");return 0; }
+            if(args.Length==2 && args[0]=="--profile-isolation") { ProfileIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} profile isolation checks");return 0; }
+            if(args.Length==2 && args[0]=="--status-layout") { StatusLayoutChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} status layout checks");return 0; }
             if(args.Length is 3 or 4 && args[0]=="--editor-review") { EditorReviewChecks.Run(args[1],args[2],Check,args.Length==4 ? args[3] : "all");return 0; }
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
@@ -186,11 +188,12 @@ static class Program
             }
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
-            PreserveExistingBatch(journalDirectory);
+            TestWindowState.PreserveExistingBatch(journalDirectory);
             var app=new App();app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
             foreach(var pair in Loc.Strings) app.Resources[pair.Key]=pair.Value;
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             var window=new MainWindow {Width=1440,Height=920};
+            TestWindowState.Isolate(window,output);
             typeof(MainWindow).GetField("editStore",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
                 .SetValue(window,new EditStore(Path.Combine(output,"edits",Guid.NewGuid().ToString("N"))));
             window.Show();
@@ -265,11 +268,5 @@ static class Program
             Console.WriteLine($"PASS {checks} checks; artifacts: {output}");return 0;
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
-    }
-    private static void PreserveExistingBatch(string directory)
-    {
-        // MainWindow startup recovers journals and can delete their staging files.
-        var path=Path.Combine(directory,"job.json");
-        if(File.Exists(path))throw new InvalidOperationException("Preserve existing batch job: "+path+". Use an isolated test account.");
     }
 }

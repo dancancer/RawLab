@@ -23,7 +23,7 @@ internal static class TransformUiChecks
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         Loc.Initialize("zh-Hans");foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-        var window=new MainWindow();var store=new EditStore(Path.Combine(directory,"edits"));Set(window,"editStore",store);
+        var window=new MainWindow();TestWindowState.Isolate(window,directory);var store=new EditStore(Path.Combine(directory,"edits"));Set(window,"editStore",store);
         try
         {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);

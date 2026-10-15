@@ -67,7 +67,7 @@
       <Border x:Name="LibraryPanel" Background="{DynamicResource TreeSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,1,0"
           AllowDrop="True" PreviewDragEnter="LibraryDragOver" PreviewDragOver="LibraryDragOver" PreviewDrop="LibraryDropped">
         <DockPanel Margin="8">
-          <StackPanel DockPanel.Dock="Top"><TextBlock Text="{DynamicResource '照片目录'}" FontWeight="SemiBold" Margin="10,14,0,8"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked"/></StackPanel>
+          <StackPanel DockPanel.Dock="Top"><TextBlock Text="{DynamicResource '照片目录'}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="10,14,0,8"/><Button x:Name="AddDirectoryButton" AutomationProperties.Name="{DynamicResource '添加目录'}" Click="AddFolderClicked" HorizontalContentAlignment="Stretch"><TextBlock Text="{DynamicResource '添加目录'}" TextWrapping="Wrap" TextAlignment="Center"/></Button></StackPanel>
           <TextBlock x:Name="LibraryHint" DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="#95979F" FontSize="{DynamicResource EditorCaptionSize}" Margin="7" TextWrapping="Wrap" Visibility="Collapsed"/>
           <TreeView x:Name="Files" AllowDrop="True" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" PreviewMouseRightButtonDown="FilesPreviewMouseRightButtonDown" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
             <TreeView.Resources>
@@ -122,10 +122,10 @@
           <Border x:Name="InfoOverlay" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
             <StackPanel><TextBlock x:Name="InfoFileText" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/><TextBlock x:Name="InfoCaptureText" FontSize="{DynamicResource EditorBodySize}" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
           </Border>
-          <StackPanel x:Name="Welcome" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center">
-            <local:EditorIcon Kind="Folder" Width="36" Height="36" Margin="0,0,0,18" TextElement.Foreground="{DynamicResource Muted}"/>
-            <TextBlock Text="{DynamicResource '打开一张 RAW'}" FontSize="{DynamicResource EditorEmptySize}" Foreground="#EEEEF2" HorizontalAlignment="Center"/>
-            <TextBlock Text="{DynamicResource '拖入照片，或添加目录开始浏览'}" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" Margin="0,14"/>
+          <StackPanel x:Name="Welcome" Grid.ColumnSpan="2" Margin="24" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+            <local:EditorIcon Kind="Folder" Width="36" Height="36" HorizontalAlignment="Center" Margin="0,0,0,18" TextElement.Foreground="{DynamicResource Muted}"/>
+            <TextBlock Text="{DynamicResource '打开一张 RAW'}" FontSize="{DynamicResource EditorEmptySize}" Foreground="#EEEEF2" TextWrapping="Wrap" TextAlignment="Center"/>
+            <TextBlock Text="{DynamicResource '拖入照片，或添加目录开始浏览'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,14"/>
             <WrapPanel HorizontalAlignment="Center"><Button Content="{DynamicResource '打开 RAW'}" Click="OpenClicked" MinWidth="128" Margin="4,10" Background="{DynamicResource Accent}" Foreground="#252110"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked" Margin="4,10"/></WrapPanel>
           </StackPanel>
           <Border x:Name="HistogramSurface" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
@@ -203,15 +203,15 @@
         </Border>
       </Grid>
     </Grid>
-    <Border Grid.Row="3" MinHeight="28" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,1,0,0">
+    <Border Grid.Row="3" MinHeight="40" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,1,0,0">
       <DockPanel Margin="14,0">
-        <Button x:Name="ExportRevealButton" DockPanel.Dock="Right" Content="{DynamicResource '在资源管理器中查看'}" Click="OpenExportedClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
-        <Button x:Name="BatchNotice" DockPanel.Dock="Right" Content="{DynamicResource '继续上次批量任务'}" Click="ShowBatchClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
-        <Button x:Name="RetrySave" DockPanel.Dock="Right" Content="{DynamicResource '重试保存'}" Click="RetrySaveClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
-        <TextBlock x:Name="SaveState" DockPanel.Dock="Right" Margin="8,0" VerticalAlignment="Center" FontSize="{DynamicResource EditorCaptionSize}" AutomationProperties.LiveSetting="Polite"/>
-        <ComboBox x:Name="GpuMode" DockPanel.Dock="Right" Width="116" SelectedIndex="0" SelectionChanged="GpuModeChanged" Margin="10,2,0,2" AutomationProperties.Name="{DynamicResource '渲染加速'}"><ComboBoxItem Content="{DynamicResource 'GPU 自动'}"/><ComboBoxItem Content="{DynamicResource '仅 CPU'}"/><ComboBoxItem Content="{DynamicResource '强制 GPU'}"/></ComboBox>
-        <TextBlock x:Name="BackendLabel" Text="{DynamicResource 'Windows · GPU 自动 · sRGB'}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right" VerticalAlignment="Center"/>
-        <Button x:Name="RetryButton" Content="{DynamicResource '重新显影'}" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2" MinHeight="26" Margin="6,0"/>
+        <Button x:Name="ExportRevealButton" DockPanel.Dock="Right" ToolTip="{DynamicResource '在资源管理器中查看'}" AutomationProperties.Name="{DynamicResource '在资源管理器中查看'}" Click="OpenExportedClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2"><local:EditorIcon Kind="Folder" Width="18" Height="18"/></Button>
+        <Button x:Name="BatchNotice" DockPanel.Dock="Right" ToolTip="{DynamicResource '继续上次批量任务'}" AutomationProperties.Name="{DynamicResource '继续上次批量任务'}" Click="ShowBatchClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2"><local:EditorIcon Kind="Library" Width="18" Height="18"/></Button>
+        <Button x:Name="RetrySave" DockPanel.Dock="Right" ToolTip="{DynamicResource '重试保存'}" AutomationProperties.Name="{DynamicResource '重试保存'}" Click="RetrySaveClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
+        <TextBlock x:Name="SaveState" DockPanel.Dock="Right" MaxWidth="240" TextTrimming="CharacterEllipsis" Margin="8,0" VerticalAlignment="Center" FontSize="{DynamicResource EditorCaptionSize}" AutomationProperties.LiveSetting="Polite"/>
+        <ComboBox x:Name="GpuMode" DockPanel.Dock="Right" MinWidth="116" SelectedIndex="0" SelectionChanged="GpuModeChanged" Margin="10,2,0,2" AutomationProperties.Name="{DynamicResource '渲染加速'}"><ComboBoxItem Content="{DynamicResource 'GPU 自动'}"/><ComboBoxItem Content="{DynamicResource '仅 CPU'}"/><ComboBoxItem Content="{DynamicResource '强制 GPU'}"/></ComboBox>
+        <TextBlock x:Name="BackendLabel" Text="{DynamicResource 'Windows · GPU 自动 · sRGB'}" MaxWidth="240" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right" VerticalAlignment="Center"/>
+        <Button x:Name="RetryButton" ToolTip="{DynamicResource '重新显影'}" AutomationProperties.Name="{DynamicResource '重新显影'}" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2" Margin="6,0"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
         <ProgressBar x:Name="BusyIndicator" Width="34" Height="3" Margin="0,0,10,0" Foreground="{DynamicResource Accent}" Background="#474B53" IsIndeterminate="True" Visibility="Collapsed"/>
         <TextBlock x:Name="Status" Text="{DynamicResource '就绪'}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
       </DockPanel>

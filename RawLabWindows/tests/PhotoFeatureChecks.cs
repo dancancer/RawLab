@@ -62,6 +62,7 @@ internal static class PhotoFeatureChecks
         foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
+        TestWindowState.Isolate(window,output);
         var store = new EditStore(Path.Combine(output, "edits")); SetField(window, "editStore", store);
         window.GpuMode.SelectedIndex = 1;
         window.Show();

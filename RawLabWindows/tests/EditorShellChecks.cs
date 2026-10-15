@@ -26,7 +26,7 @@ internal static class EditorShellChecks
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-                window=new MainWindow();window.Show();
+                window=new MainWindow();TestWindowState.Isolate(window,output);window.Show();
                 foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
                 {
                     var surface=ArrangeLayout(window,size);

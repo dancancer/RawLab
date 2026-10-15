@@ -199,6 +199,58 @@ dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW> --ui-only
 
 Admission is a data-preservation precondition, not profile virtualization or a cross-process lock. Use an exclusive test account with no product process creating a job concurrently. This coverage applies to RawLabWindows.Tests.dll/run-v08; the separate localization-ui executable is outside this entry and this verification. Existing physical acceptance limits below remain unchanged.
 
+## All Windows Test Entry And State Preservation
+
+This follow-up starts at `a57dd992419787bd96678f33872902b2e1303928`. The user extended the previous main-runner-only fix to the independent localization UI executable and requested that all related Windows issues discovered during this pass be handled together. All code remains in `RawLabWindows/**`; the additional edit in `docs/localization.md` only corrects its Windows test instructions. Shared core/C ABI, production batch recovery, product automatic-update policy, other platforms and versions are unchanged.
+
+### Complete Entry Inventory And Repairs
+
+- Both `RawLabWindows.Tests.dll` and `LocalizationUiChecks.dll` use the same test-layer journal admission before localization, argument dispatch, preference handling, output or WPF startup. An existing job is rejected with its path, without reading/recovering/moving/deleting it. The main default body retains its second check before WPF.
+- The independent executable preserves the real `App.OnStartup` and `StartupUri="MainWindow.xaml"` path. Its test-only MainWindow Loaded class handler installs private state before the product Loaded instance handler, preventing the latter's automatic-update request/write. Startup/resource subscriptions and actual six-language UI/settings still run; this is not a physical desktop/profile restart acceptance claim.
+- Every direct test construction of MainWindow now installs private Edits, Batch, folders and disabled automatic-update preferences before Show. This covers default/UI-only, About, editor-shell, transform-ui, editor-review, photo-features, interactions, profile and status-layout windows. Isolation also clears a default-profile update badge rather than retaining a blank notification from a previously cached release.
+- The independent localization test no longer backs up, rewrites or restores real `language.txt`. The Windows Loc keeps its existing single-argument signatures/default path and adds explicit-file overloads for persistence/reload; the test uses its own file. Product callers retain their original path and behavior.
+- The other standalone executables (editing, denoise-model, localization and updates), native denoise diagnostic and parser/package checks do not construct the product main window; their persistent fixtures are private or their localization use is read-only. Main runner render/model/benchmark modes add no separate main-window entry. There is no additional uncovered test executable in this inventory; the production WinExe intentionally keeps real recovery behavior.
+- `run-v08.ps1` fresh-builds both test executables and includes independent admission/UI, profile-isolation, updates and status-layout checks. The interactions mode is selectable in the same runner. No public test command needs deletion/movement of an existing user journal.
+
+### Additional Windows Layout Repair
+
+The new layout regression observed a real status-bar change from 35 to 39 DIP when RetrySave became visible. The bar now reserves a minimum slot of 40 DIP but remains Auto-height, so larger fonts can grow naturally. A subsequent programmatic-font/image check found simultaneous text actions exhausting the footer and clipping the GPU selector at the minimum window size. All four footer commands now use the existing icon vocabulary with six-language ToolTip/UIA names, the GPU selector sizes to content, and secondary labels can ellipsize without overlapping commands. Long sidebar/empty-state copy wraps; original copy and Click handlers are retained.
+
+The layout suite checks six languages, 1000x680/1440x920, 13/26 DIP fonts, seven notification combinations, and a maximally expanded dock. It compares bar/editor/dock/canvas frames and actual allocated layout slots, not only RenderSize rectangles that could still be clipped. Its empty-window expanded-dock captures are stress fixtures, not a product empty-state screenshot or physical-monitor evidence. A later six-language UIA pass also verifies the sidebar and four icon actions' accessible names.
+
+### Regression Contracts And Retained Failures
+
+- Independent admission has 22 checks: two real Running/Publishing recovery controls (four assertions), four refusal fixtures including locked/corrupt journals (four assertions each), and two empty-admission continuation checks. Each refusal requires return 1 plus its exact journal path, identical recursive file-list/SHA-256/last-write-time snapshots, no startup continuation/WPF, and no language initialization. Fixtures never occupy the real default Batch directory. The existing main admission suite remains 34 checks.
+- Profile isolation checks explicit language persistence/reload without altering the default preference; replacement of an automatic-update config before Loaded, zero HTTP requests, unchanged protected update bytes/timestamp/tmp state, private paths for all four window stores, and clearing inherited update notification state.
+- `localization-red-20261015-174816` fails at independent admission and private-update assertions. Its first layout probe and a second probe used an empty collapsed dock and hit Infinity; those fixture mistakes are not product regression evidence. The corrected `175002` probe observes the actual 35-to-39 height change. `175035` additionally catches the missing explicit language-file API.
+- An intermediate GPU-width assertion used Ideal text measurement against a Display-formatted WPF control; it was corrected to an independent Display TextBlock measurement. This was not a hidden product pass/fail. An initial bounds-only overflow check falsely passed; adding allocated-slot checks makes `status-red-20261015-180930` fail at the intended 26-DIP/minimum-window/all-notifications assertion.
+- The first broad `profile-final-20261015-175711` matrix has 16 successful entries but fails localization UI because the test prototype assigned null to StartupUri. No product startup defect is inferred from that test error, and this run is not counted as an overall pass. The replacement keeps production StartupUri and uses the Loaded class handler; the independent StartupUri/UI rechecks succeed.
+- `profile-cache-red-20261015-182143` fails when an inherited visible update badge survives private-state replacement. The test helper now immediately synchronizes notification visibility to its private checker. Independent source/entry audits and final narrow rechecks cover these follow-ups rather than leaving them for another delivery.
+
+### Final Source Bindings And Windows Results
+
+The broad frozen-source run is `build/windows-pr53-review/profile-final-20261015-181103/`, archive SHA-256 `fa6e5b24a87f6234623ce597c3fddf9442e7560145fc694d5c02ebcd468406f1`. Windows verified all 117 file hashes before building. Both managed executables fresh-build with zero warnings/errors. The targeted summary has **17/17 entries exit 0**: two builds, editing, localization, updates, About, main admission, independent admission, profile isolation, localization UI, status layout, editor-shell, geometry, transform-ui, editor-review, photo-features and interactions. Editor-review retains **90** checks, geometry **15**, transform-ui **19**, photo-features **52**, About **40**. The following unfiltered default and UI-only repeat complete **152** and **98** checks, both exit 0.
+
+```powershell
+./RawLabWindows/tests/BuildScriptChecks.ps1
+./RawLabWindows/tests/run-v08.ps1 -RawPath <external-RAW> -NativeArtifacts <unchanged-native-artifacts> -Only 'editing,localization,updates,about,default-isolation,localization-admission,profile-isolation,localization-ui,status-layout,editor-shell,geometry,transform-ui,editor-review,photo-features,interactions'
+dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW>
+dotnet <TargetDir>/RawLabWindows.Tests.dll <repo> <external-RAW> --ui-only
+```
+
+The last source follow-up only adds explicit sidebar UIA naming/empty-icon alignment and corresponding six-language assertions, then synchronizes the inherited update badge to private state and strengthens that regression. Those affected paths are rebuilt and rechecked in `profile-post-20261015-182419/`, archive SHA-256 `98e4062fcbb6f734b27e4fe348e91c00b6f4fb68eb2f339e87035d7cd0478167`. Its **7/7 entries exit 0**: both builds and all five selected suites below. Results are **34** main-admission, **22** independent-admission, **10** profile-isolation, **160** localization UI/UIA and **384** status-layout checks. The 160 UI assertions include the real StartupUri-created window and six-language names for the sidebar and all four footer commands. No render/recovery implementation changed between the two successful snapshots; unchanged native workflows retain the broad run's source/scope rather than being presented as a repeated broad run at the last snapshot.
+
+```powershell
+./RawLabWindows/tests/BuildScriptChecks.ps1
+./RawLabWindows/tests/run-v08.ps1 -RawPath <external-RAW> -NativeArtifacts <unchanged-native-artifacts> -Only 'default-isolation,localization-admission,profile-isolation,localization-ui,status-layout'
+```
+
+Both successful runs snapshot the real default `%LOCALAPPDATA%/RawLab` directory before and after execution. File lists, SHA-256 and last-write ticks compare identical; the retained files are `windows-v08-results/default-profile-before.json` and `default-profile-after.json`. This covers the actual account's existing default files without placing a job fixture there. The separate private admission fixtures exercise existing Running/Publishing journals and staging safely. It is not a registry/ACL/read-trace audit or full profile virtualization. Post-run process audit reports zero dotnet test workers referencing either completed task workspace; no other process was stopped.
+
+All 117 final Windows hashes matched on Windows. Local rechecking matches the 115 files other than this verification record and the implementation checklist updated after the run. No production/test source changed after the last snapshot. Both source freezes and all final output directories are task-owned. No RAW, native DLL, screenshot, log or generated fixture is committed.
+
+These results are local Windows verification, **not hosted CI**, physical desktop or release acceptance. No new CTest/native DLL, denoise-model/native denoise, macOS, self-contained package or release build is claimed. The earlier 33/33 CTest and denoise results retain their original source/scope. Explorer remains **NOT REACHED** in SSH session 0; physical DPI/multi-monitor/Snap/Narrator/system text-size/high-contrast/input-device and independently identified GPU acceptance remain open. Admission still requires an exclusive test account without a product process concurrently creating jobs; no cross-process lock is claimed.
+
 ## Acceptance Limits
 
 - WPF layout images are native RenderTargetBitmap client-area compositions. The SSH desktop can clamp the HWND below the requested window size; the test records both actual HWND size and exact arranged client DIP dimensions. These are not physical-monitor screenshots or proof of Snap behavior.

@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@($Only.Split(',',[StringSplitOptions]::RemoveEmptyEntries))
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
-    if($Name -ne 'build' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
+    if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
     $log=Join-Path $results ($Name+'.log')
     $preference=$ErrorActionPreference
     Push-Location $repo
@@ -24,26 +24,37 @@ function Invoke-Check([string]$Name,[string[]]$Arguments) {
     finally {$ErrorActionPreference=$preference;Pop-Location}
     $script:summary+=@{name=$Name;exitCode=$code;log=$log}
     Write-Host "$Name exit=$code log=$log"
-    if($Name -eq 'build' -and $code -ne 0){throw 'Managed WPF build failed.'}
+    if($Name -like 'build*' -and $code -ne 0){throw 'Managed WPF build failed.'}
 }
 Invoke-Check 'build' @('build',"$PSScriptRoot/RawLabWindows.Tests.csproj",'-c','Release','--no-incremental')
+Invoke-Check 'build-localization-ui' @('build',"$PSScriptRoot/localization-ui/LocalizationUiChecks.csproj",'-c','Release','--no-incremental')
 $target=(& $DotNet msbuild "$PSScriptRoot/RawLabWindows.Tests.csproj" -getProperty:TargetDir -p:Configuration=Release).Trim()
 if($LASTEXITCODE -ne 0){throw 'Cannot resolve test output.'}
+$uiTarget=(& $DotNet msbuild "$PSScriptRoot/localization-ui/LocalizationUiChecks.csproj" -getProperty:TargetDir -p:Configuration=Release).Trim()
+if($LASTEXITCODE -ne 0){throw 'Cannot resolve localization test output.'}
+foreach($destination in @($target,$uiTarget)){
 foreach($name in @('sony2fuji.dll','raw.dll')){
-    Copy-Item -LiteralPath (Join-Path $NativeArtifacts $name) -Destination $target -Force
+    Copy-Item -LiteralPath (Join-Path $NativeArtifacts $name) -Destination $destination -Force
 }
 Get-ChildItem -LiteralPath $NativeArtifacts -File -Filter '*.dll' |
     Where-Object {$_.Name -match '^(vcruntime|msvcp|vcomp|concrt)'} |
-    Copy-Item -Destination $target -Force
-Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $target -Recurse -Force
+    Copy-Item -Destination $destination -Force
+Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $destination -Recurse -Force
+}
 $runner=Join-Path $target 'RawLabWindows.Tests.dll'
+$localizationRunner=Join-Path $uiTarget 'LocalizationUiChecks.dll'
 Invoke-Check 'editing' @('run','--project',"$PSScriptRoot/editing/EditWorkflow.Tests.csproj",'-c','Release')
 Invoke-Check 'denoise-model' @('run','--project',"$PSScriptRoot/denoise/DenoiseSettingsTests.csproj",'-c','Release')
 Invoke-Check 'localization' @('run','--project',"$PSScriptRoot/localization/LocalizationChecks.csproj",'-c','Release')
+Invoke-Check 'updates' @('run','--project',"$PSScriptRoot/updates/UpdateChecks.csproj",'-c','Release')
 Invoke-Check 'about' @($runner,'--about')
 Invoke-Check 'default-isolation' @($runner,'--default-isolation',"$results/default-isolation")
+Invoke-Check 'localization-admission' @($localizationRunner,'--default-isolation',"$results/localization-admission")
+Invoke-Check 'profile-isolation' @($runner,'--profile-isolation',"$results/profile-isolation")
+Invoke-Check 'localization-ui' @($localizationRunner)
+Invoke-Check 'status-layout' @($runner,'--status-layout',"$results/status-layout")
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
-foreach($name in @('geometry','transform-ui','editor-review','photo-features','master-recipes','rendered-dng','denoise','lens')){
+foreach($name in @('geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
     $arguments=@($runner,('--'+$name),$repo,$RawPath)
     if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
     Invoke-Check $name $arguments
