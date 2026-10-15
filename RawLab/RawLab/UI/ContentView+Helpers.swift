@@ -311,6 +311,7 @@ extension ContentView {
         photoImportRequestID = nil
         photoImportTask?.cancel()
         photoImportTask = nil
+        selectedPhotoItem = nil
         viewModel.cancelImageImport()
         isImporting = false
     }
