@@ -2,11 +2,43 @@
     Title="RawLab · Windows" Width="1440" Height="920" MinWidth="1000" MinHeight="680" Icon="AppIcon.png" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="KeyPressed">
 
   <Grid TextElement.Foreground="#ECEDEF">
-    <Grid.RowDefinitions><RowDefinition Height="64"/><RowDefinition Height="*"/><RowDefinition Height="36"/></Grid.RowDefinitions>
-    <Border Background="#222429" BorderBrush="#35373B" BorderThickness="0,0,0,1">
-      <DockPanel Margin="12,5">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Menu x:Name="MainMenu" MinHeight="28" Background="#303033" Padding="8,0" FocusManager.IsFocusScope="True">
+      <MenuItem Header="{DynamicResource '文件(_F)'}">
+        <MenuItem Header="{DynamicResource '打开 RAW'}" InputGestureText="Ctrl+O" Click="OpenClicked"/>
+        <MenuItem Header="{DynamicResource '添加目录'}" Click="AddFolderClicked"/>
+        <Separator/><MenuItem x:Name="MenuExport" Header="{DynamicResource '导出'}" Click="MainExportClicked" IsEnabled="False"/>
+        <MenuItem x:Name="MenuBatch" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/>
+        <MenuItem Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked"/>
+        <Separator/><MenuItem Header="{DynamicResource '退出'}" Click="ExitClicked"/>
+      </MenuItem>
+      <MenuItem Header="{DynamicResource '编辑(_E)'}">
+        <MenuItem Header="{DynamicResource '重置当前工具'}" Click="ResetCurrentToolClicked"/>
+        <MenuItem Header="{DynamicResource '输入'}" Tag="输入" Click="ResetNamedGroupClicked"/>
+        <MenuItem Header="{DynamicResource '明暗'}" Tag="明暗" Click="ResetNamedGroupClicked"/>
+        <MenuItem Header="{DynamicResource '色彩'}" Tag="色彩" Click="ResetNamedGroupClicked"/>
+        <MenuItem Header="{DynamicResource '细节'}" Tag="细节" Click="ResetNamedGroupClicked"/>
+        <MenuItem Header="{DynamicResource '效果'}" Tag="效果" Click="ResetNamedGroupClicked"/>
+        <MenuItem Header="{DynamicResource '强度'}" Tag="胶片" Click="ResetNamedGroupClicked"/>
+        <Separator/><MenuItem Header="{DynamicResource '全部重置'}" Click="ResetAllClicked"/>
+      </MenuItem>
+      <MenuItem Header="{DynamicResource '查看(_V)'}">
+        <MenuItem Header="{DynamicResource '文件树'}" Click="LibraryToggle"/>
+        <MenuItem Header="{DynamicResource '调整栏'}" Click="DockToggle"/>
+        <MenuItem Header="{DynamicResource '直方图'}" Click="HistogramClicked"/>
+        <MenuItem Header="{DynamicResource '照片信息'}" InputGestureText="I" Click="InfoClicked"/>
+        <MenuItem Header="{DynamicResource '曝光裁切提示'}" Click="ClippingClicked"/>
+        <Separator/><MenuItem Header="{DynamicResource '对比模式'}"><MenuItem Header="{DynamicResource '关闭对比'}" Click="CompareOffClicked"/><MenuItem Header="{DynamicResource '并排对比'}" Click="CompareSideClicked"/><MenuItem Header="{DynamicResource '滑动对比'}" Click="CompareSwipeClicked"/></MenuItem>
+        <MenuItem Header="{DynamicResource '缩放'}"><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '100% 实际像素'}" InputGestureText="1" Click="ActualClicked"/><MenuItem Header="{DynamicResource '放大'}" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" Click="ZoomOutClicked"/></MenuItem>
+      </MenuItem>
+      <MenuItem Header="{DynamicResource '工具(_T)'}"><MenuItem Header="{DynamicResource '自动曝光'}" Click="AutoExposureClicked"/><MenuItem Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
+      <MenuItem Header="{DynamicResource '帮助(_H)'}"><MenuItem Header="{DynamicResource '关于 RawLab'}" Click="AboutClicked"/></MenuItem>
+    </Menu>
+    <Border Grid.Row="1" MinHeight="48" Background="#303033" BorderBrush="#444449" BorderThickness="0,0,0,1">
+      <DockPanel Margin="8,2">
         <TextBlock Text="RAWLAB" FontWeight="Bold" FontSize="18" Foreground="{StaticResource Foreground}" VerticalAlignment="Center" Margin="6,0,22,0"/>
         <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '关于 RawLab / 检查更新'}" AutomationProperties.Name="{DynamicResource '关于 RawLab'}"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
+        <Button Click="SettingsClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '设置'}" AutomationProperties.Name="{DynamicResource '设置'}"><local:EditorIcon Kind="Adjust" Width="22" Height="22"/></Button>
         <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '查看更新'}"/>
         <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="{DynamicResource '导出照片'}" AutomationProperties.Name="{DynamicResource '导出'}">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
@@ -30,9 +62,9 @@
         </StackPanel>
       </DockPanel>
     </Border>
-    <Grid Grid.Row="1">
-      <Grid.ColumnDefinitions><ColumnDefinition x:Name="LibraryColumn" Width="260" MinWidth="180" MaxWidth="520"/><ColumnDefinition x:Name="LibrarySplitterColumn" Width="5"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Border x:Name="LibraryPanel" Background="#202125" BorderBrush="#35373B" BorderThickness="0,0,1,0">
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions><ColumnDefinition x:Name="LibraryColumn" Width="244" MinWidth="180" MaxWidth="520"/><ColumnDefinition x:Name="LibrarySplitterColumn" Width="5"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border x:Name="LibraryPanel" Background="#232326" BorderBrush="#444449" BorderThickness="0,0,1,0">
         <DockPanel Margin="8">
           <StackPanel DockPanel.Dock="Top"><TextBlock Text="{DynamicResource '照片目录'}" FontWeight="SemiBold" Margin="10,14,0,8"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked"/></StackPanel>
           <TextBlock DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="#95979F" FontSize="11" Margin="7" TextWrapping="Wrap"/>
@@ -79,7 +111,7 @@
         <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Background" Value="#292B30"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#85816A"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="Background" Value="#85816A"/></Trigger></Style.Triggers></Style></GridSplitter.Style>
       </GridSplitter>
       <Grid Grid.Column="2" x:Name="EditorArea">
-        <Grid.RowDefinitions><RowDefinition Height="*" MinHeight="160"/><RowDefinition x:Name="SplitterRow" Height="6"/><RowDefinition x:Name="DockRow" Height="264" MinHeight="216"/></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="*" MinHeight="160"/><RowDefinition x:Name="SplitterRow" Height="6"/><RowDefinition x:Name="DockRow" Height="288" MinHeight="216"/></Grid.RowDefinitions>
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Margin="0,0,2,0"/>
@@ -90,23 +122,23 @@
             <StackPanel><TextBlock x:Name="InfoFileText" FontSize="12" TextWrapping="Wrap"/><TextBlock x:Name="InfoCaptureText" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
           </Border>
           <StackPanel x:Name="Welcome" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center">
-            <TextBlock Text="{DynamicResource '打开一张 RAW 照片'}" FontSize="24" Foreground="#D2D3D7" HorizontalAlignment="Center"/>
+            <TextBlock Text="{DynamicResource '打开一张 RAW'}" FontSize="24" Foreground="#EEEEF2" HorizontalAlignment="Center"/>
             <TextBlock Text="{DynamicResource '拖入照片，或添加目录开始浏览'}" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,14"/>
-            <Button Content="{DynamicResource '打开 RAW'}" Click="OpenClicked" HorizontalAlignment="Center" MinWidth="128" Margin="0,10"/>
+            <WrapPanel HorizontalAlignment="Center"><Button Content="{DynamicResource '打开 RAW'}" Click="OpenClicked" MinWidth="128" Margin="4,10"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked" Margin="4,10"/></WrapPanel>
           </StackPanel>
-          <Border Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="7" Padding="8" Width="220">
+          <Border x:Name="HistogramSurface" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="#D923252A" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
             <StackPanel><Button x:Name="HistogramButton" Click="HistogramClicked" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" Padding="6,2" ToolTip="{DynamicResource '展开或收起直方图'}" AutomationProperties.Name="{DynamicResource '直方图'}"><local:EditorIcon Kind="Histogram" Width="18" Height="18"/></Button>
               <StackPanel x:Name="HistogramPanel"><local:HistogramView x:Name="Histogram" Height="105" Margin="2,8"/><TextBlock x:Name="ClipStats" FontSize="11" Foreground="#A8ABB4"/></StackPanel>
             </StackPanel>
           </Border>
         </Grid>
-        <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="#3E4046" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"/>
-        <Border x:Name="AdjustmentPanel" Grid.Row="2" Background="#25272C" Padding="14,5,14,8">
+        <GridSplitter x:Name="AdjustmentSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="#444449" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" KeyboardIncrement="8" AutomationProperties.Name="{DynamicResource '调整栏'}"/>
+        <Border x:Name="AdjustmentPanel" Grid.Row="2" Background="#272729" Padding="14,5,14,8">
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
             <DockPanel x:Name="DockHeader" LastChildFill="True">
               <Button Content="{DynamicResource '收起'}" Click="DockToggle" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}"/>
-              <Button Content="{DynamicResource '全部重置'}" x:Name="ResetAllButton" Click="ResetAllClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}"/>
+              <Button x:Name="ResetAllButton" Click="ResetMenuClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '重置'}" AutomationProperties.Name="{DynamicResource '重置'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
               <WrapPanel VerticalAlignment="Center"><TextBlock x:Name="ActiveFilm" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/><TextBlock Text="{DynamicResource '曝光基准'}" VerticalAlignment="Center" Margin="5,0,8,0"/>
               <ComboBox x:Name="ExposureMode" MinWidth="130" MaxWidth="240" SelectedIndex="0" SelectionChanged="ExposureModeChanged" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
               <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" VerticalAlignment="Center" Foreground="#A8ABB4" Margin="12,0"/>
@@ -135,13 +167,13 @@
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
             </StackPanel></ScrollViewer>
-            <StackPanel x:Name="ParameterPanel" Grid.Row="2" VerticalAlignment="Center" Margin="0,5">
+            <ScrollViewer x:Name="ParameterPanel" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center" Margin="0,5">
               <local:ParameterRow x:Name="OrdinaryParameter"/>
               <WrapPanel HorizontalAlignment="Center">
               <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Adjust" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
               </WrapPanel>
-            </StackPanel>
+            </StackPanel></ScrollViewer>
             <Grid x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,3,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <Button x:Name="FilmScrollLeft" Click="FilmScrollLeftClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '向左滚动胶片'}" AutomationProperties.Name="{DynamicResource '向左滚动胶片'}"><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
@@ -154,8 +186,8 @@
               <ScrollViewer x:Name="RecipeScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" ScrollChanged="RecipeScrollChanged"><StackPanel x:Name="RecipeStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
               <Button x:Name="RecipeScrollRight" Grid.Column="2" Click="RecipeScrollRightClicked" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '向右滚动大师配方'}" AutomationProperties.Name="{DynamicResource '向右滚动大师配方'}"><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="-90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
             </Grid>
-            <local:DenoisePanel x:Name="DenoiseEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
-            <local:LensPanel x:Name="LensEditor" Grid.Row="2" Visibility="Collapsed" VerticalAlignment="Center"/>
+            <ScrollViewer x:Name="DenoiseSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:DenoisePanel x:Name="DenoiseEditor" VerticalAlignment="Center"/></ScrollViewer>
+            <ScrollViewer x:Name="LensSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:LensPanel x:Name="LensEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
             <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
@@ -165,7 +197,7 @@
         </Border>
       </Grid>
     </Grid>
-    <Border Grid.Row="2" Background="#222429" BorderBrush="#35373B" BorderThickness="0,1,0,0">
+    <Border Grid.Row="3" MinHeight="28" Background="#303033" BorderBrush="#444449" BorderThickness="0,1,0,0">
       <DockPanel Margin="14,0">
         <Button x:Name="BatchNotice" DockPanel.Dock="Right" Content="{DynamicResource '继续上次批量任务'}" Click="ShowBatchClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>
         <Button x:Name="RetrySave" DockPanel.Dock="Right" Content="{DynamicResource '重试保存'}" Click="RetrySaveClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" Padding="8,2"/>

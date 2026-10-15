@@ -45,8 +45,8 @@ public partial class MainWindow : Window
     private PhotoInfoMode photoInfoMode;
     private long photoInfoRevision;
     private LibraryEntry? contextEntry;
-    private double dockHeight=264;
-    private double libraryWidth=260;
+    private double dockHeight=288;
+    private double libraryWidth=244;
     private RenderedImage? result;
     private int renderedGpuMode;
     private Func<string>? localizedStatus;
@@ -63,7 +63,6 @@ public partial class MainWindow : Window
         InitializeComponent();
         void RefreshLanguage()
         {
-            Tools.Children.Clear(); toolButtons.Clear();
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
             BuildTools(); BuildFilms(); BuildMasterRecipes(); HslEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu();
@@ -84,7 +83,7 @@ public partial class MainWindow : Window
         Files.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,_)=>QueueThumbnailRefresh()));
         Files.SizeChanged+=(_,_)=>QueueThumbnailRefresh();
         Files.Loaded+=(_,_)=>QueueThumbnailRefresh();
-        EditorArea.SizeChanged+=(_,_)=>InfoOverlay.MaxWidth=Math.Max(80,Math.Min(380,EditorArea.ActualWidth-268));
+        EditorArea.SizeChanged+=(_,_)=>{InfoOverlay.MaxWidth=Math.Max(80,Math.Min(380,EditorArea.ActualWidth-268));UpdateDockMinimum();};
         DockHeader.SizeChanged+=(_,_)=>UpdateDockMinimum();
         ToolsScroller.SizeChanged+=(_,_)=>UpdateDockMinimum();
         NeutralCanvas.Viewport=ResultCanvas.Viewport=viewport;
@@ -150,11 +149,17 @@ public partial class MainWindow : Window
     }
     private void BuildTools()
     {
-        foreach(var spec in ParameterSpec.All)
+        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();
+        Tools.Children.Add(FilmCategory);Tools.Children.Add(MasterRecipeCategory);
+        foreach(var id in new[]{Parameter.Strength,Parameter.Exposure,Parameter.Highlights,Parameter.Shadows,Parameter.Contrast,
+            Parameter.ToneCurve,Parameter.Saturation,Parameter.Temperature,Parameter.Tint,Parameter.Sharpening})
         {
+            if(id==Parameter.Temperature)Tools.Children.Add(HslCategory);
+            if(id==Parameter.Sharpening)Tools.Children.Add(DenoiseCategory);
+            var spec=ParameterSpec.All[(int)id];
             var ring=new AdjustmentRing{Width=40,Height=40};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=20,Height=20});
-            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=Loc.Text(spec.Title),FontSize=11,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
+            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=Loc.Text(spec.Title),FontSize=11,MaxWidth=70,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
             AutomationProperties.SetName(button,Loc.Text(spec.Title));
             button.Click+=(_,_)=>{choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
@@ -166,13 +171,14 @@ public partial class MainWindow : Window
         {
             var ring=new AdjustmentRing{Width=40,Height=40};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=icon,Width=20,Height=20});
-            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=title,FontSize=11,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
+            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=title,FontSize=11,MaxWidth=70,TextWrapping=TextWrapping.Wrap,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? Loc.Text("Vignette / 暗角") : Loc.Text("Grain / 颗粒")};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
             button.Click+=(_,_)=>{if(exporting)return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
+        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);
     }
     private void FilmCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
     private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
@@ -188,7 +194,7 @@ public partial class MainWindow : Window
             if(film.Artwork!=null && File.Exists(film.Artwork))stack.Children.Add(new Image{Source=new BitmapImage(new Uri(film.Artwork)),Width=64,Height=64});
             else stack.Children.Add(new EditorIcon{Kind=film.Path==null ? "Neutral" : "Film",Width=32,Height=64});
             var displayName=film.Path==null ? Loc.Text("中性") : film.Name;
-            stack.Children.Add(new TextBlock{Text=displayName,FontSize=11,Width=80,Height=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
+            stack.Children.Add(new TextBlock{Text=displayName,FontSize=11,Width=80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? Loc.Text("中性显影")};
             AutomationProperties.SetName(button,displayName);
             button.Click+=(_,_)=>{if(exporting)return;settings.ClearMasterRecipe();lut=film.Path;MarkEdited();RefreshControls();Schedule();};
@@ -218,6 +224,7 @@ public partial class MainWindow : Window
             foreach(var pair in recipeButtons)pair.Value.Foreground=pair.Key==(settings.MasterRecipeID ?? "") ? Brushes.Gold : (Brush)FindResource("Foreground");
             ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
+            LensSurface.Visibility=LensEditor.Visibility;
             LensEditor.IsEnabled=file!=null && !exporting;LensEditor.Refresh(settings.Lens,result?.Lens);
             LensCategory.IsEnabled=file!=null && !exporting;
             LensCategory.Tag=choosingLens ? "selected" : null;
@@ -233,6 +240,7 @@ public partial class MainWindow : Window
             AutoExposureButton.Visibility=selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
             AutoExposureButton.IsEnabled=file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
+            DenoiseSurface.Visibility=DenoiseEditor.Visibility;
             DenoiseEditor.IsEnabled=file!=null && !exporting;DenoiseEditor.Refresh(settings.Denoise);
             PhotoEffectsSurface.Visibility=choosingPhotoEffects ? Visibility.Visible : Visibility.Collapsed;
             PhotoEffectsEditor.IsEnabled=file!=null && !exporting;PhotoEffectsEditor.Refresh(settings.Effects,selectedEffect);
@@ -281,6 +289,8 @@ public partial class MainWindow : Window
         ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable;
         ViewBatchMenu.IsEnabled=CurrentBatch!=null;
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
+        MenuExport.IsEnabled=ExportJpeg.IsEnabled;MenuBatch.IsEnabled=BatchExportMenu.IsEnabled;
+        HistogramSurface.Visibility=file!=null ? Visibility.Visible : Visibility.Collapsed;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting;
         BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
@@ -738,20 +748,25 @@ public partial class MainWindow : Window
         RefreshControls();
         if(changed)Schedule();
     }
-    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
+    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
     private void DockToggle(object sender,RoutedEventArgs e)
     {
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
         if(visible)dockHeight=DockRow.ActualHeight;
         AdjustmentPanel.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
+        AdjustmentSplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
         DockRow.MinHeight=visible ? 0 : 216; DockRow.Height=new(visible ? 0 : dockHeight);SplitterRow.Height=new(visible ? 0 : 6);
         RefreshControls();
         UpdateDockMinimum();
     }
     private void UpdateDockMinimum()
     {
-        if(AdjustmentPanel.Visibility==Visibility.Visible)
-            DockRow.MinHeight=Math.Max(216,DockHeader.ActualHeight+ToolsScroller.ActualHeight+130);
+        if(AdjustmentPanel.Visibility==Visibility.Visible && EditorArea.ActualHeight>0)
+        {
+            DockRow.MinHeight=216;
+            DockRow.MaxHeight=Math.Max(216,EditorArea.ActualHeight-166);
+            if(DockRow.Height.Value>DockRow.MaxHeight)DockRow.Height=new(DockRow.MaxHeight);
+        }
     }
     private void HistogramClicked(object sender,RoutedEventArgs e)=>HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
