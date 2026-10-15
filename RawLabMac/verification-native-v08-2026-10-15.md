@@ -122,6 +122,14 @@ Final crop replay evidence: `Replay all nine native crop drags and inspect Apply
 
 ## Remaining coverage and handoff
 
+### Follow-up crop investigation
+
+- Continued from `b6f7a716ab56591b0135038444eaf6a2e2b59783` in the same isolated worktree. Before instrumentation, 20 alternating native TL drags and legal uncommitted rotation input followed by crop dragging did not reproduce the stuck state.
+- A stable failure was then observed twice: open precise crop, type a legal width `80` without Enter/Tab, collapse the disclosure, then drag TL. The legal width is lost and Apply remains disabled with a busy indicator.
+- Buffered diagnostic evidence: `build/native-acceptance/crop-collapse-repro1.log` and `crop-gates-stage1.log`. The field begins editing, but removal produces no numeric-end callback. Final gate snapshot is `ready=true busy=true crop=false valid=true invalid=[] scheduler=true pending=false inFlight=false worker=false`. Both pointer end and finish callbacks are present. This is a retained numeric-interaction state, not a missing crop-pointer end or actual rendering work.
+- A distinct Enter-before-collapse control once left the native Apply control disabled while model gates had already returned to `canApply=true`; selecting 1:1 refreshed it. With additional workspace body logging, four repetitions and 20 more pointer drags did not reproduce that model/UI discrepancy. It is not attributed to the confirmed retained-interaction cause or claimed fixed.
+- Diagnostic builds exited 0: `crop-gate-diagnostic-build.log` and `crop-workspace-diagnostic-build.log`. Logs buffer in memory and flush after input rather than synchronously writing each drag event. All temporary diagnostic source changes were removed before recording this phase. No production behavior fix has been applied at this checkpoint.
+
 - Basic external RAW drag/drop is now verified as described above. The CUA cross-window targeting limitation was handled by human native input, without security changes or guessing a destination over another app. Active-draft drag/drop departure choices remain outside the exercised drop path.
 - Shift-wheel, VoiceOver announcements, complete application-wide Tab traversal, PNG/DNG exports and batch cancel/retry/interruption were not exercised. No global accessibility or security setting was changed.
 - The initial disabled-Apply observation after crop dragging remains unexplained. Final native replay passed all nine regions without changing crop production code; no claim is made that this historical observation has been fixed.
