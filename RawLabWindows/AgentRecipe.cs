@@ -8,11 +8,12 @@ internal sealed partial class RenderEngine
     public string AgentRecipe(string path,Adjustments settings,string? look,string output,int? longEdge=null)
     {
         var state=PrepareRecipe(path,settings);
+        var raster=LibraryEntry.IsRaster(path);
         var request=state.Request(path,look,0,output,longEdge);
         var hsl=state.RenderHsl.NativeConfig();var effects=state.Effects.NativeConfig();
         var denoise=state.Denoise.NativeConfig();var geometry=state.Geometry.NativeConfig();
         var perspective=state.Geometry.NativePerspectiveConfig();
-        object whiteBalance=request.WbMode==3
+        object whiteBalance=raster ? new {mode="none"} : request.WbMode==3
             ? new {mode="temperature",temperature_kelvin=request.Temperature,tint=request.Tint}
             : new {mode="camera"};
         var exposure=state.ExposureMode switch{0=>"scene",1=>"preview",2=>"sensor",_=>throw new ArgumentOutOfRangeException(nameof(settings))};
@@ -20,7 +21,7 @@ internal sealed partial class RenderEngine
         object size=longEdge is {} edge ? new{mode="limit_long_edge",long_edge=edge} : new{mode="native"};
         var document=new{
             schema_version=4,
-            input=new{path=Path.GetFullPath(path),type="raw"},
+            input=new{path=Path.GetFullPath(path),type=raster ? "raster" : "raw"},
             edits=new{
                 exposure=new{mode=exposure,ev=request.ExposureEv,brightness=request.Brightness},
                 white_balance=whiteBalance,

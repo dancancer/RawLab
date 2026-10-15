@@ -159,12 +159,16 @@ set(CORE_SOURCES
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
     src/ffi/sony2fuji_c.cpp
-    src/platform/display_image.cpp
     src/gpu/lut_gpu.cpp
     src/gpu/image_stats.cpp
     src/gpu/denoise.cpp
     src/gpu/compute_denoise.cpp
 )
+if(WIN32)
+    list(APPEND CORE_SOURCES src/platform/display_image_windows.cpp)
+else()
+    list(APPEND CORE_SOURCES src/platform/display_image.cpp)
+endif()
 
 if(SONY2FUJI_ENABLE_GPU)
     if(WIN32)
@@ -185,6 +189,9 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+if(WIN32)
+    target_link_libraries(sony2fuji_core windowscodecs ole32)
+endif()
 if(SONY2FUJI_ENABLE_GPU AND WIN32)
     target_link_libraries(sony2fuji_core d3d11 dxgi d3dcompiler)
 endif()
@@ -225,6 +232,9 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    if(WIN32)
+        target_link_libraries(sony2fuji windowscodecs ole32)
+    endif()
     if(SONY2FUJI_ENABLE_GPU AND WIN32)
         target_link_libraries(sony2fuji d3d11 dxgi d3dcompiler)
     endif()

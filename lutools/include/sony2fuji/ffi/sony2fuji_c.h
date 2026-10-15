@@ -292,7 +292,8 @@ typedef enum sony2fuji_render_backend {
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
-// macOS ImageIO adapter: single-frame opaque 8-bit SDR JPEG/PNG/TIFF/HEIF.
+// Desktop adapters: single-frame opaque 8-bit SDR RGB.
+// macOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
 // Rejects transparency, high-bit-depth/HDR and unsupported encodings.
 // Pass a zero-initialized or previously returned buffer; release with

@@ -10,6 +10,10 @@ public sealed class LibraryEntry : INotifyPropertyChanged
 {
     public static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos".Split(' '),StringComparer.OrdinalIgnoreCase);
     public static bool IsRaw(string path) => RawExtensions.Contains(System.IO.Path.GetExtension(path).TrimStart('.'));
+    public static readonly HashSet<string> RasterExtensions = new("jpg jpeg png tif tiff".Split(' '),StringComparer.OrdinalIgnoreCase);
+    public static bool IsRaster(string path) => RasterExtensions.Contains(System.IO.Path.GetExtension(path).TrimStart('.'));
+    public static bool IsImage(string path) => IsRaw(path) || IsRaster(path);
+    internal static string ImageFilter => string.Join(';',RawExtensions.Concat(RasterExtensions).Select(x=>"*."+x));
     public string Path { get; }
     public string Name => System.IO.Path.GetFileName(IsFolder ? Path.TrimEnd('\\', '/') : Path);
     public bool IsFolder { get; }
@@ -32,7 +36,7 @@ public sealed class LibraryEntry : INotifyPropertyChanged
         {
             var entries=await Task.Run(()=>new DirectoryInfo(Path).EnumerateFileSystemInfos()
                 .Where(f=>(f.Attributes&(FileAttributes.Hidden|FileAttributes.ReparsePoint))==0)
-                .Where(f=>f is DirectoryInfo || IsRaw(f.FullName))
+                .Where(f=>f is DirectoryInfo || IsImage(f.FullName))
                 .OrderBy(f=>f is DirectoryInfo ? 0 : 1).ThenBy(f=>f.Name,StringComparer.CurrentCultureIgnoreCase)
                 .Select(f=>(f.FullName,Folder:f is DirectoryInfo)).ToArray());
             Children.Clear(); foreach(var entry in entries)Children.Add(new(entry.FullName,entry.Folder));

@@ -7,6 +7,12 @@
 
 0.8 编辑器实现位于独立功能分支，尚未发布。统一参数行、原生菜单、几何/镜头草稿及本轮验证边界见 [Windows 0.8 验证记录](VERIFICATION-v08.md)。下方 0.7 下载链接仍指已发布版本。
 
+本地 Agent v08 开发还接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
+普通图像只接受单帧、不透明的 8-bit SDR RGB，最多 64M 像素；方向与 ICC 转 sRGB 各处理一次，
+不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。HEIF、BigTIFF、透明、高位深、浮点/HDR、CMYK、多帧以及不支持的色彩描述会明确拒绝，不能据此宣称支持所有 ICC。
+新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
+Windows 实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)，不代表已发布或 PR 已更新。
+
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ## 下载 v0.7.0 Windows 包
@@ -65,8 +71,8 @@ python3 RawLabWindows/build-remote.py \
 
 | 功能 | Windows 实现 |
 |---|---|
-| RAW 打开、拖放、多目录文件树 | 原生对话框；文件夹可直接拖入左侧空白处或目录行并记住，重复路径去重，不移动源文件；目录按需展开；拖动右侧边界调整宽度；缩略图自动单/双列，文件名在下方，超长省略、悬停显示全名 |
-| 缩略图 | 只提取内嵌预览，不解包/显影 RAW；最多两个后台读取任务 |
+| 照片打开、拖放、多目录文件树 | RAW、JPEG/PNG/经典 TIFF；原生对话框；文件夹可直接拖入左侧空白处或目录行并记住，重复路径去重，不移动源文件；目录按需展开；拖动右侧边界调整宽度；缩略图自动单/双列，文件名在下方，超长省略、悬停显示全名 |
+| 缩略图 | RAW 只提取内嵌预览，不解包/显影；普通图像复用严格 WIC 解码/方向/色彩入口后缩小；最多两个后台读取任务 |
 | 胶片 | 独立“胶片”类别，选中后显示胶片列表；同一套十种 LUT 与包装图；支持中性、多选导入兼容 CUBE/RLOOK；导入项使用会话内的外部文件引用 |
 | 调整 | 胶片强度 0–200%（默认 100%）、曝光、色温、色调、对比度、高光、阴影、S 曲线、饱和度、锐化 |
 | 几何 | 八手柄/移动裁切、比例预设、百分比精调、左右 90° 旋转、翻转、±45° 拉直及水平/垂直透视；独立草稿预览，应用后才保存并可冻结到批量任务 |
@@ -205,6 +211,26 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 `localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
 状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
 不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
+
+普通图像和单张预览的功能回归可通过同一入口选择：
+
+```powershell
+./RawLabWindows/tests/run-v08.ps1 -RawPath 'C:/samples/photo.ARW' -NativeArtifacts 'build/RawLab-Windows' -Only 'raster,comparison-default'
+```
+
+`raster` 比较 GUI renderer、CLI 和冻结 BatchRunner 的 FINAL 像素；`comparison-default`
+覆盖主窗口的菜单、历史恢复、文件树/拖放处理器和实际混合批量导出。两者都不是物理输入验收。
+独立原生交互入口另行构建无产品程序集引用的 UIA driver，通过真实 Windows 文件选择器和跨进程控件
+执行 RAW/PNG/JPEG 打开、对比切换、调参及私有 profile 重启恢复：
+
+```powershell
+./RawLabWindows/tests/run-comparison-native.ps1 -RawPath 'C:/samples/photo.ARW' -NativeArtifacts 'build/RawLab-Windows'
+```
+
+该入口同样先保护默认 journal，运行前后核对默认 RawLab 配置文件字节及修改时间，并将所有写入放在私有目录。
+退出码 `0` 表示实际原生交互通过，`2` 表示桌面不可达的 `NOT REACHED`，其他非零表示失败；
+详细结果写入独立输出目录的 `summary.json` 和日志。`run-v08.ps1` 不隐式调用这个入口，不能替代其结果。
+原生 UIA 仍不代表 Explorer/OLE 拖入、真实鼠标/触控笔、物理 GPU 或多显示器验收。
 
 `editor-review` 还覆盖空闲批量窗口同步关闭失败时的 pending viewport resize：锁住私有 journal，
 分别保留和不保留前台导入，确认无需额外输入即可恢复精确预览，且独立 CPU 像素一致。

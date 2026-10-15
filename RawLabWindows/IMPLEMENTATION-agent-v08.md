@@ -47,17 +47,17 @@
 
 **Interfaces:** 复用 `sony2fuji_load_display_image` 与 `SONY2FUJI_INPUT_DISPLAY_BUFFER=2`；不复制 C++ 调色阶段。只在实际支持且验证后声明 JPEG/PNG/TIFF/HEIF 能力。
 
-- [ ] 添加 JPEG/PNG 解码、方向、ICC、精度/alpha/HDR/multiframe/损坏拒绝 RED。
-- [ ] 实现 WIC 边界及共享 GUI/CLI 入口；保持单次方向/颜色变换，明确 RAW-only 请求禁用/拒绝。
-- [ ] 贯通打开、文件树/Drop、info/缩略图、预览、保存恢复、Agent、单张与混合 Batch。
-- [ ] 重新构建 Windows native，验证 identity 色彩、三入口 FINAL、源身份/alias 保护和 RAW 回归；实际探测 TIFF/HEIF codec。
-- [ ] 定向独立复核、修复、复验，记录支持/不支持项并本地提交。
+- [x] 添加 JPEG/PNG 解码、方向、ICC、精度/alpha/HDR/multiframe/损坏拒绝测试；记录原生合法 PNG 拒绝与托管缺少分类入口的实际 RED，不把 fixture/编译失败计为 RED。
+- [x] 实现 WIC 边界及共享 GUI/CLI 入口；保持单次方向/颜色变换，明确 RAW-only 请求禁用/拒绝。
+- [x] 贯通打开、文件树/Drop、info/缩略图、预览、保存恢复、Agent、单张与混合 Batch。
+- [x] 重新构建 Windows native，验证 identity 色彩、三入口 FINAL、源身份/alias 保护和 RAW 回归；实际验证经典 RGB8 TIFF 的原生/托管/CLI/冻结批量路径，HEIF 不声明支持。
+- [x] 定向独立复核、修复、复验，记录支持/不支持项；本轮必要本地提交，不改变 PR。
 
 ## Milestone 3: Single Preview Default
 
 **Files:** `MainWindow.xaml(.cs)`、现有 comparison/canvas/cache 接线与测试；不将会话选择写入历史编辑。
 
-- [ ] 添加新窗口、新图、历史恢复的默认关闭 RED；保留同图手动侧并排/滑动及异步状态断言。
-- [ ] 同步菜单、button、canvas、cache 的默认/切图状态，不只改字段初值。
-- [ ] 执行真实 Windows 原生打开/切图/对比/调参操作验收；若桌面输入不可达则准确记录限制，不把 routed event 当物理操作。
-- [ ] 重跑受影响编辑器/批量/隔离验证，完成独立复核与本地提交。核实远端 PR 未改变。
+- [x] 添加新窗口、新图、历史恢复的默认关闭 RED；保留同图手动侧并排/滑动及异步状态断言。
+- [x] 同步菜单、button、canvas、cache 的默认/切图状态，不只改字段初值。
+- [ ] 真实 Windows 原生打开/切图/对比/调参操作验收仍 NOT REACHED。独立 UIA driver/入口已零警告构建并实际运行，但 VM 无交互桌面；退出码 2，不能用 routed event 或 27 项功能检查代替。
+- [x] 重跑受影响编辑器/批量/隔离验证，完成独立复核及必要本地提交。153 项全套编辑器、79 项 raster 等结果见验证记录；远端 PR 未改变。

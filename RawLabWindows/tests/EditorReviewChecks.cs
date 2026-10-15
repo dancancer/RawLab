@@ -32,8 +32,9 @@ internal static class EditorReviewChecks
         var originalHash=SHA256.HashData(File.ReadAllBytes(raw));
         var output=Path.Combine(repo,"build","windows-editor-review",DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(output);
-        var photo=Path.Combine(output,"photo"+Path.GetExtension(raw));File.Copy(raw,photo);
-        var other=Path.Combine(output,"other"+Path.GetExtension(raw));File.Copy(raw,other);
+        var inputs=Path.Combine(output,"inputs");Directory.CreateDirectory(inputs);
+        var photo=Path.Combine(inputs,"photo"+Path.GetExtension(raw));File.Copy(raw,photo);
+        var other=Path.Combine(inputs,"other"+Path.GetExtension(raw));File.Copy(raw,other);
         var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         try
@@ -134,6 +135,8 @@ internal static class EditorReviewChecks
             var window=Open("close-journal-retry");var held=new HeldContext(SynchronizationContext.Current!);
             var folder=new LibraryEntry(Path.GetDirectoryName(photo)!,true);
             var loading=folder.Load();InteractionChecks.PumpUntil(()=>loading.IsCompleted);loading.GetAwaiter().GetResult();
+            check(folder.Children.Count==2 && folder.Children.All(entry=>entry.Path==photo || entry.Path==other),
+                "Close recovery library excludes earlier exported images and contains only its two source photos");
             window.Files.ItemsSource=new[]{folder};folder.IsExpanded=true;window.UpdateLayout();
             var visible=folder.Children.First(entry=>entry.Path==photo);
             InteractionChecks.PumpUntil(()=>visible.Thumbnail!=null);

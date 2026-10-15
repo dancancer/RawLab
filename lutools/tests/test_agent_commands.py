@@ -88,7 +88,7 @@ class AgentCommands(unittest.TestCase):
         expected = {
             "recipe_versions": [1, 2, 3, 4],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
-            "input_types": ["raw", "raster"] if sys.platform == "darwin" else ["raw"],
+            "input_types": ["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"],
             "output_formats": ["jpeg", "png", "dng"],
             "exposure_modes": ["scene", "preview", "sensor"],
             "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
@@ -99,6 +99,8 @@ class AgentCommands(unittest.TestCase):
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
                 features = result["result"]["optional_features"]
+                if sys.platform == "win32":
+                    self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff"])
                 self.assertEqual(set(features), {"wavelet_denoise", "chroma_denoise", "lens_correction"})
                 self.assertTrue(all(isinstance(value, bool) for value in features.values()))
         self.assertFalse((self.root / "edited.jpg").exists())

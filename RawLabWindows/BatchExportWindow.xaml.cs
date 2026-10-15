@@ -52,11 +52,12 @@ public partial class BatchExportWindow : Window
 
     private void RefreshLanguage()
     {
-        var state = job.Settings.Restore();
+        var state = RenderEngine.PrepareInputSettings(job.Source,job.Settings.Restore());
+        var raster=LibraryEntry.IsRaster(job.Source);
         var lookName = job.Look == null ? Loc.Text("中性") : job.LookName;
         SourceLook.Text = $"{lookName} · {job.Settings.Values[(int)Parameter.Strength]:0}%";
-        SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
-        AllSettings.Text = string.Join("\n", ParameterSpec.All.Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
+        SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], raster ? Loc.Text("不适用") : state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), raster ? Loc.Text("显示图像") : new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
+        AllSettings.Text = string.Join("\n", ParameterSpec.All.Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
         AllSettings.Text += $"\nHSL  {(state.Hsl.IsIdentity ? Loc.Text("未调整") : Loc.Text("已调整"))}";
         AllSettings.Text += Loc.Format("\n降噪  {0}\n亮度降噪  {1:0.#}\n色彩降噪  {2:0.#}\n粗颗粒降噪  {3:0.#}", state.Denoise.Enabled ? Loc.Text("开启") : Loc.Text("关闭"), state.Denoise.Luma, state.Denoise.Chroma, state.Denoise.Coarse);
         AllSettings.Text += "\n" + string.Join("\n", new[] {
@@ -125,8 +126,8 @@ public partial class BatchExportWindow : Window
     private async void AddClicked(object sender, RoutedEventArgs e)
     {
         if (Running || job.Started || preflighting) return;
-        var picker = new OpenFileDialog { Title = Loc.Text("选择待导出的 RAW 照片"), Multiselect = true,
-            Filter = Loc.Text("RAW 照片|") + string.Join(';', LibraryEntry.RawExtensions.Select(x => "*." + x)) };
+        var picker = new OpenFileDialog { Title = Loc.Text("选择待导出的照片"), Multiselect = true,
+            Filter = Loc.Text("照片|") + LibraryEntry.ImageFilter };
         if (picker.ShowDialog(this) != true) return;
         await AddInputs(picker.FileNames);
     }

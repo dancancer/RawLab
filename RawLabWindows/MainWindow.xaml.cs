@@ -37,7 +37,7 @@ public partial class MainWindow : Window
     private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
     // The modeless batch owns its lifetime; foreground completion must not clear it.
     private bool exporting=>foregroundBusy || batchWindow?.Busy==true;
-    private bool compare=true,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,swipe;
+    private bool compare,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,swipe;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
     private bool choosingHsl,autoExposing;
@@ -52,6 +52,7 @@ public partial class MainWindow : Window
     private double libraryWidth=244;
     private RenderedImage? result;
     private int renderedGpuMode;
+    private int? rasterPreviousGpuMode;
     private Func<string>? localizedStatus;
     private readonly HashSet<LibraryEntry> visibleThumbnails=[];
     private readonly DispatcherTimer thumbnailRefresh=new(){Interval=TimeSpan.FromMilliseconds(80)};
@@ -65,6 +66,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        AutomationProperties.SetAutomationId(this,"MainWindow");
+        foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareOff,CompareSide,CompareSwipe,
+            MenuCompareOff,MenuCompareSide,MenuCompareSwipe,NeutralCanvas,ResultCanvas,ExportButton,ExportPng,SaveState,Status,Files})
+            AutomationProperties.SetAutomationId(control,control.Name);
+        AutomationProperties.SetAutomationId(ValueSlider,"ParameterValueSlider");
+        AutomationProperties.SetAutomationId(ValueText,"ParameterValueText");
         if(Application.Current!=null)EditorAppearance.Apply(Application.Current.Resources);
         void RefreshLanguage()
         {
@@ -137,7 +144,7 @@ public partial class MainWindow : Window
         InitializeEditWorkflow();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
-            var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsRaw);
+            var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
             if(input!=null)OpenFile(input);
             await updates.CheckAsync(false, updateCancellation.Token);
         };
@@ -223,6 +230,15 @@ public partial class MainWindow : Window
         syncing=true;
         try
         {
+            var raster=file!=null && LibraryEntry.IsRaster(file);
+            if(raster)settings=RenderEngine.PrepareInputSettings(file!,settings);
+            if(raster)
+            {
+                rasterPreviousGpuMode ??= GpuMode.SelectedIndex;
+                GpuMode.SelectedIndex=1;
+            }
+            else if(rasterPreviousGpuMode is {} previousMode)
+            {rasterPreviousGpuMode=null;GpuMode.SelectedIndex=previousMode;}
             var spec=ParameterSpec.All[(int)selectedParameter];
             OrdinaryParameter.Refresh(Loc.Text(spec.Title),NumericRange.For(spec),settings[selectedParameter],settings.Default(selectedParameter),spec.Unit);
             AutomationProperties.SetName(ValueSlider,Loc.Text(spec.Title));
@@ -236,8 +252,8 @@ public partial class MainWindow : Window
             ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
             LensSurface.Visibility=LensEditor.Visibility;
-            LensEditor.IsEnabled=file!=null && !exporting;LensEditor.Refresh(PreviewLens,result?.Lens);
-            LensCategory.IsEnabled=file!=null && !exporting;
+            LensEditor.IsEnabled=file!=null && !raster && !exporting;LensEditor.Refresh(PreviewLens,result?.Lens);
+            LensCategory.IsEnabled=file!=null && !raster && !exporting;
             LensCategory.Tag=choosingLens ? "selected" : null;
             LensCategoryRing.Selected=choosingLens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
             GeometrySurface.Visibility=choosingGeometry ? Visibility.Visible : Visibility.Collapsed;
@@ -270,13 +286,14 @@ public partial class MainWindow : Window
             }
             ExposureMode.SelectedIndex=settings.ExposureMode;
             ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
-            ExposureMode.IsEnabled=ExposureMode.IsEnabled && !transform.Active;
+            ExposureMode.IsEnabled=ExposureMode.IsEnabled && !raster && !transform.Active;
             ResetParameterButton.IsEnabled=ResetGroupButton.IsEnabled=canAdjust;
             AsShotButton.IsEnabled=file!=null && !exporting && settings.AsShot!=null && !transform.Active;
             DraftActions.Visibility=transform.Active ? Visibility.Visible : Visibility.Collapsed;
             ApplyDraftButton.IsEnabled=CanApplyTransform;
             foreach(var (id,controls) in toolButtons)
             {
+                controls.Button.IsEnabled=file!=null && (!raster || id is not(Parameter.Temperature or Parameter.Tint));
                 var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingLens && !choosingGeometry && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
@@ -288,7 +305,7 @@ public partial class MainWindow : Window
             ActiveFilm.Text=filmName;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : filmName;ActiveFilm.ToolTip=filmName;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             RefreshComparisonLayout();
-            CompareButton.Tag=compare ? "selected" : null;
+            RefreshComparisonSelection();
             ClippingButton.Tag=clipping ? "selected" : null;
             InfoButton.Tag=photoInfoMode == PhotoInfoMode.Hidden ? null : "selected";
             LibraryToggleButton.Tag=LibraryPanel.Visibility==Visibility.Visible ? "selected" : null;
@@ -310,7 +327,7 @@ public partial class MainWindow : Window
         ApplyDraftButton.IsEnabled=CanApplyTransform;
         HistogramSurface.Visibility=file!=null ? Visibility.Visible : Visibility.Collapsed;
         CompareButton.IsEnabled=ClippingButton.IsEnabled=InfoButton.IsEnabled=AdjustToggleButton.IsEnabled=file!=null && !exporting;
-        AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting;
+        AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
         ExportButton.ToolTip=file==null ? Loc.Text("打开 RAW 照片后导出") : transform.Active ? Loc.Text("草稿预览 · 尚未应用") :
@@ -323,10 +340,11 @@ public partial class MainWindow : Window
     private void RefreshRenderLabels()
     {
         if (result == null) { if (file != null && !renderFailed) BackendLabel.Text=Loc.Text("相机预览 · 正在显影"); return; }
-        BackendLabel.Text=$"{(result.Backend==3 ? "Direct3D 11 · GPU" : renderedGpuMode==0 ? "CPU" : Loc.Text("CPU · GPU 已回退"))} · sRGB";
+        BackendLabel.Text=$"{(result.Backend==3 ? "Direct3D 11 · GPU" : renderedGpuMode==0 || (file!=null && LibraryEntry.IsRaster(file)) ? "CPU" : Loc.Text("CPU · GPU 已回退"))} · sRGB";
         ClipStats.Text=Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计", result.Shadows, result.Highlights);
-        BaselineLabel.Text=Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
-        AsShotButton.ToolTip=result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature, result.WhiteBalance.Value.Tint);
+        var raster=file!=null && LibraryEntry.IsRaster(file);
+        BaselineLabel.Text=raster ? Loc.Text("显示图像") : Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
+        AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature, result.WhiteBalance.Value.Tint);
     }
     private void RetryClicked(object sender,RoutedEventArgs e)=>Schedule();
     private void Report(Exception error)=>SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
@@ -337,9 +355,10 @@ public partial class MainWindow : Window
         try
         {
             path=Path.GetFullPath(path);
-            if(!LibraryEntry.IsRaw(path))throw new InvalidOperationException(Loc.Text("请选择支持的 RAW 文件。"));
+            if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
             if(!ResolveTransformDraft() || !SaveEdits())return;
             RestoreEdits(path);
+            compare=swipe=false;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
@@ -492,7 +511,7 @@ public partial class MainWindow : Window
         UpdateBusy(); Pump();
     }
     private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting || transform.Active)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
-    private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !exporting)Schedule(); }
+    private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !syncing && !exporting)Schedule(); }
     private void ResetGroupClicked(object sender,RoutedEventArgs e) { if(exporting || !ResolveTransformDraft())return;var group=ParameterSpec.All[(int)selectedParameter].Group;if(group=="胶片" && settings.MasterRecipeID!=null){settings.ClearMasterRecipe();lut=null;}settings.ResetGroup(group);MarkEdited();RefreshControls();Schedule(); }
     private void ResetAllClicked(object sender,RoutedEventArgs e) { if(file==null || exporting || !ResolveTransformDraft())return;if(settings.MasterRecipeID!=null)lut=null;settings.ResetAll();MarkEdited();RefreshControls();Schedule(); }
     private async void AutoExposureClicked(object sender,RoutedEventArgs e)
@@ -513,7 +532,7 @@ public partial class MainWindow : Window
     private void OpenClicked(object sender,RoutedEventArgs e)
     {
         if(exporting)return;
-        var dialog=new OpenFileDialog{Title=Loc.Text("打开 RAW 照片"),Filter=Loc.Text("RAW 照片|")+string.Join(';',LibraryEntry.RawExtensions.Select(x=>"*."+x))+Loc.Text("|所有文件|*.*")};
+        var dialog=new OpenFileDialog{Title=Loc.Text("打开照片"),Filter=Loc.Text("照片|")+LibraryEntry.ImageFilter+Loc.Text("|所有文件|*.*")};
         if(dialog.ShowDialog(this)==true)OpenFile(dialog.FileName);
     }
     private async void ImportClicked(object sender,RoutedEventArgs e)
@@ -739,11 +758,11 @@ public partial class MainWindow : Window
             {
                 targets=await Task.Run(()=>new DirectoryInfo(entry.Path).EnumerateFiles()
                     .Where(child=>(child.Attributes&(FileAttributes.Hidden|FileAttributes.ReparsePoint))==0)
-                    .Where(child=>LibraryEntry.IsRaw(child.FullName))
+                    .Where(child=>LibraryEntry.IsImage(child.FullName))
                     .Select(child=>new LibraryEntry(child.FullName,false)).ToArray());
             }
-            else targets=LibraryEntry.IsRaw(entry.Path) ? [entry] : [];
-            if (targets.Length == 0) { SetStatus(() => Loc.Text("目录中没有直接 RAW 照片。"),true); return; }
+            else targets=LibraryEntry.IsImage(entry.Path) ? [entry] : [];
+            if (targets.Length == 0) { SetStatus(() => Loc.Text("目录中没有直接照片。"),true); return; }
             var answer=MessageBox.Show(this,
                 Loc.Format("将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？", targets.Length),
                 Loc.Text("应用当前设置"),MessageBoxButton.YesNo,MessageBoxImage.Question);
@@ -780,7 +799,7 @@ public partial class MainWindow : Window
             try{foreach(var folder in folders)library.Add(folder);e.Effects=DragDropEffects.Copy;}
             catch(Exception error){Report(error);}
         }
-        else if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsRaw(path)) is {} raw)
+        else if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw)
         {
             OpenFile(raw);e.Effects=DragDropEffects.Copy;
         }
@@ -791,7 +810,7 @@ public partial class MainWindow : Window
         if(exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
         var folders=paths.Where(Directory.Exists).ToArray();
         try{foreach(var path in folders)library.Add(path);if(folders.Length>0)e.Effects=DragDropEffects.Copy;}catch(Exception ex){Report(ex);}
-        if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsRaw(path)) is {} raw){OpenFile(raw);e.Effects=DragDropEffects.Copy;}
+        if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw){OpenFile(raw);e.Effects=DragDropEffects.Copy;}
     }
     private void LibraryToggle(object sender,RoutedEventArgs e)
     {
@@ -811,16 +830,23 @@ public partial class MainWindow : Window
     private void CompareSwipeClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,true);
     internal void SetComparisonMode(bool enabled,bool sliding)
     {
-        if(transform.Active && !ResolveTransformDraft())return;
+        if(transform.Active && !ResolveTransformDraft()){RefreshComparisonSelection();return;}
         var changed=compare!=enabled;
         compare=enabled;swipe=enabled && sliding;
         RefreshComparisonLayout();
         RefreshComparisonToolTip();
-        Grid.SetColumnSpan(NeutralLabel,swipe ? 2 : 1);
-        FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-        CompareOff.IsChecked=!enabled;CompareSide.IsChecked=enabled && !sliding;CompareSwipe.IsChecked=swipe;
         RefreshControls();
         if(changed)Schedule();
+    }
+    private void RefreshComparisonSelection()
+    {
+        Grid.SetColumnSpan(NeutralLabel,swipe ? 2 : 1);
+        FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        CompareOff.IsChecked=MenuCompareOff.IsChecked=!compare;
+        CompareSide.IsChecked=MenuCompareSide.IsChecked=compare && !swipe;
+        CompareSwipe.IsChecked=MenuCompareSwipe.IsChecked=swipe;
+        CompareButton.Tag=compare ? "selected" : null;
+        AutomationProperties.SetItemStatus(CompareButton,!compare ? "off" : swipe ? "swipe" : "side");
     }
     private void RefreshComparisonLayout()
     {

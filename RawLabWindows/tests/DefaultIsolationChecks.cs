@@ -23,7 +23,7 @@ internal static class DefaultIsolationChecks
                 "Recovery control retains the private journal and published output: "+status);
             foreach(var mode in new[]{"--default-isolation","--profile-isolation","--status-layout","--appearance","--editor-review","--editor-shell",
                 "--transform-ui","--about","--geometry","--lens","--rendered-dng","--master-recipes","--photo-features","--denoise",
-                "--interactions","--benchmark","--benchmark-ui","--entry-selection","--resources","--agent-recipe"})Reject(status,false,mode:mode);
+                "--interactions","--benchmark","--benchmark-ui","--entry-selection","--resources","--agent-recipe","--raster","--comparison-default","--comparison-ui-host"})Reject(status,false,mode:mode);
             foreach(var uiOnly in new[]{false,true})Reject(status,uiOnly);
         }
         Reject(BatchStatus.Running,true,locked:true);
@@ -41,7 +41,7 @@ internal static class DefaultIsolationChecks
             if(uiOnly)args=[..args,"--ui-only"];
             if(mode!=null)args=mode switch{
                 "--about"=>[mode],
-                "--agent-recipe"=>[mode,..args,Path.Combine(fixture.Directory,"missing-cli.exe")],
+                "--agent-recipe" or "--raster"=>[mode,..args,Path.Combine(fixture.Directory,"missing-cli.exe")],
                 "--default-isolation" or "--profile-isolation" or "--status-layout" or "--appearance" or "--editor-shell"=>[mode,repo],
                 _=>[mode,..args]};
             var rejected=false;

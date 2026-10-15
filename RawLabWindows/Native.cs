@@ -93,8 +93,8 @@ internal static class Native
     internal static void Check(int status)
     {
         if (status != 0) throw new InvalidOperationException(status switch {
-            1 => Loc.Text("参数或输出路径无效，不能覆盖原始 RAW。"), 2 => Loc.Text("不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"),
-            3 => Loc.Text("无法读取或写入文件，请检查路径与权限。"), 5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"), _ => Loc.Text("RAW 显影失败。") });
+            1 => Loc.Text("参数或输出路径无效，不能覆盖原始 RAW。"), 2 => Loc.Text("不支持此照片或外观文件。"),
+            3 => Loc.Text("无法读取或写入文件，请检查路径与权限。"), 5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"), _ => Loc.Text("照片处理失败。") });
     }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_create(out IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_destroy(IntPtr session);
@@ -123,4 +123,6 @@ internal static class Native
     [DllImport(Dll, EntryPoint="sony2fuji_analyze_image", CallingConvention=CallingConvention.Cdecl)] internal static extern int AnalyzeWithoutMask(ref Buffer buffer,int mode,[Out] uint[] bins,out uint shadows,out uint highlights,IntPtr mask);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int rawlab_thumbnail([MarshalAs(UnmanagedType.LPUTF8Str)] string path,out Buffer buffer,out int kind,out int flip);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int rawlab_preview([MarshalAs(UnmanagedType.LPUTF8Str)] string path,out Buffer buffer,out int kind,out int flip,out int width,out int height);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_load_display_image([MarshalAs(UnmanagedType.LPUTF8Str)] string path,ref Buffer buffer);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int rawlab_display_preview([MarshalAs(UnmanagedType.LPUTF8Str)] string path,uint edge,ref Buffer buffer,out uint width,out uint height);
 }

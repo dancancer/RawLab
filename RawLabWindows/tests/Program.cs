@@ -38,6 +38,9 @@ static class Program
         {
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==3 && args[0]=="--comparison-default") { ComparisonDefaultChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} comparison default checks");return 0; }
+            if(args.Length==3 && args[0]=="--comparison-ui-host")return ComparisonDefaultChecks.Host(args[1],args[2]);
+            if(args.Length==4 && args[0]=="--raster") { RasterChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} raster checks");return 0; }
             if(args.Length==4 && args[0]=="--agent-recipe") { AgentRecipeChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} Agent recipe checks");return 0; }
             if(args.Length==3 && args[0]=="--entry-selection") { EntrySelectionChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} entry selection checks");return 0; }
             if(args.Length==3 && args[0]=="--resources") { ResourceChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} resource checks");return 0; }
@@ -205,7 +208,7 @@ static class Program
             var folder=new LibraryEntry(Path.GetDirectoryName(raw)!,true);
             window.Files.ItemsSource=new[]{folder};
             var loading=folder.Load();PumpUntil(()=>loading.IsCompleted,TimeSpan.FromSeconds(30));loading.GetAwaiter().GetResult();
-            Check(folder.Children.Any(p=>!p.IsFolder) && folder.Children.Where(p=>!p.IsFolder).All(p=>LibraryEntry.IsRaw(p.Path)),"Lazy file library lists RAW files and filters JPEGs");
+            Check(folder.Children.Any(p=>!p.IsFolder) && folder.Children.Where(p=>!p.IsFolder).All(p=>LibraryEntry.IsImage(p.Path)),"Lazy file library lists supported RAW and ordinary images");
             window.Measure(new Size(1440,920));window.Arrange(new Rect(0,0,1440,920));window.UpdateLayout();
             var proxyPublished=false;var proxyAllowedExport=false;var openClock=Stopwatch.StartNew();double proxyMs=0;
             var statusText=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
