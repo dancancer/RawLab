@@ -49,10 +49,10 @@ final class BatchExportModel: ObservableObject {
     func addFiles() {
         guard !running, !job.started, !validating else { return }
         let panel = NSOpenPanel()
-        panel.title = L10n.text("选择待导出的 RAW 照片")
+        panel.title = L10n.text("选择待导出的照片")
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = DirectoryContents.rawExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = DirectoryContents.supportedExtensions.compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK { add(panel.urls) }
     }
 
@@ -62,8 +62,8 @@ final class BatchExportModel: ObservableObject {
         var added: [BatchExportItem] = []
         for url in urls {
             do {
-                guard DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased()) else {
-                    throw RenderError.failed(L10n.text("不是支持的 RAW 文件"))
+                guard DirectoryContents.supportedExtensions.contains(url.pathExtension.lowercased()) else {
+                    throw RenderError.failed(L10n.text("不是支持的图像文件"))
                 }
                 var item = try BatchExportItem(url: url)
                 item.selected = true

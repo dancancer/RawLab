@@ -143,8 +143,9 @@ struct EditorView: View {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().frame(maxWidth: 210)
                     .id(localizationLocale.identifier)
+                    .disabled(RenderEngine.isRasterInput(model.file))
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
-                Text(model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
+                Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
                     .font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 66)
                     .help(L10n.text("基础曝光偏移"))
                 Menu {
@@ -213,7 +214,7 @@ struct EditorView: View {
                     }
                 } else {
                     Image(systemName: "photo.on.rectangle.angled").font(.system(size: 36)).foregroundStyle(.secondary)
-                    Button(action: model.openPanel) { Label(L10n.text("打开 RAW…"), systemImage: "folder") }.controlSize(.large)
+                    Button(action: model.openPanel) { Label(L10n.text("打开照片"), systemImage: "folder") }.controlSize(.large)
                         .accessibilityIdentifier("editor.empty.openRAW")
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -252,7 +253,7 @@ struct EditorView: View {
                 .help(L10n.text("显示或收起文件树")).accessibilityLabel(L10n.text("文件树"))
                 .accessibilityValue(showFiles ? L10n.text("已展开") : L10n.text("已收起"))
             Button(action: model.openPanel) { Image(systemName: "folder") }
-                .help(L10n.text("打开 RAW")).accessibilityLabel(L10n.text("打开 RAW")).disabled(model.exporting)
+                .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
         }
         ToolbarItemGroup {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }

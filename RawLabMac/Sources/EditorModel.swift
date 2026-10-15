@@ -161,6 +161,7 @@ final class EditorModel: ObservableObject {
     var canApplySettings: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
 
     @discardableResult func beginGeometryDraft(tab: MacGeometryTab = .crop) -> Bool {
+        if tab == .lens && RenderEngine.isRasterInput(file) { return false }
         if geometryDraft != nil { return selectGeometryDraftTab(tab) }
         guard file != nil, result != nil, !exporting, !lookLibraryBusy, saveEdits() else { return false }
         geometryDraftEntrySaveError = saveError
@@ -178,6 +179,7 @@ final class EditorModel: ObservableObject {
     }
 
     @discardableResult func selectGeometryDraftTab(_ tab: MacGeometryTab) -> Bool {
+        if tab == .lens && RenderEngine.isRasterInput(file) { return false }
         guard geometryDraft != nil, invalidGeometryDraftInputs.isEmpty else { return false }
         geometryDraftTab = tab
         return true
@@ -431,11 +433,11 @@ final class EditorModel: ObservableObject {
         guard canApplySettings else { return }
         do {
             let targets = directory ? try DirectoryContents.read(url).photos : [url]
-            guard !targets.isEmpty else { throw RenderError.failed(L10n.text("此目录没有 RAW 照片。")) }
+            guard !targets.isEmpty else { throw RenderError.failed(L10n.text("此目录没有照片。")) }
             let alert = NSAlert()
             alert.messageText = L10n.format("应用当前设置到 %@ 张照片？", String(describing: targets.count))
-            alert.informativeText = L10n.text("将替换目标照片的本机调整记录，不改写原始 RAW。") +
-                (directory ? L10n.text("仅包含此目录中的 RAW，不包含子目录。") : "")
+            alert.informativeText = L10n.text("将替换目标照片的本机调整记录，不改写原始文件。") +
+                (directory ? L10n.text("仅包含此目录中的照片，不包含子目录。") : "")
             alert.addButton(withTitle: L10n.text("应用当前设置")); alert.addButton(withTitle: L10n.text("取消"))
             if alert.runModal() == .alertFirstButtonReturn { try applyCurrentSettings(to: targets) }
         } catch { self.error = error.localizedDescription }
@@ -475,7 +477,8 @@ final class EditorModel: ObservableObject {
     func openPanel() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-        panel.title = L10n.text("打开 RAW 照片")
+        panel.title = L10n.text("打开照片")
+        panel.allowedContentTypes = DirectoryContents.supportedExtensions.compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
     func open(_ url: URL) {

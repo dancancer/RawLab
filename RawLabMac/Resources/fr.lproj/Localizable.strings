@@ -1,4 +1,13 @@
 "%@ · %@%%" = "%@ · %@%%";
+"打开照片" = "Ouvrir une photo";
+"请至少选择一张照片。" = "Veuillez sélectionner au moins une photo.";
+"选择待导出的照片" = "Sélectionner les photos à exporter";
+"不是支持的图像文件" = "Fichier image non pris en charge";
+"无照片" = "Aucune photo";
+"此目录没有照片。" = "Ce dossier ne contient aucune photo.";
+"将替换目标照片的本机调整记录，不改写原始文件。" = "Les réglages locaux sont remplacés sans modifier les fichiers originaux.";
+"仅包含此目录中的照片，不包含子目录。" = "Seules les photos de ce dossier sont incluses, sans les sous-dossiers.";
+"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.";
 "%@ · 本次导出效果" = "%@ · L'effet de cette exportation";
 "%@ 至 %@" = "%@ à %@";
 "%@ 至 %@ %@" = "%@ à %@ %@";

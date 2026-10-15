@@ -8,7 +8,10 @@
     "schema_version": { "type": "integer", "const": 4 },
     "input": {
       "type": "object", "additionalProperties": false, "required": ["path"],
-      "properties": { "path": { "type": "string", "minLength": 1 } }
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["raw", "raster"], "default": "raw" }
+      }
     },
     "edits": {
       "type": "object", "additionalProperties": false, "required": ["exposure"],
@@ -27,7 +30,7 @@
         "white_balance": {
           "type": "object", "additionalProperties": false, "required": ["mode"],
           "properties": {
-            "mode": { "enum": ["camera", "auto", "temperature"] },
+            "mode": { "enum": ["camera", "auto", "temperature", "none"] },
             "temperature_kelvin": { "type": "number", "minimum": 2000, "maximum": 50000 },
             "tint": { "type": "number", "minimum": -150, "maximum": 150, "default": 0 }
           },
@@ -169,5 +172,73 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["input"],
+        "properties": {
+          "input": {
+            "required": ["type"],
+            "properties": { "type": { "const": "raster" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "edits": {
+            "properties": {
+              "exposure": {
+                "properties": { "mode": { "const": "sensor" } }
+              },
+              "white_balance": {
+                "properties": { "mode": { "const": "none" } }
+              },
+              "denoise": {
+                "properties": {
+                  "raw_level": { "const": 0 }
+                }
+              },
+              "lens_correction": {
+                "properties": {
+                  "distortion": { "const": false },
+                  "tca": { "const": false },
+                  "profile_id": { "const": null }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["input"],
+        "properties": {
+          "input": {
+            "anyOf": [
+              { "not": { "required": ["type"] } },
+              {
+                "required": ["type"],
+                "properties": { "type": { "const": "raw" } }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "edits": {
+            "properties": {
+              "white_balance": {
+                "properties": {
+                  "mode": { "enum": ["camera", "auto", "temperature"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

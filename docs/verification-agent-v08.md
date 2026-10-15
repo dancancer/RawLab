@@ -57,7 +57,52 @@ PNG16 独立量化后最大差 0。该合成 DNG 的 ImageIO metadata 不可读�
 原始日志保留在系统临时目录：`/tmp/rawlab-agent-three-entry-final.log`、
 `/tmp/rawlab-agent-core-ctest.log`、`/tmp/rawlab-agent-macos-build.log`、`/tmp/rawlab-agent-commands.log`。
 
+## macOS 普通图像
+
+新增 JPEG/PNG/TIFF/HEIF 输入，覆盖打开面板、目录列表、缩略图、拖放入口、信息读取、
+编辑保存与恢复、FINAL/preview、Agent info/export、混合 RAW/普通图片批量导出。
+独立只读复核后修正了批量空选提示仍限定 RAW 的遗漏，并增加回归断言。
+
+支持矩阵明确限制为单帧、不透明、8-bit SDR RGB，最多 64M 像素。ImageIO 处理方向一次；
+带 ICC 的图片转换到 sRGB，无 profile 的 RGB 显式按 sRGB 解读。未标记的灰度/索引色、
+透明像素、16-bit/float、CMYK、多页/多帧和识别到的 HDR/gain-map 拒绝，不静默降级。
+本轮实际 HEIF 样例为 `.heic`/`public.heic`，不代表所有 HEIF 编码变体。真实 HDR gain-map
+fixture 尚未覆盖。导出 PNG16 不表示支持 16-bit 输入，rendered DNG 也不是 RAW/HDR 输出。
+
+新增 `SONY2FUJI_INPUT_DISPLAY_BUFFER = 2`，旧 RAW=0、BUFFER=1 与 request v2 布局不变。
+显示图像走现有线性编辑算法与显示输出转换，不套 RAW 场景 sigmoid 或 DNG/RAW 曝光基线。
+WB/FBDD/镜头校正属于 RAW 语义，普通图像 UI 不提供其效果，v4 配方明确拒绝这些请求。
+Auto 明确回退 CPU，Force GPU 明确失败；未增加第二套处理算法或放宽数值容差。
+共享解码函数仅 macOS 启用，其他平台返回 unsupported；Windows 尚未适配。
+
+### 实际运行
+
+- `ctest --test-dir lutools/build-macos --output-on-failure`：36/36，67.49 秒。
+- `bash lutools/test.sh`：独立 Debug/shared-library build，36/36，76.81 秒；本地缺少
+  `DSC06251.ARW`，可选 `sony_highlights` 未执行，未计入通过项。
+- 最后平台 guard 与 CLI 修改后重新构建，相关 display/parser/schema/Agent 五项 CTest
+  5/5，6.26 秒。
+- `bash RawLabMac/tests/raster-render.sh lutools/examples/DJI_20250602164503_0444_D.DNG lutools/build-macos/sony2fuji`：
+  JPEG/PNG/TIFF/HEIF fixture 全部通过，没有格式跳过；GUI FINAL、Agent CLI、直接 CPU、
+  Auto CPU 的 PNG16 解码像素 exact，同尺寸 48x33 preview exact。新增 Agent info 断言验证
+  raster/sRGB8 与 camera/lens/capture/as-shot WB 为 null。还覆盖 gamma identity、metadata、
+  thumbnail、alpha/16-bit/corrupt 拒绝、hardlink 原图保护、持久化恢复、混合 batch 冻结与源 identity。
+- `bash RawLabMac/tests/edit-model.sh`：真实异步 EditorModel 打开带方向 JPEG/PNG、编辑像素变化、
+  保存/新模型恢复、未见照片默认值、失败输入不残留上一张图片均通过；不是原生按钮交互。
+- `bash RawLabMac/tests/batch-export.sh`：先因 RAW 专用提示断言失败，修复后通过。
+- `bash RawLabMac/tests/presentation.sh`、`bash RawLabMac/tests/localization.sh` 通过。
+- 最终 `bash RawLabMac/build.sh` 完整构建与 bundle/signing 检查通过；RAW 三入口脚本
+  再次通过，包含禁用小波 canonical 默认值的新增断言。
+- lens-only 补测 14 项通过，Agent result 报告实际 applied distortion，GUI buffer/Agent PNG
+  量化后最大差 0。禁用小波的 canonical 默认值及 CLI 参数顺序也有回归。
+
+日志：`/tmp/rawlab-raster-final-ctest.log`、`/tmp/rawlab-raster-test-sh.log`、
+`/tmp/rawlab-raster-final-guards.log`、`/tmp/rawlab-raster-final-info.log`、
+`/tmp/rawlab-edit-model-raster-final.log`、`/tmp/rawlab-raster-batch-copy-green.log`、
+`/tmp/rawlab-lens-report-green.log`、`/tmp/rawlab-raster-stable-macos-build.log`、
+`/tmp/rawlab-agent-final-canonical.log`。早期 dyld/测试 RED 不计为成功证据。
+
 ## 后续里程碑
 
-- 普通图像：实现和验收进行中；不把系统解码器能力视为应用已经支持。
-- Windows：尚未开始适配或验证；进入阶段前刷新 development 与 PR #53。
+- 默认比较：必须完成隔离产品、偏好和编辑记录的原生按钮/键鼠交互验收。
+- Windows：尚未开始适配或验证；上述 macOS 三项门槛通过后刷新 development 与 PR #53。

@@ -10,6 +10,7 @@ namespace sony2fuji {
 struct EditRecipe {
     uint32_t schemaVersion = 1;
     std::string inputPath;
+    bool rasterInput = false;
     std::string outputPath;
     std::string lookPath;
     // Required in JSON: never inherit a CLI, UI or session exposure default.

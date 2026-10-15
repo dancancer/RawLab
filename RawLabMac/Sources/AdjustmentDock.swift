@@ -225,7 +225,7 @@ struct AdjustmentDock: View {
                 toolCaption(L10n.text("镜头"))
                 Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 3, height: 3)
             }.frame(width: 72, height: 70).foregroundStyle(lensSelected ? Color.yellow : Color.primary)
-        }.buttonStyle(.plain).id("lens").disabled(model.result == nil)
+        }.buttonStyle(.plain).id("lens").disabled(model.result == nil || RenderEngine.isRasterInput(model.file))
             .help(L10n.text("镜头畸变和横向色差校正")).accessibilityLabel(L10n.text("镜头校正"))
             .accessibilityIdentifier("tool.lens").accessibilityAddTraits(lensSelected ? .isSelected : [])
     }

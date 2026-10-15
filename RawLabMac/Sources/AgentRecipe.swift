@@ -18,6 +18,8 @@ extension RenderEngine {
         let chroma = wavelet == nil ? (state.chromaNoiseReduction ?? 0) : 0
         let raw = wavelet == nil && chroma == 0 ? state.rawNoiseReduction : 0
         var wb: [String: Any] = ["mode": "camera"]
+        let raster = Self.isRasterInput(url)
+        if raster { wb = ["mode": "none"] }
         if request.wb_mode == SONY2FUJI_WB_TEMPERATURE {
             wb = ["mode": "temperature", "temperature_kelvin": request.temperature, "tint": request.tint]
         }
@@ -36,7 +38,7 @@ extension RenderEngine {
         let size: [String: Any] = exportLongEdge.map { ["mode": "limit_long_edge", "long_edge": $0] } ?? ["mode": "native"]
         let document: [String: Any] = [
             "schema_version": 4,
-            "input": ["path": url.standardizedFileURL.path],
+            "input": ["path": url.standardizedFileURL.path, "type": raster ? "raster" : "raw"],
             "edits": [
                 "exposure": ["mode": exposure, "ev": request.exposure_ev, "brightness": request.brightness],
                 "white_balance": wb,
@@ -52,7 +54,7 @@ extension RenderEngine {
                             "grain_size": fx.grain_size, "grain_roughness": fx.grain_roughness],
                 "denoise": ["raw_level": Int(raw), "chroma_mode": Int(chroma),
                             "wavelet": ["enabled": wavelet?.enabled ?? false, "luma": Float(wavelet?.luma ?? 0),
-                                        "chroma": Float(wavelet?.chroma ?? 0), "coarse": Float(wavelet?.coarse ?? 0)]],
+                                        "chroma": Float(wavelet?.chroma ?? 46), "coarse": Float(wavelet?.coarse ?? 50)]],
                 "lens_correction": ["distortion": lens.distortion, "tca": lens.tca, "auto_crop": lens.autoCrop,
                                     "profile_id": lens.coreProfileID.isEmpty ? NSNull() : lens.coreProfileID as Any],
                 "geometry": ["crop": ["x": Float(geometry.cropX), "y": Float(geometry.cropY),

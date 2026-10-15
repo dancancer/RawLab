@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
+import sys
 
 
 ERROR_CODES = {
@@ -87,7 +88,7 @@ class AgentCommands(unittest.TestCase):
         expected = {
             "recipe_versions": [1, 2, 3, 4],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
-            "input_types": ["raw"],
+            "input_types": ["raw", "raster"] if sys.platform == "darwin" else ["raw"],
             "output_formats": ["jpeg", "png", "dng"],
             "exposure_modes": ["scene", "preview", "sensor"],
             "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
@@ -116,6 +117,15 @@ class AgentCommands(unittest.TestCase):
                 self.assertEqual(result["output"]["jpeg_quality"], 95)
                 self.assertEqual(result["output"]["size"], {"mode": "native"})
         self.assertFalse((self.root / "edited.jpg").exists())
+
+    def test_lens_database_validation_flag_order(self):
+        self.write_recipe()
+        for groups in itertools.permutations((("--recipe", self.recipe), ("--lens-database", self.root / "lenses.xml"), ("--print-recipe",))):
+            arguments = [item for group in groups for item in group]
+            with self.subTest(arguments=arguments):
+                process = self.run_cli(*arguments)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertEqual(json.loads(process.stdout)["schema_version"], 1)
 
     def test_validation_retains_unicode_relative_paths(self):
         self.document["input"]["path"] = "样片/日落 🌅.ARW"

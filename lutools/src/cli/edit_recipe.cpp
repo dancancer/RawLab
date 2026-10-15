@@ -177,8 +177,14 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         EditRecipe parsed;
         parsed.schemaVersion = version;
         const auto& input = required(root, "input", "recipe");
-        fields(input, "input", {"path"});
+        if (version >= 4) fields(input, "input", {"path", "type"});
+        else fields(input, "input", {"path"});
         parsed.inputPath = text(required(input, "path", "input"), "input.path");
+        if (input.contains("type")) {
+            const auto type = text(input.at("type"), "input.type");
+            if (type == "raster") parsed.rasterInput = true;
+            else if (type != "raw") throw std::invalid_argument("input.type must be raw or raster");
+        }
 
         const auto& edits = required(root, "edits", "recipe");
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
@@ -200,7 +206,10 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             const auto& wb = edits.at("white_balance");
             fields(wb, "edits.white_balance", {"mode", "temperature_kelvin", "tint"});
             const auto wbMode = text(required(wb, "mode", "edits.white_balance"), "edits.white_balance.mode");
-            if (wbMode == "camera") parsed.whiteBalanceMode = SONY2FUJI_WB_CAMERA;
+            if (parsed.rasterInput && wbMode != "none")
+                throw std::invalid_argument("Raster edits.white_balance.mode must be none");
+            if (parsed.rasterInput && wbMode == "none") parsed.whiteBalanceMode = SONY2FUJI_WB_CAMERA;
+            else if (wbMode == "camera") parsed.whiteBalanceMode = SONY2FUJI_WB_CAMERA;
             else if (wbMode == "auto") parsed.whiteBalanceMode = SONY2FUJI_WB_AUTO;
             else if (wbMode == "temperature") {
                 parsed.whiteBalanceMode = SONY2FUJI_WB_TEMPERATURE;
@@ -211,6 +220,10 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             if (wbMode != "temperature" && (wb.contains("temperature_kelvin") || wb.contains("tint")))
                 throw std::invalid_argument("Kelvin/tint require edits.white_balance.mode=temperature");
         }
+
+        if (parsed.rasterInput && (parsed.exposureMode != SONY2FUJI_EXPOSURE_SENSOR ||
+            parsed.rawNoiseReduction != 0 || parsed.lensDistortion || parsed.lensTca || !parsed.lensProfileId.empty()))
+            throw std::invalid_argument("Raster inputs require sensor exposure mode and disabled RAW denoise/lens correction");
 
         if (edits.contains("look")) {
             const auto& look = edits.at("look");
@@ -298,6 +311,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         default: throw std::invalid_argument("Invalid white balance mode");
     }
     Json wb = {{"mode", wbMode}};
+    if (recipe.rasterInput) wb = {{"mode", "none"}};
     if (recipe.whiteBalanceMode == SONY2FUJI_WB_TEMPERATURE) {
         wb["temperature_kelvin"] = recipe.temperatureKelvin;
         wb["tint"] = recipe.tint;
@@ -323,6 +337,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
                 {"vertical", recipe.perspective.vertical}};
     }
     if (recipe.schemaVersion >= 4) {
+        document["input"]["type"] = recipe.rasterInput ? "raster" : "raw";
         auto& edits = document["edits"];
         edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
             {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
@@ -346,7 +361,7 @@ sony2fuji_request EditRecipe::toRequest() const {
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION;
     request.struct_size = sizeof(request);
-    request.input_type = SONY2FUJI_INPUT_RAW;
+    request.input_type = rasterInput ? SONY2FUJI_INPUT_DISPLAY_BUFFER : SONY2FUJI_INPUT_RAW;
     request.input_path = inputPath.c_str();
     request.lut_path = lookPath.empty() ? nullptr : lookPath.c_str();
     request.lut_strength = lookStrength;

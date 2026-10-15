@@ -34,7 +34,10 @@ typedef enum sony2fuji_status {
 
 typedef enum sony2fuji_input_type {
     SONY2FUJI_INPUT_RAW = 0,
-    SONY2FUJI_INPUT_BUFFER = 1
+    SONY2FUJI_INPUT_BUFFER = 1,
+    // Opaque SDR display-sRGB pixels. Unlike legacy scene buffers, neutral
+    // rendering only re-encodes sRGB; no RAW baseline or scene view curve.
+    SONY2FUJI_INPUT_DISPLAY_BUFFER = 2
 } sony2fuji_input_type;
 
 typedef enum sony2fuji_pixel_format {
@@ -288,6 +291,13 @@ typedef enum sony2fuji_render_backend {
 // ============================================================================
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
+
+// macOS ImageIO adapter: single-frame opaque 8-bit SDR JPEG/PNG/TIFF/HEIF.
+// Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
+// Rejects transparency, high-bit-depth/HDR and unsupported encodings.
+// Pass a zero-initialized or previously returned buffer; release with
+// sony2fuji_release_buffer. Other platforms currently return UNSUPPORTED.
+sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 

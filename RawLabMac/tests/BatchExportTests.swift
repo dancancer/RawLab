@@ -96,6 +96,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         job.outputDirectory = output
         job.items = try inputs.map { try BatchExportItem(url: $0) }
         try check(job.items.allSatisfy { !$0.selected }, "candidates start unselected")
+        try check(!BatchExportFailure.noSelection.localizedDescription.contains("RAW"),
+                  "empty selection guidance applies to RAW and ordinary photos")
         for index in job.items.indices { job.items[index].selected = true }
         settings.exposure = -1
         settings.reset(.geometry)

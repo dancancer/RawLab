@@ -9,6 +9,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <algorithm>
+#include <cctype>
 
 namespace sony2fuji {
 namespace {
@@ -51,6 +53,13 @@ Json optionalFeatures() {
     return {{"wavelet_denoise", sony2fuji_session_set_wavelet_denoise(session, &wavelet) == SONY2FUJI_STATUS_OK},
         {"chroma_denoise", sony2fuji_session_set_chroma_denoise(session, 1) == SONY2FUJI_STATUS_OK},
         {"lens_correction", sony2fuji_session_set_lens_correction(session, &lens) == SONY2FUJI_STATUS_OK}};
+}
+
+bool rasterPath(const std::string& path) {
+    auto extension = std::filesystem::u8path(path).extension().u8string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return std::tolower(c); });
+    return extension == ".jpg" || extension == ".jpeg" || extension == ".png" || extension == ".tif" ||
+        extension == ".tiff" || extension == ".heif" || extension == ".heic";
 }
 
 // Core diagnostics must not contaminate the machine-readable stdout document.
@@ -109,8 +118,17 @@ int runAgentCommands(int argc, char* argv[]) {
         }
         if (capabilities) {
             if (!recipeFile.empty() || printRecipe || info || preview || seenEdge || !lensDatabase.empty()) return fail("invalid_argument", "Capabilities cannot be combined with another command");
+            Json inputs = {"raw"};
+            Json raster = nullptr;
+#if defined(__APPLE__)
+            inputs.push_back("raster");
+            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
+                {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
+                {"backend", "cpu"}, {"max_pixels", 64000000}};
+#endif
             std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4}},
-                {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", {"raw"}},
+                {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
+                {"raster_input", raster},
                 {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}},
                 {"geometry_operations", {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"}},
                 {"edit_groups", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"}},
@@ -119,8 +137,21 @@ int runAgentCommands(int argc, char* argv[]) {
         }
         if (info) {
             if (infoFile.empty() || !recipeFile.empty() || printRecipe || preview || seenEdge || !lensDatabase.empty())
-                return fail("invalid_argument", "--info <RAW> requires one input and no recipe");
+                return fail("invalid_argument", "--info <image> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
+            if (rasterPath(absolute)) {
+                sony2fuji_buffer image{};
+                const auto status = sony2fuji_load_display_image(absolute.c_str(), &image);
+                if (status != SONY2FUJI_STATUS_OK)
+                    return fail(statusCode(status), "Raster input requires a supported single-frame opaque 8-bit SDR image", status);
+                const Json result = {{"input_path", absolute}, {"input_type", "raster"},
+                    {"identified_size", {{"width", image.width}, {"height", image.height}, {"orientation", 1}}},
+                    {"rendered_size", nullptr}, {"color_space", "srgb"}, {"bits_per_component", 8},
+                    {"camera", nullptr}, {"lens", nullptr}, {"capture", nullptr}, {"as_shot_white_balance", nullptr}};
+                sony2fuji_release_buffer(&image);
+                std::cout << machineJson(envelope(command, result)) << '\n';
+                return 0;
+            }
             RawInfoResult inspected;
             {
                 DiagnosticsToStderr diagnostics;
@@ -174,6 +205,7 @@ int runAgentCommands(int argc, char* argv[]) {
         if (!recipe.lookPath.empty() && overwrites(std::filesystem::u8path(recipe.lookPath)))
             return fail("invalid_argument", "Output must not overwrite the look", SONY2FUJI_STATUS_INVALID_ARGUMENT);
         sony2fuji_status status;
+        Json lensResult = nullptr;
         {
             DiagnosticsToStderr diagnostics;
             sony2fuji_session* pointer = nullptr;
@@ -203,11 +235,36 @@ int runAgentCommands(int argc, char* argv[]) {
                 status = sony2fuji_session_set_geometry(session.get(), &recipe.geometry);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_perspective(session.get(), &recipe.perspective);
-            const auto request = recipe.toRequest();
+            auto request = recipe.toRequest();
+            sony2fuji_buffer image{};
+            const auto release = [](sony2fuji_buffer* value) { sony2fuji_release_buffer(value); };
+            const std::unique_ptr<sony2fuji_buffer, decltype(release)> decoded(&image, release);
+            if (status == SONY2FUJI_STATUS_OK && recipe.rasterInput) {
+                status = sony2fuji_load_display_image(recipe.inputPath.c_str(), &image);
+                request.input_pixels = image.data;
+                request.input_width = image.width;
+                request.input_height = image.height;
+                request.input_pixel_format = image.pixel_format;
+                request.input_color_space = SONY2FUJI_COLOR_SRGB;
+                request.input_is_linear = 0;
+            }
             if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session.get(), &request, nullptr);
+            if (status == SONY2FUJI_STATUS_OK && recipe.schemaVersion >= 4 &&
+                (recipe.lensDistortion || recipe.lensTca)) {
+                sony2fuji_lens_report report{};
+                if (sony2fuji_session_get_lens_report(session.get(), &report) == SONY2FUJI_STATUS_OK) {
+                    const char* states[] = {"off", "matched", "no_database", "no_camera", "no_lens", "ambiguous",
+                        "no_calibration", "missing_focal_length", "embedded_geometry", "unsupported_input"};
+                    const auto state = static_cast<unsigned>(report.state);
+                    lensResult = {{"state", state < 10 ? states[state] : "unknown"},
+                        {"applied_distortion", report.applied_distortion != 0}, {"applied_tca", report.applied_tca != 0},
+                        {"crop_scale", report.crop_scale}, {"profile_id", report.profile.id}};
+                }
+            }
         }
         if (status != SONY2FUJI_STATUS_OK) return fail(statusCode(status), sony2fuji_status_message(status), status);
         Json result = {{"output_path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)}};
+        if (!lensResult.is_null()) result["lens_correction"] = std::move(lensResult);
         if (preview) {
             // Use exact FINAL + no-upscale sizing, so the preview is the final
             // result at the requested size, without interactive approximations.

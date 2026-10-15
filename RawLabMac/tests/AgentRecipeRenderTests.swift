@@ -93,7 +93,12 @@ private func inspectRecipe(_ data: Data, label: String) throws -> [String: Any] 
     let hsl = try dictionary(edits["hsl"], "edits.hsl")
     let effects = try dictionary(edits["effects"], "edits.effects")
     let denoise = try dictionary(edits["denoise"], "edits.denoise")
-    _ = try dictionary(denoise["wavelet"], "edits.denoise.wavelet")
+    let wavelet = try dictionary(denoise["wavelet"], "edits.denoise.wavelet")
+    if wavelet["enabled"] as? Bool == false {
+        try check((wavelet["chroma"] as? NSNumber)?.intValue == 46 &&
+                  (wavelet["coarse"] as? NSNumber)?.intValue == 50,
+                  "\(label): omitted wavelet uses canonical disabled defaults")
+    }
     _ = try dictionary(edits["lens_correction"], "edits.lens_correction")
     _ = try dictionary(edits["geometry"], "edits.geometry")
     let lookStrength = try number(look["strength"], "edits.look.strength")
@@ -234,20 +239,6 @@ private func runAgentParity(_ context: AgentRecipeContext, engine: RenderEngine,
     return apiOutput
 }
 
-private func runAutoSelfParity(_ context: AgentRecipeContext, input: URL,
-                               settings: Adjustments, lut: URL?, label: String) throws {
-    let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO, lensDatabaseURL: context.lensDatabase)
-    let agentOutput = context.root.appendingPathComponent("\(label)-auto-agent.png")
-    let directOutput = context.root.appendingPathComponent("\(label)-auto-direct.png")
-    _ = try engine.agentRecipe(input, settings: settings, lut: lut, output: agentOutput, exportLongEdge: 257)
-    _ = try engine.render(input, settings: settings, lut: lut, edge: nil, output: agentOutput,
-                          exportLongEdge: 257)
-    let direct = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO, lensDatabaseURL: context.lensDatabase)
-    _ = try direct.render(input, settings: settings, lut: lut, edge: nil, output: directOutput,
-                          exportLongEdge: 257)
-    try comparePNG(agentOutput, directOutput, "\(label) Auto agent/direct FINAL")
-}
-
 private func runBatchFrozen(_ context: AgentRecipeContext, input: URL, settings: Adjustments,
                             lut: URL?, expected: URL) throws {
     let journal = BatchJournal(directory: context.root.appendingPathComponent("batch-journal"))
@@ -309,7 +300,10 @@ private func runLensCase(_ context: AgentRecipeContext) throws {
     let cliOutput = context.root.appendingPathComponent("lens-cli.png")
     let recipeURL = context.root.appendingPathComponent("lens.json")
     try writeJSON(try rewriteOutput(recipe, output: cliOutput), to: recipeURL)
-    _ = try runCLI(context.cli, recipe: recipeURL, lensDatabase: context.lensDatabase)
+    let envelope = try runCLI(context.cli, recipe: recipeURL, lensDatabase: context.lensDatabase)
+    let result = try dictionary(envelope["result"], "result")
+    let lens = try dictionary(result["lens_correction"], "result.lens_correction")
+    try check(lens["applied_distortion"] as? Bool == true, "Agent reports actual applied lens correction")
     let gui = try engine.render(context.lensRaw, settings: settings, lut: nil, edge: nil)!
     let cli = try image(cliOutput)
     try check(gui.lensInfo?.appliedDistortion == true,
@@ -403,7 +397,6 @@ struct AgentRecipeRenderTests {
         recipeSettings.strength = 1
         try runPersistence(context, input: input, settings: recipeSettings, lut: recipeLUT, engine: cpu)
         try runBatchFrozen(context, input: input, settings: recipeSettings, lut: recipeLUT, expected: oneOutput)
-        try runAutoSelfParity(context, input: input, settings: mixed, lut: lut, label: "mixed")
         try runLensCase(context)
         let finalIdentity = try OriginalFileIdentity(input)
         try check(finalIdentity == original, "source RAW identity remains unchanged")

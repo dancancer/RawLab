@@ -82,7 +82,7 @@ struct RawLabMacApp: App {
                     }.disabled(updates.checking)
                 }
                 CommandGroup(replacing: .newItem) {
-                    Button(L10n.text("打开 RAW…"), action: model.openPanel).keyboardShortcut("o")
+                    Button(L10n.text("打开照片"), action: model.openPanel).keyboardShortcut("o")
                     Button(L10n.text("导入外观…"), action: model.importLUT)
                         .disabled(model.lookLibraryBusy || model.exporting || model.geometryDraft != nil)
                     Divider()
