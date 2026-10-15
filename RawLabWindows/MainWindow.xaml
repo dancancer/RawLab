@@ -1,5 +1,5 @@
 <Window x:Class="RawLab.Windows.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:RawLab.Windows"
-    Title="RawLab · Windows" Width="1440" Height="920" MinWidth="1000" MinHeight="680" Icon="AppIcon.png" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="KeyPressed">
+    Title="RawLab · Windows" Style="{StaticResource {x:Type Window}}" Width="1440" Height="920" MinWidth="1000" MinHeight="680" Icon="AppIcon.png" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="KeyPressed">
 
   <Grid TextElement.Foreground="{DynamicResource Foreground}" Background="{DynamicResource CanvasSurface}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>

@@ -22,6 +22,7 @@ public partial class BatchExportWindow : Window
     public bool Running { get; private set; }
     public bool Busy=>Running || preflighting;
     public bool Discarded { get; private set; }
+    public bool CloseFailed { get; private set; }
     public BatchJob Job => job;
     public event Action<bool>? BusyChanged;
 
@@ -41,7 +42,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!job.Started && !Discarded)try{journal.Discard(job);Discarded=true;}catch(Exception error){args.Cancel=true;job.Error=error.Message;Refresh();}
+            if(!job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;job.Error=error.Message;Refresh();}
         };
         ready = true;
         RefreshLanguage();
@@ -130,7 +131,7 @@ public partial class BatchExportWindow : Window
     internal async Task AddInputs(IEnumerable<string> inputs)
     {
         if(Running || job.Started || preflighting || closed)return;
-        preflighting=true;BusyChanged?.Invoke(true);Refresh();var errors=new List<string>();
+        CloseFailed=closeRequested=false;preflighting=true;BusyChanged?.Invoke(true);Refresh();var errors=new List<string>();
         var settings=job.Settings.Copy();var look=job.Look;
         try
         {
@@ -263,7 +264,7 @@ public partial class BatchExportWindow : Window
         if (Running) { CancelExecution(); return; }
         if (job.SelectedCount == 0 || job.OutputDirectory == null) return;
         if (!job.Started && editingCustomSize && !CommitCustomSize()) return;
-        Running = true; cancellation = new(); BusyChanged?.Invoke(true); Refresh();
+        CloseFailed=closeRequested=false;Running = true; cancellation = new(); BusyChanged?.Invoke(true); Refresh();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
         try
         {

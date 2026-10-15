@@ -32,6 +32,7 @@ internal static class EditorShellChecks
                     var menu=window.FindName("MainMenu") as Menu;
                     check(menu?.Items.Count==5,"Five discoverable native menus: "+language);
                     check(window.WindowStyle==WindowStyle.SingleBorderWindow && window.ResizeMode==ResizeMode.CanResize,"Standard caption and resizable Windows shell");
+                    check(window.FontSize==(double)app.Resources["EditorBodySize"],"Editor uses the shared Windows text scale");
                     check(window.ResultCanvas.ActualHeight>=160,"Canvas retains 160 DIP at "+size);
                     check(!window.ExportButton.IsEnabled,"Empty editor cannot export");
                     check(window.NeutralCanvas.Visibility==Visibility.Collapsed && window.NeutralColumn.ActualWidth==0,"Empty editor has a single unbroken canvas");

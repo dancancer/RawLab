@@ -905,7 +905,11 @@ public partial class MainWindow : Window
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
         previewResize.Stop();
-        if(batchWindow?.Busy==true)batchWindow.Close();
+        if(batchWindow is {} batch)
+        {
+            batch.Close();
+            if(batch.IsVisible && !batch.Busy){e.Cancel=true;closing=false;return;}
+        }
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         closeFinished=true;engine?.Dispose();engine=null;

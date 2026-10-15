@@ -91,8 +91,15 @@ internal static class PhotoFeatureChecks
             var closingJob=BatchJob.Create(source,frozen.Capture(),null,"Neutral");
             var closingJournal=new BatchJournal(Path.Combine(output,"closing-preflight-journal"));
             var closingWindow=new BatchExportWindow(closingJob,closingJournal){Owner=window};closingWindow.Show();
-            var closingValidation=closingWindow.AddInputs([target]);closingWindow.Close();
-            InteractionChecks.PumpUntil(()=>closingValidation.IsCompleted);closingValidation.GetAwaiter().GetResult();
+            closingJournal.Save(closingJob);
+            using(var journalLock=new FileStream(Path.Combine(closingJournal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
+            {
+                var closingValidation=closingWindow.AddInputs([target]);closingWindow.Close();
+                InteractionChecks.PumpUntil(()=>closingValidation.IsCompleted);closingValidation.GetAwaiter().GetResult();
+                Check(closingWindow.IsVisible && closingWindow.CloseFailed && !closingWindow.Discarded && closingWindow.Job.Error!=null,
+                    "A failed journal cleanup keeps the batch visible for retry after validation");
+            }
+            closingWindow.Close();
             Check(!closingWindow.IsVisible && closingWindow.Discarded && closingJournal.Load()==null,
                 "Close during RAW validation waits for native work and does not recreate a discarded journal");
 
