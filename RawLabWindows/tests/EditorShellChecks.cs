@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Input;
@@ -38,9 +39,7 @@ internal static class EditorShellChecks
                     check(window.NeutralCanvas.Visibility==Visibility.Collapsed && window.NeutralColumn.ActualWidth==0,"Empty editor has a single unbroken canvas");
                     check(window.ResultCanvas.ToolTip==null,"Empty canvas has no zoom instructions");
                     check(Descendants(window.Welcome).OfType<TextBlock>().Any(t=>t.Text==Loc.Text("打开一张 RAW")),"Exact approved empty-state heading");
-                    var bitmap=new RenderTargetBitmap((int)surface.ActualWidth,(int)surface.ActualHeight,96,96,PixelFormats.Pbgra32);
-                    bitmap.Render(surface);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                    using var stream=File.Create(Path.Combine(output,$"empty-{language}-{size.Width}.png"));encoder.Save(stream);
+                    CaptureLayout(window,surface,Path.Combine(output,$"empty-{language}-{size.Width}.png"));
                 }
                 window.Close();window=null;
             }
@@ -73,6 +72,25 @@ internal static class EditorShellChecks
         if(Math.Abs(content.ActualWidth-client.Width)>.5 || Math.Abs(content.ActualHeight-client.Height)>.5)
             throw new InvalidOperationException("WPF client layout did not reach the requested DIP size.");
         return content;
+    }
+    internal static void CaptureLayout(Window window,FrameworkElement content,string path)
+    {
+        var size=new Size(content.Width,content.Height);
+        window.Content=null;
+        try
+        {
+            TextElement.SetFontSize(content,window.FontSize);TextElement.SetFontFamily(content,window.FontFamily);
+            content.Measure(size);content.Arrange(new Rect(size));content.UpdateLayout();
+            var bitmap=new RenderTargetBitmap((int)size.Width,(int)size.Height,96,96,PixelFormats.Pbgra32);bitmap.Render(content);
+            var corner=new byte[4];bitmap.CopyPixels(new Int32Rect(bitmap.PixelWidth-1,bitmap.PixelHeight-1,1,1),corner,4,0);
+            if(corner[3]!=255)throw new InvalidOperationException("WPF layout composition is clipped or transparent at the requested bounds.");
+            var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var stream=File.Create(path);encoder.Save(stream);
+        }
+        finally
+        {
+            window.Content=content;content.ClearValue(TextElement.FontSizeProperty);content.ClearValue(TextElement.FontFamilyProperty);
+            content.ClearValue(FrameworkElement.WidthProperty);content.ClearValue(FrameworkElement.HeightProperty);window.UpdateLayout();
+        }
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {

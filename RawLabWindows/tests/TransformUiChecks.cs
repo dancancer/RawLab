@@ -78,8 +78,7 @@ internal static class TransformUiChecks
             {
                 var surface=EditorShellChecks.ArrangeLayout(window,size);
                 check(window.ResultCanvas.ActualHeight>=160,"Real RAW layout retains 160 DIP canvas");
-                var bitmap=new RenderTargetBitmap((int)surface.ActualWidth,(int)surface.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(surface);
-                var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var stream=File.Create(Path.Combine(output,$"raw-{size.Width}.png"));encoder.Save(stream);
+                EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"raw-{size.Width}.png"));
             }
         }
         finally{if(Get<TransformDraft>(window,"transform").Active)Invoke(window,"CancelTransformDraft");Set(window,"editStore",store);window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();}
