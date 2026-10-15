@@ -80,6 +80,7 @@ internal static class TransformUiChecks
             foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
             {
                 var surface=EditorShellChecks.ArrangeLayout(window,size);
+                InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
                 check(window.ResultCanvas.ActualHeight>=160,"Real RAW layout retains 160 DIP canvas");
                 EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"raw-{size.Width}.png"));
             }
