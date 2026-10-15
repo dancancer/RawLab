@@ -24,7 +24,7 @@
 | 确定性导入/取消/旧结果/手势状态，以及逆序 DNG 成功/失败尺寸重放 | 167 assertions PASS | `/tmp/rawlab-ios-v4-import-state-complete.log` |
 | 既有忙碌尺寸、降噪取消、DNG 成功及失败后重放 | 三组 PASS | `/tmp/rawlab-ios-v4-import-viewport-r2.log` |
 | 真实四角/移动、锁中旧坐标、取消＋迟到 B、各手势中途导入、新触摸恢复 | 4/4 PASS，零跳过 | `/tmp/rawlab-ios-v4-crop-lock-r2/crop-lock-ui.log`、同目录 `.xcresult` |
-| 原有裁剪比例解锁/拖角/旋转、几何 Cancel/Apply/退出确认 | 2/2 PASS | `/tmp/rawlab-ios-v4-import-existing.log`、`.xcresult` |
+| 原有裁剪比例解锁/拖角/旋转、几何 Cancel/Apply/退出确认 | 较早构建 2/2 PASS；不是精确 e63 最终重跑 | `/tmp/rawlab-ios-v4-import-existing.log`、`.xcresult`；使用 `/tmp/rawlab-ios-v4-derived` |
 | 默认测试未显式安装/启用独立容器 | 4 项明确 skipped，0 failures | `/tmp/rawlab-ios-v4-crop-lock-default.log` |
 
 专用设备：iPhone `6BAF1C5B-C060-46FC-99C5-BEB18F1F7CE1`、iPad `A9E7D8B6-8145-4E53-A0E7-8791A5EFA14B`，iOS 27 Simulator / Xcode 27。
@@ -52,5 +52,7 @@ bash RawLab/tests/crop-lock-ui.sh <built-RawLab.app> <dedicated-simulator-UDID> 
 最终冻结范围为 16 个实现/测试文件，两位收尾复核均无 Must-fix、无 Should-fix，首轮两项问题已关闭；提交前逐文件核对源码与复核快照一致，`git diff --check` 通过。
 
 真实触控覆盖组件＋ViewModel，完整 PhotosPicker 等待阶段的切换/晚错误/取消链由获取 helper 回归和源码复核支撑，没有完整应用录制证明。未重复真机触觉、性能或全部旧 UI 套件。此前父任务在精确 `3f87abb` 的真实 RAW Cancel/Apply/Reset/JPEG+DNG 验证属于旧基线证据，不冒充新提交的 RAW 结果复核；新精确 SHA 交由该验证任务复核。
+
+后续独立复验已针对精确 e63 完成 167 状态、13 RAW 迟到发布断言、3 组尺寸、4 项触控及 5 项完整应用 RAW 验证（报告提交 `1ad455605479723f9140797671307a01213f5b31`）。独立核对同时确认：上述两项既有 UI 使用较早 derived data，不计入精确 e63 的 9/9 UI 结果。各阶段准确归属及原始证据位置见 [PR 准备记录](ios-v08-pr-readiness-2026-10-15.md)。
 
 全部操作保留在独立工作树与本任务模拟器。本地提交；没有推送、PR、合并或发布。
