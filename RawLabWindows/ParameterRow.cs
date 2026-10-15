@@ -83,6 +83,7 @@ public sealed class ParameterRow : Grid
     }
     private void Publish(double next,bool interactive)
     {
-        value=next;RestoreText();syncing=true;Slider.Value=range.Position(value);syncing=false;Changed?.Invoke(value,interactive);
+        var changed=value!=next;value=next;RestoreText();syncing=true;Slider.Value=range.Position(value);syncing=false;
+        if(changed)Changed?.Invoke(value,interactive);
     }
 }

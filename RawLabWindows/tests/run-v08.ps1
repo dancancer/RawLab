@@ -9,8 +9,14 @@ New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
     $log=Join-Path $results ($Name+'.log')
-    & $DotNet @Arguments 2>&1 | Out-File -FilePath $log -Encoding utf8
-    $code=$LASTEXITCODE
+    $preference=$ErrorActionPreference
+    Push-Location $repo
+    try {
+        $ErrorActionPreference='Continue'
+        & $DotNet @Arguments 2>&1 | ForEach-Object {"$_"} | Out-File -FilePath $log -Encoding utf8 -Width 4096
+        $code=$LASTEXITCODE
+    }
+    finally {$ErrorActionPreference=$preference;Pop-Location}
     $script:summary+=@{name=$Name;exitCode=$code;log=$log}
     Write-Host "$Name exit=$code log=$log"
     if($Name -eq 'build' -and $code -ne 0){throw 'Managed WPF build failed.'}
