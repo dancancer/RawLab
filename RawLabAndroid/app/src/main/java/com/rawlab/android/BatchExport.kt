@@ -289,6 +289,7 @@ class BatchExportModel(
     source: BatchSourceSnapshot,
     initial: BatchJob? = null,
     private val gpuMode: Int = NativeProcessor.AUTO,
+    private val processorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val resolver = context.contentResolver
@@ -370,7 +371,7 @@ class BatchExportModel(
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)
-                val processor = NativeProcessor(gpuMode, lensDatabase = storage.lensDatabase())
+                val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val result = try {
                     val render: (BatchTarget, EditSettings) -> File = { target, settings ->
                         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
@@ -434,7 +435,7 @@ class BatchExportModel(
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
-                NativeProcessor(gpuMode, lensDatabase = storage.lensDatabase()).use { it.preview(destination, null, EditSettings(), 256, false) }
+                processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(destination, null, EditSettings(), 256, false) }
             } catch (error: Exception) { destination.delete(); throw error }
         }
         return BatchTarget(identity, destination, name, uri.toString())
@@ -492,7 +493,7 @@ class BatchExportModel(
     suspend fun preview(target: BatchTarget): android.graphics.Bitmap = withContext(Dispatchers.IO) {
         val source = mutable.value.job.source
         // 效果查看先限长再降噪，避免处理整张 RAW；最终导出仍保留完整质量。
-        NativeProcessor(gpuMode, lensDatabase = storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true).bitmap() }
+        processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true).bitmap() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {

@@ -15,15 +15,18 @@ import java.util.UUID
 
 class BatchWorkflowInstrumentedTest {
     val compose = createAndroidComposeRule<MainActivity>()
-    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
+    private val cleanup = BatchTestCleanup(InstrumentationRegistry.getInstrumentation().targetContext)
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(cleanup).around(LanguageTestRule()).around(compose)
 
     @Test fun remembersEditsAndExportsFrozenBatchWithoutChangingTargetRecords() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val root = File(context.cacheDir, "batch-test-${UUID.randomUUID()}").apply { mkdirs() }
+        val fixtureId = UUID.randomUUID().toString()
+        cleanup.begin(fixtureId)
+        val root = File(context.filesDir, "RawLab/BatchJobs/$fixtureId/inputs").apply { mkdirs() }
         val source = File(root, "source.dng")
         instrumentation.context.assets.open("sample.RAW").use { from -> source.outputStream().use { from.copyTo(it) } }
-        val target = File(root, "target.dng").also { source.copyTo(it) }
+        val target = File(root, cleanup.targetName(fixtureId)).also { source.copyTo(it) }
         val identity = PhotoIdentity(Uri.fromFile(target).toString())
         val model = compose.activity.model
         var output: Uri? = null
@@ -47,6 +50,7 @@ class BatchWorkflowInstrumentedTest {
             assertEquals(settings, reopened.load(PhotoIdentity(Uri.fromFile(source).toString())))
             compose.runOnUiThread { model.beginBatch() }
             val batch = model.batch.value!!
+            cleanup.trackJob(batch.state.value.job.id)
             compose.waitUntil(60_000) { batch.state.value.phase == BatchPhase.SELECTING }
             compose.onNodeWithText("导出 0 张").assertIsNotEnabled()
             compose.runOnUiThread { batch.addUris(listOf(Uri.fromFile(target))) }
@@ -67,7 +71,7 @@ class BatchWorkflowInstrumentedTest {
             compose.onNodeWithText("导出 1 张").assertIsDisplayed()
             compose.onNodeWithText("查看").performClick()
             val previewStarted = android.os.SystemClock.elapsedRealtime()
-            compose.waitUntil(90_000) { compose.onAllNodesWithContentDescription("target.dng").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(90_000) { compose.onAllNodesWithContentDescription(target.name).fetchSemanticsNodes().isNotEmpty() }
             instrumentation.sendStatus(2, android.os.Bundle().apply {
                 putString("stream", "Batch effect preview ms=${android.os.SystemClock.elapsedRealtime() - previewStarted}\n")
             })
@@ -95,8 +99,11 @@ class BatchWorkflowInstrumentedTest {
             assertFalse(journal.pending().contains(batch.state.value.job.id))
             compose.onNodeWithText("关闭").performClick()
         } finally {
-            output?.let { context.contentResolver.delete(it, null, null) }
-            root.deleteRecursively()
+            val batch = model.batch.value
+            batch?.state?.value?.job?.id?.let(cleanup::trackJob)
+            cleanup.finish(batch?.state?.value?.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) ||
+                model.state.value.operation != Operation.NONE,
+                cancel = { batch?.cancel() }, close = { compose.runOnUiThread { model.closeBatch() } })
         }
     }
 

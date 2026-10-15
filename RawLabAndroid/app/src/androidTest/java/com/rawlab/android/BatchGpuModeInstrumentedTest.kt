@@ -7,24 +7,60 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.ViewModelStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 
 class BatchGpuModeInstrumentedTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    val compose = createAndroidComposeRule<MainActivity>()
+    private val cleanup = BatchTestCleanup(InstrumentationRegistry.getInstrumentation().targetContext)
+    @get:Rule val isolatedCompose = RuleChain.outerRule(cleanup).around(compose)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
+
+    @Test fun disabledNewBatchValidatesImportedTargetWithCpu() {
+        val modes = CopyOnWriteArrayList<Int>()
+        val store = ViewModelStore()
+        lateinit var model: EditorViewModel
+        compose.runOnUiThread {
+            model = EditorViewModel(compose.activity.application) { mode, database ->
+                modes += mode
+                NativeProcessor(mode, database)
+            }
+            store.put("validation", model)
+        }
+        try {
+            withBatch(false, EditSettings(customWb = true), resumed = false, model = model, expectCompleted = false) { batch ->
+                assertEquals(BatchPhase.SELECTING, batch.state.value.phase)
+                assertEquals(1, batch.state.value.job.rows.size)
+                assertEquals("Target validation must inherit GPU off, with one real processor", listOf(NativeProcessor.CPU), modes.toList())
+                status("targetValidation modes=$modes gpuEnabled=${model.state.value.gpuEnabled} realNative=true")
+            }
+        } finally { compose.runOnUiThread { store.clear() } }
+    }
 
     @Test fun resumedBatchWithGpuDisabledUsesCpuForPreviewAndOriginalSizeCleanExport() {
         val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         withBatch(gpuEnabled = false, settings = settings, resumed = true, format = ExportFormat.JPEG) { batch ->
+            if (InstrumentationRegistry.getArguments().getString("batchAbortProbe") == "true") {
+                compose.runOnUiThread { batch.retryFailed() }
+                compose.waitUntil(60_000) {
+                    Thread.getAllStackTraces().values.any { stack -> stack.any {
+                        it.className == NativeProcessor::class.java.name && it.methodName == "nativeProcess"
+                    } }
+                }
+                status("injectedFailure nativeProcessActive=true")
+                throw AssertionError("Injected failure while real native export is active")
+            }
             assertPreviewMatchesMode(batch, NativeProcessor.CPU)
             exportAndCompare(batch, NativeProcessor.CPU, "resumed-cpu-clean", ExportFormat.JPEG, null)
         }
@@ -72,22 +108,27 @@ class BatchGpuModeInstrumentedTest {
 
     private fun withBatch(gpuEnabled: Boolean, settings: EditSettings, resumed: Boolean,
                           longEdge: Int? = null, rlook: Boolean = false, format: ExportFormat = ExportFormat.PNG,
+                          model: EditorViewModel = compose.activity.model, expectCompleted: Boolean = true,
                           check: (BatchExportModel) -> Unit) {
         val id = UUID.randomUUID().toString()
+        cleanup.begin(id)
         val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
         val inputs = File(journalRoot, "$id/inputs").apply { mkdirs() }
         val source = File(inputs, "source.dng")
         instrumentation.context.assets.open("sample.RAW").use { from -> source.outputStream().use { from.copyTo(it) } }
-        val target = File(inputs, "target.dng").also { source.copyTo(it) }
+        val target = File(inputs, cleanup.targetName(id)).also { source.copyTo(it) }
         val before = digest(source)
-        val look = if (rlook) File(inputs, "synthetic.rlook").apply { writeBytes(syntheticRlook()) } else null
+        val look = if (rlook) File(inputs, "batch-gpu-$id.rlook").apply { writeBytes(syntheticRlook()) } else null
         val journal = BatchJournal(journalRoot)
-        val model = compose.activity.model
-        var managedLookId: String? = null
         try {
             val effectiveSettings = if (look != null && !resumed) {
+                cleanup.trackLookImport(look.name)
                 val imported = PhotoStorage(context).use { it.importLook(Uri.fromFile(look)) }
-                managedLookId = imported.id
+                if (InstrumentationRegistry.getArguments().getString("batchLookAbortProbe") == "true") {
+                    status("injectedFailure importedLook=${imported.id} beforeBatch=true")
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                    throw AssertionError("Injected failure after managed look import")
+                }
                 settings.copy(film = imported.id)
             } else settings
             compose.runOnUiThread { model.setGpuEnabled(gpuEnabled) }
@@ -100,6 +141,7 @@ class BatchGpuModeInstrumentedTest {
                 val loaded = requireNotNull(journal.load(id))
                 assertEquals(BatchRowStatus.PENDING, loaded.rows.single().status)
                 compose.runOnUiThread { model.resumeBatch(loaded) }
+                cleanup.trackJob(model.batch.value!!.state.value.job.id)
                 compose.waitUntil(60_000) { model.batch.value?.state?.value?.phase != BatchPhase.PREPARING }
                 assertEquals(BatchPhase.CANCELLED, model.batch.value!!.state.value.phase)
             } else {
@@ -110,6 +152,7 @@ class BatchGpuModeInstrumentedTest {
                 compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
                 assertNull(model.state.value.error)
                 compose.runOnUiThread { model.beginBatch() }
+                cleanup.trackJob(model.batch.value!!.state.value.job.id)
                 compose.waitUntil(60_000) { model.batch.value?.state?.value?.phase == BatchPhase.SELECTING }
                 compose.runOnUiThread { model.batch.value!!.addUris(listOf(Uri.fromFile(target))) }
                 compose.waitUntil(180_000) { model.batch.value!!.state.value.phase != BatchPhase.PREPARING }
@@ -120,19 +163,13 @@ class BatchGpuModeInstrumentedTest {
             check(batch)
             assertEquals(before, digest(source))
             assertEquals(before, digest(target))
-            assertFalse(journal.pending().contains(batch.state.value.job.id))
+            if (expectCompleted) assertFalse(journal.pending().contains(batch.state.value.job.id))
         } finally {
             val batch = model.batch.value
-            batch?.state?.value?.job?.rows?.mapNotNull { it.outputUri }?.forEach {
-                context.contentResolver.delete(Uri.parse(it), null, null)
-            }
-            if (batch?.state?.value?.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING)) batch?.cancel()
-            else {
-                compose.runOnUiThread { model.closeBatch() }
-                batch?.state?.value?.job?.id?.let(journal::discard)
-                journal.discard(id)
-                managedLookId?.let { lookId -> PhotoStorage(context).use { it.deleteLook(lookId) } }
-            }
+            batch?.state?.value?.job?.id?.let(cleanup::trackJob)
+            cleanup.finish(batch?.state?.value?.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) ||
+                model.state.value.operation != Operation.NONE,
+                cancel = { batch?.cancel() }, close = { compose.runOnUiThread { model.closeBatch() } })
         }
     }
 

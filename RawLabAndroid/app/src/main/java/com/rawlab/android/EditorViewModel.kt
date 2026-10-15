@@ -69,7 +69,10 @@ private sealed interface LookResult {
     data class Failed(val error: Throwable, val reload: Boolean) : LookResult
 }
 
-class EditorViewModel(application: Application) : AndroidViewModel(application) {
+class EditorViewModel @JvmOverloads constructor(
+    application: Application,
+    private val batchProcessorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
+) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
     private var editStore: EditStore? = runCatching { EditStore(File(application.filesDir, "edits")) }.getOrNull()
     private val mutableBatch = MutableStateFlow<BatchExportModel?>(null)
@@ -495,12 +498,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (!current.canExport || mutableBatch.value != null) return
         val photo = current.photo ?: return
         mutableBatch.value = BatchExportModel(getApplication(), storage,
-            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name), gpuMode = gpuMode())
+            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name), gpuMode = gpuMode(),
+            processorFactory = batchProcessorFactory)
     }
 
     fun resumeBatch(job: BatchJob) {
         if (mutableBatch.value != null || mutable.value.draft != null || mutable.value.operation != Operation.NONE) return
-        mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job, gpuMode = gpuMode())
+        mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job, gpuMode = gpuMode(),
+            processorFactory = batchProcessorFactory)
     }
 
     fun closeBatch() {

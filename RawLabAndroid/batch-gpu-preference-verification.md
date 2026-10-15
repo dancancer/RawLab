@@ -188,3 +188,135 @@ Shared ADB `5037/5047` retain original PIDs `23749/51027`; no shared-device comm
 All instrumentation used explicit private ADB/serial selection. The initial emulator launch was
 restarted with explicit private-ADB environment settings before installing or testing the app.
 No push, PR or release was performed.
+
+## P2 Review Follow-Up
+
+The review found two test gaps, not a new rendering regression: GPU-off target-import validation
+had no observable mode assertion, and active failure cleanup could delete a publishing URI while
+native work continued into the next test. The earlier successful runs did not exercise that failure
+path. Both original `240_000` export waits and the original-size Clean settings remain unchanged.
+
+`EditorViewModel` now forwards a per-model processor factory to new and resumed batches. Its default
+still constructs the real `NativeProcessor(mode, database)` at all three batch creation sites;
+`@JvmOverloads` retains the Android `(Application)` constructor. The new focused GPU-off test records
+exactly one CPU construction during `beginBatch -> addUris -> copyTarget`, before any effect preview
+or export. The recording factory returns a real processor, not a mock render. This observes the
+construction mode; the existing CPU/GLES differential tests separately verify native behavior.
+
+Both batch test classes now use `BatchTestCleanup`. Each fixture records its UUID, actual job UUID,
+process owner and render-file baseline. Active cleanup sends cancellation but deletes nothing and
+terminates the failed instrumentation process. A crash is a failure, never a pass or a retry of the
+240-second wait. Fresh-process recovery refuses a still-live owner, rereads the final checkpoint,
+and cleans only the recorded jobs (including interrupted atomic-checkpoint `.tmp` files), inputs,
+managed look, outputs and newly created render files.
+Unique target names identify a pending MediaStore insert even before its checkpoint; both collection
+queries and deletion verification explicitly include pending rows. Managed-look ownership is recorded
+by unique original name before import, closing the import-return/ID-recording window.
+
+Use the task-owned device only, with explicit ADB server and serial:
+
+```sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_ADB_SERVER_PORT=5063 \
+ANDROID_SERIAL=emulator-5762 bash RawLabAndroid/tests/batch-gpu.sh /tmp/batch-gpu-results
+```
+
+The wrapper runs one method per invocation, force-stops the target package, verifies its PID is gone,
+and invokes recovery in a new process after success or failure. It preserves an overall nonzero
+result after any failed/crashed method. Normal per-method recovery may find no manifest; that is
+not itself proof of a dead-owner takeover. The deterministic cleanup tests and opt-in crash probes
+provide that evidence. `BATCH_ABORT_PROBE=true` injects failure only after the real CPU export enters
+`nativeProcess`; `BATCH_LOOK_ABORT_PROBE=true` exits immediately after new-batch managed-look import.
+Neither probe changes the formal export wait. These are expected failures, separate from normal
+regression results, and not a reproduction that waits for a real 240-second expiration.
+
+This is test-process isolation, not an interruptible production native API or a general atomic
+crash-recovery protocol. Job ownership is recorded before export starts; arbitrary external
+process death before that record and unrelated application caches are outside this cleanup contract.
+No JNI/shared-core, GPU preference persistence or production cancellation behavior was changed.
+
+### Local Results
+
+All rendering checks below used application SHA-256
+`b1fa839069d84dc99c0024d85b87ad6fe64412f12855d2b4a8b7b91bb9f9fbc1`.
+The four GPU methods passed in independent invocations (wrapper exit 0); the original UI class
+passed `OK (2 tests)`, 295.369 s. Formal export waits remain 240 seconds, not the entire method's
+duration including independent reference renders.
+
+| Scenario | Export Time | Result |
+|---|---:|---|
+| GPU-off new target validation | n/a | exactly one real processor created with CPU mode `[0]` |
+| GPU-off resumed original-size Clean JPEG | 132005 ms | 4672x7008, exact CPU reference parity |
+| GPU-on resumed / new GLES control | 5616 / 4673 ms | 200x300, FORCE parity and distinct from CPU |
+| GPU-on resumed / new RLOOK fallback | 8326 / 8412 ms | 200x300, CPU parity, FORCE rejects without overwriting sentinel |
+| Original complete UI workflow, GPU off, original-size Clean JPEG | 139828 ms | exact CPU reference parity; target edit record and input bytes unchanged |
+
+The original UI workflow also completes rotation/recreation, effect viewing, publication and close.
+Its published MediaStore row was independently read as 4672x7008, `is_pending=0` during the CPU
+reference render. The second original test rechecks partial-output reconciliation and discard.
+
+Negative controls remain separate from passes:
+
+- Only target validation was temporarily changed from `processorFactory(gpuMode, ...)` to
+  `processorFactory(AUTO, ...)`: FAIL, `expected [0] but was [1]`, 11.446 s. The site was restored.
+- Only cleanup's collection query temporarily omitted `include_pending`: FAIL at
+  `Cleanup also finds outputs not yet checkpointed`. The query was restored. The assertion runs
+  before its emergency fixture deletion, so that deletion cannot mask the defect.
+- Latest active-native probe: PID 6107 entered real `nativeProcess`, then the injected assertion
+  caused immediate process termination; runner reports `Process crashed`. Recovery PID 6165 cleaned
+  the recorded fixture. Wrapper exit 1, as required, with no extension or retry of the export wait.
+- Latest managed-look probe: PID 6212 exited immediately after import returned, before batch creation;
+  recovery PID 6278 removed the look using its pre-recorded unique original name. Wrapper exit 1.
+
+The rendering runs used test APK
+`7f0df4ef93cca4e1ea8276e7e8afd9cdd4b8375fdf2fc4a923e701b348922ea4`.
+Subsequent cleanup-only changes add interrupted journal `.tmp` removal and idempotent, pending-aware
+MediaStore ID deletion. A real repeated-delete `SecurityException` exposed by the cleanup probe was
+fixed rather than ignored. Final test APK
+`15eb2b0d37e2677112c9028b4c876392b9460d4f4d87875f3ea81bd10af1b205`
+passes `BatchTestCleanupInstrumentedTest`: `OK (3 tests)`, 0.231 s. Its publisher test covers an open
+writer with no checkpoint, with a checkpoint, and with an already-deleted checkpoint URI. It verifies
+live-owner refusal, no deletion/close while active, and pending-aware absence after stopping. The
+simulated dead-owner test verifies both job IDs/properties, an interrupted checkpoint `.tmp`, new
+render removal, and preservation of pre-existing render and unrelated input files. Both latest crash
+probes above also ran on this final test APK. These incremental cleanup checks do not relabel the
+earlier rendering invocation as having used the later test APK; the application APK is identical.
+Targeted normal follow-up on the final test APK also PASSes (wrapper exit 0): target validation
+again records `[0]` (11.482 s), and resumed/new AUTO RLOOK exports complete in 8746/11091 ms with CPU
+pixel parity (63.092 s method total). Their normal cleanup and fresh-process recovery both pass.
+
+Final host gates: Gradle JVM tests/lint/application and test APK builds PASS (82 JVM tests, zero
+failures/errors/skips; lint zero errors/32 existing warnings), APK and all eight native libraries
+16 KB aligned, `bash -n` and `git diff --check` clean. Valid up-to-date outputs were reused; this is
+not a clean build. RAW SHA-256 remains
+`93a37abeaa3cd199773d25978a1045e580e26dbf884755f5d69c530e0bed5014`.
+
+Evidence: `/tmp/rawlab-android-v08-56c3/gpu-p2/`, including `final-batch-gpu/`, `final-workflow.log`,
+`workflow-published-media.txt`, `validation-single-site-red/`, `publisher-missing-pending-red.log`,
+`final-cleanup-tests.log`, `cleanup-final-native-abort-red/`, `cleanup-final-look-abort-red/`,
+`final-cleanup-followup/`,
+`final-build.log`, `native-alignment.log`, `rendering-sha256.txt` and `final-sha256.txt`.
+Intermediate failures remain recorded separately; `preliminary-batch-gpu/` is not the final wrapper
+gate (its running script was edited and its final parser step failed, then the stable script was
+rerun successfully). Physical GPU, other cameras/devices and hosted CI remain NOT REACHED.
+
+Final device inspection finds no task batch entries, cleanup manifest, render temporary files or
+gallery rows (including pending); the managed-look registry has `count=0`. Installed application and
+test APK hashes match `final-sha256.txt`. The task-owned emulator PID 17147 and private ADB server
+were shut down; ports 5063/5762/5763 have no listener. Shared ADB 5037/5047 retain PIDs 23749/51027
+and were not operated. At completion of device verification, the work was local and uncommitted;
+this section records that pre-commit snapshot. No push, PR or release was performed.
+
+### Local Commit Preparation
+
+Before packaging this follow-up into one user-authorized local commit, all seven code/test/script
+files and this verification document matched `final-source-sha256.txt`. Only documentation wording
+was then updated to distinguish the recorded pre-commit snapshot from the later commit preparation;
+no tested implementation or regression-test code changed.
+
+The Gradle JVM/lint/application and test APK gates were invoked again: PASS, with 5 tasks executed
+and 77 up-to-date. JVM reports remain 82 tests with zero failures/errors/skips; APK/native 16 KB
+alignment, `bash -n` and diff whitespace checks also pass. Both APKs and the external RAW still match
+`final-sha256.txt`. The emulator/device suite was not restarted or rerun for commit packaging.
+Pre-commit logs are `precommit-build.log` and `precommit-native-alignment.log` in the same evidence
+directory. Only the P2 source/tests, wrapper, verification record and P2 re-review report are included;
+the earlier `1440` review, sample RAW, generated APKs and temporary mutation artifacts are excluded.
