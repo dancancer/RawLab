@@ -4,7 +4,7 @@
 
 - Date: 2026-10-15 (Asia/Shanghai).
 - Session: `01a13d7e-530a-77d0-b2b4-ff08a2865ffa`.
-- Source: `0856eadf165129eeed276f473ce7f38588c56866`.
+- Implementation baseline: `0856eadf165129eeed276f473ce7f38588c56866` (historical source, not the final PR HEAD).
 - Branch: `feature/macos-v08-native-acceptance`.
 - Worktree: `/Users/xupeng/.codex/worktrees/macos-v08-native-acceptance/rawtools`.
 - Preserved old worktree: `/Users/xupeng/mycode/rawtools/build/macos-v08-editor`.
@@ -304,9 +304,18 @@ Final crop replay evidence: `Replay all nine native crop drags and inspect Apply
 - Shift-wheel failed on the preceding build and then passed the user's bounded first-candidate hardware recheck (`现在没问题了`); no event-level angles or latency numbers were supplied. VoiceOver announcements and complete application-wide Tab traversal remain unexercised. No global accessibility or security setting was changed.
 - The crop release notification defect is repaired and verified within the bounded native samples above. Historical passing replays alone were not used as proof; the captured failed getter sequence, deterministic RED/GREEN and same-probe ordering comparison accompany the clean-app native checks.
 - A broader action-deferral hypothesis was rejected after the window lifecycle evidence. Its temporary assertion intentionally failed in `build/native-acceptance/dismissal-regression-red.log`; that assertion was removed, not counted as an established product failure or part of the 154-check suite. No broader action deferral was shipped. Later `EditorView` edits cover accessibility containment and the explicitly recorded pending-Apply comparison/presentation boundary, not that rejected hypothesis.
-- Independent audits confirmed the old worktree is still clean at `0856eadf165129eeed276f473ce7f38588c56866`; original RAW/private fixture hashes and the user's original registry hash remain unchanged. Production changes are limited to macOS window protection, precise-crop binding, interaction notification, accessibility metadata, numeric input and straightening preview/presentation. Shared/Core, other platforms and system settings are unchanged.
+- Independent audits confirmed the old worktree is still clean at `0856eadf165129eeed276f473ce7f38588c56866`; original RAW/private fixture hashes and the user's original registry hash remain unchanged. Continuation repairs and additions cover macOS window protection, precise-crop binding, interaction notification, accessibility metadata, numeric input, straightening preview/presentation, file-tree folder drops and ordinary-preview pan routing. The inherited macOS implementation also includes the geometry/lens draft workspace, crop interaction/overlay, perspective persistence, compact controls and HSL editing. Shared/Core, other platforms and system settings are unchanged.
 
-Local phase commits (no push, PR, merge or release):
+### PR delivery verification
+
+- The user subsequently authorized commit, push and a PR targeting `development`. This supersedes the earlier local-only delivery restriction, but does not authorize merge or release.
+- Refreshed `origin/development`: `440b9788ff4cfd8a3f5dfa781b16a33997ccd801`. It is an ancestor of pre-delivery HEAD `abbc1b94699f2cc38045754b3cf208a156025c58` (41 commits ahead, none behind), so no integration merge or history rewrite was needed. The 65 changed paths are all under `RawLabMac/`; no same-source PR existed at the pre-push check.
+- Fresh standard build at that HEAD: `RAWLAB_DEPENDENCY_PREFIX` points to the previously verified dependency installation, and `RAWLAB_APP_PATH` points to the separate `build/native-acceptance/pr-delivery-20261015/RawLab Mac.app`. `bash RawLabMac/build.sh` exited 0, including the DNG/JXL checks and `PASS: all non-system dynamic dependencies are bundled and signed`. Independent `codesign --verify --deep --strict` also exited 0. The running acceptance bundle was not replaced or relaunched.
+- Fresh targeted automation at the same HEAD: `folder-drop.sh` passed 13 ingestion checks; `parameter-value.sh` passed its full precision/native-field regression; `mac-geometry-draft.sh` with `RAWLAB_GEOMETRY_DRAFT_FOCUS=crop-input-routing` passed 18 focused checks against private A. The same freshly compiled executable with focus `straighten-preview` passed 22 focused Apply/Cancel/presentation checks. Logs are `build.log`, `folder-drop.log`, `parameter-value.log`, `crop-input-routing.log` and `straighten-preview.log` under `build/native-acceptance/pr-delivery-20261015/`.
+- Production, test and resource trees at the tested HEAD are identical to `fb1bb6a5f371976143f82a26b80f21361c044b12`; subsequent commits only update this report. The complete 192-check suite and inherited perspective/localization matrices were not rerun for delivery. The checks above are local automation, not hosted CI or fresh native-input acceptance. No additional desktop replay was performed; the user's external-drop acceptance decision and the VoiceOver/full-application Tab coverage limits remain unchanged.
+- Read-only independent delivery audit confirmed the base relationship, macOS-only scope and evidence boundaries. This report's historical source label and incomplete scope sentence were clarified. `git diff --check` passed before the delivery commit; no RAW, screenshot, build output or credential is staged.
+
+Local phase commits before PR delivery (no push, PR, merge or release at these checkpoints):
 
 1. `d382db15a742f3ad4b36f6a961bdbd97e6425226`: isolated audit and build baseline.
 2. `28b77d22dafbbb9df0833e15806dca38fb9ebcd8`: native import, draft and keyboard evidence.
