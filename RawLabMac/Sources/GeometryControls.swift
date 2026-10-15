@@ -39,7 +39,16 @@ struct GeometryControls: View {
                 rotationControls.frame(minWidth: 220, maxWidth: .infinity)
                 gridControl.frame(width: 120, alignment: .leading)
             }
-            DisclosureGroup(isExpanded: $showsPreciseCrop) {
+            DisclosureGroup(isExpanded: Binding(get: { showsPreciseCrop }, set: { expanded in
+                if !expanded {
+                    commitFocusedInput()
+                    let hasInvalidCropInput = [GeometryParameter.cropX, .cropY, .cropWidth, .cropHeight].contains {
+                        model.invalidGeometryDraftInputs.contains("geometry.value.\($0.rawValue)")
+                    }
+                    guard !hasInvalidCropInput else { return }
+                }
+                showsPreciseCrop = expanded
+            })) {
                 VStack(spacing: 0) {
                     ForEach([GeometryParameter.cropX, .cropY, .cropWidth, .cropHeight]) { parameter in
                         parameterRow(parameter).disabled(!model.geometryDraftPreviewReady)

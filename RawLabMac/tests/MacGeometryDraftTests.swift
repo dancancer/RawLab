@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import ImageIO
 import Darwin
+import SwiftUI
 
 @main struct MacGeometryDraftTests {
     struct Failure: Error, CustomStringConvertible {
@@ -68,8 +69,10 @@ import Darwin
         try check(CGImageDestinationFinalize(destination), "preview evidence writes to the isolated output directory")
     }
 
-    static func main() throws {
+    @MainActor static func main() throws {
         setbuf(stdout, nil)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
         let source = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
         let originals = output.appendingPathComponent("raw-copies-\(UUID().uuidString)", isDirectory: true)
@@ -95,6 +98,10 @@ import Darwin
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "precise-crop-collapse" {
+            runPreciseCropChecks(model)
+            return
+        }
         try windowCloseChecks(model)
         model.settings.geometry = committed
         model.settings.lensCorrection = lens
@@ -206,7 +213,84 @@ import Darwin
         try preexistingReadErrorChecks(raw: a, output: output)
         try check(try OriginalFileIdentity(source) == sourceIdentity && Data(contentsOf: source) == original &&
                   Data(contentsOf: a) == original && Data(contentsOf: b) == original, "all draft operations leave the original and copied RAW bytes unchanged")
-        print("PASS: \(checks) macOS geometry/lens draft transaction checks")
+        runPreciseCropChecks(model)
+    }
+
+    @MainActor static func runPreciseCropChecks(_ model: EditorModel) {
+        Task { @MainActor in
+            do {
+                try await preciseCropCollapseChecks(model)
+                print("PASS: \(checks) macOS geometry/lens draft transaction checks")
+                exit(0)
+            } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+        }
+        NSApp.run()
+    }
+
+    @MainActor static func preciseCropCollapseChecks(_ model: EditorModel) async throws {
+        NSApp.activate(ignoringOtherApps: true)
+        try await Task.sleep(for: .milliseconds(100))
+        func nativeFields(_ view: NSView) -> [NumericTextField] {
+            (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap(nativeFields)
+        }
+        for text in ["80", "invalid"] {
+            try check(model.beginGeometryDraft(tab: .crop), "precise-collapse draft opens")
+            let deadline = Date().addingTimeInterval(90)
+            while Date() < deadline && (model.busy || !model.geometryDraftPreviewReady) {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try check(!model.busy && model.geometryDraftPreviewReady, "precise-collapse matching preview completes")
+            model.updateGeometryDraft { $0.cropX = 0; $0.cropWidth = 1 }
+            let host = NSHostingView(rootView: GeometryControls(model: model, showsPreciseCrop: true))
+            let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 740, height: 400),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.makeKeyAndOrderFront(nil)
+            defer { window.contentView = nil; window.close(); model.cancelGeometryDraft() }
+            try await Task.sleep(for: .milliseconds(200))
+            host.layoutSubtreeIfNeeded()
+            try check(NSApp.keyWindow === window, "the test-owned offscreen window owns native input")
+            guard let field = nativeFields(host).first(where: { $0.accessibilityIdentifier() == "geometry.value.cropWidth" }) else {
+                throw Failure(description: "precise crop width native field is missing")
+            }
+            field.selectText(nil)
+            guard let editor = field.currentEditor() as? NSTextView else {
+                throw Failure(description: "precise crop field has no native field editor")
+            }
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            try await Task.sleep(for: .milliseconds(50))
+            try check(model.busy, "uncommitted native typing owns the scheduler interaction")
+            try check(model.geometryDraftSettings.cropWidth == 1, "typing has not yet committed the crop width")
+            guard let firstField = nativeFields(host).first(where: { $0.accessibilityIdentifier() == "geometry.value.cropX" }) else {
+                throw Failure(description: "precise crop first row is missing")
+            }
+            // The disclosure is 32 points above the first precise row in this fixed-size host.
+            let row = firstField.convert(firstField.bounds, to: host)
+            let point = host.convert(NSPoint(x: 19, y: row.midY + (host.isFlipped ? -32 : 32)), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!)
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            if text == "80" {
+                try check(!nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" },
+                          "the hosted disclosure really collapsed its precise controls")
+            }
+            try check(!model.busy, "collapsing precise crop ends native numeric interaction")
+            if text == "80" {
+                try check(abs(model.geometryDraftSettings.cropWidth - 0.8) < 1e-9 && model.geometryDraftCanApply,
+                          "collapse commits the legal crop width before removing its editor")
+                try check(!nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" },
+                          "legal collapse removes precise controls after the commit")
+            } else {
+                try check(model.invalidGeometryDraftInputs.contains("geometry.value.cropWidth") && !model.geometryDraftCanApply,
+                          "collapse never accepts an invalid crop draft")
+                try check(nativeFields(host).contains { $0 === field } && field.stringValue == text,
+                          "an invalid precise draft remains visible for correction")
+            }
+        }
     }
 
     final class WindowDelegateProbe: NSObject, NSWindowDelegate {

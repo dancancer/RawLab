@@ -11,7 +11,7 @@ test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2;
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 mkdir -p "$OUT"
 SOURCES=()
-for name in Engine Adjustments MasterRecipe EditPersistence BatchExport EditorModel LookLibrary RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard; do
+for name in Engine Adjustments MasterRecipe EditPersistence BatchExport EditorModel LookLibrary RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard GeometryControls ParameterValueField ParameterPrecision AdjustmentRow MacRotationRuler; do
     SOURCES+=("$ROOT/RawLabMac/Sources/$name.swift")
 done
 for name in Localization GeometrySettings HSLSettings HSLNative ExportMetadata; do
