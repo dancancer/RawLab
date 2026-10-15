@@ -467,5 +467,9 @@
   "在资源管理器中查看": "Ver en el Explorador de archivos",
   "JPEG：质量 95，保留可读取拍摄信息。": "JPEG: calidad 95; conserva los datos de captura legibles.",
   "PNG：16-bit，保留可读取拍摄信息。": "PNG: 16 bits; conserva los datos de captura legibles.",
-  "DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。": "DNG: resultado renderizado; no contiene datos originales del sensor ni EXIF de captura."
+  "DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。": "DNG: resultado renderizado; no contiene datos originales del sensor ni EXIF de captura.",
+  "效果": "Efectos",
+  "透视：水平 {0:0.###} · 垂直 {1:0.###}": "Perspectiva: horizontal {0:0.###} · vertical {1:0.###}",
+  "\n降噪  {0}\n亮度降噪  {1:0.#}\n色彩降噪  {2:0.#}\n粗颗粒降噪  {3:0.#}": "\nReducción de ruido  {0}\nLuminancia  {1:0.#}\nCrominancia  {2:0.#}\nRuido grueso  {3:0.#}",
+  "\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}": "\nReducción de ruido cromático de pantalla  {0}\nViñeta  Intensidad {1:+0.#;-0.#;0} · Punto medio {2:0.#} · Redondez {3:+0.#;-0.#;0} · Desvanecimiento {4:0.#} · Protección de altas luces {5:0.#}\nGrano  Intensidad {6:0.#} · Tamaño {7:0.#} · Rugosidad {8:0.#}"
 }

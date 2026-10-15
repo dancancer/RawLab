@@ -9,6 +9,7 @@ public partial class MainWindow
 {
     private EditStore? editStore;
     private bool editDirty;
+    private string? saveNoticeKey;
     private readonly DispatcherTimer editSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer editNoticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly BatchJournal batchJournal = new(BatchJournal.DefaultDirectory);
@@ -20,10 +21,10 @@ public partial class MainWindow
     private void InitializeEditWorkflow()
     {
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
-        editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible) SaveState.Text = ""; };
+        editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;} };
         Deactivated += (_, _) => SaveEdits();
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
-        catch (Exception error) { SetSaveNotice(Loc.Text("无法读取调整记录"), error.Message, true); }
+        catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
         try { previousBatch = batchJournal.Load(); }
         catch (Exception error) { Report(new IOException(Loc.Text("无法读取上次批量任务：") + error.Message, error)); }
         RefreshBatchNotice(); UpdateBusy();
@@ -34,7 +35,7 @@ public partial class MainWindow
         ++editRevision;
         if (!ready || syncing || file == null) return;
         editDirty = true;
-        if (RetrySave.Visibility != Visibility.Visible) SaveState.Text = "";
+        if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
         editSaveTimer.Stop(); editSaveTimer.Start();
     }
 
@@ -46,10 +47,10 @@ public partial class MainWindow
         {
             editStore ??= new EditStore(EditStore.DefaultDirectory);
             editStore.Save(file, settings.Capture(), CurrentLookIdentity());
-            editDirty = false; SetSaveNotice(Loc.Text("调整已保存"), "", false);
+            editDirty = false; SetSaveNotice("调整已保存", "", false);
             return true;
         }
-        catch (Exception error) { SetSaveNotice(Loc.Text("调整未保存"), error.Message, true); return false; }
+        catch (Exception error) { SetSaveNotice("调整未保存 · 重试", error.Message, true); return false; }
     }
 
     internal string? CurrentLookIdentity()
@@ -84,13 +85,14 @@ public partial class MainWindow
             films.Add(new(Path.GetFileNameWithoutExtension(lut), lut, null)); BuildFilms();
         }
         editDirty = false;
-        if (saved != null) SetSaveNotice(Loc.Text("已恢复上次调整"), "", false);
-        else if (RetrySave.Visibility != Visibility.Visible) SaveState.Text = "";
+        if (saved != null) SetSaveNotice("已恢复上次调整", "", false);
+        else if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
     }
 
-    private void SetSaveNotice(string text, string detail, bool failed)
+    private void RefreshSaveNotice(){if(saveNoticeKey!=null)SaveState.Text=Loc.Text(saveNoticeKey);}
+    private void SetSaveNotice(string key, string detail, bool failed)
     {
-        SaveState.Text = text; SaveState.ToolTip = detail;
+        saveNoticeKey=key;SaveState.Text = Loc.Text(key); SaveState.ToolTip = detail;
         SaveState.Foreground = failed ? Brushes.LightSalmon : (Brush)FindResource("Muted");
         RetrySave.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
         editNoticeTimer.Stop(); if (!failed) editNoticeTimer.Start();
@@ -98,8 +100,8 @@ public partial class MainWindow
     private void RetrySaveClicked(object sender, RoutedEventArgs e)
     {
         if (editDirty) { SaveEdits(); return; }
-        try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice(Loc.Text("调整记录可用"), "", false); }
-        catch (Exception error) { SetSaveNotice(Loc.Text("无法读取调整记录"), error.Message, true); }
+        try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }
+        catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
     }
 
     private void BatchExportClicked(object sender, RoutedEventArgs e)
@@ -126,6 +128,7 @@ public partial class MainWindow
 
     private void ShowBatchClicked(object sender, RoutedEventArgs e)
     {
+        if(!ResolveTransformDraft())return;
         if (batchWindow != null) { batchWindow.Activate(); return; }
         if (previousBatch != null) ShowBatch(previousBatch);
     }

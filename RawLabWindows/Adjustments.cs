@@ -44,7 +44,7 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
         var v = Id == Parameter.Temperature ? 1 / (1 / Min - position * (1 / Min - 1 / Max)) : Min + position * (Max - Min);
         return Math.Clamp(Math.Round(v / Step, MidpointRounding.AwayFromZero) * Step, Min, Max);
     }
-    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) && double.IsFinite(value)
+    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.GetCultureInfo(Loc.Language), out var value) && double.IsFinite(value)
         ? Math.Clamp(Math.Round(value / Step, MidpointRounding.AwayFromZero) * Step, Min, Max) : null;
     public static readonly ParameterSpec[] All = [
         new(Parameter.Strength,"强度","胶片",0,200,.1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.01,"EV",2),
@@ -153,7 +153,7 @@ public sealed class Adjustments
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
         var spec = PhotoEffectSpec.For(id);
-        value = Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
+        value = Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
         Effects = id switch {
             PhotoEffectParameter.VignetteAmount => Effects with { VignetteAmount = value },
             PhotoEffectParameter.VignetteMidpoint => Effects with { VignetteMidpoint = value },

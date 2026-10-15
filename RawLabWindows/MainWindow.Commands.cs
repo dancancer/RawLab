@@ -9,6 +9,18 @@ public partial class MainWindow
 {
     private void ExitClicked(object sender,RoutedEventArgs e)=>Close();
     private void MainExportClicked(object sender,RoutedEventArgs e)=>ExportMenuClicked(ExportButton,e);
+    private async void OpenExportedClicked(object sender,RoutedEventArgs e)
+    {
+        if(lastExportedPath==null)return;
+        try
+        {
+            var item=await Task.Run(()=>{System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHParseDisplayName(lastExportedPath,IntPtr.Zero,out var parsed,0,out _));return parsed;});
+            try{System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHOpenFolderAndSelectItems(item,0,IntPtr.Zero,0));}
+            finally{System.Runtime.InteropServices.Marshal.FreeCoTaskMem(item);}
+            await EnsureExplorerSelection(lastExportedPath);
+        }
+        catch(Exception error){Report(error);}
+    }
     private void SettingsClicked(object sender,RoutedEventArgs e)
     {
         if(exporting)return;
@@ -19,13 +31,14 @@ public partial class MainWindow
     }
     private void ResetNamedGroupClicked(object sender,RoutedEventArgs e)
     {
-        if(file==null || exporting || sender is not MenuItem{Tag:string group})return;
+        if(file==null || exporting || sender is not MenuItem{Tag:string group} || !ResolveTransformDraft())return;
         if(group=="胶片" && settings.MasterRecipeID!=null){settings.ClearMasterRecipe();lut=null;}
         settings.ResetGroup(group);MarkEdited();RefreshControls();Schedule();
     }
     private void ResetCurrentToolClicked(object sender,RoutedEventArgs e)
     {
         if(file==null || exporting)return;
+        if(transform.Active){transform.Reset();transformPreviewReady=false;++transformGeneration;RefreshCropDraft();RefreshControls();Schedule();return;}
         if(choosingDenoise)settings.Denoise=new();
         else if(choosingHsl)settings.Hsl=new();
         else if(choosingPhotoEffects)settings.ResetEffects(selectedEffect==PhotoEffectTool.Vignette);

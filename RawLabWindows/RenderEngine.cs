@@ -141,6 +141,8 @@ internal sealed class RenderEngine : IDisposable
     {
         var config=value.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_geometry(session,ref config));
+        var perspective=value.NativePerspectiveConfig();
+        Native.Check(Native.sony2fuji_session_set_perspective(session,ref perspective));
     }
     private LensInfo ReadLens(string path) {
         var file = new FileInfo(path);

@@ -30,7 +30,7 @@ public sealed class Viewport
         return (int)Math.Min(edge,Math.Max(64,Math.Ceiling(edge*fit*Zoom/64)*64));
     }
 }
-public sealed class PhotoCanvas : FrameworkElement
+public sealed partial class PhotoCanvas : FrameworkElement
 {
     private BitmapSource? image,mask,comparison,comparisonMask;
     private Viewport? viewport;
@@ -55,14 +55,15 @@ public sealed class PhotoCanvas : FrameworkElement
     public void SetComparison(BitmapSource? source,BitmapSource? clipping) { comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
     public PhotoCanvas()
     {
-        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay};
+        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay,cropOverlay};
         referenceLayer.Children.Add(referenceDrawing);editedLayer.Children.Add(editedDrawing);
         referenceDrawing.Transform=editedDrawing.Transform=imageTransform;
         RenderOptions.SetBitmapScalingMode(this,BitmapScalingMode.LowQuality);
         ClipToBounds=true; Focusable=true; Cursor=Cursors.Hand;
-        MouseWheel+=(_,e)=> { Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=true; };
+        MouseWheel+=(_,e)=> { if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=image!=null; };
         MouseLeftButtonDown+=(_,e)=> {
             Focus();var point=e.GetPosition(this);
+            if(HandleCropDown(point)){e.Handled=true;return;}
             draggingDivider=ComparisonEnabled && Math.Abs(point.X-ActualWidth*Divider)<=18;
             if(e.ClickCount==2 && !draggingDivider && image!=null)
             {
@@ -73,13 +74,14 @@ public sealed class PhotoCanvas : FrameworkElement
         };
         MouseMove+=(_,e)=> {
             var next=e.GetPosition(this);
+            if(HandleCropMove(next)){e.Handled=true;return;}
             Cursor=ComparisonEnabled && (draggingDivider || Math.Abs(next.X-ActualWidth*Divider)<=18) ? Cursors.SizeWE : Cursors.Hand;
             if(draggingDivider){if(ActualWidth>0)Divider=next.X/ActualWidth;return;}
             if(drag is not {} point)return;Viewport?.Move(next-point);drag=next;
         };
-        MouseLeftButtonUp+=(_,_)=> { drag=null;draggingDivider=false;ReleaseMouseCapture(); };
-        LostMouseCapture+=(_,_)=>{drag=null;draggingDivider=false;};
-        KeyDown+=(_,e)=> { if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        MouseLeftButtonUp+=(_,_)=> { EndCropDrag();drag=null;draggingDivider=false;ReleaseMouseCapture(); };
+        LostMouseCapture+=(_,_)=>{EndCropDrag();drag=null;draggingDivider=false;};
+        KeyDown+=(_,e)=> { if(HandleCropKey(e)){e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{UpdateTransform();UpdateComparison();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
@@ -88,7 +90,7 @@ public sealed class PhotoCanvas : FrameworkElement
     protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi) {base.OnDpiChanged(oldDpi,newDpi);UpdateTransform();}
     protected override void OnRender(DrawingContext dc)
     {
-        dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(20,21,24)),null,new Rect(RenderSize));
+        dc.DrawRectangle(SystemParameters.HighContrast ? SystemColors.WindowBrush : new SolidColorBrush(Color.FromRgb(28,28,30)),null,new Rect(RenderSize));
     }
     private void DrawImages()
     {
@@ -119,6 +121,7 @@ public sealed class PhotoCanvas : FrameworkElement
         }
         var edge=Viewport.PreviewLongEdge(RenderSize,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
+        DrawCrop();
     }
     private void UpdateComparison()
     {

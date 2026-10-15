@@ -11,9 +11,9 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
     public double Value(double position) => Clamp(Reciprocal
         ? 1 / (1 / Min - Math.Clamp(position, 0, 1) * (1 / Min - 1 / Max))
         : Min + Math.Clamp(position, 0, 1) * (Max - Min));
-    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value)
+    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.GetCultureInfo(Loc.Language), out var value)
         && double.IsFinite(value) ? Clamp(value) : null;
-    public string Format(double value) => value.ToString(FixedDecimals >= 0 ? "F" + FixedDecimals : "0.########", CultureInfo.CurrentCulture);
+    public string Format(double value) => value.ToString(FixedDecimals >= 0 ? "F" + FixedDecimals : "0.########", CultureInfo.GetCultureInfo(Loc.Language));
     public static NumericRange For(ParameterSpec spec) => new(spec.Min, spec.Max, spec.Step,
         spec.Id == Parameter.Exposure ? .1 : spec.Id == Parameter.Temperature ? 100 : 1,
         spec.Id == Parameter.Exposure ? .01 : spec.Id == Parameter.Temperature ? 10 : .1,

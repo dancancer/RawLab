@@ -10,7 +10,7 @@ namespace RawLab.Windows;
 
 public sealed class ParameterRow : Grid
 {
-    public Slider Slider { get; } = new() { Minimum = 0, Maximum = 1, MinWidth = 140 };
+    public ParameterSlider Slider { get; } = new() { Minimum = 0, Maximum = 1, MinWidth = 140 };
     public TextBox Number { get; } = new() { Width = 72, MinHeight = 26, Padding = new Thickness(5,2,5,2),
         VerticalContentAlignment = VerticalAlignment.Center };
     public Button ResetButton { get; } = new() { Width = 28, Height = 28, MinHeight = 28, Padding = new Thickness(3), Margin = new Thickness(0),
@@ -53,8 +53,6 @@ public sealed class ParameterRow : Grid
             e.Handled=motion.Consumed;
             if(motion.Steps!=0)Publish(range.Clamp(range.Parse(Number.Text)!.Value+motion.Steps*(fine ? range.FineWheel : range.Wheel)),false);
         };
-        // Slider 自带的滚轮不能绕过数值框的节流约定。
-        Slider.PreviewMouseWheel+=(_,_)=>{ };
         ResetButton.Click+=(_,_)=>Publish(defaultValue,false);
         SizeChanged+=(_,_)=>ColumnDefinitions[0].Width=new GridLength(ActualWidth<600 ? 120 : 130);
     }
@@ -64,11 +62,12 @@ public sealed class ParameterRow : Grid
         var changedRange=range!=limits;
         range=limits; value=current; defaultValue=reset;
         label.Text=title;unit.Text=suffix;IsEnabled=enabled;
+        Slider.NumericRange=limits;Slider.SmallChange=limits.Grid/(limits.Max-limits.Min);Slider.LargeChange=limits.Wheel/(limits.Max-limits.Min);
         AutomationProperties.SetName(Slider,title);AutomationProperties.SetName(Number,title);
         AutomationProperties.SetHelpText(Number,$"{limits.Min} - {limits.Max} {suffix}");
         AutomationProperties.SetName(ResetButton,Loc.Format("重置{0}",title));ResetButton.ToolTip=Loc.Format("重置{0}",title);
         syncing=true;Slider.Value=range.Position(value);syncing=false;
-        if(changedRange || !Number.IsKeyboardFocusWithin || !dirty)RestoreText();
+        if(changedRange || !dirty || (!Number.IsKeyboardFocusWithin && !(KeepInvalidInput && HasInvalidInput)))RestoreText();
     }
     public void RestoreText()
     {

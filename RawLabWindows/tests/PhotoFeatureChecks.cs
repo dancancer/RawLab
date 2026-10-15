@@ -142,7 +142,8 @@ internal static class PhotoFeatureChecks
             var vignetteHighlights = Descendants<Slider>(window).Single(slider =>
                 AutomationProperties.GetName(slider) == "暗角高光保护");
             Check(!vignetteHighlights.IsEnabled, "Zero vignette disables highlights protection");
-            vignetteAmount.Value = -40;
+            vignetteAmount.Value = .3;
+            ((Expander)window.PhotoEffectsEditor.FindName("VignetteDetails")).IsExpanded=true;
             Check(vignetteHighlights.IsEnabled, "Negative vignette enables highlights protection");
             Screenshot(window, Path.Combine(output, "vignette.png"));
             var labels = Descendants<TextBlock>(window.PhotoEffectsEditor).Where(label => label.IsVisible &&

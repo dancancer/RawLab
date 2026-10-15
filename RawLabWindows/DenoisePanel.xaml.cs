@@ -8,7 +8,7 @@ public partial class DenoisePanel : UserControl
     private DenoiseSettings value=new();
     private bool syncing=true;
     private readonly ParameterRow[] rows=[new(),new(),new()];
-    private static readonly string[] titles=["亮度降噪","色彩降噪","粗色斑"];
+    private static readonly string[] titles=["亮度降噪","色彩降噪","粗色斑抑制"];
     public event Action<DenoiseSettings,bool>? Changed;
     public DenoisePanel()
     {

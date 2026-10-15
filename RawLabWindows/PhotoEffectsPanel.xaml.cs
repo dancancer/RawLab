@@ -39,6 +39,7 @@ public partial class PhotoEffectsPanel : UserControl
             rows[spec.Id].Refresh(Loc.Text(titles[(int)spec.Id]),new(spec.Min,spec.Max),value[spec.Id],spec.DefaultValue,"%",enabled);
             var fullName=Loc.Text((spec.IsVignette ? "暗角" : "颗粒")+titles[(int)spec.Id]);
             AutomationProperties.SetName(rows[spec.Id].Slider,fullName);
+            AutomationProperties.SetName(rows[spec.Id].ResetButton,Loc.Text("重置"+(spec.IsVignette ? "暗角" : "颗粒")+titles[(int)spec.Id]));
             AutomationProperties.SetName(rows[spec.Id].Number,Loc.Text((spec.IsVignette ? "暗角" : "颗粒")+titles[(int)spec.Id]+"数值"));
         }
         syncing=false;

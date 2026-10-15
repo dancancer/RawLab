@@ -2,6 +2,9 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RawLab.Windows;
@@ -39,6 +42,19 @@ internal static class EditorShellChecks
                 }
                 window.Close();window=null;
             }
+            Loc.Initialize("en");
+            var row=new ParameterRow();var host=new Window{Content=row,Width=720,SizeToContent=SizeToContent.Height};
+            host.Show();row.Refresh("Exposure",new(-4,4,.01,.1,.01,false,2),0,0,"EV");host.UpdateLayout();
+            MouseWheelEventArgs Wheel(int delta){var args=new MouseWheelEventArgs(Mouse.PrimaryDevice,Environment.TickCount,delta){RoutedEvent=UIElement.PreviewMouseWheelEvent};row.Number.RaiseEvent(args);return args;}
+            check(Wheel(120).Handled && row.Number.Text=="0.10","WPF vertical wheel takes one ordinary exposure step");
+            check(Wheel(120).Handled && row.Number.Text=="0.10","Rapid WPF wheel events are consumed but rate limited");
+            row.Number.Text="invalid";check(!Wheel(120).Handled,"Invalid numeric draft does not intercept panel scrolling");
+            row.RestoreText();row.Number.IsReadOnly=true;check(!Wheel(120).Handled,"Read-only numeric field does not intercept panel scrolling");row.Number.IsReadOnly=false;
+            var provider=(IRangeValueProvider)UIElementAutomationPeer.CreatePeerForElement(row.Slider)!.GetPattern(PatternInterface.RangeValue)!;
+            check(provider.Minimum==-4 && provider.Maximum==4 && provider.SmallChange==.01 && Math.Abs(provider.Value-.1)<1e-10,"Slider automation reports actual numeric units, not normalized position");
+            row.Refresh("Exposure",new(-4,4,.01,.1,.01,false,2),4,0,"EV");check(Wheel(120).Handled,"Boundary wheel remains consumed");
+            host.FontSize=26;host.UpdateLayout();check(row.ActualHeight>=32 && row.Number.ActualHeight>=26,"Enlarged parameter text grows its row naturally");
+            host.Close();
         }
         finally{window?.Close();Loc.Initialize(previous);app.Shutdown();}
     }

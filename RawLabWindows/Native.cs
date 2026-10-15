@@ -42,6 +42,12 @@ internal static class Native
         public float StraightenDegrees;
     }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct PerspectiveConfig
+    {
+        public uint Version,StructSize;
+        public float Horizontal,Vertical;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct HslConfig
     {
         public uint Version, StructSize;
@@ -99,6 +105,7 @@ internal static class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_inspect_lens(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string input,out LensReport report,[Out] LensProfile[]? profiles,uint capacity,out uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_hsl(Session session,ref HslConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_geometry(Session session,ref GeometryConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_perspective(Session session,ref PerspectiveConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_geometry_size(Session session,out uint width,out uint height);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_estimate_auto_exposure(Session session,ref Request request,out float exposure);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_gpu_config(Session session,ref GpuConfig config);

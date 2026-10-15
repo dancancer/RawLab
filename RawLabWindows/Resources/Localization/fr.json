@@ -467,5 +467,9 @@
   "在资源管理器中查看": "Afficher dans l’Explorateur de fichiers",
   "JPEG：质量 95，保留可读取拍摄信息。": "JPEG : qualité 95 ; les informations de prise de vue lisibles sont conservées.",
   "PNG：16-bit，保留可读取拍摄信息。": "PNG : 16 bits ; les informations de prise de vue lisibles sont conservées.",
-  "DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。": "DNG : rendu final ; ne contient pas les données originales du capteur ni les données EXIF de prise de vue."
+  "DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。": "DNG : rendu final ; ne contient pas les données originales du capteur ni les données EXIF de prise de vue.",
+  "效果": "Effets",
+  "透视：水平 {0:0.###} · 垂直 {1:0.###}": "Perspective : horizontale {0:0.###} · verticale {1:0.###}",
+  "\n降噪  {0}\n亮度降噪  {1:0.#}\n色彩降噪  {2:0.#}\n粗颗粒降噪  {3:0.#}": "\nRéduction du bruit  {0}\nLuminance  {1:0.#}\nChrominance  {2:0.#}\nBruit grossier  {3:0.#}",
+  "\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}": "\nRéduction du bruit chromatique d’affichage  {0}\nVignettage  Intensité {1:+0.#;-0.#;0} · Point médian {2:0.#} · Rondeur {3:+0.#;-0.#;0} · Progressivité {4:0.#} · Protection des hautes lumières {5:0.#}\nGrain  Intensité {6:0.#} · Taille {7:0.#} · Rugosité {8:0.#}"
 }
