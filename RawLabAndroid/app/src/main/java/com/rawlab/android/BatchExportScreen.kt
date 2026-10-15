@@ -197,12 +197,8 @@ private fun BatchConfirmContent(
         }
         item {
             Text(AppStrings.text(R.string.message_output), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(20.dp, 16.dp, 20.dp, 4.dp))
-            Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = format == ExportFormat.JPEG, onClick = { onFormat(ExportFormat.JPEG) }, label = { Text(stringResource(R.string.jpeg)) })
-                FilterChip(selected = format == ExportFormat.PNG, onClick = { onFormat(ExportFormat.PNG) }, label = { Text(stringResource(R.string.png)) })
-                FilterChip(selected = format == ExportFormat.DNG, onClick = { onFormat(ExportFormat.DNG) }, label = { Text(stringResource(R.string.dng)) })
-            }
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ExportFormatControls(format, onFormat, Modifier.padding(horizontal = 20.dp))
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) {
                     FilterChip(selected = destination == null, onClick = onAlbumOutput, label = { Text(AppStrings.text(R.string.message_photo_gallery)) })
                 }
@@ -242,7 +238,7 @@ private fun exportSizeChoice(longEdge: Int?): ExportSizeChoice = when (longEdge)
 private fun BatchProgressContent(state: BatchExportState, onCancel: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else if (state.phase == BatchPhase.PREPARING) AppStrings.text(R.string.message_preparing) else AppStrings.text(R.string.message_exporting), style = MaterialTheme.typography.titleLarge)
-        LinearProgressIndicator(progress = { (state.successCount + state.failedCount).toFloat() / state.job.rows.size.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth())
+        LinearProgressIndicator(progress = { state.completionFraction }, modifier = Modifier.fillMaxWidth())
         Text(AppStrings.format(R.string.message_completed, state.successCount.toString(), state.job.rows.size.toString()))
         LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row -> BatchRowLine(row) } }
         OutlinedButton(onClick = onCancel, enabled = !state.stopping, modifier = Modifier.fillMaxWidth()) { Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else stringResource(R.string.cancel)) }
@@ -255,6 +251,7 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (state.phase == BatchPhase.COMPLETE) AppStrings.text(R.string.message_export_complete) else if (state.failedCount > 0) AppStrings.text(R.string.message_some_exports_failed) else AppStrings.text(R.string.message_export_result), style = MaterialTheme.typography.titleLarge)
         Text(AppStrings.format(R.string.message_succeeded_failed_not_processed, state.successCount.toString(), state.failedCount.toString(), (state.unfinishedCount - state.failedCount).toString()))
+        if (state.confirmationCount > 0) Text(stringResource(R.string.batch_confirmation_count, state.confirmationCount))
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row ->
             BatchRowLine(row)

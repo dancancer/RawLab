@@ -43,7 +43,7 @@ class LookLibraryInstrumentedTest {
             val library = LookLibrary(root)
             assertThrows(UnsupportedOperationException::class.java) { library.importLook(invalid) }
             assertTrue(library.list().isEmpty())
-            assertTrue(root.listFiles().orEmpty().isEmpty())
+            assertTrue(root.listFiles().orEmpty().all { it.name == ".lock" })
             val a = library.importLook(first, "same.cube")
             val b = library.importLook(second, "same.cube")
             assertNotEquals(a.id, b.id)

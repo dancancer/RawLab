@@ -292,12 +292,13 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
     jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
-    jint exposureMode, jfloatArray hslValues, jboolean recipeActive) {
+    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jintArray backendOut) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
         auto* session = found->second.get();
+        if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
         check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         UtfChars in(env, input), film(env, lut), out(env, output);
         bool effectiveCustom = customWb;
@@ -337,6 +338,11 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
+        if (backendOut) {
+            const auto backend = static_cast<jint>(sony2fuji_session_get_last_backend(session));
+            env->SetIntArrayRegion(backendOut, 0, 1, &backend);
+            if (env->ExceptionCheck()) return nullptr;
+        }
         if (output) return nullptr;
         const auto& b = buffer.value;
         const size_t row = static_cast<size_t>(b.width) * 4;

@@ -3,10 +3,13 @@ package com.rawlab.android
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -278,6 +281,8 @@ data class BatchExportState(
     val selectedCount: Int get() = job.rows.size
     val successCount: Int get() = job.rows.count { it.status == BatchRowStatus.SUCCESS }
     val failedCount: Int get() = job.rows.count { it.status == BatchRowStatus.FAILED }
+    val confirmationCount: Int get() = job.rows.count { it.status == BatchRowStatus.NEEDS_CONFIRMATION }
+    val completionFraction: Float get() = successCount.toFloat() / selectedCount.coerceAtLeast(1)
     val unfinishedCount: Int get() = job.rows.count { it.status !in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION) }
 }
 
@@ -286,11 +291,14 @@ class BatchExportModel(
     private val storage: PhotoStorage,
     source: BatchSourceSnapshot,
     initial: BatchJob? = null,
+    private val gpuMode: Int = NativeProcessor.AUTO,
+    private val processorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val resolver = context.contentResolver
     private val cancelRequested = AtomicBoolean(false)
     private var running: Job? = null
+    private var discardCompletion: CompletableDeferred<Unit>? = null
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
     private val initialJob = initial ?: BatchJob(source, emptyList())
     private val mutable = MutableStateFlow(BatchExportState(initialJob, phase = BatchPhase.PREPARING,
@@ -367,13 +375,14 @@ class BatchExportModel(
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)
-                val processor = NativeProcessor(lensDatabase = storage.lensDatabase())
+                val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val result = try {
                     val render: (BatchTarget, EditSettings) -> File = { target, settings ->
                         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
                         try {
-                            processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, format,
+                            val backend = processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, format,
                                 materialized.outputLongEdge)
+                            android.util.Log.i("RawLabBatch", "job=${materialized.id} exportBackend=$backend")
                             temporary
                         } catch (error: Throwable) {
                             temporary.delete()
@@ -431,7 +440,7 @@ class BatchExportModel(
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
-                NativeProcessor(lensDatabase = storage.lensDatabase()).use { it.preview(destination, null, EditSettings(), 256, false) }
+                processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(destination, null, EditSettings(), 256, false) }
             } catch (error: Exception) { destination.delete(); throw error }
         }
         return BatchTarget(identity, destination, name, uri.toString())
@@ -487,9 +496,13 @@ class BatchExportModel(
     }
 
     suspend fun preview(target: BatchTarget): android.graphics.Bitmap = withContext(Dispatchers.IO) {
-        val source = mutable.value.job.source
-        // 效果查看先限长再降噪，避免处理整张 RAW；最终导出仍保留完整质量。
-        NativeProcessor(lensDatabase = storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true).bitmap() }
+        // 取消对话框不能中断 JNI；所有预览仍由 model 持有，关闭后等它们退出再删输入。
+        val work = scope.async(Dispatchers.IO) {
+            val source = mutable.value.job.source
+            // 效果查看先限长再降噪，最终导出仍保留完整质量。
+            processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true) }
+        }
+        try { work.await().bitmap() } finally { work.cancel() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {
@@ -520,14 +533,25 @@ class BatchExportModel(
 
     fun setDestination(destination: Uri?) { mutable.value = mutable.value.copy(destination = destination) }
 
-    fun discardDraftOrCompleted() {
-        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) BatchJournal(journalRoot).discard(initialJob.id)
+    fun discardDraftOrCompleted(): Deferred<Unit>? {
+        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
+        return discardCompletion
     }
 
     fun discard(): Boolean {
         if (mutable.value.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING)) return false
-        return try { BatchJournal(journalRoot).discard(initialJob.id); true }
+        return try { discardAfterWork(); true }
         catch (error: Exception) { mutable.value = mutable.value.copy(error = error.message); false }
+    }
+
+    private fun discardAfterWork() {
+        if (discardCompletion != null) return
+        val completion = CompletableDeferred<Unit>().also { discardCompletion = it }
+        scope.coroutineContext[Job]!!.invokeOnCompletion {
+            try { BatchJournal(journalRoot).discard(initialJob.id); completion.complete(Unit) }
+            catch (error: Exception) { completion.completeExceptionally(error) }
+        }
+        close()
     }
 
     override fun close() {
