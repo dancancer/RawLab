@@ -320,3 +320,9 @@ alignment, `bash -n` and diff whitespace checks also pass. Both APKs and the ext
 Pre-commit logs are `precommit-build.log` and `precommit-native-alignment.log` in the same evidence
 directory. Only the P2 source/tests, wrapper, verification record and P2 re-review report are included;
 the earlier `1440` review, sample RAW, generated APKs and temporary mutation artifacts are excluded.
+
+### CPU Hotspot Follow-up
+
+The later evidence-driven Android Debug dependency correction, unchanged 240-second
+physical CPU workflows, numerical equivalence and teardown are recorded separately in
+[CPU denoise performance verification](cpu-denoise-performance-verification.md).
