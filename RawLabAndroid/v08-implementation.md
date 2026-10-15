@@ -178,3 +178,13 @@ design prototype checks are reference evidence only and are not Android product 
 
 This report supplies Android implementation/evidence for coordination entries V08-007/V08-014/
 V08-020/V08-021. The global 0.8 checklist, Shared/core ABI and other platforms were not edited.
+
+## Batch Timeout Follow-Up
+
+The [local fixed-budget investigation](batch-timeout-diagnosis.md) reproduced the same timeout on
+the exact pre-v0.8 baseline and localized it to SwiftShader's full-resolution Clean wavelet path.
+Fresh-session CPU Clean and FORCE-with-denoise-disabled controls pass within the unchanged 240 s
+budget. The evidence points to a pre-existing emulator software-GLES slow path rather than v0.8
+introducing this timeout. Both original runs remain censored at 240 s: this does not prove equal
+uncensored GPU throughput or exclude every smaller regression, change the original test result,
+or replace physical GPU acceptance.
