@@ -18,21 +18,21 @@
 ## Tasks
 
 1. Parameter interaction and reusable rows (`ParameterInteraction.cs`, `ParameterRow.cs`, parameter panels and managed tests).
-   - [ ] Add failing tests for exact fine grids, inverse-temperature mapping, wheel threshold/rate/reset/invalid-event contracts.
-   - [ ] Implement pure numeric/wheel model and bind five-column slider/text/unit/reset rows, Enter/blur/Escape and wheel handling.
-   - [ ] Verify managed suites and cross-build; commit focused changes.
+   - [x] Add failing tests for exact fine grids, inverse-temperature mapping, wheel threshold/rate/reset/invalid-event contracts.
+   - [x] Implement pure numeric/wheel model and bind five-column slider/text/unit/reset rows, Enter/blur/Escape and wheel handling.
+   - [x] Verify managed suites and cross-build; commit focused changes.
 2. Window shell and discovery (`MainWindow.xaml`, `MainWindow.xaml.cs`, `Controls.xaml`, platform resources).
-   - [ ] Add native layout/menu regression checks before shell changes.
-   - [ ] Implement five native menus, exact empty state, scrollable adjustment content, retained dock height and reset scopes; settings dialog and six-language keys.
-   - [ ] Verify cross-build and native layout where available; commit.
+   - [x] Add native layout/menu regression checks before shell changes.
+   - [x] Implement five native menus, exact empty state, scrollable adjustment content, retained dock height and reset scopes; settings dialog and six-language keys.
+   - [x] Verify cross-build and native layout where available; commit.
 3. Geometry/lens workspace (`GeometrySettings.cs`, `Native.cs`, geometry/lens panels, canvas and MainWindow binding).
-   - [ ] Add failing tests for real current ABI, serialized perspective, draft apply/cancel/reset and constrained crop transforms.
-   - [ ] Implement platform binding and independent draft, leave prompt, crop overlay/ratio/ruler/keyboard controls; retain honest lens capability reports.
-   - [ ] Verify managed/native geometry checks and commit.
+   - [x] Add failing tests for real current ABI, serialized perspective, draft apply/cancel/reset and constrained crop transforms.
+   - [x] Implement platform binding and independent draft, leave prompt, crop overlay/ratio/ruler/keyboard controls; retain honest lens capability reports.
+   - [x] Verify managed/native geometry checks and commit.
 4. Workflow verification and completion (`tests/**`, platform verification record).
-   - [ ] Check save-failure switch blocking, exact-preview export/copy gate, RAW/output and frozen batch behavior.
-   - [ ] Run isolated Windows build/test and targeted native UI matrix where available; record precise NOT REACHED items.
-   - [ ] Independent read-only review, fix findings, re-run affected checks and commit verification record.
+   - [x] Check save-failure switch blocking, exact-preview export/copy gate, RAW/output and frozen batch behavior.
+   - [x] Run isolated Windows build/test and targeted native UI matrix where available; record precise NOT REACHED items.
+   - [x] Independent read-only review, fix findings, re-run affected checks and commit verification record.
 
 ## Review Focus
 
@@ -44,4 +44,7 @@
 
 ## Progress
 
-- Setup verified: independent git-dir, clean detached base; created feature branch. Design and workflow read; implementation ongoing.
+- Implementation commits are local to `feature/windows-v08-editor`; no shared or other-platform source changed.
+- Managed editing, denoise-model, localization and Windows cross-build pass. The isolated Windows core run passed 33/33 CTest; its legacy wrapper then stopped before WPF tests on test-output discovery.
+- Native targeted checks and final affected-check reruns are recorded separately in `VERIFICATION-v08.md`. Programmatic WPF composition is not physical DPI, Snap, Narrator, touchpad or multi-monitor acceptance.
+- Implementation and owned verification are complete; release acceptance remains non-green because of the recorded legacy wrapper discovery failure, existing real-RAW denoise assertion and physical acceptance gaps. No claim of complete hardware/release verification is made.
