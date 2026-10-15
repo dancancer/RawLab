@@ -21,7 +21,9 @@ internal static class DefaultIsolationChecks
                 "Recovery control really cleans the private staging file: "+status);
             check(File.Exists(control.Record) && File.Exists(control.Published),
                 "Recovery control retains the private journal and published output: "+status);
-            foreach(var mode in new[]{"--photo-features","--interactions"})Reject(status,false,mode:mode);
+            foreach(var mode in new[]{"--default-isolation","--profile-isolation","--status-layout","--appearance","--editor-review","--editor-shell",
+                "--transform-ui","--about","--geometry","--lens","--rendered-dng","--master-recipes","--photo-features","--denoise",
+                "--interactions","--benchmark","--benchmark-ui","--entry-selection","--resources"})Reject(status,false,mode:mode);
             foreach(var uiOnly in new[]{false,true})Reject(status,uiOnly);
         }
         Reject(BatchStatus.Running,true,locked:true);
@@ -37,7 +39,10 @@ internal static class DefaultIsolationChecks
             var repo=Path.Combine(fixture.Directory,"suite");
             string[] args=[repo,Path.Combine(fixture.Directory,"missing.arw")];
             if(uiOnly)args=[..args,"--ui-only"];
-            if(mode!=null)args=[mode,..args];
+            if(mode!=null)args=mode switch{
+                "--about"=>[mode],
+                "--default-isolation" or "--profile-isolation" or "--status-layout" or "--appearance" or "--editor-shell"=>[mode,repo],
+                _=>[mode,..args]};
             var rejected=false;
             using(var held=locked ? new FileStream(fixture.Record,FileMode.Open,FileAccess.ReadWrite,FileShare.None) : null)
             {

@@ -247,3 +247,21 @@ dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll 
 历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。
+
+### 恢复、入口及资源回归
+
+`--editor-review <repo> <RAW> [part]` 省略 part 时运行所有编辑器场景；子场景名忽略大小写和首尾空格，
+未知或显式空值直接失败，不创建样片或窗口。主测试程序也拒绝未知模式、错误参数数量及错误的 `--ui-only`。
+下列独立检查同样先保护已有默认 journal/staging，并使用私有窗口配置：
+
+```powershell
+dotnet <TargetDir>/RawLabWindows.Tests.dll --entry-selection <repo> <RAW>
+dotnet <TargetDir>/RawLabWindows.Tests.dll --resources <repo> <RAW>
+```
+
+`--resources` 在一次预热后执行三轮真实 RAW 的 CPU 编辑、原尺寸/适合窗口、重新打开及关闭，
+记录每 100ms 的进程私有内存、工作集、托管内存、CPU 时间和空闲时的预览缓存。
+它检查窗口可回收、原生 session 释放、已有缓存预算及 RAW 字节保持不变，不用任意 RSS 上限代替泄漏判断。
+结果写入任务目录 `build/windows-resource-checks/`；这是短时单 VM 验证，不是长期压力或物理 GPU 验收。
+编辑器回归另检查关闭请求后的缩略图队列停止、失败后的文件树恢复、无变化时不重显影，
+以及 1000 次格式检查式拖拽悬停；实际 Drop 仍验证路径，不改写源文件。

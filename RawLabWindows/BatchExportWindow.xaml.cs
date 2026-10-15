@@ -19,6 +19,7 @@ public partial class BatchExportWindow : Window
     private CancellationTokenSource cancellation = new();
     private bool ready, refreshingSize, editingCustomSize,preflighting,closed;
     private volatile bool closeRequested;
+    private Task? thumbnailLoading;
     public bool Running { get; private set; }
     public bool Busy=>Running || preflighting;
     public bool Discarded { get; private set; }
@@ -37,12 +38,13 @@ public partial class BatchExportWindow : Window
         Dng.IsChecked = job.Format == ExportFormat.RenderedDng;
         SourceName.Text = Path.GetFileName(job.Source); SourceName.ToolTip = job.Source;
         Loaded += async (_, _) => {
-            try { SourceThumbnail.Source = await Task.Run(() => RenderEngine.Thumbnail(job.Source)); } catch (Exception) { }
+            try { var source=await Task.Run(() => RenderEngine.Thumbnail(job.Source));if(closed || closeRequested)return;SourceThumbnail.Source=source; } catch (Exception) { }
+            if(closed || closeRequested)return;
             await LoadThumbnails();
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;job.Error=error.Message;Refresh();}
+            if(!job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -158,11 +160,22 @@ public partial class BatchExportWindow : Window
         catch(Exception error){if(!closed)job.Error=error.Message;}
         finally{preflighting=false;if(!closed){Refresh();if(closeRequested)Close();}BusyChanged?.Invoke(false);}
     }
-    private async Task LoadThumbnails()
+    private Task LoadThumbnails()
     {
-        foreach (var row in rows.Where(row => row.Thumbnail == null).ToArray())
+        if(thumbnailLoading is { IsCompleted:false })return thumbnailLoading;
+        return thumbnailLoading=ReadThumbnails();
+    }
+    private async Task ReadThumbnails()
+    {
+        var attempted=new HashSet<Guid>();
+        while(!closed && !closeRequested && rows.FirstOrDefault(row=>row.Thumbnail==null && !attempted.Contains(row.Item.Id)) is {} row)
         {
-            try { row.SetThumbnail(await Task.Run(() => RenderEngine.Thumbnail(row.Input))); } catch (Exception) { }
+            attempted.Add(row.Item.Id);
+            try {
+                var image=await Task.Run(() => RenderEngine.Thumbnail(row.Input));
+                if(closed || closeRequested)return;
+                if(rows.Contains(row))row.SetThumbnail(image);
+            } catch (Exception) { }
         }
     }
     private void SelectAllClicked(object sender, RoutedEventArgs e) => SelectAll(true);
@@ -244,11 +257,6 @@ public partial class BatchExportWindow : Window
     }
     private void CloseClicked(object sender, RoutedEventArgs e)
     {
-        if (!job.Started && !Running)
-        {
-            try { journal.Discard(job); Discarded = true; }
-            catch (Exception error) { job.Error = error.Message; Refresh(); return; }
-        }
         Close();
     }
     private void RevealFolderClicked(object sender, RoutedEventArgs e) { if (job.OutputDirectory != null) Process.Start(new ProcessStartInfo(job.OutputDirectory) { UseShellExecute = true }); }

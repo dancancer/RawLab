@@ -140,7 +140,7 @@ public partial class MainWindow
         window.BusyChanged += active => {
             var closeFailed=!active && closing && window.CloseFailed;
             if(closeFailed){RecoverFailedClose(window);return;}
-            if(!active && !exporting && !closing)CommitPreviewSize();
+            if(!active && !exporting && !closing)ResumePreview();
             RefreshControls(); RefreshBatchNotice();
             if(!active && closing && !scheduler.Busy)FinishClose();
         };
@@ -154,7 +154,7 @@ public partial class MainWindow
     private void RecoverFailedClose(BatchExportWindow window)
     {
         closing=false;IsEnabled=true;
-        if(!exporting)CommitPreviewSize();
+        ResumePreview();QueueThumbnailRefresh();
         RefreshControls();RefreshBatchNotice();
         SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);
     }

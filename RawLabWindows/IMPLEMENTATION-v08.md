@@ -59,6 +59,18 @@
 - [x] Regress conditional status-bar layout changes across language, text size, and notification states; fix confirmed Windows layout instability.
 - [x] Complete the broad Windows matrix and final affected-source recheck, including both isolation suites, real StartupUri localization UI and unchanged-default-state audits. Prepare the authorized commit/PR #53 update; merging remains prohibited.
 
+### Six P2 Recovery And Resource Follow-up
+
+Scope: Windows implementation/tests only, starting at `5e6cac9`; no shared core, ABI or other-platform changes. Execution follows the existing review contracts without another approval round.
+
+- [x] Add failing regressions for visible-tree recovery, thumbnail-stage cancellation, no-op close recovery, strict CLI selection, drag-hover admission and live caption scaling.
+- [x] Share close/cancel cleanup, resume all visible thumbnails after failure, and replay only genuinely deferred preview work while preserving import/batch completion orders.
+- [x] Reject malformed test commands before fixtures; keep filesystem checks out of DragOver and retain real Drop validation and busy/closing gates.
+- [x] Use live size resources for every dynamic caption; test normal/high-contrast and scale round trips on retained controls.
+- [x] Remove implicit StartupUri startup from manual-window fixtures; keep the independent real-startup test and assert private window ownership/collection.
+- [x] Run a frozen-source Windows matrix, negative controls, real-RAW interaction/resource soak with process/native-memory observations, and default-profile preservation audit.
+- [x] Independently inspect the complete patch and same-class boundaries; document source hashes, actual results and physical gaps; prepare the authorized commit/push update to PR #53 without merging.
+
 - Implementation commits are local to `feature/windows-v08-editor`; no shared or other-platform source changed.
 - Managed editing, denoise-model, localization and Windows cross-build pass. The isolated Windows full `build.ps1 -Test` follow-up passes 33/33 CTest, About and 152 default WPF checks; the test-output discovery failure is fixed and covered by a PowerShell parser regression.
 - Native targeted checks and final affected-check reruns are recorded separately in `VERIFICATION-v08.md`. Programmatic WPF composition is not physical DPI, Snap, Narrator, touchpad or multi-monitor acceptance.

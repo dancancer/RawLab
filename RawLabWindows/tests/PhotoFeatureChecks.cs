@@ -58,8 +58,7 @@ internal static class PhotoFeatureChecks
         Check(info!.DisplayWidth > 0 && info.DisplayHeight > 0 && info.CaptureTime != null,
             "Production ExifTool reports oriented source dimensions and capture time");
 
-        var app = new App(); app.InitializeComponent(); app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
+        var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
         TestWindowState.Isolate(window,output);

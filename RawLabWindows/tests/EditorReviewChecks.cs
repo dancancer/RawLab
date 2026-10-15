@@ -11,8 +11,22 @@ using RawLab.Windows;
 internal static class EditorReviewChecks
 {
     private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
+    internal enum Part { All, BusyBatchFirst, BusyForegroundFirst, BusyExportBatchFirst, BusyExportFirst, BusyResumePreview,
+        CloseJournalRetry, CloseJournalSync, CloseIdleNoop, CloseThumbnailQueue, CloseRunning, ResizeImportFirst,
+        ResizeBatchBeforeImport, ResizeExportFirst, ResizeBatchBeforeExport, LibraryDrop, DialogGeometry, DialogLens }
+    internal static readonly IReadOnlyDictionary<string,Part> Parts=new Dictionary<string,Part>(StringComparer.OrdinalIgnoreCase){
+        ["all"]=Part.All,["busy-batch-first"]=Part.BusyBatchFirst,["busy-foreground-first"]=Part.BusyForegroundFirst,
+        ["busy-export-batch-first"]=Part.BusyExportBatchFirst,["busy-export-first"]=Part.BusyExportFirst,["busy-resume-preview"]=Part.BusyResumePreview,
+        ["close-journal-retry"]=Part.CloseJournalRetry,["close-journal-sync"]=Part.CloseJournalSync,["close-idle-noop"]=Part.CloseIdleNoop,
+        ["close-thumbnail-queue"]=Part.CloseThumbnailQueue,["close-running"]=Part.CloseRunning,["resize-import-first"]=Part.ResizeImportFirst,
+        ["resize-batch-before-import"]=Part.ResizeBatchBeforeImport,["resize-export-first"]=Part.ResizeExportFirst,
+        ["resize-batch-before-export"]=Part.ResizeBatchBeforeExport,["library-drop"]=Part.LibraryDrop,
+        ["dialog-geometry"]=Part.DialogGeometry,["dialog-lens"]=Part.DialogLens};
+    internal static Part ParsePart(string part)=>Parts.TryGetValue(part.Trim(),out var value) ? value :
+        throw new ArgumentException("Unknown editor-review part: '"+part+"'. Available: "+string.Join(", ",Parts.Keys));
     internal static void Run(string repo,string raw,Action<bool,string> check,string part="all")
     {
+        var selected=ParsePart(part);
         repo=Path.GetFullPath(repo);raw=Path.GetFullPath(raw);
         if(File.Exists(Path.Combine(BatchJournal.DefaultDirectory,"job.json")))throw new InvalidOperationException("Preserve existing batch job; use an isolated test account.");
         var originalHash=SHA256.HashData(File.ReadAllBytes(raw));
@@ -20,26 +34,22 @@ internal static class EditorReviewChecks
         Directory.CreateDirectory(output);
         var photo=Path.Combine(output,"photo"+Path.GetExtension(raw));File.Copy(raw,photo);
         var other=Path.Combine(output,"other"+Path.GetExtension(raw));File.Copy(raw,other);
-        var app=new App();app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
-        foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
+        var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         try
         {
-            if(part is "all" or "busy-batch-first")BusyOrder(false,false);
-            if(part is "all" or "busy-foreground-first")BusyOrder(true,false);
-            if(part is "all" or "busy-export-batch-first")BusyOrder(false,true);
-            if(part is "all" or "busy-export-first")BusyOrder(true,true);
-            if(part is "all" or "busy-resume-preview")BusyOrder(true,false,true);
-            if(part is "all" or "close-journal-retry")CloseJournalRetry();
-            if(part is "all" or "close-journal-sync"){CloseIdleJournalRetry(false);CloseIdleJournalRetry(true);}
-            if(part is "all" or "close-running")CloseRunning();
-            if(part is "all" or "resize-import-first")ResizeOrder(true,false);
-            if(part is "all" or "resize-batch-before-import")ResizeOrder(false,false);
-            if(part is "all" or "resize-export-first")ResizeOrder(true,true);
-            if(part is "all" or "resize-batch-before-export")ResizeOrder(false,true);
-            if(part is "all" or "library-drop")LibraryDrop();
-            if(part is "all" or "dialog-geometry")DraftDialog(false);
-            if(part is "all" or "dialog-lens")DraftDialog(true);
+            var executed=0;
+            void RunPart(Part candidate,Action action){if(selected==Part.All || selected==candidate){action();executed++;}}
+            RunPart(Part.BusyBatchFirst,()=>BusyOrder(false,false));RunPart(Part.BusyForegroundFirst,()=>BusyOrder(true,false));
+            RunPart(Part.BusyExportBatchFirst,()=>BusyOrder(false,true));RunPart(Part.BusyExportFirst,()=>BusyOrder(true,true));
+            RunPart(Part.BusyResumePreview,()=>BusyOrder(true,false,true));RunPart(Part.CloseJournalRetry,CloseJournalRetry);
+            RunPart(Part.CloseJournalSync,()=>{CloseIdleJournalRetry(false);CloseIdleJournalRetry(true);});
+            RunPart(Part.CloseIdleNoop,CloseIdleNoop);RunPart(Part.CloseThumbnailQueue,()=>{CloseThumbnailQueue(false);CloseThumbnailQueue(true);CloseSourceThumbnail();});
+            RunPart(Part.CloseRunning,CloseRunning);RunPart(Part.ResizeImportFirst,()=>ResizeOrder(true,false));
+            RunPart(Part.ResizeBatchBeforeImport,()=>ResizeOrder(false,false));RunPart(Part.ResizeExportFirst,()=>ResizeOrder(true,true));
+            RunPart(Part.ResizeBatchBeforeExport,()=>ResizeOrder(false,true));RunPart(Part.LibraryDrop,LibraryDrop);
+            RunPart(Part.DialogGeometry,()=>DraftDialog(false));RunPart(Part.DialogLens,()=>DraftDialog(true));
+            check(executed==(selected==Part.All ? Parts.Count-1 : 1),"Every selected editor scenario actually executes");
             check(new[]{raw,photo,other}.All(path=>originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(path)))),
                 "Editor review regressions preserve the external RAW and both source copies");
         }
@@ -53,7 +63,8 @@ internal static class EditorReviewChecks
             Set(window,"batchJournal",new BatchJournal(Path.Combine(output,name,"batch")));
             window.GpuMode.SelectedIndex=1;window.Show();
             InteractionChecks.PumpUntil(()=>window.IsLoaded);window.OpenFile(photo);
-            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);return window;
+            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            check(app.Windows.Count==1,"Manual editor fixture creates exactly one private main window: "+name);return window;
         }
         void BusyOrder(bool foregroundFirst,bool export,bool resumePreview=false)
         {
@@ -121,6 +132,12 @@ internal static class EditorReviewChecks
         void CloseJournalRetry()
         {
             var window=Open("close-journal-retry");var held=new HeldContext(SynchronizationContext.Current!);
+            var folder=new LibraryEntry(Path.GetDirectoryName(photo)!,true);
+            var loading=folder.Load();InteractionChecks.PumpUntil(()=>loading.IsCompleted);loading.GetAwaiter().GetResult();
+            window.Files.ItemsSource=new[]{folder};folder.IsExpanded=true;window.UpdateLayout();
+            var visible=folder.Children.First(entry=>entry.Path==photo);
+            InteractionChecks.PumpUntil(()=>visible.Thumbnail!=null);
+            check(Get<HashSet<LibraryEntry>>(window,"visibleThumbnails").Contains(visible),"Close recovery starts with an actually visible loaded library thumbnail");
             var journal=Get<BatchJournal>(window,"batchJournal");var engine=Get<object>(window,"engine");
             var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);
             using var releasePreflight=new ManualResetEventSlim();
@@ -142,9 +159,12 @@ internal static class EditorReviewChecks
                 {
                     window.Close();
                     check(window.IsVisible && !window.IsEnabled && Get<bool>(window,"closing"),"Owner waits for preflight before attempting journal cleanup");
+                    check(visible.Thumbnail==null,"Deferred owner close releases the visible library thumbnail");
                     held.Release();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);preflight!.GetAwaiter().GetResult();
                     check(batch.IsVisible && batch.CloseFailed && !batch.Discarded && recovered,"Journal cleanup failure restores the real owner without disposing its engine");
                     check(reported,"Journal cleanup failure reaches the restored main-window error state");
+                    InteractionChecks.PumpUntil(()=>visible.Thumbnail!=null);
+                    check(Get<HashSet<LibraryEntry>>(window,"visibleThumbnails").Contains(visible),"Failed close reloads visible library thumbnails without scroll or resize");
                     InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
                     check(window.AdjustmentPanel.IsEnabled && !Get<bool>(window,"closing"),"Failed owner close resumes an exact preview and editing");
                     var actual=Get<RenderedImage>(window,"result");using var oracle=new RenderEngine(0);
@@ -260,6 +280,78 @@ internal static class EditorReviewChecks
                 if(window.IsVisible){window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
             }
         }
+        void CloseIdleNoop()
+        {
+            var window=Open("close-idle-noop");var journal=Get<BatchJournal>(window,"batchJournal");
+            var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job);
+            var batch=Get<BatchExportWindow>(window,"batchWindow");
+            var scheduler=Get<object>(window,"scheduler");long Revision()=>(long)scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)!;
+            var revision=Revision();var previous=Get<RenderedImage>(window,"result");
+            try
+            {
+                check(!Get<DispatcherTimer>(window,"previewResize").IsEnabled && Get<int>(window,"previewLongEdge")==Get<int>(window,"requestedPreviewLongEdge"),"No-op close fixture has no pending viewport resize");
+                using(var locked=new FileStream(Path.Combine(journal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
+                {
+                    for(var attempt=0;attempt<3;attempt++)
+                    {
+                        window.Close();
+                        check(batch.CloseFailed && window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing"),"Repeated idle close failure restores the owner");
+                        check(Revision()==revision && ReferenceEquals(previous,Get<RenderedImage>(window,"result")) && window.ExportPng.IsEnabled,
+                            "Idle close failure with an exact unchanged frame submits no render: "+attempt);
+                    }
+                }
+            }
+            finally{window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+        }
+        void CloseThumbnailQueue(bool initial)
+        {
+            var window=Open("thumbnail-queue-"+initial);var journal=Get<BatchJournal>(window,"batchJournal");
+            var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
+            if(initial)job.Items=[BatchItem.Create(photo),BatchItem.Create(other)];journal.Save(job);
+            var step=new SteppedContext(SynchronizationContext.Current!);Task? preflight=null;BatchExportWindow? batch=null;
+            try
+            {
+                if(initial)
+                {
+                    step.Capture(()=>Invoke(window,"ShowBatch",job));batch=Get<BatchExportWindow>(window,"batchWindow");
+                    // Loaded is delivered by WPF; explicitly step its real async body under the held context.
+                    InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);
+                    InteractionChecks.PumpUntil(()=>Get<System.Collections.IEnumerable>(batch,"rows").Cast<BatchRow>().All(row=>row.Thumbnail!=null));
+                    foreach(var row in Get<System.Collections.IEnumerable>(batch,"rows").Cast<BatchRow>())row.SetThumbnail(null);
+                    step.Capture(()=>preflight=(Task)Invoke(batch,"LoadThumbnails")!);
+                }
+                else
+                {
+                    Invoke(window,"ShowBatch",job);batch=Get<BatchExportWindow>(window,"batchWindow");
+                    InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);
+                    step.Capture(()=>preflight=batch.AddInputs([photo,other]));
+                    step.Next();
+                }
+                InteractionChecks.PumpUntil(()=>step.Pending);
+                var posts=step.Posts;var rows=Get<System.Collections.IEnumerable>(batch!,"rows").Cast<BatchRow>().ToArray();
+                check(rows.Length==2,"Thumbnail cancellation fixture has two real RAW rows: "+initial);
+                var clock=Stopwatch.StartNew();if(initial)Click(batch!.CloseAction);else window.Close();step.Release();
+                InteractionChecks.PumpUntil(()=>preflight!.IsCompleted && (initial ? !batch!.IsVisible : !window.IsVisible));preflight!.GetAwaiter().GetResult();
+                check(rows.All(row=>row.Thumbnail==null),"Closing never publishes an in-flight or queued row thumbnail: "+initial);
+                check(step.Posts==posts,"Closing starts no later native thumbnail work: "+initial);
+                Console.WriteLine($"thumbnail-close initial={initial}; elapsed-ms={clock.Elapsed.TotalMilliseconds:F2}; posts-after-close={step.Posts-posts}");
+            }
+            finally{step.Release();if(window.IsVisible){window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}}
+        }
+        void CloseSourceThumbnail()
+        {
+            var window=Open("source-thumbnail-close");var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
+            Invoke(window,"ShowBatch",job);var batch=Get<BatchExportWindow>(window,"batchWindow");
+            var step=new SteppedContext(SynchronizationContext.Current!);
+            try
+            {
+                InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);batch.SourceThumbnail.Source=null;
+                step.Capture(()=>batch.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent)));
+                InteractionChecks.PumpUntil(()=>step.Pending);Click(batch.CloseAction);step.Next();
+                check(!batch.IsVisible && batch.SourceThumbnail.Source==null,"The real Loaded handler never publishes its late source thumbnail after closing");
+            }
+            finally{step.Release();window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+        }
         void ResizeOrder(bool foregroundFirst,bool export)
         {
             var name="resize-"+export+"-"+foregroundFirst;var window=Open(name);
@@ -322,6 +414,14 @@ internal static class EditorReviewChecks
             {
                 var over=RouteDrop(window.Files,Data(first,second),false);
                 check(over.Handled && over.Effects==DragDropEffects.Copy,"File-tree folder drag explicitly advertises copy, never move");
+                var ghost=Path.Combine(folders,"not-created","ghost.ARW");
+                check(RouteDrop(window.Files,Data(ghost),false).Effects==DragDropEffects.Copy,"Drag hover accepts format without probing the filesystem");
+                check(RouteDrop(window.Files,Data(ghost),true).Effects==DragDropEffects.None,"Actual drop still rejects a nonexistent path");
+                check(RouteDrop(window.Files,Data(first),false,DragDropEffects.Move).Effects==DragDropEffects.None,"Drag hover rejects move-only transfers");
+                var format=new FormatOnlyDrop();var hoverClock=Stopwatch.StartNew();var allocated=GC.GetAllocatedBytesForCurrentThread();
+                for(var i=0;i<1000;i++)RouteDrop(window.Files,format,false);
+                check(format.PayloadReads==0,"One thousand drag-hover events never request file paths or filesystem metadata");
+                Console.WriteLine($"drag-hover-1000-ms={hoverClock.Elapsed.TotalMilliseconds:F2}; managed-bytes={GC.GetAllocatedBytesForCurrentThread()-allocated}");
                 var library=Get<Library>(window,"library");var storage=Path.Combine(output,"library-folders.json");
                 Set(library,"settingsPath",storage);library.Roots.Clear();
                 var dropped=RouteDrop(window.Files,Data(first,second),true);
@@ -341,11 +441,17 @@ internal static class EditorReviewChecks
                 var move=RouteDrop(window.Files,Data(folders),true,DragDropEffects.Move);
                 check(move.Effects==DragDropEffects.None && library.Roots.Count==3,"File-tree drops never accept a move-only transfer");
                 Set(window,"foregroundBusy",true);Invoke(window,"RefreshControls");
+                check(RouteDrop(window.Files,Data(first),false).Effects==DragDropEffects.None,"Busy editor rejects drag hover");
                 var busy=RouteDrop(window.Files,Data(folders),true);
                 check(busy.Effects==DragDropEffects.None && library.Roots.Count==3,"Busy editor rejects folder drops without changing the library");
                 Set(window,"foregroundBusy",false);Invoke(window,"RefreshControls");
                 Set(window,"closing",true);var closing=RouteDrop(window.Files,Data(folders),true);Set(window,"closing",false);
                 check(closing.Effects==DragDropEffects.None && library.Roots.Count==3,"Closing editor rejects folder drops");
+                Set(window,"closing",true);
+                check(RouteDrop(window.Files,Data(first),false).Effects==DragDropEffects.None && RouteDrop(window,Data(folders),true).Effects==DragDropEffects.None,
+                    "Closing state rejects both tree hover and the root-window drop entry");
+                Set(window,"closing",false);
+                check(RouteDrop(window,Data(folders),true,DragDropEffects.Move).Effects==DragDropEffects.None && library.Roots.Count==3,"Root-window drops reject move-only transfers");
                 RouteDrop(window.Files,Data(other),true);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
                 check(Get<string>(window,"file")==other && library.Roots.Count==3,"A RAW-only drop on the tree retains the existing photo-open behavior");
                 check(new[]{first,second,third}.All(Directory.Exists) && File.Exists(other),"Folder drops retain the original folders and RAW files");
@@ -434,6 +540,42 @@ internal static class EditorReviewChecks
         {
             lock(pending){released=true;foreach(var (callback,state) in pending)target.Post(callback,state);pending.Clear();}
         }
+    }
+    private sealed class SteppedContext(SynchronizationContext target):SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback,object? State)> pending=[];
+        private bool released;
+        public int Posts {get;private set;}
+        public bool Pending{get{lock(pending)return pending.Count>0;}}
+        public override void Post(SendOrPostCallback callback,object? state)
+        {
+            lock(pending){Posts++;if(!released){pending.Enqueue((callback,state));return;}}
+            target.Post(_=>Capture(()=>callback(state)),null);
+        }
+        public void Capture(Action action){var previous=Current;SetSynchronizationContext(this);try{action();}finally{SetSynchronizationContext(previous);}}
+        public void Next()
+        {
+            InteractionChecks.PumpUntil(()=>Pending);
+            (SendOrPostCallback Callback,object? State) next;lock(pending)next=pending.Dequeue();
+            Capture(()=>next.Callback(next.State));
+        }
+        public void Release(){lock(pending){released=true;while(pending.TryDequeue(out var next)){var item=next;target.Post(_=>Capture(()=>item.Callback(item.State)),null);}}}
+    }
+    private sealed class FormatOnlyDrop:IDataObject
+    {
+        public int PayloadReads {get;private set;}
+        public object GetData(string format,bool autoConvert){PayloadReads++;throw new InvalidOperationException("Drag hover must not read payload paths");}
+        public object GetData(string format)=>GetData(format,false);
+        public object GetData(Type format)=>GetData(format.FullName!,false);
+        public bool GetDataPresent(string format,bool autoConvert)=>format==DataFormats.FileDrop;
+        public bool GetDataPresent(string format)=>GetDataPresent(format,false);
+        public bool GetDataPresent(Type format)=>false;
+        public string[] GetFormats(bool autoConvert)=>[DataFormats.FileDrop];
+        public string[] GetFormats()=>GetFormats(false);
+        public void SetData(string format,object data,bool autoConvert)=>throw new NotSupportedException();
+        public void SetData(string format,object data)=>throw new NotSupportedException();
+        public void SetData(Type format,object data)=>throw new NotSupportedException();
+        public void SetData(object data)=>throw new NotSupportedException();
     }
     private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
     private static void Set(object owner,string name,object value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);

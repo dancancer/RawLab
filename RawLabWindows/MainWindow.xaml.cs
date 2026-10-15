@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer thumbnailRefresh=new(){Interval=TimeSpan.FromMilliseconds(80)};
     private readonly DispatcherTimer previewResize=new(){Interval=TimeSpan.FromMilliseconds(200)};
     private int previewLongEdge=2000,requestedPreviewLongEdge=2000;
+    private bool previewDeferred;
     private LibraryEntry? selectedThumbnail;
     private readonly UpdateChecker updates = new(typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown");
     private AboutWindow? aboutWindow;
@@ -163,7 +164,9 @@ public partial class MainWindow : Window
             var spec=ParameterSpec.All[(int)id];
             var ring=new AdjustmentRing{Width=40,Height=40};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=20,Height=20});
-            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=Loc.Text(spec.Title),FontSize=11*EditorAppearance.TextScale,MaxWidth=70,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
+            var caption=new TextBlock{Text=Loc.Text(spec.Title),MaxWidth=70,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
             AutomationProperties.SetName(button,Loc.Text(spec.Title));
             button.Click+=(_,_)=>{if(!ResolveTransformDraft())return;OrdinaryParameter.RestoreText();choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
@@ -175,7 +178,9 @@ public partial class MainWindow : Window
         {
             var ring=new AdjustmentRing{Width=40,Height=40};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=icon,Width=20,Height=20});
-            var stack=new StackPanel(); stack.Children.Add(grid); stack.Children.Add(new TextBlock{Text=title,FontSize=11*EditorAppearance.TextScale,MaxWidth=70,TextWrapping=TextWrapping.Wrap,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)});
+            var caption=new TextBlock{Text=title,MaxWidth=70,TextWrapping=TextWrapping.Wrap,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? Loc.Text("Vignette / 暗角") : Loc.Text("Grain / 颗粒")};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
@@ -198,7 +203,8 @@ public partial class MainWindow : Window
             if(film.Artwork!=null && File.Exists(film.Artwork))stack.Children.Add(new Image{Source=new BitmapImage(new Uri(film.Artwork)),Width=64,Height=64});
             else stack.Children.Add(new EditorIcon{Kind=film.Path==null ? "Neutral" : "Film",Width=32,Height=64});
             var displayName=film.Path==null ? Loc.Text("中性") : film.Name;
-            stack.Children.Add(new TextBlock{Text=displayName,FontSize=11*EditorAppearance.TextScale,Width=80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
+            var caption=new TextBlock{Text=displayName,Width=80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? Loc.Text("中性显影")};
             AutomationProperties.SetName(button,displayName);
             button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;settings.ClearMasterRecipe();lut=film.Path;MarkEdited();RefreshControls();Schedule();};
@@ -206,7 +212,8 @@ public partial class MainWindow : Window
         }
         var importContent=new StackPanel();
         importContent.Children.Add(new EditorIcon{Kind="Add",Width=26,Height=64});
-        importContent.Children.Add(new TextBlock{Text=Loc.Text("导入外观"),FontSize=11*EditorAppearance.TextScale,Height=30,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
+        var importCaption=new TextBlock{Text=Loc.Text("导入外观"),MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
+        importCaption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");importContent.Children.Add(importCaption);
         var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip=Loc.Text("导入兼容 CUBE 或 RLOOK，可选择多个文件")};
         AutomationProperties.SetName(importButton,Loc.Text("导入外观"));importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
     }
@@ -335,7 +342,7 @@ public partial class MainWindow : Window
             RestoreEdits(path);
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
-            previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;
+            previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
             file=path; interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
             RefreshComparisonToolTip();
             viewport.SetSourceSize(0,0);
@@ -414,10 +421,18 @@ public partial class MainWindow : Window
     {
         previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;Schedule(initialPreview:result==null);
     }
+    private void ResumePreview()
+    {
+        if(exporting || closing)return;
+        if(previewDeferred || requestedPreviewLongEdge!=previewLongEdge)CommitPreviewSize();
+        else UpdateBusy();
+    }
     private int RenderEdge(bool proxy)=>proxy && previewLongEdge==0 ? 2000 : previewLongEdge;
     private void Schedule(bool initialPreview=false)
     {
-        if(!ready || file==null || exporting || closing)return;
+        if(!ready || file==null || closing)return;
+        if(exporting){previewDeferred=true;return;}
+        previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
         if(!LookAvailable){exactReady=false;result=null;renderFailed=true;SetStatus(() => Loc.Text("上次使用的外观不可用，请重新导入或选择外观。"),true);UpdateBusy();return;}
@@ -529,11 +544,11 @@ public partial class MainWindow : Window
             {
                 settings.ClearMasterRecipe();
                 foreach(var path in accepted)if(!films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,path)))films.Add(new(Path.GetFileNameWithoutExtension(path),path,null));
-                lut=accepted[^1];MarkEdited();BuildFilms();
+                lut=accepted[^1];previewDeferred=true;MarkEdited();BuildFilms();
             }
         }
         catch(Exception error){errors.Add(error.Message);}
-        finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();else Schedule();}
+        finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
         return errors;
     }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
@@ -751,8 +766,8 @@ public partial class MainWindow : Window
     private void LibraryDragOver(object sender,DragEventArgs e)
     {
         e.Handled=true;e.Effects=DragDropEffects.None;
-        if(exporting || closing || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
-        if(paths.Any(path=>Directory.Exists(path) || (File.Exists(path) && LibraryEntry.IsRaw(path))))
+        if(exporting || closing)return;
+        if(e.Data.GetDataPresent(DataFormats.FileDrop,false))
             e.Effects=e.AllowedEffects & DragDropEffects.Copy;
     }
     private void LibraryDropped(object sender,DragEventArgs e)
@@ -772,9 +787,11 @@ public partial class MainWindow : Window
     }
     private void FilesDropped(object sender,DragEventArgs e)
     {
-        if(exporting || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
-        try{foreach(var path in paths.Where(Directory.Exists))library.Add(path);}catch(Exception ex){Report(ex);}
-        if(paths.FirstOrDefault(LibraryEntry.IsRaw) is {} raw)OpenFile(raw);
+        e.Handled=true;e.Effects=DragDropEffects.None;
+        if(exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
+        var folders=paths.Where(Directory.Exists).ToArray();
+        try{foreach(var path in folders)library.Add(path);if(folders.Length>0)e.Effects=DragDropEffects.Copy;}catch(Exception ex){Report(ex);}
+        if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsRaw(path)) is {} raw){OpenFile(raw);e.Effects=DragDropEffects.Copy;}
     }
     private void LibraryToggle(object sender,RoutedEventArgs e)
     {
@@ -925,7 +942,7 @@ public partial class MainWindow : Window
             SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
         catch(Exception ex){Report(ex);}
-        finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else UpdatePreviewSize(requestedPreviewLongEdge);}
+        finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
     }
     private void WindowClosing(object? sender,CancelEventArgs e)
     {

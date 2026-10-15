@@ -132,6 +132,25 @@ internal static class AppearanceChecks
                 EditorShellChecks.CaptureLayout(host,panel,Path.Combine(output,light ? "contrast-light.png" : "contrast-dark.png"));
                 void Pair(Brush foreground,Brush background,string name)=>check(Contrast(foreground,background)>=4.5,"Readable runtime palette: "+light+"/"+name+" "+foreground+"/"+background);
             }
+            foreach(var scale in new[]{1.0,2.0,2.25,1.0})
+            {
+                EditorAppearance.Apply(app.Resources,true,new(Brushes.White,Brushes.Black,Brushes.Navy,Brushes.White),scale);
+                editor.UpdateLayout();
+                foreach(var strip in new[]{editor.Tools,editor.FilmStrip})
+                {
+                    var captions=Descendants(strip).OfType<TextBlock>().ToArray();
+                    check(captions.Length>0 && captions.All(text=>Math.Abs(text.FontSize-11*scale)<.001),"Retained tool/film captions follow live text scale: "+strip.Name+"/"+scale);
+                }
+                foreach(var recipe in editor.RecipeStrip.Children.OfType<Button>())
+                {
+                    var labels=((StackPanel)recipe.Content).Children.OfType<TextBlock>().ToArray();
+                    check(labels.Length==2 && Math.Abs(labels[0].FontSize-13*scale)<.001 && Math.Abs(labels[1].FontSize-11*scale)<.001,
+                        "Retained recipe title and caption follow live text scale: "+scale+"/"+labels[0].Text);
+                }
+            }
+            EditorAppearance.Apply(app.Resources,false,new(Brushes.White,Brushes.Black,Brushes.Navy,Brushes.White),1);
+            check(Contrast(input.Foreground,input.Background)>=4.5 && input.Background.ToString()=="#FF212124","Retained input returns from high contrast to the normal palette");
+            check((double)app.Resources["OverlayGridWidth"]==.6 && (Brush)app.Resources["HistogramOutline"] is SolidColorBrush{Color.A:0},"Normal palette restores overlay grid width and hides the histogram envelope");
         }
         finally{tip.IsOpen=menu.IsOpen=false;host.Close();sizeDialog.Close();about.Close();settings.Close();batch.Close();editor.Close();app.Shutdown();}
         void Apply(bool light)

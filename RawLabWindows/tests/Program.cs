@@ -38,6 +38,8 @@ static class Program
         {
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==3 && args[0]=="--entry-selection") { EntrySelectionChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} entry selection checks");return 0; }
+            if(args.Length==3 && args[0]=="--resources") { ResourceChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} resource checks");return 0; }
             if(args.Length==2 && args[0]=="--default-isolation") { DefaultIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} default isolation checks");return 0; }
             if(args.Length==2 && args[0]=="--profile-isolation") { ProfileIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} profile isolation checks");return 0; }
             if(args.Length==2 && args[0]=="--status-layout") { StatusLayoutChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} status layout checks");return 0; }
@@ -55,6 +57,8 @@ static class Program
             if(args.Length==3 && args[0]=="--interactions") { InteractionChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark") { PerformanceChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark-ui") { PerformanceChecks.Run(args[1],args[2],true);return 0; }
+            if(args.Length is not(2 or 3) || args[0].StartsWith("--",StringComparison.Ordinal) ||
+                (args.Length==3 && args[2]!="--ui-only"))throw new ArgumentException("Unknown command or invalid arguments. Supply <repo> <raw> [--ui-only], or a named mode with its required arguments.");
             return RunDefault(args,journalDirectory);
         }
         catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
@@ -190,8 +194,7 @@ static class Program
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
             TestWindowState.PreserveExistingBatch(journalDirectory);
-            var app=new App();app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
-            foreach(var pair in Loc.Strings) app.Resources[pair.Key]=pair.Value;
+            var app=TestWindowState.CreateApplication();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             var window=new MainWindow {Width=1440,Height=920};
             TestWindowState.Isolate(window,output);
