@@ -25,6 +25,7 @@ struct MacGeometryDraft: Equatable {
     var previewGeometry: GeometrySettings {
         var full = geometry
         full.cropX = 0; full.cropY = 0; full.cropWidth = 1; full.cropHeight = 1
+        full.straightenDegrees = 0
         return full
     }
 }
@@ -53,6 +54,9 @@ final class EditorModel: ObservableObject {
     @Published private(set) var invalidGeometryDraftInputs = Set<String>()
     @Published private(set) var geometryCropInteracting = false
     @Published private(set) var geometryDraftRevision = 0
+    @Published private(set) var pendingGeometryPresentation: GeometrySettings?
+    private var geometryDraftEntryResult: RenderedImage?
+    private var geometryDraftEntryNeutral: RenderedImage?
     private var geometryDraftEpoch = UUID()
     private var geometryDepartureAction: (() -> Void)?
     private var geometryDepartureStay: (() -> Void)?
@@ -66,10 +70,13 @@ final class EditorModel: ObservableObject {
             geometryDraftPreviewReady && !busy && !geometryCropInteracting && !exporting
     }
     var lensDraftPreviewIsCurrent: Bool { geometryDraftPreviewReady && !busy }
+    var canComparePreview: Bool { geometryDraft == nil && pendingGeometryPresentation == nil }
     var geometryCanvasSize: CGSize {
         guard let result else { return CGSize(width: 1, height: 1) }
-        return CGSize(width: CGFloat(result.nativeWidth ?? result.image.width),
-                      height: CGFloat(result.nativeHeight ?? result.image.height))
+        let source = CGSize(width: CGFloat(result.nativeWidth ?? result.image.width),
+                            height: CGFloat(result.nativeHeight ?? result.image.height))
+        guard let draft = geometryDraft else { return source }
+        return MacStraightenPreview(source: source, degrees: draft.geometry.straightenDegrees).safeCanvas
     }
     var cropAspectRatio: Double? { cropAspectPreset.ratio(for: geometryCanvasSize, swapped: cropAspectSwapped) }
     var geometryPreviewSettings: Adjustments {
@@ -157,6 +164,7 @@ final class EditorModel: ObservableObject {
         guard file != nil, result != nil, !exporting, !lookLibraryBusy, saveEdits() else { return false }
         geometryDraftEntrySaveError = saveError
         geometryDraftSaveFailed = false
+        geometryDraftEntryResult = result; geometryDraftEntryNeutral = neutral
         geometryDraftEpoch = UUID(); editRevision = UUID()
         geometryDraft = MacGeometryDraft(geometry: settings.geometrySettings, lens: settings.lensSettings)
         geometryDraftTab = tab; geometryDraftPreviewReady = false
@@ -177,6 +185,7 @@ final class EditorModel: ObservableObject {
     func updateGeometryDraft(_ edit: (inout GeometrySettings) -> Void) {
         guard var draft = geometryDraft else { return }
         let before = draft.previewGeometry
+        let previousAngle = draft.geometry.straightenDegrees
         edit(&draft.geometry)
         guard draft.geometry.isValid, draft != geometryDraft else { return }
         geometryDraft = draft
@@ -184,6 +193,12 @@ final class EditorModel: ObservableObject {
         if before != draft.previewGeometry {
             geometryDraftPreviewReady = false
             schedule()
+        } else if geometryDraftPreviewReady, previousAngle != draft.geometry.straightenDegrees,
+                  let ratio = cropAspectRatio {
+            let rect = CropInteraction.dragging(CropInteraction.rect(from: draft.geometry), handle: .bottomRight,
+                translation: .zero, canvasSize: geometryCanvasSize, ratio: ratio)
+            draft.geometry = CropInteraction.applying(rect: rect, to: draft.geometry)
+            geometryDraft = draft
         }
     }
 
@@ -270,6 +285,8 @@ final class EditorModel: ObservableObject {
         saveWork?.cancel()
         updatingMetadata = true; settings = committed; updatingMetadata = false
         dirty = false; saveError = nil; saveStatusKey = "调整已保存"
+        // 精确渲染完成前沿用同一底图的已裁切显示，避免闪回未旋转画面。
+        pendingGeometryPresentation = draft.geometry
         clearSaveStatusLater(); endGeometryDraft(); schedule(forceExact: true)
         return true
     }
@@ -279,6 +296,7 @@ final class EditorModel: ObservableObject {
         // Discarding an unsaved draft restores the saved entry state, including
         // its feedback. Do not clear an unrelated error that predated the task.
         if geometryDraftSaveFailed { saveError = geometryDraftEntrySaveError }
+        result = geometryDraftEntryResult; neutral = geometryDraftEntryNeutral
         endGeometryDraft(); schedule(forceExact: true)
     }
 
@@ -286,6 +304,7 @@ final class EditorModel: ObservableObject {
         geometryDraft = nil; geometryDraftPreviewReady = false
         geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
         geometryDraftEntrySaveError = nil; geometryDraftSaveFailed = false
+        geometryDraftEntryResult = nil; geometryDraftEntryNeutral = nil
         geometryDraftEpoch = UUID(); editRevision = UUID()
         scheduler.setInteracting(false)
         batch?.sourceEditingGeometry = false
@@ -740,6 +759,7 @@ final class EditorModel: ObservableObject {
                 }
             } else if let neutral, let result {
                 let previousCanvas = geometryCanvasSize
+                if !request.value.editingGeometry { pendingGeometryPresentation = nil }
                 self.neutral = neutral
                 self.result = result
                 if let draft = geometryDraft,

@@ -191,7 +191,7 @@ struct EditorView: View {
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
             HStack(spacing: 1) {
-                if compare, model.geometryDraft == nil, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
+                if compare, model.canComparePreview, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
                 imagePane(result, title: model.selectedMasterRecipe?.name ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
             }
         } else {
@@ -255,7 +255,7 @@ struct EditorView: View {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
                 .tint(compare ? .yellow : nil)
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
-                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || model.geometryDraft != nil)
+                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || !model.canComparePreview)
             Button {
                 if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
                 infoMode = infoMode.next
@@ -325,6 +325,7 @@ struct EditorView: View {
                     pan: $pan, clipping: showMask, sourceHeight: model.result?.nativeHeight ?? model.neutral?.image.height,
                     onPreviewSizeChange: model.updatePreviewLongEdge,
                     cropSettings: model.geometryDraftPreviewReady ? model.geometryDraft?.geometry : nil,
+                    pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,
                     cropAspectRatio: model.cropAspectRatio, cropGrid: model.cropGridEnabled,
                     onCropChange: model.geometryDraftTab == .crop ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
                     onCropEditingChanged: model.geometryDraftTab == .crop ? model.setGeometryCropInteracting : nil)
@@ -332,7 +333,7 @@ struct EditorView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(title)
             .overlay(alignment: .bottomLeading) {
-                if compare && model.geometryDraft == nil {
+                if compare && model.canComparePreview {
                     Text(title).font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
                         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 4)).padding(10)
                         .allowsHitTesting(false)

@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import SwiftUI
 
 @main
@@ -9,10 +10,11 @@ struct ParameterValueTests {
     }
     final class ValueBox { var value: Double; init(_ value: Double) { self.value = value } }
 
-    static func wheel(_ pixels: Int32, time: Double, fine: Bool = false, horizontal: Int32 = 0) -> NSEvent {
-        let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+    static func wheel(_ pixels: Int32, time: Double, fine: Bool = false, horizontal: Int32 = 0,
+                       line: Bool = false, precise: Bool = true) -> NSEvent {
+        let event = CGEvent(scrollWheelEvent2Source: nil, units: line ? .line : .pixel, wheelCount: 2,
                             wheel1: pixels, wheel2: horizontal, wheel3: 0)!
-        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        if precise { event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1) }
         event.timestamp = UInt64(time * 1_000_000_000)
         if fine { event.flags = .maskShift }
         return NSEvent(cgEvent: event)!
@@ -51,8 +53,75 @@ struct ParameterValueTests {
         while RunLoop.main.run(mode: .default, before: deadline), Date() < deadline {}
     }
 
+    static func shiftHorizontalChecks() {
+        let (ordinaryBox, ordinaryField, ordinaryCoordinator) = fixture(0.3)
+        let ordinary = ordinaryCoordinator.wheel(wheel(0, time: 40, horizontal: 80))
+        check(!ordinary && ordinaryBox.value == 0.3 && ordinaryField.stringValue == "0.30",
+              "Ordinary horizontal scrolling passes through without changing a numeric field")
+
+        let (fineBox, fineField, fineCoordinator) = fixture(0.3)
+        let event = wheel(0, time: 40, fine: true, horizontal: 80)
+        let fine = fineCoordinator.wheel(event)
+        check(fine && fineBox.value == 0.31 && fineField.stringValue == "+0.31",
+              "Shift horizontal scrolling applies one fine numeric step (accepted=\(fine), value=\(fineBox.value), dx=\(event.scrollingDeltaX), dy=\(event.scrollingDeltaY))")
+    }
+
+    static func discreteLineWheelChecks() {
+        let (box, field, coordinator) = fixture(0.3)
+        let event = wheel(1, time: 40, line: true, precise: false)
+        check(!event.hasPreciseScrollingDeltas && event.scrollingDeltaY == 1,
+              "The regression fixture is one non-precise native line notch")
+        let accepted = coordinator.wheel(event)
+        check(accepted && box.value == 0.4 && field.stringValue == "+0.40",
+              "One discrete line notch applies one ordinary numeric step immediately (accepted=\(accepted), value=\(box.value), text=\(field.stringValue), dy=\(event.scrollingDeltaY), precise=\(event.hasPreciseScrollingDeltas))")
+        check(coordinator.wheel(wheel(1, time: 40.02, line: true, precise: false)) && box.value == 0.5,
+              "A second discrete notch is not dropped by the trackpad throttle")
+    }
+
+    static func valueFieldLayoutChecks() {
+        let bounds = NSRect(x: 0, y: 0, width: 72, height: 26)
+        let field = NumericTextField(frame: bounds)
+        let cell = NumericTextFieldCell(textCell: "")
+        field.cell = cell
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        field.alignment = .right
+        cell.font = field.font
+        cell.alignment = .right
+        cell.wraps = false
+        cell.isScrollable = true
+        field.stringValue = "+0.30"
+        check(field.bounds.size == bounds.size && field.font?.pointSize == 13 && cell.font?.pointSize == 13,
+              "The native value field uses a 72 by 26 frame and 13 point font")
+
+        let drawing = cell.drawingRect(forBounds: bounds)
+        let editor = cell.fieldEditor(for: field)!
+        cell.edit(withFrame: bounds, in: field, editor: editor, delegate: nil, event: nil)
+        cell.select(withFrame: bounds, in: field, editor: editor, delegate: nil, start: 0, length: field.stringValue.count)
+        editor.string = field.stringValue
+        guard let container = editor.textContainer, let layout = editor.layoutManager else {
+            check(false, "The native cell edit/select path exposes a text layout")
+            return
+        }
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        let usedCenterY = editor.frame.minY + editor.textContainerOrigin.y + used.midY
+        check(abs(usedCenterY - drawing.midY) < 0.5,
+              "The field editor's used text is vertically centered with the drawing rect (used=\(used), origin=\(editor.textContainerOrigin), editor=\(editor.frame), usedCenterY=\(usedCenterY), drawing=\(drawing))")
+    }
+
     static func main() {
         _ = NSApplication.shared
+        if let focus = ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_FOCUS"] {
+            switch focus {
+            case "shift-horizontal": shiftHorizontalChecks()
+            case "line-wheel": discreteLineWheelChecks()
+            case "cell-layout": valueFieldLayoutChecks()
+            default: check(false, "Unknown parameter-value focus: \(focus)")
+            }
+            return
+        }
         var exposure = 0.0
         for _ in 0..<40 { exposure = ParameterPrecision.exposure.stepped(exposure, direction: 1, fine: false, in: -4...4) }
         check(exposure == 4, "Forty ordinary EV steps reach the exact upper bound")
@@ -254,6 +323,9 @@ struct ParameterValueTests {
         check(AdjustmentParameter.strength.spec.multiplier == 100 && AdjustmentParameter.strength.spec.step == 0.001 &&
               AdjustmentParameter.sharpening.spec.multiplier == 1 && AdjustmentParameter.sharpening.spec.step == 0.1,
               "Strength and sharpening retain their engine-to-display mappings")
+        shiftHorizontalChecks()
+        discreteLineWheelChecks()
+        valueFieldLayoutChecks()
         print("PASS: parameter value precision and native field regressions")
     }
 }

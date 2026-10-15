@@ -103,6 +103,7 @@ struct MacCropOverlay: View {
     let previewIdentity: ObjectIdentifier
     var aspectRatio: Double? = nil
     var showsGrid = true
+    var imageOutline: Path? = nil
     var onChange: ((GeometrySettings) -> Void)? = nil
     var onEditingChanged: ((Bool) -> Void)? = nil
 
@@ -118,7 +119,7 @@ struct MacCropOverlay: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Canvas { context, _ in
-                var shade = Path(imageBounds)
+                var shade = imageOutline ?? Path(imageBounds)
                 shade.addRect(selection)
                 context.fill(shade, with: .color(.black.opacity(0.55)), style: FillStyle(eoFill: true))
                 context.stroke(Path(selection), with: .color(.black.opacity(0.75)), lineWidth: 3)

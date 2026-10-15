@@ -205,18 +205,21 @@ struct ParameterValueField: NSViewRepresentable {
             guard let field else { return false }
             let draft = field.currentEditor()?.string ?? field.stringValue
             let starting = parent.precision.parse(draft)
-            let result = wheelState.handle(verticalPixels: event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 1 : 40),
-                                           timestamp: event.timestamp, fine: event.modifierFlags.contains(.shift),
+            let fine = event.modifierFlags.contains(.shift)
+            // Shift 滚轮可能由 AppKit 转为横轴；普通横向滚动仍交给父视图。
+            let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : (fine ? event.scrollingDeltaX : 0)
+            let result = wheelState.handle(verticalPixels: delta,
+                                           timestamp: event.timestamp, fine: fine,
                                            editable: field.isEnabled && field.isEditable,
                                            validValue: parent.value.isFinite && starting != nil,
-                                           momentum: event.momentumPhase != [])
+                                           momentum: event.momentumPhase != [], discrete: !event.hasPreciseScrollingDeltas)
             switch result {
             case .pass: return false
             case .consume: return true
             case .step(let direction):
                 guard let starting else { return false }
                 parent.value = parent.precision.stepped(starting, direction: direction,
-                                                       fine: event.modifierFlags.contains(.shift), in: parent.range)
+                                                       fine: fine, in: parent.range)
                 lastValue = parent.value
                 write(parent.precision.text(parent.value, signed: parent.signed))
                 dirty = false
@@ -304,6 +307,17 @@ final class NumericTextFieldCell: NSTextFieldCell {
         result.origin.y += max(0, (result.height - height) / 2)
         result.size.height = min(result.height, height)
         return result
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                       delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                         delegate: Any?, start: Int, length: Int) {
+        super.select(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj,
+                     delegate: delegate, start: start, length: length)
     }
 }
 

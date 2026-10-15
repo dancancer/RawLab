@@ -192,12 +192,25 @@ import SwiftUI
             throw Failure.message("\(name): bitmap unavailable")
         }
         host.cacheDisplay(in: host.bounds, to: bitmap)
-        guard bitmap.pixelsWide == Int(size.width), bitmap.pixelsHigh == Int(size.height),
-              let data = bitmap.representation(using: .png, properties: [:]) else {
-            throw Failure.message("\(name): PNG unavailable or unexpected dimensions")
+        let logicalWidth = Int(size.width), logicalHeight = Int(size.height)
+        let oneX = bitmap.pixelsWide == logicalWidth && bitmap.pixelsHigh == logicalHeight
+        let twoX = bitmap.pixelsWide == logicalWidth * 2 && bitmap.pixelsHigh == logicalHeight * 2
+        guard (oneX || twoX), let data = bitmap.representation(using: .png, properties: [:]) else {
+            throw Failure.message("\(name): PNG unavailable or unexpected dimensions (logical \(logicalWidth)x\(logicalHeight), backing \(bitmap.pixelsWide)x\(bitmap.pixelsHigh))")
         }
         try data.write(to: output.appendingPathComponent(name + ".png"))
-        return bitmap
+        guard let normalized = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: logicalWidth, pixelsHigh: logicalHeight,
+                                                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                colorSpaceName: .deviceRGB, bitmapFormat: [], bytesPerRow: 0, bitsPerPixel: 0),
+              let graphics = NSGraphicsContext(bitmapImageRep: normalized) else {
+            throw Failure.message("\(name): logical-size sampling bitmap unavailable")
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        bitmap.draw(in: NSRect(origin: .zero, size: size))
+        graphics.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+        return normalized
     }
 
     private static func luminance(_ bitmap: NSBitmapImageRep, at point: CGPoint) -> CGFloat {

@@ -90,7 +90,7 @@ struct ParameterWheelAccumulator {
     mutating func reset() { self = Self() }
 
     mutating func handle(verticalPixels: Double, timestamp: TimeInterval, fine: Bool,
-                         editable: Bool, validValue: Bool, momentum: Bool = false) -> Result {
+                         editable: Bool, validValue: Bool, momentum: Bool = false, discrete: Bool = false) -> Result {
         guard editable, validValue, verticalPixels.isFinite, timestamp.isFinite else {
             reset()
             return .pass
@@ -105,6 +105,11 @@ struct ParameterWheelAccumulator {
         direction = newDirection
         self.fine = fine
         if momentum { remainder = 0; return .consume }
+        if discrete {
+            remainder = 0
+            lastAccepted = nil
+            return .step(newDirection)
+        }
         // Cap spikes so a large mouse event cannot leave queued steps behind.
         remainder += min(80, abs(verticalPixels)) * Double(newDirection)
         guard abs(remainder) >= 80 else { return .consume }

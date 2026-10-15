@@ -77,6 +77,45 @@ import SwiftUI
         model.setGeometryCropInteracting(false)
     }
 
+    static func straightenPreviewChecks(_ model: EditorModel) throws {
+        try check(model.beginGeometryDraft(tab: .crop), "straighten preview opens a crop draft")
+        try wait(model, draft: true, "straighten reference canvas")
+        let image = model.result!.image
+        var publications = 0
+        let observer = model.$result.dropFirst().sink { _ in publications += 1 }
+        defer { observer.cancel() }
+        for angle in [-45.0, -22.5, -3, 0, 3, 22.5, 45] {
+            model.setGeometryDraftParameter(.straightenDegrees, to: angle)
+            try check(model.geometryDraftPreviewReady && !model.busy && model.result!.image === image,
+                      "straighten \(angle) keeps the crop canvas ready without RAW work")
+        }
+        let started = ProcessInfo.processInfo.systemUptime
+        for index in 0..<600 {
+            model.setGeometryDraftParameter(.straightenDegrees, to: Double(index % 91) - 45)
+        }
+        print(String(format: "BENCH: 600 model-only straighten updates %.2f ms; this is not native frame latency",
+                     (ProcessInfo.processInfo.systemUptime - started) * 1000))
+        settle(0.3)
+        try check(publications == 0 && model.result!.image === image,
+                  "straighten changes enqueue no delayed replacement of the reference image")
+        let appliedGeometry = model.geometryDraftSettings
+        try check(model.applyGeometryDraft() && model.pendingGeometryPresentation == appliedGeometry && model.result!.image === image,
+                  "Apply retains its transformed crop presentation until the exact frame arrives")
+        try check(!model.canComparePreview,
+                  "pending Apply does not compare an untransformed neutral frame against the transformed base")
+        try wait(model, "straighten Apply exact completion")
+        try check(model.pendingGeometryPresentation == nil && model.canComparePreview,
+                  "the matching exact frame clears pending presentation and restores comparison")
+        let entryImage = model.result!.image
+        try check(model.beginGeometryDraft(tab: .crop), "straighten Cancel opens another draft")
+        try wait(model, draft: true, "straighten Cancel reference")
+        model.setGeometryDraftParameter(.straightenDegrees, to: -30)
+        model.cancelGeometryDraft()
+        try check(model.result!.image === entryImage && model.pendingGeometryPresentation == nil,
+                  "Cancel immediately restores the entry image without an unrotated flash")
+        try wait(model, "straighten preview cleanup")
+    }
+
     static func write(_ image: CGImage, to url: URL) throws {
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
             throw Failure(description: "Could not create preview evidence")
@@ -114,6 +153,11 @@ import SwiftUI
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "straighten-preview" {
+            try straightenPreviewChecks(model)
+            print("PASS: \(checks) focused straighten preview checks")
+            return
+        }
         if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "precise-crop-collapse" {
             runPreciseCropChecks(model)
             return
@@ -124,6 +168,7 @@ import SwiftUI
             try cropApplyPublicationChecks(model)
             return
         }
+        try straightenPreviewChecks(model)
         try windowCloseChecks(model)
         model.settings.geometry = committed
         model.settings.lensCorrection = lens
@@ -372,8 +417,9 @@ import SwiftUI
         try check(!draft.hasChanges && draft.originalGeometry == geometry && draft.originalLens == lens,
                   "draft snapshots geometry and lens originals")
         try check(draft.previewGeometry.cropX == 0 && draft.previewGeometry.cropY == 0 && draft.previewGeometry.cropWidth == 1 &&
-                  draft.previewGeometry.cropHeight == 1 && draft.previewGeometry.perspectiveHorizontal == geometry.perspectiveHorizontal,
-                  "draft preview removes only crop and retains native transforms")
+                  draft.previewGeometry.cropHeight == 1 && draft.previewGeometry.straightenDegrees == 0 &&
+                  draft.previewGeometry.perspectiveHorizontal == geometry.perspectiveHorizontal,
+                  "draft preview removes crop and UI straightening while retaining other native transforms")
         draft.geometry.cropWidth = 0.5; draft.lens.distortion = true
         try check(draft.hasChanges && draft.originalGeometry == geometry && draft.originalLens == lens,
                   "draft geometry and lens changes retain immutable original snapshots")
