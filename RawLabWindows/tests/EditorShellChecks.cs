@@ -82,19 +82,21 @@ internal static class EditorShellChecks
     internal static void CaptureLayout(Window window,FrameworkElement content,string path)
     {
         var size=new Size(content.Width,content.Height);
-        window.Content=null;
+        window.Content=null;window.UpdateLayout();
+        var host=new Grid{Width=size.Width,Height=size.Height};host.Children.Add(content);
         try
         {
             TextElement.SetFontSize(content,window.FontSize);TextElement.SetFontFamily(content,window.FontFamily);
-            content.Measure(size);content.Arrange(new Rect(size));content.UpdateLayout();
-            var bitmap=new RenderTargetBitmap((int)size.Width,(int)size.Height,96,96,PixelFormats.Pbgra32);bitmap.Render(content);
+            content.InvalidateMeasure();content.InvalidateArrange();host.Measure(size);host.Arrange(new Rect(size));host.UpdateLayout();
+            Console.WriteLine($"Offscreen WPF composition={content.RenderSize}; layout clip={System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(content)?.Bounds}");
+            var bitmap=new RenderTargetBitmap((int)size.Width,(int)size.Height,96,96,PixelFormats.Pbgra32);bitmap.Render(host);
             var corner=new byte[4];bitmap.CopyPixels(new Int32Rect(bitmap.PixelWidth-1,bitmap.PixelHeight-1,1,1),corner,4,0);
             if(corner[3]!=255)throw new InvalidOperationException("WPF layout composition is clipped or transparent at the requested bounds.");
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var stream=File.Create(path);encoder.Save(stream);
         }
         finally
         {
-            window.Content=content;content.ClearValue(TextElement.FontSizeProperty);content.ClearValue(TextElement.FontFamilyProperty);
+            host.Children.Remove(content);window.Content=content;content.ClearValue(TextElement.FontSizeProperty);content.ClearValue(TextElement.FontFamilyProperty);
             content.ClearValue(FrameworkElement.WidthProperty);content.ClearValue(FrameworkElement.HeightProperty);window.UpdateLayout();
         }
     }
