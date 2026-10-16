@@ -18,7 +18,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 - RAW development with exposure, camera-space white balance, tone, color and
   sharpening controls.
-- Development source also accepts ordinary opaque RGB8 SDR images: JPEG/PNG
+- Ordinary opaque RGB8 SDR images: JPEG/PNG
   on all four clients, TIFF on macOS/iOS/Windows and HEIF on macOS/iOS. Raster
   input shares the editing/export core without the RAW scene curve or camera
   controls. Unsupported HDR, high-bit-depth, transparent and multi-frame inputs
@@ -53,13 +53,17 @@ film looks do not promise an exact match to in-camera JPEGs.
   fallback. HSL runs in the platform photo GPU pipeline; RAW decoding and file
   encoding remain CPU operations.
 - A shared C++17 core, command-line tools and a desktop LUT preparation utility.
+- Desktop Agent JSON editing, capability discovery, previews and FINAL exports
+  reuse the same parameters and processing core as the GUI and frozen batches.
+- Crop, rotate, straighten, flip and perspective correction; photos open with
+  one preview and optional before/after comparison.
 
 ## Platforms
 
 | Client | Requirements |
 | --- | --- |
 | Windows | Windows 10/11, x64 |
-| macOS | v0.8 target: macOS 14+, Apple Silicon or Intel; minimum-OS runtime acceptance pending |
+| macOS | macOS 14 deployment target, Apple Silicon or Intel; physical minimum-OS coverage remains limited |
 | Android | Android 8.0+, ARM64 or x86_64 |
 | iOS | iOS 18+, iPhone and iPad; the downloadable IPA requires re-signing |
 
@@ -67,7 +71,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 - [Documentation index](docs/README.md)
 - [Download the latest release](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.7.0 release notes (build 11)](docs/releases/v0.7.0.md)
+- [v0.8.0 release notes (build 12)](docs/releases/v0.8.0.md)
 - [Installation and distribution notes](docs/installation.md)
 - [iPhone installation guide](docs/ios-installation.md)
 - [Changelog](CHANGELOG.md)

@@ -1,10 +1,10 @@
 # RawLab Bundled Look Attribution
 
-Status on 2026-10-16: 28 adapted third-party LUTs remain UNCONFIRMED for
-redistribution. The repository owner explicitly approved public source
-publication with this notice and integration into `development`. That approval
-is not a license grant from the original authors or authorization for an
-official release. Color adaptation does not grant copyright rights.
+Status on 2026-10-17: 28 adapted third-party LUTs remain UNCONFIRMED for
+redistribution. After the earlier source/development exception, the repository
+owner explicitly authorized their inclusion in the v0.8.0 formal release with
+this notice and risk record retained. That decision is not a license grant from
+the original authors. Color adaptation does not grant copyright rights.
 `REDISTRIBUTION_BLOCKED.md` retains the unresolved release risk; it does not
 block compilation, including Release builds. CI success is not license clearance.
 

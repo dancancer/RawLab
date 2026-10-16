@@ -1,4 +1,11 @@
-# Bundled Look Redistribution Is Not Cleared
+# Bundled Look Redistribution Remains Unconfirmed
+
+On 2026-10-17 the repository owner explicitly authorized the v0.8.0 formal
+release and chose to distribute these 28 derivatives with the existing risk
+record retained. This extends the owner's earlier source/development exception;
+it does not establish permission from the original authors. The filename is a
+historical risk marker, not a compile-time or packaging switch. UNCONFIRMED
+license fields, source attribution and permanent notices remain unchanged.
 
 On 2026-10-16 the repository owner explicitly approved publishing this snapshot
 in the public source repository with the unconfirmed-permission notice retained,
@@ -8,9 +15,10 @@ release, installer upload, signing or deployment.
 
 This file remains an unresolved release-risk record, not a compile-time switch.
 Normal builds, including Release configuration, are not blocked by its presence.
-A successful build or CI run is not redistribution clearance. Before an official
-release containing these derivatives, resolve the underlying rights and required
-notices and obtain the separate release authorization required by `agent.md`.
+A successful build or CI run is not redistribution clearance. The owner's
+separate release authorization is now recorded above, but the underlying rights
+review remains unresolved. Do not remove this record or label the derivatives
+permission-cleared without per-source evidence and the required notices.
 
 The 28 third-party derivatives have UNCONFIRMED redistribution permission.
 Public download, a creator credit, and permission to use a LUT are not assumed

@@ -96,11 +96,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.7.0 APK / Download Android v0.7.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Android-0.7.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.7.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
+[下载 Android v0.8.0 APK / Download Android v0.8.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Android-0.8.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.0/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.7.0`、`versionCode=11`，沿用正式发布签名，支持同签名旧正式版覆盖升级。arm64-v8a/x86_64 共享核心均从本轮源码增量重建，新增 JPEG XL DNG、渲染型 DNG 导出、Lensfun 镜头校正与六语界面，并优化视口预览和降噪内存。专属2.5GB AVD 的 Sony 原尺寸三格式及独立 FINAL 验收通过；GPU 验收范围为≥6GB，实际真机约12GB。详见[发布验收](../docs/verification-v0.7.0-release.md)。
+发布 APK 为 `versionName=0.8.0`、`versionCode=12`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/releases/v0.8.0-preparation.md)。
 
-The release APK uses version0.7.0/code11 and the existing release identity. Both native ABIs include the verified Sony memory fix. JPEG XL DNG, rendered DNG export, Lensfun correction, six languages and viewport/denoise reuse are new in this version. Existing local validation is retained; packaging adds no new device experiment. See [release verification](../docs/verification-v0.7.0-release.md).
+The release APK uses version0.8.0/code12 and the existing release identity. JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/releases/v0.8.0-preparation.md) and package provenance for actual candidate/device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
