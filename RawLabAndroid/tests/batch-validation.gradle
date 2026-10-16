@@ -1,0 +1,8 @@
+gradle.beforeProject { project ->
+    project.plugins.withId('com.android.application') {
+        project.androidComponents.finalizeDsl { android ->
+            // 真机验证使用独立数据，不覆盖用户安装。
+            android.defaultConfig.applicationId = 'com.rawlab.android.batchprobe56c3'
+        }
+    }
+}

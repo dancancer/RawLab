@@ -128,6 +128,35 @@ removes app-private data, not the original album photos.
 
 ## 验证 / Verification
 
+Android Debug 的 CPU 降噪依赖 `wavelib`、`opencv_core`、`opencv_imgproc` 与调用方一样使用
+`-O3`，仍保留调试符号和断言，不启用 fast-math；仅优化调用方不能优化依赖中的 SWT 和滤波循环。
+构建后用实际生成的两份编译数据库检查最后生效的优化选项，不能只搜索是否出现 `-O3`：
+
+```sh
+# From RawLabAndroid; replace <build-hash> with the directory from this build.
+python3 -B -m unittest discover -s tests -p test_check_cpu_build.py
+python3 -B tests/check-cpu-build.py \
+  app/.cxx/Debug/<build-hash>/arm64-v8a/compile_commands.json \
+  app/.cxx/Debug/<build-hash>/x86_64/compile_commands.json
+# Compare snapshots from the same ABI/build directory; repeat for x86_64.
+python3 -B tests/check-cpu-build.py --compare /path/to/before-arm64.json \
+  app/.cxx/Debug/<build-hash>/arm64-v8a/compile_commands.json
+```
+
+检查器严格拒绝不安全浮点选项，即使后面出现相反选项也不视为完全抵消；拒绝未展开的
+response/config 文件和 `-Xclang`/`-mllvm` 转发，避免隐藏生效参数。标准的 precise/strict、
+contract on/off、IEEE denormal 模式允许通过；限制只作用于被检查的 CPU 目标。
+`--compare` 按构建目录规范化后的源文件与输出对象配对，分别报告编译记录数和唯一源文件数。
+重复或缺失对象标识会失败；非预期选项变化、对象删除或新增非数值测试对象也会失败。
+必需源文件按当前检出和该 ABI 构建目录下的默认 CMake 依赖布局核对完整路径，不接受其他
+目录下的同名替代文件；比较时最多允许新增一个当前检出的 `wavelet_denoise_tests` 对象。
+检查的是数据库元数据，不要求历史源文件仍在磁盘，也不代替源码、产物哈希或实际运行验证。
+
+`wavelet_denoise_tests` 也可作为 Android CMake 的独立 `EXCLUDE_FROM_ALL` 目标构建，
+在设备上执行现有的 SWT golden、纹理/颜色边缘、缓存和逐像素一致性测试；不打包进 APK。
+原尺寸 CPU 批处理仍以既有 240 秒用例验证，GPU 开关的模式约定和画质不变。
+热点证据、逐像素对照和真机结果见 [CPU 性能验证](cpu-denoise-performance-verification.md)。
+
 ```sh
 # Repository root: shared rendering regressions.
 bash lutools/test.sh

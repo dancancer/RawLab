@@ -63,12 +63,13 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     @Synchronized
-    fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null) {
+    fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null): Int {
         check(handle != 0L) { "Processor is closed" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
         configureLens(settings.lens)
         configureGeometry(settings.geometry)
+        val backend = intArrayOf(-1)
         nativeProcess(handle, input.path, lut?.path, output.path, settings.strength,
             settings.exposure, settings.customWb, settings.temperature, settings.tint,
             settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
@@ -77,8 +78,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             settings.displayChromaDenoise, settings.effects.vignetteAmount, settings.effects.vignetteMidpoint,
             settings.effects.vignetteRoundness, settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
             settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
-            settings.exposureMode, settings.renderHsl.packed(), settings.recipeID != null)
+            settings.exposureMode, settings.renderHsl.packed(), settings.recipeID != null, backend)
+        check(backend[0] >= 0) { "Native export did not report a backend" }
         if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output)
+        return backend[0]
     }
 
     @Synchronized
@@ -133,7 +136,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean): NativeFrame?
+        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, backend: IntArray? = null): NativeFrame?
 
     companion object {
         const val CPU = 0

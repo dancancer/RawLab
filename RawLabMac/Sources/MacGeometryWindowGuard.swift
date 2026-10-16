@@ -81,14 +81,45 @@ final class RawLabMacDelegate: NSObject, NSApplicationDelegate {
     weak var model: EditorModel?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model else { return .terminateNow }
         sender.keyWindow?.makeFirstResponder(nil)
-        guard model.geometryDraftHasChanges else {
-            return model.saveEdits() ? .terminateNow : .terminateCancel
+        guard let model else {
+            return finishTermination(sender)
         }
-        guard !model.geometryDraftDeparturePending else { return .terminateCancel }
-        model.requestLeavingGeometryDraft({ sender.reply(toApplicationShouldTerminate: true) },
-                                         onStay: { sender.reply(toApplicationShouldTerminate: false) })
+        guard !model.geometryDraftHasChanges else {
+            guard !model.geometryDraftDeparturePending else { return .terminateCancel }
+            model.requestLeavingGeometryDraft({ [weak self, weak sender] in
+                guard let self, let sender else { return }
+                let reply = self.finishTermination(sender)
+                if reply != .terminateLater {
+                    sender.reply(toApplicationShouldTerminate: reply == .terminateNow)
+                }
+            }, onStay: { [weak sender] in
+                sender?.reply(toApplicationShouldTerminate: false)
+            })
+            return .terminateLater
+        }
+        guard model.saveEdits() else { return .terminateCancel }
+        return finishTermination(sender)
+    }
+
+    private func finishTermination(_ sender: NSApplication, allow: Bool = true) -> NSApplication.TerminateReply {
+        guard allow else {
+            sender.reply(toApplicationShouldTerminate: false)
+            return .terminateLater
+        }
+#if RAWLAB_RUM_LOCAL
+        var replied = false
+        let reply: () -> Void = { [weak sender] in
+            guard !replied else { return }
+            replied = true
+            sender?.reply(toApplicationShouldTerminate: true)
+        }
+        LocalRUM.shutdown { DispatchQueue.main.async(execute: reply) }
+        // 网络失联不允许统计服务无限阻塞退出；超时视为异常终止。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: reply)
         return .terminateLater
+#else
+        return .terminateNow
+#endif
     }
 }

@@ -10,6 +10,7 @@ trap 'rm -rf "$OUT"' EXIT
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
+    "$ROOT/Shared/UsageAnalytics.swift" \
     "$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swift" \
     "$ROOT/RawLabMac/Sources/MacStraightenPreview.swift" \
     "$ROOT/RawLabMac/Sources/MacCropInteraction.swift" \

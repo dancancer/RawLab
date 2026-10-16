@@ -270,7 +270,8 @@ extension ContentView {
             let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
                 ?? (try? PhotoIdentity.fallback(for: source.url))
             await MainActor.run {
-                viewModel.importImage(from: source, identity: identity, settings: .default) { restored in
+                viewModel.importImage(from: source, identity: identity, settings: .default,
+                    onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
                 }
                 selectedPhotoItem = nil
@@ -295,6 +296,7 @@ extension ContentView {
             return
         }
         batchModel = BatchExportModel(source: source, editor: viewModel)
+        batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
         batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false }
         showingBatchExport = true
     }
@@ -304,6 +306,7 @@ extension ContentView {
             let journal = try BatchJournalStore.appStore()
             if let job = try journal.pendingJobs().first {
                 batchModel = BatchExportModel(job: job, journalStore: journal)
+                batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
                 batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
             }
         } catch { viewModel.statusMessage = L10n.format("无法恢复批量任务：%@", String(describing: error.localizedDescription)) }
@@ -332,6 +335,7 @@ extension ContentView {
                     if let error = error {
                         viewModel.statusMessage = error.localizedDescription
                     } else if success {
+                        UsageAnalytics.shared.record(.exportCompleted)
                         viewModel.statusMessage = L10n.text("已保存到照片。")
                     } else {
                         viewModel.statusMessage = L10n.text("保存失败，请重试。")

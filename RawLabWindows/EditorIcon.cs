@@ -28,6 +28,8 @@ public sealed class EditorIcon : FrameworkElement
         ["Neutral"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,3 V21"),
         ["Add"]=Geometry.Parse("M12,4 V20 M4,12 H20"),
         ["Reset"]=Geometry.Parse("M4,10 A8,8 0 1 1 5,18 M4,4 V10 H10"),
+        ["RotateLeft"]=Geometry.Parse("M3,10 A9,9 0 1 1 5,19 M3,3 V10 H10"),
+        ["RotateRight"]=Geometry.Parse("M21,10 A9,9 0 1 0 19,19 M21,3 V10 H14"),
         ["Histogram"]=Geometry.Parse("M3,21 V14 H7 V8 H11 V3 H15 V10 H19 V16 H22 V21 Z"),
         ["ChevronDown"]=Geometry.Parse("M5,9 L12,16 19,9"),
         ["Photo"]=Geometry.Parse("M3,4 H21 V20 H3 Z M3,17 L9,11 14,16 17,13 21,17 M15,7 A1.5,1.5 0 1 1 14.99,7")

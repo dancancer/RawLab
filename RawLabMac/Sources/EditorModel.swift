@@ -151,6 +151,8 @@ final class EditorModel: ObservableObject {
     private var saveWork: DispatchWorkItem?
     private var dirty = false
     private var lookLibrary: LookLibrary?
+    private let onUsage: (UsageEvent) -> Void
+    private var pendingImportEvent = false
     var selectedFilm: Film? { films.first { $0.id == selectedFilmID } }
     var selectedMasterRecipe: MasterRecipe? { settings.masterRecipe }
     var missingFilm: Bool { !selectedFilmID.isEmpty && (selectedFilm == nil || !FileManager.default.isReadableFile(atPath: selectedFilm!.url.path)) }
@@ -357,7 +359,9 @@ final class EditorModel: ObservableObject {
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,
          editDirectory: URL = EditPersistence.defaultDirectory,
-         batchDirectory: URL = BatchJournal.defaultDirectory) {
+         batchDirectory: URL = BatchJournal.defaultDirectory,
+         onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+        self.onUsage = onUsage
         self.editDirectory = editDirectory
         batchJournal = BatchJournal(directory: batchDirectory)
         do {
@@ -381,6 +385,13 @@ final class EditorModel: ObservableObject {
         debounceTimer = timer
     }
     deinit { debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel() }
+
+    func selectFilm(_ id: String) {
+        guard (id != selectedFilmID || settings.masterRecipeID != nil),
+              id.isEmpty || films.contains(where: { $0.id == id }) else { return }
+        selectedFilmID = id
+        onUsage(.filmSelected(id.isEmpty ? .none : selectedFilm?.managedID == nil ? .builtIn : .custom))
+    }
 
     private func edited() {
         editRevision = UUID()
@@ -467,7 +478,7 @@ final class EditorModel: ObservableObject {
     }
 
     private func attachBatch(_ job: BatchExportJob) {
-        let model = BatchExportModel(job: job, journal: batchJournal)
+        let model = BatchExportModel(job: job, journal: batchJournal, onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
@@ -496,6 +507,7 @@ final class EditorModel: ObservableObject {
         do { restored = try editStore?.state(for: url) }
         catch { saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription)) }
         file = url; neutral = nil; result = nil; error = nil; statusState = .none
+        pendingImportEvent = true
         updatingMetadata = true
         settings = restored?.settings ?? Adjustments()
         if let masterRecipeID = restored?.masterRecipeID {
@@ -778,6 +790,10 @@ final class EditorModel: ObservableObject {
                     }
                     geometryDraftPreviewReady = true
                 }
+                if pendingImportEvent {
+                    pendingImportEvent = false
+                    onUsage(.photoImported)
+                }
                 updatingMetadata = true
                 settings.resolveWhiteBalance(result.asShotWhiteBalance)
                 settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
@@ -821,7 +837,10 @@ final class EditorModel: ObservableObject {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
                                              interactive: false, exportLongEdge: longEdge)
-                DispatchQueue.main.async { self.exporting = false; self.statusState = .exported(output.lastPathComponent) }
+                DispatchQueue.main.async {
+                    self.exporting = false; self.statusState = .exported(output.lastPathComponent)
+                    self.onUsage(.exportCompleted)
+                }
             } catch {
                 DispatchQueue.main.async { self.exporting = false; self.error = error.localizedDescription }
             }

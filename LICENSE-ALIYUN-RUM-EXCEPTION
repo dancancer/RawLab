@@ -1,0 +1,58 @@
+RawLab Alibaba Cloud RUM SDK Linking Exception
+Version 1.0, 16 October 2026
+
+Additional permission under section 7 of the GNU General Public License,
+version 3 (GPLv3).
+
+1. Scope
+
+The copyright holders of the original RawLab project code grant this
+additional permission for that code (the "Program"). The Program remains
+licensed under GPLv3 only. This permission does not apply to third-party
+code or resources that carry their own licenses.
+
+"Covered SDKs" means only the following Alibaba Cloud RUM SDK releases:
+
+- AlibabaCloud RUM native SDK 0.4.4 for macOS and Windows, including
+  libalibabacloud_rum.dylib and alibabacloud_rum.dll;
+- com.aliyun.rum:alibabacloud-android-rum-sdk:2.3.2 for Android;
+- AlibabaCloudRUM 2.4.2 for iOS, including AlibabaCloudRUMSDK.xcframework.
+
+The Covered SDKs also include runtime components bundled in those official
+SDK releases and needed to use them, and modifications of those releases
+permitted by their respective licenses. Other SDK releases, unrelated
+Alibaba Cloud SDKs, and separately added libraries are not covered.
+
+2. Linking and Conveying
+
+You may link or combine the Program with the Covered SDKs, statically or
+dynamically, and convey the resulting combination. You must comply with
+GPLv3 for the Program and with the respective licenses of the Covered SDKs.
+
+Solely because of this linking or combination, you are not required by the
+Program's GPLv3 terms to license the Covered SDKs under GPLv3 or to include
+their source code in the Corresponding Source of the combination.
+
+The Corresponding Source obligations for the Program remain unchanged.
+They include modifications to the Program, integration or adapter code
+forming part of the Program, and the scripts required by GPLv3 to build
+and install it. This exception does not waive any source-code, notice,
+relinking, or other obligation imposed independently by a Covered SDK's
+license or any other third-party license.
+
+3. Third-Party Rights
+
+This exception grants rights only in the Program. It grants no rights in
+the Covered SDKs, does not relicense them, and does not represent that
+their licenses permit any particular use, modification, or redistribution.
+You are responsible for obtaining any necessary third-party permissions
+and complying with their terms. All other GPLv3 requirements remain in
+effect except to the extent expressly relaxed above.
+
+4. Modified Versions
+
+If you modify the Program, you may extend this exception to your changes
+if you have the necessary copyright authority, but you are not required
+to do so. You may remove this additional permission from your version as
+permitted by GPLv3 section 7. A version without this exception is governed
+by GPLv3 without this additional permission.

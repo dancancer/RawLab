@@ -9,6 +9,8 @@
     <Compile Remove="editing/**/*.cs" />
     <Compile Remove="localization/**/*.cs" />
     <Compile Remove="localization-ui/**/*.cs" />
+    <Compile Remove="ui-automation/**/*.cs" />
+    <Compile Remove="usage/**/*.cs" />
     <ProjectReference Include="../RawLabWindows.csproj"/>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
   </ItemGroup>

@@ -120,9 +120,13 @@ int runAgentCommands(int argc, char* argv[]) {
             if (!recipeFile.empty() || printRecipe || info || preview || seenEdge || !lensDatabase.empty()) return fail("invalid_argument", "Capabilities cannot be combined with another command");
             Json inputs = {"raw"};
             Json raster = nullptr;
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
             inputs.push_back("raster");
+#if defined(_WIN32)
+            raster = {{"formats", {"jpeg", "png", "tiff"}}, {"bits_per_component", 8},
+#else
             raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
+#endif
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 64000000}};
 #endif

@@ -7,6 +7,22 @@ case "$ARCH" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture: $ARCH" >
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
 DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}"
+RUM_FLAGS=(-swift-version 5)
+if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
+    if [ "${RAWLAB_RELEASE:-0}" = 1 ] || [ "${CONFIGURATION:-}" = Release ]; then
+        echo "RUM SDK is restricted to private local validation builds." >&2; exit 2
+    fi
+    APP="$(swift -e 'import Foundation; print(URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL.resolvingSymlinksInPath().path)' "$APP")"
+    LOCAL_ROOT="$(cd "$ROOT" && pwd -P)/.cache/tmp"
+    case "$APP" in
+        "$LOCAL_ROOT/"*) ;;
+        *) echo "RUM local app output must stay under .cache/tmp/." >&2; exit 2 ;;
+    esac
+    RUM_BUILD="$BUILD/rum-local"
+    bash "$ROOT/experiments/rum-pilot/prepare-macos.sh" "$RUM_BUILD"
+    RUM_LIB="$RUM_BUILD/AlibabaCloud_RUM_macOS_0.4.4/lib/$ARCH/Release"
+    RUM_FLAGS+=(-D RAWLAB_RUM_LOCAL -I "$RUM_BUILD/module" -L "$RUM_LIB" -lalibabacloud_rum)
+fi
 CHROMA_PREFIX="${RAWLAB_DEPENDENCY_PREFIX:-$ROOT/build/macos15-deps/$ARCH/install}"
 LENS_PREFIX="$ROOT/build/lensfun/$ARCH/install"
 export PKG_CONFIG_PATH="$LENS_PREFIX/lib/pkgconfig:$CHROMA_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
@@ -25,6 +41,7 @@ cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/MasterRecipes" "$APP/Contents/Resources/MasterRecipeIcons" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/RawLab-GPL-3.0.txt"
+cp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
 cp "$ROOT/docs/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
 cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resources/Licenses/"
 cp -R "$ROOT/RawLabMac/Resources/Licenses/." "$APP/Contents/Resources/Licenses/"
@@ -45,7 +62,8 @@ if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX
     SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 fi
 RAW_LIB="$(pkg-config --variable=libdir libraw)"
-swiftc -swift-version 5 -O -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
+swiftc -O -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
+    "${RUM_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT"/RawLabMac/Sources/*.swift "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
@@ -56,6 +74,10 @@ cp "$ROOT/Shared/master-recipes.json" "$APP/Contents/Resources/master-recipes.js
 for localization in "$ROOT"/RawLabMac/Resources/*.lproj; do
     cp -R "$localization" "$APP/Contents/Resources/"
 done
+if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.rawlab.mac.rumlocal' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Add :RawLabRUMLocal bool true' "$APP/Contents/Info.plist"
+fi
 bash "$ROOT/RawLabMac/build-icon.sh" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $DEPLOYMENT_TARGET" "$APP/Contents/Info.plist"
 for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
@@ -84,6 +106,11 @@ embed_dependency() {
                 source="$RAW_LIB/${dependency#@rpath/}"
                 if [ ! -f "$source" ]; then source="$OPENCV_PREFIX/lib/${dependency#@rpath/}"; fi
                 if [ ! -f "$source" ]; then source="$LENS_PREFIX/lib/${dependency#@rpath/}"; fi
+                if [ ! -f "$source" ] && [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then source="$RUM_LIB/${dependency#@rpath/}"; fi
+                ;;
+            @loader_path/*)
+                if [ "${RAWLAB_RUM_LOCAL:-0}" != 1 ]; then echo "Unexpected loader-relative dependency" >&2; exit 1; fi
+                source="$RUM_LIB/${dependency#@loader_path/}"
                 ;;
             /*) source="$dependency" ;;
             *) echo "Unsupported dependency path: $dependency" >&2; exit 1 ;;

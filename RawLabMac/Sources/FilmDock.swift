@@ -42,7 +42,7 @@ struct FilmDock: View {
     private func filmButton(name: String, id: String, imageSize: CGFloat, height: CGFloat,
                             isCustom: Bool = false) -> some View {
         let selected = model.settings.masterRecipeID == nil && model.selectedFilmID == id
-        return Button { model.selectedFilmID = id } label: {
+        return Button { model.selectFilm(id) } label: {
             VStack(spacing: 5) {
                 FilmPackageImage(name: name, neutral: id.isEmpty, isCustom: isCustom)
                     .frame(width: imageSize, height: imageSize)

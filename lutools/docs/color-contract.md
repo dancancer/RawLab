@@ -82,9 +82,12 @@ This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
-The adapter is currently implemented for macOS only; other platforms return
-unsupported. Windows and mobile ordinary-image decoding are not validated by a
-successful Mac test.
+The macOS adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
+and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
+Mac results; HEIF and BigTIFF are not enabled. Unknown non-sRGB PNG color metadata
+without a supported ICC profile is rejected instead of guessed. Other platforms
+currently return unsupported. Platform evidence and remaining ICC/physical-device
+limits are recorded in `RawLabWindows/VERIFICATION-agent-v08.md`.
 
 ## Rendering Order
 

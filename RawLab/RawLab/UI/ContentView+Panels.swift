@@ -4,7 +4,10 @@ import SwiftUI
 extension ContentView {
     @ToolbarContentBuilder
     var editorToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            Button { showingPrivacy = true } label: { Image(systemName: "gearshape") }
+                .accessibilityLabel("隐私设置").help("隐私设置")
+                .accessibilityIdentifier("editor.privacy")
             photoImportButton(isEnabled: !editorBusy)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -150,7 +153,9 @@ extension ContentView {
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Spacer(minLength: 8)
+                editSaveStatus
                 Menu {
                     Button(L10n.text("重置全部调整"), role: .destructive) {
                         applySettingsChange(.default)
@@ -165,9 +170,8 @@ extension ContentView {
                 .accessibilityLabel(L10n.text("重置调整"))
                 .disabled(!viewModel.hasImage || editingLocked || settings == .default)
             }
+            .frame(height: max(44, panelHeaderHeight))
             .padding(.horizontal, 16)
-
-            editSaveStatus
 
             toolStrip
             valuePanel
@@ -181,29 +185,31 @@ extension ContentView {
         case .idle:
             EmptyView()
         case .restored:
-            Label(L10n.text("已恢复上次调整"), systemImage: "checkmark.circle.fill")
-                .font(.caption)
+            editSaveLabel(L10n.text("已恢复上次调整"), symbol: "checkmark.circle.fill")
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
         case .saved:
-            Label(L10n.text("调整已保存"), systemImage: "checkmark.circle.fill")
-                .font(.caption)
+            editSaveLabel(L10n.text("调整已保存"), symbol: "checkmark.circle.fill")
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
         case .failed(let message):
             Button {
                 viewModel.retrySave(settings: settings)
             } label: {
-                Label(L10n.text("调整未保存，点击重试"), systemImage: "exclamationmark.triangle.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                editSaveLabel(L10n.text("调整未保存，点击重试"), symbol: "exclamationmark.triangle.fill")
+                    .frame(minWidth: 44, minHeight: 44)
             }
-            .font(.caption)
             .foregroundStyle(.orange)
             .accessibilityValue(message)
-            .padding(.horizontal, 16)
         }
+    }
+
+    private func editSaveLabel(_ title: String, symbol: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            Label(title, systemImage: symbol).fixedSize()
+            Image(systemName: symbol)
+        }
+        .font(.caption)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
     }
 
     var toolStrip: some View {
@@ -519,6 +525,9 @@ extension ContentView {
 
     func filmButton(name: String, id: String?, imageSize: CGFloat) -> some View {
         Button {
+            if settings.masterRecipeID != nil || settings.lutID != id {
+                UsageAnalytics.shared.record(.filmSelected(id == nil ? .none : .builtIn))
+            }
             var updated = settings
             updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
             updated.lutID = id

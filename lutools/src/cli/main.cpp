@@ -8,6 +8,10 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>
+#include <utility>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 using namespace sony2fuji;
 
@@ -191,7 +195,7 @@ int processRequest(const sony2fuji_request& request, sony2fuji_raw_exposure_mode
     return 0;
 }
 
-int main(int argc, char* argv[]) {
+static int runMain(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--json" || arg == "--capabilities" || arg == "--info" || arg == "--preview" ||
@@ -235,3 +239,32 @@ int main(int argc, char* argv[]) {
     request.jpeg_quality = options.quality;
     return processRequest(request, options.rawExposure);
 }
+
+#if defined(_WIN32)
+int wmain(int argc, wchar_t* argv[]) {
+    std::vector<std::string> arguments;
+    arguments.reserve(argc);
+    for (int index = 0; index < argc; ++index) {
+        const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+            argv[index], -1, nullptr, 0, nullptr, nullptr);
+        if (size <= 0) {
+            std::cerr << "Invalid Unicode command-line argument\n";
+            return 1;
+        }
+        std::string value(static_cast<size_t>(size), '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, argv[index], -1,
+                value.data(), size, nullptr, nullptr) != size) return 1;
+        value.pop_back();
+        arguments.push_back(std::move(value));
+    }
+    std::vector<char*> pointers;
+    pointers.reserve(static_cast<size_t>(argc) + 1);
+    for (auto& argument : arguments) pointers.push_back(argument.data());
+    pointers.push_back(nullptr);
+    return runMain(argc, pointers.data());
+}
+#else
+int main(int argc, char* argv[]) {
+    return runMain(argc, argv);
+}
+#endif

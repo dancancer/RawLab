@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 int main() {
     std::vector<unsigned char> input(256 * 3);
