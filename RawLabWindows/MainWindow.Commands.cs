@@ -41,6 +41,7 @@ public partial class MainWindow
         if(transform.Active){if(transform.Tool==TransformTool.Geometry)GeometryEditor.ResetDraft();else UpdateLensDraft(new());return;}
         if(choosingDenoise)settings.Denoise=new();
         else if(choosingHsl)settings.Hsl=new();
+        else if(choosingWhiteBalance)settings.ResetWhiteBalance();
         else if(choosingPhotoEffects)settings.ResetEffects(selectedEffect==PhotoEffectTool.Vignette);
         else if(choosingGeometry)settings.Geometry=new();
         else if(choosingLens)settings.Lens=new();

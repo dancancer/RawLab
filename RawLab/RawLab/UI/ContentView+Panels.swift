@@ -188,7 +188,7 @@ extension ContentView {
                         applySettingsChange(.default)
                     }
                     if let adjustment = selectedAdjustment {
-                        Button(L10n.format("重置%@", String(describing: adjustment.title))) { reset(adjustment) }
+                        Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetSelectedAdjustment() }
                     }
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
@@ -274,7 +274,7 @@ extension ContentView {
                     .accessibilityIdentifier("tool.geometry")
                     .opacity(geometrySelected ? 1 : rulerFocusOpacity)
                     .accessibilityAddTraits(geometrySelected ? .isSelected : []).id("geometry")
-                    ForEach(AdjustmentKind.allCases) { adjustment in
+                    ForEach(AdjustmentKind.toolCases) { adjustment in
                         Button { selectEditorTool(.adjustment(adjustment)) } label: {
                             AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
                                                 selected: selectedAdjustment == adjustment && !lensSelected && !geometrySelected,
@@ -288,7 +288,7 @@ extension ContentView {
                         .accessibilityIdentifier("tool.\(adjustment.rawValue)")
                         .opacity(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
                         .contextMenu {
-                            Button(L10n.format("重置%@", String(describing: adjustment.title))) { reset(adjustment) }
+                            Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetTool(adjustment) }
                             .disabled(!viewModel.hasImage || adjustmentProgress(adjustment) == 0 || editingLocked || lensSelected || geometrySelected)
                         }
                         .id(adjustment.rawValue)

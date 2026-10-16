@@ -10,6 +10,7 @@ struct AdjustmentControl: View {
     let unit: String
     let formatter: (Double) -> String
     let reciprocal: Bool
+    let showsReset: Bool
     let identifier: String
     let onEditingChanged: (Bool) -> Void
     @State private var fine = false
@@ -22,7 +23,8 @@ struct AdjustmentControl: View {
 
     init(title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 1,
          defaultValue: Double, unit: String = "", formatter: @escaping (Double) -> String,
-         reciprocal: Bool = false, identifier: String, onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
+         reciprocal: Bool = false, showsReset: Bool = true, identifier: String,
+         onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
         self.title = title
         _value = value
         self.range = range
@@ -31,6 +33,7 @@ struct AdjustmentControl: View {
         self.unit = unit
         self.formatter = formatter
         self.reciprocal = reciprocal
+        self.showsReset = showsReset
         self.identifier = identifier
         self.onEditingChanged = onEditingChanged
     }
@@ -42,10 +45,10 @@ struct AdjustmentControl: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { titleLabel; Spacer(minLength: 0); valueButton; resetButton }
+                HStack(spacing: 12) { titleLabel; Spacer(minLength: 0); valueButton; if showsReset { resetButton } }
                 VStack(alignment: .leading, spacing: 4) {
                     titleLabel
-                    HStack(spacing: 12) { valueButton; Spacer(minLength: 0); resetButton }
+                    HStack(spacing: 12) { valueButton; Spacer(minLength: 0); if showsReset { resetButton } }
                 }
             }
             AdjustmentRuler(value: $value, scale: scale, defaultValue: validDefault,

@@ -28,7 +28,7 @@ struct PhotoEffectsControls: View {
                         .accessibilityIdentifier("effects.advanced.vignette")
                 }
                 Spacer(minLength: 0)
-                Button {
+                if !isVignette || advanced { Button {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                     model.settings.resetEffect(tool)
                 } label: {
@@ -36,8 +36,9 @@ struct PhotoEffectsControls: View {
                 }.buttonStyle(.borderless)
                     .help(L10n.format("重置%@", tool.spec.title))
                     .accessibilityLabel(L10n.format("重置%@", tool.spec.title))
-                    .accessibilityIdentifier("effects.reset.\(tool.rawValue)")
+                    .accessibilityIdentifier("effects.resetGroup.\(tool.rawValue)")
                     .disabled(model.settings.isEffectDefault(tool))
+                }
             }.frame(minHeight: 28)
             ForEach(parameters) { parameter in
                 ParameterRow(title: parameter == .grainAmount ? L10n.text("颗粒强度") : parameter.title,
@@ -45,7 +46,8 @@ struct PhotoEffectsControls: View {
                     get: { model.settings.effectSettings[keyPath: parameter.keyPath] },
                     set: { model.settings.setEffect(parameter, to: $0) }
                 ), range: parameter.range, defaultValue: parameter.defaultValue,
-                identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)
+                identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting,
+                showsReset: !isVignette || advanced)
                     .disabled(isDisabled(parameter))
             }
             if let reason = disabledReason {

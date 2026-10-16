@@ -16,6 +16,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     case vignette
     case grain
 
+    static let toolCases: [AdjustmentKind] = allCases.filter { $0 != .tint }
+
     var id: String { rawValue }
 
     var title: String {
@@ -36,7 +38,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return L10n.text("饱和度")
         case .hsl: return "HSL"
         case .temperature:
-            return L10n.text("色温")
+            return L10n.text("白平衡")
         case .tint:
             return L10n.text("色调")
         case .noiseReduction:
@@ -231,6 +233,15 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     }
 
     func progress(in settings: RawSettings) -> Double {
+        if self == .temperature {
+            let temperatureProgress = scalarProgress(value: settings.temperature,
+                                                     baseline: RawSettings.default.temperature,
+                                                     range: RawSettings.temperatureRange)
+            let tintProgress = scalarProgress(value: settings.tint,
+                                              baseline: RawSettings.default.tint,
+                                              range: RawSettings.tintRange)
+            return abs(temperatureProgress) >= abs(tintProgress) ? temperatureProgress : tintProgress
+        }
         if self == .vignette || self == .grain {
             let deltas = PhotoEffectParameter.allCases
                 .filter { $0.isVignette == (self == .vignette) }
@@ -248,6 +259,22 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         let span = delta >= 0 ? range.upperBound - baseline : baseline - range.lowerBound
         guard span > 0 else { return 0 }
         return min(max(delta / span, -1), 1)
+    }
+
+    private func scalarProgress(value: Double, baseline: Double, range: ClosedRange<Double>) -> Double {
+        let delta = value - baseline
+        let span = delta >= 0 ? range.upperBound - baseline : baseline - range.lowerBound
+        guard span > 0 else { return 0 }
+        return min(max(delta / span, -1), 1)
+    }
+
+    static func resetWhiteBalance(in settings: inout RawSettings,
+                                  cameraTemperature: Double?, cameraTint: Double?) {
+        settings.temperature = cameraTemperature ?? RawSettings.default.temperature
+        settings.tint = settings.masterRecipeID == nil
+            ? cameraTint ?? RawSettings.default.tint
+            : RawSettings.default.tint
+        settings.whiteBalanceMode = .camera
     }
 
     func reset(in settings: inout RawSettings) {

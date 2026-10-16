@@ -24,10 +24,10 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
-internal val editorToolOrder = listOf(0, 15) + (1..14).toList() + listOf(17, 16)
+internal val editorToolOrder = listOf(0, 15) + (1..8).toList() + (10..14).toList() + listOf(17, 16)
 
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
-    R.string.shadows, R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.temperature,
+    R.string.shadows, R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
     R.string.master_recipes, R.string.info_lens, R.string.geometry)
 
@@ -36,6 +36,12 @@ internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.Ph
     Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
     Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
     Icons.Outlined.Tune, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate)
+
+internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
+    val temperature = shotTemperature ?: edits.temperature
+    val tint = if (edits.recipeID != null) 0f else shotTint ?: edits.tint
+    return abs(edits.temperature - temperature) > .0001f || abs(edits.tint - tint) > .0001f
+}
 
 @Composable
 internal fun EditorToolStrip(state: EditorState, selected: Int, select: (Int) -> Unit) {
@@ -62,21 +68,24 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
         5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)
         6 -> Triple(edits.toneCurve * 100f, 0f, -100f..100f)
         7 -> Triple(edits.saturation * 100f, 0f, -100f..100f)
-        8 -> Triple(edits.temperature, state.preview?.temperature ?: edits.temperature, 2000f..50000f)
+        // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
         9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)
         10 -> Triple(edits.sharpening * 100f, 0f, 0f..200f)
         else -> null
     }
-    val changed = scalar?.let { abs(it.first - it.second) > .0001f } ?: when (index) {
-        0 -> edits.film != "neutral"
-        15 -> edits.recipeID != null
-        11 -> edits.denoise != DenoiseSettings()
-        12 -> !edits.effects.isEffectDefault(true)
-        13 -> !edits.effects.isEffectDefault(false)
-        14 -> !edits.hsl.isIdentity
-        16 -> edits.lens != LensSettings()
-        17 -> !edits.geometry.isIdentity
-        else -> false
+    val changed = when (index) {
+        8 -> whiteBalanceChanged(edits, state.preview?.temperature, state.preview?.tint)
+        else -> scalar?.let { abs(it.first - it.second) > .0001f } ?: when (index) {
+            0 -> edits.film != "neutral"
+            15 -> edits.recipeID != null
+            11 -> edits.denoise != DenoiseSettings()
+            12 -> !edits.effects.isEffectDefault(true)
+            13 -> !edits.effects.isEffectDefault(false)
+            14 -> !edits.hsl.isIdentity
+            16 -> edits.lens != LensSettings()
+            17 -> !edits.geometry.isIdentity
+            else -> false
+        }
     }
     val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -84,10 +93,13 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
     val number = scalar?.let { formatAdjustment(it.first, if (index == 2) .05f else 1f) }
     val title = stringResource(editorToolTitles[index])
     val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
+    val valueDescription = if (index == 8) listOf(
+        "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
+    ).joinToString(" · ") else number
     Column(Modifier.width(80.dp).heightIn(min = 88.dp).selectable(selected, enabled = state.controlsEnabled,
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
-        stateDescription = listOfNotNull(number, status).joinToString(" · ")
+        stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
     }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {

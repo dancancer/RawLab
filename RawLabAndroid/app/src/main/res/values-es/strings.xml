@@ -246,6 +246,8 @@
     <string name="grain_roughness">Rugosidad</string>
     <string name="reset_vignette">Restablecer viñeta</string>
     <string name="reset_grain">Restablecer grano</string>
+    <string name="expand_vignette">Mostrar parámetros de viñeta</string>
+    <string name="collapse_vignette">Ocultar parámetros de viñeta</string>
     <string name="exposure_basis">Referencia de exposición</string>
     <string name="hsl_unadjusted">Sin ajustar</string>
     <string name="hsl_adjusted">Ajustado</string>

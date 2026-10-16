@@ -40,6 +40,31 @@ struct EditorPresentationTests {
         }
         check(AdjustmentKind.exposure.step == 0.05 && AdjustmentKind.temperature.step == 10 &&
               AdjustmentKind.shadows.step == 1 && AdjustmentKind.saturation.step == 1, "iOS steps match Mac")
+        check(AdjustmentKind.allCases.contains(.temperature) && AdjustmentKind.allCases.contains(.tint) &&
+              AdjustmentKind.temperature.title == L10n.text("白平衡"),
+              "White balance keeps both lower-level parameters in the complete adjustment list")
+        check(AdjustmentKind.toolCases.contains(.temperature) && !AdjustmentKind.toolCases.contains(.tint),
+              "The editor tool list presents white balance once through temperature")
+        var tintOnlyWhiteBalance = RawSettings.default
+        tintOnlyWhiteBalance.tint = 24
+        check(AdjustmentKind.temperature.progress(in: tintOnlyWhiteBalance) > 0,
+              "White balance progress reflects a tint-only edit")
+        let restoredTint = try! JSONDecoder().decode(RawSettings.self,
+                                                       from: JSONEncoder().encode(tintOnlyWhiteBalance))
+        check(restoredTint.tint == 24 && AdjustmentKind.tint.value(from: restoredTint) == 24,
+              "Tint remains a persisted lower-level white balance parameter")
+        var recipeWhiteBalance = RawSettings.default
+        let recipeID = MasterRecipe.allRecipes[0].id
+        recipeWhiteBalance.masterRecipeID = recipeID
+        recipeWhiteBalance.temperature = 9000
+        recipeWhiteBalance.tint = 31
+        recipeWhiteBalance.whiteBalanceMode = .custom
+        recipeWhiteBalance.exposure = 0.35
+        AdjustmentKind.resetWhiteBalance(in: &recipeWhiteBalance, cameraTemperature: 5200, cameraTint: 8)
+        check(recipeWhiteBalance.masterRecipeID == recipeID && recipeWhiteBalance.temperature == 5200 &&
+              recipeWhiteBalance.tint == 0 && recipeWhiteBalance.whiteBalanceMode == .camera &&
+              recipeWhiteBalance.exposure == 0.35,
+              "Whole white balance reset keeps the selected recipe and unrelated edits")
         check(!EditorLayoutPolicy.usesSidePanel(width: 834, height: 1100, accessibility: false), "Portrait iPad keeps a wide photo above the adjustment region")
         check(EditorLayoutPolicy.usesSidePanel(width: 1100, height: 834, accessibility: false), "Landscape iPad separates photo and adjustment regions")
         check(!EditorLayoutPolicy.usesSidePanel(width: 500, height: 900, accessibility: false), "Narrow iPad windows use compact layout")

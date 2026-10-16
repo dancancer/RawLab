@@ -104,6 +104,8 @@ internal object AppStrings {
         R.string.grain_roughness -> "粗糙度"
         R.string.reset_vignette -> "重置暗角"
         R.string.reset_grain -> "重置颗粒"
+        R.string.expand_vignette -> "展开暗角参数"
+        R.string.collapse_vignette -> "收起暗角参数"
         R.string.exposure_basis -> "曝光基准"
         R.string.hsl_unadjusted -> "未调整"
         R.string.hsl_adjusted -> "已调整"

@@ -80,6 +80,16 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("test_photo_copy.py", contracts, "Photo-copy tests require macOS plutil")
         self.assertIn("test_photo_copy.py", mac)
 
+    def test_tool_group_regressions_run_on_their_supported_hosts(self):
+        commands = {
+            name: "\n".join(step.get("run", "") for step in job["steps"])
+            for name, job in self.workflow["jobs"].items()
+        }
+        self.assertIn("test_tool_group_ui.py", commands["contracts"])
+        self.assertIn("RawLabMac/tests/presentation.sh", commands["macos"])
+        self.assertIn("RawLabMac/tests/control-groups.sh", commands["macos"])
+        self.assertIn("comparison-default,tool-groups", commands["windows"])
+
 
 if __name__ == "__main__":
     unittest.main()
