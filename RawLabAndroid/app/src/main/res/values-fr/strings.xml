@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="usage_analytics">Analyse d\'utilisation</string>
+    <string name="usage_privacy">Lorsque cette option est activée, Aliyun traite le nombre d\'utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d\'appareil, des informations sur l\'appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.</string>
+    <string name="usage_privacy_policy">Politique de confidentialité d\'Aliyun</string>
+    <string name="usage_unavailable">L\'analyse d\'utilisation n\'est pas configurée dans cette version. Aucune donnée n\'est collectée ni transmise.</string>
+    <string name="usage_disabled">L\'analyse d\'utilisation est désactivée.</string>
+    <string name="usage_enabled">L\'analyse d\'utilisation est autorisée. Vous pouvez la désactiver à tout moment.</string>
+    <string name="usage_storage_failed">Le réglage d\'analyse n\'a pas pu être enregistré. La collecte est arrêtée pour ce processus.</string>
+    <string name="usage_start_failed">Le service d\'analyse n\'a pas pu démarrer. La retouche photo n\'est pas affectée.</string>
+    <string name="usage_record_failed">L\'événement d\'analyse n\'a pas pu être envoyé. La retouche photo n\'est pas affectée.</string>
+    <string name="usage_stop_failed">Le service d\'analyse n\'a pas pu s\'arrêter. Redémarrez l\'application avant de réessayer.</string>
+    <string name="usage_cleanup_failed">Le nettoyage des données d\'analyse locales n\'est pas terminé. Redémarrez l\'application avant de réessayer.</string>
+    <string name="usage_restart_required">L\'analyse est arrêtée. Redémarrez l\'application avant de la réactiver.</string>
     <string name="app_name">RawLab</string>
     <string name="about_rawlab">À propos de RawLab</string>
     <string name="app_version">Version %1$s</string>
@@ -311,13 +323,19 @@
     <string name="geometry_rotate_right">Tourner à droite</string>
     <string name="geometry_flip_horizontal">Retourner horizontalement</string>
     <string name="geometry_flip_vertical">Retourner verticalement</string>
+    <string name="geometry_perspective_horizontal">Perspective horizontale</string>
+    <string name="geometry_perspective_vertical">Perspective verticale</string>
+    <string name="geometry_perspective_hint">La perspective suit la rotation et les retournements, avant le redressement et le recadrage. Le cadre est réduit pour éviter les bords noirs.</string>
     <string name="geometry_straighten">Redresser</string>
     <string name="geometry_crop_x">Gauche</string>
     <string name="geometry_crop_y">Haut</string>
     <string name="geometry_crop_width">Largeur</string>
     <string name="geometry_crop_height">Hauteur</string>
-    <string name="geometry_crop_hint">Les pourcentages de recadrage suivent la rotation, les retournements et le redressement.</string>
+    <string name="geometry_crop_hint">Les pourcentages de recadrage suivent la rotation, les retournements, la perspective et le redressement.</string>
     <string name="geometry_crop_error" formatted="false">Saisissez un recadrage de dimensions positives dans le cadre de 0–100%.</string>
     <string name="geometry_apply_crop">Appliquer le recadrage</string>
     <string name="geometry_summary">Recadrage %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Rotation %5$d° · Redressement %6$+.1f°</string>
+    <string name="geometry_swap_ratio">Inverser le format du recadrage</string>
+    <string name="geometry_ratio_free">Libre</string>
+    <string name="geometry_ratio_original">Original</string>
 </resources>

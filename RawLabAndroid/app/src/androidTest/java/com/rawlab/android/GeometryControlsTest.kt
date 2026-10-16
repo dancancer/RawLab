@@ -18,6 +18,46 @@ import org.junit.Test
 class GeometryControlsTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun perspectiveAndCompleteRatiosUseTheGenericDraft() {
+        var draft by mutableStateOf(AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, EditSettings(), 2f / 3f, 2f / 3f))
+        compose.setContent {
+            MaterialTheme {
+                Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
+                    GeometryControls(draft.value.geometry, true, draft.geometryRatio, draft.geometryPortrait,
+                        onRatioChange = { ratio, portrait -> draft = draft.selectGeometryRatio(ratio, portrait) }) { next, _ ->
+                        draft = draft.update(draft.value.copy(geometry = next))
+                    }
+                }
+            }
+        }
+        for ((label, input) in listOf(R.string.geometry_perspective_horizontal to "25", R.string.geometry_perspective_vertical to "-40")) {
+            compose.onNodeWithTag("adjustment-value-$label").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-input").performTextReplacement(input)
+            compose.onNodeWithTag("adjustment-input-apply").performClick()
+        }
+        compose.runOnIdle {
+            assertEquals(.25f, draft.value.geometry.perspectiveHorizontal, 0f)
+            assertEquals(-.4f, draft.value.geometry.perspectiveVertical, 0f)
+        }
+        compose.onNodeWithTag("geometry.ratios").performScrollTo()
+        for (ratio in GeometryRatio.entries) {
+            compose.onNodeWithTag("geometry.ratios").performScrollToNode(hasTestTag("geometry.ratio-${ratio.name}"))
+            compose.onNodeWithTag("geometry.ratio-${ratio.name}").performClick().assertIsSelected()
+            compose.runOnIdle {
+                assertEquals(ratio, draft.geometryRatio)
+                draft.geometryAspect?.let {
+                    assertEquals(it, draft.value.geometry.cropWidth * (2f / 3f) / draft.value.geometry.cropHeight, .00001f)
+                }
+            }
+        }
+        compose.onNodeWithTag("geometry.ratios").performScrollToNode(hasTestTag("geometry.swap-ratio"))
+        compose.onNodeWithTag("geometry.swap-ratio").performClick()
+        compose.runOnIdle {
+            assertFalse(draft.geometryPortrait)
+            assertEquals(16f / 9f, draft.geometryAspect!!, .00001f)
+        }
+    }
+
     @Test fun compactControlsValidateCropRotateFlipAndReset() {
         var value by mutableStateOf(GeometrySettings())
         val context = InstrumentationRegistry.getInstrumentation().targetContext

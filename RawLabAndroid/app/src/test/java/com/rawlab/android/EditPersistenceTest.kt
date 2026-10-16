@@ -31,16 +31,21 @@ class EditPersistenceTest {
                     grainAmount = 65f, grainSize = 70f),
                 recipeID = "recipe",
                 lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000"),
-                geometry = GeometrySettings(.2f, .1f, .8f, .7f, 3, true, true, -10f))
+                geometry = GeometrySettings(.2f, .1f, .8f, .7f, 3, true, true, -10f, .45f, -.3f))
             EditStore(directory).save(identity, changed)
             val reopened = EditStore(directory)
             assertEquals(changed, reopened.load(identity))
             val file = File(directory, "edits.properties")
             val properties = java.util.Properties().also { file.inputStream().use(it::load) }
             val key = properties.stringPropertyNames().first { it.endsWith(".values") }
+            val geometryKey = key.removeSuffix(".values") + ".geometry"
+            properties.setProperty(geometryKey, "1,0.2,0.1,0.8,0.7,3,1,1,-10.0")
+            file.outputStream().use { properties.store(it, null) }
+            assertEquals(changed.copy(geometry = changed.geometry.copy(perspectiveHorizontal = 0f,
+                perspectiveVertical = 0f)), EditStore(directory).load(identity))
             properties.setProperty(key, properties.getProperty(key).split(',').take(24).joinToString(","))
             properties.remove(key.removeSuffix(".values") + ".lens")
-            properties.remove(key.removeSuffix(".values") + ".geometry")
+            properties.remove(geometryKey)
             file.outputStream().use { properties.store(it, null) }
             val legacy = EditStore(directory).load(identity)!!
             assertEquals(0, legacy.exposureMode)

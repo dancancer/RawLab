@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="usage_analytics">Nutzungsanalyse</string>
+    <string name="usage_privacy">Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen. Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.</string>
+    <string name="usage_privacy_policy">Datenschutzerklärung von Aliyun</string>
+    <string name="usage_unavailable">Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.</string>
+    <string name="usage_disabled">Die Nutzungsanalyse ist deaktiviert.</string>
+    <string name="usage_enabled">Die Nutzungsanalyse ist erlaubt. Sie können sie jederzeit deaktivieren.</string>
+    <string name="usage_storage_failed">Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt.</string>
+    <string name="usage_start_failed">Der Analysedienst konnte nicht gestartet werden. Die Fotobearbeitung ist nicht betroffen.</string>
+    <string name="usage_record_failed">Das Analyseereignis konnte nicht gesendet werden. Die Fotobearbeitung ist nicht betroffen.</string>
+    <string name="usage_stop_failed">Der Analysedienst konnte nicht gestoppt werden. Starten Sie die App vor einem erneuten Versuch neu.</string>
+    <string name="usage_cleanup_failed">Die Bereinigung lokaler Analysedaten wurde nicht abgeschlossen. Starten Sie die App vor einem erneuten Versuch neu.</string>
+    <string name="usage_restart_required">Die Analyse wurde gestoppt. Starten Sie die App neu, bevor Sie sie wieder aktivieren.</string>
     <string name="app_name">RawLab</string>
     <string name="about_rawlab">Über RawLab</string>
     <string name="app_version">Version %1$s</string>
@@ -311,13 +323,19 @@
     <string name="geometry_rotate_right">Nach rechts drehen</string>
     <string name="geometry_flip_horizontal">Horizontal spiegeln</string>
     <string name="geometry_flip_vertical">Vertikal spiegeln</string>
+    <string name="geometry_perspective_horizontal">Horizontale Perspektive</string>
+    <string name="geometry_perspective_vertical">Vertikale Perspektive</string>
+    <string name="geometry_perspective_hint">Die Perspektivkorrektur folgt auf Drehung und Spiegelung, vor Begradigung und Zuschnitt. Das Bild wird beschnitten, um schwarze Ränder zu vermeiden.</string>
     <string name="geometry_straighten">Begradigen</string>
     <string name="geometry_crop_x">Links</string>
     <string name="geometry_crop_y">Oben</string>
     <string name="geometry_crop_width">Breite</string>
     <string name="geometry_crop_height">Höhe</string>
-    <string name="geometry_crop_hint">Die Zuschnittwerte beziehen sich auf das gedrehte, gespiegelte und begradigte Bild.</string>
+    <string name="geometry_crop_hint">Die Zuschnittwerte beziehen sich auf das gedrehte, gespiegelte, perspektivisch korrigierte und begradigte Bild.</string>
     <string name="geometry_crop_error" formatted="false">Einen Zuschnitt mit positiver Breite und Höhe innerhalb von 0–100% eingeben.</string>
     <string name="geometry_apply_crop">Zuschnitt anwenden</string>
     <string name="geometry_summary">Zuschnitt %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Drehung %5$d° · Begradigung %6$+.1f°</string>
+    <string name="geometry_swap_ratio">Zuschnittausrichtung wechseln</string>
+    <string name="geometry_ratio_free">Frei</string>
+    <string name="geometry_ratio_original">Original</string>
 </resources>

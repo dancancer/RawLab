@@ -102,7 +102,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     private fun configureGeometry(settings: GeometrySettings) = nativeSetGeometry(handle,
         settings.cropX, settings.cropY, settings.cropWidth, settings.cropHeight, settings.quarterTurns,
-        settings.flipHorizontal, settings.flipVertical, settings.straightenDegrees)
+        settings.flipHorizontal, settings.flipVertical, settings.straightenDegrees,
+        settings.perspectiveHorizontal, settings.perspectiveVertical)
 
     private fun readLens(input: File): LensInfo {
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
@@ -122,7 +123,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
     private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
-        cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float)
+        cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,
+        perspectiveHorizontal: Float, perspectiveVertical: Float)
     private external fun nativeGeometrySize(handle: Long): IntArray
     private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>

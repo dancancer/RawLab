@@ -123,6 +123,8 @@ class EditorV08DraftTest {
         fun ready() = compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         fun capture(name: String) {
             val dir = File(context.getExternalFilesDir(null), "v08-layout").apply { mkdirs() }
+            // 系统权限弹窗遮挡时不能把后台 Compose 状态当作可见界面验收。
+            compose.waitUntil(30_000) { compose.activity.hasWindowFocus() }
             compose.waitForIdle()
             val bitmap = instrumentation.uiAutomation.takeScreenshot()
             File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

@@ -23,7 +23,8 @@ import kotlin.math.min
 import kotlin.math.abs
 
 @Composable
-internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, enabled: Boolean, onChange: (GeometrySettings) -> Unit) {
+internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, enabled: Boolean,
+    physicalAspect: Float? = null, onChange: (GeometrySettings) -> Unit) {
     val current by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     val description = stringResource(R.string.geometry_drag_hint)
@@ -46,7 +47,7 @@ internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, enab
                 CustomAccessibilityAction(labels[1]) { change(current.moveCrop(.02f, 0f)); true },
                 CustomAccessibilityAction(labels[2]) { change(current.moveCrop(0f, -.02f)); true },
                 CustomAccessibilityAction(labels[3]) { change(current.moveCrop(0f, .02f)); true })
-        }.pointerInput(image, enabled) {
+        }.pointerInput(image, enabled, physicalAspect) {
             if (!enabled || width <= 0f || height <= 0f) return@pointerInput
             var baseline: GeometrySettings? = null
             var corner = -1
@@ -67,17 +68,8 @@ internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, enab
                 val dx = delta.x / width
                 val dy = delta.y / height
                 if (corner < 0) change(start.moveCrop(dx, dy)) else {
-                    val left = corner == 0 || corner == 2
-                    val top = corner < 2
-                    val anchorX = start.cropX + if (left) start.cropWidth else 0f
-                    val anchorY = start.cropY + if (top) start.cropHeight else 0f
-                    val maxWidth = if (left) anchorX else 1f - anchorX
-                    val maxHeight = if (top) anchorY else 1f - anchorY
-                    val nextWidth = (start.cropWidth + if (left) -dx else dx).coerceIn(minOf(56.dp.toPx() / width, maxWidth), maxWidth)
-                    val nextHeight = (start.cropHeight + if (top) -dy else dy).coerceIn(minOf(56.dp.toPx() / height, maxHeight), maxHeight)
-                    change(start.copy(cropX = if (left) (anchorX - nextWidth).coerceAtLeast(0f) else anchorX,
-                        cropY = if (top) (anchorY - nextHeight).coerceAtLeast(0f) else anchorY,
-                        cropWidth = nextWidth, cropHeight = nextHeight))
+                    change(GeometryCropMath.resize(start, GeometryCropCorner.entries[corner], dx, dy,
+                        physicalAspect, pair.comparisonWidth / pair.comparisonHeight))
                 }
             }, onDragEnd = { baseline = null }, onDragCancel = { baseline = null })
         }) {
