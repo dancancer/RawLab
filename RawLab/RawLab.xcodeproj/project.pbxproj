@@ -43,7 +43,6 @@
 		AB1400000000000000000008 /* FLog2_to_PROVIA_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000008 /* FLog2_to_PROVIA_65grid_V.1.00.cube */; };
 		AB1400000000000000000009 /* FLog2_to_REALA-ACE_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000009 /* FLog2_to_REALA-ACE_65grid_V.1.00.cube */; };
 		AB140000000000000000000A /* FLog2_to_Velvia_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB150000000000000000000A /* FLog2_to_Velvia_65grid_V.1.00.cube */; };
-		AB140000000000000000000B /* FLog2_to_WDR_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB150000000000000000000B /* FLog2_to_WDR_65grid_V.1.00.cube */; };
 		AB140000000000000000000C /* acros.png in Resources */ = {isa = PBXBuildFile; fileRef = AB150000000000000000000C /* acros.png */; };
 		AB140000000000000000000D /* astia.png in Resources */ = {isa = PBXBuildFile; fileRef = AB150000000000000000000D /* astia.png */; };
 		AB140000000000000000000E /* classic-chrome.png in Resources */ = {isa = PBXBuildFile; fileRef = AB150000000000000000000E /* classic-chrome.png */; };
@@ -143,7 +142,6 @@
 		AB1500000000000000000008 /* FLog2_to_PROVIA_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_PROVIA_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000009 /* FLog2_to_REALA-ACE_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_REALA-ACE_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_REALA-ACE_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB150000000000000000000A /* FLog2_to_Velvia_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_Velvia_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_Velvia_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
-		AB150000000000000000000B /* FLog2_to_WDR_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_WDR_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_WDR_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB150000000000000000000C /* acros.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "acros.png"; path = "../RawLabMac/Resources/FilmIcons/acros.png"; sourceTree = SOURCE_ROOT; };
 		AB150000000000000000000D /* astia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "astia.png"; path = "../RawLabMac/Resources/FilmIcons/astia.png"; sourceTree = SOURCE_ROOT; };
 		AB150000000000000000000E /* classic-chrome.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "classic-chrome.png"; path = "../RawLabMac/Resources/FilmIcons/classic-chrome.png"; sourceTree = SOURCE_ROOT; };
@@ -394,7 +392,6 @@
 				AB1500000000000000000008 /* FLog2_to_PROVIA_65grid_V.1.00.cube */,
 				AB1500000000000000000009 /* FLog2_to_REALA-ACE_65grid_V.1.00.cube */,
 				AB150000000000000000000A /* FLog2_to_Velvia_65grid_V.1.00.cube */,
-				AB150000000000000000000B /* FLog2_to_WDR_65grid_V.1.00.cube */,
 				AB150000000000000000000C /* acros.png */,
 				AB150000000000000000000D /* astia.png */,
 				AB150000000000000000000E /* classic-chrome.png */,
@@ -538,7 +535,6 @@
 				AB1400000000000000000008 /* FLog2_to_PROVIA_65grid_V.1.00.cube in Resources */,
 				AB1400000000000000000009 /* FLog2_to_REALA-ACE_65grid_V.1.00.cube in Resources */,
 				AB140000000000000000000A /* FLog2_to_Velvia_65grid_V.1.00.cube in Resources */,
-				AB140000000000000000000B /* FLog2_to_WDR_65grid_V.1.00.cube in Resources */,
 				AB140000000000000000000C /* acros.png in Resources */,
 				AB140000000000000000000D /* astia.png in Resources */,
 				AB140000000000000000000E /* classic-chrome.png in Resources */,

@@ -166,8 +166,8 @@ native UIFont measurement found that 30 points clipped a 32-point caption.
 
 The Mac, iOS, Android and Windows film pickers remain one flat horizontal list,
 ordered Fujifilm, Kodak, then Other, with vertical dividers between nonempty
-groups and no tabs or filtering. The legacy Fuji looks stay together (10 on
-Mac/Android/Windows; iOS also retains its existing WDR look). Kodak contains
+groups and no tabs or filtering. The 10 legacy Fuji looks stay together on all
+four platforms; technical WDR is not bundled as a film look. Kodak contains
 23 G'MIC looks plus Ektar v2, displayed as `EKTAR 100 RawLab edition`; the 5
 camera looks and every imported look follow in Other. Neutral and import remain
 common actions in their existing positions. Grouping does not change selected
@@ -223,16 +223,21 @@ Verified locally on this branch:
   and measured every default caption within the reserved two-line height.
   Those resource checks were not a full app or screen-level test.
 - Shared Apple grouping tests cover the catalog's 24 Kodak / 5 Other entries,
-  legacy Fuji (including iOS WDR), empty groups and stable group order. The
+  legacy Fuji names, WDR name resolution, empty groups and stable group order. The
   current iOS app's complete Swift sources typecheck against the simulator SDK.
 - The iOS XCFramework was subsequently built from the current source for
   device arm64 and simulator arm64/x86_64; architecture, notices and runtime
   dependency validation passed. The complete simulator Debug app built and
   ran on a dedicated iPhone 17 Pro / iOS 27 simulator with an isolated bundle
   ID. Its shared resource folder matches the source byte-for-byte. Native UI
-  inspection confirmed 11 Fuji, 24 Kodak and 5 Other looks, both dividers,
+  inspection confirmed 10 Fuji, 24 Kodak and 5 Other looks, both dividers,
   the Ektar display name, artwork and selection/scroll-to-selected behavior.
   The packaged framework also passed the simulator JPEG XL DNG/C ABI suite.
+- iOS WDR was removed only from the app's resource references, leaving its
+  source CUBE and core/custom-import compatibility intact. The bundled-LUT
+  regression first rejected the old 40-entry app, then loaded all 39 entries
+  in the fresh Debug build through the actual simulator C ABI. Native UI
+  inspection confirmed no WDR entry and preserved the selected Kodak look.
 - Windows Debug WPF app and WPF test projects cross-compile with .NET 8 (zero
   warnings/errors). The standalone `tests/looks/LookGrouping.Tests.csproj`
   passes all 9 grouping checks; the Windows runner includes the `looks` suite.

@@ -829,9 +829,10 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         app.buttons["tool.film"].tap()
         for name in ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
-                     "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia", "WDR"] {
+                     "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"] {
             XCTAssertTrue(app.buttons[name].exists, "Missing built-in LUT: \(name)")
         }
+        XCTAssertFalse(app.buttons["WDR"].exists)
         XCTAssertFalse(app.buttons["FLog2 709"].exists)
         capture("complete-film-list")
     }

@@ -1,10 +1,17 @@
 #include <stdio.h>
+#include <string.h>
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 int main(int argc, char **argv) {
-    if (argc != 41) {
-        fprintf(stderr, "Expected 40 display LUTs, found %d\n", argc - 1);
+    if (argc != 40) {
+        fprintf(stderr, "Expected 39 display LUTs, found %d\n", argc - 1);
         return 1;
+    }
+    for (int i = 1; i < argc; i++) {
+        if (strstr(argv[i], "to_WDR")) {
+            fprintf(stderr, "WDR must not be bundled as a film LUT: %s\n", argv[i]);
+            return 1;
+        }
     }
     unsigned char pixels[12] = {120, 80, 40, 10, 220, 30, 180, 20, 190, 230, 230, 230};
     sony2fuji_session *session = NULL;
