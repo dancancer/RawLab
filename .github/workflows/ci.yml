@@ -45,7 +45,7 @@ jobs:
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
           python scripts/ci/test_workflow.py
-          python RawLabMac/tests/test_photo_copy.py
+          python lutools/tests/test_cli_test_encoding.py
           python RawLabMac/tests/test_single_preview.py
           git diff --check
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -90,6 +90,11 @@ jobs:
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
           python -m pip install -r scripts/ci/requirements.txt
+          python RawLabMac/tests/test_photo_copy.py
+          python RawLabMac/tests/test_build_environment.py
+          python lutools/tests/test_lens_dependencies.py
+          bash RawLabMac/tests/horizontal-picker.sh
+          bash RawLabMac/tests/horizontal-picker-native.sh
           brew install pkg-config autoconf automake libtool
           bash RawLabMac/build.sh
           ctest --test-dir lutools/build-macos --output-on-failure --no-tests=error \

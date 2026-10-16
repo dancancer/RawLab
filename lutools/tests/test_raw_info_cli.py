@@ -17,7 +17,7 @@ class RawInfoCLI(unittest.TestCase):
 
     def run_cli(self, *arguments, cwd=None):
         return subprocess.run([str(CLI), *map(str, arguments)], cwd=cwd,
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8", timeout=60)
 
     def envelope(self, process, error=None, command="info", status=None):
         try:

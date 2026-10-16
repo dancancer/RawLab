@@ -9,8 +9,8 @@ credentials. A workflow run is not release authorization.
 
 | Check | Hosted runner | Coverage |
 | --- | --- | --- |
-| Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, photo-copy and single-preview source contracts, whitespace |
-| macOS build and parity (arm64 / x86_64) | macOS 26 arm64 and Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, localization and SDK-free analytics lifecycle |
+| Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, single-preview source contracts, whitespace |
+| macOS build and parity (arm64 / x86_64) | macOS 26 arm64 and Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
 | Windows build and parity | Windows Server 2022 x64 / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
 | Android build and JVM tests | Ubuntu 24.04 / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
 | iOS framework and unsigned app | macOS 26 arm64 / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
@@ -45,6 +45,10 @@ protection settings or grant permission to bypass them.
   runtime support on macOS 14; native acceptance on the minimum OS is separate.
   [Runner labels](https://github.com/actions/runner-images/blob/main/README.md)
   and toolchains can change; logs identify the actual environment.
+- Mac dependencies include source-built dynamic GLib/Lensfun rather than a
+  higher-minimum Homebrew bottle. App/bundled-dylib architecture and minimum OS
+  are checked by the existing bundle gate. The 14.0-target picker model/native
+  bridge regressions run on both hosted architectures, not on an OS 14 host.
 
 ## Safety and Results
 

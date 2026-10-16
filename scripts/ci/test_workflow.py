@@ -75,6 +75,10 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertTrue('"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"' in self.text,
                         "Use the hosted SDK's explicit sdkmanager path")
         self.assertNotRegex(self.text, r"export \w+=\"\$\(")
+        contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
+        mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
+        self.assertNotIn("test_photo_copy.py", contracts, "Photo-copy tests require macOS plutil")
+        self.assertIn("test_photo_copy.py", mac)
 
 
 if __name__ == "__main__":

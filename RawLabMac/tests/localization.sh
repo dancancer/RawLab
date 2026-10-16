@@ -10,6 +10,7 @@ printf '%s\n' '"语言" = "Language";' '"仅英文" = "English fallback";' '"导
 printf '%s\n' '"语言" = "Sprache";' > "$OUT/Fixture.bundle/Contents/Resources/de.lproj/Localizable.strings"
 printf '%s\n' '"导出 %@ 张" = "%@ 枚を書き出す";' > "$OUT/Fixture.bundle/Contents/Resources/ja.lproj/Localizable.strings"
 test -f "$ROOT/Shared/Localization.swift" || { echo 'FAIL: shared localization helper is missing'; exit 1; }
-swiftc -swift-version 5 -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+swiftc -swift-version 5 -sdk "${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}" \
+    -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     "$ROOT/Shared/Localization.swift" "$ROOT/RawLabMac/tests/LocalizationTests.swift" -o "$OUT/test"
 "$OUT/test" "$OUT/Fixture.bundle"

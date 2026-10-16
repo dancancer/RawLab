@@ -1,31 +1,69 @@
 #!/bin/bash
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ARCH="${RAWLAB_ARCH:-$(uname -m)}"
-BASE="$ROOT/build/lensfun"
-SOURCE="$BASE/sources/lensfun-0.3.4"
-ARCHIVE="$BASE/sources/lensfun-0.3.4.tar.gz"
-PREFIX="$BASE/$ARCH/install"
-mkdir -p "$BASE/sources"
-if ! pkg-config --exists glib-2.0; then
-    echo "Lensfun requires GLib development files (brew install glib)." >&2
+source "$ROOT/RawLabMac/build-env.sh"
+
+if ! rawlab_macos_version_at_most "14.0" "$MACOSX_DEPLOYMENT_TARGET"; then
+    echo "macOS Lensfun dependencies require deployment target 14.0 or newer: $MACOSX_DEPLOYMENT_TARGET" >&2
+    exit 2
+fi
+
+SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+CC="${CC:-$(xcrun -f clang)}"
+CXX="${CXX:-$(xcrun -f clang++)}"
+AR="${AR:-$(xcrun -f ar)}"
+PYTHON="${PYTHON:-python3}"
+CMAKE="${CMAKE:-$(command -v cmake)}"
+JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
+BUILD="$RAWLAB_LENS_BASE/$ARCH"
+GLIB_BUILD="$RAWLAB_DEPS_BASE/$ARCH/glib"
+LOG="${RAWLAB_LENS_LOG:-/tmp/rawlab-lens-dependency-$MACOSX_DEPLOYMENT_TARGET-$ARCH.log}"
+exec > >(tee "$LOG") 2>&1
+
+"$PYTHON" "$ROOT/lutools/cmake/build-lens-dependencies.py" \
+    --build "$BUILD" --glib-build "$GLIB_BUILD" \
+    --prefix "$RAWLAB_LENS_PREFIX" --glib-prefix "$RAWLAB_DEPENDENCY_PREFIX" \
+    --platform macos --arch "$ARCH" --cc "$CC" --cxx "$CXX" --ar "$AR" \
+    --cmake "$CMAKE" --sysroot "$SDKROOT" --minimum "$MACOSX_DEPLOYMENT_TARGET" \
+    --source-cache "$RAWLAB_SOURCE_CACHE" --jobs "$JOBS"
+
+PKG_CONFIG_PATH="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig" \
+    PKG_CONFIG_LIBDIR="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig" \
+    pkg-config --exists glib-2.0 lensfun
+
+if [ "$(PKG_CONFIG_PATH="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig" \
+    pkg-config --variable=prefix glib-2.0)" != "$RAWLAB_DEPENDENCY_PREFIX" ]; then
+    echo "GLib pkg-config prefix is not target-built: $RAWLAB_DEPENDENCY_PREFIX" >&2
     exit 1
 fi
-GLIB_LIB="$(pkg-config --variable=libdir glib-2.0)/libglib-2.0.dylib"
-if ! lipo -verify_arch "$ARCH" "$GLIB_LIB" >/dev/null 2>&1; then
-    echo "GLib must support $ARCH. Set PKG_CONFIG_PATH to a target-architecture GLib build." >&2
+if [ "$(PKG_CONFIG_PATH="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig" \
+    pkg-config --variable=prefix lensfun)" != "$RAWLAB_LENS_PREFIX" ]; then
+    echo "Lensfun pkg-config prefix is not target-built: $RAWLAB_LENS_PREFIX" >&2
     exit 1
 fi
-if [ ! -f "$ARCHIVE" ]; then
-    curl -fL --retry 2 https://github.com/lensfun/lensfun/archive/refs/tags/v0.3.4.tar.gz -o "$ARCHIVE"
-fi
-printf '%s  %s\n' dafb39c08ef24a0e2abd00d05d7341b1bf1f0c38bfcd5a4c69cf5f0ecb6db112 "$ARCHIVE" | shasum -a 256 -c -
-if [ ! -d "$SOURCE" ]; then tar -xf "$ARCHIVE" -C "$BASE/sources"; fi
-cmake -S "$SOURCE" -B "$BASE/$ARCH/build" -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}" \
-    -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_NAME_DIR="$PREFIX/lib" \
-    -DBUILD_STATIC=OFF -DBUILD_TESTS=OFF -DBUILD_LENSTOOL=OFF -DBUILD_DOC=OFF \
-    -DBUILD_FOR_SSE=OFF -DBUILD_FOR_SSE2=OFF -DPYTHON=OFF -DINSTALL_PYTHON_MODULE=OFF -DINSTALL_HELPER_SCRIPTS=OFF
-cmake --build "$BASE/$ARCH/build" -j "${JOBS:-6}"
-cmake --install "$BASE/$ARCH/build"
+
+check_binary() {
+    local binary="$1" minimum
+    lipo -verify_arch "$ARCH" "$binary" >/dev/null
+    if otool -L "$binary" | grep -Eq '/opt/homebrew|/usr/local/Cellar'; then
+        echo "Host package-manager dependency leaked into $binary" >&2
+        exit 1
+    fi
+    minimum="$(otool -l "$binary" | awk '
+        $1 == "minos" { print $2; exit }
+        $1 == "LC_VERSION_MIN_MACOSX" { version_min = 1; next }
+        version_min && $1 == "version" { print $2; exit }
+    ')"
+    if [ -z "$minimum" ] || ! rawlab_macos_version_at_most "$minimum" "$MACOSX_DEPLOYMENT_TARGET"; then
+        echo "Deployment target check failed for $binary: ${minimum:-missing}" >&2
+        exit 1
+    fi
+}
+
+while IFS= read -r binary; do check_binary "$binary"; done < <(
+    find "$RAWLAB_DEPENDENCY_PREFIX/lib" "$RAWLAB_LENS_PREFIX/lib" \
+        -maxdepth 1 -type f -name '*.dylib' -print | sort
+)
+test -f "$RAWLAB_LENS_PREFIX/libraries.json"
+echo "Built target Lensfun/GLib dependencies for $ARCH (macOS $MACOSX_DEPLOYMENT_TARGET)"
