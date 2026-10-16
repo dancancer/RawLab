@@ -45,7 +45,7 @@ fi
 
 check_binary() {
     local binary="$1" minimum
-    lipo -verify_arch "$ARCH" "$binary" >/dev/null
+    lipo "$binary" -verify_arch "$ARCH" >/dev/null
     if otool -L "$binary" | grep -Eq '/opt/homebrew|/usr/local/Cellar'; then
         echo "Host package-manager dependency leaked into $binary" >&2
         exit 1

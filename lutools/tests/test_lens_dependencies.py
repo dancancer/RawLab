@@ -3,6 +3,7 @@ import argparse
 import importlib.util
 import io
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -95,6 +96,14 @@ class LensDependencyContracts(unittest.TestCase):
         self.assertEqual(BUILDER.cmake_fresh_args("macos"), ["--fresh"])
         self.assertEqual(BUILDER.cmake_fresh_args("android"), [])
         self.assertEqual(BUILDER.cmake_fresh_args("ios"), [])
+
+    def test_lipo_input_precedes_variadic_architecture_option(self):
+        script = (self.ROOT / "RawLabMac" / "build-lens-dependency.sh").read_text()
+        calls = [shlex.split(line) for line in script.splitlines()
+                 if line.strip().startswith("lipo ")]
+        # Xcode 26 treats every argument after -verify_arch as an architecture.
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:4], ["lipo", "$binary", "-verify_arch", "$ARCH"])
 
 
 if __name__ == "__main__":
