@@ -229,20 +229,22 @@ struct GeometryProcessingTests {
             data[pixel * 4 + 3] = 255
         }
         let source = Sony2FujiProcessor.Buffer(data: data, width: 256, height: 256,
-                                                stride: 1024, pixelFormat: SONY2FUJI_PIXEL_RGBA8)
+                                                stride: 1024, pixelFormat: SONY2FUJI_PIXEL_RGBA8,
+                                                semantic: .legacy)
         let rasterURL = output.appendingPathComponent("oriented.jpg")
         try writeOrientedRaster(to: rasterURL)
         let raster = try processor.loadRasterBuffer(url: rasterURL)
         let oriented = try processor.loadRasterBuffer(url: rasterURL, applyingOrientation: true)
-        check(oriented.orientation == .up && oriented.buffer.width == raster.buffer.height &&
-              oriented.buffer.height == raster.buffer.width,
-              "iOS geometry input bakes EXIF orientation before processing")
+        check(raster.orientation == .up && oriented.orientation == .up &&
+              oriented.buffer.width == raster.buffer.width && oriented.buffer.height == raster.buffer.height &&
+              oriented.buffer.data == raster.buffer.data,
+              "iOS geometry receives an already-oriented raster canvas exactly once")
         var geometry = RawSettings.default
         geometry.geometry.quarterTurns = 1
         geometry.geometry.flipHorizontal = true
         let rotatedRaster = try cpuProcessor.processBuffer(buffer: oriented.buffer, settings: geometry,
                                                            previewLongEdge: nil, lutURL: nil)
-        check(rotatedRaster.width == raster.buffer.width && rotatedRaster.height == raster.buffer.height,
+        check(rotatedRaster.width == raster.buffer.height && rotatedRaster.height == raster.buffer.width,
               "iOS geometry rotates the already-oriented raster canvas once")
         let uprightJPEG = try processor.makeJPEGData(from: rotatedRaster, sourceURL: rasterURL,
                                                       orientation: .up, quality: 0.92)

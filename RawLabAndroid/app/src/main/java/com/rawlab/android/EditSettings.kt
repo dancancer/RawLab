@@ -40,6 +40,15 @@ data class EditSettings(
         require(displayChromaDenoise in 0..2)
     }
     fun reset() = EditSettings(film = film)
+
+    /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
+    fun effectiveFor(input: PhotoInputKind): EditSettings = if (input == PhotoInputKind.RASTER) copy(
+        exposureMode = 2,
+        customWb = false,
+        temperature = 6500f,
+        tint = 0f,
+        lens = LensSettings(),
+    ) else this
     fun resetWhiteBalance(asShotTemperature: Float?, asShotTint: Float?): EditSettings = copy(
         customWb = false,
         temperature = asShotTemperature ?: 6500f,

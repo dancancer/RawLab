@@ -63,6 +63,7 @@
 "小波降噪" = "Wavelet-Rauschunterdrückung";
 "尚未保存，允许重新导出" = "Noch nicht gespeichert; erneuten Export erlauben";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
+"尚未选择照片" = "Keine Fotos ausgewählt";
 "展开调整栏" = "Anpassungsbereich ausklappen";
 "已保存" = "Gespeichert";
 "已保存 %@ 张到照片图库" = "%@ in Fotos gespeichert";
@@ -73,11 +74,13 @@
 "已恢复上次调整" = "Vorherige Anpassungen wiederhergestellt";
 "已收起" = "Eingeklappt";
 "已选 %@ 张 RAW" = "%@ RAW-Fotos ausgewählt";
+"已选 %@ 张照片" = "%@ Fotos ausgewählt";
 "开启" = "Ein";
 "强度" = "Intensität";
 "当前预览的亮度分布" = "Aktuelle Luminanzverteilung der Vorschau";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
 "所选 RAW：%@" = "Ausgewählte RAW-Datei: %@";
+"所选照片：%@" = "Ausgewähltes Foto: %@";
 "所选外观不可用，请重新选择外观。" = "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.";
 "打开系统设置" = "Systemeinstellungen öffnen";
 "批量导出" = "Stapel-Export";
@@ -103,6 +106,7 @@
 "无法读取已保存的调整，原有记录未被覆盖。" = "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.";
 "显示或收起调整栏" = "Anpassungsbereich ein- oder ausblenden";
 "普通图片未加入，请选择 RAW。" = "Normale Bilder wurden nicht hinzugefügt; wählen Sie RAW aus.";
+"从文件导入" = "Aus Dateien importieren";
 "曝光" = "Belichtung";
 "曝光补偿" = "Belichtungskorrektur";
 "未处理" = "Nicht verarbeitet";
@@ -118,6 +122,7 @@
 "正在保存" = "Speichern";
 "正在停止…" = "Wird angehalten…";
 "正在准备 RAW…" = "RAW wird vorbereitet…";
+"正在准备照片…" = "Fotos werden vorbereitet…";
 "正在加载胶片" = "Filme werden geladen";
 "正在处理" = "Verarbeiten";
 "正在导入" = "Importieren";
@@ -149,6 +154,7 @@
 "色调" = "Farbton";
 "语言" = "Sprache";
 "请先导入一张 RAW 照片。" = "Importieren Sie zuerst ein RAW-Foto.";
+"请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
 "请等待当前任务完成。" = "Warten Sie, bis der aktuelle Auftrag abgeschlossen ist.";
 "请输入 1–65535 之间的像素数" = "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein";
 "调整" = "Anpassungen";

@@ -37,6 +37,10 @@ final class RecipeWhiteBalanceCache {
 }
 
 extension Sony2FujiProcessor {
+    func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
+        buffer.semantic == .display ? SONY2FUJI_INPUT_DISPLAY_BUFFER : SONY2FUJI_INPUT_BUFFER
+    }
+
     func loadMetadata(from url: URL) throws -> ImageMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
@@ -171,6 +175,19 @@ extension Sony2FujiProcessor {
         return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
+    func effectiveSettings(_ settings: RawSettings, session: OpaquePointer, url: URL?,
+                           inputType: sony2fuji_input_type) throws -> RawSettings {
+        var result = try prepareRecipe(settings, session: session, url: url)
+        guard inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER else { return result }
+        result.exposureMode = .sensor
+        result.whiteBalanceMode = .camera
+        result.temperature = 6500
+        result.tint = 0
+        result.noiseReduction = 0
+        result.lensCorrection = nil
+        return result
+    }
+
     func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
                                exposureMode: RawExposureMode) throws -> RawWhiteBalance {
         // Read the target RAW once; saved recipe values are not its as-shot WB.
@@ -195,6 +212,7 @@ extension Sony2FujiProcessor {
         request.output_target = SONY2FUJI_TARGET_BUFFER
         request.output_format = SONY2FUJI_OUTPUT_RGBA8
         request.jpeg_quality = 95
+        let displayInput = inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER
         request.wb_mode = inputType == SONY2FUJI_INPUT_RAW && settings.whiteBalanceMode == .custom
             ? SONY2FUJI_WB_TEMPERATURE
             : SONY2FUJI_WB_CAMERA
@@ -203,18 +221,18 @@ extension Sony2FujiProcessor {
         request.brightness = 1
         request.contrast = Float(settings.contrast)
         request.saturation = Float(settings.saturation)
-        // Camera RAW WB is already applied before demosaic. Raster inputs keep
-        // the old post-RGB temperature/tint path and therefore remain separate.
-        request.temperature = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+        // RAW white balance is applied before demosaic. Display input stays
+        // neutral; legacy scene buffers retain their existing post-RGB path.
+        request.temperature = displayInput || (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW)
             ? 6500
             : Float(settings.temperature)
-        request.tint = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+        request.tint = displayInput || (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW)
             ? 0
             : Float(settings.tint)
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
         request.tone_curve = Float(settings.toneCurve)
-        request.noise_reduction = settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
+        request.noise_reduction = displayInput || settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request
     }
@@ -336,7 +354,7 @@ extension Sony2FujiProcessor {
         }
     }
 
-    func copyBuffer(_ buffer: sony2fuji_buffer) throws -> Buffer {
+    func copyBuffer(_ buffer: sony2fuji_buffer, semantic: Buffer.Semantic = .legacy) throws -> Buffer {
         guard let baseAddress = buffer.data,
               buffer.width > 0,
               buffer.height > 0,
@@ -351,7 +369,8 @@ extension Sony2FujiProcessor {
             width: Int(buffer.width),
             height: Int(buffer.height),
             stride: Int(buffer.stride_bytes),
-            pixelFormat: buffer.pixel_format
+            pixelFormat: buffer.pixel_format,
+            semantic: semantic
         )
     }
 

@@ -90,6 +90,18 @@ struct BatchSourceSnapshot: Codable, Equatable {
         self.sourceKind = sourceKind
         self.settings = settings
     }
+
+    func settings(for targetKind: BatchSourceKind) -> RawSettings {
+        guard sourceKind == .raster, targetKind == .raw else { return settings }
+        var result = settings
+        result.exposureMode = RawSettings.default.exposureMode
+        result.whiteBalanceMode = .camera
+        result.temperature = 6500
+        if result.masterRecipeID == nil { result.tint = 0 }
+        result.noiseReduction = 0
+        result.lensCorrection = nil
+        return result
+    }
 }
 
 struct BatchTarget: Codable, Equatable, Identifiable {
@@ -292,8 +304,8 @@ final class BatchJournalStore {
         return try urls.compactMap { url -> BatchExportJob? in
             let original = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
             let recovered = relocateOwnedFiles(original).recovered()
-            // JPEG completion is fully owned by Photos; DNG files remain in Documents/Exports
-            // until the user explicitly finishes or discards the recovered job.
+            // Photos owns completed JPEGs. Keep the completed DNG journal until dismissal;
+            // exported files in Documents/Exports persist independently of the journal.
             if recovered.status == .completed && recovered.outputFormat == .jpeg {
                 try discard(id: recovered.id)
                 return nil

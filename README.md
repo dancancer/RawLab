@@ -18,6 +18,12 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 - RAW development with exposure, camera-space white balance, tone, color and
   sharpening controls.
+- Development source also accepts ordinary opaque RGB8 SDR images: JPEG/PNG
+  on all four clients, TIFF on macOS/iOS/Windows and HEIF on macOS/iOS. Raster
+  input shares the editing/export core without the RAW scene curve or camera
+  controls. Unsupported HDR, high-bit-depth, transparent and multi-frame inputs
+  are rejected rather than silently converted. See the
+  [input contract](lutools/docs/color-contract.md#display-referred-raster-input).
 - New RAW edits start with embedded-preview exposure matching. One-shot Auto
   exposure and an eight-channel HSL mixer are shared across all four clients;
   existing saved exposure baselines are preserved.

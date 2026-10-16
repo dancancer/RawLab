@@ -106,7 +106,8 @@ extension ContentView {
     }
 
     var whiteBalancePanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let isRaster = viewModel.sourceKind == .raster
+        return VStack(alignment: .leading, spacing: 12) {
             if viewModel.sourceKind == .raw {
                 Picker(L10n.text("白平衡模式"), selection: Binding(
                     get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
@@ -127,13 +128,13 @@ extension ContentView {
                               unit: "K", formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
                               reciprocal: true, identifier: "whiteBalance.temperature",
                               onEditingChanged: setSliderEditing)
-                .disabled(viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil)
+                .disabled(isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil))
             AdjustmentControl(title: L10n.text(settings.masterRecipeID == nil ? "色调" : "色调偏移"), value: whiteBalanceTintBinding,
                               range: RawSettings.tintRange, step: 1,
                               defaultValue: whiteBalanceTintDefault,
                               formatter: { String(format: $0 == 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
                               identifier: "whiteBalance.tint", onEditingChanged: setSliderEditing)
-                .disabled((viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
+                .disabled(isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
                           (viewModel.sourceKind == .raw && settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil))
 
             if viewModel.sourceKind == .raw, let whiteBalance = viewModel.rawWhiteBalance {

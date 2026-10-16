@@ -8,15 +8,10 @@ internal sealed partial class RenderEngine
     private Stamp? inputStamp;
     internal long CachedDisplayBytes => checked((long)displayInput.Size);
 
-    internal static Adjustments PrepareInputSettings(string path,Adjustments value)
-    {
-        if(!LibraryEntry.IsRaster(path))return value;
-        var prepared=value.Clone();
-        prepared.ExposureMode=2;
-        prepared.ResolveWhiteBalance(null);prepared.ResetWhiteBalance();
-        prepared.Lens=new(false,false,false);
-        return prepared;
-    }
+    internal static Adjustments PrepareInputSettings(string path,Adjustments value) =>
+        PhotoInput.PrepareInputSettings(path,value);
+    internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value) =>
+        PhotoInput.PrepareBatchSettings(source,target,value);
     private void EnsureInput(string path)
     {
         var info=new FileInfo(path);var stamp=new Stamp(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);

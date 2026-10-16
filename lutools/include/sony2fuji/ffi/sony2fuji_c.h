@@ -292,12 +292,13 @@ typedef enum sony2fuji_render_backend {
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
-// Desktop adapters: single-frame opaque 8-bit SDR RGB.
-// macOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
+// File adapters: single-frame opaque 8-bit SDR RGB.
+// macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
 // Rejects transparency, high-bit-depth/HDR and unsupported encodings.
 // Pass a zero-initialized or previously returned buffer; release with
-// sony2fuji_release_buffer. Other platforms currently return UNSUPPORTED.
+// sony2fuji_release_buffer. Android clients decode validated files with the
+// platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
 sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);

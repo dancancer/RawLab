@@ -49,6 +49,29 @@ struct BatchExportTests {
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
                                           sourceURL: sourceURL, displayName: "source.ARW", settings: settings)
+        var rasterSettings = settings
+        rasterSettings.masterRecipeID = nil
+        rasterSettings.whiteBalanceMode = .custom
+        rasterSettings.exposureMode = .scene
+        rasterSettings.temperature = 7200
+        rasterSettings.tint = 18
+        rasterSettings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        let rasterSource = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "raster-source"),
+                                                sourceURL: root.appendingPathComponent("source.jpg"),
+                                                displayName: "source.jpg", sourceKind: .raster,
+                                                settings: rasterSettings)
+        let rawTargetSettings = rasterSource.settings(for: .raw)
+        check(rawTargetSettings.whiteBalanceMode == .camera && rawTargetSettings.temperature == 6500 &&
+              rawTargetSettings.tint == 0 && rawTargetSettings.exposureMode == .preview &&
+              rawTargetSettings.lensCorrection == nil,
+              "mixed batch does not leak raster-only camera WB, exposure, or lens settings into RAW targets")
+        check(rawTargetSettings.geometry == rasterSettings.geometry &&
+              rawTargetSettings.hsl == rasterSettings.hsl &&
+              rawTargetSettings.photoEffects == rasterSettings.photoEffects &&
+              rawTargetSettings.denoise == rasterSettings.denoise,
+              "mixed batch keeps raster style settings frozen while resolving target camera defaults")
+        check(rasterSource.settings(for: .raster) == rasterSettings,
+              "raster target keeps its frozen settings without mutating the batch source")
         let targets = (1...6).map { index in
             BatchTarget(identity: PhotoIdentity(resourceIdentifier: "target-\(index)"),
                         sourceURL: root.appendingPathComponent("target-\(index).ARW"),
@@ -180,10 +203,16 @@ struct BatchExportTests {
         let completedDNGPendingJobs = try journal.pendingJobs()
         check(completedDNGPendingJobs.contains(where: { $0.id == completedDNG.id }),
               "completed DNG journal remains recoverable until explicit discard")
+        _ = try BatchFileOutputStore.directory(for: completedDNG.id)
+        let exportedDNG = Data("durable DNG output".utf8)
+        try exportedDNG.write(to: durableDNG)
         try journal.discard(id: completedDNG.id)
         let afterDiscardDNGJobs = try journal.pendingJobs()
         check(!afterDiscardDNGJobs.contains(where: { $0.id == completedDNG.id }),
               "explicit DNG discard removes the durable journal")
+        let retainedDNG = try Data(contentsOf: durableDNG)
+        check(retainedDNG == exportedDNG,
+              "discarding a DNG journal preserves the exported image")
         try journal.save(cancelled)
         let resumableCancelled = try journal.pendingJobs()
         check(resumableCancelled.contains(where: { $0.id == cancelled.id }), "cancelled work remains accessible for resume")

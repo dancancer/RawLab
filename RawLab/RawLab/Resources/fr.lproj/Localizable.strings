@@ -63,6 +63,7 @@
 "小波降噪" = "Réduction du bruit par ondelettes";
 "尚未保存，允许重新导出" = "Pas encore enregistré ; autoriser la réexportation";
 "尚未选择 RAW" = "Aucune photo RAW sélectionnée";
+"尚未选择照片" = "Aucune photo sélectionnée";
 "展开调整栏" = "Développer les réglages";
 "已保存" = "Enregistré";
 "已保存 %@ 张到照片图库" = "%@ enregistrées dans Photos";
@@ -73,11 +74,13 @@
 "已恢复上次调整" = "Réglages précédents restaurés";
 "已收起" = "Réduit";
 "已选 %@ 张 RAW" = "%@ photos RAW sélectionnées";
+"已选 %@ 张照片" = "%@ photos sélectionnées";
 "开启" = "Activé";
 "强度" = "Intensité";
 "当前预览的亮度分布" = "Distribution de luminance de l’aperçu actuel";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Réussite %@ · Échec %@ · Non traitées %@";
 "所选 RAW：%@" = "RAW sélectionné : %@";
+"所选照片：%@" = "Photo sélectionnée : %@";
 "所选外观不可用，请重新选择外观。" = "Le look sélectionné est indisponible ; choisissez-en un autre.";
 "打开系统设置" = "Ouvrir les réglages système";
 "批量导出" = "Exportation par lots";
@@ -103,6 +106,7 @@
 "无法读取已保存的调整，原有记录未被覆盖。" = "Impossible de lire les réglages enregistrés ; l’enregistrement existant n’a pas été remplacé.";
 "显示或收起调整栏" = "Afficher ou masquer les réglages";
 "普通图片未加入，请选择 RAW。" = "Les images ordinaires n’ont pas été ajoutées ; sélectionnez des fichiers RAW.";
+"从文件导入" = "Importer depuis Fichiers";
 "曝光" = "Exposition";
 "曝光补偿" = "Compensation d’exposition";
 "未处理" = "Non traité";
@@ -118,6 +122,7 @@
 "正在保存" = "Enregistrement";
 "正在停止…" = "Arrêt…";
 "正在准备 RAW…" = "Préparation du RAW…";
+"正在准备照片…" = "Préparation des photos…";
 "正在加载胶片" = "Chargement des films";
 "正在处理" = "Traitement";
 "正在导入" = "Importation";
@@ -149,6 +154,7 @@
 "色调" = "Teinte";
 "语言" = "Langue";
 "请先导入一张 RAW 照片。" = "Importez d’abord une photo RAW.";
+"请先导入一张照片。" = "Importez d’abord une photo.";
 "请等待当前任务完成。" = "Attendez la fin de la tâche actuelle.";
 "请输入 1–65535 之间的像素数" = "Entrez un nombre de pixels compris entre 1 et 65 535";
 "调整" = "Réglages";

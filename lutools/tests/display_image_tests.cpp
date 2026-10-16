@@ -129,6 +129,22 @@ FixtureImage cmykImage(CGColorSpaceRef colorSpace) {
     return result;
 }
 
+FixtureImage hdrImage(CGColorSpaceRef colorSpace) {
+    FixtureImage result;
+    std::vector<float> values(64 * 64 * 4);
+    for (size_t index = 0; index < values.size(); ++index)
+        values[index] = index % 4 == 3 ? 1.0f : static_cast<float>(index % 64) / 16.0f;
+    result.bytes.resize(values.size() * sizeof(float));
+    std::memcpy(result.bytes.data(), values.data(), result.bytes.size());
+    auto* provider = CGDataProviderCreateWithData(nullptr, result.bytes.data(), result.bytes.size(), nullptr);
+    if (!provider) return result;
+    result.image = CGImageCreate(64, 64, 32, 128, 64 * 16, colorSpace,
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedLast) | kCGBitmapFloatComponents | kCGBitmapByteOrder32Little,
+        provider, nullptr, false, kCGRenderingIntentDefault);
+    CGDataProviderRelease(provider);
+    return result;
+}
+
 bool writeImage(const std::filesystem::path& path, CFStringRef type, CGImageRef image,
                 CFDictionaryRef properties = nullptr, size_t frameCount = 1) {
     const auto pathString = path.u8string();
@@ -222,10 +238,11 @@ std::vector<uint8_t> outputBytes(const sony2fuji_buffer& buffer) {
     return result;
 }
 
-void expectUnsupported(const std::filesystem::path& path, const std::string& label) {
+void expectUnsupported(const std::filesystem::path& path, const std::string& label, bool validEncoding = false) {
     sony2fuji_buffer buffer{};
     const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
-    check(status == SONY2FUJI_STATUS_UNSUPPORTED || status == SONY2FUJI_STATUS_PROCESSING_ERROR,
+    check(status == SONY2FUJI_STATUS_UNSUPPORTED ||
+          (!validEncoding && status == SONY2FUJI_STATUS_PROCESSING_ERROR),
           label + " is rejected");
     check(!buffer.data && buffer.size_bytes == 0 && buffer.width == 0 && buffer.height == 0,
           label + " clears output on rejection");
@@ -245,7 +262,7 @@ void expectEmptyPathClearsBuffer() {
     sony2fuji_release_buffer(&buffer);
 }
 
-void runMacTests() {
+void runAppleTests() {
     const auto root = std::filesystem::temp_directory_path() /
         ("rawlab-display-image-" + std::to_string(getpid()));
     std::filesystem::create_directories(root);
@@ -303,6 +320,37 @@ void runMacTests() {
             check(opaque,
                   path.extension().string() + " output is opaque");
         }
+        sony2fuji_release_buffer(&buffer);
+    }
+
+    for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
+        const auto path = root / ("orientation-" + std::to_string(orientation) + ".png");
+        auto* properties = orientationProperties(orientation);
+        check(properties && writeImage(path, CFSTR("public.png"), fixture.image, properties),
+              "Generate EXIF orientation " + std::to_string(orientation));
+        if (properties) CFRelease(properties);
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+        const uint32_t width = orientation >= 5 ? 3 : 2;
+        const uint32_t height = orientation >= 5 ? 2 : 3;
+        bool matches = status == SONY2FUJI_STATUS_OK && buffer.width == width && buffer.height == height;
+        for (uint32_t y = 0; matches && y < height; ++y) {
+            for (uint32_t x = 0; matches && x < width; ++x) {
+                uint32_t sourceX = x, sourceY = y;
+                switch (orientation) {
+                    case 2: sourceX = 1 - x; break;
+                    case 3: sourceX = 1 - x; sourceY = 2 - y; break;
+                    case 4: sourceY = 2 - y; break;
+                    case 5: sourceX = y; sourceY = x; break;
+                    case 6: sourceX = y; sourceY = 2 - x; break;
+                    case 7: sourceX = 1 - y; sourceY = 2 - x; break;
+                    case 8: sourceX = 1 - y; sourceY = x; break;
+                }
+                const auto* actual = static_cast<const uint8_t*>(buffer.data) + (y * width + x) * 4;
+                matches = std::equal(actual, actual + 4, pattern.begin() + (sourceY * 2 + sourceX) * 4);
+            }
+        }
+        check(matches, "EXIF orientation " + std::to_string(orientation) + " transforms pixels exactly once");
         sony2fuji_release_buffer(&buffer);
     }
 
@@ -401,6 +449,30 @@ void runMacTests() {
     if (grayWritten) expectUnsupported(gray, "Unprofiled grayscale PNG");
     CGColorSpaceRelease(deviceGray);
 
+    auto* taggedGraySpace = CGColorSpaceCreateWithName(kCGColorSpaceGenericGrayGamma2_2);
+    auto taggedGrayFixture = grayImage(2, 1, taggedGraySpace, {32, 224});
+    const auto taggedGray = root / "tagged-gray.png";
+    const bool taggedGrayWritten = taggedGrayFixture.image &&
+        writeImage(taggedGray, CFSTR("public.png"), taggedGrayFixture.image);
+    check(taggedGrayWritten, "Generate profiled grayscale PNG fixture");
+    if (taggedGrayWritten) {
+        const auto pathString = taggedGray.u8string();
+        auto* url = CFURLCreateFromFileSystemRepresentation(
+            kCFAllocatorDefault, reinterpret_cast<const UInt8*>(pathString.data()), pathString.size(), false);
+        auto* source = url ? CGImageSourceCreateWithURL(url, nullptr) : nullptr;
+        auto* properties = source ? CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr) : nullptr;
+        auto* image = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
+        check(properties && CFDictionaryGetValue(properties, kCGImagePropertyProfileName) && image &&
+                  CGColorSpaceGetModel(CGImageGetColorSpace(image)) == kCGColorSpaceModelMonochrome,
+              "Profiled grayscale fixture retains its profile and non-RGB source model");
+        if (image) CGImageRelease(image);
+        if (properties) CFRelease(properties);
+        if (source) CFRelease(source);
+        if (url) CFRelease(url);
+        expectUnsupported(taggedGray, "Profiled grayscale PNG", true);
+    }
+    CGColorSpaceRelease(taggedGraySpace);
+
     const auto transparent = root / "transparent.png";
     auto transparentFixture = rgbaImage(1, 1, sRGB, {255, 0, 0, 127});
     check(transparentFixture.image && writeImage(transparent, CFSTR("public.png"), transparentFixture.image),
@@ -417,6 +489,45 @@ void runMacTests() {
     check(fixture.image && writeImage(multipage, CFSTR("public.tiff"), fixture.image, nullptr, 2),
           "Generate multi-page TIFF fixture");
     expectUnsupported(multipage, "Multi-page TIFF");
+
+#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000)
+    if (__builtin_available(macOS 15.0, iOS 18.0, *)) {
+        auto* extended = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+        auto hdr = hdrImage(extended);
+        auto* withHeadroom = CGImageCreateCopyWithContentHeadroom(4.0f, hdr.image);
+        check(withHeadroom != nullptr, "Create extended-linear HDR image with explicit headroom");
+        const void* keys[] = {kCGImageDestinationEncodeRequest};
+        const void* values[] = {kCGImageDestinationEncodeToISOGainmap};
+        auto* properties = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 1,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        const auto path = root / "iso-gain-map.jpg";
+        const bool written = withHeadroom && writeImage(path, CFSTR("public.jpeg"), withHeadroom, properties);
+        if (!written) std::cout << "SKIP ISO gain-map: system encoder could not create the fixture\n";
+        if (written) {
+            const auto name = path.u8string();
+            auto* url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
+                reinterpret_cast<const UInt8*>(name.data()), name.size(), false);
+            auto* source = CGImageSourceCreateWithURL(url, nullptr);
+            auto* auxiliary = source ? CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0,
+                kCGImageAuxiliaryDataTypeISOGainMap) : nullptr;
+            check(auxiliary != nullptr, "ISO gain-map fixture contains an actual auxiliary gain map");
+            if (auxiliary) {
+                CFRelease(auxiliary);
+                expectUnsupported(path, "HDR ISO gain-map JPEG", true);
+                if (const char* output = std::getenv("RAWLAB_TEST_GAIN_MAP_OUTPUT"))
+                    std::filesystem::copy_file(path, output, std::filesystem::copy_options::overwrite_existing);
+            }
+            if (source) CFRelease(source);
+            CFRelease(url);
+        }
+        CFRelease(properties);
+        if (withHeadroom) CGImageRelease(withHeadroom);
+        CGColorSpaceRelease(extended);
+    }
+#endif
+    if (const char* gainMap = std::getenv("RAWLAB_TEST_GAIN_MAP"))
+        expectUnsupported(gainMap, "External verified HDR gain-map JPEG", true);
 
     const auto dng = root / "not-a-dng.dng";
     check(fixture.image && writeImage(dng, CFSTR("public.tiff"), fixture.image),
@@ -446,7 +557,7 @@ void runMacTests() {
 
 int main() {
 #if defined(__APPLE__)
-    runMacTests();
+    runAppleTests();
 #else
     sony2fuji_buffer output{};
     const auto status = sony2fuji_load_display_image("missing.jpg", &output);

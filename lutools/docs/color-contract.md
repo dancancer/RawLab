@@ -61,7 +61,7 @@ reuse. The SDK allocation-failure hook verifies the C ABI memory status.
 
 The additive `SONY2FUJI_INPUT_DISPLAY_BUFFER=2` consumes tightly packed opaque
 RGB8/RGBA8 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
-their rendering are unchanged. The macOS ImageIO adapter applies EXIF orientation
+their rendering are unchanged. The shared macOS/iOS ImageIO adapter applies EXIF orientation
 once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
 single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF. Transparency, higher bit depth,
 floating-point/HDR, multi-frame/page and CMYK inputs are rejected, not flattened
@@ -82,12 +82,24 @@ This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
-The macOS adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
+The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
 and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
 Mac results; HEIF and BigTIFF are not enabled. Unknown non-sRGB PNG color metadata
-without a supported ICC profile is rejected instead of guessed. Other platforms
-currently return unsupported. Platform evidence and remaining ICC/physical-device
-limits are recorded in `RawLabWindows/VERIFICATION-agent-v08.md`.
+without a supported ICC profile is rejected instead of guessed. Android uses a
+separate API-26-compatible platform decoder for validated JPEG/PNG files and
+passes their oriented opaque display-sRGB pixels through the same explicit
+display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
+entry point remains unsupported rather than pretending to decode those files.
+The native clients resolve camera-only settings separately for every mixed-batch
+target and retain the original frozen recipe. A raster source's dormant camera
+WB, lens and exposure-baseline values do not become active on a RAW target:
+the target uses its own as-shot WB and the client's default RAW exposure mode.
+An active master recipe's tint remains a relative style offset against that
+target WB, not a source-camera WB value to copy or discard.
+Mobile Agent interfaces remain out
+of scope. Desktop evidence and remaining ICC/physical-device limits are recorded
+in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
+`../../docs/verification-raster-input-all-platforms-2026-10-16.md`.
 
 ## Rendering Order
 

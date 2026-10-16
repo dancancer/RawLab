@@ -68,6 +68,25 @@ struct ImagePhotoFile: Transferable {
 
 enum PhotoImportFile {
     static var directory: URL { FileManager.default.temporaryDirectory.appendingPathComponent("RawLabImports", isDirectory: true) }
+    static let supportedContentTypes: [UTType] = [
+        .rawImage, .jpeg, .png, .tiff, .heif, .heic
+    ]
+
+    static func sourceKind(for url: URL) -> PhotoImportSource? {
+        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return nil }
+        if type.conforms(to: .rawImage) { return .raw(url) }
+        if type.conforms(to: .image) { return .raster(url) }
+        return nil
+    }
+
+    static func retainSource(_ source: URL) throws -> PhotoImportSource {
+        guard let kind = sourceKind(for: source) else { throw PhotoImportError.unsupportedItem }
+        let retained = try retain(source)
+        switch kind {
+        case .raw: return .raw(retained)
+        case .raster: return .raster(retained)
+        }
+    }
 
     static func retain(_ source: URL) throws -> URL {
         let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)

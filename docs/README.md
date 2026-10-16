@@ -35,6 +35,7 @@ retain their original candidate scope.
 - [Release blockers, scope decisions and remaining acceptance](releases/v0.8.0-preparation.md)
 - [macOS Agent and ordinary-image verification](verification-agent-v08.md)
 - [Windows Agent and integrated-source verification](../RawLabWindows/VERIFICATION-agent-v08.md)
+- [All-platform ordinary-image input and current acceptance](verification-raster-input-all-platforms-2026-10-16.md)
 - [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
 - [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
 - [Optional local RUM and default SDK-free verification](verification-rum-analytics-2026-10-16.md)

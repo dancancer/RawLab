@@ -186,6 +186,21 @@ try
     job.Items.Add(BatchItem.Create(a) with { Selected = true });
     job.Items.Add(BatchItem.Create(b) with { Selected = true });
     var journal = new BatchJournal(Path.Combine(root, "batch"));
+    var rasterSource = Path.Combine(root, "source.PNG");
+    var mixed = BatchJob.Create(rasterSource, saved, null, "Mixed");
+    mixed.OutputDirectory = output;
+    mixed.Items.Add(BatchItem.Create(a) with { Selected = true });
+    var mixedCalls = 0;
+    BatchRunner.Run(mixed, journal, false, CancellationToken.None, (_, _) => { }, (_, settings, _, destination) => {
+        mixedCalls++;
+        Check(settings.ExposureMode == 1 && settings[Parameter.Temperature] == 6500 && settings[Parameter.Tint] == 0 &&
+              settings.Lens == new LensSettings(false,false,false), "raster source does not leak camera-only settings into RAW targets");
+        Check(settings[Parameter.Exposure] == .75 && settings.Geometry == saved.Geometry && settings.Denoise == saved.Denoise,
+              "mixed targets retain common frozen editing parameters");
+        File.WriteAllText(destination, "mixed");
+    });
+    Check(mixedCalls == 1 && mixed.Items[0].Status == BatchStatus.Succeeded && mixed.Settings.SameAs(saved),
+          "renderer-independent batch normalization preserves the stored source snapshot");
     var calls = new List<string>();
     BatchRunner.Run(job, journal, false, CancellationToken.None, (_, _) => { }, (input, settings, _, destination) => {
         calls.Add(input); Check(settings[Parameter.Exposure] == .75, "frozen source parameters");

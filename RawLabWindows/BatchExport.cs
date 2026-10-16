@@ -175,7 +175,8 @@ public static class BatchRunner
             try
             {
                 if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择。"));
-                render(item.Input, job.Settings.Restore(), job.Look, temporary, job.LongEdge);
+                var settings=PhotoInput.PrepareBatchSettings(job.Source,item.Input,job.Settings.Restore());
+                render(item.Input, settings, job.Look, temporary, job.LongEdge);
             }
             catch (Exception error)
             {
