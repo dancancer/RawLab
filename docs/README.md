@@ -1,7 +1,7 @@
 # Documentation
 
 Use the guides below for the current source. Published downloads remain
-[v0.6.0, build 10](releases/v0.6.0.md). Current development release gates are in
+[v0.7.0, build 11](releases/v0.7.0.md). Current development release gates are in
 [v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
 retain their original candidate scope.
 
@@ -39,7 +39,7 @@ retain their original candidate scope.
 - [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
 - [Optional local RUM and default SDK-free verification](verification-rum-analytics-2026-10-16.md)
 
-## v0.7.0 Candidate
+## v0.7.0 Release Records
 
 - [Candidate notes](releases/v0.7.0.md) and [corresponding-source instructions](releases/v0.7.0-source.md)
 - [Feature deliveries and final verification](verification-v0.7.0.md)
@@ -50,11 +50,14 @@ retain their original candidate scope.
 
 All five features are integrated in development. The final composition report
 distinguishes new execution from evidence reused through identical source.
-Candidate packages are local preparation; published downloads remain v0.6.0.
+The candidate records retain their original local scope; the remote
+[v0.7.0 Release](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)
+is the current publication record. No v0.8.0 package has been published.
 
 ## Published Releases and History
 
 - [Changelog](../CHANGELOG.md)
+- [v0.7.0 release](releases/v0.7.0.md) and [corresponding source](releases/v0.7.0-source.md)
 - [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)
 - [v0.5.1 release](releases/v0.5.1.md) and [v0.5.0 release](releases/v0.5.0.md)
 - [Historical plans, feature checks, reviews and experiment references](archive/README.md)

@@ -35,7 +35,14 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
                 self.assertNotIn("permissions", job)
                 self.assertNotIn("self-hosted", job["runs-on"])
-        self.assertEqual(jobs["macos"]["runs-on"], "macos-26")
+        mac = jobs["macos"]
+        self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
+        self.assertEqual(mac["env"]["MACOSX_DEPLOYMENT_TARGET"], "14.0")
+        self.assertEqual(mac["strategy"]["fail-fast"], "false")
+        self.assertEqual(mac["strategy"]["matrix"]["include"], [
+            {"runner": "macos-26", "arch": "arm64"},
+            {"runner": "macos-26-intel", "arch": "x86_64"},
+        ])
         self.assertEqual(jobs["ios"]["runs-on"], "macos-26")
 
     def test_actions_and_artifact_paths_are_constrained(self):
@@ -63,6 +70,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotRegex(self.text, r"SONY2FUJI_ENABLE_\w+=OFF")
         self.assertNotRegex(self.text, r"RAWLAB_RUM_LOCAL[=: ]+['\"]?1")
         self.assertNotIn("-Test -SelfContained", self.text)
+
+    def test_hosted_tool_discovery_preserves_failures(self):
+        self.assertTrue('"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"' in self.text,
+                        "Use the hosted SDK's explicit sdkmanager path")
+        self.assertNotRegex(self.text, r"export \w+=\"\$\(")
 
 
 if __name__ == "__main__":

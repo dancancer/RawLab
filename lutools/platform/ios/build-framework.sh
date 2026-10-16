@@ -10,7 +10,6 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 #
 #   bash .../build-framework.sh \
 #     -DFETCHCONTENT_SOURCE_DIR_RAWLAB_DNG_SOURCE=/path/to/dng_sdk_1_7_1
-CMAKE_EXTRA_ARGS=("$@")
 mkdir -p "$SOURCES" "$ROOT/build-ios"
 
 fetch() {
@@ -53,7 +52,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     # LibRaw and the Adobe DNG SDK are built by the shared core wrapper so the
     # static decoder and its SDK support use the same target architecture.
     core="$BASE/core-$config"
-    cmake -S "$ROOT" -B "$core" -GXcode "${common[@]}" "${CMAKE_EXTRA_ARGS[@]}" \
+    cmake -S "$ROOT" -B "$core" -GXcode "${common[@]}" "$@" \
         -DIOS=ON -DBUILD_SHARED_LIB=ON -DBUILD_CLI=OFF -DBUILD_TESTING=OFF \
         -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_BUILD_LENS_DEPS=ON \
         -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_GPU=ON \

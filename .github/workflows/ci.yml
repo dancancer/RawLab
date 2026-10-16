@@ -56,9 +56,20 @@ jobs:
           retention-days: 7
 
   macos:
-    name: macOS build and parity
-    runs-on: macos-26
+    name: macOS build and parity (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      RAWLAB_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -74,8 +85,10 @@ jobs:
           git rev-parse HEAD
           sw_vers
           xcodebuild -version
-          export DEVELOPER_DIR="$(xcode-select -p)"
-          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          export SDKROOT
           python -m pip install -r scripts/ci/requirements.txt
           brew install pkg-config autoconf automake libtool
           bash RawLabMac/build.sh
@@ -96,7 +109,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: macos-results
+          name: macos-${{ matrix.arch }}-results
           path: |
             build/ci/*.log
             build/ci/*.xml
@@ -174,7 +187,7 @@ jobs:
           exec > >(tee build/ci/android.log) 2>&1
           git rev-parse HEAD
           java -version
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
           cd RawLabAndroid
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
           bash scripts/check-native.sh
@@ -204,7 +217,8 @@ jobs:
           git rev-parse HEAD
           sw_vers
           xcodebuild -version
-          export DEVELOPER_DIR="$(xcode-select -p)"
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
           bash lutools/platform/ios/build-framework.sh
           bash lutools/platform/ios/verify-framework.sh lutools/build-ios/sony2fuji.xcframework
           xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Debug \

@@ -10,17 +10,20 @@ credentials. A workflow run is not release authorization.
 | Check | Hosted runner | Coverage |
 | --- | --- | --- |
 | Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, photo-copy and single-preview source contracts, whitespace |
-| macOS build and parity | macOS 26 arm64 | Default app/bundle and full-feature native build; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, localization and SDK-free analytics lifecycle |
+| macOS build and parity (arm64 / x86_64) | macOS 26 arm64 and Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, localization and SDK-free analytics lifecycle |
 | Windows build and parity | Windows Server 2022 x64 / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
 | Android build and JVM tests | Ubuntu 24.04 / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
 | iOS framework and unsigned app | macOS 26 arm64 / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
 
-All five checks must **succeed on the current PR head/test merge**. A missing,
+All six checks (five job groups, including both Mac architectures) must
+**succeed on the current PR head/test merge**. A missing,
 skipped, cancelled or stale-head run is not a pass. After merge, also inspect the
 push run for the exact `development` merge SHA. Logs print the checked-out SHA;
 PR checks may test GitHub's synthetic merge commit rather than the source head.
 Use the run's event, source head, checkout SHA and base together when recording
 evidence. A later source/base change invalidates the earlier integration result.
+This is the merge acceptance policy; this task does not change repository branch
+protection settings or grant permission to bypass them.
 
 ## Boundaries
 
@@ -38,7 +41,8 @@ evidence. A later source/base change invalidates the earlier integration result.
   XCTest, import Photos fixtures, sign a device app or validate installation.
 - Android compiles instrumentation tests but does **not** run connected-device
   tests. GLES, SAF, OEM locale and physical interaction evidence stays separate.
-- macOS 26 arm64 success does not establish the advertised macOS 15/Intel support.
+- Building both architectures with a 14.0 minimum on macOS 26 does not establish
+  runtime support on macOS 14; native acceptance on the minimum OS is separate.
   [Runner labels](https://github.com/actions/runner-images/blob/main/README.md)
   and toolchains can change; logs identify the actual environment.
 
