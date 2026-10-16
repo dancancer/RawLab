@@ -1,10 +1,12 @@
 # iOS 0.8 合并后的模型与原生处理验证
 
+原矩阵（401 条断言＋3 组 viewport）对应旧 native core `f454bab64993119d45795d5996702a824daadea5`；文末单列 #53 合入后的 `dcf78dcf` 增量验证。
+
 本轮最小模型矩阵全部完成：**401 条断言与 3 组 viewport 回归通过，7 项测试最终均完成并返回 0，零跳过、零运行超时。import-state 是同一已链接 binary 的首次续跑；原 wrapper 因执行连接恢复而消失，没有完整退出记录。** 这份报告只记录模型／处理器层；系统 PhotosPicker、完整应用的实际导出与 RUM UI 由协调会话另行验收，不混算。
 
 ## 精确来源
 
-- 最终测试源码：`9ec42c6649a5797efeefcf74ea2e3b3ba1a4c284`。
+- 原矩阵测试源码：`9ec42c6649a5797efeefcf74ea2e3b3ba1a4c284`。
 - 应用由协调会话在 `f2857bef02ff49ffaacfdd8b7fe41cae235e9e29` 完成 `build-for-testing`；`RawLab/RawLab` tree 为 `6c48c015fc6d8e5f53670ed9d6e512738243e5ea`。其后提交只修测试隔离与编译输入；本轮结束核对产品、Shared 和 native source/header 相对该应用构建无差异。
 - 使用本轮重新构建的 arm64 simulator framework；native core tree 为 `f454bab64993119d45795d5996702a824daadea5`，输入 dylib SHA256 为 `67bd918c1ebce865f1c4c1665b2bb233c86d5ccda85dc734184e90deffc6e293`。未用旧预构建库代替新源码。
 - 专用 iPhone 18 Pro / iOS 27 Simulator：`47310A81-02AA-45A1-807A-431181E4D338`，名称 `RawLab V08 Model Integration`。只读 Foundation probe 与真实 RAW harness 均确认 home、Documents、cache、tmp 位于该设备的 `data/` 内；未使用真实用户 profile。
@@ -66,3 +68,32 @@ bash RawLab/tests/batch-publication.sh "$APP" "$DEVICE"
 本轮没有增加产品修复，没有修改 Shared／native 数学、其它平台或真实用户 profile，没有提交／推送／修改 PR。新测试及脚本隔离由主任务提交为 `f2857bef`、`8b0264fa`、`9ec42c66`。
 
 模型层直接调用真实 ViewModel／processor，不等于完整 PhotosPicker provider 等待取消、iCloud、真实 Files／Photos 导出或不同相机端到端验收。RUM 这里只验证导入成功 hook 的接纳／迟到规则，opt-in／privacy／lifecycle UI 另有协调会话证据。没有实机触觉、帧率／输入延迟或硬件辅助功能证据；这些边界保持待验。旧单次 SwiftUI 发布 warning 不因本模型日志未出现而宣称已修复。所有本地 PASS 都不是托管 CI PASS。
+
+
+## #53 合入后的新核心增量验证
+
+本节对应 merge head `106a958d161b2f21f27e8da54f6eea446c1a1a1d`、native core tree `dcf78dcf15b0860383eb9d7e678c4b84631b52d0`。本次只重跑受新核心／header／装载变化直接影响的检查；前述 401 条断言、3 组 viewport 与协调会话的原 UI 证据保持旧 `f454bab6` framework 归属。
+
+协调会话重新完成 `derived-v4` 的应用 `build-for-testing`（`target-v4/app-build.log`）。实际新应用为 `/tmp/rawlab-ios-v08-integration-20261016/derived-v4/Build/Products/Debug-iphonesimulator/RawLab.app`，嵌入 framework SHA256 为 `42ae4bc99ed03f9484b03a8039df12d401416e9f917c2a026062862a5be9fc7e`，与新 `framework-v4` 包一致；源码 public header SHA256 为 `9331d38f6ae8c4227b29d8a8cf9a78a431293a54f747b269a679b8016e4b8dff`。设备仍为本任务独占的 `47310A81-02AA-45A1-807A-431181E4D338`，本次只 boot 这一台。
+
+该新包为相同 arm64 simulator／SDK 27／deployment 18.0 配置的增量构建；GPU、DNGSDK、Lensfun、wavelet 与 chroma denoise 启用，OpenMP 关闭。framework owner 的记录确认 30 个 public API 与当前 header 的静态／链接核验通过。模型 owner 又在运行前实测新 app 的 embedded hash、当前 header、脚本与测试源码 hash，并确认 `RawLab/RawLab`、Shared 及本脚本／测试相对 `9ec42c66` 没有差异；产品 tree 保持 `6c48c015fc6d8e5f53670ed9d6e512738243e5ea`。
+
+| 本次新增运行 | 实际结果 |
+| --- | --- |
+| `display-loader-runtime-probe` | 首次执行 exit 0，0.572 秒；`dladdr` 实际加载 `/private/tmp/rawlab-ios-v08-integration-20261016/framework-v4/sony2fuji.xcframework/ios-arm64-simulator/sony2fuji.framework/sony2fuji`，文件 hash 与新包一致。`display_enum=2`，portable loader 返回 `UNSUPPORTED=2`；空输出指针返回 `INVALID_ARGUMENT=1`；零初始化输出保持 data／size／宽高／stride 为空且 pixel format 为 RGB8。 |
+| `processor-export.sh` | 首次执行 exit 0，**56/56 断言 PASS，0 FAIL／0 SKIP**；含编译共 126.920 秒。覆盖原脚本 RAW／buffer、JPEG／DNG、尺寸／EXIF、镜头、CPU／Force Metal、HSL／效果及原生降噪 FINAL 像素／JPEG 对照。 |
+
+loader 探针核验的是零初始化输出保持为空，未扩称非零旧 buffer 的清理测试。新核心的 56 项独立记录不计成“旧 401 项全部在新核心重跑”，也未重复其它模型或 UI 套件。
+
+实际命令为：
+
+```sh
+xcrun simctl spawn 47310A81-02AA-45A1-807A-431181E4D338 /tmp/rawlab-ios-v08-integration-20261016/framework-v4/display-loader-runtime-probe
+RAWLAB_TEST_RAW="$SONY_SHARED" RAWLAB_TEST_DENOISE_RAW="$DJI_PRIVATE_V4" bash RawLab/tests/processor-export.sh /tmp/rawlab-ios-v08-integration-20261016/derived-v4/Build/Products/Debug-iphonesimulator/RawLab.app 47310A81-02AA-45A1-807A-431181E4D338
+```
+
+新增证据目录为 `/tmp/rawlab-ios-v08-integration-20261016/models-v4/`，保留 `display-loader-runtime.{log,json}`、`processor-v4-provenance.json`、`processor-export.log`／`processor-export-result.json`、`runtime-boundary.json`、`final-input-hashes.json`、`processor-output-files.json` 和 `cleanup.json`。原 `models/` 下的旧 log／provenance 未被覆盖。
+
+本次 Sony ARW 仍直接引用共享只读 `dc280884…`；原 DJI 私有副本已随上一阶段清理，所以只从共享原件补一份到本次 `models-v4/fixtures/`。两类输入在运行结束分别复核 SHA256，均与上文完整 hash 相同。随后删除本次 DJI 私有副本、一次性 runtime helper、编译 harness／重复 framework、bridge.o 与 module cache；保留 9 个必要输出（共 3,914,577 字节）及 JSON／日志。共享原件未修改、重新下载或 chmod；仅新增上述本次 DJI 测试副本。
+
+最后仅 shutdown MODELS，命令 exit 0、3.247 秒、无超时；设备数据未 erase，记录为 `simulator-shutdown.json`。没有额外设备测试，也没有产品代码改动；新 framework／DerivedData 由协调会话统一管理。原真机与发布架构边界继续适用。
