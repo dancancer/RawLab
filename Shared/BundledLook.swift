@@ -1,5 +1,22 @@
 import Foundation
 
+enum FilmGroup: String, CaseIterable {
+    case fuji, kodak, other
+
+    static func builtIn(_ fileName: String) -> Self {
+        let id = fileName.hasSuffix(".cube") ? String(fileName.dropLast(5)) : fileName
+        if let look = BundledLook.find(id) {
+            return look.id.hasPrefix("RawLab_look_") || look.id == "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65"
+                ? .kodak : .other
+        }
+        return id.hasPrefix("FLog2_to_") || id.hasPrefix("X100VI_FLog2_FGamut_to_") ? .fuji : .other
+    }
+
+    static func sections<T>(_ values: [T], group: (T) -> Self) -> [[T]] {
+        allCases.map { category in values.filter { group($0) == category } }.filter { !$0.isEmpty }
+    }
+}
+
 struct BundledLook: Decodable {
     let id: String
     let name: String

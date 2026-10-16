@@ -15,8 +15,10 @@ struct FilmPresentation {
     ].merging(Dictionary(uniqueKeysWithValues: BundledLook.all.map { ($0.id.uppercased(), $0.artworkName) })) { _, new in new }
     let name: String
     let artworkName: String?
+    let group: FilmGroup
 
     init(fileName: String) {
+        group = FilmGroup.builtIn(fileName)
         if let look = BundledLook.find(fileName) {
             name = look.name
             artworkName = look.artworkName

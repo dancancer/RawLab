@@ -5,17 +5,18 @@ struct FilmDock: View {
     @ObservedObject var model: EditorModel
     var body: some View {
         let _ = localizationLocale
+        let sections = FilmGroup.sections(model.films, group: { $0.group })
         GeometryReader { geometry in
             let itemHeight = max(66, geometry.size.height - 16)
             let imageSize = max(32, min(96, itemHeight - 34))
             HorizontalPicker(selectedID: model.selectedFilmID, name: L10n.text("胶片")) {
                 HStack(spacing: 8) {
                     filmButton(name: L10n.text("中性"), id: "", imageSize: imageSize, height: itemHeight)
-                    ForEach(FilmGroup.allCases, id: \.self) { group in
-                        if group != .fuji {
+                    ForEach(sections.indices, id: \.self) { index in
+                        if index > 0 {
                             Divider().frame(height: itemHeight - 16).padding(.horizontal, 12)
                         }
-                        ForEach(model.films.filter { $0.group == group }) { film in
+                        ForEach(sections[index]) { film in
                             filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
                                        isCustom: film.managedID != nil)
                                 .contextMenu {

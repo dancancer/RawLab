@@ -164,11 +164,15 @@ horizontal picker behavior, legacy widths and custom-look artwork behavior
 are preserved. iOS reserves 34 scaled caption points for new two-line labels;
 native UIFont measurement found that 30 points clipped a 32-point caption.
 
-The Mac film picker remains one flat horizontal list, ordered Fujifilm, Kodak,
-then Other, with vertical dividers between groups and no tabs or filtering.
-The 10 legacy Fuji looks stay together; Kodak contains 23 G'MIC looks plus
-Ektar v2; the 5 camera looks and every imported look follow in Other. Neutral
-and import remain common actions. Grouping does not change selected LUTs or IDs.
+The Mac, iOS, Android and Windows film pickers remain one flat horizontal list,
+ordered Fujifilm, Kodak, then Other, with vertical dividers between nonempty
+groups and no tabs or filtering. The legacy Fuji looks stay together (10 on
+Mac/Android/Windows; iOS also retains its existing WDR look). Kodak contains
+23 G'MIC looks plus Ektar v2, displayed as `EKTAR 100 RawLab edition`; the 5
+camera looks and every imported look follow in Other. Neutral and import remain
+common actions in their existing positions. Grouping does not change selected
+LUTs, IDs, persisted settings or CUBE contents. Imported looks are classified
+by their managed identity, not a potentially matching built-in display name.
 
 ## Reproduction
 
@@ -210,11 +214,21 @@ Verified locally on this branch:
 - Existing shared-core CTest: 36/36 passed. No core implementation was changed.
 - Android Debug unit tests and generated assets; per-file equality of all 29
   CUBEs, mapped artwork, catalog and NOTICE against the prepared asset output.
+  Flat-group tests cover stable order, same-name imports, unavailable entries
+  and missing groups; the resource instrumentation tests also compile with
+  assertions for the actual 40-entry list and its two divider positions.
 - iOS Foundation presentation tests and actual UI-source typecheck. A minimal
   Xcode native resource bundle using the same folder-reference form was built;
   iPhone/iPad simulator UIKit checks decoded all 29 icons, checked CUBE hashes
   and measured every default caption within the reserved two-line height.
   This was not a full RawLab iOS app build or screen-level test.
+- Shared Apple grouping tests cover the catalog's 24 Kodak / 5 Other entries,
+  legacy Fuji (including iOS WDR), empty groups and stable group order. The
+  current iOS app's complete Swift sources typecheck against the simulator SDK.
+- Windows Debug WPF app and WPF test projects cross-compile with .NET 8 (zero
+  warnings/errors). The standalone `tests/looks/LookGrouping.Tests.csproj`
+  passes all 9 grouping checks; the Windows runner includes the `looks` suite.
+  WPF group-divider/name assertions compile but were not executed on Windows.
 - Release blockers were checked for Mac and Android; iOS PBX and Windows XML
   configurations were inspected. No Release/public artifact was produced.
 
@@ -234,9 +248,10 @@ failures (Android `output_destination`, Apple crop hint); this change adds no
 new translatable UI key and does not silently fix those unrelated issues.
 
 Not verified: full iOS/Android app/native builds, mobile device/GLES runs,
-Windows build/D3D11 (no local .NET toolchain), macOS 14 hardware, CI, every
-dynamic-type size, or global camera/film fidelity. Do not infer those results
-from shared table/resource tests.
+Windows UI/D3D11 runtime, macOS 14 hardware, CI, every dynamic-type size, or
+global camera/film fidelity. The full iOS build stops at the missing worktree
+`lutools/build-ios/sony2fuji.xcframework`; no compiled framework was copied from
+another checkout. Do not infer runtime results from source or resource tests.
 
 ## Redistribution Gate
 

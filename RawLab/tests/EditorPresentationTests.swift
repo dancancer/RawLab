@@ -164,6 +164,14 @@ struct EditorPresentationTests {
         let custom = FilmPresentation(fileName: "My_Custom_Look")
         check(custom.name == "My_Custom_Look" && custom.artworkName == nil,
               "Unknown names remain intact and do not borrow film artwork")
+        check(film.group == .fuji && wdr.group == .fuji && custom.group == .other,
+              "Legacy Fuji and unknown looks retain their flat-list groups")
+        let groups = FilmGroup.sections(BundledLook.all, group: { FilmPresentation(fileName: $0.id).group })
+        check(groups.map(\.count) == [24, 5], "Shared iOS looks have 24 Kodak and 5 Other entries")
+        check(FilmGroup.sections([FilmGroup](), group: { $0 }).isEmpty,
+              "An empty look list has no empty sections or separators")
+        check(FilmGroup.sections([FilmGroup.other, .fuji, .kodak, .other], group: { $0 }) == [[.fuji], [.kodak], [.other, .other]],
+              "Flat sections follow Fuji, Kodak, Other without dropping or duplicating looks")
         let ektar = FilmPresentation(fileName: "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
         check(ektar.name == "EKTAR 100 RawLab edition" && ektar.artworkName == "ektar-100-phuket",
               "Project Ektar keeps its distinct name and existing artwork")
