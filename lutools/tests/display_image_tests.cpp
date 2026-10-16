@@ -449,6 +449,30 @@ void runAppleTests() {
     if (grayWritten) expectUnsupported(gray, "Unprofiled grayscale PNG");
     CGColorSpaceRelease(deviceGray);
 
+    auto* taggedGraySpace = CGColorSpaceCreateWithName(kCGColorSpaceGenericGrayGamma2_2);
+    auto taggedGrayFixture = grayImage(2, 1, taggedGraySpace, {32, 224});
+    const auto taggedGray = root / "tagged-gray.png";
+    const bool taggedGrayWritten = taggedGrayFixture.image &&
+        writeImage(taggedGray, CFSTR("public.png"), taggedGrayFixture.image);
+    check(taggedGrayWritten, "Generate profiled grayscale PNG fixture");
+    if (taggedGrayWritten) {
+        const auto pathString = taggedGray.u8string();
+        auto* url = CFURLCreateFromFileSystemRepresentation(
+            kCFAllocatorDefault, reinterpret_cast<const UInt8*>(pathString.data()), pathString.size(), false);
+        auto* source = url ? CGImageSourceCreateWithURL(url, nullptr) : nullptr;
+        auto* properties = source ? CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr) : nullptr;
+        auto* image = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
+        check(properties && CFDictionaryGetValue(properties, kCGImagePropertyProfileName) && image &&
+                  CGColorSpaceGetModel(CGImageGetColorSpace(image)) == kCGColorSpaceModelMonochrome,
+              "Profiled grayscale fixture retains its profile and non-RGB source model");
+        if (image) CGImageRelease(image);
+        if (properties) CFRelease(properties);
+        if (source) CFRelease(source);
+        if (url) CFRelease(url);
+        expectUnsupported(taggedGray, "Profiled grayscale PNG", true);
+    }
+    CGColorSpaceRelease(taggedGraySpace);
+
     const auto transparent = root / "transparent.png";
     auto transparentFixture = rgbaImage(1, 1, sRGB, {255, 0, 0, 127});
     check(transparentFixture.image && writeImage(transparent, CFSTR("public.png"), transparentFixture.image),

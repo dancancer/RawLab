@@ -178,13 +178,9 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     CFUnique<CGImageRef> decoded(CGImageSourceCreateImageAtIndex(source.get(), 0, decodeOptions.get()));
     if (!decoded) return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const CGColorSpaceRef decodedSpace = CGImageGetColorSpace(decoded.get());
-    if (decodedSpace && CGColorSpaceGetModel(decodedSpace) == kCGColorSpaceModelCMYK)
+    if (!decodedSpace || CGColorSpaceGetModel(decodedSpace) != kCGColorSpaceModelRGB)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     const bool hasProfile = CFDictionaryGetValue(properties.get(), kCGImagePropertyProfileName) != nullptr;
-    // CGImageCreateCopyWithColorSpace requires matching component counts; do not
-    // guess sRGB for unprofiled gray, indexed, or other non-RGB source models.
-    if (!hasProfile && (!decodedSpace || CGColorSpaceGetModel(decodedSpace) != kCGColorSpaceModelRGB))
-        return SONY2FUJI_STATUS_UNSUPPORTED;
     if (isHDRColorSpace(decodedSpace) || CGImageGetBitsPerComponent(decoded.get()) != 8 ||
         (CGImageGetBitmapInfo(decoded.get()) & kCGBitmapFloatComponents) != 0)
         return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -213,13 +209,11 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     }
 
     CGColorSpaceRef sourceSpace = CGImageGetColorSpace(image.get());
-    if (sourceSpace && CGColorSpaceGetModel(sourceSpace) == kCGColorSpaceModelCMYK)
+    if (!sourceSpace || CGColorSpaceGetModel(sourceSpace) != kCGColorSpaceModelRGB)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     if (isHDRColorSpace(sourceSpace)) return SONY2FUJI_STATUS_UNSUPPORTED;
 
     if (!hasProfile) {
-        if (!sourceSpace || CGColorSpaceGetModel(sourceSpace) != kCGColorSpaceModelRGB)
-            return SONY2FUJI_STATUS_UNSUPPORTED;
         CFUnique<CGColorSpaceRef> sRGB(CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
         if (!sRGB) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         CFUnique<CGImageRef> retagged(CGImageCreateCopyWithColorSpace(image.get(), sRGB.get()));

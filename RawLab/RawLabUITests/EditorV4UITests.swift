@@ -587,6 +587,19 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
     }
 
+    func testFilesPickerSelectsSeededRasterFromLocalStorage() throws {
+        let app = XCUIApplication()
+        launchEnglish(app)
+        try selectSeededFilesImage(in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 60),
+                      app.debugDescription)
+        XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.debugDescription)
+        XCTAssertFalse(app.buttons["tool.lens"].isEnabled,
+                       "A raster selected through Files must not expose RAW-only lens correction")
+        XCTAssertEqual(app.buttons["tool.temperature"].label, "White Balance")
+        capture("v4-files-raster-imported", in: app)
+    }
+
     func testFileImportMenuDisablesWhileEditorIsBusy() {
         let app = XCUIApplication()
         launchEnglish(app, additionalArguments: ["-RawLab.testBusyEditor"])
@@ -633,6 +646,63 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(cancel.isHittable)
         cancel.tap()
         waitUntil(timeout: 10) { !cancel.exists && app.descendants(matching: .any)["editor.photo"].exists }
+    }
+
+    private func selectSeededFilesImage(in app: XCUIApplication) throws {
+        let privacy = app.buttons["editor.privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
+        privacy.tap()
+        let filesItems = app.buttons.matching(identifier: "editor.import.file").allElementsBoundByIndex
+        let file = filesItems.first { $0.exists && $0.isHittable }
+        XCTAssertNotNil(file, app.debugDescription)
+        guard let file else { return }
+        XCTAssertTrue(file.isEnabled, "The Files picker can only be opened from a clean empty editor state")
+        file.tap()
+
+        let localStorage = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "DOC.sidebar.item.On My ")).firstMatch
+        if !localStorage.waitForExistence(timeout: 2) {
+            let browse = app.buttons["Browse"].firstMatch
+            XCTAssertTrue(browse.waitForExistence(timeout: 10), app.debugDescription)
+            browse.tap()
+        }
+
+        let downloadsBeforeNavigation = app.cells.matching(identifier: "Downloads").firstMatch
+        if !downloadsBeforeNavigation.waitForExistence(timeout: 2) {
+            let location = app.cells.allElementsBoundByIndex.first {
+                $0.label == "On My iPhone" || $0.label == "On My iPad"
+                    || $0.identifier.hasPrefix("DOC.sidebar.item.On My ")
+            }
+            if let location {
+                location.tap()
+            } else {
+                let locationButton = app.buttons.allElementsBoundByIndex.first {
+                    $0.label == "On My iPhone" || $0.label == "On My iPad"
+                }
+                XCTAssertNotNil(locationButton, app.debugDescription)
+                guard let locationButton else { return }
+                locationButton.tap()
+            }
+        }
+
+        let downloads = app.cells.matching(identifier: "Downloads").firstMatch
+        XCTAssertTrue(downloads.waitForExistence(timeout: 10), app.debugDescription)
+        downloads.tap()
+
+        var fixture: XCUIElement?
+        waitUntil(timeout: 15) {
+            let candidate = app.cells.matching(identifier: "RawLabFilesFixture, png").firstMatch
+            if candidate.exists {
+                fixture = candidate
+                return true
+            }
+            return false
+        }
+        XCTAssertNotNil(fixture, app.debugDescription)
+        guard let fixture else { return }
+        fixture.tap()
+        waitUntil(timeout: 60) {
+            app.descendants(matching: .any)["editor.photo"].exists
+        }
     }
 
     private func openAndCancelPhotoPicker(_ identifier: String, in app: XCUIApplication) {

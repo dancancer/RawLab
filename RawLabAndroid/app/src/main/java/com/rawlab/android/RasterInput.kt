@@ -382,6 +382,9 @@ internal object RasterContainerValidator {
             val length = readInt(chunkHeader, 0)
             if (length < 0 || length > 64 * 1024 * 1024) return invalid("Invalid PNG chunk")
             val type = chunkHeader.copyOfRange(4, 8)
+            if (type.contentEquals("sRGB".toByteArray()) && length != 1 ||
+                type.contentEquals("cICP".toByteArray()) && length != 4)
+                return invalid("Invalid PNG color metadata")
             if (type.contentEquals("iCCP".toByteArray()) && length > IccProfiles.MAX_PROFILE_BYTES)
                 return invalid("PNG ICC profile is too large")
             val data = if (isMetadataChunk(type) || type.contentEquals("acTL".toByteArray()) ||
@@ -393,7 +396,16 @@ internal object RasterContainerValidator {
             if (type.contentEquals("acTL".toByteArray())) return invalid("Animated PNG is not supported")
             if (type.contentEquals("tRNS".toByteArray())) hasTransparencyChunk = true
             when {
-                type.contentEquals("sRGB".toByteArray()) -> hasSrgbProfile = true
+                type.contentEquals("sRGB".toByteArray()) -> {
+                    if (data == null || (data[0].toInt() and 0xFF) !in 0..3)
+                        return invalid("Invalid PNG sRGB rendering intent")
+                    hasSrgbProfile = true
+                }
+                type.contentEquals("cICP".toByteArray()) -> {
+                    if (data == null || !data.contentEquals(byteArrayOf(1, 13, 0, 1)))
+                        return invalid("PNG color metadata is not supported")
+                    hasSrgbProfile = true
+                }
                 type.contentEquals("iCCP".toByteArray()) -> {
                     if (hasIccProfile || data == null || !IccProfiles.validatePngChunk(data))
                         return invalid("Invalid PNG ICC profile")
@@ -401,13 +413,17 @@ internal object RasterContainerValidator {
                 }
                 type.contentEquals("gAMA".toByteArray()) || type.contentEquals("cHRM".toByteArray()) ->
                     hasUnresolvedColorMetadata = true
-                type.contentEquals("cICP".toByteArray()) || type.contentEquals("mDCv".toByteArray()) ||
+                type.contentEquals("mDCv".toByteArray()) ||
                     type.contentEquals("mDCV".toByteArray()) ||
                     type.contentEquals("cLLi".toByteArray()) -> return invalid("HDR PNG color metadata is not supported")
             }
             if (data != null && containsGainMapMarker(data)) return invalid("HDR gain maps are not supported")
-            if (type.contentEquals("IEND".toByteArray())) sawIend = true
+            if (type.contentEquals("IEND".toByteArray())) {
+                if (length != 0) return invalid("Invalid PNG end marker")
+                sawIend = true
+            }
         }
+        if (stream.read() >= 0) return invalid("Trailing PNG data is not supported")
         if (hasTransparencyChunk) return invalid("Transparent PNG is not supported")
         if (hasSrgbProfile && hasIccProfile) return invalid("PNG has conflicting color profiles")
         if (hasUnresolvedColorMetadata && !hasSrgbProfile && !hasIccProfile)
@@ -514,7 +530,8 @@ internal object RasterContainerValidator {
     private fun isMetadataChunk(type: ByteArray): Boolean =
         type.contentEquals("iTXt".toByteArray()) || type.contentEquals("tEXt".toByteArray()) ||
             type.contentEquals("zTXt".toByteArray()) || type.contentEquals("eXIf".toByteArray()) ||
-            type.contentEquals("iCCP".toByteArray())
+            type.contentEquals("iCCP".toByteArray()) || type.contentEquals("sRGB".toByteArray()) ||
+            type.contentEquals("cICP".toByteArray())
 
     private fun containsGainMapMarker(data: ByteArray): Boolean {
         val text = data.toString(Charsets.ISO_8859_1).lowercase()

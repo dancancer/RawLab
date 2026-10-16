@@ -203,10 +203,16 @@ struct BatchExportTests {
         let completedDNGPendingJobs = try journal.pendingJobs()
         check(completedDNGPendingJobs.contains(where: { $0.id == completedDNG.id }),
               "completed DNG journal remains recoverable until explicit discard")
+        _ = try BatchFileOutputStore.directory(for: completedDNG.id)
+        let exportedDNG = Data("durable DNG output".utf8)
+        try exportedDNG.write(to: durableDNG)
         try journal.discard(id: completedDNG.id)
         let afterDiscardDNGJobs = try journal.pendingJobs()
         check(!afterDiscardDNGJobs.contains(where: { $0.id == completedDNG.id }),
               "explicit DNG discard removes the durable journal")
+        let retainedDNG = try Data(contentsOf: durableDNG)
+        check(retainedDNG == exportedDNG,
+              "discarding a DNG journal preserves the exported image")
         try journal.save(cancelled)
         let resumableCancelled = try journal.pendingJobs()
         check(resumableCancelled.contains(where: { $0.id == cancelled.id }), "cancelled work remains accessible for resume")

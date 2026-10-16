@@ -8,10 +8,10 @@ using System.Windows.Media.Imaging;
 namespace RawLab.Windows;
 public sealed class LibraryEntry : INotifyPropertyChanged
 {
-    public static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos".Split(' '),StringComparer.OrdinalIgnoreCase);
-    public static bool IsRaw(string path) => RawExtensions.Contains(System.IO.Path.GetExtension(path).TrimStart('.'));
-    public static readonly HashSet<string> RasterExtensions = new("jpg jpeg png tif tiff".Split(' '),StringComparer.OrdinalIgnoreCase);
-    public static bool IsRaster(string path) => RasterExtensions.Contains(System.IO.Path.GetExtension(path).TrimStart('.'));
+    public static readonly HashSet<string> RawExtensions = PhotoInput.RawExtensions;
+    public static bool IsRaw(string path) => PhotoInput.IsRaw(path);
+    public static readonly HashSet<string> RasterExtensions = PhotoInput.RasterExtensions;
+    public static bool IsRaster(string path) => PhotoInput.IsRaster(path);
     public static bool IsImage(string path) => IsRaw(path) || IsRaster(path);
     internal static string ImageFilter => string.Join(';',RawExtensions.Concat(RasterExtensions).Select(x=>"*."+x));
     public string Path { get; }

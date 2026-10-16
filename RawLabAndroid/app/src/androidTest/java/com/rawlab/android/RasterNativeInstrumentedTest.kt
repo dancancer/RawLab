@@ -30,6 +30,45 @@ import kotlin.math.roundToInt
 @RunWith(AndroidJUnit4::class)
 class RasterNativeInstrumentedTest {
     @Test
+    fun sdrCicpPngPreservesNeutralPixelsAndFinalExport() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = testRoot(context, "raster-cicp")
+        val input = File(root, "sdr.png")
+        val hdr = File(root, "hdr.png")
+        val output = File(root, "output.png")
+        writeCicpPng(input, byteArrayOf(1, 13, 0, 1))
+        writeCicpPng(hdr, byteArrayOf(9, 16, 0, 1))
+        try {
+            assertTrue(RasterContainerValidator.inspect(input.readBytes()).isValid)
+            assertTrue(!RasterContainerValidator.inspect(hdr.readBytes()).isValid)
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val preview = processor.preview(input, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
+                val pixels = preview.bitmap()
+                try {
+                    assertEquals(2, pixels.width)
+                    assertEquals(1, pixels.height)
+                    assertEquals(0xFF336699.toInt(), pixels.getPixel(0, 0))
+                    assertEquals(0xFFCC8040.toInt(), pixels.getPixel(1, 0))
+                } finally {
+                    pixels.recycle()
+                }
+                assertEquals(0, processor.export(input, null, EditSettings(), output, ExportFormat.PNG, null, PhotoInputKind.RASTER))
+                val final = checkNotNull(BitmapFactory.decodeFile(output.path))
+                try {
+                    assertFrameMatchesBitmap(preview, final, 0)
+                } finally {
+                    final.recycle()
+                }
+                assertThrows(IOException::class.java) {
+                    processor.preview(hdr, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
+                }
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun neutralRasterPreservesPixelsOrientationAndFullResolutionExport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = testRoot(context, "raster-native")
@@ -401,6 +440,19 @@ private const val PROGRESSIVE_JPEG_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAM
     "AVHw/9oACAECAQE/ENis/8QAFxABAQEBAAAAAAAAAAAAAAAAAREAMf/aAAgBAQABPxBLxVstClVVXt3/2Q=="
 
 private const val PNG_SIGNATURE_SIZE = 8
+
+private fun writeCicpPng(file: File, cicp: ByteArray) {
+    val header = ByteBuffer.allocate(13).order(ByteOrder.BIG_ENDIAN)
+        .putInt(2).putInt(1).put(8).put(2).put(0).put(0).put(0).array()
+    val compressed = ByteArrayOutputStream().also { output ->
+        DeflaterOutputStream(output).use { stream ->
+            stream.write(byteArrayOf(0, 0x33, 0x66, 0x99.toByte(), 0xCC.toByte(), 0x80.toByte(), 0x40))
+        }
+    }.toByteArray()
+    file.writeBytes(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10) +
+        makePngChunk("IHDR", header) + makePngChunk("cICP", cicp) +
+        makePngChunk("IDAT", compressed) + makePngChunk("IEND", byteArrayOf()))
+}
 
 private fun testRoot(context: android.content.Context, prefix: String): File =
     File(context.cacheDir, "$prefix-${UUID.randomUUID()}").apply { mkdirs() }

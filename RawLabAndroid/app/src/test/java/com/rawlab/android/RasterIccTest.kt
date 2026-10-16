@@ -22,6 +22,15 @@ class RasterIccTest {
     }
 
     @Test
+    fun pngExplicitSrgbMarkersConflictWithIccProfiles() {
+        val png = pngWithIccp(syntheticIccProfile(displayP3 = true))
+        val prefix = png.copyOf(png.size - 12)
+        for ((type, data) in listOf("cICP" to byteArrayOf(1, 13, 0, 1), "sRGB" to byteArrayOf(0))) {
+            assertFalse(RasterContainerValidator.inspect(prefix + pngChunk(type, data) + pngChunk("IEND", byteArrayOf())).isValid)
+        }
+    }
+
+    @Test
     fun jpegIccProfileRequiresEveryOrderedChunkExactlyOnce() {
         val profile = syntheticIccProfile(displayP3 = true)
         val split = profile.size / 2

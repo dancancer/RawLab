@@ -75,6 +75,33 @@ class RasterInputTest {
     }
 
     @Test
+    fun pngColorMarkersAcceptOnlyExplicitSrgb() {
+        assertTrue(RasterContainerValidator.inspect(pngWithChunk("cICP", byteArrayOf(1, 13, 0, 1))).isValid)
+        for (payload in listOf(byteArrayOf(9, 16, 0, 1), byteArrayOf(1, 13, 1, 1), byteArrayOf(1, 13, 0))) {
+            assertFalse(RasterContainerValidator.inspect(pngWithChunk("cICP", payload)).isValid)
+        }
+    }
+
+    @Test
+    fun pngSrgbChunkRequiresOneValidRenderingIntent() {
+        for (intent in 0..3) {
+            assertTrue(RasterContainerValidator.inspect(pngWithChunk("sRGB", byteArrayOf(intent.toByte()))).isValid)
+        }
+        for (payload in listOf(byteArrayOf(), byteArrayOf(4), byteArrayOf(0, 0))) {
+            assertFalse(RasterContainerValidator.inspect(pngWithChunk("sRGB", payload)).isValid)
+        }
+    }
+
+    @Test
+    fun pngEndMustBeEmptyAndTerminateTheStream() {
+        val prefix = pngHeader(2, 2, 8, 2, false)
+        val complete = pngHeader(2, 2, 8, 2, true)
+        assertFalse(RasterContainerValidator.inspect(prefix + pngChunk("IEND", byteArrayOf(1))).isValid)
+        assertFalse(RasterContainerValidator.inspect(complete + byteArrayOf(0)).isValid)
+        assertFalse(RasterContainerValidator.inspect(complete + complete).isValid)
+    }
+
+    @Test
     fun rasterContainerValidationAcceptsRealProgressiveJpegWithMultipleScans() {
         val jpeg = Base64.getDecoder().decode(PROGRESSIVE_JPEG_BASE64)
         val result = RasterContainerValidator.inspect(jpeg)
@@ -102,9 +129,12 @@ class RasterInputTest {
         return signature + chunk + if (includeIend) iend else ByteArray(0)
     }
 
-    private fun pngWithChunk(type: String): ByteArray = pngHeader(2, 2, 8, 2, false) +
-        byteArrayOf(0, 0, 0, 0, type[0].code.toByte(), type[1].code.toByte(), type[2].code.toByte(), type[3].code.toByte(),
-            0, 0, 0, 0) + byteArrayOf(0, 0, 0, 0, 'I'.code.toByte(), 'E'.code.toByte(), 'N'.code.toByte(), 'D'.code.toByte(), 0, 0, 0, 0)
+    private fun pngWithChunk(type: String, data: ByteArray = byteArrayOf()): ByteArray =
+        pngHeader(2, 2, 8, 2, false) + pngChunk(type, data) + pngChunk("IEND", byteArrayOf())
+
+    private fun pngChunk(type: String, data: ByteArray): ByteArray =
+        byteArrayOf((data.size ushr 24).toByte(), (data.size ushr 16).toByte(),
+            (data.size ushr 8).toByte(), data.size.toByte()) + type.toByteArray(Charsets.US_ASCII) + data + ByteArray(4)
 
     private fun jpegWithMpf(): ByteArray {
         val mpf = byteArrayOf(0xFF.toByte(), 0xE2.toByte(), 0, 10, 'M'.code.toByte(), 'P'.code.toByte(), 'F'.code.toByte(), 0, 0, 0)
