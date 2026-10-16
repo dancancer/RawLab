@@ -160,7 +160,7 @@ jobs:
             Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
             Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
             $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
-            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups'
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,looks'
           }
           finally {
             if (Test-Path build/windows-v08-results) {

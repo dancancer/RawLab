@@ -88,7 +88,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("test_tool_group_ui.py", commands["contracts"])
         self.assertIn("RawLabMac/tests/presentation.sh", commands["macos"])
         self.assertIn("RawLabMac/tests/control-groups.sh", commands["macos"])
-        self.assertIn("comparison-default,tool-groups", commands["windows"])
+        self.assertIn("comparison-default,tool-groups,looks", commands["windows"])
 
     def test_lut_contracts_include_the_adapter_dependencies(self):
         contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
