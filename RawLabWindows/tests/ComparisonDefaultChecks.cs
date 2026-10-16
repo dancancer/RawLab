@@ -15,6 +15,11 @@ internal static class ComparisonDefaultChecks
 
     internal static void Run(string repo, string raw, Action<bool, string> check)
     {
+        check(GpuSelection(null)==1 && GpuSelection("Cpu")==1 && GpuSelection("Auto")==0 && GpuSelection("Force")==2,
+            "Native acceptance GPU selection defaults to CPU and maps explicit modes");
+        var rejectedMode=false;
+        try{GpuSelection("gpu");}catch(ArgumentException){rejectedMode=true;}
+        check(rejectedMode,"Native acceptance rejects an unknown GPU mode");
         repo = Path.GetFullPath(repo);
         raw = Path.GetFullPath(raw);
         var output = Path.Combine(repo, "build", "comparison-default", Guid.NewGuid().ToString("N"));
@@ -151,6 +156,12 @@ internal static class ComparisonDefaultChecks
 
     internal static int Host(string repo, string profile)
     {
+        var gpuSelection=GpuSelection(Environment.GetEnvironmentVariable("RAWLAB_COMPARISON_GPU"));
+        if(Process.GetCurrentProcess().SessionId==0 || !Environment.UserInteractive)
+        {
+            Console.WriteLine("NOT REACHED Native acceptance requires an interactive Windows session.");
+            return 2;
+        }
         repo = Path.GetFullPath(repo);
         profile = Path.GetFullPath(profile);
         Directory.CreateDirectory(profile);
@@ -162,9 +173,9 @@ internal static class ComparisonDefaultChecks
         {
             if (string.Equals(Environment.GetEnvironmentVariable("RAWLAB_COMPARISON_UI_PHASE"), "restart",
                     StringComparison.OrdinalIgnoreCase))
-                return RunHostedWindow(repo, profile, raw, fixtures, "restart");
+                return RunHostedWindow(repo, profile, raw, fixtures, "restart",gpuSelection);
 
-            var first = RunHostedWindow(repo, profile, raw, fixtures, "first");
+            var first = RunHostedWindow(repo, profile, raw, fixtures, "first",gpuSelection);
             if (first == 2 || first != 0) return first;
             return RunRestartHost(repo, profile);
         }
@@ -192,14 +203,22 @@ internal static class ComparisonDefaultChecks
         return child.ExitCode;
     }
 
-    private static int RunHostedWindow(string repo, string profile, string raw, Fixtures fixtures, string phase)
+    private static int GpuSelection(string? mode)=>mode?.ToLowerInvariant() switch
+    {
+        null or "" or "cpu"=>1,
+        "auto"=>0,
+        "force"=>2,
+        _=>throw new ArgumentException("RAWLAB_COMPARISON_GPU must be Cpu, Auto or Force.")
+    };
+
+    private static int RunHostedWindow(string repo, string profile, string raw, Fixtures fixtures, string phase,int gpuSelection)
     {
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
         TestWindowState.Isolate(window, Path.Combine(profile, "window-state"));
         UseProfile(window, profile);
-        window.GpuMode.SelectedIndex = 1;
+        window.GpuMode.SelectedIndex = gpuSelection;
         Process? driver = null;
         Task<string>? driverOutput = null, driverError = null;
         DispatcherTimer? timeoutTimer = null;

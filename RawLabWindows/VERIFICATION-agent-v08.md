@@ -4,9 +4,11 @@
 
 Milestone 1 (complete Agent v4) and milestone 2's bounded ordinary-image paths
 have completed their functional validation. Milestone 3's single-preview behavior
-is implemented and functionally verified, but its real native interaction gate
-is NOT REACHED because no interactive desktop is available. The first sections
-record M1; the follow-up section records M2/M3 separately. No push, PR update,
+is implemented and functionally verified. Its native desktop gate subsequently
+passed on the connected VM and on physical host 125, including CPU/Force/Auto
+runs, as recorded in Native Desktop Follow-up below. Earlier NOT REACHED results
+remain historical evidence, not current completion claims. The first sections
+record M1; the follow-up sections record M2/M3 separately. No push, PR update,
 merge or release is authorized by this record.
 
 - Windows base: `3199c915d20b77f38c00a6b7c1edbc9a286807ea`, branch `feature/windows-v08-editor`.
@@ -101,7 +103,9 @@ The final UI-only child took 20.01 s. At 250 ms sampling, maximum working set wa
 set was 1,443,614,720 bytes. These are one short process run, not a memory cap,
 leak/soak test, large mixed-batch benchmark or GPU-memory acceptance result.
 
-NOT REACHED: physical Windows GPU identity/performance/memory, physical OLE/file
+At the M1 checkpoint, NOT REACHED included physical GPU identity/memory and
+native desktop interaction. The later desktop section supersedes those two
+limits with physical-host measurements. Still NOT REACHED: physical OLE/file
 drag input, real mouse/touch/pen and keyboard interaction, multi-monitor/DPI/Snap,
 Narrator and actual OS high-contrast/text-scale changes, long-running memory soak
 and broad camera coverage. The VM reports Microsoft Basic Display Adapter;
@@ -226,9 +230,11 @@ mixed export assertions and accurate raster labels; RAW Force GPU -> raster
 visible CPU selection with RAW selection restoration; and an independent native
 runner that captures the external driver's exit/reason and preserves default
 profile files. No parser, shared rendering math or ABI layout was changed for
-those fixes. The native desktop gate remains open, not a functional-test pass.
+those fixes. At that pre-desktop checkpoint the native desktop gate remained
+open, rather than being counted as a functional-test pass. It is closed by the
+separate native runs below.
 
-Final sampled binary SHA-256 values after the last managed build:
+Pre-desktop sampled binary SHA-256 values after that managed build:
 
 - `sony2fuji.dll`: `3731dfc1fbb1b69197a77a36e62881a4e7d82f9ca1c98d653b84f2a34cb4f7b4`.
 - `sony2fuji.exe`: `cd5ca9232e9f5de7b40302f2dcb48bc26f17c25a0ed3c8c072704c2f98b457cd`.
@@ -245,3 +251,129 @@ hostile metadata decompression peak bounds or full 64M-input acceptance. Native
 CMYK JPEG and HDR/gain-map marker probes are preflight/header refusal controls,
 not complete HDR/gain-map image fixtures; complete RGB8 TIFF and float/CMYK TIFF
 fixtures are separately exercised. HEIF is not advertised or accepted.
+
+## Native Desktop Follow-up (2026-10-16)
+
+This follow-up changes only three Windows test sources; no production editor,
+shared core, ABI, driver, display policy or firewall code/configuration was
+changed. The source base is local `725fbda73d5920ced3f2ac350c610dbbfab3b1c3`.
+The 519-file archive is `build/windows-agent-v08/native-desktop-source/source.zip`,
+SHA-256 `691b3b9628161491b14d0efd48c85834e0c4d1d8b677a900d17acfb4adfb244f`.
+At the Windows hash-audit checkpoint, 517 files matched; only the existing
+implementation/verification Markdown files differed. All executable source,
+tests and assets still match. README's GPU/native acceptance notes and this
+acceptance prose were updated after that archive/audit and are not included in
+its 517-file count.
+
+The changed test-source SHA-256 values are:
+
+- `tests/ComparisonDefaultChecks.cs`: `c4b11b7082639d3e80681a119f5c2510b858efcbf7c4a4fa6f49848dccfac776`.
+- `tests/EntrySelectionChecks.cs`: `7ec423da467b51ef83eb8ce313b77942cda382a509194e7d4f3b4ef558a6cc3c`.
+- `tests/ui-automation/Program.cs`: `aa9bf2a2607d51752f27cb45fe57249be80f06933a913a3f282deb845111ccea`.
+
+The VM uses an actual logged-on RDP Session 1, not SSH Session 0. Temporary
+InteractiveToken tasks run only this task's host/probe and were removed after
+completion. Physical host 125 uses the existing authenticated RDP Session 2,
+with the existing x64 Windows Desktop Runtime 8.0.11. No SDK/runtime installation
+was needed there. The user confirmed certificate warnings themselves. Only the
+explicitly authorized `physical-transfer` directory was redirected; its row was
+removed, redirection disabled and the 125 RDP transport disconnected afterward.
+
+### Failure, Fix And Gates
+
+The first VM interactive run genuinely failed with exit 1: the native open
+dialog is a child of the main window in the UIA tree, while the old driver only
+searched the root's direct children. It timed out at OpenPhoto/FindDialog after
+eight minutes. The fixed driver searches the owner children first, then the
+root, always filtered by host PID, with a 15-second dialog lookup timeout.
+The same VM's complete rerun passes. The noninteractive preflight regression
+also failed before its fix, entering fixture/native initialization instead of
+returning 2; after the fix, Session 0 returns NOT REACHED before creating profile
+or WPF state. Default-journal admission still runs before that preflight.
+
+The external driver now checks native comparison menu TogglePattern selection,
+canvas RangeValue support, neutral-canvas visibility and the retained 35% swipe
+divider after asynchronous exposure. CPU is the default; test-only environment
+`RAWLAB_COMPARISON_GPU=Cpu|Auto|Force` selects the initial mode for both processes.
+Force requires the completed RAW preview's actual GPU backend, never fallback.
+
+| Run/Gate | Actual Result |
+| --- | --- |
+| Fresh managed host and independent UIA driver builds | Passed, zero warnings/errors; separate new outputs, no old managed DLL substitution. |
+| VM `native-desktop-green` | Exit 0, 60 native UIA checks, first and restarted processes; default profile unchanged. |
+| 125 `Cpu-20261016-015519` | Exit 0, 60 native UIA checks; RAW and raster backend CPU. |
+| 125 `Force-20261016-015642` | Exit 0, 60 native UIA checks; each RAW open/reopen/restart uses D3D11, PNG/JPEG CPU. |
+| 125 `Auto-20261016-015811` | Exit 0, 57 native UIA checks; logs confirm D3D11 on all RAW stages and CPU on raster. Auto intentionally does not require GPU availability. |
+| Entry selection / default isolation / comparison default / profile isolation | 59 / 160 / 29 / 10 passed, respectively; all exit 0. |
+| Default stores | VM's existing two files and 125's existing `folders.json` retain file lists, SHA-256 and modification ticks; no default journal/staging is loaded or changed. |
+
+Each native run opens the real OpenFileDialog, switches RAW -> PNG -> JPEG ->
+RAW, changes side/swipe via the real context menu, edits exposure through UIA,
+and restores 1.25 EV in a separate restarted host. Routed-event functional
+tests are not counted as native input. An initial 125 CPU run completed the
+assertions but its orchestration recorded a null exit code; it is not a green
+gate. The repeated CPU run above writes and verifies an explicit `exit.txt=0`.
+
+The portable base archive SHA-256 is
+`7ccbdd00fe011424fc1b8b82896805fc655f098189bd5813db7b4887b7bba141`;
+the managed overlay is
+`35180d7db1879d5e21e239af30be44f58647e4a051c6605d6528ceec5c9bdbbc`.
+The physical runner validates every packaged file against the resulting binary
+manifest before launch. Actual final binary SHA-256 values used by both hosts:
+
+- `RawLab.dll`: `6e577a7f906d081f6408255fc088013a9704737ec4b451fa8790bc5c1a4f348f`.
+- `RawLabWindows.Tests.dll`: `8eae362f1fcde5b54b7717f020d12774105490f8412451d85ad69ef24a8b989f`.
+- `RawLabWindows.UiAutomation.dll`: `59544f3a4c8a957ee9b5f38ebc1896e053a318b957b6e279c037d63a0c4666d3`.
+- `sony2fuji.dll`: unchanged `3731dfc1fbb1b69197a77a36e62881a4e7d82f9ca1c98d653b84f2a34cb4f7b4`.
+
+### Physical GPU And Memory
+
+125 reports NVIDIA GeForce RTX 4090 D, driver 616.56; `nvidia-smi` reports
+49,140 MiB total memory. CIM also lists the RDP display adapter. A read-only
+DXGI probe identifies NVIDIA PCI `10DE:2685`, subsystem `169710DE`, revision A1,
+Flags 0 (neither software nor remote). The sampled RawLab PID instances map
+exactly to its `luid_0x00000000_0x0000D355`. A second DXGI record has identical
+device fields but another LUID; it is retained in the evidence, not guessed to
+be a second physical card or the renderer's selected device.
+
+GPUProcessMemory samples are taken roughly every 1.06-1.18 seconds, median about
+1.1 seconds. Per-record values are summed only within the same PID/time before
+taking maxima. Dedicated and shared columns are independent sample maxima, not
+their simultaneous sum. Units below are MiB (2^20 bytes).
+
+| Run/Host PID | Dedicated GPU Max | Shared GPU Max | Private Max | Working Set Max |
+| --- | ---: | ---: | ---: | ---: |
+| CPU first / 19852 | 61.12 | 11.34 | 769.54 | 820.17 |
+| CPU restart / 5632 | 50.65 | 9.14 | 837.55 | 774.20 |
+| Force first / 11808 | 558.75 | 417.40 | 1629.39 | 1155.32 |
+| Force restart / 16436 | 137.70 | 83.40 | 860.43 | 815.21 |
+| Auto first / 13848 | 558.75 | 86.75 | 1270.94 | 834.33 |
+| Auto restart / 14480 | 128.09 | 69.43 | 860.92 | 825.54 |
+
+The Force transient is materially higher than CPU in this short scenario, but
+there is no measured accumulation after window/process closure. Prior host GPU
+allocations sample down to zero before restart; the final independent audit at
+02:00:47Z finds none of all eight sampled task PID processes or GPU counter
+instances remaining. This is not a long-running leak or memory-upper-bound proof.
+CPU mode itself has GPU allocations, so these are whole-process values including
+WPF composition, not native D3D11-only allocations. No ETW/GPUView attribution
+to individual queues/allocations was performed. Whole-card before/after readings
+are about 1473-1474 MiB and are not substituted for RawLab process VRAM.
+
+Evidence and reproducible private orchestration are retained under ignored
+`build/windows-agent-v08/physical-transfer/`, `native-desktop-baseline/`,
+`native-desktop-green/` and `desktop-regressions/`. These measurements do not
+justify changing shared GPU allocation policy during a Windows-only task.
+
+### Remaining Physical Acceptance
+
+The listed native desktop workflows and physical-host GPU execution are covered,
+but the desktop is delivered through RDP. On-site monitor/color-management/HDR
+accuracy, actual Explorer OLE folder/file drag input, physical mouse/keyboard,
+touch/pen, multi-monitor DPI/Snap changes, Narrator and live OS high-contrast/
+text-scale changes remain unverified. Folder drag still has functional routed-
+event regression coverage only. Long soak, large mixed batches, 64M images,
+broad camera/driver coverage, and GPU device-loss/TDR recovery were not added to
+this bounded run. No global SDK/runtime installation, driver/security policy or
+fan settings on 125 were changed. No push, PR update, merge or release was performed
+during this validation pass; later delivery requires separate user authorization.

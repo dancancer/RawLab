@@ -230,7 +230,10 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 该入口同样先保护默认 journal，运行前后核对默认 RawLab 配置文件字节及修改时间，并将所有写入放在私有目录。
 退出码 `0` 表示实际原生交互通过，`2` 表示桌面不可达的 `NOT REACHED`，其他非零表示失败；
 详细结果写入独立输出目录的 `summary.json` 和日志。`run-v08.ps1` 不隐式调用这个入口，不能替代其结果。
-原生 UIA 仍不代表 Explorer/OLE 拖入、真实鼠标/触控笔、物理 GPU 或多显示器验收。
+该验收默认仅 CPU；测试环境变量 `RAWLAB_COMPARISON_GPU=Cpu|Auto|Force` 可选择两次启动的加速模式，
+运行后应恢复原环境变量。Force 会核对 RAW 实际 GPU backend，PNG/JPEG 必须显示 CPU，返回 RAW 后恢复原模式。
+原生 UIA 本身仍不代表 Explorer/OLE 拖入、真实鼠标/触控笔、物理 GPU 或多显示器验收。
+VM 和 125 真实主机的原生通过结果、独立 PID/LUID 显存采样及未覆盖项目见 [验证记录](VERIFICATION-agent-v08.md#native-desktop-follow-up-2026-10-16)。
 
 `editor-review` 还覆盖空闲批量窗口同步关闭失败时的 pending viewport resize：锁住私有 journal，
 分别保留和不保留前台导入，确认无需额外输入即可恢复精确预览，且独立 CPU 像素一致。

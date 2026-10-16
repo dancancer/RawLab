@@ -59,5 +59,7 @@
 
 - [x] 添加新窗口、新图、历史恢复的默认关闭 RED；保留同图手动侧并排/滑动及异步状态断言。
 - [x] 同步菜单、button、canvas、cache 的默认/切图状态，不只改字段初值。
-- [ ] 真实 Windows 原生打开/切图/对比/调参操作验收仍 NOT REACHED。独立 UIA driver/入口已零警告构建并实际运行，但 VM 无交互桌面；退出码 2，不能用 routed event 或 27 项功能检查代替。
-- [x] 重跑受影响编辑器/批量/隔离验证，完成独立复核及必要本地提交。153 项全套编辑器、79 项 raster 等结果见验证记录；远端 PR 未改变。
+- [x] 接通 VM 交互 Session 1，并在 125 真实主机的 Session 2 重跑独立 UIA/NativeDialog：打开、RAW/PNG/JPEG 切图、并排/滑动、异步曝光和分隔线保持、新进程历史恢复。VM CPU、125 CPU/Force/Auto 均退出 0；不是 routed event 代替原生输入。
+- [x] 实际桌面暴露的对话框 owner-child 查找遗漏已修复并完成同一 VM RED/GREEN；Session 0 提前返回 NOT REACHED，新增无 fixture/WPF 初始化回归。Windows 相关 59 项入口、160 项默认隔离、29 项 comparison、10 项 profile 隔离复验通过。
+- [x] 125 的进程级专用/共享显存按 PID/LUID 采样并映射 RTX 4090 D；Force/Auto 的 RAW backend 为 D3D11，raster 为 CPU；全部采样 PID 关闭后无进程或 GPU counter 残留。物理显示器色彩、OLE 拖入、触控/笔、多屏/DPI、系统辅助功能及长时间压力仍未覆盖，详见验证记录。
+- [x] 重跑受影响编辑器/批量/隔离验证，完成独立复核及必要本地提交。153 项全套编辑器、79 项 raster 等结果见验证记录；该验证阶段未 push 或更新远端 PR。

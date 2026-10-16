@@ -48,9 +48,11 @@ internal static class Program
 
         internal int Run()
         {
+            Trace("started");
             root = AutomationElement.RootElement;
             main = WaitForMainWindow();
-            WaitMode("off");
+            Trace("main-window");
+            WaitMode("off",false);
             Check(true,"A fresh native window exposes single mode before a photo is opened");
             if (phase.Equals("restart", StringComparison.OrdinalIgnoreCase))
             {
@@ -78,6 +80,8 @@ internal static class Program
                 SetRangeValue("ParameterValueSlider", 1.25);
             });
             WaitMode("swipe");
+            Check(Math.Abs(GetRangeValue(FindById(main,"ResultCanvas")!) - 35)<.01,
+                "Async exposure preserves the native swipe divider");
 
             OpenPhoto(png);
             WaitMode("off");
@@ -121,12 +125,13 @@ internal static class Program
 
         private void OpenPhoto(string path)
         {
+            Trace("open-start " + System.IO.Path.GetFileName(path));
             WaitBusyThenReady(() =>
             {
                 var open = FindById(main, "OpenPhoto") ?? FindByNames(main, "打开照片", "打开 RAW", "Open photo", "Open RAW");
                 if (open == null) throw new InvalidOperationException("OpenPhoto UIA control is missing.");
                 var invocation = Task.Run(() => Invoke(open));
-                var dialog = Wait(() => FindDialog());
+                var dialog = Wait(() => FindDialog(), TimeSpan.FromSeconds(15));
                 if (dialog == null) throw new InvalidOperationException("OpenFileDialog did not appear through UIA.");
                 if (invocation.IsFaulted) throw invocation.Exception!.GetBaseException();
                 var edit = Wait(() => dialog.FindFirst(TreeScope.Descendants,
@@ -145,6 +150,15 @@ internal static class Program
                     throw new TimeoutException("OpenPhoto modal Invoke did not return.");
                 Wait(() => main.Current.Name.EndsWith(System.IO.Path.GetFileName(path), StringComparison.OrdinalIgnoreCase));
             });
+            Trace("open-ready " + System.IO.Path.GetFileName(path));
+            var raster=path.Equals(png,StringComparison.OrdinalIgnoreCase) || path.Equals(jpeg,StringComparison.OrdinalIgnoreCase);
+            var gpu=Environment.GetEnvironmentVariable("RAWLAB_COMPARISON_GPU") ?? "Cpu";
+            var backend=FindByNames(main,"CPU · sRGB","Direct3D 11 · GPU · sRGB","CPU · GPU 已回退 · sRGB");
+            Check(backend!=null,"Completed native preview exposes its actual backend");
+            var expected=raster || gpu.Equals("Cpu",StringComparison.OrdinalIgnoreCase) ? "CPU · sRGB" :
+                gpu.Equals("Force",StringComparison.OrdinalIgnoreCase) ? "Direct3D 11 · GPU · sRGB" : null;
+            if(expected!=null)Check(backend!.Current.Name==expected,"Native preview backend matches "+(raster ? "raster CPU" : gpu));
+            Trace("backend " + backend!.Current.Name);
         }
 
         private AutomationElement? FindDialog()
@@ -152,7 +166,8 @@ internal static class Program
             var condition = new AndCondition(
                 new PropertyCondition(AutomationElement.ProcessIdProperty, hostPid),
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window));
-            return root.FindAll(TreeScope.Children, condition).Cast<AutomationElement>()
+            return main.FindFirst(TreeScope.Children, condition) ??
+                root.FindAll(TreeScope.Children, condition).Cast<AutomationElement>()
                 .FirstOrDefault(element => element.Current.NativeWindowHandle != main.Current.NativeWindowHandle);
         }
 
@@ -173,10 +188,29 @@ internal static class Program
             Wait(() => export.Current.IsEnabled);
         }
 
-        private void WaitMode(string mode)
+        private void WaitMode(string mode,bool loaded=true)
         {
             Wait(() => string.Equals(FindById(main, "CompareButton")?.Current.ItemStatus,
                 mode, StringComparison.OrdinalIgnoreCase));
+            if(loaded)
+            {
+                var canvas=FindById(main,"ResultCanvas") ?? throw new InvalidOperationException("Result canvas is missing.");
+                var range=canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _);
+                Check(range==(mode=="swipe"),"Native canvas range support matches "+mode);
+                var neutral=FindById(main,"NeutralCanvas");
+                Check((neutral!=null && !neutral.Current.IsOffscreen)==(mode=="side"),"Native neutral canvas visibility matches "+mode);
+                Invoke(FindById(main,"CompareButton")!);
+                AutomationElement? selected=null;
+                foreach(var option in new[]{"off","side","swipe"})
+                {
+                    var item=Wait(()=>FindById(root,"Compare"+char.ToUpperInvariant(option[0])+option[1..]),TimeSpan.FromSeconds(10))!;
+                    var toggle=(TogglePattern)item.GetCurrentPattern(TogglePattern.Pattern);
+                    Check((toggle.Current.ToggleState==ToggleState.On)==(option==mode),"Native comparison menu selection "+option+" in "+mode);
+                    if(option==mode)selected=item;
+                }
+                Invoke(selected!);
+            }
+            Trace("mode " + mode);
         }
 
         private void WaitBusyThenReady(Action action)
@@ -258,9 +292,10 @@ internal static class Program
             return null;
         }
 
-        private T? Wait<T>(Func<T?> probe) where T : class
+        private T? Wait<T>(Func<T?> probe, TimeSpan? timeout = null) where T : class
         {
-            while (clock.Elapsed < TotalTimeout)
+            var step = Stopwatch.StartNew();
+            while (clock.Elapsed < TotalTimeout && (timeout == null || step.Elapsed < timeout))
             {
                 try
                 {
@@ -270,7 +305,7 @@ internal static class Program
                 catch (ElementNotAvailableException) { }
                 Thread.Sleep(50);
             }
-            throw new TimeoutException("UIA driver exceeded its total timeout.");
+            throw new TimeoutException("UIA element did not appear within its timeout.");
         }
 
         private bool Wait(Func<bool> probe)
@@ -288,6 +323,13 @@ internal static class Program
         {
             if (!success) throw new InvalidOperationException(message);
             Console.WriteLine("PASS " + message);
+        }
+
+        private void Trace(string message)
+        {
+            var line = $"{DateTime.UtcNow:O} host={hostPid} phase={phase} {message}";
+            System.IO.File.AppendAllText(System.IO.Path.Combine(profile, "driver-" + phase + ".log"), line + Environment.NewLine);
+            Console.WriteLine(line);
         }
     }
 
