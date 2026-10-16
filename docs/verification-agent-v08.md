@@ -190,3 +190,86 @@ Mac-specific 范围、RUM 必须保留的语义、链接检查及定向验收计
 `usage-model.sh` 的显式 source/link 闭包需要在正式集成后补齐现有 Master/HSL/geometry/crop、
 Lensfun/TIFF 依赖，并新增 raster 成功/失败、显式胶片选择和混合批量的事件组合回归。
 上述是准备阶段的源码审计，不是新目标上的构建或运行通过。
+
+## 2026-10-16 已合前置的 Mac 联合验证
+
+本节更新前面按日期保留的状态：Windows #53 已合入；Windows 实现仍归原 owner，
+不属于本 Mac PR 的新增差异。正式目标为 `7da15e57b1f2178d12cabc823c249dc589578547`，
+父提交为 RUM `435feda1d6e44cc5a53a4a0c73208ce96fc6ee0b` 和 Windows
+`236e61603e12be1192df43b478247931520086a1`。
+
+从 `a036b9709469b18ab36146f6c154ee71a2437237` 实际 merge 该目标，生成
+`5a4ead49de6e5007aaf2244d8d26498d2ce1c77a`。实际冲突只有六个共享文件：
+`lutools/CMakeLists.txt`、`docs/color-contract.md`、`include/sony2fuji/ffi/sony2fuji_c.h`、
+`src/cli/agent_commands.cpp`、`tests/display_render_tests.cpp`、`tests/test_agent_commands.py`
+（后五个均相对 `lutools/`）。依照共享 owner 的明确安排，完整保留目标的 `lutools`；
+没有对 Mac 文件整份选 ours/theirs。`EditorModel`、`BatchExportModel`、App 的 RUM
+变更自动合并，随后按行为验证。相对该目标，`lutools`、Shared、Windows、Android、iOS
+差异均为空；RUM 的 `FilmDock`、About 隐私和终止 delegate 未被本功能修改。
+
+### 源码与构建绑定
+
+生产源码在合并提交 `5a4ead4` 构建；补充测试及 harness 修复提交为
+`433115d4a0ab407aab18930824a44d5a68ba7977`，没有生产行为改动。后续本节与计划的
+文档提交不改变以下生产树，也不以文档提交为理由重复 native 构建。
+
+| Git tree | 值 |
+| --- | --- |
+| `RawLabMac/Sources` | `ae67d2937b9e81764c01355d15413025555c10bc` |
+| `RawLabMac/Resources` | `943ae090d647a4e4908763d25db03b2cb4a167e7` |
+| `Shared` | `bc401d9573b324ce8712e07d12d8ef637c2900c8` |
+| `lutools`，与目标相同 | `dcf78dcf15b0860383eb9d7e678c4b84631b52d0` |
+
+| 本地生成产物 | SHA-256 |
+| --- | --- |
+| `build/RawLab Mac.app/Contents/MacOS/RawLabMac` | `c5aa96e0f0d55f8af70b9aedaebef40ba8a123fb7ebb9b82e090ffa33f0b3648` |
+| `lutools/build-macos/libsony2fuji_core.a` | `3a9e9e5f8b3adc113095544bb775e901796ad2b1eb0c6091c2cb136d5b85b7a5` |
+| `lutools/build-macos/sony2fuji` | `2c31d8d58c342bca07bc16891f6b0eee80ec3dd83476e7d39f9137be8554b946` |
+
+### 实际执行与结果
+
+以下命令在本 worktree 执行。RAW 参数均为只读的
+`lutools/examples/DJI_20250602164503_0444_D.DNG`，CLI 为本次构建的
+`lutools/build-macos/sony2fuji`。完整日志保留在
+`/tmp/rawlab-mac-integration-20261016-bb72/`，不提交照片、SDK、截图或构建产物。
+
+- `bash RawLabMac/build.sh`：exit 0。默认 app、JXL、完整非系统动态依赖、许可和 ad-hoc
+  签名检查通过。`otool -L` 及 `bundle.sh` 检查默认包不含厂商 RUM SDK。
+- `ctest --test-dir lutools/build-macos --output-on-failure`：exit 0，36/36，50.21 秒。
+- `bash RawLabMac/tests/agent-recipe-render.sh <RAW> <CLI>`：exit 0。真实 RAW、完整 v4
+  编辑、大师 0/50/100/200%、持久化、冻结 batch、FINAL/exact preview 继续通过；合成
+  lens 实际 applied，独立量化最大差 0。没有放宽原容差。
+- `bash RawLabMac/tests/raster-render.sh <RAW> <CLI>`：exit 0。JPEG/PNG/TIFF/HEIF 无格式
+  跳过，GUI/CLI/CPU/Auto FINAL 及同尺寸 preview 像素 exact；新增大师 0/50/100/200%
+  组合也通过，raster WB 保持 none。混合 batch、metadata、方向、缩略图、拒绝和源保护通过。
+- `bash RawLabMac/tests/usage-model.sh <RAW>`：exit 0。真实异步 EditorModel 经 debounce
+  后等待终态，JPEG/PNG 成功 import 各一次，坏文件无成功事件，编辑不重计；历史恢复无
+  film 事件，显式 built-in/custom/neutral 为安全类型；Agent Data 生成不写文件、不发事件。
+  混合 RAW/PNG/坏 RAW 本轮成功 2、失败 1；取消重试 0/0，失败重试 0/1，不重计旧成功项。
+- 12 个其余 gate 均 exit 0：`Shared/tests/usage-analytics.sh`、`usage-transport.sh`；
+  Mac `rum-local.sh`、`usage-termination.sh`、`usage-privacy-presentation.sh <privacy.png>`、`edit-model.sh`、
+  `batch-export.sh`、`presentation.sh`、`localization.sh`、`test_single_preview.py`（3/3）、
+  `batch-render.sh <RAW>`、`bundle.sh <app>`。终止测试覆盖默认和 local fake SDK，不启动真实 SDK。
+- `bash RawLabMac/tests/batch-import-presentation.sh <output-directory> --compile-only`：exit 0。
+  **只确认源码链接；桌面 sheet 交互 NOT REACHED**。该生产界面未变化，不为重复旧交互占用桌面。
+- `env RAWLAB_RUM_LOCAL=1 RAWLAB_RELEASE=1 bash RawLabMac/build.sh`：预期 exit 2，准确拒绝
+  `RUM SDK is restricted to private local validation builds.`，不是构建通过项。
+- `git diff --check` 和目标外平台/共享目录空差异检查通过。
+
+先前失败保留且不计通过：`usage-model.sh` 初次缺少现有 HSL/geometry/master/Lensfun/TIFF
+链接依赖；新增 fixture 表达式首次触发 Swift type-check 超时，改为简单循环后重新通过。
+gate driver 的 `batch-presentation` 首次也是旧 source list 编译失败，未打开任何窗口；
+补全 Shared source 后单独 compile-only 通过，**没有把 driver 的 1 个失败改称 13 项全过**。
+Lensfun 重复 calibration warning 及故意坏 RAW 的 IO 诊断仍在成功测试日志中，并非零警告。
+
+### 隔离与未验证范围
+
+- 保留前述 2026-10-15 CUA 原生对比按钮证据；合并没有改变 compare 逻辑，新源码契约 3/3。
+  本次未重复物理桌面交互，也未将模型调用、offscreen bitmap 或源码断言冒充按钮验收。
+- 隐私 harness 使用 task-owned、不显示且禁止激活的窗口，验证 440x574 布局及默认 unavailable；
+  不修改真实用户同意状态，不声明真实屏幕视觉验收。
+- 默认包 SDK-free；local SDK 的生产链接入口没有变化，本次没有重新构建或启动真实 SDK 包，
+  未发送事件、未改云配置。保留 fake-SDK 生命周期和 Release flag 拒绝的准确范围。
+- Windows 原生验证和其他平台由各 owner 报告，本 Mac PR 不代替这些平台的验收；真实 HDR
+  gain-map fixture 仍未覆盖。普通图像支持限制不变。
+- 当前结果均为本地执行，不是 hosted CI。PR 的 exact-head CI/状态在交付时另行核对。

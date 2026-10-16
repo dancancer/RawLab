@@ -59,15 +59,20 @@ The Mac feature adds 27 paths relative to `acfc4ae` (production, localization an
 
 **Interfaces:** `RenderEngine.agentRecipe(_:settings:lut:output:exportLongEdge:) -> Data`; `EditorModel.init(..., onUsage: (UsageEvent) -> Void)`; `BatchExportModel.init(job:journal:onUsage:)`; `EditorModel.selectFilm(_:)`.
 
-- [ ] Receive the PR #53 merge SHA, fetch development again and verify it contains that SHA. Record actual source/head/target before edits.
-- [ ] Merge the confirmed target into the existing source branch; enumerate actual conflicts, if any. Do not blanket-select ours/theirs for Mac files.
-- [ ] Retain target `lutools/**`, including Windows WIC, Unicode CLI and cross-platform capability declarations. Confirm `git diff <target> -- lutools` is empty; refer any required shared semantic change back to coordination.
-- [ ] Keep `AgentRecipe.swift`, raster `Engine.swift` input adapter, generic photo entry points, persistence, batch freezing and RAW-only control guards.
-- [ ] In `EditorModel.swift` preserve `onUsage`, pending-import completion and `attachBatch` callback injection alongside generic image opening and raster restore/error isolation.
-- [ ] In `BatchExportModel.swift` preserve per-run attempted/succeeded/failed accounting alongside supported image selection and rendering.
-- [ ] Preserve `RawLabMacApp.swift` usage lifecycle/local flag and change only the photo menu copy needed by this feature. Preserve `FilmDock.selectFilm`, `AboutView` privacy and `MacGeometryWindowGuard` termination logic.
-- [ ] Preserve `EditorView` compare=false and reset-on-file only; rerenders and history must not write compare state.
-- [ ] Inspect Mac build/link and affected test source lists. Use existing local dependency paths; add only missing Mac sources/libraries, with no shared build abstraction or core rewrite.
+- [x] Receive the PR #53 merge SHA, fetch development again and verify it contains that SHA. Record actual source/head/target before edits.
+- [x] Merge the confirmed target into the existing source branch; enumerate actual conflicts, if any. Do not blanket-select ours/theirs for Mac files.
+- [x] Retain target `lutools/**`, including Windows WIC, Unicode CLI and cross-platform capability declarations. Confirm `git diff <target> -- lutools` is empty; refer any required shared semantic change back to coordination.
+- [x] Keep `AgentRecipe.swift`, raster `Engine.swift` input adapter, generic photo entry points, persistence, batch freezing and RAW-only control guards.
+- [x] In `EditorModel.swift` preserve `onUsage`, pending-import completion and `attachBatch` callback injection alongside generic image opening and raster restore/error isolation.
+- [x] In `BatchExportModel.swift` preserve per-run attempted/succeeded/failed accounting alongside supported image selection and rendering.
+- [x] Preserve `RawLabMacApp.swift` usage lifecycle/local flag and change only the photo menu copy needed by this feature. Preserve `FilmDock.selectFilm`, `AboutView` privacy and `MacGeometryWindowGuard` termination logic.
+- [x] Preserve `EditorView` compare=false and reset-on-file only; rerenders and history must not write compare state.
+- [x] Inspect Mac build/link and affected test source lists. Use existing local dependency paths; add only missing Mac sources/libraries, with no shared build abstraction or core rewrite.
+
+Actual integration: target `7da15e57b1f2178d12cabc823c249dc589578547`, merge commit
+`5a4ead49de6e5007aaf2244d8d26498d2ce1c77a`. All six conflicts were in `lutools`;
+the explicitly assigned shared owner required retaining the target tree. Mac/RUM files merged
+without text conflicts. The target diff for `lutools`, Shared and all non-Mac platforms is empty.
 
 ## Task 3: Validate The Integrated Mac Combinations
 
@@ -75,16 +80,23 @@ The Mac feature adds 27 paths relative to `acfc4ae` (production, localization an
 
 **Interfaces:** Inject private `onUsage` collectors, test-owned stores and fake transports. Existing rendering tests continue to use the shared C ABI/CLI and exact PNG comparisons.
 
-- [ ] Add regression-first raster cases to the usage/model harness: corrupt input adds no success, JPEG/PNG adds one event, rerender/restore does not add film clicks, explicit built-in/custom/neutral selections emit safe kinds, mixed batch and failed retry count only this run. Run new assertions before any necessary production fix; do not manufacture a failure when the composed behavior already works.
-- [ ] Build the default app: `bash RawLabMac/build.sh`. Run `bash RawLabMac/tests/bundle.sh` against the actual bundle and verify default dynamic closure contains no RUM SDK.
-- [ ] Run affected core tests from the freshly configured Mac target, including display decode/render, recipe/parser/schema/commands and RAW coverage. Record test count and any optional missing fixtures, never infer a pass from a skip.
-- [ ] Run `agent-recipe-render.sh <read-only-RAW> <current-CLI>` and `raster-render.sh <read-only-RAW> <current-CLI>`; require same-condition GUI/Agent/Batch FINAL and preview results with existing tolerances unchanged.
-- [ ] Run `edit-model.sh`, `batch-export.sh`, `presentation.sh`, `localization.sh`, `test_single_preview.py` and affected batch render/presentation tests after source/link changes.
-- [ ] Run `Shared/tests/usage-analytics.sh`, `Shared/tests/usage-transport.sh`, Mac `rum-local.sh`, `usage-model.sh <RAW>`, and `usage-termination.sh` (default/local fake SDK).
-- [ ] Run the privacy presentation harness only without stealing a desktop: use a task-owned unshown window or obtain a concrete desktop handoff first. Verify the default unavailable/opt-in surface; do not change real consent.
-- [ ] If local SDK linkage is affected, build a private local bundle only and verify exact bundled notices/SDK and Release-flag rejection. Do not launch that bundle or send events.
-- [ ] Preserve the 2026-10-15 CUA interaction evidence for unchanged compare logic. Inspect the integrated diff; repeat only state combinations whose code changed, using the isolated harness and a free/handed-off desktop.
+- [x] Add regression-first raster cases to the usage/model harness: corrupt input adds no success, JPEG/PNG adds one event, rerender/restore does not add film clicks, explicit built-in/custom/neutral selections emit safe kinds, mixed batch and failed retry count only this run. Run new assertions before any necessary production fix; do not manufacture a failure when the composed behavior already works.
+- [x] Build the default app: `bash RawLabMac/build.sh`. Run `bash RawLabMac/tests/bundle.sh` against the actual bundle and verify default dynamic closure contains no RUM SDK.
+- [x] Run affected core tests from the freshly configured Mac target, including display decode/render, recipe/parser/schema/commands and RAW coverage. Record test count and any optional missing fixtures, never infer a pass from a skip.
+- [x] Run `agent-recipe-render.sh <read-only-RAW> <current-CLI>` and `raster-render.sh <read-only-RAW> <current-CLI>`; require same-condition GUI/Agent/Batch FINAL and preview results with existing tolerances unchanged.
+- [x] Run `edit-model.sh`, `batch-export.sh`, `presentation.sh`, `localization.sh`, `test_single_preview.py` and affected batch render/presentation tests after source/link changes.
+- [x] Run `Shared/tests/usage-analytics.sh`, `Shared/tests/usage-transport.sh`, Mac `rum-local.sh`, `usage-model.sh <RAW>`, and `usage-termination.sh` (default/local fake SDK).
+- [x] Run the privacy presentation harness only without stealing a desktop: use a task-owned unshown window or obtain a concrete desktop handoff first. Verify the default unavailable/opt-in surface; do not change real consent.
+- [x] If local SDK linkage is affected, build a private local bundle only and verify exact bundled notices/SDK and Release-flag rejection. Do not launch that bundle or send events.
+- [x] Preserve the 2026-10-15 CUA interaction evidence for unchanged compare logic. Inspect the integrated diff; repeat only state combinations whose code changed, using the isolated harness and a free/handed-off desktop.
 - [ ] Run an independent read-only integration review, fix confirmed defects with focused RED/GREEN checks, and append source-bound results/limits to the report.
+
+Validation limits: the unchanged local-SDK linkage was not rebuilt; default SDK-free closure,
+fake-SDK termination and the Release/local flag rejection were checked. The unchanged look-import
+sheet was compiled with `batch-import-presentation.sh <output-directory> --compile-only` after fixing its stale
+source list; physical sheet interaction is **NOT REACHED**, not a runtime pass. Privacy uses an
+unshown task-owned window, not desktop interaction. See the verification report for exact source,
+commands, retained failed attempts and logs.
 
 ## Task 4: Deliver One Mac PR
 
