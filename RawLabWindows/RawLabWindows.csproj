@@ -23,6 +23,10 @@
     <EmbeddedResource Include="Resources/Localization/*.json" />
     <Content Include="../lutools/flog-2-new/*.cube" Exclude="../lutools/flog-2-new/*FLog2-709*;../lutools/flog-2-new/*WDR*" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/FilmIcons/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/*.cube" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/catalog.json" Link="bundled-looks.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/Artwork/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/NOTICE.md" Link="Licenses/Bundled-Looks.md" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="../RawLabMac/Resources/AppIcon.png" Link="AppIcon.png" />
     <Content Include="../Shared/master-recipes.json" Link="master-recipes.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../lutools/third_party/lensfun/version_1/*.xml" Link="Lensfun/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
@@ -43,6 +47,10 @@
            Text="RawLabRumSdkRoot must contain the official alibabacloud_rum.h header." />
     <Error Condition="'$(Configuration)' != 'Release' and !Exists('$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll')"
            Text="The Windows 0.4.4 Release SDK DLL is missing under RawLabRumSdkRoot." />
+  </Target>
+  <Target Name="ValidateBundledLookDistribution" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="Exists('../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md')"
+           Text="Bundled LUT redistribution is unconfirmed; Release builds are blocked." />
   </Target>
   <Target Name="RemoveRawLabRumLocalBinary" BeforeTargets="PrepareForBuild"
           Condition="'$(RawLabRumLocal)' != 'true'">

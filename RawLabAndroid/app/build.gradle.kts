@@ -8,6 +8,11 @@ plugins {
 }
 
 val repo = rootDir.parentFile
+if (gradle.startParameter.taskNames.any { it.substringAfterLast(':').let { name ->
+        name.equals("assemble", true) || name.equals("build", true) || name.contains("release", true)
+    } } && repo.resolve("Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md").exists()) {
+    throw GradleException("Bundled LUT redistribution is unconfirmed; Release builds are blocked")
+}
 val rawlabRumLocalProperty = providers.gradleProperty("rawlabRumLocal")
 val rawlabRumLocal = rawlabRumLocalProperty.map { value ->
     value.toBooleanStrictOrNull() ?: throw GradleException("rawlabRumLocal must be true or false")
@@ -47,6 +52,10 @@ val prepareAssets by tasks.registering(Sync::class) {
         exclude("*FLog2-709*", "*WDR*")
     }
     from(repo.resolve("RawLabMac/Resources/FilmIcons")) { into("artwork"); include("*.png") }
+    from(repo.resolve("Shared/BundledLooks")) { into("films"); include("*.cube") }
+    from(repo.resolve("Shared/BundledLooks/catalog.json")) { rename { "bundled-looks.json" } }
+    from(repo.resolve("Shared/BundledLooks/Artwork")) { into("artwork"); include("*.png") }
+    from(repo.resolve("Shared/BundledLooks/NOTICE.md")) { into("licenses"); rename { "Bundled-Looks.md" } }
     from(repo.resolve("Shared/master-recipes.json"))
     from(repo.resolve("RawLabMac/Resources/MasterRecipes")) { into("MasterRecipes"); include("*.cube") }
     from(repo.resolve("RawLabMac/Resources/MasterRecipeIcons")) { into("MasterRecipeIcons"); include("*.png") }

@@ -170,9 +170,11 @@ struct PresentationTests {
               "Directory browsing exposes RAW/JPEG/PNG, not hidden files, GIF or LUTs")
         check(listing.folders[0].lastPathComponent == "nested", "Subfolders remain lazy tree nodes")
         let artworkFolder = URL(fileURLWithPath: CommandLine.arguments[1])
-        check(FilmArtwork.resourceNames.count == 10, "Every bundled film has packaging artwork")
+        check(FilmArtwork.resourceNames.count == 39, "Every bundled film has packaging artwork")
         for name in FilmArtwork.resourceNames.keys.sorted() {
-            guard let url = FilmArtwork.url(for: name, in: artworkFolder),
+            let directory = FileManager.default.fileExists(atPath: artworkFolder.appendingPathComponent(FilmArtwork.resourceNames[name]! + ".png").path)
+                ? artworkFolder : URL(fileURLWithPath: "Shared/BundledLooks/Artwork")
+            guard let url = FilmArtwork.url(for: name, in: directory),
                   let image = NSImage(contentsOf: url) else { fatalError("Missing or invalid artwork: \(name)") }
             check(image.size.width >= 128 && image.size.height >= 128, "Packaging image decodes: \(name)")
             check(url.deletingPathExtension().lastPathComponent == FilmArtwork.resourceNames[name],

@@ -3,6 +3,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cmp "$ROOT/Shared/master-recipes.json" "${1:-$ROOT/build/RawLab Mac.app}/Contents/Resources/master-recipes.json"
 APP="${1:-$ROOT/build/RawLab Mac.app}"
+cmp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
+for asset in "$ROOT"/Shared/BundledLooks/*.cube; do
+    cmp "$asset" "$APP/Contents/Resources/LUTs/$(basename "$asset")"
+done
+cmp "$ROOT/RawLabMac/Resources/FilmIcons/ektar-100-phuket.png" "$APP/Contents/Resources/FilmIcons/ektar-100-phuket.png"
+for asset in "$ROOT"/Shared/BundledLooks/Artwork/*.png; do
+    cmp "$asset" "$APP/Contents/Resources/FilmIcons/$(basename "$asset")"
+done
+cmp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
 for language in en zh-Hans de fr ja es; do
     cmp "$ROOT/RawLabMac/Resources/$language.lproj/Localizable.strings" "$APP/Contents/Resources/$language.lproj/Localizable.strings"
 done

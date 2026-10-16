@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D01100000000000000000001 /* BundledLooks in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000011; };
+        D01100000000000000000002 /* Ektar Phuket artwork in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000012; };
+        D01100000000000000000003 /* BundledLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000013; };
         D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01000000000000000000011; };
         D00300000000000000000001 /* GeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000011; };
         D00300000000000000000002 /* GeometryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000012; };
@@ -94,6 +97,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        D01100000000000000000011 /* BundledLooks */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../Shared/BundledLooks"; sourceTree = SOURCE_ROOT; };
+        D01100000000000000000012 /* Ektar Phuket artwork */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "../RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"; sourceTree = SOURCE_ROOT; };
+        D01100000000000000000013 /* BundledLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/BundledLook.swift"; sourceTree = SOURCE_ROOT; };
         D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/PickerAcquisitionCancelUITests.swift; sourceTree = SOURCE_ROOT; };
         D00300000000000000000011 /* GeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometrySettings.swift; path = "../Shared/GeometrySettings.swift"; sourceTree = SOURCE_ROOT; };
         D00300000000000000000012 /* GeometryControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryControls.swift; sourceTree = "<group>"; };
@@ -370,6 +376,9 @@
 		55B1D2570BE3466BB45F7CD5 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+                D01100000000000000000011,
+                D01100000000000000000012,
+                D01100000000000000000013,
                 AB2000000000000000000011,
                 AB2000000000000000000012,
                 AB2000000000000000000013,
@@ -453,6 +462,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 86048109104C15A6E77F6FC2 /* Build configuration list for PBXNativeTarget "RawLab" */;
 			buildPhases = (
+				D01100000000000000000020 /* Validate bundled LUT distribution */,
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
@@ -511,6 +521,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                D01100000000000000000001,
+                D01100000000000000000002,
                 AB2000000000000000000001,
                 AB2000000000000000000002,
                 AB2000000000000000000003,
@@ -543,6 +555,20 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+        D01100000000000000000020 /* Validate bundled LUT distribution */ = {
+            isa = PBXShellScriptBuildPhase;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ("$(SRCROOT)/../Shared/BundledLooks", );
+            name = "Validate bundled LUT distribution";
+            outputPaths = ();
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/sh;
+            shellScript = "if [ \"$CONFIGURATION\" = Release ] && [ -f \"$SRCROOT/../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md\" ]; then\n  echo 'error: Bundled LUT redistribution is unconfirmed; Release builds are blocked.' >&2\n  exit 2\nfi\n";
+        };
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		AB1300000000000000000006 = {
 			isa = PBXSourcesBuildPhase;
@@ -554,6 +580,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                D01100000000000000000003,
 				B1A96AA5B2105EE294EE532E /* AdjustmentScale.swift in Sources */,
 				0993BD6D24DC56B2A37EE51B /* AdjustmentControl.swift in Sources */,
 				905511E55B785785A2181EC4 /* AdjustmentRuler.swift in Sources */,

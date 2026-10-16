@@ -7,6 +7,7 @@ BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-usage-model.XXXXXX")"
 trap 'rm -r "$OUT"' EXIT
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+  "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/Shared/UsageAnalytics.swift" "$ROOT/Shared/ExportMetadata.swift" \
   "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" \

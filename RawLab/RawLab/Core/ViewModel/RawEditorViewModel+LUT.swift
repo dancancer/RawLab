@@ -69,7 +69,7 @@ extension RawEditorViewModel {
 
         for url in sorted {
             let fileName = url.deletingPathExtension().lastPathComponent
-            guard isFLog2LUTName(fileName) else {
+            guard isFLog2LUTName(fileName) || BundledLook.find(fileName) != nil else {
                 continue
             }
             let displayName = prettifyLUTName(fileName)

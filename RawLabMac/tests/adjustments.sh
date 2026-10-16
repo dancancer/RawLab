@@ -10,6 +10,7 @@ if [ -f "$ROOT/RawLabMac/Sources/Adjustments.swift" ]; then
     SOURCES+=("$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift")
 fi
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+    "$ROOT/Shared/BundledLook.swift" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT/RawLabMac/tests/AdjustmentTests.swift" \
     "$ROOT/lutools/build-macos/libsony2fuji_core.a" \

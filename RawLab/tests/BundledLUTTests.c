@@ -2,8 +2,8 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 int main(int argc, char **argv) {
-    if (argc != 12) {
-        fprintf(stderr, "Expected 11 display LUTs, found %d\n", argc - 1);
+    if (argc != 41) {
+        fprintf(stderr, "Expected 40 display LUTs, found %d\n", argc - 1);
         return 1;
     }
     unsigned char pixels[12] = {120, 80, 40, 10, 220, 30, 180, 20, 190, 230, 230, 230};

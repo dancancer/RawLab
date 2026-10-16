@@ -52,6 +52,11 @@ bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
 
+当前 LUT 接入分支含再分发授权尚未确认的本地验证资源，默认构建会明确阻止打包。
+仅私有验证时使用 `RAWLAB_ALLOW_UNCLEARED_LUTS=1 bash RawLabMac/build.sh`；
+`RAWLAB_RELEASE=1` / `CONFIGURATION=Release` 仍会失败，不能用于分发。
+清单、改造约定和解除条件见 [LUT 接入记录](../docs/luts/README.md)。
+
 依赖 CMake、pkg-config、LibRaw 0.22.2+ 和 Apple Command Line Tools。Panasonic S5 II 的 RW2 使用 encoding 8，旧版 LibRaw 0.21.x 会错误解码为噪点。若 Homebrew 版本不足，使用下方源码依赖构建，不要只替换应用内动态库，因为 LibRaw 0.22 改变了 ABI。脚本默认以 26.0 为 deployment target；具备更低版本依赖时可显式设置 `MACOSX_DEPLOYMENT_TARGET`。CLT 27 的 SwiftUI 宏插件不完整时，脚本使用本机已有的 26.5 SDK，也可用 `SDKROOT` 指定。
 
 Requires CMake, pkg-config, LibRaw 0.22.2+ and Apple Command Line Tools. Panasonic S5 II RW2 uses encoding 8, which LibRaw 0.21.x incorrectly decodes as noise. If Homebrew is older, use the source dependency build below; do not replace only the bundled dylib because LibRaw 0.22 changes its ABI. The default deployment target is 26.0. Set `MACOSX_DEPLOYMENT_TARGET` only when the dependencies also support the lower target. When the CLT 27 SwiftUI macro plugin is unavailable, the script uses the locally installed 26.5 SDK; `SDKROOT` can override it.

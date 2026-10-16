@@ -12,6 +12,7 @@ SOURCES+=("$ROOT/RawLabMac/Sources/ExportSizePicker.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/MacStraightenPreview.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/MacCropInteraction.swift")
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+    "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \
   "${SOURCES[@]}" "$ROOT/RawLabMac/tests/EditModelTests.swift" \

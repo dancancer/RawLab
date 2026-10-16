@@ -8,4 +8,4 @@ trap 'rm -rf "$OUT"' EXIT
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios18.0-simulator \
     -I "$ROOT/lutools/include" -F "$APP/Frameworks" -framework sony2fuji \
     -Wl,-rpath,"$APP/Frameworks" "$ROOT/RawLab/tests/BundledLUTTests.c" -o "$OUT/luts"
-xcrun simctl spawn "$DEVICE" "$OUT/luts" "$APP"/*.cube
+xcrun simctl spawn "$DEVICE" "$OUT/luts" "$APP"/*.cube "$APP"/BundledLooks/*.cube

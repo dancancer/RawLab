@@ -343,6 +343,41 @@ struct AgentRecipeRenderTests {
             return
         }
         let original = try OriginalFileIdentity(input)
+        if arguments.contains("--bundled-looks-only") {
+            let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: lensDatabase)
+            let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE, lensDatabaseURL: lensDatabase)
+            let reference = try cpu.render(input, settings: Adjustments(), lut: nil, edge: 128)!
+            for look in BundledLook.all {
+                let file = repository.appendingPathComponent("Shared/BundledLooks/" + look.fileName)
+                for strength in [0.0, 1.0, 2.0] {
+                    var settings = Adjustments()
+                    settings.strength = strength
+                    let actual = try cpu.render(input, settings: settings, lut: file, edge: 128)!
+                    let gpu = try metal.render(input, settings: settings, lut: file, edge: 128)!
+                    let a = rgb8(actual.image), b = rgb8(gpu.image)
+                    let difference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                    try check(a.count == b.count && difference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
+                              "\(look.name) \(Int(strength * 100))% forced Metal max \(difference) DN")
+                    if strength == 0 {
+                        try check(rgb8(reference.image) == a, "\(look.name): zero is exactly neutral")
+                    }
+                }
+            }
+            for id in ["EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65", "RawLab_camera_contax_nd_std_sRGB_v1", "RawLab_look_2383_sRGB_v1"] {
+                guard let look = BundledLook.find(id) else { throw fail("Missing catalog identity: \(id)") }
+                let file = repository.appendingPathComponent("Shared/BundledLooks/" + look.fileName)
+                let settings = Adjustments()
+                let output = try runAgentParity(context, engine: cpu, input: input, settings: settings,
+                                                lut: file, label: id, previewCheck: true)
+                try runBatchFrozen(context, input: input, settings: settings, lut: file, expected: output)
+                let store = try EditPersistence(directory: root.appendingPathComponent("edits-" + id))
+                let identity = "builtin:" + look.fileName
+                try store.save(input, state: PhotoEditState(settings: settings, filmID: identity, masterRecipeID: nil))
+                try check(try store.state(for: input)?.filmID == identity, "\(look.name): stable builtin identity persists")
+            }
+            try check(try OriginalFileIdentity(input) == original, "Source RAW remains unchanged")
+            return
+        }
         let lut = repository.appendingPathComponent("lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube")
         guard FileManager.default.fileExists(atPath: lut.path) else { throw fail("PROVIA LUT is missing") }
 

@@ -34,6 +34,7 @@ class PhotoStorage(
     private val resolver = context.contentResolver
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator)
+    private val films = Film.all + BundledLooks.load(context)
     private var lensDirectory: File? = null
 
     @Synchronized
@@ -100,7 +101,7 @@ class PhotoStorage(
         return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream), PhotoIdentity(uri.toString()))
     }
 
-    fun looks(): List<LookChoice> = LookChoice.builtIns + lookLibrary.list().map {
+    fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
         LookChoice(it.id, it.name, managed = true, available = it.available)
     }
 
@@ -121,10 +122,10 @@ class PhotoStorage(
     fun deleteLook(id: String) = lookLibrary.remove(id)
 
     fun filmPath(id: String): File? {
-        val film = Film.all.firstOrNull { it.id == id }
+        val film = films.firstOrNull { it.id == id }
         if (film == null) return lookLibrary.fileFor(id)
             ?: throw IllegalArgumentException("Unknown look: ${id}")
-        val name = film.file?.let { "FLog2_to_${it}_65grid_V.1.00.cube" } ?: return null
+        val name = film.fileName ?: return null
         val destination = File(directory, name)
         if (!destination.exists()) {
             directory.mkdirs()

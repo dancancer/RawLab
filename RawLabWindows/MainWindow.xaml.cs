@@ -120,7 +120,10 @@ public partial class MainWindow : Window
         if(Directory.Exists(root))foreach(var path in Directory.GetFiles(root,"*.cube").Order())
         {
             var name=Path.GetFileNameWithoutExtension(path).Replace("FLog2_to_","").Replace("_65grid_V.1.00","").Replace('-', ' ');
-            films.Add(new(name,path,artwork.TryGetValue(name,out var icon) ? Path.Combine(AppContext.BaseDirectory,"FilmIcons",icon+".png") : null));
+            BundledLook.All.TryGetValue(Path.GetFileName(path), out var bundled);
+            name=bundled?.Name ?? name;
+            var icon=bundled?.ArtworkName ?? (artwork.TryGetValue(name,out var oldIcon) ? oldIcon : null);
+            films.Add(new(name,path,icon != null ? Path.Combine(AppContext.BaseDirectory,"FilmIcons",icon+".png") : null));
         }
         lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
         BuildTools(); BuildFilms(); BuildMasterRecipes();
@@ -216,9 +219,11 @@ public partial class MainWindow : Window
             if(film.Artwork!=null && File.Exists(film.Artwork))stack.Children.Add(new Image{Source=new BitmapImage(new Uri(film.Artwork)),Width=64,Height=64});
             else stack.Children.Add(new EditorIcon{Kind=film.Path==null ? "Neutral" : "Film",Width=32,Height=64});
             var displayName=film.Path==null ? Loc.Text("中性") : film.Name;
-            var caption=new TextBlock{Text=displayName,Width=80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
+            var additional=film.Path!=null && BundledLook.All.ContainsKey(Path.GetFileName(film.Path));
+            var caption=new TextBlock{Text=displayName,Width=additional ? 132 : 80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? Loc.Text("中性显影")};
+            if(additional)button.Width=146;
             AutomationProperties.SetName(button,displayName);
             button.Click+=(_,_)=>{
                 if(exporting || !ResolveTransformDraft() || (settings.MasterRecipeID == null && lut == film.Path))return;

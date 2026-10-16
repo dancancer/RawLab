@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "sourceAudit": "docs/luts/source-audit-2026-10-16.json",
+  "notes": {
+    "camera-gamma24": "Author statement plus explicit RawLab convention: display BT.709/D65, ideal black-zero gamma 2.4, full range in and out. Not camera calibration.",
+    "gmic-rgb-creative": "New RawLab display-sRGB creative interpretation of untagged RGB tables, reproducing G'MIC's direct RGB mapping in its usual sRGB-image workflow. Original asset transfer is unknown; especially not claimed to recover Juan Melara's original Log PFE."
+  },
+  "looks": [
+    {
+      "source": "Contax_ND_STD_33_sRGB.cube",
+      "name": "Contax ND STD",
+      "artworkName": "camera-contax-nd-std",
+      "adaptation": "camera-gamma24",
+      "id": "RawLab_camera_contax_nd_std_sRGB_v1"
+    },
+    {
+      "source": "Lumix_S1R_Vivid_sRGB_33.cube",
+      "name": "Lumix S1R Vivid",
+      "artworkName": "camera-lumix-s1r-vivid",
+      "adaptation": "camera-gamma24",
+      "id": "RawLab_camera_lumix_s1r_vivid_sRGB_v1"
+    },
+    {
+      "source": "Pentax_K5_Reversal_Film_33_sRGB.cube",
+      "name": "Pentax K-5 Reversal",
+      "artworkName": "camera-pentax-k5-reversal",
+      "adaptation": "camera-gamma24",
+      "id": "RawLab_camera_pentax_k5_reversal_sRGB_v1"
+    },
+    {
+      "source": "Ricoh_GR2_HiBW_33_sRGB.cube",
+      "name": "Ricoh GR II Hi-BW",
+      "artworkName": "camera-ricoh-gr2-hibw",
+      "adaptation": "camera-gamma24",
+      "id": "RawLab_camera_ricoh_gr2_hibw_sRGB_v1"
+    },
+    {
+      "source": "Ricoh_GR2_VIVID_33_sRGB.cube",
+      "name": "Ricoh GR II Vivid",
+      "artworkName": "camera-ricoh-gr2-vivid",
+      "adaptation": "camera-gamma24",
+      "id": "RawLab_camera_ricoh_gr2_vivid_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_2383_constlclip.cube",
+      "name": "Kodak 2383 RGB",
+      "artworkName": "look-2383",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_2383_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_2393_constlclip.cube",
+      "name": "Kodak 2393 RGB",
+      "artworkName": "look-2393",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_2393_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_bw_400_cn.cube",
+      "name": "Kodak BW 400 CN",
+      "artworkName": "look-bw-400-cn",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_bw_400_cn_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_e-100_gx_ektachrome_100.cube",
+      "name": "Kodak E100 GX",
+      "artworkName": "look-e100-gx",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_e100_gx_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_ektachrome_100_vs.cube",
+      "name": "Kodak Ektachrome 100 VS",
+      "artworkName": "look-ektachrome-100-vs",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_ektachrome_100_vs_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_ektar_100.cube",
+      "name": "Ektar 100 G'MIC",
+      "artworkName": "look-ektar-100",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_ektar_100_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_elite_100_xpro.cube",
+      "name": "Kodak Elite 100 XPRO",
+      "artworkName": "look-elite-100-xpro",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_elite_100_xpro_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_elite_chrome_200.cube",
+      "name": "Kodak Elite Chrome 200",
+      "artworkName": "look-elite-chrome-200",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_elite_chrome_200_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_elite_chrome_400.cube",
+      "name": "Kodak Elite Chrome 400",
+      "artworkName": "look-elite-chrome-400",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_elite_chrome_400_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_elite_color_200.cube",
+      "name": "Kodak Elite Color 200",
+      "artworkName": "look-elite-color-200",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_elite_color_200_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_elite_color_400.cube",
+      "name": "Kodak Elite Color 400",
+      "artworkName": "look-elite-color-400",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_elite_color_400_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_elite_extracolor_100.cube",
+      "name": "Kodak Elite Extra 100",
+      "artworkName": "look-elite-extracolor-100",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_elite_extracolor_100_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_hie_hs_infra.cube",
+      "name": "Kodak HIE Infrared",
+      "artworkName": "look-hie",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_hie_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_kodachrome_200.cube",
+      "name": "Kodak Kodachrome 200",
+      "artworkName": "look-kodachrome-200",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_kodachrome_200_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_kodachrome_25.cube",
+      "name": "Kodak Kodachrome 25",
+      "artworkName": "look-kodachrome-25",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_kodachrome_25_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_kodachrome_64.cube",
+      "name": "Kodak Kodachrome 64",
+      "artworkName": "look-kodachrome-64",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_kodachrome_64_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_portra_160_-.cube",
+      "name": "Kodak Portra 160",
+      "artworkName": "look-portra-160",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_portra_160_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_portra_400_-.cube",
+      "name": "Kodak Portra 400",
+      "artworkName": "look-portra-400",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_portra_400_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_portra_800_-.cube",
+      "name": "Kodak Portra 800",
+      "artworkName": "look-portra-800",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_portra_800_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_t-max_100.cube",
+      "name": "Kodak T-MAX 100",
+      "artworkName": "look-tmax-100",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_tmax_100_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_t-max_400.cube",
+      "name": "Kodak T-MAX 400",
+      "artworkName": "look-tmax-400",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_tmax_400_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_tmax_3200_-.cube",
+      "name": "Kodak T-MAX 3200",
+      "artworkName": "look-tmax-3200",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_tmax_3200_sRGB_v1"
+    },
+    {
+      "source": "kodak/kodak_tri-x_400_-.cube",
+      "name": "Kodak TRI-X 400",
+      "artworkName": "look-trix-400",
+      "adaptation": "gmic-rgb-creative",
+      "id": "RawLab_look_trix_400_sRGB_v1"
+    }
+  ]
+}

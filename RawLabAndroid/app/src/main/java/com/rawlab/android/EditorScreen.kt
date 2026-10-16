@@ -300,6 +300,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     val edits = state.visibleEdits
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
+    val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val calibrated = state.preview?.temperature?.isFinite() == true
     var menuLookId by remember { mutableStateOf<String?>(null) }
     var renameLookId by remember { mutableStateOf<String?>(null) }
@@ -338,9 +339,10 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                     }
                 }
                 items(state.looks, key = { it.id }) { look ->
-                    val builtIn = Film.all.firstOrNull { it.id == look.id }
-                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${look.id}.png") else null
-                    Box(Modifier.width(96.dp)) {
+                    val builtIn = bundledFilms.firstOrNull { it.id == look.id }
+                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${builtIn.artworkName}.png") else null
+                    val additional = builtIn != null && Film.all.none { it.id == builtIn.id }
+                    Box(Modifier.width(if (additional) 132.dp else 96.dp)) {
                         Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
                             enabled = state.controlsEnabled && look.available,
                             role = Role.RadioButton, onClick = {

@@ -7,7 +7,7 @@ struct EditorPresentationTests {
         print("PASS: \(message)")
     }
 
-    static func main() {
+    static func main() throws {
         var settings = RawSettings.default
         check(AdjustmentKind.contrast.range == -100...100 && AdjustmentKind.sharpening.range == 0...200,
               "iOS contrast and sharpening expose the full Mac ranges")
@@ -164,6 +164,18 @@ struct EditorPresentationTests {
         let custom = FilmPresentation(fileName: "My_Custom_Look")
         check(custom.name == "My_Custom_Look" && custom.artworkName == nil,
               "Unknown names remain intact and do not borrow film artwork")
+        let ektar = FilmPresentation(fileName: "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
+        check(ektar.name == "EKTAR 100 Phuket v2 Strong" && ektar.artworkName == "ektar-100-phuket",
+              "Project Ektar keeps its distinct name and existing artwork")
+        for look in BundledLook.all {
+            let item = FilmPresentation(fileName: look.id)
+            check(item.name == look.name && item.artworkName == look.artworkName,
+                  "Shared catalog presentation resolves \(look.id)")
+            var saved = RawSettings.default
+            saved.lutID = look.id
+            let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(saved))
+            check(restored.lutID == look.id, "Bundled look identity survives iOS persistence")
+        }
         let modernFilms: [(String, String, String?)] = [
             ("ACROS", "ACROS", "acros"), ("ASTIA", "ASTIA", "astia"),
             ("CLASSIC-CHROME", "CLASSIC CHROME", "classic-chrome"),

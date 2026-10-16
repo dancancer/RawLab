@@ -179,7 +179,8 @@ data class PhotoEffectsSettings(
             .all { value(it) == it.defaultValue }
 }
 
-data class Film(val id: String, val name: String, val file: String?) {
+data class Film(val id: String, val name: String, val file: String?, val artworkName: String = id) {
+    val fileName: String? get() = file?.let { if (it.endsWith(".cube")) it else "FLog2_to_${it}_65grid_V.1.00.cube" }
     companion object {
         val all = listOf(
             Film("neutral", "中性", null),

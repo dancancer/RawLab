@@ -42,6 +42,7 @@ struct FilmDock: View {
     private func filmButton(name: String, id: String, imageSize: CGFloat, height: CGFloat,
                             isCustom: Bool = false) -> some View {
         let selected = model.settings.masterRecipeID == nil && model.selectedFilmID == id
+        let labelWidth: CGFloat = !isCustom && BundledLook.all.contains(where: { $0.name == name }) ? 132 : 88
         return Button { model.selectFilm(id) } label: {
             VStack(spacing: 5) {
                 FilmPackageImage(name: name, neutral: id.isEmpty, isCustom: isCustom)
@@ -49,8 +50,8 @@ struct FilmDock: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                 Text(name).font(.system(size: 11, weight: selected ? .semibold : .regular))
                     .lineLimit(2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    .frame(width: 88, height: 28)
-            }.frame(width: max(88, imageSize + 12), height: height)
+                    .frame(width: labelWidth, height: 28)
+            }.frame(width: max(labelWidth, imageSize + 12), height: height)
                 .contentShape(Rectangle())
                 .foregroundStyle(selected ? Color.yellow : Color.primary)
                 .background(selected ? Color.yellow.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))

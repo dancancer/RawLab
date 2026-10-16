@@ -1,0 +1,69 @@
+{
+  "generator": "OpenAI built-in image_gen",
+  "created": "2026-10-16",
+  "packaging": "Seven original square images generated independently, then resized to 256x256 RGB PNG with sips; no creative post-processing.",
+  "purpose": "Original flat printed concept-label illustrations for RawLab look thumbnails. They are not actual LUT-rendered previews, official Kodak products, official Kodak artwork, endorsements, or reproductions.",
+  "conceptStatement": "Every asset is a fictional RawLab look concept using RAWLAB and LOOK CONCEPT labels. The artwork is original packaging-inspired graphic design, not official Kodak packaging and does not claim Kodak authorship, endorsement, calibration, or an actual LUT sample.",
+  "references": [
+    "/Users/xupeng/.codex/worktrees/bbe6/rawtools/RawLabMac/Resources/FilmIcons/custom-look.png",
+    "/Users/xupeng/.codex/worktrees/bbe6/rawtools/RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"
+  ],
+  "assets": [
+    {
+      "id": "look-2383",
+      "file": "look-2383.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-78b5ed9d-c3c6-4717-b700-e2787046e173.png",
+      "sha256": "0b5fe8a3c6d1f0b746bb657bd6ed61e52bd254899e49feeb0560a3757ba6b00e",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with yellow and near-black fields, a vivid cyan perforated film strip, contact-sheet city/leaf graphics, crisp screenprint ink and subtle matte grain. Straight-on orthographic art only; no physical box, perspective, border, margin, shadow, gradient or outside background. Render exactly RAWLAB, LOOK CONCEPT and PRINT 2383; PRINT 2383 is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-bw-400-cn",
+      "file": "look-bw-400-cn.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-b6530b66-8ad1-4041-8a8c-d9c0634df0de.png",
+      "sha256": "978f610ed85b0bc9b9ea95681eabf8d9eaa7134ed2d30cb56a0bd66f343dd49a",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with near-black, white, cool gray and restrained metallic-gold fields, black-and-white contact-sheet frames, leaf graphics and a winding perforated film strip. Straight-on orthographic screenprint art only; no physical box, perspective, border, margin, shadow or gradient. Render exactly RAWLAB, LOOK CONCEPT and BW 400 CN; BW 400 CN is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-tmax-100",
+      "file": "look-tmax-100.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-204f4b31-054c-4481-8087-dd82278495ed.png",
+      "sha256": "e7e21b71e339bbe49573c97a6e869f702f2efdd2cd8a043624c5dbaf3a0345cf",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with silver-white, pale gray, graphite charcoal and signal-red fields, contact-sheet frames, a circular registration motif and red perforated film-strip graphics. Straight-on orthographic screenprint art only; no physical box, perspective, border, margin, shadow or gradient. Render exactly RAWLAB, LOOK CONCEPT and T-MAX 100; T-MAX 100 is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-tmax-400",
+      "file": "look-tmax-400.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-14ebaef7-70ae-4708-a556-dadd9a0047e8.png",
+      "sha256": "367a733f2489d4b29788b49e05ef24b7f86160ab6a917ab92b7fc4bd59d5409d",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with charcoal black, soot gray, pale off-white and vivid magenta fields, high-contrast urban night contact-sheet frames, a diagonal perforated film strip and grid/register marks. Straight-on orthographic screenprint art only; no physical box, perspective, border, margin, shadow or gradient. Render exactly RAWLAB, LOOK CONCEPT and T-MAX 400; T-MAX 400 is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-tmax-3200",
+      "file": "look-tmax-3200.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-17e1247d-17aa-4441-b9b7-2f100cc8614c.png",
+      "sha256": "6924a39c76054073121bb202b3464f23015ee939ca877780179da09e5b67aa60",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with graphite black, gray, off-white and electric-cyan fields, motion contact-sheet frames, a sweeping cyan perforated film strip and angular registration marks. Straight-on orthographic screenprint art only; no physical box, perspective, border, margin, shadow or gradient. Render exactly RAWLAB, LOOK CONCEPT and T-MAX 3200; T-MAX 3200 is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-trix-400",
+      "file": "look-trix-400.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-7ba473c1-b5c8-45d6-9c1e-cdb1b0e8eb98.png",
+      "sha256": "bf2ab7f6f7fd55588aa3518fa663a022afa11a2e7cd57ee15ad0cb6205b8c05c",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with black, white, cool gray and saturated safety-yellow fields, monochrome street contact-sheet frames, a diagonal perforated film strip and yellow register marks. Straight-on orthographic screenprint art only; no physical box, perspective, border, margin, shadow or gradient. Render exactly RAWLAB, LOOK CONCEPT and TRI-X 400; TRI-X 400 is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-hie",
+      "file": "look-hie.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-e5b8-7610-8e61-18a6f4ba814d/exec-307806b6-ef32-47ce-844e-68d263f90485.png",
+      "sha256": "df3e2b815579b5a6ef5589e9d8b2f049504baf5313a0904ba7f23faebf784cdb",
+      "prompt": "Use case: product-mockup. Create one original full-bleed flat square package label for a RawLab look icon, with silver-white, graphite black and signal-red fields, inverted pale leaf and branch silhouettes, a red perforated film strip and register marks. Straight-on orthographic screenprint art only; no physical box, perspective, border, margin, shadow or gradient. Render exactly RAWLAB, LOOK CONCEPT and HIE INFRARED; HIE INFRARED is the dominant title. This is an invented look concept, not an actual LUT sample or retail stock; use no trademark, official logo or official package copy and never use the word KODAK.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    }
+  ]
+}

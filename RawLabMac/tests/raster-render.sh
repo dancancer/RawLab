@@ -12,6 +12,7 @@ OUT="$(mktemp -d /tmp/rawlab-raster-render.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
+    "$ROOT/Shared/BundledLook.swift" \
   -target "$(uname -m)-apple-macosx26.0" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/RawLabMac/Sources/AgentRecipe.swift" \

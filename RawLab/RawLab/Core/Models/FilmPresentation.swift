@@ -12,11 +12,16 @@ struct FilmPresentation {
         "CLASSIC-NEG.": "classic-neg", "ETERNA": "eterna", "ETERNA-BB": "eterna-bb",
         "PRO-NEG.STD": "pro-neg-std", "PROVIA": "provia", "REALA-ACE": "reala-ace",
         "VELVIA": "velvia"
-    ]
+    ].merging(Dictionary(uniqueKeysWithValues: BundledLook.all.map { ($0.id.uppercased(), $0.artworkName) })) { _, new in new }
     let name: String
     let artworkName: String?
 
     init(fileName: String) {
+        if let look = BundledLook.find(fileName) {
+            name = look.name
+            artworkName = look.artworkName
+            return
+        }
         guard let start = fileName.range(of: "_to_", options: .caseInsensitive),
               let end = fileName.range(of: "_BT.709", options: .caseInsensitive)
                 ?? fileName.range(of: "_65grid", options: .caseInsensitive),
