@@ -202,7 +202,7 @@ struct EditorView: View {
             VStack(spacing: 16) {
                 if model.busy {
                     ProgressView().controlSize(.regular)
-                    Text(model.file?.lastPathComponent ?? L10n.text("RAW 照片")).font(.headline).lineLimit(1)
+                    Text(model.file?.lastPathComponent ?? L10n.text("照片")).font(.headline).lineLimit(1)
                 } else if let error = model.error {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.yellow)
                     Text(L10n.text("操作失败")).font(.headline)
@@ -210,7 +210,7 @@ struct EditorView: View {
                         .frame(maxWidth: 340)
                     HStack {
                         Button(L10n.text("重试"), action: model.schedule)
-                        Button(L10n.text("打开其他 RAW…"), action: model.openPanel)
+                        Button(L10n.text("打开照片"), action: model.openPanel)
                     }
                 } else {
                     Image(systemName: "photo.on.rectangle.angled").font(.system(size: 36)).foregroundStyle(.secondary)

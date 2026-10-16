@@ -1,5 +1,9 @@
 "%@ · %@%%" = "%@ · %@%%";
 "打开照片" = "Abrir foto";
+"添加照片" = "Añadir fotos";
+"正在检查照片…" = "Comprobando fotos…";
+"尚未选择照片" = "No hay fotos seleccionadas";
+"照片" = "Foto";
 "请至少选择一张照片。" = "Selecciona al menos una foto.";
 "选择待导出的照片" = "Seleccionar fotos para exportar";
 "不是支持的图像文件" = "Archivo de imagen no compatible";
