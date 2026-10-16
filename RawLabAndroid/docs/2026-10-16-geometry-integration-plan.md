@@ -34,16 +34,21 @@
 
 - [x] Run clean development unit baseline: 102 tests pass.
 - [x] Add v2 round-trip and v1-upgrade RED tests: two expected failures on development.
-- [ ] Resolve merge using current v0.8 UI/state as baseline, then port only domain/native/resource deltas.
-- [ ] Add draft ratio tests proving physical aspect, original orientation, area-preserving refit, reset/unlock and projection isolation; run RED before implementation.
-- [ ] Wire ratio choices, direction, perspective controls and corner resizing through the generic draft. Preserve stale revision filtering.
-- [ ] Run JVM suite; expected zero failures. Build debug/test APKs, lint and check-native.
-- [ ] Use isolated ADB and available device for geometry preview/FINAL/reset, draft Apply/Cancel/leave/recreation and batch snapshot/GPU/lifecycle regression. Record unavailable gates without claiming success.
-- [ ] Obtain independent read-only review, fix actionable issues with regression evidence, verify old checkout fingerprint.
-- [ ] Commit normal integration merge, push existing source normally, update PR45 accurate scope/evidence, mark Ready only after gates. Coordinator alone merges.
+- [x] Resolve merge using current v0.8 UI/state as baseline, then port only domain/native/resource deltas.
+- [x] Add draft ratio tests proving physical aspect, original orientation, area-preserving refit, reset/unlock and projection isolation; run RED before implementation.
+- [x] Wire ratio choices, direction, perspective controls and corner resizing through the generic draft. Preserve stale revision filtering.
+- [x] Run JVM suite; 129 tests pass. Build debug/test APKs, lint and check-native.
+- [x] Use isolated ADB for geometry preview/FINAL/reset, draft Apply/Cancel/leave/process restart and batch snapshot/GPU/lifecycle regression. Record firmware and visual limits without claiming success.
+- [x] Obtain independent read-only review and new-core incremental review, close coverage gaps, restore batch summary rows with RED/GREEN evidence, verify old checkout fingerprint.
+- [x] Commit normal integration and target merges. Delivery uses the existing source branch/PR45, without force push or duplicate PR. Coordinator alone merges.
+
+Detailed logs, source tree identities, runtime artifacts, failed diagnostics and remaining platform
+limits are in [the integration verification record](geometry-v08-integration-verification-2026-10-16.md).
 
 ## Decisions
 
 - Explicit execution authorization overrides writing-plans' generic review pause; no additional design approval required.
-- One coherent integration commit follows the tests because the active merge cannot safely contain intermediate legacy/v0.8 mixed states.
+- The initial coherent merge is followed by normal merges of new development targets. The shared-core
+  update receives an incremental NDK/native/batch check; later Mac/iOS-only targets reuse those results
+  after verifying unchanged Android/core/configuration trees.
 - Evidence is stored outside build output; historical PR45 verification is not exact-head evidence.
