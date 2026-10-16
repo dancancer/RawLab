@@ -4,7 +4,7 @@
 
 - 原生UIPickerView数值编辑、固定游标/移动刻线、精调、默认/边界反馈与Reduce Motion路径；补齐大师配方图标和iPad布局。
 - 依据请求/来源身份拒绝迟到图像、错误、直方图和回调；取消后同图可重选，几何来源切换显式恢复未裁切编辑预览。
-- 正常merge目标development `7da15e57b1f2178d12cabc823c249dc589578547`（含#53）；首次两处冲突同时保留#55固定标题保存反馈和#57 RUM成功回调/批量终态/隐私入口。第二次merge无新增冲突，iOS相关core兼容性独立复核无可行动缺陷。
+- 正常merge目标development `62c1080348c9654702b8e1d59746c088ed78ab96`（含#53和#58）；首次两处冲突同时保留#55固定标题保存反馈和#57 RUM成功回调/批量终态/隐私入口。第二次merge无新增冲突，iOS相关core兼容性独立复核无可行动缺陷。
 
 ## 本轮验证
 
@@ -27,7 +27,7 @@
 
 ## 范围与边界
 
-相对7da15e57净diff为iOS产品、六语资源、测试及设计/证据文档；本任务未手改Shared、lutools或其他平台，macOS设计原文保留。#50/#51/#53/#55/#57已在目标。增量framework无下载/全套依赖重建，实际编译5个core和6个自动生成OpenCV kernel单元；严格mtime断言退出保留原记录，直接接续成功编译结果打包。Lensfun 14个成员payload一致，仅archive日期变化。
+相对62c10803净diff为iOS产品、六语资源、测试及设计/证据文档；本任务未手改Shared、lutools或其他平台，macOS设计原文保留。#50/#51/#53/#55/#57/#58已在目标。最后7da→62c仅macOS内容，RawLab/Shared/lutools完整tree未变；复用106a构建和运行结果，没有重复验证。增量framework无下载/全套依赖重建，实际编译5个core和6个自动生成OpenCV kernel单元；严格mtime断言退出保留原记录，直接接续成功编译结果打包。Lensfun 14个成员payload一致，仅archive日期变化。
 
 本轮为Xcode27/iOS27 arm64 Simulator。RAW系统用例停在批量就绪；实际文件输出由处理器/模型检查覆盖，完整应用导出历史保留原源码归属。真实设备、触觉、帧率/延迟、硬件辅助功能、iCloud/provider内部等待、fallback、多窗口/系统终止及真实RUM SDK/网络仍待验。e63单次SwiftUI发布警告未定位。本地通过不等于CI；当前Actions工作流为0。merge由协调任务核对exact head后执行。
 

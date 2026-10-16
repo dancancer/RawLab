@@ -2,7 +2,7 @@
 
 本轮在独立工作树 `.worktrees/ios-editor-v4`、分支 `codex/ios-editor-v4` 继续现有 [PR #52](https://github.com/dancancer/RawLab/pull/52)。以正常 merge 接入 `development`，不 rebase、不 force、不修改主工作树。合入由协调任务执行。
 
-当前已正常merge目标 `7da15e57b1f2178d12cabc823c249dc589578547`（#53），源码提交 `106a958d161b2f21f27e8da54f6eea446c1a1a1d`。新core匹配的framework、当前头文件实际链接、全新app/XCTest构建、iOS display-loader运行探针及56项处理器断言均通过。原8项UI和401条模型断言仍归属第一阶段f454核心；依据不变的iOS/Shared源码与本次增量检查复用，不改称在新core上全量重跑。
+当前已正常merge目标 `62c1080348c9654702b8e1d59746c088ed78ab96`（#58 macOS），合并提交 `70afce79dfc70b951d6fa26ffe056574a33f4991`。#53的新core构建与运行验证来源为 `106a958d161b2f21f27e8da54f6eea446c1a1a1d`；最新目标没有更改iOS/Shared/core输入。新core匹配的framework、当前头文件实际链接、全新app/XCTest构建、iOS display-loader运行探针及56项处理器断言均通过。原8项UI和401条模型断言仍归属第一阶段f454核心；依据不变的iOS/Shared源码与本次增量检查复用，不改称在新core上全量重跑。
 
 ## 第一阶段源码与产物归属（目标435feda）
 
@@ -109,6 +109,10 @@ xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Debug 
 精确增量命令记录在上述commands文件；app命令沿用第一阶段格式，设备改为MODELS UUID `47310A81-02AA-45A1-807A-431181E4D338`、DerivedData改为`derived-v4`。处理器命令为 `bash RawLab/tests/processor-export.sh /tmp/rawlab-ios-v08-integration-20261016/derived-v4/Build/Products/Debug-iphonesimulator/RawLab.app 47310A81-02AA-45A1-807A-431181E4D338`，环境显式指定共享只读Sony和私有DJI副本，见结果JSON。
 
 本次不重跑第一阶段8项UI/401断言与视口三组，也不将它们归到DCF新库。新库兼容性由新header/link、app构建、loader运行和56项实际RAW处理器检查补齐。本地已达到转Ready条件；远端最终head/target及Ready状态由PR回执确认，合入仍由协调执行。
+
+## 最后目标推进（#58 macOS）
+
+协调合入#58后，正常merge `62c1080348c9654702b8e1d59746c088ed78ab96`，提交 `70afce79dfc70b951d6fa26ffe056574a33f4991`，无冲突。独立核对7da→62c与106a→本次merge的`RawLab`、`Shared`、`lutools` diff均为空，三个完整目录tree hash前后一致，见`target-v4/final-target-reuse.json`。此推进只涉及macOS代码/资源/测试和文档，未改变iOS构建输入；因此复用精确106a/DCF/42ae的新产物及56项结果，没有仅因commit SHA变化重建或重跑。最终PR目标改为62c，产物构建来源仍明确保留106a。
 
 ## 清理与保留证据
 
