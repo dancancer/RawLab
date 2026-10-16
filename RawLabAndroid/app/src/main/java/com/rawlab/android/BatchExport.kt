@@ -18,7 +18,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.util.Properties
 import java.util.UUID
 
@@ -286,6 +286,23 @@ data class BatchExportState(
     val unfinishedCount: Int get() = job.rows.count { it.status !in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION) }
 }
 
+internal class BatchCancellation {
+    private val reason = AtomicReference<UsageBatchOutcome?>(null)
+
+    fun get(): Boolean = reason.get() != null
+    fun reset() { reason.set(null) }
+    fun request(interrupted: Boolean = false) {
+        reason.compareAndSet(null, if (interrupted) UsageBatchOutcome.Interrupted else UsageBatchOutcome.Cancelled)
+    }
+
+    fun outcome(job: BatchJob): UsageBatchOutcome = when {
+        job.globalError != null || job.rows.any { it.status == BatchRowStatus.NEEDS_CONFIRMATION } -> UsageBatchOutcome.Interrupted
+        job.rows.any { it.status == BatchRowStatus.CANCELLED } -> reason.get() ?: UsageBatchOutcome.Cancelled
+        job.rows.any { it.status == BatchRowStatus.FAILED } -> UsageBatchOutcome.Partial
+        else -> UsageBatchOutcome.Completed
+    }
+}
+
 class BatchExportModel(
     private val context: Context,
     private val storage: PhotoStorage,
@@ -293,10 +310,11 @@ class BatchExportModel(
     initial: BatchJob? = null,
     private val gpuMode: Int = NativeProcessor.AUTO,
     private val processorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
+    private val onTerminal: (succeeded: Int, failed: Int, outcome: UsageBatchOutcome) -> Unit = { _, _, _ -> },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val resolver = context.contentResolver
-    private val cancelRequested = AtomicBoolean(false)
+    private val cancelRequested = BatchCancellation()
     private var running: Job? = null
     private var discardCompletion: CompletableDeferred<Unit>? = null
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
@@ -321,7 +339,7 @@ class BatchExportModel(
 
     fun addUris(uris: List<Uri>) {
         if (uris.isEmpty() || mutable.value.phase != BatchPhase.SELECTING) return
-        cancelRequested.set(false)
+        cancelRequested.reset()
         mutable.value = mutable.value.copy(phase = BatchPhase.PREPARING)
         scope.launch {
             val failures = mutableListOf<String>()
@@ -355,6 +373,16 @@ class BatchExportModel(
         val current = mutable.value
         if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
         if (retry && current.unfinishedCount == 0) return
+        val successBefore = current.successCount
+        val attempted = mutableSetOf<String>()
+        var terminalReported = false
+        suspend fun reportTerminal(job: BatchJob, outcome: UsageBatchOutcome) {
+            if (terminalReported) return
+            terminalReported = true
+            val succeeded = (job.rows.count { it.status == BatchRowStatus.SUCCESS } - successBefore).coerceAtLeast(0)
+            val failed = job.rows.count { it.id in attempted && it.status == BatchRowStatus.FAILED }
+            withContext(Dispatchers.Main) { onTerminal(succeeded, failed, outcome) }
+        }
         if (!ExportSize.isValid(longEdge)) {
             mutable.value = current.copy(error = AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and))
             return
@@ -367,7 +395,7 @@ class BatchExportModel(
             outputLongEdge = longEdge,
             rows = current.job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) })
         mutable.value = current.copy(job = configured, phase = BatchPhase.PREPARING, outputFormat = format, destination = destination, error = null, stopping = false)
-        cancelRequested.set(false)
+        cancelRequested.reset()
         running = scope.launch(Dispatchers.IO) {
             try {
                 val materialized = configured
@@ -405,8 +433,10 @@ class BatchExportModel(
                     }
                     mutable.value = mutable.value.copy(phase = BatchPhase.RUNNING)
                     BatchRunner.run(materialized, render, { _, _, _ -> }, cancelRequested::get, journal,
-                        didUpdate = { mutable.value = mutable.value.copy(job = it) },
-                        dispose = { it.delete() }, publish = publish)
+                        didUpdate = {
+                            attempted.addAll(it.rows.filter { row -> row.status == BatchRowStatus.PROCESSING }.map { row -> row.id })
+                            mutable.value = mutable.value.copy(job = it)
+                        }, dispose = { it.delete() }, publish = publish)
                 } finally { processor.close() }
                 mutable.value = BatchExportState(result,
                     phase = when {
@@ -415,9 +445,11 @@ class BatchExportModel(
                         result.rows.any { it.status == BatchRowStatus.FAILED } -> BatchPhase.FAILED
                         else -> BatchPhase.COMPLETE
                     }, outputFormat = format, destination = destination, error = result.globalError)
+                reportTerminal(result, cancelRequested.outcome(result))
             } catch (error: Throwable) {
                 mutable.value = mutable.value.copy(phase = BatchPhase.FAILED,
                     error = error.message ?: error.javaClass.simpleName)
+                reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
     }
@@ -427,8 +459,8 @@ class BatchExportModel(
         startInternal(mutable.value.outputFormat, mutable.value.destination, mutable.value.job.outputLongEdge, retry = true)
     }
 
-    fun cancel() {
-        cancelRequested.set(true)
+    fun cancel(forBackground: Boolean = false) {
+        cancelRequested.request(interrupted = forBackground)
         if (mutable.value.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) mutable.value = mutable.value.copy(stopping = true)
     }
 
@@ -555,7 +587,7 @@ class BatchExportModel(
     }
 
     override fun close() {
-        cancelRequested.set(true)
+        cancelRequested.request(interrupted = true)
         val job = running
         if (job?.isActive == true) job.invokeOnCompletion { scope.coroutineContext[Job]?.cancel() }
         else scope.coroutineContext[Job]?.cancel()

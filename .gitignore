@@ -2,6 +2,7 @@
 .derivedData/
 DerivedData/
 .module_cache/
+/.cache/
 build/
 build-*/
 cmake-build-*/

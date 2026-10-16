@@ -4,6 +4,7 @@ struct AboutView: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var updates: UpdateChecker
     @AppStorage(L10n.preferenceKey) private var languagePreference = AppLanguage.system.rawValue
+    @ObservedObject private var usage = UsageAnalytics.shared
 
     var body: some View {
         let _ = localizationLocale
@@ -38,6 +39,14 @@ struct AboutView: View {
                 ScrollView { Text(release.notes).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     .frame(maxHeight: 180)
             }
+            Divider()
+            Toggle("允许使用统计", isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
+                .disabled(!usage.isAvailable && !usage.isEnabled)
+            Text(usage.status).font(.callout).foregroundStyle(.secondary)
+            Text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Link("阿里云隐私政策", destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
+                .font(.callout)
         }
         .padding(24).frame(width: 440).fixedSize(horizontal: false, vertical: true)
         .navigationTitle(L10n.text("关于 RawLab"))

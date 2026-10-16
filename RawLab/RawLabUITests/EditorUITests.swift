@@ -1,6 +1,25 @@
 import XCTest
 
 final class EditorUITests: XCTestCase {
+    func testUsagePrivacyDefaultsOff() {
+        let app = XCUIApplication()
+        app.launch()
+        let privacy = app.buttons["editor.privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 10))
+        privacy.tap()
+        let toggle = app.switches["usage.consent"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertTrue(app.staticTexts["当前构建未配置使用统计，未采集或上报。"].exists)
+        capture("usage-privacy-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["usage.done"].isHittable)
+        capture("usage-privacy-landscape")
+        app.buttons["usage.done"].tap()
+        XCTAssertTrue(app.buttons["editor.import"].exists)
+    }
+
     private let seedPhotoDate = "2025年6月02日, 16:45"
     private let seedPhotoBase = "DJI_20250602164503_0444_D"
     private var verifiedSeedPickerIndex: Int?

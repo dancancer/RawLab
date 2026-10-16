@@ -4,7 +4,10 @@ import SwiftUI
 extension ContentView {
     @ToolbarContentBuilder
     var editorToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            Button { showingPrivacy = true } label: { Image(systemName: "gearshape") }
+                .accessibilityLabel("隐私设置").help("隐私设置")
+                .accessibilityIdentifier("editor.privacy")
             photoImportButton(isEnabled: !editorBusy)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -522,6 +525,9 @@ extension ContentView {
 
     func filmButton(name: String, id: String?, imageSize: CGFloat) -> some View {
         Button {
+            if settings.masterRecipeID != nil || settings.lutID != id {
+                UsageAnalytics.shared.record(.filmSelected(id == nil ? .none : .builtIn))
+            }
             var updated = settings
             updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
             updated.lutID = id

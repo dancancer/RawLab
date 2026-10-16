@@ -14,6 +14,7 @@ final class BatchExportModel: ObservableObject {
     @Published var shouldPresentFileExport = false
     @Published var validationMessage: String?
     var onDiscard: () -> Void = { }
+    var onUsage: (UsageEvent) -> Void = { _ in }
 
     private let journalStore: BatchJournalStore?
     private let queue = DispatchQueue(label: "com.rawlab.batch", qos: .userInitiated)
@@ -162,7 +163,9 @@ final class BatchExportModel: ObservableObject {
         backgroundInterruption = false
         let failedIDs = failuresOnly ? Set(snapshot.targets.filter { $0.status == .failed }.map(\.id)) : nil
         let frozenLongEdge = snapshot.longEdge
+        let succeededBefore = snapshot.targets.filter { $0.status == .succeeded }.count
         queue.async { [self] in
+            var attempted = Set<String>()
             do {
                 let result: BatchExportJob
                 if snapshot.outputFormat == .renderedDNG {
@@ -179,6 +182,7 @@ final class BatchExportModel: ObservableObject {
                         cleanup: { file in try? FileManager.default.removeItem(at: file) },
                         shouldCancel: { self.isCancellationRequested },
                         didUpdate: { updated in
+                            attempted.formUnion(updated.targets.filter { $0.status == .processing }.map(\.id))
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
@@ -197,11 +201,13 @@ final class BatchExportModel: ObservableObject {
                         },
                         shouldCancel: { self.isCancellationRequested },
                         didUpdate: { updated in
+                            attempted.formUnion(updated.targets.filter { $0.status == .processing }.map(\.id))
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
                         onlyIDs: failedIDs)
                 }
+                let failed = result.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
                     self.job = result
                     if self.backgroundInterruption && result.status == .cancelled { self.job.status = .interrupted }
@@ -216,12 +222,14 @@ final class BatchExportModel: ObservableObject {
                         }
                     }
                     self.saveJournal()
+                    self.reportUsage(succeededBefore: succeededBefore, failed: failed)
                 }
             } catch {
                 let recovered = snapshot.outputFormat == .renderedDNG
                     ? snapshot.recovered()
                     : snapshot.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
                 let message = error.localizedDescription
+                let failed = recovered.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
                     self.job = recovered
                     self.job.status = .interrupted
@@ -229,9 +237,22 @@ final class BatchExportModel: ObservableObject {
                     self.validationMessage = message
                     self.isRunning = false; self.isStopping = false
                     self.saveJournal()
+                    self.reportUsage(succeededBefore: succeededBefore, failed: failed)
                 }
             }
         }
+    }
+
+    private func reportUsage(succeededBefore: Int, failed: Int) {
+        let succeeded = max(0, job.targets.filter { $0.status == .succeeded }.count - succeededBefore)
+        let outcome: UsageBatchOutcome
+        switch job.status {
+        case .completed: outcome = .completed
+        case .partialFailure: outcome = .partial
+        case .cancelled: outcome = .cancelled
+        default: outcome = .interrupted
+        }
+        onUsage(.batchExportCompleted(succeeded: succeeded, failed: failed, outcome: outcome))
     }
 
     func cancel(forBackground: Bool = false) {

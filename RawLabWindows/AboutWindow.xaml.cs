@@ -8,16 +8,22 @@ public partial class AboutWindow : Window
 {
     private readonly UpdateChecker updates;
     private bool languageReady;
-    public AboutWindow(UpdateChecker updates)
+    private readonly UsageAnalytics analytics;
+    private bool refreshingUsage;
+    public AboutWindow(UpdateChecker updates, UsageAnalytics? analytics = null)
     {
         InitializeComponent();
         this.updates = updates;
+        this.analytics = analytics ?? new UsageAnalytics();
         DataContext = updates;
         LanguageBox.ItemsSource = Loc.Choices.Select(c => c.Code == "system" ? c with { NativeName = Loc.Text("跟随系统") } : c).ToList();
         LanguageBox.SelectedValue = Loc.Preference;
         languageReady = true;
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => Loc.Changed -= RefreshLanguage;
+        this.analytics.PropertyChanged += UsageChanged;
+        Closed += (_, _) => this.analytics.PropertyChanged -= UsageChanged;
+        RefreshUsage();
     }
     private void RefreshLanguage()
     {
@@ -37,10 +43,28 @@ public partial class AboutWindow : Window
         }
     }
     private async void CheckClicked(object sender, RoutedEventArgs e) => await updates.CheckAsync(true);
+    private async void UsageConsentChanged(object sender, RoutedEventArgs e)
+    {
+        if (refreshingUsage) return;
+        var requested = UsageConsent.IsChecked == true;
+        if (requested == analytics.ConsentGiven) { RefreshUsage(); return; }
+        await analytics.SetConsentAsync(requested);
+        RefreshUsage();
+    }
     private void RepositoryClicked(object sender, RoutedEventArgs e) => OpenLink(UpdateRelease.Repository);
     private void AuthorClicked(object sender, RoutedEventArgs e) => OpenLink(UpdateRelease.Author);
+    private void PrivacyClicked(object sender, RoutedEventArgs e) => OpenLink("https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html");
     private void DownloadClicked(object sender, RoutedEventArgs e) { if (updates.Available is { } release) OpenLink(release.Url); }
     private void CloseClicked(object sender, RoutedEventArgs e) => Close();
+    private void RefreshUsage()
+    {
+        refreshingUsage = true;
+        UsageConsent.IsEnabled = analytics.CanEnable || analytics.ConsentGiven;
+        UsageConsent.IsChecked = analytics.ConsentGiven;
+        UsageStatus.Text = string.IsNullOrEmpty(analytics.StorageWarning) ? analytics.Status : analytics.StorageWarning;
+        refreshingUsage = false;
+    }
+    private void UsageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => Dispatcher.BeginInvoke(RefreshUsage);
     private void OpenLink(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
