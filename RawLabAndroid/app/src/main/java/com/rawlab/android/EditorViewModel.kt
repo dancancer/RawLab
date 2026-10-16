@@ -568,7 +568,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun onBackground() {
-        mutableBatch.value?.cancel()
+        mutableBatch.value?.cancel(forBackground = true)
         mutable.value.photo?.let { photo ->
             if (persist(photo, mutable.value.edits) == EditSaveState.FAILED) mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED)
         }

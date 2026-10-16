@@ -29,7 +29,8 @@ struct PilotConfiguration {
         guard let components = URLComponents(string: environment["RAWLAB_RUM_CONFIG_ADDRESS"] ?? ""),
               components.scheme == "https", let host = components.host,
               host.hasSuffix(".aliyuncs.com"), components.user == nil, components.password == nil,
-              components.fragment == nil, components.port == nil || components.port == 443,
+              components.query == nil, components.fragment == nil,
+              components.port == nil || components.port == 443,
               let url = components.url else {
             throw PilotError.invalid("ConfigAddress must be the HTTPS aliyuncs.com URL copied from the pilot console.")
         }

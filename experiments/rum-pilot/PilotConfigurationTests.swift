@@ -31,6 +31,8 @@ struct PilotConfigurationTests {
         rejected([], ["RAWLAB_RUM_CONFIG_ADDRESS": "https://example.cn-hangzhou.rum.aliyuncs.com.attacker.test"])
         rejected([], ["RAWLAB_RUM_CONFIG_ADDRESS": "https://user:password@example.cn-hangzhou.rum.aliyuncs.com"])
         rejected([], ["RAWLAB_RUM_CONFIG_ADDRESS": "https://example.cn-hangzhou.rum.aliyuncs.com/#secret"])
+        rejected([], ["RAWLAB_RUM_CONFIG_ADDRESS": "https://example.cn-hangzhou.rum.aliyuncs.com/?token=secret"])
+        rejected([], ["RAWLAB_RUM_CONFIG_ADDRESS": "https://example.cn-hangzhou.rum.aliyuncs.com/?"])
         rejected([], ["RAWLAB_RUM_REGION": "cn-hongkong"])
         rejected(["--unknown"], [:])
         rejected(["--send"], [:])

@@ -84,8 +84,8 @@ internal class RumLocalUsageAnalyticsTransport(
     }
 
     override fun start() {
-        if (!isAvailable) return
         check(!retired.get()) { "local RUM requires a process restart after stop" }
+        if (!isAvailable) return
         val token = epoch.get()
         executor.execute {
             if (token != epoch.get() || sdkStarted.get()) return@execute

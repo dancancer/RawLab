@@ -97,6 +97,14 @@ Windows film 选择保留 `ClearMasterRecipe` 与本地化状态；导出事件�
 
 Windows/iOS 已完成实际 native 构建的客户端源码未变化，因此未重复四套 app 构建。Mac 本次修复由上述真实 delegate 编译/行为回归覆盖，完整 Mac native 构建和照片流程仍未重验。新增脚本 `bash -n`、API 脚本 `node --check`、PBX `plutil -lint` 及 staged diff 检查通过；暂存内容没有凭据、SDK 二进制或生成产物。
 
+独立评审后又修复三项边界问题：
+
+- PC 独立 pilot 也拒绝带 query 的 ConfigAddress，避免将附加 token 传入 SDK；带 token 和空 query 的测试先 RED，再 GREEN。客户端本身已有同样校验，本次不改其源码。
+- Android local transport 先检查已退休状态，再判断配置可用性，使停止后再次 `start()` 的显式拒绝与现有测试契约一致。既有 local instrumentation 测试本轮只编译，未运行设备或 SDK，不声称已通过运行验证。
+- Android 批量取消以原子状态记录首次原因：显式取消为 `cancelled`，后台或生命周期中断为 `interrupted`；新一轮/重试重置原因。只有实际取消行使用该原因，全行成功仍为 `completed`，不改变渲染、发布、恢复或单次终态去重。新增两项 JVM 回归先 RED 后 GREEN，覆盖原因、重置及成功/不确定发布的终态。
+
+修复后完整 Android JVM 测试为 20 suites、102 tests、0 failures/errors/skipped；默认与显式 local SDK 的 Debug Kotlin/instrumentation Kotlin 编译均通过。无真实 SDK 启动或事件发送。多语言文案补齐仍按上文列为发布前验收，不将本地验证集成描述成完整发布验收。
+
 仓库目前没有 `.github/workflows`；GitHub 的实际 check-runs/status 仍须在 PR 最终 head 上读取，不把本地验证称作 hosted CI。合并前还需确认最终 head/base、无冲突及评审结论，不绕过分支保护。
 
 ## 边界
