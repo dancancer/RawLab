@@ -525,13 +525,20 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(rasterTemperature.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(rasterTint.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.segmentedControls["whiteBalance.mode"].exists,
-                       "Raster white balance keeps both parameters without a RAW camera mode")
-        try setValue("7000", title: "Temperature", unit: "K", control: "whiteBalance.temperature", in: app)
-        try setValue("+12", title: "Tint", control: "whiteBalance.tint", in: app)
-        XCTAssertEqual(try number(rasterTemperature), 7000, accuracy: 0.0001)
-        XCTAssertEqual(try number(rasterTint), 12, accuracy: 0.0001)
+                       "Raster white balance has no RAW camera mode")
+        XCTAssertFalse(rasterTemperature.isEnabled, "Raster temperature is a RAW-only control")
+        XCTAssertFalse(rasterTint.isEnabled, "Raster tint is a RAW-only control")
+        XCTAssertEqual(try number(rasterTemperature), 6500, accuracy: 0.0001)
+        XCTAssertEqual(try number(rasterTint), 0, accuracy: 0.0001)
+        assertFileImportItem(enabled: true, in: app)
+        cancelFileImporter(in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].exists,
+                      "Canceling the Files picker keeps the imported raster preview")
         try selectTool("exposure", in: app)
         try setValue("+0.40", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        cancelFileImporter(in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001,
+                       "Canceling the Files picker keeps the committed raster edit")
         try selectTool("geometry", in: app)
         XCTAssertFalse(app.buttons["editor.export"].isEnabled, "An unchanged geometry draft must block every export entry")
         if app.buttons["geometry.reset"].isEnabled {
@@ -541,14 +548,16 @@ final class EditorV4UITests: XCTestCase {
         }
         try setValue("1.2", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
         XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Unapplied geometry must block export")
+        assertFileImportItem(enabled: false, in: app)
         applyDraft(in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001)
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
+        assertFileImportItem(enabled: true, in: app)
         app.buttons["editor.export"].tap()
         let save = app.buttons["Save Current Photo"]
         XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
         waitUntil(timeout: 60) { save.isEnabled }
-        XCTAssertFalse(app.buttons["editor.batchExport"].isEnabled, "Batch RAW export is unavailable for the raster fixture")
+        XCTAssertTrue(app.buttons["editor.batchExport"].isEnabled, "Batch export accepts the raster fixture")
         XCTAssertTrue(app.buttons["Export Rendered DNG…"].isEnabled, "Rendered DNG supports the raster buffer")
         save.tap()
         let confirm = app.buttons["editor.export.confirm"]
@@ -578,6 +587,13 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
     }
 
+    func testFileImportMenuDisablesWhileEditorIsBusy() {
+        let app = XCUIApplication()
+        launchEnglish(app, additionalArguments: ["-RawLab.testBusyEditor"])
+        assertFileImportItem(enabled: false, in: app)
+        app.terminate()
+    }
+
     private func assertFunctionalEmptyEditor(in app: XCUIApplication, importLabel: String) {
         let emptyImport = app.buttons["editor.import.empty"]
         XCTAssertTrue(emptyImport.waitForExistence(timeout: 5))
@@ -591,6 +607,32 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertFalse(app.buttons["tool.film"].exists)
         let labels = Set(app.staticTexts.allElementsBoundByIndex.map(\.label).filter { !$0.isEmpty })
         XCTAssertTrue(labels.isSubset(of: Set(["RawLab", importLabel])), "The empty editor must show only functional copy and its optional navigation title")
+    }
+
+    private func assertFileImportItem(enabled: Bool, in app: XCUIApplication) {
+        let privacy = app.buttons["editor.privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
+        privacy.tap()
+        let file = app.buttons["editor.import.file"]
+        XCTAssertTrue(file.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(file.isEnabled, enabled, "File import must follow editor draft/busy lock")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        waitUntil { !file.exists }
+    }
+
+    private func cancelFileImporter(in app: XCUIApplication) {
+        let privacy = app.buttons["editor.privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
+        privacy.tap()
+        let file = app.buttons["editor.import.file"]
+        XCTAssertTrue(file.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(file.isEnabled, "The Files picker can only be opened from a clean editor state")
+        file.tap()
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(cancel.isHittable)
+        cancel.tap()
+        waitUntil(timeout: 10) { !cancel.exists && app.descendants(matching: .any)["editor.photo"].exists }
     }
 
     private func openAndCancelPhotoPicker(_ identifier: String, in app: XCUIApplication) {

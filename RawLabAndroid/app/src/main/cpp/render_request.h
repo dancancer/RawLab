@@ -98,6 +98,29 @@ inline sony2fuji_request makeRequest(const char* input, const char* lut, const c
     return request;
 }
 
+inline sony2fuji_request makeDisplayRequest(const char* input, const void* pixels,
+    uint32_t width, uint32_t height, sony2fuji_pixel_format pixelFormat,
+    const char* lut, const char* output, float strength, float exposure,
+    bool customWb, float temperature, float tint, float highlights, float shadows,
+    float contrast, float toneCurve, float saturation, float sharpening, int edge,
+    ExportFormat format, uint32_t longEdge = 0) {
+    auto request = makeRequest(input, lut, output, strength, exposure, false, 6500, 0,
+        highlights, shadows, contrast, toneCurve, saturation, sharpening, edge, format, longEdge);
+    if (!pixels || width == 0 || height == 0 || pixelFormat != SONY2FUJI_PIXEL_RGBA8)
+        throw std::invalid_argument("Invalid display image buffer");
+    request.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+    request.input_pixels = pixels;
+    request.input_width = width;
+    request.input_height = height;
+    request.input_pixel_format = pixelFormat;
+    request.input_color_space = SONY2FUJI_COLOR_SRGB;
+    request.input_is_linear = 0;
+    request.wb_mode = SONY2FUJI_WB_CAMERA;
+    request.temperature = 6500;
+    request.tint = 0;
+    return request;
+}
+
 inline sony2fuji_request makeRequest(const char* input, const char* lut, const char* output,
     float strength, float exposure, bool customWb, float temperature, float tint,
     int edge, ExportFormat format) {

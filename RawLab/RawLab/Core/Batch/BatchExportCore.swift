@@ -90,6 +90,18 @@ struct BatchSourceSnapshot: Codable, Equatable {
         self.sourceKind = sourceKind
         self.settings = settings
     }
+
+    func settings(for targetKind: BatchSourceKind) -> RawSettings {
+        guard sourceKind == .raster, targetKind == .raw else { return settings }
+        var result = settings
+        result.exposureMode = RawSettings.default.exposureMode
+        result.whiteBalanceMode = .camera
+        result.temperature = 6500
+        if result.masterRecipeID == nil { result.tint = 0 }
+        result.noiseReduction = 0
+        result.lensCorrection = nil
+        return result
+    }
 }
 
 struct BatchTarget: Codable, Equatable, Identifiable {

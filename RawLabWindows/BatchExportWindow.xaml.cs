@@ -146,7 +146,8 @@ public partial class BatchExportWindow : Window
                     if(closeRequested)break;
                     try{
                         var item=BatchItem.Create(input);
-                        try{validator.Render(input,settings.Restore(),look,64,statistics:false,clipping:false,viewportPreview:true);item=item with{Selected=true};}
+                        try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
+                            validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);item=item with{Selected=true};}
                         catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
                         accepted.Add(item);
                     }
@@ -329,7 +330,8 @@ public partial class BatchExportWindow : Window
                 if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换。"));
                 if (snapshot.Look != null && !File.Exists(snapshot.Look)) throw new InvalidOperationException(Loc.Text("任务外观不可用。"));
                 using var engine = new RenderEngine();
-                return engine.Render(row.Input, snapshot.Settings.Restore(), snapshot.Look, 1600, statistics: false, clipping: false);
+                var settings=RenderEngine.PrepareBatchSettings(snapshot.Source,row.Input,snapshot.Settings.Restore());
+                return engine.Render(row.Input, settings, snapshot.Look, 1600, statistics: false, clipping: false);
             });
             if (preview.IsVisible) { image.Source = frame?.Image; title.Text = snapshot.LookName + Loc.Text(" · 本次导出效果"); }
         }

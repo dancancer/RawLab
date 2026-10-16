@@ -60,6 +60,7 @@ internal fun EditorToolStrip(state: EditorState, selected: Int, select: (Int) ->
 @Composable
 internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onClick: () -> Unit) {
     val edits = state.visibleEdits
+    val rawOnly = state.photo?.inputKind == PhotoInputKind.RAW
     val scalar = when (index) {
         1 -> Triple(edits.strength * 100f, 100f, 0f..200f)
         2 -> Triple(edits.exposure, 0f, -4f..4f)
@@ -96,7 +97,8 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
     val valueDescription = if (index == 8) listOf(
         "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
     ).joinToString(" · ") else number
-    Column(Modifier.width(80.dp).heightIn(min = 88.dp).selectable(selected, enabled = state.controlsEnabled,
+    Column(Modifier.width(80.dp).heightIn(min = 88.dp).selectable(selected,
+        enabled = state.controlsEnabled && (index != 8 || rawOnly) && (index != 16 || rawOnly),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")

@@ -43,7 +43,7 @@ std::string lowerExtension(const char* path) {
     return extension;
 }
 
-#if defined(__APPLE__) && !TARGET_OS_IPHONE
+#if defined(__APPLE__)
 
 template <typename T>
 struct CFReleaseDeleter {
@@ -108,23 +108,21 @@ bool regularFile(const char* path) {
 }
 
 bool hasHDRGainMap(CGImageSourceRef source) {
-#if !TARGET_OS_IPHONE && defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
-    __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
     CFUnique<CFDictionaryRef> hdrGainMap(CGImageSourceCopyAuxiliaryDataInfoAtIndex(
         source, 0, kCGImageAuxiliaryDataTypeHDRGainMap));
     if (hdrGainMap) return true;
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
-    CFUnique<CFDictionaryRef> isoGainMap(CGImageSourceCopyAuxiliaryDataInfoAtIndex(
-        source, 0, kCGImageAuxiliaryDataTypeISOGainMap));
-    if (isoGainMap) return true;
-#endif
-#else
-    (void)source;
+#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000)
+    if (__builtin_available(macOS 15.0, iOS 18.0, *)) {
+        CFUnique<CFDictionaryRef> isoGainMap(CGImageSourceCopyAuxiliaryDataInfoAtIndex(
+            source, 0, kCGImageAuxiliaryDataTypeISOGainMap));
+        if (isoGainMap) return true;
+    }
 #endif
     return false;
 }
 
-sony2fuji_status loadDisplayImageMac(const char* path, sony2fuji_buffer* output) {
+sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* output) {
     if (!output) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     clearBuffer(output);
     if (!path || path[0] == '\0') return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -190,6 +188,7 @@ sony2fuji_status loadDisplayImageMac(const char* path, sony2fuji_buffer* output)
     if (isHDRColorSpace(decodedSpace) || CGImageGetBitsPerComponent(decoded.get()) != 8 ||
         (CGImageGetBitmapInfo(decoded.get()) & kCGBitmapFloatComponents) != 0)
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    decoded.reset();
 
     const int maxPixelSize = static_cast<int>(std::max(width, height));
     CFUnique<CFNumberRef> maxSize(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &maxPixelSize));
@@ -253,11 +252,14 @@ sony2fuji_status loadDisplayImageMac(const char* path, sony2fuji_buffer* output)
         std::free(pixelsData);
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
+    const bool checkAlpha = hasAlpha(CGImageGetAlphaInfo(image.get()));
     CGContextSetBlendMode(context.get(), kCGBlendModeCopy);
     CGContextDrawImage(context.get(), CGRectMake(0, 0, outputWidth, outputHeight), image.get());
+    context.reset();
+    image.reset();
 
     const auto* bytes = static_cast<const uint8_t*>(pixelsData);
-    if (hasAlpha(CGImageGetAlphaInfo(image.get()))) {
+    if (checkAlpha) {
         for (size_t offset = 3; offset < total; offset += 4) {
             if (bytes[offset] != 255) {
                 std::free(pixelsData);
@@ -281,9 +283,9 @@ sony2fuji_status loadDisplayImageMac(const char* path, sony2fuji_buffer* output)
 
 extern "C" sony2fuji_status sony2fuji_load_display_image(
     const char* path, sony2fuji_buffer* out_buffer) {
-#if defined(__APPLE__) && !TARGET_OS_IPHONE
+#if defined(__APPLE__)
     try {
-        return loadDisplayImageMac(path, out_buffer);
+        return loadDisplayImageApple(path, out_buffer);
     } catch (const std::bad_alloc&) {
         if (out_buffer) clearBuffer(out_buffer);
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;

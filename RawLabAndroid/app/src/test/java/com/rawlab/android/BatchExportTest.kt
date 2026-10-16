@@ -207,6 +207,52 @@ class BatchExportTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun sourceSnapshotResolvesCameraStateForBothBatchDirections() {
+        val root = Files.createTempDirectory("rawlab-raster-settings").toFile()
+        try {
+            val hsl = HslSettings().withValue(0, 2, 32f)
+            val stored = EditSettings(film = "velvia", strength = .6f, exposure = .35f,
+                customWb = true, temperature = 4300f, tint = 18f, exposureMode = 0,
+                hsl = hsl, recipeID = "recipe", lens = LensSettings(distortion = true),
+                denoise = DenoiseSettings(true, 10f, 72f, 100f))
+            val rasterSource = BatchSourceSnapshot(PhotoIdentity("raster-source"), File(root, "source.jpg"),
+                stored, inputKind = PhotoInputKind.RASTER)
+            val rawTarget = rasterSource.settingsFor(PhotoInputKind.RAW)
+            assertFalse(rawTarget.customWb)
+            assertEquals(6500f, rawTarget.temperature)
+            assertEquals(stored.tint, rawTarget.tint)
+            assertEquals(EditSettings().exposureMode, rawTarget.exposureMode)
+            assertEquals(LensSettings(), rawTarget.lens)
+            assertEquals(stored.recipeID, rawTarget.recipeID)
+            assertEquals(stored.strength, rawTarget.strength)
+            assertEquals(stored.hsl, rawTarget.hsl)
+            assertEquals(stored.denoise, rawTarget.denoise)
+            assertEquals(stored.exposure, rawTarget.exposure)
+            assertEquals(stored, rasterSource.settingsFor(PhotoInputKind.RASTER))
+            var rendered: EditSettings? = null
+            BatchRunner.run(
+                BatchJob(rasterSource, listOf(BatchTarget(PhotoIdentity("raw-target"), File(root, "target.arw"),
+                    "target.arw", inputKind = PhotoInputKind.RAW))),
+                render = { _, effective -> rendered = effective; ByteArray(1) },
+                write = { _, _, _ -> },
+            )
+            assertEquals(rawTarget, rendered)
+
+            val rawSource = BatchSourceSnapshot(PhotoIdentity("raw-source"), File(root, "source.arw"),
+                stored, inputKind = PhotoInputKind.RAW)
+            assertEquals(stored, rawSource.settingsFor(PhotoInputKind.RAW))
+            val rasterTarget = rawSource.settingsFor(PhotoInputKind.RASTER).effectiveFor(PhotoInputKind.RASTER)
+            assertFalse(rasterTarget.customWb)
+            assertEquals(6500f, rasterTarget.temperature)
+            assertEquals(0f, rasterTarget.tint)
+            assertEquals(2, rasterTarget.exposureMode)
+            assertEquals(LensSettings(), rasterTarget.lens)
+            assertEquals(stored.recipeID, rasterTarget.recipeID)
+            assertEquals(stored.hsl, rasterTarget.hsl)
+            assertEquals(stored.denoise, rasterTarget.denoise)
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun failuresContinueCancellationPreservesSuccessAndRetrySkipsSuccesses() {
         val root = Files.createTempDirectory("rawlab-batch").toFile()
         try {

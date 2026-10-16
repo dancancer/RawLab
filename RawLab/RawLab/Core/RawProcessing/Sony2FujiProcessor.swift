@@ -55,12 +55,35 @@ struct Sony2FujiProcessor {
     }
 
     struct Buffer {
+        enum Semantic: Equatable {
+            case legacy
+            case display
+        }
+
         let data: Data
         let width: Int
         let height: Int
         let stride: Int
         let pixelFormat: sony2fuji_pixel_format
+        let semantic: Semantic
         var nativeSize: CGSize? = nil
+
+        init(data: Data, width: Int, height: Int, stride: Int,
+             pixelFormat: sony2fuji_pixel_format, semantic: Semantic = .legacy,
+             nativeSize: CGSize? = nil) {
+            self.data = data
+            self.width = width
+            self.height = height
+            self.stride = stride
+            self.pixelFormat = pixelFormat
+            self.semantic = semantic
+            self.nativeSize = nativeSize
+        }
+
+        func withSemantic(_ semantic: Semantic) -> Buffer {
+            Buffer(data: data, width: width, height: height, stride: stride,
+                   pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize)
+        }
 
         func withCBuffer<T>(_ body: (inout sony2fuji_buffer) -> T) -> T? {
             data.withUnsafeBytes { bytes in
@@ -132,17 +155,25 @@ struct Sony2FujiProcessor {
     // =========================================================================
 
     func autoExposure(url: URL?, buffer: Buffer?, settings: RawSettings) throws -> Double {
+        let inputType: sony2fuji_input_type
+        if url != nil {
+            inputType = SONY2FUJI_INPUT_RAW
+        } else if let buffer {
+            inputType = semanticInputType(for: buffer)
+        } else {
+            throw ProcessorError.rasterDecodeFailed
+        }
         let session = try createSession()
         defer { destroySession(session) }
         try loadLensDatabase(session)
-        let settings = try prepareRecipe(settings, session: session, url: url)
+        let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
         try configureLens(session, settings: settings.lensSettings)
         let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
         guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.text("Invalid exposure mode."))
         }
-        var request = makeBaseRequest(settings: settings, inputType: url == nil ? SONY2FUJI_INPUT_BUFFER : SONY2FUJI_INPUT_RAW)
-        request.input_type = url == nil ? SONY2FUJI_INPUT_BUFFER : SONY2FUJI_INPUT_RAW
+        var request = makeBaseRequest(settings: settings, inputType: inputType)
+        request.input_type = inputType
         var ev: Float = 0
         let status: sony2fuji_status
         if let url {
@@ -215,7 +246,7 @@ struct Sony2FujiProcessor {
                 throw ProcessorError.processFailed(statusMessage(status))
             }
 
-            var output = try copyBuffer(buffer)
+            var output = try copyBuffer(buffer, semantic: .legacy)
             output.nativeSize = geometrySize(session)
             let rawWhiteBalance = readRawWhiteBalance(from: session)
             return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: try readLens(session, url: url))
@@ -237,13 +268,14 @@ struct Sony2FujiProcessor {
         let session = try createSession()
         defer { destroySession(session) }
         try loadLensDatabase(session)
-        let settings = try prepareRecipe(settings, session: session, url: nil)
+        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: semanticInputType(for: buffer))
         try configureSession(session, settings: settings,
                              interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
                              viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
 
-        var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_BUFFER)
-        request.input_type = SONY2FUJI_INPUT_BUFFER
+        let inputType = semanticInputType(for: buffer)
+        var request = makeBaseRequest(settings: settings, inputType: inputType)
+        request.input_type = inputType
         request.input_width = UInt32(buffer.width)
         request.input_height = UInt32(buffer.height)
         request.input_pixel_format = buffer.pixelFormat
@@ -255,6 +287,7 @@ struct Sony2FujiProcessor {
         request.lut_strength = lutStrength
 
         var outBuffer = sony2fuji_buffer()
+        defer { sony2fuji_release_buffer(&outBuffer) }
         let status = processBuffer(
             session: session,
             request: &request,
@@ -266,9 +299,8 @@ struct Sony2FujiProcessor {
             throw ProcessorError.processFailed(statusMessage(status))
         }
 
-        var output = try copyBuffer(outBuffer)
+        var output = try copyBuffer(outBuffer, semantic: buffer.semantic)
         output.nativeSize = geometrySize(session)
-        sony2fuji_release_buffer(&outBuffer)
         return output
     }
 
@@ -318,11 +350,12 @@ struct Sony2FujiProcessor {
         let session = try createSession()
         defer { destroySession(session) }
         try loadLensDatabase(session)
-        let settings = try prepareRecipe(settings, session: session, url: nil)
+        let inputType = semanticInputType(for: buffer)
+        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
         try configureSession(session, settings: settings, interactive: false)
 
-        var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_BUFFER)
-        request.input_type = SONY2FUJI_INPUT_BUFFER
+        var request = makeBaseRequest(settings: settings, inputType: inputType)
+        request.input_type = inputType
         request.input_width = UInt32(buffer.width)
         request.input_height = UInt32(buffer.height)
         request.input_pixel_format = buffer.pixelFormat
@@ -340,53 +373,21 @@ struct Sony2FujiProcessor {
         }
     }
 
-    func loadRasterBuffer(url: URL, applyingOrientation: Bool = false) throws -> ProcessResult {
-        let metadata = try loadMetadata(from: url)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else {
+    func loadRasterBuffer(url: URL, applyingOrientation: Bool = true) throws -> ProcessResult {
+        var native = sony2fuji_buffer()
+        defer { sony2fuji_release_buffer(&native) }
+        let status = url.path.withCString { path in
+            sony2fuji_load_display_image(path, &native)
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.rasterDecodeFailed
         }
-
-        let orientedImage = applyingOrientation ? orientedCGImage(cgImage, orientation: metadata.orientation ?? .up) : cgImage
-        guard let orientedImage else { throw ProcessorError.rasterDecodeFailed }
-        let width = orientedImage.width
-        let height = orientedImage.height
-        let bytesPerRow = width * 4
-        var data = Data(count: bytesPerRow * height)
-        let colorSpace = outputColorSpace()
-        let bitmapInfo = bitmapInfo(for: 4)
-
-        let didDraw = data.withUnsafeMutableBytes { bytes -> Bool in
-            guard let baseAddress = bytes.baseAddress else { return false }
-            guard let context = CGContext(
-                data: baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: bytesPerRow,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo.rawValue
-            ) else {
-                return false
-            }
-            context.draw(orientedImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-
-        guard didDraw else {
-            throw ProcessorError.rasterDecodeFailed
-        }
-
-        let buffer = Buffer(
-            data: data,
-            width: width,
-            height: height,
-            stride: bytesPerRow,
-            pixelFormat: SONY2FUJI_PIXEL_RGBA8
-        )
-        return ProcessResult(buffer: buffer, orientation: applyingOrientation ? .up : metadata.orientation,
-                             rawWhiteBalance: nil)
+        // The shared adapter has already validated color/alpha/depth and applied
+        // EXIF orientation. Keep the parameter for source compatibility, but do
+        // not permit a second orientation pass.
+        _ = applyingOrientation
+        let buffer = try copyBuffer(native, semantic: .display)
+        return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
     }
 
     func makeUIImage(from buffer: Buffer, orientation: CGImagePropertyOrientation?) -> UIImage? {

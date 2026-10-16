@@ -465,11 +465,11 @@ struct ImportStateTests {
             try check(source != nil && hasDNGVersionAndSize(bytes, longEdge: 64),
                       "DNG success writes a recognized TIFF container with DNG version and final dimensions")
         case .failure(let error):
-            var expectedMetadataFailure = false
+            var expectedRasterFailure = false
             if let processorError = error as? Sony2FujiProcessor.ProcessorError,
-               case .metadataUnavailable = processorError { expectedMetadataFailure = true }
-            try check(!succeeds && expectedMetadataFailure,
-                      "DNG missing-source export delivers the expected metadata read failure")
+               case .rasterDecodeFailed = processorError { expectedRasterFailure = true }
+            try check(!succeeds && expectedRasterFailure,
+                      "DNG missing-source export delivers the expected raster decode failure")
         }
         try check(!f.model.isBusy && f.model.previewResizePending &&
                   f.model.previewLongEdge == originalEdge && f.model.requestedPreviewLongEdge == 640,

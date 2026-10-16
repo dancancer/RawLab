@@ -107,6 +107,7 @@ jobs:
           cli="$PWD/lutools/build-macos/sony2fuji"
           bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
           bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
+          bash RawLabMac/tests/batch-export.sh
           bash RawLabMac/tests/edit-model.sh
           bash RawLabMac/tests/presentation.sh
           bash RawLabMac/tests/control-groups.sh

@@ -193,7 +193,7 @@ final class BatchExportModel: ObservableObject {
         guard !running else { return }
         let revision = UUID()
         previewRevision = revision; previewFile = item.input; preview = nil; previewing = true; error = nil
-        let settings = job.settings, look = job.look
+        let settings = job.settings(for: item.input), look = job.look
         queue.async { [self] in
             let result = Result { () -> RenderedImage? in
                 guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }

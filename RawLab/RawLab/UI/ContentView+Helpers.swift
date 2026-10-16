@@ -94,6 +94,9 @@ extension ContentView {
     }
 
     func adjustmentProgress(_ adjustment: AdjustmentKind) -> Double {
+        if viewModel.sourceKind == .raster && (adjustment == .temperature || adjustment == .tint) {
+            return 0
+        }
         if adjustment == .temperature {
             if viewModel.sourceKind == .raw, settings.whiteBalanceMode == .custom,
                let camera = viewModel.rawWhiteBalance {
@@ -242,6 +245,7 @@ extension ContentView {
     }
 
     var displayedTemperature: Double {
+        guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
         if viewModel.sourceKind == .raw,
            settings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
@@ -251,6 +255,7 @@ extension ContentView {
     }
 
     var displayedTint: Double {
+        guard viewModel.sourceKind != .raster else { return 0 }
         if settings.masterRecipeID != nil { return settings.tint }
         if viewModel.sourceKind == .raw,
            settings.whiteBalanceMode == .camera,
@@ -301,12 +306,23 @@ extension ContentView {
     }
 
     func photoImportButton(isEnabled: Bool) -> some View {
-        PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
+        PhotosPicker(selection: $selectedPhotoItem, matching: .images,
+                     preferredItemEncoding: .current, photoLibrary: .shared()) {
             Image(systemName: "photo.badge.plus")
         }
         .accessibilityLabel(L10n.text("导入照片"))
         .help(L10n.text("从照片图库导入"))
         .accessibilityIdentifier("editor.import")
+        .disabled(!isEnabled)
+    }
+
+    func fileImportButton(isEnabled: Bool) -> some View {
+        Button { showingFileImporter = true } label: {
+            Image(systemName: "folder.badge.plus")
+        }
+        .accessibilityLabel(L10n.text("从文件导入"))
+        .help(L10n.text("从文件导入"))
+        .accessibilityIdentifier("editor.import.file")
         .disabled(!isEnabled)
     }
 
@@ -357,15 +373,58 @@ extension ContentView {
         isImporting = false
     }
 
+    @MainActor
+    func importFromFile(_ result: Result<[URL], Error>) {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        guard let url = try? result.get().first else {
+            if case .failure(let error) = result, !(error is CancellationError) {
+                viewModel.statusMessage = error.localizedDescription
+            }
+            return
+        }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        photoImportTask?.cancel()
+        let requestID = UUID()
+        photoImportRequestID = requestID
+        viewModel.cancelImageImport()
+        isImporting = true
+        showingBefore = false
+        photoImportTask = Task {
+            let prepared: Result<(PhotoImportSource, PhotoIdentity?), Error> = await Task.detached(priority: .userInitiated) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let source = try PhotoImportFile.retainSource(url)
+                    return .success((source, try? PhotoIdentity.fallback(for: source.url)))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            guard !Task.isCancelled, photoImportRequestID == requestID else {
+                if case .success(let value) = prepared { PhotoImportFile.release(value.0.url) }
+                return
+            }
+            switch prepared {
+            case .success(let value):
+                photoImportTask = nil
+                viewModel.importImage(from: value.0, identity: value.1, settings: .default,
+                                      onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
+                    settings = restored
+                }
+            case .failure(let error):
+                photoImportTask = nil
+                photoImportRequestID = nil
+                isImporting = false
+                if !Task.isCancelled { viewModel.statusMessage = error.localizedDescription }
+            }
+        }
+    }
+
     func openBatchExport() {
         guard !isEditorDraftActive else { return }
         if batchModel != nil { showingBatchExport = true; return }
         guard let source = viewModel.currentBatchSource(settings: settings) else {
-            viewModel.statusMessage = L10n.text("请先导入一张 RAW 照片。")
-            return
-        }
-        guard source.sourceKind == .raw else {
-            viewModel.statusMessage = L10n.text("批量导出目前仅支持 RAW 照片。")
+            viewModel.statusMessage = L10n.text("请先导入一张照片。")
             return
         }
         batchModel = BatchExportModel(source: source, editor: viewModel)

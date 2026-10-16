@@ -63,6 +63,7 @@
 "小波降噪" = "Wavelet Noise Reduction";
 "尚未保存，允许重新导出" = "Not Saved Yet; Allow Re-Export";
 "尚未选择 RAW" = "No RAW Photos Selected";
+"尚未选择照片" = "No Photos Selected";
 "展开调整栏" = "Expand Adjustments";
 "已保存" = "Saved";
 "已保存 %@ 张到照片图库" = "%@ Saved to Photos";
@@ -73,11 +74,13 @@
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已收起" = "Collapsed";
 "已选 %@ 张 RAW" = "%@ RAW Photos Selected";
+"已选 %@ 张照片" = "%@ Photos Selected";
 "开启" = "On";
 "强度" = "Intensity";
 "当前预览的亮度分布" = "Current Preview Luminance Distribution";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
 "所选 RAW：%@" = "Selected RAW: %@";
+"所选照片：%@" = "Selected Photo: %@";
 "所选外观不可用，请重新选择外观。" = "Selected Look Unavailable; Choose Another Look.";
 "打开系统设置" = "Open System Settings";
 "批量导出" = "Batch Export";
@@ -103,6 +106,7 @@
 "无法读取已保存的调整，原有记录未被覆盖。" = "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.";
 "显示或收起调整栏" = "Show or Hide Adjustments";
 "普通图片未加入，请选择 RAW。" = "Standard Images Were Not Added; Select RAW.";
+"从文件导入" = "Import from Files";
 "曝光" = "Exposure";
 "曝光补偿" = "Exposure Compensation";
 "未处理" = "Not Processed";
@@ -118,6 +122,7 @@
 "正在保存" = "Saving";
 "正在停止…" = "Stopping…";
 "正在准备 RAW…" = "Preparing RAW…";
+"正在准备照片…" = "Preparing Photos…";
 "正在加载胶片" = "Loading Films";
 "正在处理" = "Processing";
 "正在导入" = "Importing";
@@ -149,6 +154,7 @@
 "色调" = "Tint";
 "语言" = "Language";
 "请先导入一张 RAW 照片。" = "Import a RAW Photo First.";
+"请先导入一张照片。" = "Import a Photo First.";
 "请等待当前任务完成。" = "Wait for the Current Task to Finish.";
 "请输入 1–65535 之间的像素数" = "Enter a pixel count from 1 to 65,535";
 "调整" = "Adjustments";

@@ -17,6 +17,15 @@ internal sealed partial class RenderEngine
         prepared.Lens=new(false,false,false);
         return prepared;
     }
+    internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
+    {
+        if(!LibraryEntry.IsRaster(source) || !LibraryEntry.IsRaw(target))return value;
+        var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
+        var prepared=PrepareInputSettings(source,value);
+        prepared.ExposureMode=1;
+        if(recipeTint is {} tint)prepared.Set(Parameter.Tint,tint);
+        return prepared;
+    }
     private void EnsureInput(string path)
     {
         var info=new FileInfo(path);var stamp=new Stamp(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);

@@ -137,7 +137,7 @@ class EditorViewModel @JvmOverloads constructor(
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
                     native.setGpuMode(work.gpuMode)
-                    val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false)
+                    val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind)
                     if ((getApplication<Application>().applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
                     WorkResult.MissingLook(photo, restored)
@@ -153,7 +153,7 @@ class EditorViewModel @JvmOverloads constructor(
             if (original?.first != work.photo.file) {
                 original = null
                 transformedNeutral = null
-                val source = native.preview(work.photo.file, null, EditSettings(), 1600, false)
+                val source = native.preview(work.photo.file, null, EditSettings(), 1600, false, work.photo.inputKind)
                 originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
                 original = work.photo.file to source.bitmap()
             }
@@ -162,12 +162,12 @@ class EditorViewModel @JvmOverloads constructor(
                 if (transformedNeutral?.first != key) {
                     transformedNeutral = null
                     val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens)
-                    transformedNeutral = key to native.preview(work.photo.file, null, comparison, edge, work.interactive).bitmap()
+                    transformedNeutral = key to native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind).bitmap()
                 }
                 transformedNeutral!!.second
             }
             val lut = storage.lookPath(work.edits)
-            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
+            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind)
             val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
             WorkResult.Preview(work, PreviewPair(neutral, film.bitmap(), film.temperature, film.tint, film.lens,
                 dimensions.first, dimensions.second, originalAspect))
@@ -176,13 +176,13 @@ class EditorViewModel @JvmOverloads constructor(
             val output = storage.temporaryOutput(work.format)
             try {
                 engine().setGpuMode(work.gpuMode)
-                engine().export(work.photo.file, storage.lookPath(work.edits), work.edits, output, work.format, work.longEdge)
+                engine().export(work.photo.file, storage.lookPath(work.edits), work.edits, output, work.format, work.longEdge, work.photo.inputKind)
                 if (work.destination == null) storage.saveAlbum(output, work.format)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
             } finally { output.delete() }
             WorkResult.Export
         }
-        is Work.AutoExposure -> WorkResult.AutoExposure(work, engine().autoExposure(work.photo.file, work.edits))
+        is Work.AutoExposure -> WorkResult.AutoExposure(work, engine().autoExposure(work.photo.file, work.edits, work.photo.inputKind))
     } }
 
     private fun performLook(work: LookWork): LookResult = synchronized(storage) { try {
@@ -542,7 +542,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (!current.canExport || mutableBatch.value != null) return
         val photo = current.photo ?: return
         mutableBatch.value = BatchExportModel(getApplication(), storage,
-            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name), gpuMode = gpuMode(),
+            BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name, inputKind = photo.inputKind), gpuMode = gpuMode(),
             processorFactory = batchProcessorFactory,
             onTerminal = { succeeded, failed, outcome ->
                 usage.record(UsageEvent.BatchExportCompleted(succeeded, failed, outcome))

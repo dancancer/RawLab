@@ -300,6 +300,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     onFilmSelected: (UsageFilmKind) -> Unit, onGeometryRatio: (GeometryRatio, Boolean) -> Unit) {
     val edits = state.visibleEdits
     val context = LocalContext.current
+    val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
@@ -396,7 +397,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled) { Text(stringResource(modes[edits.exposureMode])) }
+                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput) { Text(stringResource(modes[edits.exposureMode])) }
                     DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                         modes.forEachIndexed { index, title ->
                             DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = {
@@ -447,7 +448,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 onEdit(edits.copy(effects = value), dragging)
             }
             14 -> HslControls(edits.hsl, state.controlsEnabled) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
-            16 -> LensControls(edits.lens, state.preview?.lens, state.controlsEnabled && state.draft != null, state.rendering) { value ->
+            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && state.controlsEnabled && state.draft != null, state.rendering) { value ->
                 onDraftEdit(edits.copy(lens = value), false)
             }
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,

@@ -5,9 +5,20 @@ extension ContentView {
     @ToolbarContentBuilder
     var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
-            Button { showingPrivacy = true } label: { Image(systemName: "gearshape") }
-                .accessibilityLabel("隐私设置").help("隐私设置")
-                .accessibilityIdentifier("editor.privacy")
+            Menu {
+                Button { showingPrivacy = true } label: {
+                    Label(L10n.text("隐私设置"), systemImage: "gearshape")
+                }
+                Button { showingFileImporter = true } label: {
+                    Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
+                }
+                .disabled(editorBusy || isEditorDraftChanged)
+                .accessibilityIdentifier("editor.import.file")
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .accessibilityLabel(L10n.text("隐私设置")).help(L10n.text("隐私设置"))
+            .accessibilityIdentifier("editor.privacy")
             photoImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
                 .opacity(rulerFocusOpacity)
         }
@@ -57,7 +68,7 @@ extension ContentView {
                 }
                 .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                 Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                     .accessibilityIdentifier("editor.batchExport")
                 if batchModel != nil { Button(L10n.text("查看批量任务")) { showingBatchExport = true } }
             } label: {
@@ -112,6 +123,8 @@ extension ContentView {
                             .disabled(editorBusy)
                             .accessibilityLabel(L10n.text("导入照片"))
                             .accessibilityIdentifier("editor.import.empty")
+                            fileImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
+                                .buttonStyle(.bordered)
                         }
                         .padding(24)
                         .frame(maxWidth: .infinity)

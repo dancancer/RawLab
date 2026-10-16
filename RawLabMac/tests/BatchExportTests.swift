@@ -76,6 +76,40 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(frozenHSLJob.settings.hslSettings.value(.hue, channel: 0) == 37 &&
                   frozenHSLJob.settings.renderHSLSettings.value(.hue, channel: 0) == 18.5,
                   "new recipe jobs freeze visible HSL and its strength semantics, not static defaults")
+        let rasterSource = root.appendingPathComponent("source.png")
+        try Data("raster source identity".utf8).write(to: rasterSource)
+        var dormant = frozenHSLJob.settings
+        dormant.whiteBalanceMode = .custom
+        dormant.temperature = 4200
+        dormant.tint = 35
+        dormant.exposureMode = .sensor
+        dormant.rawNoiseReduction = 2
+        dormant.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        var rasterJob = BatchExportJob(source: rasterSource, settings: dormant, look: nil, lookName: "Mixed")
+        rasterJob.outputDirectory = output
+        var rawTarget = try BatchExportItem(url: inputs[0])
+        rawTarget.selected = true
+        rasterJob.items = [rawTarget]
+        var resolved: Adjustments?
+        try BatchExportRunner.run(job: &rasterJob, journal: hslJournal, scope: .unfinished,
+                                 shouldCancel: { false }) { _, snapshot, _, destination in
+            resolved = snapshot
+            try Data("mixed".utf8).write(to: destination)
+        }
+        try check(resolved?.whiteBalanceMode == .asShot && resolved?.temperature == 6500 &&
+                  resolved?.tint == dormant.tint && resolved?.exposureMode == .preview &&
+                  resolved?.rawNoiseReduction == 0 && resolved?.lensSettings == LensCorrectionSettings(),
+                  "raster-source batch cannot apply dormant camera controls to a RAW target")
+        try check(resolved?.masterRecipeID == dormant.masterRecipeID && resolved?.strength == dormant.strength &&
+                  resolved?.exposure == dormant.exposure && resolved?.renderHSLSettings == dormant.renderHSLSettings &&
+                  rasterJob.settings == dormant,
+                  "mixed batch preserves common style and the immutable source snapshot")
+        var independentSettings = dormant
+        independentSettings.masterRecipeID = nil
+        let independentRasterJob = BatchExportJob(source: rasterSource, settings: independentSettings,
+                                                  look: nil, lookName: "Independent")
+        try check(independentRasterJob.settings(for: inputs[0]).tint == 0,
+                  "mixed batch drops dormant camera tint when no master recipe is active")
         var v2Job = try JSONSerialization.jsonObject(with: JSONEncoder().encode(hslJob)) as! [String: Any]
         var v2Settings = v2Job["settings"] as! [String: Any]
         v2Settings["masterRecipeSettingsVersion"] = 2

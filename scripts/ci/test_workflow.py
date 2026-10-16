@@ -96,6 +96,10 @@ class WorkflowContractTests(unittest.TestCase):
         for suite in ("test_bundled_looks.py", "test_lut_source_audit.py", "test_prepare_bundled_looks.py"):
             self.assertIn("Shared/tests/" + suite, contracts)
 
+    def test_mixed_batch_source_isolation_runs_on_macos(self):
+        mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
+        self.assertIn("RawLabMac/tests/batch-export.sh", mac)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,10 @@ import java.util.UUID
 class BatchGlobalFailure(message: String, cause: Throwable? = null) : IOException(message, cause)
 class BatchPublicationUncertain(message: String, cause: Throwable? = null) : IOException(message, cause)
 
+private fun String?.toInputKind(): PhotoInputKind = runCatching {
+    PhotoInputKind.valueOf(this.orEmpty())
+}.getOrDefault(PhotoInputKind.RAW)
+
 internal fun asBatchOutputFailure(error: Throwable): Throwable =
     if (error is NativeProcessingException && error.status == NativeProcessingException.OUTPUT_IO_ERROR)
         BatchGlobalFailure(AppStrings.format(R.string.message_output_storage_failed, error.message.orEmpty()), error)
@@ -38,13 +42,27 @@ data class BatchSourceSnapshot(
     val settings: EditSettings,
     val displayName: String = sourceFile.name,
     val lookFile: File? = null,
-)
+    val inputKind: PhotoInputKind = PhotoInputKind.RAW,
+) {
+    /** Resolve camera-only state for a target without mutating the frozen source edit. */
+    fun settingsFor(targetKind: PhotoInputKind): EditSettings {
+        if (inputKind != PhotoInputKind.RASTER || targetKind != PhotoInputKind.RAW) return settings
+        return settings.copy(
+            exposureMode = EditSettings().exposureMode,
+            customWb = false,
+            temperature = 6500f,
+            tint = if (settings.recipeID == null) 0f else settings.tint,
+            lens = LensSettings(),
+        )
+    }
+}
 
 data class BatchTarget(
     val identity: PhotoIdentity,
     val sourceFile: File,
     val displayName: String,
     val sourceUri: String? = null,
+    val inputKind: PhotoInputKind = PhotoInputKind.RAW,
 ) {
     val id: String get() = identity.value
 }
@@ -122,7 +140,7 @@ object BatchRunner {
             commit()
             try {
                 val row = current.rows[index]
-                val payload = render(row.target, current.source.settings)
+                val payload = render(row.target, current.source.settingsFor(row.target.inputKind))
                 try {
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
                     commit()
@@ -178,6 +196,7 @@ class BatchJournal(private val directory: File) {
         properties.setProperty("source.path", job.source.sourceFile.path)
         properties.setProperty("source.name", job.source.displayName)
         properties.setProperty("source.look", job.source.lookFile?.path.orEmpty())
+        properties.setProperty("source.kind", job.source.inputKind.name)
         properties.setProperty("global.error", job.globalError.orEmpty())
         properties.setProperty("source.settings", SettingsCodec.encode(job.source.settings))
         properties.setProperty("journal.version", JOURNAL_VERSION.toString())
@@ -193,6 +212,7 @@ class BatchJournal(private val directory: File) {
             properties.setProperty(prefix + "path", row.target.sourceFile.path)
             properties.setProperty(prefix + "name", row.target.displayName)
             properties.setProperty(prefix + "uri", row.target.sourceUri.orEmpty())
+            properties.setProperty(prefix + "kind", row.target.inputKind.name)
             properties.setProperty(prefix + "status", row.status.name)
             properties.setProperty(prefix + "error", row.error.orEmpty())
             properties.setProperty(prefix + "output", row.outputName)
@@ -217,12 +237,14 @@ class BatchJournal(private val directory: File) {
         val properties = Properties().also { file.inputStream().use(it::load) }
         val source = BatchSourceSnapshot(PhotoIdentity(properties.getProperty("source.identity")),
             File(properties.getProperty("source.path")), SettingsCodec.decode(properties.getProperty("source.settings")),
-            properties.getProperty("source.name"), properties.getProperty("source.look").orEmpty().takeIf { it.isNotEmpty() }?.let(::File))
+            properties.getProperty("source.name"), properties.getProperty("source.look").orEmpty().takeIf { it.isNotEmpty() }?.let(::File),
+            properties.getProperty("source.kind").toInputKind())
         val count = properties.getProperty("row.count", "0").toInt()
         val targets = (0 until count).map { index ->
             val prefix = "row.${index}."
             BatchTarget(PhotoIdentity(properties.getProperty(prefix + "id")), File(properties.getProperty(prefix + "path")),
-                properties.getProperty(prefix + "name"), properties.getProperty(prefix + "uri").ifBlank { null })
+                properties.getProperty(prefix + "name"), properties.getProperty(prefix + "uri").ifBlank { null },
+                properties.getProperty(prefix + "kind").toInputKind())
         }
         val journalVersion = properties.getProperty("journal.version", "1").toIntOrNull() ?: 1
         if (journalVersion > JOURNAL_VERSION) throw IOException("Unsupported batch journal version: $journalVersion")
@@ -408,8 +430,9 @@ class BatchExportModel(
                     val render: (BatchTarget, EditSettings) -> File = { target, settings ->
                         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
                         try {
-                            val backend = processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, format,
-                                materialized.outputLongEdge)
+                            val backend = processor.export(target.sourceFile, materialized.source.lookFile,
+                                settings, temporary, format, materialized.outputLongEdge,
+                                target.inputKind)
                             android.util.Log.i("RawLabBatch", "job=${materialized.id} exportBackend=$backend")
                             temporary
                         } catch (error: Throwable) {
@@ -467,15 +490,18 @@ class BatchExportModel(
     private fun copyTarget(uri: Uri): BatchTarget {
         val identity = PhotoIdentity(uri.toString())
         val name = displayName(uri)
-        if (!RawFiles.accepts(name, resolver.getType(uri))) throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
+        val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
+            ?: throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
         val destination = inputFile(mutable.value.job.id, identity, name)
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
-                processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(destination, null, EditSettings(), 256, false) }
+                processorFactory(gpuMode, storage.lensDatabase()).use {
+                    it.preview(destination, null, EditSettings(), 256, false, inputKind)
+                }
             } catch (error: Exception) { destination.delete(); throw error }
         }
-        return BatchTarget(identity, destination, name, uri.toString())
+        return BatchTarget(identity, destination, name, uri.toString(), inputKind)
     }
 
     private fun displayName(uri: Uri): String = runCatching {
@@ -532,7 +558,9 @@ class BatchExportModel(
         val work = scope.async(Dispatchers.IO) {
             val source = mutable.value.job.source
             // 效果查看先限长再降噪，最终导出仍保留完整质量。
-            processorFactory(gpuMode, storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true) }
+            processorFactory(gpuMode, storage.lensDatabase()).use {
+                it.preview(target.sourceFile, source.lookFile, source.settingsFor(target.inputKind), 1280, true, target.inputKind)
+            }
         }
         try { work.await().bitmap() } finally { work.cancel() }
     }

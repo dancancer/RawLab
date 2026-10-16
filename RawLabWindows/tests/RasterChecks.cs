@@ -79,6 +79,47 @@ internal static class RasterChecks
             var agent=Path.Combine(output,"batch-agent-"+item.Id+".png");var path=Path.Combine(output,"batch-agent-"+item.Id+".json");
             File.WriteAllText(path,engine.AgentRecipe(item.Input,job.Settings.Restore(),job.Look,agent,64));RunCli(path);Compare(item.Output!,agent);
         }
+        var dormant=new Adjustments { ExposureMode=0, Lens=new(true,true,true,true,"dormant-profile"), Denoise=DenoiseSettings.Clean,
+            Effects=new(-21,62,13,71,22,15,27,39), DisplayChromaDenoise=2,
+            Hsl=new HslSettings().WithValue(0,3,17), Geometry=new(.08,.09,.77,.74,1,true,false,2.5,.02,-.03) };
+        dormant.ApplyMasterRecipe(recipe);dormant.ResolveWhiteBalance((2000,-150));dormant.Set(Parameter.Temperature,4200);dormant.Set(Parameter.Tint,44);dormant.Set(Parameter.Strength,73);
+        var dormantSnapshot=dormant.Capture();
+        var rasterSourceJob=BatchJob.Create(png,dormantSnapshot,null,"Raster source");rasterSourceJob.Format=ExportFormat.Png;
+        rasterSourceJob.OutputDirectory=Path.Combine(output,"batch-raster-source");Directory.CreateDirectory(rasterSourceJob.OutputDirectory);
+        rasterSourceJob.Items=[BatchItem.Create(png) with{Selected=true},BatchItem.Create(raw) with{Selected=true}];
+        var rasterSourceJournal=new BatchJournal(Path.Combine(output,"batch-raster-source-journal"));
+        var observed=new Dictionary<string,AdjustmentSnapshot>(StringComparer.OrdinalIgnoreCase);
+        BatchRunner.Run(rasterSourceJob,rasterSourceJournal,false,CancellationToken.None,(_,_)=>{},(input,state,look,target,edge)=>{
+            observed[input]=state.Capture();engine.Render(input,state,look,0,output:target,longEdge:edge);
+        });
+        var rawKey=Path.GetFullPath(raw);AdjustmentSnapshot? effectiveRaw=null;observed.TryGetValue(rawKey,out effectiveRaw);
+        check(effectiveRaw!=null,"Raster-source batch reaches the RAW target");
+        if(effectiveRaw is {} rawTargetState)
+        {
+            check(rawTargetState.ExposureMode==1,"Raster-source batch RAW target uses RAW preview exposure default");
+            check(rawTargetState.CameraWhiteBalance,"Raster-source batch RAW target uses as-shot white balance");
+            check(rawTargetState.Values[(int)Parameter.Temperature]==6500,"Raster-source batch RAW target resets temperature to RAW default");
+            check(rawTargetState.Values[(int)Parameter.Tint]==dormantSnapshot.Values[(int)Parameter.Tint] && rawTargetState.Values[(int)Parameter.Tint]!=0,
+                "Raster-source batch RAW target preserves active recipe tint offset");
+            check(rawTargetState.Lens==new LensSettings(false,false,false),"Raster-source batch RAW target disables lens correction");
+            check(rawTargetState.MasterRecipeID==dormantSnapshot.MasterRecipeID && rawTargetState.Values[(int)Parameter.Strength]==dormantSnapshot.Values[(int)Parameter.Strength],
+                "Raster-source batch RAW target preserves recipe identity and strength");
+            check(rawTargetState.Denoise==dormantSnapshot.Denoise && rawTargetState.Effects==dormantSnapshot.Effects &&
+                rawTargetState.Hsl==dormantSnapshot.Hsl && rawTargetState.Geometry==dormantSnapshot.Geometry &&
+                rawTargetState.DisplayChromaDenoise==dormantSnapshot.DisplayChromaDenoise,
+                "Raster-source batch RAW target retains common style settings");
+        }
+        var rasterKey=Path.GetFullPath(png);
+        check(observed.TryGetValue(rasterKey,out var rasterTargetState) && rasterTargetState.SameAs(dormantSnapshot),
+            "Mixed batch keeps the raster target snapshot unchanged while target normalization remains input-scoped");
+        check(dormant.Capture().SameAs(dormantSnapshot),"Batch target normalization does not mutate the frozen source snapshot");
+        var batchSettingsHelper=typeof(RenderEngine).GetMethod("PrepareBatchSettings",BindingFlags.Static|BindingFlags.NonPublic);
+        check(batchSettingsHelper!=null,"Batch render and target preview share an explicit source/target settings helper");
+        if(batchSettingsHelper!=null)
+        {
+            var previewSettings=(Adjustments)batchSettingsHelper.Invoke(null,[png,raw,dormant])!;
+            check(previewSettings.Capture().SameAs(effectiveRaw!),"Batch target preview uses the same effective RAW settings as final render");
+        }
         var damaged=Path.Combine(inputs,"damaged.png");File.WriteAllBytes(damaged,[137,80,78,71]);
         var rejected=false;try{engine.Render(damaged,new(),null,32);}catch(InvalidOperationException){rejected=true;}
         check(rejected,"Damaged ordinary input is rejected rather than returning the previous image");

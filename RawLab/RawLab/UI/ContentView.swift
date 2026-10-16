@@ -36,6 +36,7 @@ struct ContentView: View {
     @State var selectedPhotoItem: PhotosPickerItem?
     @State var photoImportTask: Task<Void, Never>?
     @State var photoImportRequestID: UUID?
+    @State var showingFileImporter = false
     @State private var checkedBatchRecovery = false
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
@@ -92,6 +93,11 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .tint(.yellow)
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
+        .fileImporter(isPresented: $showingFileImporter,
+                      allowedContentTypes: PhotoImportFile.supportedContentTypes,
+                      allowsMultipleSelection: false) { result in
+            importFromFile(result)
+        }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
             set: { if !$0 { viewModel.statusMessage = nil } }
@@ -224,6 +230,9 @@ struct ContentView: View {
     }
 
     private func handleEditorAppear() {
+        if ProcessInfo.processInfo.arguments.contains("-RawLab.testBusyEditor") {
+            isImporting = true
+        }
         if !checkedBatchRecovery {
             checkedBatchRecovery = true
             recoverBatchExport()

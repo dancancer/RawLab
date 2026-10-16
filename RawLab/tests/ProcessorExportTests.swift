@@ -60,7 +60,7 @@ struct ProcessorExportTests {
             noisy[i * 4 + 3] = 255
         }
         let noiseBuffer = Sony2FujiProcessor.Buffer(data: noisy, width: 256, height: 256, stride: 1024,
-                                                   pixelFormat: SONY2FUJI_PIXEL_RGBA8)
+                                                   pixelFormat: SONY2FUJI_PIXEL_RGBA8, semantic: .legacy)
         let limited = try processor.processBuffer(buffer: noiseBuffer, settings: .default,
                                                    previewLongEdge: nil, lutURL: nil,
                                                    exportLongEdge: 64)
@@ -111,10 +111,17 @@ struct ProcessorExportTests {
         try writeOrientedRaster(to: rasterURL)
         let raster = try processor.loadRasterBuffer(url: rasterURL)
         let oriented = try processor.loadRasterBuffer(url: rasterURL, applyingOrientation: true)
-        check(raster.orientation == .right, "raster import preserves the source EXIF orientation")
-        check(oriented.orientation == .up && oriented.buffer.width == raster.buffer.height &&
-                  oriented.buffer.height == raster.buffer.width,
-              "DNG raster input applies EXIF orientation once before final rendering")
+        check(raster.orientation == .up && raster.buffer.width == 3 && raster.buffer.height == 2,
+              "raster import applies source EXIF orientation in the shared decoder")
+        check(oriented.orientation == .up && oriented.buffer.width == raster.buffer.width &&
+                  oriented.buffer.height == raster.buffer.height && oriented.buffer.data == raster.buffer.data,
+              "raster preview and FINAL load apply EXIF orientation exactly once")
+        let invalidRasterURL = output.appendingPathComponent("invalid-raster.bin")
+        try Data("not an image".utf8).write(to: invalidRasterURL)
+        do {
+            _ = try processor.loadRasterBuffer(url: invalidRasterURL)
+            check(false, "raster loader rejects unsupported file contents")
+        } catch { check(true, "raster loader rejects unsupported file contents") }
         let noiseOff = try processor.processBuffer(buffer: noiseBuffer, settings: .default, previewLongEdge: 128, lutURL: nil)
         var denoised = RawSettings.default
         denoised.denoise.apply(.clean)
@@ -190,7 +197,8 @@ struct ProcessorExportTests {
         let bytes = Data([45, 110, 180, 255, 170, 110, 60, 255, 85, 145, 75, 255,
                           80, 70, 65, 255, 180, 185, 190, 255, 210, 65, 115, 255])
         let buffer = Sony2FujiProcessor.Buffer(data: bytes, width: 3, height: 2, stride: 12,
-                                              pixelFormat: SONY2FUJI_PIXEL_RGBA8)
+                                              pixelFormat: SONY2FUJI_PIXEL_RGBA8, semantic: .legacy)
+        let displayBuffer = buffer.withSemantic(.display)
         let original = output.appendingPathComponent("source.jpg")
         let destination = CGImageDestinationCreateWithURL(original as CFURL, "public.jpeg" as CFString, 1, nil)!
         let originalProperties: [CFString: Any] = [
@@ -213,6 +221,36 @@ struct ProcessorExportTests {
         var hsl = RawSettings.default
         for channel in 0..<8 { hsl.hsl.set(.saturation, channel: channel, value: -100) }
         let neutral = try processor.processBuffer(buffer: buffer, settings: .default, previewLongEdge: nil, lutURL: nil)
+        let displayNeutral = try processor.processBuffer(buffer: displayBuffer, settings: .default,
+                                                         previewLongEdge: nil, lutURL: nil)
+        check(displayNeutral.data == displayBuffer.data,
+              "iOS display-sRGB neutral rendering round-trips RGB8 pixels")
+        var displaySettings = RawSettings.default
+        displaySettings.exposure = 0.35
+        displaySettings.contrast = 1.12
+        displaySettings.saturation = 0.88
+        displaySettings.hsl.set(.saturation, channel: 2, value: -35)
+        displaySettings.denoise.apply(.detail)
+        displaySettings.photoEffects.vignetteAmount = -35
+        displaySettings.photoEffects.grainAmount = 18
+        displaySettings.geometry.quarterTurns = 1
+        displaySettings.geometry.cropX = 0.1
+        displaySettings.geometry.cropWidth = 0.8
+        let displayFinal = try processor.processBuffer(buffer: raster.buffer, settings: displaySettings,
+                                                       previewLongEdge: nil, lutURL: nil)
+        let displayCPU = try cpuProcessor.processBuffer(buffer: raster.buffer, settings: displaySettings,
+                                                        previewLongEdge: nil, lutURL: nil)
+        let displayRepeat = try processor.processBuffer(buffer: raster.buffer, settings: displaySettings,
+                                                        previewLongEdge: nil, lutURL: nil)
+        check(Self.maximumDifference(displayFinal.data, displayCPU.data) <= 2,
+              "iOS display Auto falls back to the CPU reference for full edits")
+        check(displayFinal.data == displayRepeat.data && displayFinal.width > 0 && displayFinal.height > 0,
+              "iOS display FINAL is deterministic and applies geometry after source decode")
+        do {
+            _ = try forcedProcessor.processBuffer(buffer: displayBuffer, settings: .default,
+                                                  previewLongEdge: nil, lutURL: nil)
+            check(false, "iOS display input rejects Force GPU instead of changing semantics")
+        } catch { check(true, "iOS display input rejects Force GPU instead of changing semantics") }
         let hslPreview = try processor.processBuffer(buffer: buffer, settings: hsl, previewLongEdge: 3, lutURL: nil)
         let hslExport = try processor.processBuffer(buffer: buffer, settings: hsl, previewLongEdge: nil, lutURL: nil)
         check(hslPreview.data == hslExport.data && hslExport.data != neutral.data,
@@ -221,9 +259,9 @@ struct ProcessorExportTests {
         let hslGPU = try forcedProcessor.processBuffer(buffer: buffer, settings: hsl, previewLongEdge: nil, lutURL: nil)
         check(Self.maximumDifference(hslGPU.data, hslCPU.data) <= 2,
               "iOS HSL Force succeeds on Metal and matches the CPU reference")
-        let rasterEV = try processor.autoExposure(url: nil, buffer: buffer, settings: .default)
+        let rasterEV = try processor.autoExposure(url: nil, buffer: displayBuffer, settings: .default)
         hsl.exposure = 3
-        check(try processor.autoExposure(url: nil, buffer: buffer, settings: hsl) == rasterEV && (-4...4).contains(rasterEV),
+        check(try processor.autoExposure(url: nil, buffer: displayBuffer, settings: hsl) == rasterEV && (-4...4).contains(rasterEV),
               "iOS raster Auto returns absolute EV independent of HSL and current exposure")
         let jpeg = try processor.makeJPEGData(from: doubled, sourceURL: original, orientation: .right, quality: 0.92)
         let fields = properties(jpeg)
