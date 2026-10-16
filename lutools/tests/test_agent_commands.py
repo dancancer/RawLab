@@ -1,5 +1,6 @@
 """Agent CLI contract tests; all outputs live in a temporary directory."""
 import argparse
+import errno
 import itertools
 import json
 import pathlib
@@ -202,11 +203,24 @@ class AgentCommands(unittest.TestCase):
                 self.envelope(self.run_cli(*arguments, cwd=self.root.parent), "export", "io_error")
                 self.assertFalse((self.root / "edited.jpg").exists())
 
+    def create_link(self, alias, source, kind):
+        try:
+            if kind == "symlink": alias.symlink_to(source)
+            else: alias.hardlink_to(source)
+        except NotImplementedError as failure:
+            self.skipTest(f"{kind} unsupported: {failure}")
+        except OSError as failure:
+            unavailable = {errno.EACCES, errno.EPERM, errno.ENOSYS,
+                           getattr(errno, "ENOTSUP", -1), getattr(errno, "EOPNOTSUPP", -1)}
+            if failure.errno in unavailable or getattr(failure, "winerror", None) in {1, 5, 50, 1314}:
+                self.skipTest(f"{kind} unavailable: {failure}")
+            raise
+
     def use_raw_fixture(self):
         if RAW is None or not RAW.is_file():
             self.skipTest("real RAW fixture not provided")
         # A symlink exercises recipe-relative input without copying or modifying RAWs.
-        (self.root / "photo.DNG").symlink_to(RAW)
+        self.create_link(self.root / "photo.DNG", RAW, "symlink")
         self.document["input"]["path"] = "photo.DNG"
         self.document["output"]["size"] = {"mode": "limit_long_edge", "long_edge": 64}
 
@@ -252,8 +266,7 @@ class AgentCommands(unittest.TestCase):
                         alias = self.root / f"{name}-{kind}-{preview}.png"
                         if kind == "direct": alias = source
                         elif kind == "normalized": alias = source.parent / "unused" / ".." / source.name
-                        elif kind == "symlink": alias.symlink_to(source)
-                        else: alias.hardlink_to(source)
+                        else: self.create_link(alias, source, kind)
                         self.document["output"]["path"] = str(alias)
                         self.write_recipe()
                         original = {key: value.read_bytes() for key, value in sources.items()}

@@ -77,5 +77,6 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 Copyright (c) 2026 RawLab contributors. This release's original project code is
 distributed under the [GNU General Public License v3.0 only](LICENSE)
-(`GPL-3.0-only`). Third-party libraries, LUTs and other bundled assets retain their
-own licenses and copyright notices. See [licensing and attribution](docs/licensing.md).
+(`GPL-3.0-only`), with a narrow [Alibaba Cloud RUM SDK linking exception](LICENSE-ALIYUN-RUM-EXCEPTION)
+under GPLv3 section 7. Third-party libraries, LUTs and other bundled assets retain
+their own licenses and copyright notices. See [licensing and attribution](docs/licensing.md).

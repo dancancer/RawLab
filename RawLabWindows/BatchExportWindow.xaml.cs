@@ -26,6 +26,7 @@ public partial class BatchExportWindow : Window
     public bool CloseFailed { get; private set; }
     public BatchJob Job => job;
     public event Action<bool>? BusyChanged;
+    public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
     public BatchExportWindow(BatchJob job, BatchJournal journal)
     {
@@ -274,14 +275,25 @@ public partial class BatchExportWindow : Window
         if (job.SelectedCount == 0 || job.OutputDirectory == null) return;
         if (!job.Started && editingCustomSize && !CommitCustomSize()) return;
         CloseFailed=closeRequested=false;Running = true; cancellation = new(); BusyChanged?.Invoke(true); Refresh();
+        var before = job.Copy();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
+        var runFailed = new HashSet<Guid>();
+        var previousStatuses = work.Items.ToDictionary(item => item.Id, item => item.Status);
         try
         {
             await Task.Run(() => {
                 if (work.Format != ExportFormat.RenderedDng) ExportMetadata.VerifyAvailable();
                 using var engine = new RenderEngine();
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
-                    (updated, _) => Dispatcher.BeginInvoke(new Action(() => { job = updated; Refresh(); })),
+                    (updated, _) => {
+                        foreach (var item in updated.Items)
+                        {
+                            if (item.Status == BatchStatus.Failed && previousStatuses.TryGetValue(item.Id, out var previous) && previous != BatchStatus.Failed)
+                                runFailed.Add(item.Id);
+                            previousStatuses[item.Id] = item.Status;
+                        }
+                        Dispatcher.BeginInvoke(new Action(() => { job = updated; Refresh(); }));
+                    },
                     (input, settings, look, destination, longEdge) => {
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
                         engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge);
@@ -295,7 +307,9 @@ public partial class BatchExportWindow : Window
         }
         finally
         {
-            job = work; Running = false; Refresh(); BusyChanged?.Invoke(false);
+            job = work;
+            RunCompleted?.Invoke(before, job.Copy(), runFailed.Count);
+            Running = false; Refresh(); BusyChanged?.Invoke(false);
             if (closeRequested && IsLoaded) Close();
         }
     }

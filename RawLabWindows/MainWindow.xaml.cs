@@ -61,10 +61,15 @@ public partial class MainWindow : Window
     private bool previewDeferred;
     private LibraryEntry? selectedThumbnail;
     private readonly UpdateChecker updates = new(typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown");
+    private readonly UsageAnalytics usageAnalytics;
     private AboutWindow? aboutWindow;
     private readonly CancellationTokenSource updateCancellation = new();
-    public MainWindow()
+    private bool startupReported, analyticsDisposed;
+    private long photoImportReportedRevision;
+    public MainWindow() : this(new UsageAnalytics()) { }
+    public MainWindow(UsageAnalytics usageAnalytics)
     {
+        this.usageAnalytics = usageAnalytics;
         InitializeComponent();
         AutomationProperties.SetAutomationId(this,"MainWindow");
         foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareOff,CompareSide,CompareSwipe,
@@ -144,6 +149,7 @@ public partial class MainWindow : Window
         InitializeEditWorkflow();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
+            if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
             if(input!=null)OpenFile(input);
             await updates.CheckAsync(false, updateCancellation.Token);
@@ -153,7 +159,7 @@ public partial class MainWindow : Window
     {
         if (aboutWindow == null)
         {
-            aboutWindow = new AboutWindow(updates) { Owner = this };
+            aboutWindow = new AboutWindow(updates, usageAnalytics) { Owner = this };
             aboutWindow.Closed += (_, _) => aboutWindow = null;
             aboutWindow.Show();
         }
@@ -214,7 +220,13 @@ public partial class MainWindow : Window
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? Loc.Text("中性显影")};
             AutomationProperties.SetName(button,displayName);
-            button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;settings.ClearMasterRecipe();lut=film.Path;MarkEdited();RefreshControls();Schedule();};
+            button.Click+=(_,_)=>{
+                if(exporting || !ResolveTransformDraft() || (settings.MasterRecipeID == null && lut == film.Path))return;
+                settings.ClearMasterRecipe();
+                lut=film.Path;
+                usageAnalytics.Record(new FilmSelectedEvent(film.Path == null ? FilmKind.None : IsBuiltInLook(film.Path) ? FilmKind.BuiltIn : FilmKind.Custom));
+                MarkEdited();RefreshControls();Schedule();
+            };
             FilmStrip.Children.Add(button); filmButtons[film.Path ?? ""]=button;
         }
         var importContent=new StackPanel();
@@ -444,7 +456,7 @@ public partial class MainWindow : Window
     {
         if(exporting || closing)return;
         if(previewDeferred || requestedPreviewLongEdge!=previewLongEdge)CommitPreviewSize();
-        else UpdateBusy();
+        else {UpdateBusy();Pump();}
     }
     private int RenderEdge(bool proxy)=>proxy && previewLongEdge==0 ? 2000 : previewLongEdge;
     private void Schedule(bool initialPreview=false)
@@ -502,6 +514,11 @@ public partial class MainWindow : Window
                     RefreshCropDraft();
                 }
                 SetStatus(() => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}");
+                if (current && openRevision != photoImportReportedRevision)
+                {
+                    photoImportReportedRevision = openRevision;
+                    usageAnalytics.Record(new PhotoImportedEvent());
+                }
                 RefreshControls();
                 UpdatePreviewSize(ResultCanvas.PreviewLongEdge);
             }
@@ -964,12 +981,15 @@ public partial class MainWindow : Window
                 return;
             }
             File.Move(temp,destination,true);
+            usageAnalytics.Record(new ExportCompletedEvent());
             lastExportedPath=destination;ExportRevealButton.Visibility=Visibility.Visible;
             SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
         catch(Exception ex){Report(ex);}
         finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
     }
+    private static bool IsBuiltInLook(string path) => StringComparer.OrdinalIgnoreCase.Equals(
+        Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
@@ -982,11 +1002,16 @@ public partial class MainWindow : Window
         }
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
-        closeFinished=true;engine?.Dispose();engine=null;
+        e.Cancel = true;
+        Dispatcher.BeginInvoke(new Action(FinishClose));
     }
-    private void FinishClose()
+    private async void FinishClose()
     {
-        if(closeFinished || scheduler.Active!=null || exporting)return;
+        // 关闭时不再启动排队预览，只等待实际运行的 worker 释放引擎。
+        if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting) return;
+        analyticsDisposed = true;
+        IsEnabled = false;
+        await usageAnalytics.DisposeAsync();
         closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();
     }
 }

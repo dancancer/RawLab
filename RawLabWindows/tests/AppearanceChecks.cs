@@ -58,6 +58,8 @@ internal static class AppearanceChecks
                 Pair((Brush)app.Resources["ScrollHover"],(Brush)app.Resources["TreeSurface"],"hovered scroll thumb");
                 Pair(editor.ValueText.Foreground,editor.ValueText.Background,"actual parameter row");Pair(editor.GpuMode.Foreground,editor.GpuMode.Background,"actual footer GPU selector");
                 Pair(about.Foreground,about.Background,"About window");Pair(settings.Foreground,settings.Background,"settings window");
+                Pair(((CheckBox)about.FindName("UsageConsent")).Foreground,about.Background,"About usage consent");
+                foreach(var link in Descendants(about).OfType<Hyperlink>())Pair(link.Foreground,about.Background,"About hyperlink");
                 Pair(batch.Foreground,batch.Background,"batch window");
                 Pair(editor.Status.Foreground,((Grid)editor.Content).Background,"actual error status");
                 Pair(editor.SaveState.Foreground,((Grid)editor.Content).Background,"actual save failure");

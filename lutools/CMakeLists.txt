@@ -303,6 +303,12 @@ if(BUILD_EXAMPLES)
     target_link_libraries(sony2fuji_example sony2fuji_core)
 endif()
 
+if(ANDROID AND SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    add_executable(wavelet_denoise_tests EXCLUDE_FROM_ALL tests/wavelet_denoise_tests.cpp)
+    target_link_libraries(wavelet_denoise_tests sony2fuji_core ${SONY2FUJI_DENOISE_LIBRARIES})
+    target_compile_options(wavelet_denoise_tests PRIVATE -UNDEBUG)
+endif()
+
 if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY2FUJI_ENABLE_WAVELET_DENOISE)
     add_executable(gpu_filter_tests EXCLUDE_FROM_ALL tests/metal_denoise_tests.cpp)
     target_link_libraries(gpu_filter_tests sony2fuji_core ${SONY2FUJI_DENOISE_LIBRARIES})

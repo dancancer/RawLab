@@ -377,3 +377,181 @@ broad camera/driver coverage, and GPU device-loss/TDR recovery were not added to
 this bounded run. No global SDK/runtime installation, driver/security policy or
 fan settings on 125 were changed. No push, PR update, merge or release was performed
 during this validation pass; later delivery requires separate user authorization.
+
+## Development Integration Follow-up
+
+This follow-up merges `development` at
+`435feda1d6e44cc5a53a4a0c73208ce96fc6ee0b` into the Windows branch at
+`7061b65187ae69707e2e2da3e3c214a66184a123`. The physical desktop/GPU results above
+retain their original source scope, not new integrated-source physical coverage.
+The new private VM workspace is `C:/RawLabBuild/windows-v08-integration-20261016`.
+Later authorization permits commit, push and updating PR #53; this owner does
+not merge, tag, release or deploy.
+
+### Conflict Semantics And Repairs
+
+Five conflicts retain both branches' contracts:
+
+- `AboutWindow.xaml`: RUM consent/disclosure/privacy links and dynamic editor
+  high-contrast foreground/muted/link resources.
+- `BatchExportWindow.xaml.cs`: preflight-plus-running `BusyChanged`, per-run RUM
+  completion before the final busy-owner release, and existing cleanup guards.
+- `EditWorkflow.cs`: existing busy ownership/recovery plus per-run RUM counts;
+  last-owner close waits for active rendering, not an intentionally unstarted
+  pending preview.
+- `MainWindow.xaml.cs`: image input admission, transform drafts and export reveal
+  state plus successful RUM event boundaries and analytics drain before engine disposal.
+- Test project: both `ui-automation/**/*.cs` and `usage/**/*.cs` compile exclusions.
+
+Three failures were reproduced before repair: TestWindowState retained the
+original analytics consent/transport; batch-last close could be stranded by a
+pending preview; and journal cleanup failure after the active render retired
+restored the window but left `Busy` with no active worker. Their expected exit-1
+logs are `profile-isolation-red.log`, `close-pending-red.log` and
+`close-recovery-red.log`. The final case explicitly has no deferred-content or
+viewport-size fallback and compares recovered pixels with an independent CPU
+render. `ResumePreview` pumps the existing request without submitting a revision
+or rendering an unchanged idle editor again.
+
+RUM regressions use real main/About/batch windows, private consent and a fake
+transport, with no network events: one launch/import, changed/repeated film,
+opt-out/re-enable, successful/refused single export, partial batch and repaired
+retry, cancellation, interruption, terminal-before-busy-release ordering, and
+in-flight drain before engine disposal. Profile isolation preserves original
+consent bytes/timestamps and never starts its transport. Appearance includes
+the new consent and links.
+
+No shared runtime was manually changed by these integration repairs. Existing
+core protection already covers recipe/input/CUBE look x direct/normalized/
+symlink/hardlink x export/preview, 24 combinations. The only extra `lutools/`
+edit makes permission/unsupported links explicit test skips; other I/O errors
+still fail. A synthetic EACCES/ENOSPC probe proves this against old/new helpers.
+No C++ math, ABI layout, other-platform UI or SDK runtime was manually changed
+by these repairs; target-branch RUM changes are retained by the normal merge.
+
+### Source Provenance
+
+Ignored evidence is under `build/windows-agent-v08/integration-20261016/`.
+Each manifest has 536 source/support files, verified on Windows before every
+build/test phase. Archives contain no external RAW. The default native package
+is newly built, not an older DLL overlaid onto current managed output.
+
+| Snapshot | SHA-256 | Scope |
+| --- | --- | --- |
+| `source-native-baseline.zip` | `9fdd66c4a1726d024fd397a1ba8247f653db955c4f4163d5e506881f41b25ccb` | Full native/self-contained build and UIA driver build. |
+| `source-close-red.zip` | `2966b3e6f795fc9ef1a9201ddc323da5f5eef730419d7a8cb86daf335139b650` | Complete base for all overlays; close-order RED and link helper. |
+| `source-initial-green-delta.zip` | `a67c268acca005c681fc646f5636d804388a952cac10049a5f650c676af20aaa` | Three-file overlay on close-RED, initial complete matrix, tree `70ea11efe13eb4b2b46da3071e8a862465062dfc`. |
+| `source-recovery-red-delta.zip` | `48477e5bc15cca417d23077094919ec56fc906c0e285372651803d8ca5bae2df` | Five-file overlay, pending-only journal-failure RED without ResumePreview fix. |
+| `source-final-green-delta.zip` | `e5cbbfc87dac85829560f19738e45020496ca0e2828460ff09ba014096b77afc` | Six-file overlay, final executable tree `92a3e713e5ee7f59cd2ab07558390c1b238ae1ae`. |
+| `source-assertion-green-delta.zip` | `17315ba22f11dbc581af04e97fe7b983ef25c0ddeb1179e89de44e77ac3ef8aa` | One test-file overlay on final-green; explicit recovery Revision invariant, tree `80545fca897bfd3777939c4bd7e0e2664f389447`. |
+| `source-assertion-clean-delta.zip` | `6a4fbb64fb218a3120cc430fd3644fc77f44ff1be43c58e534d3d8329621b9d4` | Replaces the assertion overlay on final-green; same invariant with explicit non-null lock annotation, tree `f220c7c7eca05aea4593f1921a6f977f36fd8ee9`. |
+
+These deltas are not complete ZIPs. Full-matrix manifest
+`source-final-green-hashes.json` SHA-256 is
+`4b69f47104e540d77aadb13a8b8712c176141ba396a21a9cad82d823aa012e0b`.
+The assertion-only full manifest `source-assertion-green-hashes.json` SHA-256 is
+`96df10b5975fb8906ec63d7d3341c0164411b1e92b88c1f5429ea749811952df`.
+The final `source-assertion-clean-hashes.json` SHA-256 is
+`dcac72173fb99db90e8b0b54832d350d3c11ba9f46bd08fd3afd59e27b7fd2d6`.
+Native C/C++ sources/headers, CMake, shaders and runtime assets match the fresh
+native-build baseline throughout. Only managed app/tests, the Python test helper
+and README differ. Managed binaries are rebuilt and republished after production
+changes. Later verification/checklist prose is documentation-only and outside
+the executable source freeze.
+
+### Initial Integrated Gates
+
+The local SSH observer was interrupted during the long matrix. Its original
+remote PowerShell continued to completion; all remaining process-exit files and
+the final unchanged-profile summary were collected. No exit-0 is claimed for
+the interrupted local wrapper. These are local Windows results, not hosted CI.
+Initial logs are retained separately in `results-initial-green/`; later builds
+in `results/` do not silently replace that source's zero-warning evidence.
+
+| Gate | Recorded initial integrated result |
+| --- | --- |
+| Fresh native/default self-contained package | Exit 0; existing native dependency/MSVC warnings remain. |
+| Managed test host, UIA driver and republish | Exit 0; both test builds zero warnings/errors. |
+| Profile / default admission / entry selection | 13 / 160 / 61 checks, exit 0. |
+| Comparison / appearance / About | 29 / 283 / 40 checks, exit 0. |
+| Complete editor / isolated RUM owner | 188 assertions across 19 editor parts / 25 assertions including common entry checks, exit 0. |
+| Agent / raster FINAL parity | 132 / 79 checks, exit 0. |
+| Status layout / resources / runner selection | 384 / 23 / 37 checks, exit 0. |
+| Portable usage, license fixtures, real default package | All exit 0; default output contains no local RUM SDK. |
+| Release plus local SDK | Expected exit 1 at the explicit non-Release-only admission gate. |
+| Display/Agent/recipe/CLI/schema CTest | 11/11 groups, 126.30 s, exit 0. |
+| Complete schema with hash-verified private wheels | 8/8 tests, no skips, exit 0. |
+| Link availability negative controls | Old helper expected exit 1; new helper exit 0. EACCES: 12 skips; ENOSPC: 12 diagnostic errors, zero skips. |
+
+Embedded CTest schema can lack its optional module; the separate complete gate
+closes that gap. The first RAW resource run records 632 samples, one warmup and
+three cycles, with all closed windows collectible/native sessions disposed.
+Peak sampled private/working set is 1,367,842,816 / 1,446,113,280 bytes; optional
+preview cache 131,358,720 bytes is within its existing 256 MiB budget. Collected
+private memory is 49.06, 53.47, 50.59 and 50.15 MiB. This short run proves neither
+a process-memory cap nor long-soak leak freedom, physical GPU attribution or a
+performance improvement.
+
+### Final Recovery And Assertion Gates
+
+On tree `92a3e71`, the new managed build and self-contained republish both exit
+0. This test build has one CS8602 nullable-flow warning at the recovery fixture's
+journal lock, not a production build error. The complete editor rerun passes 195 assertions across all 19 parts,
+comparison passes 29 checks, resources passes 23, and the actual default-package
+license gate passes. All four process exits are 0. Logs are
+`editor-review-final.log`, `comparison-default-final.log`, `resources-final.log`
+and `default-package-license-final.log`; `summary-recovery-green.json` confirms
+the default profile is unchanged. The retained recovery RED is now collected
+with its actual failure assertion and exit 1, not just its outer-run summary.
+
+An independent reviewer then requested an explicit unchanged-Revision assertion
+in the recovery branch. This changes only one test file: tree `80545fca` has
+identical runtime source to `92a3e71`. Its test build exits 0 with the same one
+warning, and the selected `close-pending` run passes 21 assertions/exit 0, including recovery
+pixels, all three successful close orders and no new revision. This test-only
+increment does not trigger another complete editor/Agent/raster/native/package
+run. Its evidence is `managed-build-managed-assertion.log` and
+`close-pending-assertion.log` with `summary-assertion-green.json`.
+The fixture then makes its established non-null lock invariant explicit with
+`!` (no runtime behavior change), tree `f220c7c7`. The final test build has zero
+warnings/errors and the same selected 21 assertions pass again; see
+`managed-build-managed-clean.log`, `close-pending-clean.log` and
+`summary-assertion-clean.json`. The earlier warning logs remain retained.
+
+Because the private helper is linked into the independent StartupUri executable,
+that executable is also freshly rebuilt (zero warnings/errors). Its 22
+existing-journal/staging admission checks, 160 six-language startup/UI checks
+and the build-script PowerShell parser gate all exit 0. See
+`localization-ui-build.log`, `localization-admission.log`, `localization-ui.log`,
+`build-script.log` and `summary-standalone.json`. The real default profile's
+entire before-first-RED and after-final-clean file/hash/write-tick snapshots
+match byte-for-byte across all phases, including standalone startup, not only
+within each individual test process. The final task-path/command-line process
+audit has no remaining test workers; no unrelated process is stopped.
+The local remote-packaging unittest and Python syntax check also pass; their
+outputs are retained in `local-remote-packaging.log` and `local-python-syntax.log`
+in the task evidence directory.
+
+The final CPU resource rerun records 637 samples, one warmup plus three cycles,
+all four windows collectible and native sessions disposed. Peak sampled
+private/working set is 1,369,296,896 / 1,448,583,168 bytes; optional cache remains
+131,358,720 bytes. Collected private bytes are 52,600,832, 57,085,952, 56,016,896
+and 55,767,040. Recorded non-warmup cycles take 16.58-16.63 s, not a benchmark
+speedup claim. No process/native/GPU cap or long-soak conclusion is inferred.
+
+Final package/test binary SHA-256 values:
+
+- `RawLab.dll`: `c18d00bb21f29f15b77b84b7d7c853af2892fd43d70f5e4c3e656a2222d1f1aa`.
+- `RawLabWindows.Tests.dll`: `aa9d8c3a3fa05026b5e1766fb34277ba87cca914c81253b64fbaa8f565307306`.
+- `sony2fuji.dll`: `06dacb38dd6fe0836e968a05890983ada2275ec9ddbc67575040807df477d776`.
+- `sony2fuji.exe`: `bbbcb2ba93bc62a19628cbc3f62fc1629a8c84b759a49558c42d807c33be8645`.
+
+The final merge differs from tree `f220c7c7` only in this verification document
+and the implementation checklist; runtime, tests and assets remain frozen.
+Unchanged native/core and earlier physical experiments retain their respective
+source scopes. No new physical GPU matrix or local-SDK network-delivery run is
+claimed. On-site color/HDR, Explorer OLE and real SaveFileDialog/input-device
+workflows, multi-monitor DPI/Snap, Narrator/live OS contrast/text scaling, long
+soak/large queues/64M inputs and device-loss/TDR remain unverified here. Existing
+RUM copy localization remains a known release follow-up. Hosted CI status must
+be checked against the pushed head; an empty check set is not a CI pass.

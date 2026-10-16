@@ -3,12 +3,14 @@ package com.rawlab.android
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.Properties
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 enum class LookFormat(val extension: String) {
     UNKNOWN(""), CUBE("cube"), RLOOK("rlook");
@@ -49,13 +51,14 @@ class LookLibrary(
     private val validator: LookValidator = NativeLookValidator,
 ) {
     private val registry = File(root, REGISTRY_NAME)
+    private val monitor = monitors.computeIfAbsent(root.canonicalPath) { Any() }
 
     init {
         if (root.exists() && !root.isDirectory) throw IOException("Look storage is not a directory")
-        if (!root.exists() && !root.mkdirs()) throw IOException("Cannot create look storage")
+        if (!root.isDirectory && !root.mkdirs() && !root.isDirectory) throw IOException("Cannot create look storage")
     }
 
-    fun list(): List<ManagedLook> = synchronized(this) {
+    fun list(): List<ManagedLook> = locked {
         readRegistry().map { look ->
             val file = look.file(root)
             val available = file.isFile && runCatching {
@@ -68,41 +71,35 @@ class LookLibrary(
     fun importLook(source: File, originalName: String = source.name): ManagedLook =
         source.inputStream().use { importLook(it, originalName) }
 
-    fun importLook(input: InputStream, originalName: String): ManagedLook = synchronized(this) {
+    fun importLook(input: InputStream, originalName: String): ManagedLook = locked {
         val id = UUID.randomUUID().toString()
+        val transaction = File(root, ".import-$id.pending")
+        check(transaction.createNewFile()) { "Cannot record look import" }
         val namedFormat = LookFormat.fromExtension(originalName.substringAfterLast('.', ""))
         val rawStage = File(root, ".${id}.stage")
-        var staged: File? = null
-        var destination: File? = null
         try {
             rawStage.outputStream().use { output -> input.copyTo(output) }
             val format = namedFormat.takeUnless { it == LookFormat.UNKNOWN } ?: detectContainer(rawStage)
-            staged = File(root, ".${id}.stage.${format.extension}")
-            move(rawStage, staged!!)
+            val staged = File(root, ".${id}.stage.${format.extension}")
+            move(rawStage, staged)
             val relativePath = "${id}.${format.extension}"
-            destination = File(root, relativePath)
+            val destination = File(root, relativePath)
             val name = originalName.trim().ifEmpty { "Look.${format.extension}" }
-            val validation = validator.validate(staged!!)
+            val validation = validator.validate(staged)
             require(validation.format == format) { "Look format does not match its extension" }
             require(validVersion(format, validation.version)) { "Invalid look version" }
-            move(staged!!, destination!!)
+            move(staged, destination)
             val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath)
-            try {
-                writeRegistry(readRegistry() + imported)
-            } catch (error: Throwable) {
-                destination?.delete()
-                throw error
-            }
+            writeRegistry(readRegistry() + imported)
+            transaction.delete()
             imported
         } catch (error: Throwable) {
-            rawStage.delete()
-            staged?.delete()
-            destination?.delete()
+            runCatching { recoverInterruptedImports() }
             throw error
         }
     }
 
-    fun rename(id: String, name: String): ManagedLook = synchronized(this) {
+    fun rename(id: String, name: String): ManagedLook = locked {
         val existing = requireLook(id)
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "Look name cannot be empty" }
@@ -111,7 +108,7 @@ class LookLibrary(
         renamed
     }
 
-    fun remove(id: String) = synchronized(this) {
+    fun remove(id: String) = locked {
         val existing = requireLook(id)
         val remaining = readRegistry().filterNot { it.id == id }
         writeRegistry(remaining)
@@ -121,12 +118,46 @@ class LookLibrary(
         }
     }
 
-    fun fileFor(id: String): File? = synchronized(this) {
+    fun fileFor(id: String): File? = locked {
         readRegistry().firstOrNull { it.id == id }?.file(root)?.takeIf(File::isFile)
     }
 
     private fun requireLook(id: String): ManagedLook = readRegistry().firstOrNull { it.id == id }
         ?: throw NoSuchElementException("Unknown managed look: ${id}")
+
+    private fun <T> locked(block: () -> T): T = synchronized(monitor) {
+        // 文件锁会随 owner 进程退出释放，不能清理另一个仍在导入的实例。
+        RandomAccessFile(File(root, ".lock"), "rw").use { file ->
+            file.channel.use { channel -> channel.lock().use {
+                recoverInterruptedImports()
+                block()
+            } }
+        }
+    }
+
+    private fun recoverInterruptedImports() {
+        // 损坏索引时先报错并保留全部事务，不把未知归属当成未提交。
+        val committed = readRegistry().mapTo(mutableSetOf()) { it.id }
+        fun remove(file: File) {
+            if (file.exists() && !file.delete()) throw IOException("Cannot recover look import: ${file.name}")
+        }
+        for (marker in root.listFiles().orEmpty()) {
+            val id = marker.name.removePrefix(".import-").removeSuffix(".pending")
+            if (marker.name != ".import-$id.pending" || !isSafeId(id)) continue
+            remove(File(root, ".$id.stage"))
+            for (extension in listOf("cube", "rlook")) {
+                remove(File(root, ".$id.stage.$extension"))
+                if (id !in committed) remove(File(root, "$id.$extension"))
+            }
+            remove(marker)
+        }
+        for (file in root.listFiles().orEmpty()) {
+            val stageId = file.name.removePrefix(".").substringBefore(".stage")
+            val temporaryId = file.name.removePrefix(".$REGISTRY_NAME.").removeSuffix(".tmp")
+            if ((isSafeId(stageId) && file.name in listOf(".$stageId.stage", ".$stageId.stage.cube", ".$stageId.stage.rlook")) ||
+                (isSafeId(temporaryId) && file.name == ".$REGISTRY_NAME.$temporaryId.tmp")) remove(file)
+        }
+    }
 
     private fun readRegistry(): List<ManagedLook> {
         if (!registry.exists()) return emptyList()
@@ -217,6 +248,7 @@ class LookLibrary(
         path == "$id.${format.extension}" && !path.contains('/') && !path.contains('\\')
 
     companion object {
+        private val monitors = ConcurrentHashMap<String, Any>()
         private const val REGISTRY_NAME = "registry.properties"
         private const val REGISTRY_VERSION = 1
         private val RLOOK_MAGIC = "RLOOKDCP".toByteArray()

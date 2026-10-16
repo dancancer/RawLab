@@ -29,19 +29,27 @@ internal static class ProfileIsolationChecks
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
-        var window=new MainWindow();typeof(MainWindow).GetField("updates",Private)!.SetValue(window,existing);
+        var usagePath=Path.Combine(root,"existing-usage.json");File.WriteAllText(usagePath,"{\"Enabled\":true}");
+        var usageBefore=Stamp(usagePath);var transport=new UsageTransport();
+        var existingUsage=new UsageAnalytics(usagePath,transport);
+        var window=new MainWindow(existingUsage);typeof(MainWindow).GetField("updates",Private)!.SetValue(window,existing);
         window.UpdateNotice.Visibility=Visibility.Visible;
         try
         {
             TestWindowState.Isolate(window,root,client);
             var updates=(UpdateChecker)typeof(MainWindow).GetField("updates",Private)!.GetValue(window)!;
+            var usage=(UsageAnalytics)typeof(MainWindow).GetField("usageAnalytics",Private)!.GetValue(window)!;
+            check(!ReferenceEquals(existingUsage,usage) && !usage.ConsentGiven && !usage.CanEnable,
+                "Every test window gets private disabled analytics instead of retaining existing consent or transport");
             check(!ReferenceEquals(existing,updates) && !updates.Automatic && window.UpdateNotice.Visibility==Visibility.Collapsed,
                 "Every test window gets private disabled updates without retaining a default-profile badge");
             window.Show();window.UpdateLayout();
             check(handler.Count==0 && !updates.Checking,"Test window Loaded sends no update request");
+            check(transport.Starts==0 && usageBefore==Stamp(usagePath),
+                "Test window Loaded leaves existing analytics consent bytes/timestamp and transport untouched");
             check(before.SequenceEqual(File.ReadAllBytes(protectedPath)) && written==File.GetLastWriteTimeUtc(protectedPath) && !File.Exists(protectedPath+".tmp"),
                 "Test window preserves existing update preferences and temporary files");
-            foreach(var field in new[]{"editStore","batchJournal","library","updates"})
+            foreach(var field in new[]{"editStore","batchJournal","library","updates","usageAnalytics"})
             {
                 var value=typeof(MainWindow).GetField(field,Private)!.GetValue(window)!;
                 var path=field switch {
@@ -60,5 +68,13 @@ internal static class ProfileIsolationChecks
         internal int Count;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancellationToken)
         { Count++;return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent("{}")}); }
+    }
+    private sealed class UsageTransport:IUsageAnalyticsTransport
+    {
+        internal int Starts;
+        public bool IsAvailable=>true;
+        public Task StartAsync(CancellationToken cancellationToken){Starts++;return Task.CompletedTask;}
+        public Task SendAsync(UsageEvent usageEvent,CancellationToken cancellationToken)=>Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken)=>Task.CompletedTask;
     }
 }

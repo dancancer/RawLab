@@ -26,6 +26,7 @@ internal static class TestWindowState
         var previous=(UpdateChecker)typeof(MainWindow).GetField("updates",flags)!.GetValue(window)!;
         var path=Path.Combine(root,"updates.json");File.WriteAllText(path,"{\"Automatic\":false,\"LastAttempt\":0}");
         var updates=new UpdateChecker(previous.CurrentVersion,path,updatesClient);Set("updates",updates);
+        Set("usageAnalytics",new UsageAnalytics(Path.Combine(root,"usage.json"),new UnavailableUsageAnalyticsTransport()));
         var notice=(System.Windows.FrameworkElement)window.FindName("UpdateNotice");notice.DataContext=updates;
         notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;

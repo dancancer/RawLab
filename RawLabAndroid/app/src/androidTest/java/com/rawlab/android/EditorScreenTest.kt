@@ -31,7 +31,7 @@ class EditorScreenTest {
     val compose = createAndroidComposeRule<MainActivity>()
     @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
     @Test fun emptyEditorOffersImportButCannotExport() {
-        compose.onNodeWithText("打开 RAW 照片").assertIsDisplayed()
+        compose.onNodeWithText("选择照片").assertIsDisplayed()
         compose.onNodeWithText("从文件导入").assertIsDisplayed()
         compose.onNodeWithContentDescription("导出").assertIsNotEnabled()
         capture("empty-editor.png")

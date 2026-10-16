@@ -11,6 +11,11 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.util.Properties
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class LookLibraryTest {
     private val validator = LookValidator { file ->
@@ -19,6 +24,105 @@ class LookLibraryTest {
         if (bytes.toString(Charsets.UTF_8) != "valid") throw IllegalArgumentException("invalid look")
         LookValidation(if (file.extension == "rlook") LookFormat.RLOOK else LookFormat.CUBE,
             if (file.extension == "rlook") 2 else 0)
+    }
+
+    @Test
+    fun interruptedImportRecoveryPreservesCommittedAndUnownedLooks() {
+        val root = Files.createTempDirectory("rawlab-look-recovery").toFile()
+        try {
+            val committed = LookLibrary(root, validator).importLook("valid".byteInputStream(), "existing.cube")
+            val orphanId = UUID.randomUUID().toString()
+            val unowned = File(root, "${UUID.randomUUID()}.cube").apply { writeText("user-owned") }
+            val marker = File(root, ".import-$orphanId.pending").apply { writeText("") }
+            val orphan = File(root, "$orphanId.cube").apply { writeText("valid") }
+            val stage = File(root, ".$orphanId.stage").apply { writeText("partial") }
+            val typedStage = File(root, ".${committed.id}.stage.cube").apply { writeText("partial") }
+            val committedMarker = File(root, ".import-${committed.id}.pending").apply { writeText("") }
+            val registryTemp = File(root, ".registry.properties.${UUID.randomUUID()}.tmp").apply { writeText("partial") }
+            val legacyStage = File(root, ".${UUID.randomUUID()}.stage.rlook").apply { writeText("partial") }
+            val registry = File(root, "registry.properties").readBytes()
+
+            assertEquals(listOf(committed.id), LookLibrary(root, validator).list().map { it.id })
+            for (file in listOf(marker, orphan, stage, typedStage, committedMarker, registryTemp, legacyStage)) {
+                assertFalse("Interrupted import resource must be recovered: ${file.name}", file.exists())
+            }
+            assertEquals("valid", committed.file(root).readText())
+            assertEquals("user-owned", unowned.readText())
+            assertArrayEquals(registry, File(root, "registry.properties").readBytes())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun corruptRegistryPreservesInterruptedTransactionForRecovery() {
+        val root = Files.createTempDirectory("rawlab-look-corrupt-recovery").toFile()
+        try {
+            val id = UUID.randomUUID().toString()
+            val marker = File(root, ".import-$id.pending").apply { writeText("") }
+            val orphan = File(root, "$id.rlook").apply { writeText("valid") }
+            val stage = File(root, ".$id.stage.rlook").apply { writeText("partial") }
+            val registryTemp = File(root, ".registry.properties.${UUID.randomUUID()}.tmp").apply { writeText("partial registry") }
+            val registry = "version=99\ncount=0\n".toByteArray()
+            File(root, "registry.properties").writeBytes(registry)
+            assertThrows(IOException::class.java) { LookLibrary(root, validator).list() }
+            assertTrue(marker.isFile)
+            assertEquals("valid", orphan.readText())
+            assertEquals("partial", stage.readText())
+            assertEquals("partial registry", registryTemp.readText())
+            assertArrayEquals(registry, File(root, "registry.properties").readBytes())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun anotherLibraryCannotRecoverAnImportThatIsStillRunning() {
+        val root = Files.createTempDirectory("rawlab-look-live-owner").toFile()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit<ManagedLook> {
+                LookLibrary(root, LookValidator { file ->
+                    entered.countDown()
+                    check(release.await(5, TimeUnit.SECONDS))
+                    validator.validate(file)
+                }).importLook("valid".byteInputStream(), "first.cube")
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val second = executor.submit<ManagedLook> {
+                secondStarted.countDown()
+                LookLibrary(root, validator).importLook("valid".byteInputStream(), "second.cube")
+            }
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS))
+            assertThrows(TimeoutException::class.java) { second.get(200, TimeUnit.MILLISECONDS) }
+            assertEquals(1, root.listFiles().orEmpty().count { it.name.endsWith(".stage.cube") })
+            release.countDown()
+            val a = first.get(5, TimeUnit.SECONDS)
+            val b = second.get(5, TimeUnit.SECONDS)
+            assertNotEquals(a.id, b.id)
+            assertEquals(setOf(a.id, b.id), LookLibrary(root, validator).list().map { it.id }.toSet())
+            assertEquals("valid", a.file(root).readText())
+            assertEquals("valid", b.file(root).readText())
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun directoryCreatedByAnotherOwnerDuringMkdirsIsAccepted() {
+        val parent = Files.createTempDirectory("rawlab-look-root-race").toFile()
+        val root = object : File(parent, "looks") {
+            override fun mkdirs(): Boolean {
+                File(path).mkdirs()
+                return super.mkdirs()
+            }
+        }
+        try {
+            assertTrue(LookLibrary(root, validator).list().isEmpty())
+            assertTrue(root.isDirectory)
+        } finally { parent.deleteRecursively() }
     }
 
     @Test
@@ -69,7 +173,7 @@ class LookLibraryTest {
             val library = LookLibrary(root, validator)
             assertThrows(IllegalArgumentException::class.java) { library.importLook(source) }
             assertTrue(library.list().isEmpty())
-            assertTrue(root.listFiles().orEmpty().none { it.name != "." && it.name != ".." })
+            assertTrue(root.listFiles().orEmpty().all { it.name == ".lock" })
         } finally {
             root.deleteRecursively()
             source.delete()
@@ -109,7 +213,7 @@ class LookLibraryTest {
             val library = LookLibrary(root, validator)
             assertThrows(IOException::class.java) { library.importLook(source) }
             assertArrayEquals(bytes, root.resolve("registry.properties").readBytes())
-            assertTrue(root.listFiles().orEmpty().all { it.name == "registry.properties" })
+            assertTrue(root.listFiles().orEmpty().all { it.name in listOf("registry.properties", ".lock") })
         } finally {
             root.deleteRecursively()
             source.delete()

@@ -13,7 +13,7 @@ internal static class EditorReviewChecks
     private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     internal enum Part { All, BusyBatchFirst, BusyForegroundFirst, BusyExportBatchFirst, BusyExportFirst, BusyResumePreview,
         CloseJournalRetry, CloseJournalSync, CloseIdleNoop, CloseThumbnailQueue, CloseRunning, ResizeImportFirst,
-        ResizeBatchBeforeImport, ResizeExportFirst, ResizeBatchBeforeExport, LibraryDrop, DialogGeometry, DialogLens }
+        ResizeBatchBeforeImport, ResizeExportFirst, ResizeBatchBeforeExport, LibraryDrop, DialogGeometry, DialogLens, UsageLifecycle, ClosePending }
     internal static readonly IReadOnlyDictionary<string,Part> Parts=new Dictionary<string,Part>(StringComparer.OrdinalIgnoreCase){
         ["all"]=Part.All,["busy-batch-first"]=Part.BusyBatchFirst,["busy-foreground-first"]=Part.BusyForegroundFirst,
         ["busy-export-batch-first"]=Part.BusyExportBatchFirst,["busy-export-first"]=Part.BusyExportFirst,["busy-resume-preview"]=Part.BusyResumePreview,
@@ -21,7 +21,8 @@ internal static class EditorReviewChecks
         ["close-thumbnail-queue"]=Part.CloseThumbnailQueue,["close-running"]=Part.CloseRunning,["resize-import-first"]=Part.ResizeImportFirst,
         ["resize-batch-before-import"]=Part.ResizeBatchBeforeImport,["resize-export-first"]=Part.ResizeExportFirst,
         ["resize-batch-before-export"]=Part.ResizeBatchBeforeExport,["library-drop"]=Part.LibraryDrop,
-        ["dialog-geometry"]=Part.DialogGeometry,["dialog-lens"]=Part.DialogLens};
+        ["dialog-geometry"]=Part.DialogGeometry,["dialog-lens"]=Part.DialogLens,["usage-lifecycle"]=Part.UsageLifecycle,
+        ["close-pending"]=Part.ClosePending};
     internal static Part ParsePart(string part)=>Parts.TryGetValue(part.Trim(),out var value) ? value :
         throw new ArgumentException("Unknown editor-review part: '"+part+"'. Available: "+string.Join(", ",Parts.Keys));
     internal static void Run(string repo,string raw,Action<bool,string> check,string part="all")
@@ -50,6 +51,8 @@ internal static class EditorReviewChecks
             RunPart(Part.ResizeBatchBeforeImport,()=>ResizeOrder(false,false));RunPart(Part.ResizeExportFirst,()=>ResizeOrder(true,true));
             RunPart(Part.ResizeBatchBeforeExport,()=>ResizeOrder(false,true));RunPart(Part.LibraryDrop,LibraryDrop);
             RunPart(Part.DialogGeometry,()=>DraftDialog(false));RunPart(Part.DialogLens,()=>DraftDialog(true));
+            RunPart(Part.UsageLifecycle,()=>UsageIntegrationChecks.Run(Path.Combine(output,"usage-lifecycle"),photo,check));
+            RunPart(Part.ClosePending,ClosePending);
             check(executed==(selected==Part.All ? Parts.Count-1 : 1),"Every selected editor scenario actually executes");
             check(new[]{raw,photo,other}.All(path=>originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(path)))),
                 "Editor review regressions preserve the external RAW and both source copies");
@@ -129,6 +132,73 @@ internal static class EditorReviewChecks
                 window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
             }
             IEnumerable<string> BlockedInputs(){releaseBatch.Wait();yield return photo;}
+        }
+        void ClosePending()
+        {
+            foreach(var scenario in new[]{0,1,2,3})
+            {
+                bool? batchFirst=scenario==0 ? null : scenario==1;
+                var recover=scenario==3;
+                var window=Open("close-pending-"+batchFirst+"-"+recover);var held=new HeldContext(SynchronizationContext.Current!);
+                var scheduler=Get<object>(window,"scheduler");Task? preflight=null;
+                FileStream? journalLock=null;
+                using var releaseBatch=new ManualResetEventSlim();
+                try
+                {
+                    BatchExportWindow? batch=null;
+                    if(batchFirst!=null)
+                    {
+                        var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
+                        Get<BatchJournal>(window,"batchJournal").Save(job);Invoke(window,"ShowBatch",job);batch=Get<BatchExportWindow>(window,"batchWindow");
+                    }
+                    held.Capture(()=>{window.ValueSlider.Value=.6;window.ValueSlider.Value=.65;});
+                    InteractionChecks.PumpUntil(()=>held.Pending);
+                    var queued=Get<object?>(scheduler,"pending");
+                    check(queued!=null && scheduler.GetType().GetProperty("Active")!.GetValue(scheduler)!=null,
+                        "Close fixture has a real active render and a distinct queued preview: "+batchFirst);
+                    if(batch!=null)preflight=batch.AddInputs(BlockedInputs());
+                    if(recover)
+                    {
+                        check(!Get<bool>(window,"previewDeferred") && Get<int>(window,"previewLongEdge")==Get<int>(window,"requestedPreviewLongEdge"),
+                            "Queued-close recovery has no resize or deferred-content fallback to hide a stranded pending request");
+                        journalLock=new FileStream(Path.Combine(Get<BatchJournal>(window,"batchJournal").DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read);
+                    }
+                    var revision=scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler);
+                    window.Close();
+                    check(window.IsVisible && !window.IsEnabled && !Get<bool>(window,"closeFinished"),
+                        "Close waits for the active worker even with another preview queued: "+batchFirst);
+                    if(batchFirst==true){releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);}
+                    held.Release();
+                    InteractionChecks.PumpUntil(()=>scheduler.GetType().GetProperty("Active")!.GetValue(scheduler)==null);
+                    if(batchFirst==false){releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);}
+                    if(recover)
+                    {
+                        check(window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") && batch!.CloseFailed,
+                            "Journal cleanup failure restores the owner after its active render already retired");
+                        check((!(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)! || scheduler.GetType().GetProperty("Active")!.GetValue(scheduler)!=null) &&
+                            Equals(revision,scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)),
+                            "Failed close resumes the existing queued preview without a new revision or stranded busy state");
+                        journalLock!.Dispose();journalLock=null;
+                        InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+                        var actual=Get<RenderedImage>(window,"result");using var oracle=new RenderEngine(0);
+                        var expected=oracle.Render(photo,Get<Adjustments>(window,"settings").Clone(),Get<string?>(window,"lut"),
+                            Math.Max(actual.Image.PixelWidth,actual.Image.PixelHeight),clipping:false,viewportPreview:true)!;
+                        check(Pixels(actual.Image).SequenceEqual(Pixels(expected.Image)),"Recovered queued preview matches the accepted settings and independent CPU pixels");
+                        window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
+                        continue;
+                    }
+                    check(!window.IsVisible && Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null &&
+                        ReferenceEquals(queued,Get<object?>(scheduler,"pending")) &&
+                        Equals(revision,scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)),
+                        "Last busy owner closes without starting the queued preview: "+batchFirst);
+                }
+                finally
+                {
+                    journalLock?.Dispose();held.Release();releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight?.IsCompleted ?? true);
+                    if(window.IsVisible){Invoke(window,"FinishClose");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+                }
+                IEnumerable<string> BlockedInputs(){releaseBatch.Wait();yield return photo;}
+            }
         }
         void CloseJournalRetry()
         {

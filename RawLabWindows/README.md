@@ -294,3 +294,10 @@ dotnet <TargetDir>/RawLabWindows.Tests.dll --resources <repo> <RAW>
 结果写入任务目录 `build/windows-resource-checks/`；这是短时单 VM 验证，不是长期压力或物理 GPU 验收。
 编辑器回归另检查关闭请求后的缩略图队列停止、失败后的文件树恢复、无变化时不重显影，
 以及 1000 次格式检查式拖拽悬停；实际 Drop 仍验证路径，不改写源文件。
+
+`editor-review` 的 `close-pending` 子场景覆盖活动渲染与排队预览并存时的关闭顺序，
+以及渲染先结束、批量最后结束且 journal 清理失败后的预览恢复。测试锁定私有 journal，
+并与独立 CPU 显影像素核对，不依赖 pending resize 来掩盖排队请求。
+`usage-lifecycle` 通过真实主窗口、About 和批量窗口验证启动、导入、外观切换、导出、
+部分失败重试及等待发送完成后的退出；只使用私有 consent 和假 transport，不发送网络事件。
+所有通过 `TestWindowState.Isolate` 创建的窗口同时替换 analytics，避免保留默认同意状态或 SDK transport。

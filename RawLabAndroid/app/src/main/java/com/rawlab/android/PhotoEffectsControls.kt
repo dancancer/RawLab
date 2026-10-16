@@ -50,8 +50,10 @@ internal fun PhotoEffectsControls(
                 enabled = active,
                 onValue = { next, dragging -> onChange(value.withEffect(parameter, next), dragging) },
                 onReset = { onChange(value.withEffect(parameter, parameter.defaultValue), false) },
-                clampInput = true,
             )
+            if (parameter == PhotoEffectParameter.VIGNETTE_HIGHLIGHTS && value.vignetteAmount >= 0f)
+                Text(stringResource(R.string.vignette_highlights_unavailable), Modifier.padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

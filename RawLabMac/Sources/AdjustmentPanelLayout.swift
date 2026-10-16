@@ -2,10 +2,14 @@ import Foundation
 
 struct AdjustmentPanelLayout {
     var collapsed = false
-    private var preferredHeight: CGFloat = 260
+    private var preferredHeight: CGFloat = 252
 
     func height(available: CGFloat) -> CGFloat {
         collapsed ? 0 : min(preferredHeight, Self.maximum(available))
+    }
+
+    mutating func selectHeight(_ height: CGFloat) {
+        preferredHeight = min(380, max(220, height))
     }
 
     mutating func resize(to height: CGFloat, available: CGFloat) {

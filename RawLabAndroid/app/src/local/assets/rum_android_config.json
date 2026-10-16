@@ -1,0 +1,32 @@
+{
+  "enable": true,
+  "session": {
+    "sampling": 100.0
+  },
+  "report": {
+    "flush_interval": 5000,
+    "max_batch_count": 50
+  },
+  "collectors": [
+    { "name": "hotlaunch", "enable": false, "sampling": 0.0 },
+    { "name": "coollaunch", "enable": false, "sampling": 0.0 },
+    { "name": "statechange", "enable": false, "sampling": 0.0 },
+    { "name": "crash", "enable": false, "sampling": 0.0 },
+    { "name": "lagfps", "enable": false, "sampling": 0.0 },
+    { "name": "lagstuck", "enable": false, "sampling": 0.0 },
+    { "name": "anr", "enable": false, "sampling": 0.0 },
+    { "name": "h5", "enable": false, "sampling": 0.0 },
+    { "name": "routechange", "enable": false, "sampling": 0.0 },
+    { "name": "network", "enable": false, "sampling": 0.0 },
+    { "name": "view", "enable": false, "sampling": 0.0 },
+    { "name": "action", "enable": false, "sampling": 0.0 },
+    { "name": "customevent", "enable": true, "sampling": 100.0 },
+    { "name": "customlog", "enable": false, "sampling": 0.0 },
+    { "name": "custommetric", "enable": false, "sampling": 0.0 },
+    { "name": "battery", "enable": false, "sampling": 0.0 }
+  ],
+  "tracing": {
+    "enable": false,
+    "rules": []
+  }
+}

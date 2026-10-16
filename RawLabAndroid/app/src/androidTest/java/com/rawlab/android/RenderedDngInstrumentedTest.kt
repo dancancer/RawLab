@@ -113,8 +113,8 @@ class RenderedDngInstrumentedTest {
             assertNull(model.state.value.error)
             val frozen = model.state.value.edits
             compose.onNodeWithContentDescription(context.getString(R.string.export)).performClick()
-            compose.onNodeWithText(context.getString(R.string.dng)).performClick()
-            compose.onNodeWithText(context.getString(R.string.save_album)).assertIsNotEnabled()
+            compose.onNodeWithText(context.getString(R.string.dng)).performScrollTo().performClick()
+            compose.onNodeWithText(context.getString(R.string.save_album)).assertDoesNotExist()
             compose.onNodeWithText(context.getString(R.string.save_file)).assertIsDisplayed()
             capture("single-format-dng.png")
             compose.onNodeWithText(context.getString(R.string.cancel)).performClick()
@@ -138,7 +138,7 @@ class RenderedDngInstrumentedTest {
             assertNull(batch.state.value.error)
             assertEquals(2, batch.state.value.selectedCount)
             assertEquals(frozen, batch.state.value.job.source.settings)
-            compose.onNodeWithText(context.getString(R.string.dng)).performClick()
+            compose.onNodeWithText(context.getString(R.string.dng)).performScrollTo().performClick()
             compose.onNodeWithText("照片图库").assertDoesNotExist()
             compose.onNodeWithText("导出 2 张").assertIsNotEnabled()
             capture("batch-dng-requires-directory.png")
@@ -229,6 +229,7 @@ class RenderedDngInstrumentedTest {
                 assertEquals(BatchRowStatus.PENDING, saved.rows.single().status)
                 assertNull(saved.rows.single().outputUri)
                 assertTrue(recovery!!.discard())
+                kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeout(10_000) { recovery!!.discardDraftOrCompleted()?.await() } }
                 assertNull(journal.load(initial.id))
             } finally {
                 recovery?.close()

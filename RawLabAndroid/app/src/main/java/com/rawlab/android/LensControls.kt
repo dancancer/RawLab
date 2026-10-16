@@ -20,7 +20,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, change: (LensSettings) -> Unit) {
+fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading: Boolean = false, change: (LensSettings) -> Unit) {
     var choosing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -39,8 +39,11 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, change:
             IconButton(onClick = { change(LensSettings()) }, enabled = enabled && value != LensSettings(),
                 modifier = Modifier.testTag("lens.reset")) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
         }
-        LensToggle(R.string.lens_distortion, value.distortion, enabled, "lens.distortion") { change(value.copy(distortion = it)) }
-        LensToggle(R.string.lens_tca, value.tca, enabled, "lens.tca") { change(value.copy(tca = it)) }
+        val candidate = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }
+            else info?.candidates?.firstOrNull { it.title == info.selectedLens }
+                ?: info?.candidates?.singleOrNull { it.isMatch }
+        LensToggle(R.string.lens_distortion, value.distortion, enabled && candidate?.hasDistortion == true, "lens.distortion") { change(value.copy(distortion = it)) }
+        LensToggle(R.string.lens_tca, value.tca, enabled && candidate?.hasTca == true, "lens.tca") { change(value.copy(tca = it)) }
         LensToggle(R.string.lens_auto_crop, value.autoCrop, enabled, "lens.crop") { change(value.copy(autoCrop = it)) }
         val selected = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }?.title
             else info?.selectedLens?.takeIf { it.isNotEmpty() }
@@ -48,8 +51,10 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, change:
             enabled = enabled && value.manual && info?.candidates?.isNotEmpty() == true) {
             Text(selected ?: stringResource(if (value.manual) R.string.lens_choose else R.string.lens_unmatched))
         }
-        Text(info?.message ?: stringResource(R.string.lens_info_not_ready), style = MaterialTheme.typography.bodySmall,
+        Text(if (loading) stringResource(R.string.rendering) else info?.message ?: stringResource(R.string.lens_info_not_ready), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("lens.status"))
+        if (candidate == null || !candidate.hasDistortion || !candidate.hasTca) Text(stringResource(R.string.lens_no_calibration),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         info?.detectedLens?.takeIf { it.isNotEmpty() }?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

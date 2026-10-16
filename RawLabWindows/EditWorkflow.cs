@@ -137,12 +137,20 @@ public partial class MainWindow
     {
         var window = new BatchExportWindow(job, batchJournal) { Owner = this };
         batchWindow = window;
+        window.RunCompleted += (before, after, runFailedCount) =>
+        {
+            var succeeded = Math.Clamp(after.SucceededCount - before.SucceededCount, 0, UsageAnalytics.MaxCount);
+            var failed = Math.Clamp(runFailedCount, 0, UsageAnalytics.MaxCount);
+            var outcome = after.Interrupted ? BatchOutcome.Interrupted : after.Cancelled ? BatchOutcome.Cancelled :
+                failed > 0 || after.FailedCount > 0 ? BatchOutcome.Partial : BatchOutcome.Completed;
+            usageAnalytics.Record(new BatchExportCompletedEvent(outcome, succeeded, failed));
+        };
         window.BusyChanged += active => {
             var closeFailed=!active && closing && window.CloseFailed;
             if(closeFailed){RecoverFailedClose(window);return;}
             if(!active && !exporting && !closing)ResumePreview();
             RefreshControls(); RefreshBatchNotice();
-            if(!active && closing && !scheduler.Busy)FinishClose();
+            if(!active && closing && scheduler.Active==null)FinishClose();
         };
         window.Closed += (_, _) => {
             previousBatch = window.Discarded ? null : window.Job;

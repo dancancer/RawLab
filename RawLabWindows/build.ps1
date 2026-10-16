@@ -75,6 +75,7 @@ Copy-Item "$PSScriptRoot/Licenses/*" $licenses -Force
 Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md", "$PSScriptRoot/performance.md" $output -Force
 Copy-Item "$repo/LICENSE" $output -Force
 Copy-Item "$repo/LICENSE" "$licenses/RawLab-GPL-3.0.txt" -Force
+Copy-Item "$repo/LICENSE-ALIYUN-RUM-EXCEPTION" "$licenses/RawLab-Aliyun-RUM-Exception.txt" -Force
 Copy-Item "$repo/docs/licensing.md" "$licenses/RawLab-Licensing.md" -Force
 Copy-Item "$repo/lutools/flog-2-new/F-Log2_LUT_overview_Ver.2.0E.pdf" "$output/LUTs" -Force
 if ($Test) {
