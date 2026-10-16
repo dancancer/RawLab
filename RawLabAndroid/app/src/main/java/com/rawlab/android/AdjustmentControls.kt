@@ -50,7 +50,7 @@ internal val LocalAdjustmentHapticGate = staticCompositionLocalOf { AdjustmentHa
 @Composable
 internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
     enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false,
-    defaultValue: Float = 0f, resetEnabled: Boolean = enabled) {
+    defaultValue: Float = 0f, resetEnabled: Boolean = enabled, showReset: Boolean = true) {
     val step = when (label) {
         R.string.exposure -> .05f
         R.string.temperature -> 10f
@@ -79,7 +79,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                 modifier = Modifier.testTag("adjustment-value-$label")) {
                 Text(listOf(formatted, unit).filter { it.isNotBlank() }.joinToString(" "), fontFamily = FontFamily.Monospace)
             }
-            ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_value, enabled && resetEnabled, onReset)
+            if (showReset) ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_value, enabled && resetEnabled, onReset)
         }
         if (LocalDensity.current.fontScale > 1.3f) TextButton(onClick = { input = formatted; editing = true }, enabled = enabled,
             modifier = Modifier.testTag("adjustment-value-$label")) {

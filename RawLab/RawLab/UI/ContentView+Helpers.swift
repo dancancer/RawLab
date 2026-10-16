@@ -94,13 +94,32 @@ extension ContentView {
     }
 
     func adjustmentProgress(_ adjustment: AdjustmentKind) -> Double {
+        if adjustment == .temperature {
+            if viewModel.sourceKind == .raw, settings.whiteBalanceMode == .custom,
+               let camera = viewModel.rawWhiteBalance {
+                let temperatureOrigin = RawSettings.reciprocalSliderValue(for: camera.temperature)
+                let temperaturePosition = RawSettings.reciprocalSliderValue(for: settings.temperature)
+                let temperatureDelta = temperaturePosition - temperatureOrigin
+                let temperatureDistance = temperatureDelta < 0 ? temperatureOrigin : 1 - temperatureOrigin
+                let temperatureProgress = temperatureDistance > 0
+                    ? min(1, max(-1, temperatureDelta / temperatureDistance)) : 0
+                let tintOrigin = (camera.tint + 150) / 300
+                let tintPosition = (settings.tint + 150) / 300
+                let tintDelta = tintPosition - tintOrigin
+                let tintDistance = tintDelta < 0 ? tintOrigin : 1 - tintOrigin
+                let tintProgress = tintDistance > 0 ? min(1, max(-1, tintDelta / tintDistance)) : 0
+                return abs(temperatureProgress) >= abs(tintProgress) ? temperatureProgress : tintProgress
+            }
+            if viewModel.sourceKind == .raw {
+                return settings.masterRecipeID == nil ? 0 : settings.tint / 150
+            }
+            return adjustment.progress(in: settings)
+        }
         if adjustment == .tint && settings.masterRecipeID != nil { return settings.tint / 150 }
-        if viewModel.sourceKind == .raw,
-           adjustment == .temperature || adjustment == .tint {
+        if viewModel.sourceKind == .raw, adjustment == .tint {
             guard settings.whiteBalanceMode == .custom, let camera = viewModel.rawWhiteBalance else { return 0 }
-            let isTemperature = adjustment == .temperature
-            let origin = isTemperature ? RawSettings.reciprocalSliderValue(for: camera.temperature) : (camera.tint + 150) / 300
-            let position = isTemperature ? RawSettings.reciprocalSliderValue(for: settings.temperature) : (settings.tint + 150) / 300
+            let origin = (camera.tint + 150) / 300
+            let position = (settings.tint + 150) / 300
             let delta = position - origin
             let distance = delta < 0 ? origin : 1 - origin
             return distance > 0 ? min(1, max(-1, delta / distance)) : 0
@@ -185,6 +204,27 @@ extension ContentView {
         applySettingsChange(updated)
     }
 
+    func resetTool(_ adjustment: AdjustmentKind) {
+        if adjustment == .temperature || adjustment == .tint {
+            resetWhiteBalance()
+        } else {
+            reset(adjustment)
+        }
+    }
+
+    func resetSelectedAdjustment() {
+        guard let selectedAdjustment else { return }
+        resetTool(selectedAdjustment)
+    }
+
+    func resetWhiteBalance() {
+        var updated = settings
+        AdjustmentKind.resetWhiteBalance(in: &updated,
+                                          cameraTemperature: viewModel.rawWhiteBalance?.temperature,
+                                          cameraTint: viewModel.rawWhiteBalance?.tint)
+        applySettingsChange(updated)
+    }
+
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
         var updated = settings
         if mode == .custom,
@@ -226,7 +266,7 @@ extension ContentView {
             set: { value in
                 var updated = manualWhiteBalanceSettings
                 updated.temperature = RawSettings.temperature(forReciprocalSliderValue: value)
-                updated.whiteBalanceMode = .custom
+                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -240,7 +280,7 @@ extension ContentView {
                 var updated = manualWhiteBalanceSettings
                 updated.temperature = min(max(value.rounded(), RawSettings.temperatureRange.lowerBound),
                                           RawSettings.temperatureRange.upperBound)
-                updated.whiteBalanceMode = .custom
+                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )

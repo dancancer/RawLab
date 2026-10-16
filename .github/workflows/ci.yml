@@ -47,6 +47,7 @@ jobs:
           python scripts/ci/test_workflow.py
           python lutools/tests/test_cli_test_encoding.py
           python RawLabMac/tests/test_single_preview.py
+          python RawLabMac/tests/test_tool_group_ui.py
           git diff --check
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
@@ -105,6 +106,8 @@ jobs:
           bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
           bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
           bash RawLabMac/tests/edit-model.sh
+          bash RawLabMac/tests/presentation.sh
+          bash RawLabMac/tests/control-groups.sh
           bash Shared/tests/usage-analytics.sh
           bash Shared/tests/usage-transport.sh
           bash RawLabMac/tests/usage-model.sh
@@ -155,7 +158,7 @@ jobs:
             Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
             Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
             $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
-            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default'
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups'
           }
           finally {
             if (Test-Path build/windows-v08-results) {

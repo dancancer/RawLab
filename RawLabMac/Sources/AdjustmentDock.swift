@@ -82,7 +82,7 @@ struct AdjustmentDock: View {
                         }.buttonStyle(.plain).id("hsl").accessibilityLabel("HSL").accessibilityIdentifier("tool.hsl")
                             .accessibilityAddTraits(hslSelected ? .isSelected : [])
                             .help(L10n.text("色相、饱和度和明度")).disabled(model.result == nil)
-                        ForEach([AdjustmentParameter.temperature, .tint, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]) { tool($0) }
+                        ForEach([AdjustmentParameter.temperature, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]) { tool($0) }
                         geometryTool
                         lensTool
                     }.scrollTargetLayout().padding(.horizontal, 12)
@@ -107,7 +107,7 @@ struct AdjustmentDock: View {
         if geometrySelected { return "geometry" }
         if lensSelected { return "lens" }
         if hslSelected { return "hsl" }
-        if let selected { return selected.rawValue }
+        if let selected { return selected.isWhiteBalance ? AdjustmentParameter.temperature.rawValue : selected.rawValue }
         return dockCategory == .film ? "film" : "masterRecipe"
     }
 
@@ -174,12 +174,20 @@ struct AdjustmentDock: View {
 
     private func tool(_ parameter: AdjustmentParameter) -> some View {
         let spec = parameter.spec(for: model.settings)
+        let title = parameter.isWhiteBalance ? L10n.text("白平衡") : spec.title
         let value = model.settings[keyPath: spec.keyPath]
-        let changed = parameter.isPhotoEffect ? !model.settings.isEffectDefault(parameter) :
+        let changed = parameter.isWhiteBalance ? !model.settings.isWhiteBalanceDefault :
+            parameter.isPhotoEffect ? !model.settings.isEffectDefault(parameter) :
             (parameter == .denoiseMode ? model.settings.isDenoiseEnabled : value != spec.defaultValue)
-        let active = selected == parameter && !hslSelected && !lensSelected && !geometrySelected
-        let progress = parameter == .denoiseMode ? (changed ? 1.0 : 0.0) : spec.progress(for: value)
-        let valueText = parameter == .denoiseMode ?
+        let active = (selected == parameter || (parameter.isWhiteBalance && selected?.isWhiteBalance == true)) &&
+            !hslSelected && !lensSelected && !geometrySelected
+        let progress = parameter.isWhiteBalance ? [AdjustmentParameter.temperature, .tint].map {
+            $0.spec(for: model.settings).progress(for: model.settings[keyPath: $0.spec.keyPath])
+        }.max(by: { abs($0) < abs($1) }) ?? 0 :
+            parameter == .denoiseMode ? (changed ? 1.0 : 0.0) : spec.progress(for: value)
+        let valueText = parameter.isWhiteBalance ?
+            "\(L10n.text("色温")) \(AdjustmentParameter.temperature.spec.text(model.settings.temperature)) K, \(L10n.text("色调")) \(AdjustmentParameter.tint.spec.text(model.settings.tint))" :
+            parameter == .denoiseMode ?
             model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
         return Button { finishCurrentInput(); selected = parameter; hslSelected = false; onPreferredHeight(parameter == .grainAmount ? 288 : 252) } label: {
             VStack(spacing: 0) {
@@ -194,7 +202,7 @@ struct AdjustmentDock: View {
                     Image(systemName: parameter.symbol).font(.system(size: 19, weight: .regular))
                         .foregroundStyle(active ? Color.yellow : Color.primary)
                 }.frame(width: 40, height: 40)
-                toolCaption(spec.title)
+                toolCaption(title)
                     .foregroundStyle(active ? Color.yellow : Color.primary)
                 Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 3, height: 3)
             }.frame(width: 72, height: 70).contentShape(Rectangle())
@@ -202,13 +210,14 @@ struct AdjustmentDock: View {
         .buttonStyle(.plain).id(parameter.rawValue)
         .disabled(parameter.isWhiteBalance && model.settings.asShotWhiteBalance == nil)
         .disabled((parameter == .denoiseMode || parameter.isPhotoEffect) && model.result == nil)
-        .accessibilityLabel(spec.title).accessibilityValue(valueText)
+        .accessibilityLabel(title).accessibilityValue(valueText)
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("tool.\(parameter.rawValue)")
-        .help(parameter == .denoiseMode ? noiseReductionHelp : "\(spec.title)：\(valueText)")
+        .help(parameter == .denoiseMode ? noiseReductionHelp : "\(title)：\(valueText)")
         .contextMenu {
-            Button(L10n.format("重置%@", String(describing: spec.title))) {
-                if parameter.isPhotoEffect { model.settings.resetEffect(parameter) }
+            Button(L10n.format("重置%@", String(describing: title))) {
+                if parameter.isWhiteBalance { model.settings.resetWhiteBalance() }
+                else if parameter.isPhotoEffect { model.settings.resetEffect(parameter) }
                 else { model.settings.set(parameter, to: spec.defaultValue) }
             }.disabled(!changed)
         }

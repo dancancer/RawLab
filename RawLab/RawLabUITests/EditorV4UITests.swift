@@ -332,10 +332,16 @@ final class EditorV4UITests: XCTestCase {
     func testVignetteHighlightAvailabilityAndHSLChannelValues() throws {
         let app = try launchImportedEditor()
         try selectTool("vignette", in: app)
-        resetIfEnabled("effects.vignette.reset", in: app)
+        XCTAssertFalse(app.buttons["effects.vignette.reset"].exists,
+                       "Collapsed vignette keeps the group reset out of the compact surface")
+        XCTAssertFalse(app.buttons["effects.vignette.vignetteAmount.reset"].exists,
+                       "Collapsed vignette keeps the intensity reset out of the compact surface")
         let advanced = app.buttons["effects.vignette.advanced"].firstMatch
         try revealInPanel(advanced, in: app)
         advanced.tap()
+        XCTAssertTrue(app.buttons["effects.vignette.reset"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["effects.vignette.vignetteAmount.reset"].waitForExistence(timeout: 5))
+        resetIfEnabled("effects.vignette.reset", in: app)
         capture("v4-vignette-after-expand", in: app)
         let highlights = app.buttons["effects.vignette.vignetteHighlights.value"]
         XCTAssertTrue(highlights.waitForExistence(timeout: 5))
@@ -509,6 +515,21 @@ final class EditorV4UITests: XCTestCase {
 
     func testRasterJPEGExportConfirmationUsesCommittedValuesAndBlocksDirtyGeometry() throws {
         let app = try launchImportedEditor()
+        try selectTool("temperature", in: app)
+        XCTAssertEqual(app.buttons.matching(identifier: "tool.temperature").count, 1)
+        XCTAssertEqual(app.buttons["tool.temperature"].label, "White Balance")
+        XCTAssertFalse(app.buttons["tool.tint"].exists,
+                       "Tint remains an editable parameter, not a second toolbar entry")
+        let rasterTemperature = app.buttons["whiteBalance.temperature.value"]
+        let rasterTint = app.buttons["whiteBalance.tint.value"]
+        XCTAssertTrue(rasterTemperature.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(rasterTint.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.segmentedControls["whiteBalance.mode"].exists,
+                       "Raster white balance keeps both parameters without a RAW camera mode")
+        try setValue("7000", title: "Temperature", unit: "K", control: "whiteBalance.temperature", in: app)
+        try setValue("+12", title: "Tint", control: "whiteBalance.tint", in: app)
+        XCTAssertEqual(try number(rasterTemperature), 7000, accuracy: 0.0001)
+        XCTAssertEqual(try number(rasterTint), 12, accuracy: 0.0001)
         try selectTool("exposure", in: app)
         try setValue("+0.40", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try selectTool("geometry", in: app)
@@ -682,10 +703,28 @@ final class EditorV4UITests: XCTestCase {
         let current = try XCTUnwrap(wheel.value as? String, "Native picker value missing")
         let suffix = unit.isEmpty ? "" : " " + unit
         let nativeTitle = picker.label.isEmpty ? title : picker.label
-        let target = current.contains(nativeTitle + ",") ? nativeTitle + ", " + formatted + suffix
+        // UIPickerView uses grouped thousands in its row accessibility labels while
+        // the value context intentionally keeps the compact formatter. Preserve
+        // signed values such as +20 exactly as authored by the test.
+        let sign: String
+        if let first = formatted.first, first == "+" || first == "-" {
+            sign = String(first)
+        } else {
+            sign = ""
+        }
+        let magnitudeText = sign.isEmpty ? formatted : String(formatted.dropFirst())
+        let magnitude = Double(magnitudeText) ?? 0
+        let groupedMagnitude = abs(magnitude) >= 1000
+            ? NumberFormatter.localizedString(from: NSNumber(value: abs(magnitude)), number: .decimal)
+            : magnitudeText
+        let grouped = sign + groupedMagnitude
+        let target = current.contains(nativeTitle + ",") ? nativeTitle + ", " + grouped + suffix
             : !unit.isEmpty && current.contains(suffix) ? formatted + suffix : formatted
         wheel.adjust(toPickerWheelValue: target)
-        waitUntil { app.staticTexts["adjustment.wheel.draft"].label.contains(formatted) }
+        waitUntil {
+            let draft = app.staticTexts["adjustment.wheel.draft"].label
+            return draft.contains(formatted) || draft.contains(grouped)
+        }
     }
 
     private func setValue(_ formatted: String, title: String, unit: String = "", control: String, in app: XCUIApplication) throws {
@@ -719,7 +758,11 @@ final class EditorV4UITests: XCTestCase {
     private func number(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) throws -> Double {
         let value = try XCTUnwrap(element.value as? String, "Value missing for \(element.identifier)", file: file, line: line)
         let token = value.split(separator: " ").first.map(String.init) ?? value
-        return try XCTUnwrap(Double(token), "Non-numeric value: \(value)", file: file, line: line)
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        return try XCTUnwrap(Double(token) ?? formatter.number(from: token)?.doubleValue,
+                             "Non-numeric value: \(value)", file: file, line: line)
     }
 
     private func assertExposureGrid(_ value: Double, file: StaticString = #filePath, line: UInt = #line) {

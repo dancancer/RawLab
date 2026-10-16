@@ -449,6 +449,12 @@ struct Adjustments: Equatable, Codable {
         whiteBalanceMode = .asShot
     }
 
+    var isWhiteBalanceDefault: Bool {
+        [AdjustmentParameter.temperature, .tint].allSatisfy {
+            self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue
+        }
+    }
+
     mutating func resolveRawNoiseReductionSupport(_ supported: Bool) {
         supportsRawNoiseReduction = supported
         if !supported { rawNoiseReduction = 0 }
@@ -647,7 +653,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         return value
     }
     static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .tint, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
+                                    .saturation, .temperature, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"

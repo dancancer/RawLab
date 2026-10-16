@@ -22,6 +22,8 @@ public partial class PhotoEffectsPanel : UserControl
             (spec.Id==PhotoEffectParameter.VignetteAmount ? VignetteParameters : spec.IsVignette ? VignetteFineParameters : GrainParameters).Children.Add(row);
             row.Changed+=(number,dragging)=>{if(syncing || !IsEnabled)return;var next=new Adjustments{Effects=value};next.SetEffect(spec.Id,number);Publish(next.Effects,dragging);};
         }
+        VignetteDetails.Expanded+=(_,_)=>RefreshResetVisibility();
+        VignetteDetails.Collapsed+=(_,_)=>RefreshResetVisibility();
         Refresh(value,tool);
     }
     public void Refresh(PhotoEffectsSettings settings,PhotoEffectTool selected)
@@ -30,6 +32,7 @@ public partial class PhotoEffectsPanel : UserControl
         Title.Text=Loc.Text(selected==PhotoEffectTool.Vignette ? "暗角" : "颗粒");
         VignetteParameters.Visibility=VignetteDetails.Visibility=selected==PhotoEffectTool.Vignette ? Visibility.Visible : Visibility.Collapsed;
         GrainParameters.Visibility=selected==PhotoEffectTool.Grain ? Visibility.Visible : Visibility.Collapsed;
+        RefreshResetVisibility();
         foreach(var spec in PhotoEffectSpec.All)
         {
             var enabled=spec.Id switch {
@@ -45,6 +48,12 @@ public partial class PhotoEffectsPanel : UserControl
         syncing=false;
     }
     private void Publish(PhotoEffectsSettings next,bool dragging=false){Refresh(next,tool);Changed?.Invoke(value,dragging);}
+    private void RefreshResetVisibility()
+    {
+        var showVignetteResets=tool==PhotoEffectTool.Grain || VignetteDetails.IsExpanded;
+        ResetGroupButton.Visibility=showVignetteResets ? Visibility.Visible : Visibility.Collapsed;
+        rows[PhotoEffectParameter.VignetteAmount].ResetButton.Visibility=showVignetteResets ? Visibility.Visible : Visibility.Collapsed;
+    }
     private void ResetGroupClicked(object sender,RoutedEventArgs e)
     {
         var next=new Adjustments{Effects=value};next.ResetEffects(tool==PhotoEffectTool.Vignette);Publish(next.Effects);

@@ -246,6 +246,8 @@
     <string name="grain_roughness">粗糙度</string>
     <string name="reset_vignette">重置暗角</string>
     <string name="reset_grain">重置颗粒</string>
+    <string name="expand_vignette">展开暗角参数</string>
+    <string name="collapse_vignette">收起暗角参数</string>
     <string name="exposure_basis">曝光基准</string>
     <string name="hsl_unadjusted">未调整</string>
     <string name="hsl_adjusted">已调整</string>

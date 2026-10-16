@@ -246,6 +246,8 @@
     <string name="grain_roughness">Rugosité</string>
     <string name="reset_vignette">Réinitialiser la vignette</string>
     <string name="reset_grain">Réinitialiser le grain</string>
+    <string name="expand_vignette">Afficher les paramètres de vignettage</string>
+    <string name="collapse_vignette">Masquer les paramètres de vignettage</string>
     <string name="exposure_basis">Référence d\'exposition</string>
     <string name="hsl_unadjusted">Non ajusté</string>
     <string name="hsl_adjusted">Ajusté</string>

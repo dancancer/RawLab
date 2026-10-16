@@ -84,9 +84,28 @@ struct PresentationTests {
         panel.resize(to: 1000, available: 620)
         check(panel.height(available: 620) <= 310, "Panel resizing preserves half the small window for the canvas")
         let tools = AdjustmentParameter.photoTools
-        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction }),
-              "Photo tools expose every image adjustment exactly once")
-        check(tools.count == 12 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
+        check(tools.filter(\.isWhiteBalance) == [.temperature],
+              "White balance has one tool while retaining separate temperature and tint parameters")
+        wb.resetWhiteBalance()
+        check(wb.isWhiteBalanceDefault, "Unified white balance starts unchanged at the camera baseline")
+        wb.set(.tint, to: 35)
+        check(!wb.isWhiteBalanceDefault && wb.temperature == 5274,
+              "Tint-only edits mark the unified white-balance tool changed")
+        wb.resetWhiteBalance()
+        check(wb.isWhiteBalanceDefault && wb.tint == 12 && wb.whiteBalanceMode == .asShot,
+              "Unified white-balance reset restores both parameters and as-shot mode")
+        wb.applyMasterRecipe(.hamadaDaylightV2)
+        let recipeID = wb.masterRecipeID
+        let recipeExposure = wb.exposure
+        wb.set(.temperature, to: 8000)
+        wb.set(.tint, to: 35)
+        wb.resetWhiteBalance()
+        check(wb.isWhiteBalanceDefault && wb.temperature == 5274 && wb.tint == 0 &&
+              wb.masterRecipeID == recipeID && wb.exposure == recipeExposure,
+              "White-balance group reset keeps the recipe and restores its zero tint offset")
+        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction && $0 != .tint }),
+              "Photo tools expose each adjustment group exactly once")
+        check(tools.count == 11 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
               "Photo tools replace legacy FBDD with chroma denoising")
         for tool in tools {
             check(NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) != nil,

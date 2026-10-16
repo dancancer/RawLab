@@ -11,7 +11,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
     if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
@@ -69,7 +69,7 @@ Invoke-Check 'localization-ui' @($localizationRunner)
 Invoke-Check 'status-layout' @($runner,'--status-layout',"$results/status-layout")
 Invoke-Check 'appearance' @($runner,'--appearance',"$results/appearance")
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
-foreach($name in @('geometry','transform-ui','editor-review','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
+foreach($name in @('geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
     $arguments=@($runner,('--'+$name),$repo,$RawPath)
     if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
     Invoke-Check $name $arguments

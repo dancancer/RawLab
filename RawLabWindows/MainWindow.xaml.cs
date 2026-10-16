@@ -37,7 +37,7 @@ public partial class MainWindow : Window
     private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
     // The modeless batch owns its lifetime; foreground completion must not clear it.
     private bool exporting=>foregroundBusy || batchWindow?.Busy==true;
-    private bool compare,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,swipe;
+    private bool compare,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance,swipe;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
     private bool choosingHsl,autoExposing;
@@ -132,6 +132,14 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Effects=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
+        WhiteBalanceEditor.Changed+=(parameter,value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Set(parameter,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        WhiteBalanceEditor.ResetRequested+=()=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.ResetWhiteBalance();RefreshControls();MarkEdited();Schedule();
+        };
         HslEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Hsl=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
@@ -170,10 +178,14 @@ public partial class MainWindow : Window
         Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();
         Tools.Children.Add(FilmCategory);Tools.Children.Add(MasterRecipeCategory);
         foreach(var id in new[]{Parameter.Strength,Parameter.Exposure,Parameter.Highlights,Parameter.Shadows,Parameter.Contrast,
-            Parameter.ToneCurve,Parameter.Saturation,Parameter.Temperature,Parameter.Tint,Parameter.Sharpening})
+            Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
         {
-            if(id==Parameter.Temperature)Tools.Children.Add(HslCategory);
-            if(id==Parameter.Sharpening)Tools.Children.Add(DenoiseCategory);
+            if(id==Parameter.Sharpening)
+            {
+                Tools.Children.Add(HslCategory);
+                Tools.Children.Add(WhiteBalanceCategory);
+                Tools.Children.Add(DenoiseCategory);
+            }
             var spec=ParameterSpec.All[(int)id];
             var ring=new AdjustmentRing{Width=40,Height=40};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=20,Height=20});
@@ -182,7 +194,7 @@ public partial class MainWindow : Window
             var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
             AutomationProperties.SetName(button,Loc.Text(spec.Title));
-            button.Click+=(_,_)=>{if(!ResolveTransformDraft())return;OrdinaryParameter.RestoreText();choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
+            button.Click+=(_,_)=>{if(!ResolveTransformDraft())return;OrdinaryParameter.RestoreText();choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
         foreach(var (tool,title,icon) in new[] {
@@ -197,14 +209,15 @@ public partial class MainWindow : Window
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? Loc.Text("Vignette / 暗角") : Loc.Text("Grain / 颗粒")};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
-            button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
+            button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
         Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);
     }
-    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void HslCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=true;choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void HslCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=true;choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
+    private void WhiteBalanceCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingWhiteBalance=true;choosingHsl=choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
     private void LensCategoryClicked(object sender,RoutedEventArgs e)=>BeginTransform(TransformTool.Lens);
     private void GeometryCategoryClicked(object sender,RoutedEventArgs e)=>BeginTransform(TransformTool.Geometry);
     private void BuildFilms()
@@ -261,7 +274,7 @@ public partial class MainWindow : Window
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
             foreach(var pair in recipeButtons)pair.Value.Tag=pair.Key==(settings.MasterRecipeID ?? "") ? "selected" : null;
-            ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
+            ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
             LensSurface.Visibility=LensEditor.Visibility;
             LensEditor.IsEnabled=file!=null && !raster && !exporting;LensEditor.Refresh(PreviewLens,result?.Lens);
@@ -276,6 +289,22 @@ public partial class MainWindow : Window
             HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);
             HslCategory.Tag=choosingHsl ? "selected" : null;
             HslCategoryRing.Selected=choosingHsl;HslCategoryRing.Progress=settings.Hsl.IsIdentity ? 0 : 1;HslCategoryRing.InvalidateVisual();
+            WhiteBalanceSurface.Visibility=choosingWhiteBalance ? Visibility.Visible : Visibility.Collapsed;
+            WhiteBalanceEditor.IsEnabled=file!=null && !raster && !exporting;
+            WhiteBalanceEditor.Refresh(settings,WhiteBalanceEditor.IsEnabled && settings.AsShot!=null);
+            WhiteBalanceCategory.IsEnabled=file!=null && !raster && !exporting;
+            WhiteBalanceCategory.Tag=choosingWhiteBalance ? "selected" : null;
+            WhiteBalanceCategoryRing.Selected=choosingWhiteBalance;
+            var temperatureSpec=ParameterSpec.All[(int)Parameter.Temperature];
+            var temperatureOrigin=temperatureSpec.Position(settings.Default(Parameter.Temperature));
+            var temperatureOffset=temperatureSpec.Position(settings[Parameter.Temperature])-temperatureOrigin;
+            var temperatureProgress=temperatureOffset==0 ? 0 : temperatureOffset/(temperatureOffset<0 ? temperatureOrigin : 1-temperatureOrigin);
+            var tintSpec=ParameterSpec.All[(int)Parameter.Tint];
+            var tintOrigin=tintSpec.Position(settings.Default(Parameter.Tint));
+            var tintOffset=tintSpec.Position(settings[Parameter.Tint])-tintOrigin;
+            var tintProgress=tintOffset==0 ? 0 : tintOffset/(tintOffset<0 ? tintOrigin : 1-tintOrigin);
+            WhiteBalanceCategoryRing.Progress=Math.Abs(temperatureProgress)>=Math.Abs(tintProgress) ? temperatureProgress : tintProgress;
+            WhiteBalanceCategoryRing.InvalidateVisual();
             AutoExposureButton.Visibility=selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
             AutoExposureButton.IsEnabled=file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
@@ -305,8 +334,8 @@ public partial class MainWindow : Window
             ApplyDraftButton.IsEnabled=CanApplyTransform;
             foreach(var (id,controls) in toolButtons)
             {
-                controls.Button.IsEnabled=file!=null && (!raster || id is not(Parameter.Temperature or Parameter.Tint));
-                var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingLens && !choosingGeometry && id==selectedParameter;
+                controls.Button.IsEnabled=file!=null && !exporting;
+                var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;

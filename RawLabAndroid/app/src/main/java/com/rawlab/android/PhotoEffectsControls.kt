@@ -9,9 +9,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
@@ -22,8 +28,11 @@ internal fun PhotoEffectsControls(
     enabled: Boolean,
     onChange: (PhotoEffectsSettings, Boolean) -> Unit,
 ) {
-    val parameters = PhotoEffectParameter.entries.filter { it.isVignette == vignette }
     val amount = if (vignette) PhotoEffectParameter.VIGNETTE_AMOUNT else PhotoEffectParameter.GRAIN_AMOUNT
+    var advanced by rememberSaveable(vignette) { mutableStateOf(!vignette) }
+    val parameters = PhotoEffectParameter.entries.filter {
+        it.isVignette == vignette && (!vignette || advanced || it == amount)
+    }
     val groupTitle = if (vignette) R.string.vignette else R.string.grain
     val resetLabel = if (vignette) R.string.reset_vignette else R.string.reset_grain
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -31,10 +40,17 @@ internal fun PhotoEffectsControls(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(stringResource(groupTitle), style = MaterialTheme.typography.labelLarge)
-            ToolIcon(Icons.Outlined.RestartAlt, resetLabel, enabled = enabled && !value.isEffectDefault(vignette)) {
-                onChange(value.resetEffects(vignette), false)
+            Text(stringResource(groupTitle), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            if (vignette) TextButton(
+                onClick = { advanced = !advanced },
+                modifier = Modifier.testTag("effects.vignette.advanced"),
+            ) {
+                Text(stringResource(if (advanced) R.string.collapse_vignette else R.string.expand_vignette))
             }
+            if (!vignette || advanced) ToolIcon(Icons.Outlined.RestartAlt, resetLabel,
+                enabled = enabled && !value.isEffectDefault(vignette)) {
+                    onChange(value.resetEffects(vignette), false)
+                }
         }
         parameters.forEach { parameter ->
             val active = enabled && when {
@@ -50,6 +66,7 @@ internal fun PhotoEffectsControls(
                 enabled = active,
                 onValue = { next, dragging -> onChange(value.withEffect(parameter, next), dragging) },
                 onReset = { onChange(value.withEffect(parameter, parameter.defaultValue), false) },
+                showReset = !vignette || advanced,
             )
             if (parameter == PhotoEffectParameter.VIGNETTE_HIGHLIGHTS && value.vignetteAmount >= 0f)
                 Text(stringResource(R.string.vignette_highlights_unavailable), Modifier.padding(horizontal = 16.dp),
