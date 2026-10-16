@@ -167,3 +167,26 @@ Windows 不应再次用 C# 重写 parser，也不应为迎合协议而把 UI 曝
 
 依照仓库单一 owner 约定，已就上述 Windows 接口向协调方请求明确接入/写入权安排。
 等待期间不复制 #53、不修改 owner 工作树、不 merge/rebase 未合 PR，不声明 Windows 完成。
+
+## 2026-10-16 正式集成接续
+
+协调已重新指定本会话为唯一 Mac owner，沿用 `bb72` 和 `feature/agent-complete-edits`。
+原始冻结 `82946eb4d3c99b0e6edffdc868c3c393539fc2e2`、私有素材和上文验证证据保留。
+本阶段新增授权允许门槛通过后 push 当前分支、创建目标 development 的唯一 PR；合并仍由协调执行。
+
+准备时实际引用：`development=435feda1d6e44cc5a53a4a0c73208ce96fc6ee0b`（#57 RUM 已合），
+`PR #53=7061b65187ae69707e2e2da3e3c214a66184a123`（未合）。只读合并分析没有文本冲突，
+但未执行分支合并、未声称当前组合已验证。共享 `lutools` 由 Windows owner 先集成，
+本会话等协调提供 #53 已合的新目标 SHA 后再 merge，保留目标的 WIC/Windows UTF-8/平台能力。
+
+Mac-specific 范围、RUM 必须保留的语义、链接检查及定向验收计划见
+[Mac 集成计划](superpowers/plans/2026-10-16-macos-agent-integration.md)。准备阶段不启动真实 SDK，
+不发送事件，不改统计同意状态，不占用桌面，也不在旧主工作树或其他 owner 目录写入。
+
+准备审计确认：Mac 功能相对原始基线涉及 27 个 Mac 路径；当前与 RUM 的语义重叠集中在
+`EditorModel.swift`、`BatchExportModel.swift`、`RawLabMacApp.swift`。`FilmDock`、About 隐私区块、
+终止 delegate 和 Shared usage 定义保留目标版本。新 Agent/raster 测试不编译两个 Model，
+无需额外链接厂商 SDK；隔离对比 harness 已通过 Shared glob 带齐默认依赖。
+`usage-model.sh` 的显式 source/link 闭包需要在正式集成后补齐现有 Master/HSL/geometry/crop、
+Lensfun/TIFF 依赖，并新增 raster 成功/失败、显式胶片选择和混合批量的事件组合回归。
+上述是准备阶段的源码审计，不是新目标上的构建或运行通过。
