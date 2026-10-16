@@ -2,7 +2,8 @@
 
 Date: 2026-10-16. UI worktree started from the CI/macOS-14 preparation
 revision `1949b6d`. These changes are separate from that CI PR and from the
-new bundled-LUT work. No UI change has been pushed or formally released.
+new bundled-LUT work. Initial verification preceded delivery; consult the UI
+PR for the current push, CI and merge state. No formal release is authorized.
 The final local branch is rebased onto CI preparation revision `8b1b841`;
 only its release-evidence document differs from the tested pre-rebase tree.
 All production sources, tests and workflow hooks are byte-identical.
@@ -136,11 +137,12 @@ the 28 checks were rerun after that correction. Package SHA-256:
 
 ## Regression Hooks and Cleanup
 
-The local UI branch adds macOS presentation/control-group/source checks and the
+The UI branch adds macOS presentation/control-group/source checks and the
 Windows `tool-groups` suite to the hosted workflow. Six workflow policy tests
-and actionlint passed. These unpushed UI hooks are not part of CI PR #59's
-current hosted run; Android JVM tests use the existing job, while iOS CI only
-compiles the UI tests and does not claim simulator execution.
+and actionlint passed. These UI hooks are separate from CI PR #59's baseline
+and require their own current-head CI run. Android JVM tests use the existing
+job, while iOS CI only compiles the UI tests and does not claim simulator
+execution.
 
 The private macOS acceptance profile/app and input copy were removed without
 changing the original fixture or user edit records. Unneeded local native
