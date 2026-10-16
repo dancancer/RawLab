@@ -1,8 +1,9 @@
 # Documentation
 
 Use the guides below for the current source. Published downloads remain
-[v0.6.0, build 10](releases/v0.6.0.md); [v0.7.0 preparation](releases/v0.7.0-preparation.md)
-tracks the next version.
+[v0.6.0, build 10](releases/v0.6.0.md). Current development release gates are in
+[v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
+retain their original candidate scope.
 
 ## Using RawLab
 
@@ -27,6 +28,16 @@ tracks the next version.
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
 - [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
 - [Licensing and attribution](licensing.md)
+- [Hosted verification and its coverage boundaries](ci.md)
+
+## v0.8.0 Preparation
+
+- [Release blockers, scope decisions and remaining acceptance](releases/v0.8.0-preparation.md)
+- [macOS Agent and ordinary-image verification](verification-agent-v08.md)
+- [Windows Agent and integrated-source verification](../RawLabWindows/VERIFICATION-agent-v08.md)
+- [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
+- [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
+- [Optional local RUM and default SDK-free verification](verification-rum-analytics-2026-10-16.md)
 
 ## v0.7.0 Candidate
 
