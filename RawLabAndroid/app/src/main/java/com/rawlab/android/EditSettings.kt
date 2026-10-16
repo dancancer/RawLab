@@ -40,6 +40,11 @@ data class EditSettings(
         require(displayChromaDenoise in 0..2)
     }
     fun reset() = EditSettings(film = film)
+    fun resetWhiteBalance(asShotTemperature: Float?, asShotTint: Float?): EditSettings = copy(
+        customWb = false,
+        temperature = asShotTemperature ?: 6500f,
+        tint = if (recipeID == null) asShotTint ?: 0f else 0f,
+    )
     val recipeScale get() = if (recipeID == null) 1f else strength
     val renderHsl get() = hsl.scaled(recipeScale)
     fun applyRecipe(recipe: MasterRecipe) = copy(film = "neutral", recipeID = recipe.id, strength = 1f,

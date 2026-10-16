@@ -21,7 +21,7 @@ public partial class MainWindow
         savedTransformCompare=compare;savedTransformSwipe=swipe;
         transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
         compare=swipe=false;NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
-        choosingRecipes=choosingHsl=choosingFilm=choosingDenoise=choosingPhotoEffects=false;
+        choosingRecipes=choosingHsl=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
         choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
         if(choosingGeometry){GeometryEditor.Begin(transform.Geometry);ResultCanvas.GeometryEditing=true;}
         viewport.Fit();interacting=false;RefreshControls();Schedule();ResultCanvas.Focus();

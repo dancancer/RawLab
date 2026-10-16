@@ -80,6 +80,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var pendingLeave by remember { mutableStateOf<(() -> Unit)?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
+    LaunchedEffect(tool) { if (tool == 9) tool = 8 }
     val surroundingAlpha by animateFloatAsState(if (adjusting) .32f else 1f, tween(160), label = "adjustment-context")
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("editor", android.content.Context.MODE_PRIVATE) }
@@ -311,8 +312,8 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     var reset by rememberSaveable { mutableStateOf(false) }
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (expanded && (tool == 8 || tool == 9)) {
-                TextButton(onClick = { onEdit(edits.copy(customWb = false, tint = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f), false) }, enabled = state.controlsEnabled && calibrated,
+            if (expanded && tool == 8) {
+                TextButton(onClick = { onEdit(edits.resetWhiteBalance(state.preview?.temperature, state.preview?.tint), false) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
             } else {
                 val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.name
@@ -421,15 +422,15 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 { value, dragging -> onEdit(edits.copy(toneCurve = value / 100), dragging) }, { onEdit(edits.copy(toneCurve = 0f), false) })
             7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(saturation = value / 100), dragging) }, { onEdit(edits.copy(saturation = 0f), false) })
-            8, 9 -> {
+            8 -> {
                 if (!calibrated) Text(stringResource(R.string.wb_unavailable), Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
-                else {
-                    if (tool == 8) NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
+                else Column {
+                    NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = true, temperature = value), dragging) },
                         { onEdit(edits.copy(temperature = state.preview?.temperature ?: 6500f,
                             customWb = edits.recipeID == null && edits.tint != state.preview?.tint), false) }, reciprocal = true,
                             defaultValue = state.preview?.temperature ?: edits.temperature)
-                    else NumericControl(R.string.tint, edits.tint, -150f..150f, "", state.controlsEnabled,
+                    NumericControl(R.string.tint, edits.tint, -150f..150f, "", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = if (edits.recipeID == null) true else edits.customWb, tint = value), dragging) },
                         { onEdit(edits.copy(tint = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f,
                             customWb = edits.customWb && edits.temperature != state.preview?.temperature), false) },

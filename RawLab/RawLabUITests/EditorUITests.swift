@@ -325,6 +325,9 @@ final class EditorUITests: XCTestCase {
             XCTAssertTrue(mode.label.contains(c[1]), mode.label)
 
             tapTool("temperature")
+            XCTAssertTrue(app.buttons["tool.temperature"].isSelected)
+            XCTAssertFalse(app.buttons["tool.tint"].exists,
+                           "White balance keeps tint as a parameter rather than a second tool")
             let wb = app.segmentedControls["whiteBalance.mode"]
             XCTAssertTrue(wb.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(wb.buttons[c[4]].exists && wb.buttons[c[5]].exists, app.debugDescription)
@@ -639,6 +642,9 @@ final class EditorUITests: XCTestCase {
         }
         capture("effects-vignette-portrait")
         scrollPanel(up: false)
+        XCTAssertFalse(app.buttons["effects.vignette.reset"].exists,
+                       "Collapsed vignette does not expose the group reset")
+        app.buttons["effects.vignette.advanced"].tap()
         app.buttons["重置暗角"].tap()
         XCTAssertEqual(app.textFields["effects.vignette.value.vignetteAmount"].value as? String, "0")
         XCTAssertFalse(app.sliders["effects.vignette.slider.vignetteHighlights"].isEnabled)
@@ -971,8 +977,10 @@ final class EditorUITests: XCTestCase {
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 32, height: 32))
             let pixels = buffer.bindMemory(to: UInt8.self)
             return stride(from: 0, to: pixels.count, by: 4).filter { offset in
-                Double(pixels[offset]) > 100 && Double(pixels[offset]) > Double(pixels[offset + 1]) * 1.8 &&
-                    Double(pixels[offset]) > Double(pixels[offset + 2]) * 1.8
+                let red = Double(pixels[offset])
+                let green = Double(pixels[offset + 1])
+                let blue = Double(pixels[offset + 2])
+                return red > 100 && red > green * 1.8 && red > blue * 1.8
             }.count
         }
         return redPixels > 4

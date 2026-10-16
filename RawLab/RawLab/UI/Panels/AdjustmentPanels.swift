@@ -33,7 +33,7 @@ extension ContentView {
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if let adjustment = selectedAdjustment {
-            if (adjustment == .temperature || adjustment == .tint), viewModel.sourceKind == .raw {
+            if adjustment == .temperature || adjustment == .tint {
                 whiteBalancePanel
                     .disabled(!viewModel.hasImage || editingLocked)
             } else {
@@ -107,33 +107,36 @@ extension ContentView {
 
     var whiteBalancePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker(L10n.text("白平衡模式"), selection: Binding(
-                get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
-            )) {
-                Text(L10n.text("拍摄时")).tag(RawWhiteBalanceMode.camera)
-                Text(L10n.text("自定义")).tag(RawWhiteBalanceMode.custom)
+            if viewModel.sourceKind == .raw {
+                Picker(L10n.text("白平衡模式"), selection: Binding(
+                    get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
+                )) {
+                    Text(L10n.text("拍摄时")).tag(RawWhiteBalanceMode.camera)
+                    Text(L10n.text("自定义")).tag(RawWhiteBalanceMode.custom)
+                }
+                .pickerStyle(.segmented)
+                .id(localizationLocale.identifier)
+                .frame(minHeight: 44)
+                .disabled(viewModel.rawWhiteBalance == nil)
+                .accessibilityIdentifier("whiteBalance.mode")
             }
-            .pickerStyle(.segmented)
-            .id(localizationLocale.identifier)
-            .frame(minHeight: 44)
-            .disabled(viewModel.rawWhiteBalance == nil)
-            .accessibilityIdentifier("whiteBalance.mode")
 
             AdjustmentControl(title: L10n.text("色温"), value: whiteBalanceTemperatureBinding,
                               range: RawSettings.temperatureRange, step: 10,
-                              defaultValue: viewModel.rawWhiteBalance?.temperature ?? .nan,
+                              defaultValue: whiteBalanceTemperatureDefault,
                               unit: "K", formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
                               reciprocal: true, identifier: "whiteBalance.temperature",
                               onEditingChanged: setSliderEditing)
-                .disabled(viewModel.rawWhiteBalance == nil)
+                .disabled(viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil)
             AdjustmentControl(title: L10n.text(settings.masterRecipeID == nil ? "色调" : "色调偏移"), value: whiteBalanceTintBinding,
                               range: RawSettings.tintRange, step: 1,
                               defaultValue: whiteBalanceTintDefault,
                               formatter: { String(format: $0 == 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
                               identifier: "whiteBalance.tint", onEditingChanged: setSliderEditing)
-                .disabled((settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil) || viewModel.rawWhiteBalance == nil)
+                .disabled((viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
+                          (viewModel.sourceKind == .raw && settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil))
 
-            if let whiteBalance = viewModel.rawWhiteBalance {
+            if viewModel.sourceKind == .raw, let whiteBalance = viewModel.rawWhiteBalance {
                 Text(settings.whiteBalanceMode == .camera
                      ? String(format: L10n.text("拍摄时：%.0f K · 色调 %+.0f"), whiteBalance.temperature, whiteBalance.tint)
                      : L10n.text("自定义白平衡"))
@@ -141,7 +144,7 @@ extension ContentView {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(rulerFocusOpacity)
-            } else {
+            } else if viewModel.sourceKind == .raw {
                 Text(L10n.text("缺少有效相机校准，保留拍摄时白平衡"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -155,7 +158,7 @@ extension ContentView {
     private var whiteBalanceTemperatureBinding: Binding<Double> {
         let number = temperatureNumberBinding()
         return Binding(get: { number.wrappedValue }, set: { value in
-            if value == viewModel.rawWhiteBalance?.temperature {
+            if value == whiteBalanceTemperatureDefault {
                 reset(.temperature)
             } else {
                 number.wrappedValue = value
@@ -163,8 +166,12 @@ extension ContentView {
         })
     }
 
+    private var whiteBalanceTemperatureDefault: Double {
+        viewModel.rawWhiteBalance?.temperature ?? RawSettings.default.temperature
+    }
+
     private var whiteBalanceTintDefault: Double {
-        guard let whiteBalance = viewModel.rawWhiteBalance else { return .nan }
+        guard let whiteBalance = viewModel.rawWhiteBalance else { return 0 }
         return settings.masterRecipeID == nil ? whiteBalance.tint : 0
     }
 
@@ -177,7 +184,7 @@ extension ContentView {
             }
             var updated = settings
             updated.tint = min(max(value.rounded(), RawSettings.tintRange.lowerBound), RawSettings.tintRange.upperBound)
-            if updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
+            if viewModel.sourceKind == .raw, updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
             applySettingsChange(updated)
         })
     }

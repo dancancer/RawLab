@@ -1,8 +1,8 @@
 # RawLab Mac
 
-原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。支持独立构建最低 macOS 15 的 Apple Silicon 和 Intel 版本；macOS 15 真机运行仍需验证。默认本机构建继续使用现有 Homebrew 依赖和 macOS 26 目标。
+原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。0.8 的最低支持目标为 macOS 14，保留 Apple Silicon 和 Intel。应用和源码依赖默认以 14.0 编译，构建目录按最低系统与架构隔离；macOS 14 真机运行验收仍待完成。旧版已发布包的系统要求不因此改变。
 
-A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ pipeline with the CLI and iOS client. Separate Apple Silicon and Intel builds can target macOS 15; runtime verification on macOS 15 hardware is still pending. The default local build retains the existing Homebrew dependencies and macOS 26 target.
+A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and iOS client. The v0.8 compatibility target is macOS 14 on Apple Silicon and Intel. App and source-built dependencies default to deployment target 14.0, with dependency outputs isolated by target and architecture. Runtime acceptance on macOS 14 is still pending; already-published packages keep their original requirements.
 
 ## 功能预览 / Preview
 
@@ -52,18 +52,17 @@ bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
 
-当前 LUT 接入分支含再分发授权尚未确认的本地验证资源，默认构建会明确阻止打包。
-仅私有验证时使用 `RAWLAB_ALLOW_UNCLEARED_LUTS=1 bash RawLabMac/build.sh`；
-`RAWLAB_RELEASE=1` / `CONFIGURATION=Release` 仍会失败，不能用于分发。
-清单、改造约定和解除条件见 [LUT 接入记录](../docs/luts/README.md)。
+当前 LUT 接入含 28 个再分发授权尚未确认的第三方资源。仓库 owner 已允许公开源码和
+`development` 集成，但不构成原作者许可或正式发布授权；编译不受此记录阻断。
+清单、改造约定和未解决风险见 [LUT 接入记录](../docs/luts/README.md)。
 
-依赖 CMake、pkg-config、LibRaw 0.22.2+ 和 Apple Command Line Tools。Panasonic S5 II 的 RW2 使用 encoding 8，旧版 LibRaw 0.21.x 会错误解码为噪点。若 Homebrew 版本不足，使用下方源码依赖构建，不要只替换应用内动态库，因为 LibRaw 0.22 改变了 ABI。脚本默认以 26.0 为 deployment target；具备更低版本依赖时可显式设置 `MACOSX_DEPLOYMENT_TARGET`。CLT 27 的 SwiftUI 宏插件不完整时，脚本使用本机已有的 26.5 SDK，也可用 `SDKROOT` 指定。
+依赖 CMake 3.24+、pkg-config、Python 3.11+ 和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
 
-Requires CMake, pkg-config, LibRaw 0.22.2+ and Apple Command Line Tools. Panasonic S5 II RW2 uses encoding 8, which LibRaw 0.21.x incorrectly decodes as noise. If Homebrew is older, use the source dependency build below; do not replace only the bundled dylib because LibRaw 0.22 changes its ABI. The default deployment target is 26.0. Set `MACOSX_DEPLOYMENT_TARGET` only when the dependencies also support the lower target. When the CLT 27 SwiftUI macro plugin is unavailable, the script uses the locally installed 26.5 SDK; `SDKROOT` can override it.
+Requires CMake 3.24+, pkg-config, Python 3.11+ and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.
 
-构建脚本打包所需 Homebrew 动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
+构建脚本打包源码构建的动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
 
-The build script embeds the required Homebrew libraries and applies a local ad-hoc signature. It does not notarize the app or change Xcode's license acceptance state.
+The build script embeds the source-built libraries and applies a local ad-hoc signature. It does not notarize the app or change Xcode's license acceptance state.
 
 构建时会重新复制动态依赖、将递归依赖改为应用内 `@rpath`，并运行 `tests/bundle.sh` 检查不存在本机 Homebrew 路径。依赖许可证随应用保存在 `Contents/Resources/Licenses`；[第三方说明](Resources/ThirdPartyNotices.md)记录来源，Release 同时提供 LibRaw 对应版本的源代码归档。
 
@@ -73,7 +72,7 @@ Each build refreshes the embedded libraries, rewrites transitive dependencies to
 
 The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the RAW-to-render color transformation, without camera, aperture or brand lettering. The source is `Resources/AppIcon.png`; `build-icon.sh` generates a native 16-1024px `.icns`, registered through `CFBundleIconFile`. Generation provenance is in `Resources/AppIcon.md`.
 
-## macOS 15 双架构构建 / macOS 15 Builds
+## macOS 14 双架构构建 / macOS 14 Builds
 
 从固定版本的上游源码重建第三方动态库，分别输出两个应用，避免覆盖默认产物。需要 CMake、pkg-config、make 和 Apple Command Line Tools；依赖下载使用 curl。Intel 的 libjpeg SIMD 优化需要可选的 NASM，缺失时仍可正常解码。保留 OpenMP、JPEG、DNG deflate 和 LCMS；LibRaw 0.22 不再启用旧 RedCine/JasPer 路径，不承诺原有 JPEG2000 覆盖。
 
@@ -84,14 +83,12 @@ Rebuild third-party libraries from pinned upstream source archives and produce t
 Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
 
 ```bash
-for arch in arm64 x86_64; do
-    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 bash RawLabMac/build-dependencies.sh
-    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 \
-      PKG_CONFIG_PATH="$PWD/build/macos15-deps/$arch/install/lib/pkgconfig" \
-      RAWLAB_BUILD_DIR="$PWD/lutools/build-macos15-$arch" \
-      RAWLAB_APP_PATH="$PWD/build/macos15-$arch/RawLab Mac.app" \
-      bash RawLabMac/build.sh
-done
+# Run independently on each target-architecture host.
+arch="$(uname -m)"
+RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=14.0 \
+  RAWLAB_BUILD_DIR="$PWD/lutools/build-macos14-$arch" \
+  RAWLAB_APP_PATH="$PWD/build/macos14-$arch/RawLab Mac.app" \
+  bash RawLabMac/build.sh
 ```
 
 打包校验会检查主程序及所有内嵌动态库的架构、最低系统版本、签名和依赖完整性。新包仍为 ad-hoc 签名，不是已公证发行版。

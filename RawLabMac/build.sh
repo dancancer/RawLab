@@ -8,11 +8,10 @@ if [ -f "$ROOT/Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md" ]; then
     fi
 fi
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-ARCH="${RAWLAB_ARCH:-$(uname -m)}"
-case "$ARCH" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture: $ARCH" >&2; exit 1 ;; esac
+source "$ROOT/RawLabMac/build-env.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
-DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}"
+DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
 RUM_FLAGS=(-swift-version 5)
 if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
     if [ "${RAWLAB_RELEASE:-0}" = 1 ] || [ "${CONFIGURATION:-}" = Release ]; then
@@ -29,9 +28,8 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
     RUM_LIB="$RUM_BUILD/AlibabaCloud_RUM_macOS_0.4.4/lib/$ARCH/Release"
     RUM_FLAGS+=(-D RAWLAB_RUM_LOCAL -I "$RUM_BUILD/module" -L "$RUM_LIB" -lalibabacloud_rum)
 fi
-CHROMA_PREFIX="${RAWLAB_DEPENDENCY_PREFIX:-$ROOT/build/macos15-deps/$ARCH/install}"
-LENS_PREFIX="$ROOT/build/lensfun/$ARCH/install"
-export PKG_CONFIG_PATH="$LENS_PREFIX/lib/pkgconfig:$CHROMA_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+CHROMA_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
+LENS_PREFIX="$RAWLAB_LENS_PREFIX"
 if ! pkg-config --exists rawlab-dng-sdk; then
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
 fi
@@ -42,7 +40,7 @@ RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
 RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
 RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-tiff-dependency.sh"
 cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON
-cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu)"
+cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
 "$BUILD/dng_jxl_tests"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/MasterRecipes" "$APP/Contents/Resources/MasterRecipeIcons" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
@@ -55,6 +53,7 @@ cp "$ROOT/RawLabMac/Resources/ThirdPartyNotices.md" "$APP/Contents/Resources/Lic
 mkdir -p "$APP/Contents/Resources/Lensfun" "$APP/Contents/Resources/Licenses/Lensfun"
 cp -R "$ROOT/lutools/third_party/lensfun/version_1/." "$APP/Contents/Resources/Lensfun/"
 cp "$ROOT/lutools/third_party/lensfun/"*.txt "$ROOT/lutools/third_party/lensfun/"*.md "$APP/Contents/Resources/Licenses/Lensfun/"
+cp -R "$LENS_PREFIX/licenses/lensfun/." "$APP/Contents/Resources/Licenses/Lensfun/"
 OPENCV_PREFIX="$(pkg-config --variable=prefix opencv4)"
 mkdir -p "$APP/Contents/Resources/Licenses/OpenCV"
 cp -R "$OPENCV_PREFIX/share/licenses/opencv4/." "$APP/Contents/Resources/Licenses/OpenCV/"

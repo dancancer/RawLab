@@ -23,12 +23,12 @@ internal static class PhotoFeatureChecks
         Console.WriteLine("PASS " + name); checks++;
     }
 
-    private static object? Field(object value, string name) => value.GetType()
+    internal static object? Field(object value, string name) => value.GetType()
         .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(value);
     private static void SetField(object value, string name, object? data) => value.GetType()
         .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(value, data);
-    private static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-    private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+    internal static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+    internal static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
         {
@@ -153,52 +153,7 @@ internal static class PhotoFeatureChecks
             Click(window.InfoButton);
             InteractionChecks.PumpUntil(() => window.InfoFileText.Text.Contains("source.ARW"));
             Check(!window.InfoFileText.Text.Contains("target.ARW"), "Rapid photo switches never publish the previous file metadata");
-            window.ValueSlider.Value = .625; InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
-            var grainTool = window.Tools.Children.OfType<Button>().Single(button =>
-                AutomationProperties.GetAutomationId(button) == "Grain");
-            Click(grainTool);
-            window.UpdateLayout();
-            var grainAmount = Descendants<TextBox>(window).Single(field =>
-                AutomationProperties.GetName(field) == "颗粒强度数值");
-            var grainAmountSlider = Descendants<Slider>(window).Single(slider =>
-                AutomationProperties.GetName(slider) == "颗粒强度");
-            grainAmountSlider.Value = 100;
-            grainAmount.Text = "1000";
-            grainAmount.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, Environment.TickCount,
-                grainAmount, grainAmount) { RoutedEvent = UIElement.LostKeyboardFocusEvent });
-            Check(grainAmount.Text == "100", "Clamped photo effect input normalizes its numeric field");
-            Screenshot(window, Path.Combine(output, "grain.png"));
-            grainAmountSlider.Value = 0;
-            InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
-            var vignetteTool = window.Tools.Children.OfType<Button>().Single(button =>
-                AutomationProperties.GetAutomationId(button) == "Vignette");
-            Click(vignetteTool); window.UpdateLayout();
-            ((Expander)window.PhotoEffectsEditor.FindName("VignetteDetails")).IsExpanded=true;window.UpdateLayout();
-            var vignetteAmount = Descendants<Slider>(window).Single(slider =>
-                AutomationProperties.GetName(slider) == "暗角强度");
-            var vignetteHighlights = Descendants<Slider>(window).Single(slider =>
-                AutomationProperties.GetName(slider) == "暗角高光保护");
-            Check(!vignetteHighlights.IsEnabled, "Zero vignette disables highlights protection");
-            vignetteAmount.Value = .3;
-            Check(vignetteHighlights.IsEnabled, "Negative vignette enables highlights protection");
-            Screenshot(window, Path.Combine(output, "vignette.png"));
-            var labels = Descendants<TextBlock>(window.PhotoEffectsEditor).Where(label => label.IsVisible &&
-                new[] { "强度", "中点", "圆度", "羽化", "高光保护" }.Contains(label.Text)).ToArray();
-            Check(labels.Length == 5, "All vignette parameter labels are visible in the narrow editor");
-            foreach (var label in labels)
-            {
-                var text = new FormattedText(label.Text, System.Globalization.CultureInfo.CurrentCulture,
-                    label.FlowDirection, new Typeface(label.FontFamily, label.FontStyle, label.FontWeight, label.FontStretch),
-                    label.FontSize, label.Foreground, VisualTreeHelper.GetDpi(label).PixelsPerDip);
-                var available = Math.Min(label.ActualWidth, LayoutInformation.GetLayoutSlot(label).Width);
-                Check(available + 1 >= text.Width, "Vignette label fits without clipping: " + label.Text);
-            }
-            window.PhotoEffectsSurface.ScrollToBottom(); window.UpdateLayout();
-            var highlightsPosition = vignetteHighlights.TransformToAncestor(window.PhotoEffectsSurface)
-                .Transform(new Point(0, vignetteHighlights.ActualHeight / 2));
-            Check(highlightsPosition.Y >= 0 && highlightsPosition.Y < window.PhotoEffectsSurface.ActualHeight,
-                "Wrapped vignette controls remain reachable in the adjustment dock");
-            Screenshot(window, Path.Combine(output, "vignette-scrolled.png"));
+            ToolGroupChecks.RunAssertions(window, output, Check);
             Click(Descendants<Button>(window).Single(button =>
                 AutomationProperties.GetName(button) == "重置当前效果"));
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
@@ -333,7 +288,7 @@ internal static class PhotoFeatureChecks
         if (png) Check(File.ReadAllBytes(path)[24] == 16, "Sized PNG retains sixteen-bit channels");
     }
 
-    private static void Screenshot(Window window, string path)
+    internal static void Screenshot(Window window, string path)
     {
         window.UpdateLayout();
         var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);

@@ -84,14 +84,17 @@ struct IOSPhotoEffectsControls: View {
                     .font(.subheadline.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button(action: resetEffect) {
-                    Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
+                if effect != .vignette || advancedExpanded {
+                    Button(action: resetEffect) {
+                        Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.format("重置%@", effect.title))
+                    .accessibilityIdentifier("effects.\(effect.rawValue).reset")
+                    .disabled(effectIsDefault)
                 }
-                .accessibilityLabel(L10n.format("重置%@", effect.title))
-                .accessibilityIdentifier("effects.\(effect.rawValue).reset")
-                .disabled(effectIsDefault)
             }
-            parameterControl(effect == .vignette ? .vignetteAmount : .grainAmount)
+            parameterControl(effect == .vignette ? .vignetteAmount : .grainAmount,
+                             showsReset: effect != .vignette || advancedExpanded)
             DisclosureGroup(isExpanded: $advancedExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(parameters.dropFirst()) { parameter in
@@ -116,10 +119,11 @@ struct IOSPhotoEffectsControls: View {
         .id(effect.rawValue)
     }
 
-    private func parameterControl(_ parameter: PhotoEffectParameter) -> some View {
+    private func parameterControl(_ parameter: PhotoEffectParameter, showsReset: Bool = true) -> some View {
         AdjustmentControl(title: parameter.title, value: binding(for: parameter),
                           range: parameter.range, step: 1, defaultValue: parameter.defaultValue,
                           formatter: { String(format: $0 == 0 || parameter.range.lowerBound >= 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
+                          showsReset: showsReset,
                           identifier: "effects.\(effect.rawValue).\(parameter.rawValue)",
                           onEditingChanged: onEditingChanged)
             .disabled(parameter == .vignetteHighlights && settings.vignetteAmount >= 0)

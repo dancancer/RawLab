@@ -41,7 +41,7 @@ class AgentPreview(unittest.TestCase):
 
     def run_cli(self, *arguments, cwd=None):
         return subprocess.run([str(CLI), *map(str, arguments)], cwd=cwd or self.cwd,
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, text=True, encoding="utf-8", timeout=120)
 
     def envelope(self, process, error=None, command="preview", status=None):
         try:

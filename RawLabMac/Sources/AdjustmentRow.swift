@@ -14,6 +14,7 @@ struct ParameterRow: View {
     var onValidityChange: (Bool) -> Void = { _ in }
     var externalResetRevision = 0
     var sliderMapping = ParameterSliderMapping.linear
+    var showsReset = true
     @State private var resetRevision = 0
 
     private func controlIdentifier(_ control: String) -> String {
@@ -51,7 +52,7 @@ struct ParameterRow: View {
                 .frame(width: 72, height: 26)
             Text(unit).font(.system(size: 13)).foregroundStyle(.secondary)
                 .frame(width: 22, alignment: .leading).accessibilityHidden(true)
-            Button {
+            if showsReset { Button {
                 // Camera-derived white balance defaults deliberately bypass the editing grid.
                 value = defaultValue
                 resetRevision += 1
@@ -61,6 +62,7 @@ struct ParameterRow: View {
             .buttonStyle(.borderless)
             .accessibilityIdentifier(controlIdentifier("reset"))
             .help(L10n.format("重置%@", title)).accessibilityLabel(L10n.format("重置%@", title))
+            }
         }
         .frame(minHeight: 32)
         .frame(maxWidth: 720)

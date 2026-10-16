@@ -36,6 +36,7 @@ class PhotoEffectsControlsTest {
                 }
             }
         }
+        compose.onNodeWithText("展开暗角参数").performClick()
         listOf("强度", "中点", "圆度", "羽化", "高光保护").forEach {
             compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
         }
@@ -44,6 +45,26 @@ class PhotoEffectsControlsTest {
         compose.runOnIdle {
             assertEquals(PhotoEffectsSettings().copy(grainAmount = 50f), value)
         }
+    }
+
+    @Test fun vignetteStartsWithOnlyIntensityAndRevealsResetWithAdvancedParameters() {
+        var value by mutableStateOf(PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f))
+        compose.setContent {
+            RawLabTheme {
+                Surface(Modifier.width(360.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
+                    PhotoEffectsControls(value, vignette = true, enabled = true) { next, _ -> value = next }
+                }
+            }
+        }
+        compose.onNodeWithText("强度").assertIsDisplayed()
+        compose.onNodeWithText("中点").assertDoesNotExist()
+        compose.onNodeWithContentDescription("重置暗角").assertDoesNotExist()
+        compose.onNodeWithContentDescription("重置此项").assertDoesNotExist()
+
+        compose.onNodeWithText("展开暗角参数").performClick()
+        compose.onNodeWithText("中点").assertIsDisplayed()
+        compose.onNodeWithContentDescription("重置暗角").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(5)
     }
 
     @Test fun grainToolShowsIndependentParameterSet() {

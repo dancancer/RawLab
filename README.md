@@ -53,7 +53,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 | Client | Requirements |
 | --- | --- |
 | Windows | Windows 10/11, x64 |
-| macOS | macOS 15+, Apple Silicon or Intel |
+| macOS | v0.8 target: macOS 14+, Apple Silicon or Intel; minimum-OS runtime acceptance pending |
 | Android | Android 8.0+, ARM64 or x86_64 |
 | iOS | iOS 18+, iPhone and iPad; the downloadable IPA requires re-signing |
 

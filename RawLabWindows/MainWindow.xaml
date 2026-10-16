@@ -164,6 +164,9 @@
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
+              <Button x:Name="WhiteBalanceCategory" Click="WhiteBalanceCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '白平衡'}" AutomationProperties.Name="{DynamicResource '白平衡'}" AutomationProperties.AutomationId="WhiteBalance">
+                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="WhiteBalanceCategoryRing"/><local:EditorIcon Kind="Temperature" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '白平衡'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+              </Button>
             </StackPanel></ScrollViewer>
             <ScrollViewer x:Name="ParameterPanel" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center" Margin="0,5">
               <local:ParameterRow x:Name="OrdinaryParameter"/>
@@ -188,6 +191,7 @@
             <ScrollViewer x:Name="LensSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:LensPanel x:Name="LensEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
+            <ScrollViewer x:Name="WhiteBalanceSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:WhiteBalancePanel x:Name="WhiteBalanceEditor"/></ScrollViewer>
             <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <local:PhotoEffectsPanel x:Name="PhotoEffectsEditor" VerticalAlignment="Center"/>
             </ScrollViewer>

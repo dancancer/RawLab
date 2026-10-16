@@ -1,8 +1,8 @@
 # Third-Party Notices for RawLab Mac
 
-The application bundles the following dynamically linked libraries from the
-installed Homebrew packages, or rebuilt from the pinned upstream sources in
-`RawLabMac/build-dependencies.sh` for macOS 15 arm64/x86_64. Their original license and copyright notices are
+The application bundles libraries rebuilt from pinned upstream sources in
+`RawLabMac/build-dependencies.sh` and `RawLabMac/build-lens-dependency.sh`,
+targeting macOS 14 arm64/x86_64. Their original license and copyright notices are
 included alongside this document. Packaging changes only Mach-O install names
 and ad-hoc code signatures. LibRaw also includes the source patches described below.
 
@@ -18,9 +18,10 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 | libtiff | 4.7.1 | https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz | libtiff-LICENSE.md |
 | Lensfun library | 0.3.4 | https://github.com/lensfun/lensfun/tree/v0.3.4 | Lensfun/lgpl-3.0.txt, Lensfun/UPSTREAM-README.md |
 | Lensfun database | DB1 snapshot, 2026-10-12 | https://lensfun.github.io/ | Lensfun/database-CC-BY-SA-3.0.txt, Lensfun/README.md |
-| GLib | 2.84.3 in the verified arm64 bundle | https://github.com/GNOME/glib/tree/2.84.3 | GLib-COPYING |
-| GNU gettext libintl | 0.25 in the verified arm64 bundle | https://ftp.gnu.org/gnu/gettext/ | Gettext-COPYING.LIB |
-| PCRE2 | 10.45 in the verified arm64 bundle | https://github.com/PCRE2Project/pcre2/tree/pcre2-10.45 | PCRE2-LICENCE |
+| GLib | 2.84.4 | https://github.com/GNOME/glib/tree/2.84.4 | Lensfun/GLib-COPYING |
+| proxy-libintl | 33934de09af6a6627eb44e310a8079df009abdbb | https://github.com/frida/proxy-libintl/tree/33934de09af6a6627eb44e310a8079df009abdbb | Lensfun/proxy-libintl-COPYING |
+| PCRE2 | 10.44 | https://github.com/PCRE2Project/pcre2/tree/pcre2-10.44 | Lensfun/PCRE2-LICENCE |
+| zlib | 1.3.1 | https://zlib.net/fossils/zlib-1.3.1.tar.gz | Lensfun/zlib-LICENSE |
 
 Lensfun is built unmodified from a checksum-pinned source archive using
 `RawLabMac/build-lens-dependency.sh`, without Python tools, lenstool or libpng.
@@ -28,11 +29,11 @@ The library is LGPL-3.0; the unmodified offline database is CC BY-SA 3.0 and
 remains separate from RawLab code. Lensfun database authors/contributors retain
 their rights; the project and calibration contribution service are at
 https://lensfun.github.io/. Database provenance is retained in Lensfun/README.md.
-GLib and libintl retain LGPL-2.1-or-later terms; PCRE2 retains its original BSD
+GLib and proxy-libintl retain their original LGPL terms; PCRE2 retains its original BSD
 license and PCRE2 exception. Their source releases are available at
 https://download.gnome.org/sources/glib/2.84/,
-https://ftp.gnu.org/gnu/gettext/, and
-https://github.com/PCRE2Project/pcre2/releases/tag/pcre2-10.45.
+https://github.com/frida/proxy-libintl, and
+https://github.com/PCRE2Project/pcre2/releases/tag/pcre2-10.44.
 
 Rendered DNG serialization uses libtiff with a virtual output-referred linear-sRGB
 profile. It does not embed original sensor data or claim reversible RAW edits.
@@ -60,7 +61,7 @@ the older 0.21.5 build used by previous releases, not the current source build.
 Other installed recipes are available from Homebrew Core:
 https://github.com/Homebrew/homebrew-core/tree/master/Formula
 
-The macOS 15 dependency build uses the official release source archive at
+The macOS dependency build uses the official release source archive at
 https://www.libraw.org/data/LibRaw-0.22.2.tar.gz with the upstream LibRaw-cmake
 build scripts at https://github.com/LibRaw/LibRaw-cmake/tree/eb98e4325aef2ce85d2eb031c2ff18640ca616d3.
 Its exact archive checksums and build options are recorded in
