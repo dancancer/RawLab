@@ -340,8 +340,8 @@ private func chromaSettings(from source: Adjustments) -> Adjustments {
 }
 
 private func renderReference(_ engine: RenderEngine, input: URL, settings: Adjustments,
-                            output: URL, edge: Int) throws {
-    _ = try engine.render(input, settings: settings, lut: nil, edge: nil,
+                            output: URL, edge: Int, lut: URL? = nil) throws {
+    _ = try engine.render(input, settings: settings, lut: lut, edge: nil,
                           output: output, exportLongEdge: edge)
     try check(FileManager.default.fileExists(atPath: output.path),
               "GUI FINAL writes raster reference")
@@ -416,7 +416,7 @@ private func expectProtectedAliases(_ context: RasterContext, input: URL, settin
 }
 
 private func runRasterCase(_ context: RasterContext, fixture: RasterFixture,
-                           engine: RenderEngine, settings: Adjustments) throws -> URL {
+                           engine: RenderEngine, settings: Adjustments, lut: URL? = nil) throws -> URL {
     let label = fixture.label
     let edge = 48
     let info = try invokeCLI(context.cli, arguments: ["--info", fixture.url.path, "--json"])
@@ -431,12 +431,12 @@ private func runRasterCase(_ context: RasterContext, fixture: RasterFixture,
     let guiOutput = context.root.appendingPathComponent("\(label)-gui.png")
     let cliOutput = context.root.appendingPathComponent("\(label)-cli.png")
     let recipeURL = context.root.appendingPathComponent("\(label).json")
-    let agentData = try engine.agentRecipe(fixture.url, settings: settings, lut: nil,
+    let agentData = try engine.agentRecipe(fixture.url, settings: settings, lut: lut,
                                            output: guiOutput, exportLongEdge: edge)
     let recipe = try inspectRasterRecipe(agentData, input: fixture.url, label: label)
     try check(!FileManager.default.fileExists(atPath: guiOutput.path),
               "\(label): agent recipe Data API has no output side effect")
-    try renderReference(engine, input: fixture.url, settings: settings, output: guiOutput, edge: edge)
+    try renderReference(engine, input: fixture.url, settings: settings, output: guiOutput, edge: edge, lut: lut)
     let cliRecipe = try rewriteOutput(recipe, output: cliOutput)
     try writeJSON(cliRecipe, to: recipeURL)
     let _ = try runCLI(context.cli, recipe: recipeURL)
@@ -444,12 +444,12 @@ private func runRasterCase(_ context: RasterContext, fixture: RasterFixture,
 
     let directOutput = context.root.appendingPathComponent("\(label)-direct.png")
     let direct = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
-    try renderReference(direct, input: fixture.url, settings: settings, output: directOutput, edge: edge)
+    try renderReference(direct, input: fixture.url, settings: settings, output: directOutput, edge: edge, lut: lut)
     try comparePNG(guiOutput, directOutput, "\(label) GUI/CPU")
 
     let autoOutput = context.root.appendingPathComponent("\(label)-auto.png")
     let auto = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
-    try renderReference(auto, input: fixture.url, settings: settings, output: autoOutput, edge: edge)
+    try renderReference(auto, input: fixture.url, settings: settings, output: autoOutput, edge: edge, lut: lut)
     try comparePNG(guiOutput, autoOutput, "\(label) GUI/Auto")
     try check(auto.lastBackend == SONY2FUJI_BACKEND_CPU,
               "\(label): Auto explicitly falls back to CPU for display raster")
@@ -465,7 +465,7 @@ private func runRasterCase(_ context: RasterContext, fixture: RasterFixture,
     var forceRejected = false
     do {
         let force = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
-        _ = try force.render(fixture.url, settings: settings, lut: nil, edge: nil,
+        _ = try force.render(fixture.url, settings: settings, lut: lut, edge: nil,
                              output: context.root.appendingPathComponent("\(label)-force.png"),
                              exportLongEdge: edge)
     } catch { forceRejected = true }
@@ -557,6 +557,14 @@ struct RasterRenderTests {
         var outputs: [String: URL] = [:]
         for fixture in fixtures {
             outputs[fixture.label] = try runRasterCase(context, fixture: fixture, engine: cpu, settings: settings)
+        }
+        var master = settings
+        master.applyMasterRecipe(.hamadaDaylightV2)
+        let masterLUT = MasterRecipe.hamadaDaylightV2.lutURL()!
+        for strength in [0.0, 0.5, 1.0, 2.0] {
+            master.strength = strength
+            let fixture = RasterFixture(url: primary.url, label: "png-master-\(Int(strength * 100))", oriented: primary.oriented)
+            _ = try runRasterCase(context, fixture: fixture, engine: cpu, settings: master, lut: masterLUT)
         }
         if let primaryOutput = outputs[primary.label] {
             try expectProtectedAliases(context, input: primary.url, settings: settings, engine: cpu, label: primary.label)
