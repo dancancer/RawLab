@@ -14,6 +14,19 @@ import java.io.File
 
 enum class Operation { NONE, IMPORT, IMPORT_LOOK, PICK_EXPORT, EXPORT }
 enum class EditSaveState { NONE, RESTORED, SAVED, FAILED }
+
+internal class PendingPhotoImport {
+    private var identity: PhotoIdentity? = null
+
+    fun begin(identity: PhotoIdentity) { this.identity = identity }
+    fun clear() { identity = null }
+    fun complete(identity: PhotoIdentity): Boolean {
+        if (this.identity != identity) return false
+        this.identity = null
+        return true
+    }
+}
+
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
     val comparisonHeight: Float = neutral.height.toFloat())
@@ -74,6 +87,7 @@ class EditorViewModel @JvmOverloads constructor(
     private val batchProcessorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
 ) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
+    private val usage = UsageAnalyticsRegistry.get(application)
     private var editStore: EditStore? = runCatching { EditStore(File(application.filesDir, "edits")) }.getOrNull()
     private val mutableBatch = MutableStateFlow<BatchExportModel?>(null)
     val batch = mutableBatch.asStateFlow()
@@ -86,6 +100,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var previewLongEdge = 1600
     private var requestedPreviewLongEdge = 1600
     private var previewResizeJob: Job? = null
+    private val pendingPhotoImport = PendingPhotoImport()
     private var lookRevision = 0L
     private var releases = 0
     private val mutable = MutableStateFlow(EditorState())
@@ -209,9 +224,11 @@ class EditorViewModel @JvmOverloads constructor(
                             .copy(preview = value.pair, exact = !request.interactive, error = null)
                         return@fold
                     }
+                    val imported = pendingPhotoImport.complete(request.photo.identity)
                     if (request.importing) {
                         mutable.value.photo?.file?.takeIf { it != request.photo.file }?.delete()
                     }
+                    if (imported) usage.record(UsageEvent.PhotoImported)
                     val settings = if (!request.edits.customWb && value.pair.temperature.isFinite())
                         request.edits.copy(temperature = value.pair.temperature.coerceIn(2000f, 50000f),
                             tint = if (request.edits.recipeID == null) value.pair.tint.coerceIn(-150f, 150f) else request.edits.tint)
@@ -226,7 +243,10 @@ class EditorViewModel @JvmOverloads constructor(
                         exact = !request.interactive, error = null,
                         saveState = if (request.restored && saved == EditSaveState.SAVED) EditSaveState.RESTORED else saved)
                 }
-                WorkResult.Export -> mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
+                WorkResult.Export -> {
+                    mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
+                    usage.record(UsageEvent.ExportCompleted)
+                }
                 is WorkResult.AutoExposure -> {
                     val current = mutable.value
                     if (current.photo?.identity == value.request.photo.identity && current.edits == value.request.edits) {
@@ -236,6 +256,7 @@ class EditorViewModel @JvmOverloads constructor(
             }
             fadeSaveNotice()
         }, { error ->
+            if (mutable.value.operation == Operation.IMPORT) pendingPhotoImport.clear()
             mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(error = failure(error))
         })
         updatePreviewSize(requestedPreviewLongEdge)
@@ -293,12 +314,17 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun importPhoto(uri: Uri?) {
-        if (uri == null || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
+        if (uri == null) {
+            pendingPhotoImport.clear()
+            return
+        }
+        if (mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         val current = mutable.value
         if (current.photo != null && persist(current.photo, current.edits) == EditSaveState.FAILED) {
             mutable.value = current.copy(saveState = EditSaveState.FAILED, error = text(R.string.edit_storage_error))
             return
         }
+        pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
         mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null)
         previewResizeJob?.cancel()
         previewResizeJob = null
@@ -503,13 +529,19 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = current.photo ?: return
         mutableBatch.value = BatchExportModel(getApplication(), storage,
             BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name), gpuMode = gpuMode(),
-            processorFactory = batchProcessorFactory)
+            processorFactory = batchProcessorFactory,
+            onTerminal = { succeeded, failed, outcome ->
+                usage.record(UsageEvent.BatchExportCompleted(succeeded, failed, outcome))
+            })
     }
 
     fun resumeBatch(job: BatchJob) {
         if (mutableBatch.value != null || mutable.value.draft != null || mutable.value.operation != Operation.NONE) return
         mutableBatch.value = BatchExportModel(getApplication(), storage, job.source, job, gpuMode = gpuMode(),
-            processorFactory = batchProcessorFactory)
+            processorFactory = batchProcessorFactory,
+            onTerminal = { succeeded, failed, outcome ->
+                usage.record(UsageEvent.BatchExportCompleted(succeeded, failed, outcome))
+            })
     }
 
     fun closeBatch() {

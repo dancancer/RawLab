@@ -1,3 +1,6 @@
+import java.security.MessageDigest
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +8,30 @@ plugins {
 }
 
 val repo = rootDir.parentFile
+val rawlabRumLocalProperty = providers.gradleProperty("rawlabRumLocal")
+val rawlabRumLocal = rawlabRumLocalProperty.map { value ->
+    value.toBooleanStrictOrNull() ?: throw GradleException("rawlabRumLocal must be true or false")
+}.orElse(false).get()
+val localRumAar = repo.resolve(".cache/shared/aliyun-rum/android/2.3.2/alibabacloud-android-rum-sdk-2.3.2.aar")
+val localRumAarSha256 = "681592df6727230a4ff7aef951636afb7d566fbcf486b15b25294b29154c5b1f"
+
+fun java.io.File.sha256(): String = MessageDigest.getInstance("SHA-256").digest(readBytes())
+    .joinToString("") { byte -> "%02x".format(byte) }
+
+fun invokesReleaseTask(task: String): Boolean {
+    val name = task.substringAfterLast(':')
+    return name.equals("assemble", ignoreCase = true) ||
+        name.equals("build", ignoreCase = true) ||
+        name.contains("release", ignoreCase = true)
+}
+
+if (rawlabRumLocal && gradle.startParameter.taskNames.any(::invokesReleaseTask)) {
+    throw GradleException("rawlabRumLocal is a Debug-only local validation flag; Release tasks are rejected")
+}
+if (rawlabRumLocal && (!localRumAar.isFile || localRumAar.sha256() != localRumAarSha256)) {
+    throw GradleException("Missing or unexpected Aliyun RUM 2.3.2 AAR at ${localRumAar.path}")
+}
+
 val testRaw = providers.gradleProperty("rawlabTestRaw").orElse(providers.environmentVariable("RAWLAB_TEST_RAW"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
@@ -38,6 +65,7 @@ val prepareAssets by tasks.registering(Sync::class) {
     }
     from("src/main/notices") { into("licenses") }
     from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }
+    from(repo.resolve("LICENSE-ALIYUN-RUM-EXCEPTION")) { into("licenses"); rename { "RawLab-Aliyun-RUM-Exception.txt" } }
     from(repo.resolve("docs/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
     from(androidComponents.sdkComponents.ndkDirectory) {
         include("toolchains/llvm/prebuilt/*/sysroot/NOTICE")
@@ -60,6 +88,14 @@ android {
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
     }
     buildFeatures { compose = true }
+    if (rawlabRumLocal) {
+        sourceSets["main"].java.exclude("**/DefaultUsageAnalyticsRegistry.kt")
+        sourceSets["main"].java.exclude("**/DefaultRumLocalConfigurationProvider.kt")
+        sourceSets["debug"].java.srcDir("src/local/java")
+        sourceSets["debug"].assets.srcDir("src/local/assets")
+        sourceSets["debug"].manifest.srcFile("src/local/AndroidManifest.xml")
+        sourceSets["androidTest"].java.srcDir("src/localAndroidTest/java")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -70,6 +106,16 @@ android {
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    if (rawlabRumLocal) buildTypes.getByName("debug").applicationIdSuffix = ".rumlocal"
+}
+
+if (rawlabRumLocal) {
+    tasks.withType<KotlinCompile>().configureEach {
+        if (name == "compileDebugKotlin") {
+            exclude("**/DefaultUsageAnalyticsRegistry.kt")
+            exclude("**/DefaultRumLocalConfigurationProvider.kt")
+        }
+    }
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareAssets) }
@@ -79,6 +125,7 @@ tasks.matching {
 }.configureEach { dependsOn(prepareTestAssets) }
 
 dependencies {
+    if (rawlabRumLocal) add("debugImplementation", files(localRumAar))
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.exifinterface:exifinterface:1.4.2")

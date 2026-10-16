@@ -37,11 +37,13 @@ class MainActivity : ComponentActivity() {
     }
     val model: EditorViewModel by lazy { ViewModelProvider(this)[EditorViewModel::class.java] }
     val updates: UpdateViewModel by lazy { ViewModelProvider(this)[UpdateViewModel::class.java] }
+    val usage: UsageAnalytics by lazy { UsageAnalyticsRegistry.get(applicationContext) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
-        setContent { RawLabTheme { RawLabApp(model, updates) } }
+        usage.beginSession()
+        setContent { RawLabTheme { RawLabApp(model, updates, usage) } }
     }
 }
 
@@ -62,9 +64,10 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
+private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
     val state by model.state.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
+    val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(updates) { updates.check(manual = false) }
     var album by rememberSaveable { mutableStateOf(false) }
@@ -88,7 +91,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
     var licenses by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) { album = false; model.importPhoto(uri) }
+        if (uri != null) album = false
+        model.importPhoto(uri)
     }
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
@@ -122,6 +126,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
             onEdit = model::edit, onReset = model::reset, onRetry = model::retry,
             onSaveRetry = model::retrySave,
             onAutoExposure = model::autoExposure,
+            onFilmSelected = { usage.record(UsageEvent.FilmSelected(it)) },
             onExport = {
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
@@ -186,7 +191,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
         }
     }
     if (licenses) LicenseDialog { licenses = false }
-    if (about) AboutDialog(updateState, updates::setAutomatic, { updates.check(manual = true) }) { about = false }
+    if (about) AboutDialog(updateState, updates::setAutomatic, { updates.check(manual = true) }, { about = false },
+        usageState = usageState, onUsage = usage::setEnabled)
 }
 
 @Composable

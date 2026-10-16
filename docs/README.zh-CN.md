@@ -51,4 +51,4 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 
 ## 许可
 
-Copyright (c) 2026 RawLab contributors。本版本的项目原创代码以 [GNU General Public License v3.0 only](../LICENSE)（`GPL-3.0-only`）发布。第三方库、LUT 和其他附带资源保留各自的许可证与版权声明，详见[许可与归属说明](licensing.md)。
+Copyright (c) 2026 RawLab contributors。本版本的项目原创代码采用 [GNU General Public License v3.0 only](../LICENSE)（`GPL-3.0-only`），并按 GPLv3 第 7 节提供范围明确的[阿里云 RUM SDK 链接例外](../LICENSE-ALIYUN-RUM-EXCEPTION)。第三方库、LUT 和其他附带资源保留各自的许可证与版权声明，详见[许可与归属说明](licensing.md)。

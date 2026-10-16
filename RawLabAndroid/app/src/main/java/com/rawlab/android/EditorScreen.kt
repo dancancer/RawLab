@@ -54,6 +54,9 @@ fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, onClick: ()
     }
 }
 
+internal fun filmSelectionChanged(edits: EditSettings, selectedId: String): Boolean =
+    edits.film != selectedId || edits.recipeID != null
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
@@ -67,7 +70,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
-    onApplyDraft: () -> Unit = {}, onDiscardDraft: () -> Unit = {}) {
+    onApplyDraft: () -> Unit = {}, onDiscardDraft: () -> Unit = {},
+    onFilmSelected: (UsageFilmKind) -> Unit = {}) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
@@ -183,7 +187,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         VerticalDivider()
                         AdjustmentDock(state, Modifier.width(sideDockWidth).fillMaxHeight(), tool, selectTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
-                            onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit, { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 })
+                            onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
+                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected)
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
@@ -193,7 +198,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         HorizontalDivider()
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, selectTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
-                            onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit, { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 })
+                            onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
+                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected)
                     }
                 }
             }
@@ -286,7 +292,8 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit,
     onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit,
     onAutoExposure: () -> Unit, onDraftEdit: (EditSettings, Boolean) -> Unit,
-    onApplyDraft: () -> Unit, onDiscardDraft: () -> Unit) {
+    onApplyDraft: () -> Unit, onDiscardDraft: () -> Unit,
+    onFilmSelected: (UsageFilmKind) -> Unit) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
@@ -331,8 +338,16 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                     val builtIn = Film.all.firstOrNull { it.id == look.id }
                     val artwork = if (builtIn?.file != null) assetBitmap("artwork/${look.id}.png") else null
                     Box(Modifier.width(96.dp)) {
-                        Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id, enabled = state.controlsEnabled,
-                            role = Role.RadioButton, onClick = { onEdit(edits.selectFilm(look.id, state.preview?.tint), false) }),
+                        Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
+                            enabled = state.controlsEnabled && look.available,
+                            role = Role.RadioButton, onClick = {
+                                onEdit(edits.selectFilm(look.id, state.preview?.tint), false)
+                                if (filmSelectionChanged(edits, look.id)) onFilmSelected(when {
+                                    look.managed -> UsageFilmKind.Custom
+                                    look.id == "neutral" -> UsageFilmKind.None
+                                    else -> UsageFilmKind.BuiltIn
+                                })
+                            }),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.size(80.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
                                 if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {

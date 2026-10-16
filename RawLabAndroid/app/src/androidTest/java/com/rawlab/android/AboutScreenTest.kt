@@ -36,4 +36,11 @@ class AboutScreenTest {
         compose.onNodeWithText("确定").performClick()
         compose.onNodeWithText("关于 RawLab").assertDoesNotExist()
     }
+
+    @Test fun usageSwitchIsDisabledWhenBuildHasNoTransport() {
+        compose.onNodeWithContentDescription("更多").performClick()
+        compose.onNodeWithText("关于 RawLab").performClick()
+        compose.onNodeWithContentDescription("使用统计").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("当前构建未配置使用统计，未采集或上报。").performScrollTo().assertIsDisplayed()
+    }
 }

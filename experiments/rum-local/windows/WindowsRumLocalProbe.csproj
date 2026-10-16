@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);RAWLAB_RUM_LOCAL</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../../RawLabWindows/UsageAnalytics.cs" Link="UsageAnalytics.cs" />
+    <Compile Include="../../../RawLabWindows/RumLocalConfiguration.cs" Link="RumLocalConfiguration.cs" />
+    <Compile Include="../../../RawLabWindows/RumLocalUsageAnalyticsTransport.cs" Link="RumLocalUsageAnalyticsTransport.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RawLabRumSdkRoot)' != ''">
+    <Content Include="$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll"
+             Link="alibabacloud_rum.dll" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+</Project>

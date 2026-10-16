@@ -5,7 +5,7 @@ import AppKit
 struct RawLabMacApp: App {
     @NSApplicationDelegateAdaptor(RawLabMacDelegate.self) private var appDelegate
     @AppStorage(L10n.preferenceKey) private var languagePreference = AppLanguage.system.rawValue
-    @StateObject private var model = EditorModel()
+    @StateObject private var model = EditorModel(onUsage: { UsageAnalytics.shared.record($0) })
     @StateObject private var updates = UpdateChecker()
     @Environment(\.openWindow) private var openWindow
     init() {
@@ -50,6 +50,9 @@ struct RawLabMacApp: App {
                 exit(0)
             } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
         }
+        #if RAWLAB_RUM_LOCAL
+        LocalRUM.configure()
+        #endif
         NSApplication.shared.setActivationPolicy(.regular)
     }
     var body: some Scene {
@@ -64,7 +67,13 @@ struct RawLabMacApp: App {
                 }
                 EditorView(model: model)
                     .onAppear { appDelegate.model = model }
-            }.task { await updates.check(manual: false) }
+            }.task {
+                UsageAnalytics.shared.beginSession()
+                await updates.check(manual: false)
+            }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    UsageAnalytics.shared.endSession()
+                }
                 .environment(\.locale, selectedLocale)
         }
             .defaultSize(width: 1320, height: 850)

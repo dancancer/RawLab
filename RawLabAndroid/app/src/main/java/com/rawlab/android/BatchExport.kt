@@ -293,6 +293,7 @@ class BatchExportModel(
     initial: BatchJob? = null,
     private val gpuMode: Int = NativeProcessor.AUTO,
     private val processorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
+    private val onTerminal: (succeeded: Int, failed: Int, outcome: UsageBatchOutcome) -> Unit = { _, _, _ -> },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val resolver = context.contentResolver
@@ -355,6 +356,16 @@ class BatchExportModel(
         val current = mutable.value
         if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
         if (retry && current.unfinishedCount == 0) return
+        val successBefore = current.successCount
+        val attempted = mutableSetOf<String>()
+        var terminalReported = false
+        suspend fun reportTerminal(job: BatchJob, outcome: UsageBatchOutcome) {
+            if (terminalReported) return
+            terminalReported = true
+            val succeeded = (job.rows.count { it.status == BatchRowStatus.SUCCESS } - successBefore).coerceAtLeast(0)
+            val failed = job.rows.count { it.id in attempted && it.status == BatchRowStatus.FAILED }
+            withContext(Dispatchers.Main) { onTerminal(succeeded, failed, outcome) }
+        }
         if (!ExportSize.isValid(longEdge)) {
             mutable.value = current.copy(error = AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and))
             return
@@ -405,8 +416,10 @@ class BatchExportModel(
                     }
                     mutable.value = mutable.value.copy(phase = BatchPhase.RUNNING)
                     BatchRunner.run(materialized, render, { _, _, _ -> }, cancelRequested::get, journal,
-                        didUpdate = { mutable.value = mutable.value.copy(job = it) },
-                        dispose = { it.delete() }, publish = publish)
+                        didUpdate = {
+                            attempted.addAll(it.rows.filter { row -> row.status == BatchRowStatus.PROCESSING }.map { row -> row.id })
+                            mutable.value = mutable.value.copy(job = it)
+                        }, dispose = { it.delete() }, publish = publish)
                 } finally { processor.close() }
                 mutable.value = BatchExportState(result,
                     phase = when {
@@ -415,9 +428,16 @@ class BatchExportModel(
                         result.rows.any { it.status == BatchRowStatus.FAILED } -> BatchPhase.FAILED
                         else -> BatchPhase.COMPLETE
                     }, outputFormat = format, destination = destination, error = result.globalError)
+                reportTerminal(result, when {
+                    result.globalError != null || result.rows.any { it.status == BatchRowStatus.NEEDS_CONFIRMATION } -> UsageBatchOutcome.Interrupted
+                    result.rows.any { it.status == BatchRowStatus.CANCELLED } -> UsageBatchOutcome.Cancelled
+                    result.rows.any { it.status == BatchRowStatus.FAILED } -> UsageBatchOutcome.Partial
+                    else -> UsageBatchOutcome.Completed
+                })
             } catch (error: Throwable) {
                 mutable.value = mutable.value.copy(phase = BatchPhase.FAILED,
                     error = error.message ?: error.javaClass.simpleName)
+                reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
     }
