@@ -8,6 +8,7 @@ struct DirectoryContents {
     let photos: [URL]
     static let rawExtensions: Set<String> = ["arw", "arq", "dng", "nef", "nrw", "cr2", "cr3", "crw", "raf",
         "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos"]
+    static let supportedExtensions = rawExtensions.union(["jpg", "jpeg", "png", "tif", "tiff", "heif", "heic"])
 
     static func read(_ url: URL) throws -> Self {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isPackageKey]
@@ -18,7 +19,7 @@ struct DirectoryContents {
             let values = try entry.resourceValues(forKeys: keys)
             if values.isDirectory == true && values.isSymbolicLink != true && values.isPackage != true {
                 folders.append(entry)
-            } else if values.isRegularFile == true && rawExtensions.contains(entry.pathExtension.lowercased()) {
+            } else if values.isRegularFile == true && supportedExtensions.contains(entry.pathExtension.lowercased()) {
                 photos.append(entry)
             }
         }
@@ -123,7 +124,9 @@ final class PhotoThumbnails: @unchecked Sendable {
         if let image = cache.object(forKey: url as NSURL) { return image }
         return await withCheckedContinuation { continuation in
             queue.addOperation { [self] in
+                let raster = !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
                 let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                    kCGImageSourceCreateThumbnailFromImageAlways: raster,
                     kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 180,
                     kCGImageSourceShouldCache: false]
                 var result: NSImage?

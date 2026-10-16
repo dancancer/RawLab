@@ -159,12 +159,15 @@ struct PresentationTests {
         try Data().write(to: folder.appendingPathComponent("photo.ARW"))
         try Data().write(to: folder.appendingPathComponent("photo.dng"))
         try Data().write(to: folder.appendingPathComponent("photo.ARQ"))
+        try Data().write(to: folder.appendingPathComponent("photo.JPG"))
+        try Data().write(to: folder.appendingPathComponent("photo.png"))
+        try Data().write(to: folder.appendingPathComponent("animation.gif"))
         try Data().write(to: folder.appendingPathComponent("style.cube"))
         try Data().write(to: folder.appendingPathComponent(".hidden.ARW"))
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("nested"), withIntermediateDirectories: true)
         let listing = try DirectoryContents.read(folder)
-        check(listing.photos.count == 3 && listing.folders.count == 1,
-              "Directory browsing exposes RAW files and folders, not hidden files or LUTs")
+        check(listing.photos.count == 5 && listing.folders.count == 1,
+              "Directory browsing exposes RAW/JPEG/PNG, not hidden files, GIF or LUTs")
         check(listing.folders[0].lastPathComponent == "nested", "Subfolders remain lazy tree nodes")
         let artworkFolder = URL(fileURLWithPath: CommandLine.arguments[1])
         check(FilmArtwork.resourceNames.count == 10, "Every bundled film has packaging artwork")

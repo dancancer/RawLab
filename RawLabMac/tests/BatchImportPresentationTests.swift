@@ -19,7 +19,9 @@ struct BatchImportPresentationTests {
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
         UserDefaults.standard.setVolatileDomain(["photoFolders": []], forName: UserDefaults.argumentDomain)
-        let model = EditorModel(lookDirectory: root.appendingPathComponent("library"))
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("library"),
+                                editDirectory: root.appendingPathComponent("edits"),
+                                batchDirectory: root.appendingPathComponent("batch"))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 950, height: 620),
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: EditorView(model: model))

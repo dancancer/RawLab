@@ -1,4 +1,17 @@
 "%@ · %@%%" = "%@ · %@%%";
+"打开照片" = "Open Photo";
+"添加照片" = "Add Photos";
+"正在检查照片…" = "Checking photos…";
+"尚未选择照片" = "No Photos Selected";
+"照片" = "Photo";
+"请至少选择一张照片。" = "Please select at least one photo.";
+"选择待导出的照片" = "Select Photos to Export";
+"不是支持的图像文件" = "Unsupported image file";
+"无照片" = "No photos";
+"此目录没有照片。" = "This folder contains no photos.";
+"将替换目标照片的本机调整记录，不改写原始文件。" = "This replaces local adjustments without modifying original files.";
+"仅包含此目录中的照片，不包含子目录。" = "Only photos in this folder are included, not subfolders.";
+"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.";
 "%@ · 本次导出效果" = "%@ · The effect of this export";
 "%@ 至 %@" = "%@ to %@";
 "%@ 至 %@ %@" = "%@ to %@ %@";

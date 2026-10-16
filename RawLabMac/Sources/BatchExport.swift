@@ -140,7 +140,7 @@ enum BatchExportFailure: LocalizedError {
         case .destination: return L10n.text("无法写入输出目录，请检查访问权限和剩余空间。")
         case .changedInput: return L10n.text("原始文件已被替换，请重新选择照片。")
         case .missingLook: return L10n.text("任务使用的外观文件不可用，请重新创建任务。")
-        case .noSelection: return L10n.text("请至少选择一张 RAW 照片。")
+        case .noSelection: return L10n.text("请至少选择一张照片。")
         }
     }
 }

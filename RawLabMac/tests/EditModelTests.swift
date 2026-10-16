@@ -5,7 +5,133 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
     if try !value() { throw Failure(message: message) }
 }
 
+private func rasterFixtureImage() -> CGImage {
+    let width = 4, height = 3
+    let bytes: [UInt8] = [
+        255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255,
+        32, 64, 96, 160, 128, 96, 16, 48, 80, 224, 192, 160,
+        12, 34, 56, 78, 90, 123, 145, 167, 189, 210, 231, 252
+    ]
+    return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 24,
+                   bytesPerRow: width * 3, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                   provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
+                   shouldInterpolate: false, intent: .defaultIntent)!
+}
+
+private func writeRasterFixture(_ image: CGImage, to url: URL, type: CFString) throws {
+    let properties: [CFString: Any] = [
+        kCGImagePropertyOrientation: UInt32(6),
+        kCGImagePropertyTIFFDictionary: [
+            kCGImagePropertyTIFFMake: "RawLab Editor Fixture",
+            kCGImagePropertyTIFFImageDescription: "editor-raster"
+        ]
+    ]
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, type, 1, nil) else {
+        throw Failure(message: "cannot create " + url.pathExtension + " ImageIO destination")
+    }
+    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else {
+        throw Failure(message: "cannot write " + url.pathExtension + " editor fixture")
+    }
+}
+
+private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Data }
+
 @main struct EditModelTests {
+    static func waitForRender(_ model: EditorModel, _ label: String) throws {
+        let deadline = Date().addingTimeInterval(120)
+        while model.busy && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(!model.busy && model.error == nil && model.result != nil && model.neutral != nil,
+                  label + ": EditorModel raster render completes")
+    }
+
+    static func waitForFailure(_ model: EditorModel, _ label: String) throws {
+        let deadline = Date().addingTimeInterval(120)
+        while model.busy && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(!model.busy && model.result == nil && model.neutral == nil && model.error != nil,
+                  label + ": invalid raster clears result and publishes an error")
+    }
+
+    static func makeRasterModel(root: URL, lut: URL) -> EditorModel {
+        let result = EditorModel(lookDirectory: root.appendingPathComponent("looks"),
+                                 editDirectory: root.appendingPathComponent("edits"),
+                                 batchDirectory: root.appendingPathComponent("batch"))
+        result.films = [Film(name: "PROVIA", url: lut)]
+        result.selectedFilmID = lut.path
+        return result
+    }
+
+    static func checkRasterMetadata(_ model: EditorModel, _ label: String) throws {
+        guard let neutral = model.neutral, let result = model.result else {
+            throw Failure(message: label + ": raster result is missing")
+        }
+        for (name, frame) in [("neutral", neutral), ("result", result)] {
+            try check(frame.image.width == 3 && frame.image.height == 4 &&
+                      frame.nativeWidth == 3 && frame.nativeHeight == 4,
+                      label + " " + name + ": ImageIO orientation is applied to final dimensions")
+            try check(frame.baselineEV == 0 && frame.metadataEV == 0 &&
+                      frame.asShotWhiteBalance == nil && !frame.supportsRawNoiseReduction &&
+                      frame.lensInfo == nil,
+                      label + " " + name + ": raster has zero RAW metadata, no WB/RAW NR/lens state")
+        }
+    }
+
+    static func rasterEditorChecks(root: URL, lut: URL) throws {
+        let fixtureRoot = root.appendingPathComponent("editor-raster")
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        let image = rasterFixtureImage()
+        let jpeg = fixtureRoot.appendingPathComponent("oriented.jpg")
+        let png = fixtureRoot.appendingPathComponent("oriented.png")
+        try writeRasterFixture(image, to: jpeg, type: "public.jpeg" as CFString)
+        try writeRasterFixture(image, to: png, type: "public.png" as CFString)
+
+        let first = makeRasterModel(root: fixtureRoot, lut: lut)
+        first.open(jpeg)
+        try waitForRender(first, "JPEG open")
+        try checkRasterMetadata(first, "JPEG open")
+        let originalPixels = pixels(first.result!.image)
+
+        first.settings.exposure = 0.4
+        first.settings.contrast = 36
+        first.settings.saturation = -24
+        first.settings.setHSL(.hue, channel: 0, value: 31)
+        first.settings.setHSL(.lightness, channel: 4, value: -19)
+        first.settings.setEffect(.vignetteAmount, to: -42)
+        first.settings.setEffect(.grainAmount, to: 37)
+        try waitForRender(first, "JPEG tone/HSL/effects edit")
+        try check(pixels(first.result!.image) != originalPixels,
+                  "JPEG tone/HSL/effects edit changes the actual raster render")
+        try check(first.saveEdits(), "JPEG raster edit history saves")
+        let saved = first.settings
+
+        let second = makeRasterModel(root: fixtureRoot, lut: lut)
+        second.open(png)
+        try waitForRender(second, "PNG open in a new EditorModel")
+        try check(second.settings.contrast == 0 && second.settings.saturation == 0 &&
+                  second.settings.hslSettings.isIdentity && second.settings.effectSettings == PhotoEffectsSettings(),
+                  "PNG open does not inherit another raster's edit history")
+        try checkRasterMetadata(second, "PNG open")
+        second.open(jpeg)
+        try waitForRender(second, "JPEG history restore")
+        try check(second.settings.exposure == saved.exposure && second.settings.contrast == saved.contrast &&
+                  second.settings.saturation == saved.saturation && second.settings.hslSettings == saved.hslSettings &&
+                  second.settings.effectSettings == saved.effectSettings,
+                  "JPEG history restores tone/HSL/effects in a new EditorModel")
+        try checkRasterMetadata(second, "JPEG history restore")
+
+        let broken = fixtureRoot.appendingPathComponent("broken.png")
+        try Data("not an image".utf8).write(to: broken, options: .atomic)
+        let failing = makeRasterModel(root: fixtureRoot, lut: lut)
+        failing.open(broken)
+        try waitForFailure(failing, "broken PNG open")
+        print("PASS: EditorModel raster open, oriented dimensions, metadata isolation, persistence and rejection")
+    }
+
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -136,6 +262,12 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(!failing.saveEdits() && failing.saveError != nil, "save failure must be visible")
         failing.open(b)
         try check(failing.file == a && failing.settings.exposure == 1, "failed save must not discard edits on photo switch")
+        let repository = URL(fileURLWithPath: ProcessInfo.processInfo.environment["RAWLAB_TEST_ROOT"] ??
+                             FileManager.default.currentDirectoryPath)
+        let rasterLUT = repository.appendingPathComponent("lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube")
+        try check(FileManager.default.isReadableFile(atPath: rasterLUT.path),
+                  "raster EditorModel integration has a real PROVIA LUT")
+        try rasterEditorChecks(root: root, lut: rasterLUT)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
         if CommandLine.arguments.count > 1 {
             let live = model()
