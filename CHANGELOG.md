@@ -3,6 +3,44 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.8.0] - 2026-10-17
+
+### Added
+
+- Complete desktop Agent/CLI JSON editing, capability and image information,
+  preview and FINAL export through the existing processing core.
+- Crop, rotate, straighten, flip and perspective correction with shared
+  preview/export geometry, committed drafts and frozen batch settings.
+- Ordinary JPEG/PNG input on all clients, TIFF on Apple/Windows and HEIF on
+  Apple, including native-size exports and mixed RAW/image batches.
+- Twenty-nine additional creative looks and consistent artwork, including the
+  independently authored Ektar look. Third-party attribution and UNCONFIRMED
+  redistribution records remain intact under the owner's release decision.
+- A six-check hosted CI workflow, including native macOS arm64 and Intel
+  app/parity builds. Exact candidate run results are recorded separately.
+
+### Changed
+
+- Open photos with a single preview; before/after comparison is explicitly enabled.
+- Combine temperature/tint under White Balance and simplify collapsed vignette controls.
+- Target macOS 14 on both Apple Silicon and Intel, with architecture/minimum-OS
+  isolated dependency builds and runtime-available ImageIO checks.
+- Keep optional usage statistics SDK-free in default distribution builds.
+
+### Fixed
+
+- Preserve master-recipe tint while clearing dormant camera-only settings in
+  raster-source to RAW-target batches on every client.
+- Reject profiled non-RGB Apple images and malformed Android PNG color/end
+  metadata while accepting legal SDR cICP and structured RGB ICC profiles.
+- Complete native iPhone/iPad Files import/cancellation/busy/draft regression
+  coverage and restore renderer-independent Windows batch-model compilation.
+
+Version `0.8.0`, build `12`. See [release notes](docs/releases/v0.8.0.md),
+[source rebuild instructions](docs/releases/v0.8.0-source.md) and
+[release acceptance](docs/releases/v0.8.0-preparation.md). AI denoise/upscaling,
+HDR export, video generation and mobile Agent/MCP are not part of this release.
+
 ## [0.7.0] - 2026-10-14
 
 ### Added

@@ -1,7 +1,8 @@
 # Documentation
 
-Use the guides below for the current source. Published downloads remain
-[v0.7.0, build 11](releases/v0.7.0.md). Current development release gates are in
+The current source targets [v0.8.0, build 12](releases/v0.8.0.md). Use the
+[GitHub release record](https://github.com/dancancer/RawLab/releases) for actual
+published packages and checksums. Candidate gates are tracked in
 [v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
 retain their original candidate scope.
 
@@ -32,6 +33,7 @@ retain their original candidate scope.
 
 ## v0.8.0 Preparation
 
+- [Release notes](releases/v0.8.0.md) and [corresponding-source instructions](releases/v0.8.0-source.md)
 - [Release blockers, scope decisions and remaining acceptance](releases/v0.8.0-preparation.md)
 - [macOS Agent and ordinary-image verification](verification-agent-v08.md)
 - [Windows Agent and integrated-source verification](../RawLabWindows/VERIFICATION-agent-v08.md)
@@ -49,15 +51,16 @@ retain their original candidate scope.
 - [Version and release preparation checklist](releases/v0.7.0-preparation.md)
 - [JPEG XL DNG verification](verification-dng-jpeg-xl-2026-10-12.md)
 
-All five features are integrated in development. The final composition report
-distinguishes new execution from evidence reused through identical source.
-The candidate records retain their original local scope; the remote
+The five v0.7 features were integrated before that release. Its final composition
+report distinguishes new execution from evidence reused through identical source.
+These candidate records retain their original local scope; the versioned
 [v0.7.0 Release](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)
-is the current publication record. No v0.8.0 package has been published.
+records that publication, not the current v0.8 candidate state.
 
 ## Published Releases and History
 
 - [Changelog](../CHANGELOG.md)
+- [v0.8.0 notes](releases/v0.8.0.md) and [corresponding source](releases/v0.8.0-source.md)
 - [v0.7.0 release](releases/v0.7.0.md) and [corresponding source](releases/v0.7.0-source.md)
 - [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)
 - [v0.5.1 release](releases/v0.5.1.md) and [v0.5.0 release](releases/v0.5.0.md)

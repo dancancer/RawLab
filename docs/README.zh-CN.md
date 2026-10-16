@@ -13,7 +13,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 ## 主要功能
 
 - RAW 显影，支持曝光、相机空间白平衡、明暗、色彩和锐化调整。
-- 当前开发源码支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 另支持 HEIF。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与验收边界见[普通图像输入记录](verification-raster-input-all-platforms-2026-10-16.md)。
+- 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 另支持 HEIF。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与验收边界见[普通图像输入记录](verification-raster-input-all-platforms-2026-10-16.md)。
 - 四端新照片默认使用“匹配内嵌预览”曝光基准，提供一次性自动曝光和八色 HSL 调整；保留旧照片已保存的曝光基准。
 - 内置胶片外观，强度范围为 0-200%，支持兼容 CUBE/RLOOK 导入及原图与调整效果对比。
 - 四端统一提供 14 个大师配方与风格图标。应用配方覆盖六项调色及全部 24 项 HSL，0-200% 强度整体缩放当前配方参数、HSL 和 LUT；编辑记录与冻结批量任务保留手动修改，并按目标 RAW 解析拍摄白平衡。
@@ -24,13 +24,15 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 - Windows、macOS 和 Android 导出 JPEG 与 16-bit PNG，iOS 导出 JPEG；保留可读取的拍摄元数据，更新成片尺寸和方向。
 - 在支持的平台使用 Metal、Direct3D 11 或 OpenGL ES，HSL 接入平台 GPU 显影链路，并保留 GPU 失败时的自动 CPU 回退。RAW 解码和文件编码仍在 CPU 执行。
 - 共享 C++17 核心、命令行工具及桌面 LUT 准备工具。
+- 桌面 Agent 提供完整编辑参数、能力查询、预览和最终导出，与界面和冻结批量任务复用参数及处理核心。
+- 支持裁切、旋转、拉直、翻转和透视校正；打开照片默认仅显示预览图，按需开启前后对比。
 
 ## 支持平台
 
 | 客户端 | 系统要求 |
 | --- | --- |
 | Windows | Windows 10/11，x64 |
-| macOS | v0.8 目标为 macOS 14+，Apple Silicon 或 Intel；最低系统实机验收待完成 |
+| macOS | 最低部署目标为 macOS 14，支持 Apple Silicon 或 Intel；最低系统实机覆盖仍有限 |
 | Android | Android 8.0+，ARM64 或 x86_64 |
 | iOS | iOS 18+，iPhone 和 iPad；下载的 IPA 需要自行重新签名 |
 
@@ -38,7 +40,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 
 - [文档索引](README.md)
 - [下载最新版本](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.7.0 发布说明（构建 11）](releases/v0.7.0.md)
+- [v0.8.0 发布说明（构建 12）](releases/v0.8.0.md)
 - [安装与分发说明](installation.md)
 - [将 RawLab 安装到自己的 iPhone](ios-installation.zh-CN.md)
 - [更新日志](../CHANGELOG.md)

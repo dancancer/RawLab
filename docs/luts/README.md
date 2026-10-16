@@ -1,10 +1,10 @@
 # Bundled RawLab Looks
 
-Status on 2026-10-16: the repository owner explicitly approved public source
-publication with the unconfirmed-permission notice retained and integration into
-`development`. The 28 third-party derivatives remain UNCONFIRMED for
-redistribution. The owner's approval is not an original-author license grant or
-formal release authorization. Color adaptation is not license clearance.
+Status on 2026-10-17: after the earlier source/development exception, the owner
+explicitly authorized including these LUTs in the v0.8.0 formal release while
+retaining the notices and unresolved risk record. The 28 third-party derivatives
+remain UNCONFIRMED for redistribution. The owner's decision is not an
+original-author license grant. Color adaptation is not license clearance.
 
 ## Inventory and Identity
 
@@ -296,11 +296,12 @@ Windows Release build commands and the other platform configurations require no
 LUT-specific override, CI bypass or substitute configuration. Existing unrelated
 RUM private-validation restrictions remain unchanged.
 
-The owner explicitly accepted public source publication and `development`
-integration while this evidence is unresolved. That exception does not establish
-third-party rights, replace a per-source review, or authorize a tag, official
-Release, installer upload, signing or deployment. Successful tests and CI do not
-clear the risk.
+The owner initially accepted public source publication and `development`
+integration while this evidence was unresolved. On 2026-10-17 the owner separately
+authorized formal v0.8.0 distribution with these derivatives included. This does
+not establish third-party rights or replace a per-source review. Successful tests
+and CI do not clear the risk; UNCONFIRMED catalog fields and permanent notices
+remain intact.
 
 Before clearing the gate, record permission for each source (including derivative
 redistribution), retain required author/license notices, update catalog and

@@ -9,9 +9,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.7.0</Version>
-    <FileVersion>0.7.0.11</FileVersion>
-    <InformationalVersion>0.7.0+build.11</InformationalVersion>
+    <Version>0.8.0</Version>
+    <FileVersion>0.8.0.12</FileVersion>
+    <InformationalVersion>0.8.0+build.12</InformationalVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RawLabRumLocal)' == 'true' and '$(Configuration)' != 'Release'">

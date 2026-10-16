@@ -5,21 +5,21 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
-0.8 编辑器实现位于独立功能分支，尚未发布。统一参数行、原生菜单、几何/镜头草稿及本轮验证边界见 [Windows 0.8 验证记录](VERIFICATION-v08.md)。下方 0.7 下载链接仍指已发布版本。
+0.8 编辑器与 Agent 已合入集成源码。统一参数行、原生菜单、几何/镜头草稿及各轮验证边界见 [Windows 0.8 验证记录](VERIFICATION-v08.md)。实际发布状态、包版本和校验和以 GitHub Release 及随包 provenance 为准。
 
-本地 Agent v08 开发还接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
+Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
 普通图像只接受单帧、不透明的 8-bit SDR RGB，最多 64M 像素；方向与 ICC 转 sRGB 各处理一次，
 不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。HEIF、BigTIFF、透明、高位深、浮点/HDR、CMYK、多帧以及不支持的色彩描述会明确拒绝，不能据此宣称支持所有 ICC。
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
-Windows 实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)，不代表已发布或 PR 已更新。
+Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.7.0 Windows 包
+## 下载 v0.8.0 Windows 包
 
-[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Windows-0.7.0-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.7.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.7.0/SHA256SUMS.txt)
+[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Windows-0.8.0-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.0/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.7.0/build11，self-contained .NET8；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。受 Sony 内存修复影响的 native DLL 已增量重建，未变的 WPF/runtime/resources 沿用已验证的0.7候选。新增 JPEG XL DNG、渲染型 DNG 导出、镜头配置校正、六语界面和视口/降噪复用。实际包检查与既有 GPU/UI 覆盖见[发布验收](../docs/verification-v0.7.0-release.md)。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.8.0/build12，self-contained .NET8；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
 
 ## 构建
 
