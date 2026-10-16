@@ -706,7 +706,12 @@ final class EditorV4UITests: XCTestCase {
         // UIPickerView uses grouped thousands in its row accessibility labels while
         // the value context intentionally keeps the compact formatter. Preserve
         // signed values such as +20 exactly as authored by the test.
-        let sign = formatted.first.map(String.init).flatMap { $0 == "+" || $0 == "-" ? $0 : nil } ?? ""
+        let sign: String
+        if let first = formatted.first, first == "+" || first == "-" {
+            sign = String(first)
+        } else {
+            sign = ""
+        }
         let magnitudeText = sign.isEmpty ? formatted : String(formatted.dropFirst())
         let magnitude = Double(magnitudeText) ?? 0
         let groupedMagnitude = abs(magnitude) >= 1000
