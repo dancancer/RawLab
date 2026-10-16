@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DEPENDENCY_PREFIX="${RAWLAB_DEPENDENCY_PREFIX:-$ROOT/build/macos15-deps/$(uname -m)/install}"
-export PKG_CONFIG_PATH="$ROOT/build/lensfun/$(uname -m)/install/lib/pkgconfig:$DEPENDENCY_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+source "$ROOT/RawLabMac/build-env.sh"
+DEPENDENCY_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 LINK_PACKAGES=(libraw rawlab-dng-sdk libtiff-4)
 # A focused geometry build may disable these optional processing stages.
 for package in opencv4 wavelib lensfun; do
@@ -19,7 +19,7 @@ for source in "$ROOT"/RawLabMac/Sources/*.swift; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
 done
-swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     -module-cache-path "$OUT/ModuleCache" -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/GeometryRenderTests.swift" \
     "$BUILD/libsony2fuji_core.a" $(pkg-config --libs "${LINK_PACKAGES[@]}") \

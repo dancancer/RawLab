@@ -17,6 +17,9 @@ for notice in RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensin
     test -f "$APP/Contents/Resources/Licenses/$notice"
 done
 cmp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
+for notice in GLib-COPYING PCRE2-LICENCE proxy-libintl-COPYING zlib-LICENSE; do
+    test -f "$APP/Contents/Resources/Licenses/Lensfun/$notice"
+done
 for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \
         Highway-LICENSE.txt Highway-LICENSE-BSD3.txt skcms-LICENSE.txt; do
     test -f "$APP/Contents/Resources/Licenses/dng-sdk/$notice"
