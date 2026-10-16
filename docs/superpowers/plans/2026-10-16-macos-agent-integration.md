@@ -89,7 +89,7 @@ without text conflicts. The target diff for `lutools`, Shared and all non-Mac pl
 - [x] Run the privacy presentation harness only without stealing a desktop: use a task-owned unshown window or obtain a concrete desktop handoff first. Verify the default unavailable/opt-in surface; do not change real consent.
 - [x] If local SDK linkage is affected, build a private local bundle only and verify exact bundled notices/SDK and Release-flag rejection. Do not launch that bundle or send events.
 - [x] Preserve the 2026-10-15 CUA interaction evidence for unchanged compare logic. Inspect the integrated diff; repeat only state combinations whose code changed, using the isolated harness and a free/handed-off desktop.
-- [ ] Run an independent read-only integration review, fix confirmed defects with focused RED/GREEN checks, and append source-bound results/limits to the report.
+- [x] Run an independent read-only integration review, fix confirmed defects with focused RED/GREEN checks, and append source-bound results/limits to the report.
 
 Validation limits: the unchanged local-SDK linkage was not rebuilt; default SDK-free closure,
 fake-SDK termination and the Release/local flag rejection were checked. The unchanged look-import
@@ -104,8 +104,14 @@ commands, retained failed attempts and logs.
 
 **Interfaces:** Existing source branch -> latest confirmed development; coordinator consumes PR URL, exact head/base and evidence.
 
-- [ ] Check diff, owned staged paths and a clean worktree; make scoped local commits. Recheck target drift and rerun only affected gates.
-- [ ] Query existing PRs for `feature/agent-complete-edits`; reuse a matching open PR rather than creating a duplicate.
-- [ ] Push without force. For GitHub maintenance calls, use command-scoped owner authentication if required; do not switch global gh auth or expose/persist tokens.
-- [ ] Create/update the development PR with changes, current-source verification, historical CUA scope, RUM preservation and unverified platform/SDK boundaries. Attach the created PR with the app tool.
-- [ ] Verify remote head, current target, mergeability and exact-head CI/status. Empty CI is not success. Report URL/head/target/evidence to coordination; do not merge.
+- [x] Check diff, owned staged paths and a clean worktree; make scoped local commits. Recheck target drift and rerun only affected gates.
+- [x] Query existing PRs for `feature/agent-complete-edits`; reuse a matching open PR rather than creating a duplicate.
+- [x] Push without force. For GitHub maintenance calls, use command-scoped owner authentication if required; do not switch global gh auth or expose/persist tokens.
+- [x] Create/update the development PR with changes, current-source verification, historical CUA scope, RUM preservation and unverified platform/SDK boundaries. Attach the created PR with the app tool.
+- [x] Verify remote head, current target, mergeability and exact-head CI/status. Empty CI is not success. Report URL/head/target/evidence to coordination; do not merge.
+
+Delivered [PR #58](https://github.com/dancancer/RawLab/pull/58), attached to this chat. Reviewed
+production head `b7d6ca9eaca46e7cf3efb85f45fa127bb6d26574` targets `7da15e57`; GitHub reports
+OPEN/non-draft/MERGEABLE/CLEAN, with zero check runs and zero statuses (combined status pending),
+not hosted-CI success. This completion record is docs-only; refresh remote head/state once more
+after pushing it and send the final freeze SHA to coordination. Keep the worktree and unique logs.

@@ -207,11 +207,12 @@ Lensfun/TIFF 依赖，并新增 raster 成功/失败、显式胶片选择和混�
 变更自动合并，随后按行为验证。相对该目标，`lutools`、Shared、Windows、Android、iOS
 差异均为空；RUM 的 `FilmDock`、About 隐私和终止 delegate 未被本功能修改。
 
-### 源码与构建绑定
+### 初次联合构建绑定
 
 生产源码在合并提交 `5a4ead4` 构建；补充测试及 harness 修复提交为
-`433115d4a0ab407aab18930824a44d5a68ba7977`，没有生产行为改动。后续本节与计划的
-文档提交不改变以下生产树，也不以文档提交为理由重复 native 构建。
+`433115d4a0ab407aab18930824a44d5a68ba7977`，没有生产行为改动。报告提交 `aa52d23`
+仅改文档。以下是该阶段的树与产物；后续评审发现的文案修复及最终构建另见末节，
+不以文档提交为理由重复 native 构建。
 
 | Git tree | 值 |
 | --- | --- |
@@ -273,3 +274,33 @@ Lensfun 重复 calibration warning 及故意坏 RAW 的 IO 诊断仍在成功测
 - Windows 原生验证和其他平台由各 owner 报告，本 Mac PR 不代替这些平台的验收；真实 HDR
   gain-map fixture 仍未覆盖。普通图像支持限制不变。
 - 当前结果均为本地执行，不是 hosted CI。PR 的 exact-head CI/状态在交付时另行核对。
+
+## 最终复核与 PR 交付
+
+独立只读 reviewer 完整检查 `7da15e57..aa52d239`，未发现 Critical/Important 问题。
+唯一 Minor 是支持普通图像的批量/加载/重试入口残留五处 RAW-only 文案；主代理逐处
+核实后，以 `b7d6ca9eaca46e7cf3efb85f45fa127bb6d26574` 最小修复，并补齐六语通用照片
+key。没有调整渲染、状态、比较重置或 RUM 逻辑。reviewer 对 `aa52d239..b7d6ca9` 增量
+复核后，将完整范围绑定到 `7da15e57..b7d6ca9`，最终 Ready，无遗留 finding。
+协调侧另有共享/RUM 只读复核；未为相同代码重复派发第三轮或重跑既有渲染实验。
+
+新增 `python3 RawLabMac/tests/test_photo_copy.py` 修复前实际 RED 8 处（旧文案和六语缺 key），
+修复后 GREEN 3/3；使用 `plutil` 解析全部六语资源。仅重验受影响的
+`localization.sh`、`presentation.sh`、`test_single_preview.py`（3/3）、完整
+`RawLabMac/build.sh` 和 `bundle.sh <app>`，均 exit 0。日志分别为同目录下的
+`photo-copy-red.log`、`photo-copy-green.log`、`localization-copy.log`、
+`presentation-copy.log`、`build-copy.log`、`bundle-copy.log`。
+
+最终构建对应 `b7d6ca9`，源码树为 `RawLabMac/Sources=2dca778d24c4bf93cc386bcc57aef6f10f4a3219`、
+`RawLabMac/Resources=05bdf758b664b979ec678a5f57d1cfd9f663b8dd`；Shared 和 lutools 的树值
+与上表相同。最终 app executable SHA-256 为
+`bffa56d36b5b8b797456425887fdb1b761e42354ef00c9ac94cf87fdc7b010b1`；core archive 和 CLI
+SHA-256 与上表相同。构建后未启动 app 或真实 SDK；历史物理 compare 证据、NOT REACHED
+的 sheet/真实 SDK/HDR fixture 边界不变。
+
+已 push 原分支并创建、attach 唯一 [PR #58](https://github.com/dancancer/RawLab/pull/58)，
+目标 `development=7da15e57b1f2178d12cabc823c249dc589578547`。首次远端核验 source 为
+`b7d6ca9eaca46e7cf3efb85f45fa127bb6d26574`，OPEN、非 Draft、MERGEABLE、CLEAN；
+exact-head check-runs 为 0、commit statuses 为 0，combined status 为 pending，
+**没有 hosted CI 通过结论**。本完成记录仅改文档，push 后再次核对最终远端 SHA/状态并交协调。
+本会话不 merge、不发布、不清理 worktree 或唯一证据。
