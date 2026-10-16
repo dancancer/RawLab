@@ -237,3 +237,91 @@ The additive 16-byte `sony2fuji_perspective_config` v1 and
 binary request v2 unchanged. The two setters preserve each other's settings.
 Set both complete configs, including zero values to reset, before every render.
 They share the same native-canvas query lifecycle and CPU geometry policy.
+
+## Complete edits in recipe v4
+
+Use `schema_version: 4` for the complete edit record. Versions 1, 2 and 3
+remain unchanged and reject these fields. The [v4 schema](edit-json-v4.schema.json)
+and [complete example](../examples/edit-recipes/complete-v4.json) show the v4
+control shape; normalized CLI output also includes explicit `input.type`.
+
+`input.type` is optional in v4 and defaults to `raw`; the v4 serializer always
+emits the explicit value (`raw` or `raster`). Versions 1, 2 and 3 keep their
+existing input object and reject `input.type`, so legacy recipes do not acquire
+new behavior during normalization.
+
+All v4 groups are optional in the input. Validation treats omitted controls as
+identity values, while normalization emits every group and every default. The
+recipe stores the final values consumed by the shared core; it does not store a
+master-recipe ID, UI percentage conversion, or another multiplication by look
+strength.
+
+`--lens-database /path/to/offline-db` selects an offline Lensfun file/directory
+for rendering. A v4 render that requests lens correction returns
+`result.lens_correction` with `state`, `applied_distortion`, `applied_tca`,
+`crop_scale` and `profile_id`. For example, `no_database`, `no_calibration` or
+`embedded_geometry` reports that the requested correction was not applied;
+successful file encoding alone is not evidence of applied lens correction.
+
+### Raster input boundary
+
+`input.type: "raster"` is a macOS capability for one opaque 8-bit SDR JPEG,
+PNG, TIFF or HEIF frame. The supported input is single-frame, sRGB display
+data; 16-bit, alpha, floating-point, HDR, CMYK and other image variants are
+rejected before processing. Other platforms must advertise raster only when
+their capability response provides the same contract.
+
+Raster recipes use `edits.exposure.mode: "sensor"` and
+`edits.white_balance.mode: "none"`; omitting white balance has the same
+default. `raw_level` must be zero, and lens `distortion`, `tca` and
+`profile_id` must be disabled/null. Tone, look, HSL, effects, display chroma
+denoise, wavelet denoise and geometry remain available. Raw-only camera white
+balance, RAW exposure baselines, lens correction and FBDD are not applied.
+Mixed batches resolve these RAW-only settings per input instead of carrying
+camera state from a neighboring RAW photo.
+
+| Capability | `raw` | `raster` |
+| --- | --- | --- |
+| Camera white balance and RAW exposure baseline | Yes | No |
+| FBDD and catalog lens correction | Optional | No |
+| Tone, look, HSL, effects and geometry | Yes | Yes |
+| Display chroma and wavelet denoise | Optional | Optional |
+
+| Group / field | Values / units | Default |
+| --- | --- | --- |
+| `input.type` | `raw` or macOS `raster` | `raw` when omitted |
+| `edits.look.strength` | Factor [0,2]; 0 bypasses look loading | 1 |
+| `edits.tone.contrast`, `saturation` | Core multipliers [0,2] | 1 |
+| `edits.tone.highlights`, `shadows`, `s_curve` | Signed core controls [-1,1] | 0 |
+| `edits.detail.sharpening` | Core sharpening amount [0,2] | 0 |
+| `edits.hsl.hue`, `saturation`, `lightness` | Three arrays of eight channel values, each [-100,100] | Eight zeroes per array |
+| `edits.effects.vignette_amount`, `vignette_roundness` | [-100,100] | 0 |
+| `edits.effects.vignette_midpoint`, `vignette_feather`, `vignette_highlights` | [0,100] | 50, 50, 0 |
+| `edits.effects.grain_amount`, `grain_size`, `grain_roughness` | [0,100] | 0, 25, 50 |
+| `edits.denoise.raw_level`, `chroma_mode` | Integer 0, 1 or 2 | 0 |
+| `edits.denoise.wavelet.enabled` | Boolean | `false` |
+| `edits.denoise.wavelet.luma`, `chroma`, `coarse` | [0,100] | 0, 46, 50 |
+| `edits.lens_correction.distortion`, `tca` | Boolean | `false` |
+| `edits.lens_correction.auto_crop` | Boolean | `true` |
+| `edits.lens_correction.profile_id` | Nonempty catalog ID or `null`; `null` selects automatic matching | `null` |
+
+For raster input, the effective defaults are `sensor` exposure, `none` white
+balance, `raw_level: 0`, and disabled/null lens correction. A raw recipe may
+use `camera`, `auto` or `temperature` white balance, but not `none`.
+
+The v4 adapter maps tone and detail to the existing request v2 controls. The
+remaining groups use the additive session setters for HSL, photo effects, raw
+and display denoise, wavelet denoise, and lens correction. These setters must
+be available in the linked shared core before a recipe is rendered; unavailable
+optional capabilities return their existing structured `unsupported` status.
+The macOS path reuses the shared `apply`/HSL stages and preserves the current
+RAW camera white-balance result rather than applying a second UI conversion.
+For raster input the display-linear path performs the explicit sRGB decode and
+re-encode without adding a RAW scene baseline or neutral-scene sigmoid. GPU
+Auto may fall back to CPU; GPU Force rejects unsupported raster paths rather
+than claiming GPU success.
+
+The result protocol remains `protocol_version: 1`; v4 changes only the edit
+schema. `--print-recipe` still validates without opening the RAW and preserves
+recipe-relative paths. The CLI capabilities response must advertise v4 only
+when the v4 parser and serializer are available.

@@ -44,6 +44,7 @@ internal static class AboutChecks
             ApplyLanguage();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             window = new MainWindow();
+            TestWindowState.Isolate(window,directory);
             // Keep startup updates on the real path, with isolated settings and no network access.
             typeof(MainWindow).GetField("updates", PrivateInstance)!.SetValue(window, updates);
             window.UpdateNotice.DataContext = updates;

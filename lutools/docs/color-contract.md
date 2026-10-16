@@ -57,6 +57,38 @@ same uncompressed pixels, including a Stage1-only required MapTable, a required
 Stage2 GainMap with internal ActiveArea, orientation, WB reload and decoder
 reuse. The SDK allocation-failure hook verifies the C ABI memory status.
 
+### Display-Referred Raster Input
+
+The additive `SONY2FUJI_INPUT_DISPLAY_BUFFER=2` consumes tightly packed opaque
+RGB8/RGBA8 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
+their rendering are unchanged. The macOS ImageIO adapter applies EXIF orientation
+once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
+single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF. Transparency, higher bit depth,
+floating-point/HDR, multi-frame/page and CMYK inputs are rejected, not flattened
+or silently quantized. Untagged grayscale/indexed images are not inferred to use
+a particular gray transfer function and are rejected.
+
+Display input is inverse-sRGB-decoded once, uses the existing linear exposure,
+wavelet, look, tone/HSL, chroma/detail/effects and geometry stages, and re-encodes
+sRGB instead of adding the RAW scene sigmoid. With defaults its RGB8 pixels
+round-trip exactly. It receives no RAW exposure baseline, as-shot WB, FBDD or
+lens calibration. The native clients disable camera-specific controls; mixed
+batch snapshots resolve those controls independently for each input. Agent v4
+uses explicit `input.type=raster`, `exposure.mode=sensor` and WB `none` and rejects
+explicit RAW-only edits. A RAW film/DCP look applied to already rendered pixels
+is a creative effect, not recovery of sensor latitude or a calibrated camera match.
+
+This display-referred path reuses the reference CPU stages. GPU Auto explicitly
+falls back to CPU and Force returns unsupported until the scene-view GPU
+shaders have a matching display-input mode. Rendered DNG output preserves the
+result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
+The macOS adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
+and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
+Mac results; HEIF and BigTIFF are not enabled. Unknown non-sRGB PNG color metadata
+without a supported ICC profile is rejected instead of guessed. Other platforms
+currently return unsupported. Platform evidence and remaining ICC/physical-device
+limits are recorded in `RawLabWindows/VERIFICATION-agent-v08.md`.
+
 ## Rendering Order
 
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.

@@ -25,12 +25,12 @@ public sealed record PhotoEffectSpec(
     public double Value(double position)
     {
         position = Math.Clamp(position, 0, 1);
-        return Math.Clamp(Math.Round(Min + position * (Max - Min), MidpointRounding.AwayFromZero), Min, Max);
+        return Math.Clamp(Math.Round(Min + position * (Max - Min), 1, MidpointRounding.AwayFromZero), Min, Max);
     }
 
     public double? Parse(string text) => double.TryParse(text, System.Globalization.NumberStyles.Float,
-        System.Globalization.CultureInfo.CurrentCulture, out var value) && double.IsFinite(value)
-        ? Math.Clamp(value, Min, Max) : null;
+        System.Globalization.CultureInfo.GetCultureInfo(Loc.Language), out var value) && double.IsFinite(value)
+        ? Math.Clamp(Math.Round(value,1,MidpointRounding.AwayFromZero), Min, Max) : null;
 
     public static readonly PhotoEffectSpec[] All = [
         new(PhotoEffectParameter.VignetteAmount, Loc.Text("强度"), true, -100, 100, 0),

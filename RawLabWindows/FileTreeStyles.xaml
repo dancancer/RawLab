@@ -6,11 +6,11 @@
       <Setter.Value>
         <ControlTemplate TargetType="Thumb">
           <Border Background="Transparent" Padding="2">
-            <Border x:Name="Handle" Background="#555860" CornerRadius="3"/>
+            <Border x:Name="Handle" Background="{DynamicResource ScrollThumb}" CornerRadius="3"/>
           </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Handle" Property="Background" Value="#858993"/></Trigger>
-            <Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="Background" Value="#B3B7C0"/></Trigger>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Handle" Property="Background" Value="{DynamicResource ScrollHover}"/></Trigger>
+            <Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="Background" Value="{DynamicResource ScrollPressed}"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>

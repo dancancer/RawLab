@@ -405,10 +405,14 @@ sony2fuji_status validateRequest(
         if (isEmptyString(request->input_path)) {
             return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
-    } else if (request->input_type == SONY2FUJI_INPUT_BUFFER) {
+    } else if (request->input_type == SONY2FUJI_INPUT_BUFFER || request->input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER) {
         if (!request->input_pixels || request->input_width == 0 || request->input_height == 0) {
             return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
+        if (request->input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER &&
+            (request->input_color_space != SONY2FUJI_COLOR_SRGB || request->input_is_linear != 0 ||
+             request->wb_mode != SONY2FUJI_WB_CAMERA || request->temperature != 6500 || request->tint != 0))
+            return SONY2FUJI_STATUS_UNSUPPORTED;
     } else {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
@@ -417,15 +421,17 @@ sony2fuji_status validateRequest(
         if (isEmptyString(request->output_path)) {
             return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
-        if (request->input_type == SONY2FUJI_INPUT_RAW) {
+        const auto overwrites = [&](const char* source) {
             std::error_code error;
-            const auto inputPath = std::filesystem::u8path(request->input_path);
+            const auto inputPath = std::filesystem::u8path(source);
             const auto outputPath = std::filesystem::u8path(request->output_path);
-            const bool sameFile = std::filesystem::equivalent(inputPath, outputPath, error);
-            if (sameFile || std::filesystem::weakly_canonical(inputPath) ==
-                std::filesystem::weakly_canonical(outputPath))
-                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-        }
+            return std::filesystem::equivalent(inputPath, outputPath, error) ||
+                std::filesystem::weakly_canonical(inputPath) == std::filesystem::weakly_canonical(outputPath);
+        };
+        if (((request->input_type == SONY2FUJI_INPUT_RAW || request->input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER) &&
+             !isEmptyString(request->input_path) && overwrites(request->input_path)) ||
+            (!isEmptyString(request->lut_path) && overwrites(request->lut_path)))
+            return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     } else if (request->output_target == SONY2FUJI_TARGET_BUFFER) {
         if (!out_buffer) {
             return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -882,6 +888,8 @@ sony2fuji_status loadBufferImage(
 
     for (size_t i = 0; i < image.pixels.size(); ++i) {
         size_t offset = i * channels;
+        if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && channels == 4 && data[offset + 3] != 255)
+            return SONY2FUJI_STATUS_UNSUPPORTED;
         image.pixels[i].r = data[offset] / 255.0f;
         image.pixels[i].g = data[offset + 1] / 255.0f;
         image.pixels[i].b = data[offset + 2] / 255.0f;
@@ -1371,6 +1379,9 @@ static sony2fuji_status processImpl(
     }
 
     sony2fuji_request local = *request;
+    const bool displayInput = local.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER;
+    if (displayInput && (session->raw_noise_reduction != 0 || session->lens_correction.active() ||
+        session->gpu_config.mode == sony2fuji::GpuMode::Force)) return SONY2FUJI_STATUS_UNSUPPORTED;
     local.lut_strength = clampFloat(local.lut_strength, 0.0f, 2.0f);
     session->last_backend = SONY2FUJI_BACKEND_CPU;
     if (local.input_type != SONY2FUJI_INPUT_RAW) {
@@ -1417,6 +1428,9 @@ static sony2fuji_status processImpl(
 #else
     bool gpuPipeline = false;
 #endif
+    // Reuse the reference stages; scene-view GPU shaders retain their existing
+    // contract. Auto explicitly falls back for display-referred input.
+    if (displayInput) gpuPipeline = false;
 
     sony2fuji::ImageData image;
     sony2fuji_color_space color_space = SONY2FUJI_COLOR_SRGB;
@@ -1595,9 +1609,10 @@ static sony2fuji_status processImpl(
 
     sony2fuji::ImageData base = image;
     for (auto& p : base.pixels) {
-        p.r = sony2fuji::neutralDisplay(p.r);
-        p.g = sony2fuji::neutralDisplay(p.g);
-        p.b = sony2fuji::neutralDisplay(p.b);
+        const auto encode = displayInput ? sony2fuji::GammaConverter::applySRGBGamma : sony2fuji::neutralDisplay;
+        p.r = encode(p.r);
+        p.g = encode(p.g);
+        p.b = encode(p.b);
     }
     if (use_lut) {
         if (dcp) {

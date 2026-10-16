@@ -11,8 +11,10 @@ public sealed record BatchItem(Guid Id, string Input, OriginalIdentity Identity)
     public string? Output { get; init; }
     public OriginalIdentity? CompletedIdentity { get; init; }
     public string? Error { get; init; }
+    public string? ValidationError { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public bool CanSelect=>ValidationError==null;
     public static BatchItem Create(string input) => new(Guid.NewGuid(), Path.GetFullPath(input), OriginalIdentity.Read(input));
-    public string StatusText => Status switch {
+    public string StatusText => ValidationError!=null ? Loc.Text("验证失败") : Status switch {
         BatchStatus.Waiting => Loc.Text("等待导出"), BatchStatus.Running or BatchStatus.Publishing => Loc.Text("正在导出"),
         BatchStatus.Succeeded => Loc.Text("已导出"), _ => Loc.Text("导出失败")
     };
@@ -44,9 +46,9 @@ public sealed class BatchJob
     public bool Cancelled { get; set; }
     public string? Error { get; set; }
     public List<BatchItem> Items { get; set; } = [];
-    public int SelectedCount => Items.Count(x => x.Selected);
-    public int SucceededCount => Items.Count(x => x.Selected && x.Status == BatchStatus.Succeeded);
-    public int FailedCount => Items.Count(x => x.Selected && x.Status == BatchStatus.Failed);
+    public int SelectedCount => Items.Count(x => x.Selected && x.CanSelect);
+    public int SucceededCount => Items.Count(x => x.Selected && x.CanSelect && x.Status == BatchStatus.Succeeded);
+    public int FailedCount => Items.Count(x => x.Selected && x.CanSelect && x.Status == BatchStatus.Failed);
     public int RemainingCount => SelectedCount - SucceededCount - FailedCount;
     [System.Text.Json.Serialization.JsonIgnore]
     public string Suffix => Format.Suffix();
@@ -145,7 +147,7 @@ public static class BatchRunner
             for (var i = 0; i < job.Items.Count; i++)
             {
                 var item = job.Items[i];
-                if (!item.Selected || item.Status == BatchStatus.Succeeded || (failuresOnly && item.Status != BatchStatus.Failed)) continue;
+                if (!item.Selected || !item.CanSelect || item.Status == BatchStatus.Succeeded || (failuresOnly && item.Status != BatchStatus.Failed)) continue;
                 if (cancellation.IsCancellationRequested) { job.Cancelled = true; break; }
                 VerifyDestination(job.OutputDirectory);
                 job.Items[i] = item with { Status = BatchStatus.Running, Error = null };

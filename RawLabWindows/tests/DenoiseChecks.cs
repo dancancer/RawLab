@@ -1,27 +1,60 @@
 using System.IO;
+using System.Security.Cryptography;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RawLab.Windows;
 
 internal static class DenoiseChecks
 {
-    internal static void Run(string repository,string raw)
+    internal static void Run(string repository,string raw,string? noiseRaw=null)
     {
         static void Check(bool value,string message) { if(!value)throw new Exception(message);Console.WriteLine("PASS "+message); }
         static byte[] Pixels(BitmapSource image) {
             var bytes=new byte[image.PixelWidth*image.PixelHeight*4];
             new FormatConvertedBitmap(image,PixelFormats.Bgra32,null,0).CopyPixels(bytes,image.PixelWidth*4,0);return bytes;
         }
+        noiseRaw=Path.GetFullPath(noiseRaw ?? Path.Combine(repository,"build","windows-fixtures","denoise.dng"));
+        if(!File.Exists(noiseRaw))throw new FileNotFoundException("Generate the controlled noisy RAW with lutools/tests/make_denoise_fixture.py, or supply it as the fourth --denoise argument.",noiseRaw);
+        var rawHash=SHA256.HashData(File.ReadAllBytes(raw));
+        var noiseHash=SHA256.HashData(File.ReadAllBytes(noiseRaw));
         ComparisonChecks.Run(Check);
+        using(var controlled=new RenderEngine(0))
+        {
+            var controlSettings=new Adjustments();
+            var original=Pixels(controlled.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!.Image);
+            controlSettings.Denoise=DenoiseSettings.Clean;
+            var filtered=Pixels(controlled.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!.Image);
+            Check(!original.SequenceEqual(filtered),"Clean changes the controlled noisy RAW through the production RenderEngine");
+            using var controlGpu=new RenderEngine(1);
+            var controlGpuAvailable=controlGpu.Render(noiseRaw,new Adjustments(),null,1600,viewportPreview:true)!.Backend==3;
+            Console.WriteLine("OBSERVED controlled Direct3D 11 available="+controlGpuAvailable);
+            var automatic=controlGpu.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!;
+            var automaticPixels=Pixels(automatic.Image);
+            Check(automatic.Backend is 0 or 3 && !original.SequenceEqual(automaticPixels) &&
+                automaticPixels.Zip(filtered,(a,b)=>Math.Abs(a-b)).Max()<=2,"Controlled Auto filters the RAW and matches CPU");
+            if(controlGpuAvailable || automatic.Backend==3)
+            {
+                controlGpu.SetGpuMode(2);
+                var forced=controlGpu.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!;
+                var forcedPixels=Pixels(forced.Image);
+                Check(forced.Backend==3 && !original.SequenceEqual(forcedPixels),"Force Direct3D 11 actually filters the controlled noisy RAW");
+                Check(forcedPixels.Zip(filtered,(a,b)=>Math.Abs(a-b)).Max()<=2,"Controlled active wavelet CPU/Direct3D 11 parity");
+            }
+            else Console.WriteLine("NOT REACHED controlled active Direct3D 11 parity: no Direct3D 11 backend observed");
+            controlSettings.Denoise=controlSettings.Denoise with{Enabled=false};
+            Check(original.SequenceEqual(Pixels(controlled.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!.Image)),
+                "Disabling controlled denoise restores exact original pixels");
+        }
         using var engine=new RenderEngine(0);
         var settings=new Adjustments();
-        // 小缩图可能没有足够的噪声样本；导出回归先确保预览实际发生滤波。
+        // 任意真实照片可能不足八个平坦图块；非零滤波由上面的受控 RAW 保证。
         const int appliedEdge=1600;
         var off=engine.RenderPreview(raw,settings,null,appliedEdge,false,true,false);
         settings.Denoise=DenoiseSettings.Clean;
         var clean=engine.RenderPreview(raw,settings,null,appliedEdge,false,true,false);
         Check(ReferenceEquals(off.Neutral,clean.Neutral),"Denoise leaves the original frame unchanged");
-        Check(!Pixels(off.Result.Image).SequenceEqual(Pixels(clean.Result.Image)),"Native wavelet changes real RAW output");
+        Check(!ReferenceEquals(off.Result,clean.Result),"Denoise changes invalidate the managed preview result cache");
+        Console.WriteLine("OBSERVED external RAW viewport pixel change="+!Pixels(off.Result.Image).SequenceEqual(Pixels(clean.Result.Image)));
         settings.Set(Parameter.Exposure,1);
         var exposed=engine.RenderPreview(raw,settings,null,appliedEdge,false,true,false);
         Check(ReferenceEquals(off.Neutral,exposed.Neutral),"Exposure leaves the original frame unchanged");
@@ -112,5 +145,7 @@ internal static class DenoiseChecks
         Check(actual.PixelWidth==full.Image.PixelWidth && actual.PixelHeight==full.Image.PixelHeight,
             "JPEG after viewport denoise remains native size");
         Check(Pixels(actual).SequenceEqual(Pixels(expected)),"JPEG after viewport denoise matches independent FINAL export");
+        Check(rawHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(raw))) && noiseHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(noiseRaw))),
+            "External and controlled RAW inputs remain byte-identical");
     }
 }

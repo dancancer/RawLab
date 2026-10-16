@@ -32,20 +32,24 @@ public static class Loc
         return Choices.Any(c => c.Code == parts[0] && c.Code != "system") ? parts[0] : "en";
     }
 
-    public static void Initialize(string? preferenceOverride = null)
+    public static void Initialize(string? preferenceOverride = null)=>Initialize(preferenceOverride,null);
+    public static void Initialize(string? preferenceOverride,string? preferencePath)
     {
-        try { Preference = preferenceOverride ?? (File.Exists(preferenceFile) ? File.ReadAllText(preferenceFile).Trim() : "system"); }
+        var path=preferencePath ?? preferenceFile;
+        try { Preference = preferenceOverride ?? (File.Exists(path) ? File.ReadAllText(path).Trim() : "system"); }
         catch (IOException) { Preference = "system"; }
         catch (UnauthorizedAccessException) { Preference = "system"; }
         if (!Choices.Any(c => c.Code == Preference)) Preference = "system";
         Reload();
     }
 
-    public static void SetPreference(string preference)
+    public static void SetPreference(string preference)=>SetPreference(preference,null);
+    public static void SetPreference(string preference,string? preferencePath)
     {
         if (!Choices.Any(c => c.Code == preference)) throw new ArgumentException(nameof(preference));
-        Directory.CreateDirectory(Path.GetDirectoryName(preferenceFile)!);
-        File.WriteAllText(preferenceFile, preference);
+        var path=preferencePath ?? preferenceFile;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, preference);
         Preference = preference;
         Reload();
         Changed?.Invoke();
