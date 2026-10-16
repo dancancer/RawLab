@@ -24,7 +24,8 @@ struct MacGeometryWorkspace: View {
                         .foregroundStyle(model.geometryDraftTab == tab ? Color.yellow : Color.secondary)
                         .accessibilityIdentifier("geometry.tab.\(tab.rawValue)")
                         .accessibilityAddTraits(model.geometryDraftTab == tab ? .isSelected : [])
-                        .disabled(!model.invalidGeometryDraftInputs.isEmpty && model.geometryDraftTab != tab)
+                        .disabled((!model.invalidGeometryDraftInputs.isEmpty && model.geometryDraftTab != tab) ||
+                                  (tab == .lens && RenderEngine.isRasterInput(model.file)))
                 }
                 Spacer(minLength: 8)
                 Button {

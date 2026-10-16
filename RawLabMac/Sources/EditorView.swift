@@ -6,7 +6,7 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
-    @State private var compare = true
+    @State private var compare = false
     @State private var clipping = false
     @State private var histogramExpanded = true
     @State private var showFiles = true
@@ -82,7 +82,10 @@ struct EditorView: View {
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
-        .onChange(of: model.file) { _, _ in fit() }
+        .onChange(of: model.file) { _, _ in
+            compare = false
+            fit()
+        }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.geometryDraftTab) { _, tab in
             if geometryViewState != nil { adjustmentPanel.selectHeight(tab == .lens ? 330 : 252) }
@@ -140,8 +143,9 @@ struct EditorView: View {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().frame(maxWidth: 210)
                     .id(localizationLocale.identifier)
+                    .disabled(RenderEngine.isRasterInput(model.file))
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
-                Text(model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
+                Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
                     .font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 66)
                     .help(L10n.text("基础曝光偏移"))
                 Menu {
@@ -198,7 +202,7 @@ struct EditorView: View {
             VStack(spacing: 16) {
                 if model.busy {
                     ProgressView().controlSize(.regular)
-                    Text(model.file?.lastPathComponent ?? L10n.text("RAW 照片")).font(.headline).lineLimit(1)
+                    Text(model.file?.lastPathComponent ?? L10n.text("照片")).font(.headline).lineLimit(1)
                 } else if let error = model.error {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.yellow)
                     Text(L10n.text("操作失败")).font(.headline)
@@ -206,11 +210,11 @@ struct EditorView: View {
                         .frame(maxWidth: 340)
                     HStack {
                         Button(L10n.text("重试"), action: model.schedule)
-                        Button(L10n.text("打开其他 RAW…"), action: model.openPanel)
+                        Button(L10n.text("打开照片"), action: model.openPanel)
                     }
                 } else {
                     Image(systemName: "photo.on.rectangle.angled").font(.system(size: 36)).foregroundStyle(.secondary)
-                    Button(action: model.openPanel) { Label(L10n.text("打开 RAW…"), systemImage: "folder") }.controlSize(.large)
+                    Button(action: model.openPanel) { Label(L10n.text("打开照片"), systemImage: "folder") }.controlSize(.large)
                         .accessibilityIdentifier("editor.empty.openRAW")
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -249,7 +253,7 @@ struct EditorView: View {
                 .help(L10n.text("显示或收起文件树")).accessibilityLabel(L10n.text("文件树"))
                 .accessibilityValue(showFiles ? L10n.text("已展开") : L10n.text("已收起"))
             Button(action: model.openPanel) { Image(systemName: "folder") }
-                .help(L10n.text("打开 RAW")).accessibilityLabel(L10n.text("打开 RAW")).disabled(model.exporting)
+                .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
         }
         ToolbarItemGroup {
             Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }

@@ -17,13 +17,13 @@ struct BatchExportView: View {
                 }
                 Spacer()
                 if !model.job.started {
-                    Button(action: model.addFiles) { Label(L10n.text("添加 RAW"), systemImage: "plus") }
+                    Button(action: model.addFiles) { Label(L10n.text("添加照片"), systemImage: "plus") }
                     Button(L10n.text("全选")) { model.selectAll(true) }.disabled(model.job.items.isEmpty)
                     Button(L10n.text("全不选")) { model.selectAll(false) }.disabled(model.job.selectedCount == 0)
                 }
             }.padding(20)
             if model.validating {
-                HStack { ProgressView().controlSize(.small); Text(L10n.text("正在检查 RAW 照片…")) }
+                HStack { ProgressView().controlSize(.small); Text(L10n.text("正在检查照片…")) }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 12)
             }
             if model.job.started {
@@ -60,7 +60,7 @@ struct BatchExportView: View {
             if model.job.items.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "photo.on.rectangle").font(.system(size: 32)).foregroundStyle(.secondary)
-                    Text(L10n.text("尚未选择 RAW"))
+                    Text(L10n.text("尚未选择照片"))
                     Button(L10n.text("选择照片…"), action: model.addFiles)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
