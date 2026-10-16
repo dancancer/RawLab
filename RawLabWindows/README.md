@@ -5,6 +5,14 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
+0.8 编辑器实现位于独立功能分支，尚未发布。统一参数行、原生菜单、几何/镜头草稿及本轮验证边界见 [Windows 0.8 验证记录](VERIFICATION-v08.md)。下方 0.7 下载链接仍指已发布版本。
+
+本地 Agent v08 开发还接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
+普通图像只接受单帧、不透明的 8-bit SDR RGB，最多 64M 像素；方向与 ICC 转 sRGB 各处理一次，
+不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。HEIF、BigTIFF、透明、高位深、浮点/HDR、CMYK、多帧以及不支持的色彩描述会明确拒绝，不能据此宣称支持所有 ICC。
+新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
+Windows 实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)，不代表已发布或 PR 已更新。
+
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ## 下载 v0.7.0 Windows 包
@@ -63,16 +71,16 @@ python3 RawLabWindows/build-remote.py \
 
 | 功能 | Windows 实现 |
 |---|---|
-| RAW 打开、拖放、多目录文件树 | 原生对话框；目录按需展开；拖动右侧边界调整宽度；缩略图自动单/双列，文件名在下方，超长省略、悬停显示全名 |
-| 缩略图 | 只提取内嵌预览，不解包/显影 RAW；最多两个后台读取任务 |
+| 照片打开、拖放、多目录文件树 | RAW、JPEG/PNG/经典 TIFF；原生对话框；文件夹可直接拖入左侧空白处或目录行并记住，重复路径去重，不移动源文件；目录按需展开；拖动右侧边界调整宽度；缩略图自动单/双列，文件名在下方，超长省略、悬停显示全名 |
+| 缩略图 | RAW 只提取内嵌预览，不解包/显影；普通图像复用严格 WIC 解码/方向/色彩入口后缩小；最多两个后台读取任务 |
 | 胶片 | 独立“胶片”类别，选中后显示胶片列表；同一套十种 LUT 与包装图；支持中性、多选导入兼容 CUBE/RLOOK；导入项使用会话内的外部文件引用 |
 | 调整 | 胶片强度 0–200%（默认 100%）、曝光、色温、色调、对比度、高光、阴影、S 曲线、饱和度、锐化 |
-| 几何 | 百分比裁切、左右 90° 旋转、水平/垂直翻转、±45° 拉直；逐照片保存并冻结到批量任务 |
+| 几何 | 八手柄/移动裁切、比例预设、百分比精调、左右 90° 旋转、翻转、±45° 拉直及水平/垂直透视；独立草稿预览，应用后才保存并可冻结到批量任务 |
 | 效果 | 独立暗角和颗粒工具；暗角强度/中点/圆度/羽化/高光保护，颗粒强度/大小/粗糙度；辅助参数可单项或分组重置，强度为零时保留编辑值 |
 | 降噪 | 小波亮度/色彩/粗色斑参数与独立显示色彩降噪模式；所有模式按每次显影请求写入 native 会话 |
 | 白平衡 | 拍摄时相机增益；校准后的 2000–50000 K / ±150 色调；倒色温滑杆 |
 | 曝光基准 | 标准显影、匹配内嵌预览、传感器基准；显示实际基础偏移 |
-| 数值输入和重置 | 滑杆、数字、单项/分组/全部重置；保留照片与胶片选择 |
+| 数值输入和重置 | 五列参数行、精细网格、Enter/失焦提交、Esc 恢复当前输入；有效数值框内限速滚轮调整，单项/分组/全部重置 |
 | 逐照片编辑 | 本机自动保存并恢复各照片参数和 LUT 身份；失败可重试，不写回 RAW |
 | 对比 | 顶部菜单切换并排 / 左右滑动 / 关闭；中性与修改后共享缩放、平移；适合窗口、100% 实际物理像素 |
 | 直方图 / 裁切提示 | 最终 sRGB 显示图统计；RGB 线性计数、重叠填色；可折叠 |
@@ -99,7 +107,7 @@ JPEG 和 PNG 导出自动保留可读取的相机、镜头、拍摄时间、快�
 目录（含 Perl、源码和许可证）；无需用户另行安装。请保留完整安装包目录。
 
 不支持任意输入色彩空间的 CUBE；需声明兼容的 Fuji F-Log/F-Log2/F-Log2C
-输入和 BT.709 显示或受支持的 Log 输出。RLOOK 使用 CPU 回退，不是 Direct3D 原生 DCP 加速；自定义外观尚无 Mac/Android 的托管库和逐文件导入报告。细节与色彩约定见 [处理契约](../lutools/docs/color-contract.md)。
+输入和 BT.709 显示或受支持的 Log 输出。RLOOK 使用 CPU 回退，不是 Direct3D 原生 DCP 加速；导入时逐文件验证并报告失败、保留成功项，仍引用原路径，没有新增 Mac/Android 的托管库同步。细节与色彩约定见 [处理契约](../lutools/docs/color-contract.md)。
 显示 Kelvin 是相机校准估计，不等同于 Lightroom 私有配置值。
 
 ## 打开、缩放与性能
@@ -169,6 +177,96 @@ dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --
 托管设置检查覆盖 40 字节几何 ABI、旧记录默认值、快照与批量恢复；Windows 原生定向入口为
 `dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --geometry <repo> <RAW>`。
 macOS 上的 WPF 交叉编译及托管测试不代表 Windows 原生或 D3D11 运行验证。
+
+`run-v08.ps1` 包含 `editor-review` 回归，也可直接运行
+`RawLabWindows.Tests.dll --editor-review <repo> <RAW>`。它通过真实主窗口的批量接线，
+控制单张导出/外观导入与预检的两种完成顺序，检查编辑、切图、延迟关闭及实际 PNG 发布；
+并检查几何/镜头离开对话框在精确预览完成后启用“应用并离开”。还覆盖真实主窗口在
+journal 清理失败后的恢复与重试、Running 批量的当前项完成后关闭，以及导入/单张导出与
+批量两种完成顺序下的 viewport resize 恢复，包含降噪 debounce 和独立 CPU 视口像素比对。
+测试通过 dispatcher 完成回调和批量首项 Running 进度 post 固定时序，仍执行真实 native
+工作，不依赖机器速度或物理文件选择器，也不向产品代码增加测试控制入口。
+边界裁框旋转的模型回归在 editing 中，水平/垂直翻转的真实控件回归在 transform-ui 中。
+
+主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
+存在即拒绝运行；默认套件完成 native 检查后、WPF 初始化前再检查一次。使用没有产品任务并发运行的独立测试账号，
+不要为运行测试删除或移动已有 journal。默认窗口的 EditStore 仍使用每次运行独立的目录。
+`run-v08.ps1` 的 `default-isolation` 回归也可直接运行
+`RawLabWindows.Tests.dll --default-isolation <output>`，不需要 RAW 或系统目录重定向。
+它对同一共同入口传入任务私有的 journal 路径，覆盖 Running/Publishing、完整与 UI-only
+参数、photo-features/interactions 分派、文件锁和损坏 JSON，检查拒绝后 journal、staging、成片的文件列表、字节和修改时间不变，
+且不创建输出或 WPF Application。另一个私有对照调用真实恢复清理，证明 fixture 确实能触发风险。
+
+独立 `localization-ui/LocalizationUiChecks.csproj` 也在任何偏好处理或 WPF 启动前执行同一保护。
+其 `--default-isolation <output>` 回归使用私有 Running/Publishing、文件锁和损坏 JSON，
+确认 journal/staging/源文件/成片的文件列表、字节、修改时间保持，且未进入启动或语言处理。
+正常六语测试改用私有语言文件，不再备份、覆盖或恢复真实 `language.txt`。
+测试保留真实 App.OnStartup、StartupUri 自动创建窗口和语言订阅；测试侧的 Loaded 类处理器
+先于窗口的 Loaded 实例处理器注入私有状态，避免自动更新副作用。这仍不是物理桌面或真实 profile 重启验收。
+
+直接构造 WPF 主窗口的测试在 Show 前通过 `TestWindowState` 使用私有 Edits、Batch、目录库和禁用自动更新的配置；
+独立 StartupUri 路径在 Loaded 类处理器中完成同样隔离，先于产品的 Loaded 实例处理器。
+防止 Loaded 写入默认 `updates.json` 或发起后台网络请求。窗口构造仍读取默认配置，所以入口保护和独立账号要求继续有效；
+这不是跨进程锁或完整用户配置虚拟化。`run-v08.ps1` 会构建两种可执行程序，并包含
+`localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
+状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
+不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
+
+普通图像和单张预览的功能回归可通过同一入口选择：
+
+```powershell
+./RawLabWindows/tests/run-v08.ps1 -RawPath 'C:/samples/photo.ARW' -NativeArtifacts 'build/RawLab-Windows' -Only 'raster,comparison-default'
+```
+
+`raster` 比较 GUI renderer、CLI 和冻结 BatchRunner 的 FINAL 像素；`comparison-default`
+覆盖主窗口的菜单、历史恢复、文件树/拖放处理器和实际混合批量导出。两者都不是物理输入验收。
+独立原生交互入口另行构建无产品程序集引用的 UIA driver，通过真实 Windows 文件选择器和跨进程控件
+执行 RAW/PNG/JPEG 打开、对比切换、调参及私有 profile 重启恢复：
+
+```powershell
+./RawLabWindows/tests/run-comparison-native.ps1 -RawPath 'C:/samples/photo.ARW' -NativeArtifacts 'build/RawLab-Windows'
+```
+
+该入口同样先保护默认 journal，运行前后核对默认 RawLab 配置文件字节及修改时间，并将所有写入放在私有目录。
+退出码 `0` 表示实际原生交互通过，`2` 表示桌面不可达的 `NOT REACHED`，其他非零表示失败；
+详细结果写入独立输出目录的 `summary.json` 和日志。`run-v08.ps1` 不隐式调用这个入口，不能替代其结果。
+该验收默认仅 CPU；测试环境变量 `RAWLAB_COMPARISON_GPU=Cpu|Auto|Force` 可选择两次启动的加速模式，
+运行后应恢复原环境变量。Force 会核对 RAW 实际 GPU backend，PNG/JPEG 必须显示 CPU，返回 RAW 后恢复原模式。
+原生 UIA 本身仍不代表 Explorer/OLE 拖入、真实鼠标/触控笔、物理 GPU 或多显示器验收。
+VM 和 125 真实主机的原生通过结果、独立 PID/LUID 显存采样及未覆盖项目见 [验证记录](VERIFICATION-agent-v08.md#native-desktop-follow-up-2026-10-16)。
+
+`editor-review` 还覆盖空闲批量窗口同步关闭失败时的 pending viewport resize：锁住私有 journal，
+分别保留和不保留前台导入，确认无需额外输入即可恢复精确预览，且独立 CPU 像素一致。
+`appearance` 对已打开的真实窗口执行浅色、深色、浅色高对比度资源切换，检查输入、弹层、
+选中/悬停/按下状态、进度和滑条的成对颜色及画布重绘，还检查已存在的滑动分隔线、裁切网格/控制点和
+直方图轮廓。直方图保留 RGB 通道语义，高对比度时额外画清晰的包络线；照片及导出像素不变。
+测试不更改系统配色，也不替代物理高对比度验收。
+
+`run-v08.ps1 -Only` 接受逗号分隔的套件名，忽略首尾空格、大小写和重复项。省略或空字符串运行全部套件；
+非空但仅含空格/逗号的值、未知名称或未实际运行的选择项都会失败。构建始终执行。
+每次执行先清空旧 summary，提前失败也留下本轮非零结果，不会沿用上次 PASS。
+可单独验证真实 PowerShell 入口（使用私有外部命令替身，不执行产品渲染）：
+
+```powershell
+./RawLabWindows/tests/RunnerSelectionChecks.ps1 -Output 'build/windows-runner-selection'
+```
+
+`--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的
+八个平坦图块，不能假定每张照片在每个视口都一定改变像素；受控输入负责验证实际滤波效果。
+先在安装了 NumPy、tifffile 的测试 Python 环境生成 fixture，再运行专项：
+
+```powershell
+python lutools/tests/make_denoise_fixture.py build/windows-fixtures/denoise.dng
+./RawLabWindows/tests/run-v08.ps1 -RawPath 'C:/samples/photo.ARW' -NativeArtifacts 'build/RawLab-Windows' -Only denoise
+# fixture 位于其他位置时，显式传入 -DenoiseRaw 'C:/samples/denoise.dng'
+```
+
+直接调用测试程序时，可使用 `--denoise <repo> <RAW> <controlled-DNG>`；省略最后一个参数时，
+使用 `<repo>/build/windows-fixtures/denoise.dng`，缺少文件会报错，不会跳过滤波断言。
+生成的 DNG 属于忽略的测试产物，不提交，也不会被 `build-remote.py` 自动发送；远程专项前须
+单独生成或传送到任务自己的构建目录。`build.ps1` 保持 ASCII，以免 Windows PowerShell 5.1
+按系统 ANSI 编码读取时吞掉命令；`tests/BuildScriptChecks.ps1` 检查这一约束及测试构建命令的 AST。
+
 完成 `build.ps1 -Test` 后，可单独运行以下可见窗口测量；它会打开测试窗口并自动缩放、平移，输出首次画面、原尺寸细节和合成回调间隔：
 
 ```powershell
@@ -178,3 +276,28 @@ dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll 
 历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。
+
+### 恢复、入口及资源回归
+
+`--editor-review <repo> <RAW> [part]` 省略 part 时运行所有编辑器场景；子场景名忽略大小写和首尾空格，
+未知或显式空值直接失败，不创建样片或窗口。主测试程序也拒绝未知模式、错误参数数量及错误的 `--ui-only`。
+下列独立检查同样先保护已有默认 journal/staging，并使用私有窗口配置：
+
+```powershell
+dotnet <TargetDir>/RawLabWindows.Tests.dll --entry-selection <repo> <RAW>
+dotnet <TargetDir>/RawLabWindows.Tests.dll --resources <repo> <RAW>
+```
+
+`--resources` 在一次预热后执行三轮真实 RAW 的 CPU 编辑、原尺寸/适合窗口、重新打开及关闭，
+记录每 100ms 的进程私有内存、工作集、托管内存、CPU 时间和空闲时的预览缓存。
+它检查窗口可回收、原生 session 释放、已有缓存预算及 RAW 字节保持不变，不用任意 RSS 上限代替泄漏判断。
+结果写入任务目录 `build/windows-resource-checks/`；这是短时单 VM 验证，不是长期压力或物理 GPU 验收。
+编辑器回归另检查关闭请求后的缩略图队列停止、失败后的文件树恢复、无变化时不重显影，
+以及 1000 次格式检查式拖拽悬停；实际 Drop 仍验证路径，不改写源文件。
+
+`editor-review` 的 `close-pending` 子场景覆盖活动渲染与排队预览并存时的关闭顺序，
+以及渲染先结束、批量最后结束且 journal 清理失败后的预览恢复。测试锁定私有 journal，
+并与独立 CPU 显影像素核对，不依赖 pending resize 来掩盖排队请求。
+`usage-lifecycle` 通过真实主窗口、About 和批量窗口验证启动、导入、外观切换、导出、
+部分失败重试及等待发送完成后的退出；只使用私有 consent 和假 transport，不发送网络事件。
+所有通过 `TestWindowState.Isolate` 创建的窗口同时替换 analytics，避免保留默认同意状态或 SDK transport。

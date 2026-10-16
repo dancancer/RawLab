@@ -43,15 +43,12 @@ EditRecipe parse(const std::string& value) {
 }
 
 bool sameRecipe(const EditRecipe& a, const EditRecipe& b) {
-    return a.inputPath == b.inputPath && a.outputPath == b.outputPath && a.lookPath == b.lookPath &&
-        a.exposureMode == b.exposureMode && a.exposureEv == b.exposureEv && a.brightness == b.brightness &&
-        a.whiteBalanceMode == b.whiteBalanceMode && a.temperatureKelvin == b.temperatureKelvin &&
-        a.tint == b.tint && a.lookStrength == b.lookStrength && a.outputFormat == b.outputFormat &&
-        a.jpegQuality == b.jpegQuality && a.outputLongEdge == b.outputLongEdge;
+    return sony2fuji::serializeEditRecipe(a) == sony2fuji::serializeEditRecipe(b);
 }
 
 EditRecipe sentinel() {
     EditRecipe value;
+    value.schemaVersion = 4;
     value.inputPath = "kept-input.DNG";
     value.outputPath = "kept-output.png";
     value.lookPath = "kept-look.rlook";
@@ -65,6 +62,11 @@ EditRecipe sentinel() {
     value.outputFormat = SONY2FUJI_OUTPUT_PNG;
     value.jpegQuality = 81;
     value.outputLongEdge = 1200;
+    value.contrast = 1.4f;
+    value.effects.grain_amount = 23;
+    value.hsl.hue[3] = -15;
+    value.wavelet.enabled = 1;
+    value.lensProfileId = "kept-profile";
     return value;
 }
 
@@ -198,6 +200,42 @@ void legacyRequestParity() {
         check(actual.wb_mul[channel] == legacy.wb_mul[channel], "legacy unused WB multiplier " + std::to_string(channel));
 }
 
+void completeEdits() {
+    auto v4 = [](const std::string& edits) {
+        return replaceOnce(document(R"({"mode":"scene"})", edits), "\"schema_version\":1", "\"schema_version\":4");
+    };
+    const auto complete = v4(R"(,"tone":{"contrast":1.2,"saturation":0.7,"highlights":-0.4,"shadows":0.3,"s_curve":0.5},"detail":{"sharpening":0.6},"hsl":{"hue":[1,2,3,4,5,6,7,8],"saturation":[-100,0,0,0,0,0,0,100],"lightness":[8,7,6,5,4,3,2,1]},"effects":{"vignette_amount":-35,"vignette_midpoint":60,"vignette_roundness":-20,"vignette_feather":70,"vignette_highlights":15,"grain_amount":25,"grain_size":30,"grain_roughness":45},"denoise":{"raw_level":1,"chroma_mode":2,"wavelet":{"enabled":true,"luma":15,"chroma":46,"coarse":50}},"lens_correction":{"distortion":true,"tca":true,"auto_crop":false,"profile_id":"test-profile"})");
+    const auto recipe = parse(complete);
+    const auto request = recipe.toRequest();
+    check(request.contrast == 1.2f && request.saturation == .7f && request.highlights == -.4f &&
+          request.shadows == .3f && request.tone_curve == .5f && request.sharpening == .6f,
+          "v4 maps effective tone/detail values without UI percentage/sign or master-strength conversion");
+    const auto normalized = sony2fuji::serializeEditRecipe(recipe);
+    check(sony2fuji::serializeEditRecipe(parse(normalized)) == normalized, "all v4 parameters round trip stably");
+    check(normalized.find("test-profile") != std::string::npos && normalized.find("grain_roughness") != std::string::npos &&
+          normalized.find("raw_level") != std::string::npos, "v4 normalization preserves session controls");
+    const auto defaults = sony2fuji::serializeEditRecipe(parse(v4("")));
+    check(defaults.find("wavelet") != std::string::npos && defaults.find("hsl") != std::string::npos &&
+          defaults.find("auto_crop") != std::string::npos, "v4 emits all explicit defaults");
+    for (const auto& edit : {R"(,"tone":{"contrast":-0.01})", R"(,"tone":{"saturation":2.01})",
+             R"(,"tone":{"highlights":1.01})", R"(,"tone":{"shadows":-1.01})", R"(,"tone":{"s_curve":1.01})",
+             R"(,"detail":{"sharpening":-0.1})", R"(,"detail":{"sharpening":2.1})",
+             R"(,"hsl":{"hue":[0]})", R"(,"hsl":{"hue":[101,0,0,0,0,0,0,0]})",
+             R"(,"hsl":{"hue":[0,0,0,0,0,0,0,true]})", R"(,"hsl":{"unknown":[]})",
+             R"(,"effects":{"grain_size":101})", R"(,"effects":{"vignette_roundness":-101})",
+             R"(,"effects":{"grain_amount":1e999})", R"(,"effects":{"vignette_amount":null})",
+             R"(,"denoise":{"raw_level":3})", R"(,"denoise":{"raw_level":1.0})", R"(,"denoise":{"chroma_mode":-1})",
+             R"(,"denoise":{"wavelet":{"enabled":1}})", R"(,"denoise":{"wavelet":{"luma":101}})",
+             R"(,"denoise":{"wavelet":{"coarse":-1}})", R"(,"lens_correction":{"tca":0})",
+             R"(,"lens_correction":{"profile_id":""})", R"(,"tone":{"contrast":1,"contrast":2})"})
+        reject(v4(edit), "v4 invalid/unknown/duplicate control");
+    for (int version = 1; version <= 3; ++version)
+        reject(replaceOnce(v4(R"(,"tone":{})"), "\"schema_version\":4", "\"schema_version\":" + std::to_string(version)),
+               "old versions reject new controls", "edits.tone");
+    parse(v4(R"(,"tone":{"contrast":0,"saturation":2,"highlights":-1,"shadows":1,"s_curve":-1},"detail":{"sharpening":2},"hsl":{"hue":[-100,100,0,0,0,0,0,0]},"look":{"path":null,"strength":2})"));
+}
+
+
 void invalidFields() {
     const auto minimal = document();
     for (const auto& entry : std::vector<std::pair<std::string, std::string>>{
@@ -206,7 +244,7 @@ void invalidFields() {
              {replaceOnce(minimal, R"("edits":{"exposure":{"mode":"scene"}},)", ""), "recipe.edits"},
              {replaceOnce(minimal, R"("output":{"path":"out.jpg","format":"jpeg"})", R"("output":{})"), "output.path"},
              {replaceOnce(minimal, R"("format":"jpeg")", R"("format":null)"), "output.format"},
-             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":4)"), "schema_version"},
+             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":5)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":1.0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":"1")"), "schema_version"},
@@ -303,6 +341,7 @@ int main() {
         whiteBalanceAndLook();
         outputAndRoundTrip();
         legacyRequestParity();
+        completeEdits();
         invalidFields();
         unknownAndDuplicateKeys();
         malformedAndUnicode();

@@ -1,144 +1,52 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
+using System.Windows.Automation;
 
 namespace RawLab.Windows;
-
 public enum PhotoEffectTool { Vignette, Grain }
-
 public partial class PhotoEffectsPanel : UserControl
 {
-    private PhotoEffectsSettings value = new();
+    private PhotoEffectsSettings value=new();
     private PhotoEffectTool tool;
-    private bool syncing, dragging;
-    public event Action<PhotoEffectsSettings, bool>? Changed;
-
+    private bool syncing;
+    private readonly Dictionary<PhotoEffectParameter,ParameterRow> rows=[];
+    private static readonly string[] titles=["强度","中点","圆度","羽化","高光保护","强度","大小","粗糙度"];
+    public event Action<PhotoEffectsSettings,bool>? Changed;
     public PhotoEffectsPanel()
     {
         InitializeComponent();
-        SizeChanged += (_, _) => ReflowColumns();
-        foreach (var slider in new[] {
-            VignetteAmountSlider, VignetteMidpointSlider, VignetteRoundnessSlider, VignetteFeatherSlider,
-            VignetteHighlightsSlider, GrainAmountSlider, GrainSizeSlider, GrainRoughnessSlider
-        })
+        foreach(var spec in PhotoEffectSpec.All)
         {
-            slider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler((_, _) => dragging = true));
-            slider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => { dragging = false; Changed?.Invoke(value, false); }));
+            var row=new ParameterRow();rows[spec.Id]=row;
+            AutomationProperties.SetAutomationId(row.Slider,spec.Id.ToString());
+            (spec.Id==PhotoEffectParameter.VignetteAmount ? VignetteParameters : spec.IsVignette ? VignetteFineParameters : GrainParameters).Children.Add(row);
+            row.Changed+=(number,dragging)=>{if(syncing || !IsEnabled)return;var next=new Adjustments{Effects=value};next.SetEffect(spec.Id,number);Publish(next.Effects,dragging);};
         }
-        Refresh(value, PhotoEffectTool.Vignette);
+        Refresh(value,tool);
     }
-
-    private void ReflowColumns()
+    public void Refresh(PhotoEffectsSettings settings,PhotoEffectTool selected)
     {
-        var columns = Math.Clamp((int)((ActualWidth - 8) / 148), 1, 5);
-        VignetteParameters.Columns = columns == 4 ? 3 : columns;
-        GrainParameters.Columns = Math.Min(columns, 3);
+        syncing=true;value=settings;tool=selected;
+        Title.Text=Loc.Text(selected==PhotoEffectTool.Vignette ? "暗角" : "颗粒");
+        VignetteParameters.Visibility=VignetteDetails.Visibility=selected==PhotoEffectTool.Vignette ? Visibility.Visible : Visibility.Collapsed;
+        GrainParameters.Visibility=selected==PhotoEffectTool.Grain ? Visibility.Visible : Visibility.Collapsed;
+        foreach(var spec in PhotoEffectSpec.All)
+        {
+            var enabled=spec.Id switch {
+                PhotoEffectParameter.VignetteHighlights=>value.VignetteAmount<0,
+                PhotoEffectParameter.VignetteMidpoint or PhotoEffectParameter.VignetteRoundness or PhotoEffectParameter.VignetteFeather=>value.VignetteAmount!=0,
+                PhotoEffectParameter.GrainSize or PhotoEffectParameter.GrainRoughness=>value.GrainAmount!=0,_=>true};
+            rows[spec.Id].Refresh(Loc.Text(titles[(int)spec.Id]),new(spec.Min,spec.Max),value[spec.Id],spec.DefaultValue,"%",enabled);
+            var fullName=Loc.Text((spec.IsVignette ? "暗角" : "颗粒")+titles[(int)spec.Id]);
+            AutomationProperties.SetName(rows[spec.Id].Slider,fullName);
+            AutomationProperties.SetName(rows[spec.Id].ResetButton,Loc.Text("重置"+(spec.IsVignette ? "暗角" : "颗粒")+titles[(int)spec.Id]));
+            AutomationProperties.SetName(rows[spec.Id].Number,Loc.Text((spec.IsVignette ? "暗角" : "颗粒")+titles[(int)spec.Id]+"数值"));
+        }
+        syncing=false;
     }
-
-    public void Refresh(PhotoEffectsSettings settings, PhotoEffectTool selected)
+    private void Publish(PhotoEffectsSettings next,bool dragging=false){Refresh(next,tool);Changed?.Invoke(value,dragging);}
+    private void ResetGroupClicked(object sender,RoutedEventArgs e)
     {
-        syncing = true;
-        value = settings;
-        tool = selected;
-        Title.Text = selected == PhotoEffectTool.Vignette ? Loc.Text("暗角") : Loc.Text("颗粒");
-        VignetteParameters.Visibility = selected == PhotoEffectTool.Vignette ? Visibility.Visible : Visibility.Collapsed;
-        GrainParameters.Visibility = selected == PhotoEffectTool.Grain ? Visibility.Visible : Visibility.Collapsed;
-        Set(VignetteAmountSlider, VignetteAmountText, PhotoEffectParameter.VignetteAmount);
-        Set(VignetteMidpointSlider, VignetteMidpointText, PhotoEffectParameter.VignetteMidpoint);
-        Set(VignetteRoundnessSlider, VignetteRoundnessText, PhotoEffectParameter.VignetteRoundness);
-        Set(VignetteFeatherSlider, VignetteFeatherText, PhotoEffectParameter.VignetteFeather);
-        Set(VignetteHighlightsSlider, VignetteHighlightsText, PhotoEffectParameter.VignetteHighlights);
-        Set(GrainAmountSlider, GrainAmountText, PhotoEffectParameter.GrainAmount);
-        Set(GrainSizeSlider, GrainSizeText, PhotoEffectParameter.GrainSize);
-        Set(GrainRoughnessSlider, GrainRoughnessText, PhotoEffectParameter.GrainRoughness);
-        VignetteMidpointParameters.IsEnabled = VignetteRoundnessParameters.IsEnabled =
-            VignetteFeatherParameters.IsEnabled = value.VignetteAmount != 0;
-        // Highlights protection only applies while a negative vignette darkens pixels.
-        VignetteHighlightsParameters.IsEnabled = value.VignetteAmount < 0;
-        GrainSizeParameters.IsEnabled = GrainRoughnessParameters.IsEnabled = value.GrainAmount != 0;
-        ResetGroupButton.IsEnabled = PhotoEffectSpec.All.Where(spec => spec.IsVignette == (selected == PhotoEffectTool.Vignette))
-            .Any(spec => value[spec.Id] != spec.DefaultValue);
-        syncing = false;
-    }
-
-    private void Set(Slider slider, TextBox text, PhotoEffectParameter parameter)
-    {
-        var number = value[parameter];
-        slider.Value = number;
-        text.Text = number.ToString("F0", CultureInfo.CurrentCulture);
-    }
-
-    private void Publish(PhotoEffectsSettings next, bool interactive = false)
-    {
-        if (syncing || !IsEnabled) return;
-        Refresh(next, tool);
-        Changed?.Invoke(value, interactive);
-    }
-
-    private void SliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (!syncing && sender is Slider slider && slider.Tag is string name && Enum.TryParse<PhotoEffectParameter>(name, out var parameter))
-            SetValue(parameter, e.NewValue, dragging);
-    }
-
-    private void SetValue(PhotoEffectParameter parameter, double number, bool interactive = false)
-    {
-        var spec = PhotoEffectSpec.For(parameter);
-        number = Math.Clamp(Math.Round(number, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
-        var next = parameter switch {
-            PhotoEffectParameter.VignetteAmount => value with { VignetteAmount = number },
-            PhotoEffectParameter.VignetteMidpoint => value with { VignetteMidpoint = number },
-            PhotoEffectParameter.VignetteRoundness => value with { VignetteRoundness = number },
-            PhotoEffectParameter.VignetteFeather => value with { VignetteFeather = number },
-            PhotoEffectParameter.VignetteHighlights => value with { VignetteHighlights = number },
-            PhotoEffectParameter.GrainAmount => value with { GrainAmount = number },
-            PhotoEffectParameter.GrainSize => value with { GrainSize = number },
-            PhotoEffectParameter.GrainRoughness => value with { GrainRoughness = number },
-            _ => value
-        };
-        if (next != value) Publish(next, interactive);
-        else Refresh(value, tool);
-    }
-
-    private void Commit(TextBox box)
-    {
-        if (box.Tag is string name && Enum.TryParse<PhotoEffectParameter>(name, out var parameter) &&
-            double.TryParse(box.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var number) && double.IsFinite(number))
-            SetValue(parameter, number);
-        else Refresh(value, tool);
-    }
-
-    private void ValueCommitted(object sender, KeyboardFocusChangedEventArgs e) { if (!syncing) Commit((TextBox)sender); }
-    private void ValueKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) { Commit((TextBox)sender); e.Handled = true; }
-        if (e.Key == Key.Escape) { Refresh(value, tool); e.Handled = true; }
-    }
-
-    private void ResetValue(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: string name } && Enum.TryParse<PhotoEffectParameter>(name, out var parameter))
-            SetValue(parameter, PhotoEffectSpec.For(parameter).DefaultValue);
-    }
-
-    private void ResetGroupClicked(object sender, RoutedEventArgs e)
-    {
-        var vignette = tool == PhotoEffectTool.Vignette;
-        var next = value;
-        foreach (var spec in PhotoEffectSpec.All.Where(spec => spec.IsVignette == vignette))
-            next = spec.Id switch {
-                PhotoEffectParameter.VignetteAmount => next with { VignetteAmount = spec.DefaultValue },
-                PhotoEffectParameter.VignetteMidpoint => next with { VignetteMidpoint = spec.DefaultValue },
-                PhotoEffectParameter.VignetteRoundness => next with { VignetteRoundness = spec.DefaultValue },
-                PhotoEffectParameter.VignetteFeather => next with { VignetteFeather = spec.DefaultValue },
-                PhotoEffectParameter.VignetteHighlights => next with { VignetteHighlights = spec.DefaultValue },
-                PhotoEffectParameter.GrainAmount => next with { GrainAmount = spec.DefaultValue },
-                PhotoEffectParameter.GrainSize => next with { GrainSize = spec.DefaultValue },
-                PhotoEffectParameter.GrainRoughness => next with { GrainRoughness = spec.DefaultValue },
-                _ => next
-            };
-        Publish(next);
+        var next=new Adjustments{Effects=value};next.ResetEffects(tool==PhotoEffectTool.Vignette);Publish(next.Effects);
     }
 }

@@ -8,6 +8,7 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../TestWindowState.cs" Link="TestWindowState.cs" />
     <ProjectReference Include="../../RawLabWindows.csproj" />
   </ItemGroup>
 </Project>

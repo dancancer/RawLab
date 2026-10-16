@@ -8,7 +8,7 @@ namespace RawLab.Windows;
 internal sealed record RenderedImage(BitmapSource Image, BitmapSource? Clipping, uint[] Histogram, double Shadows, double Highlights, float Baseline, (double Temperature,double Tint)? WhiteBalance, int Backend, LensInfo? Lens = null, int NativeWidth = 0, int NativeHeight = 0);
 internal sealed record PreviewFrame(RenderedImage Neutral,RenderedImage Result);
 internal sealed record EmbeddedPreview(BitmapSource? Image,int Width,int Height);
-internal sealed class RenderEngine : IDisposable
+internal sealed partial class RenderEngine : IDisposable
 {
     private Native.Session session = new();
     private int gpuMode;
@@ -36,19 +36,22 @@ internal sealed class RenderEngine : IDisposable
     }
     private void InitializeSession() => Native.Check(Native.sony2fuji_session_set_lens_database(session,lensDatabase));
     public void SetGpuMode(int mode) { var config=new Native.GpuConfig{Version=1,StructSize=12,Mode=mode};Native.Check(Native.sony2fuji_session_set_gpu_config(session,ref config));gpuMode=mode; }
-    public void Dispose() {previews.Clear();original=null;session.Dispose();}
+    public void Dispose() {previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
     public double AutoExposure(string path, Adjustments settings)
     {
         settings = PrepareRecipe(path, settings);
+        EnsureInput(path);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         var request=settings.Request(path,null,0,null);
+        SetInput(ref request,path);
         Native.Check(Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev));
         return ev;
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
     {
+        settings=PrepareInputSettings(path,settings);
         static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);}
         var rawStamp=FileStamp(path);var lutStamp=lut==null ? null : FileStamp(lut);
         // Replaced files must invalidate the native decoded data as well as WPF frames.
@@ -88,6 +91,7 @@ internal sealed class RenderEngine : IDisposable
     public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false)
     {
         settings = PrepareRecipe(path, settings);
+        EnsureInput(path);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
@@ -102,6 +106,7 @@ internal sealed class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
         var format = output == null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
         var request = settings.Request(path,lut,edge,output,longEdge);
+        SetInput(ref request,path);
         Native.Buffer buffer = default, mask = default;
         try
         {
@@ -122,12 +127,14 @@ internal sealed class RenderEngine : IDisposable
             uint shadows=0,highlights=0;
             if(clipping) Native.Check(Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask));
             else if(statistics) Native.Check(Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero));
-            Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out var baseline,out _));
-            var calibrated = Native.sony2fuji_session_get_raw_white_balance(session,out var temperature,out var tint) == 0;
+            float baseline=0,temperature=6500,tint=0;
+            var raster=LibraryEntry.IsRaster(path);
+            if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
+            var calibrated = !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
             var count = (double)buffer.Width * buffer.Height;
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
             return new(Bitmap(buffer),mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? (Math.Round(temperature),Math.Round(tint)) : null,LastBackend,ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+                calibrated ? (Math.Round(temperature),Math.Round(tint)) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
@@ -141,6 +148,8 @@ internal sealed class RenderEngine : IDisposable
     {
         var config=value.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_geometry(session,ref config));
+        var perspective=value.NativePerspectiveConfig();
+        Native.Check(Native.sony2fuji_session_set_perspective(session,ref perspective));
     }
     private LensInfo ReadLens(string path) {
         var file = new FileInfo(path);
@@ -158,6 +167,7 @@ internal sealed class RenderEngine : IDisposable
     }
     private Adjustments PrepareRecipe(string path, Adjustments settings)
     {
+        if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
         if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
         // 配方色调属于目标 RAW 的拍摄白平衡，不沿用冻结来源的相机值。
         var neutral = new Adjustments { ExposureMode = settings.ExposureMode };
@@ -190,6 +200,11 @@ internal sealed class RenderEngine : IDisposable
         Native.Buffer buffer = default;
         try
         {
+            if(LibraryEntry.IsRaster(path))
+            {
+                if(edge<=0 || Native.rawlab_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
+                return new(Bitmap(buffer),checked((int)sourceWidth),checked((int)sourceHeight));
+            }
             if (Native.rawlab_preview(path,out buffer,out var kind,out var flip,out var width,out var height) != 0) return new(null,width,height);
             var bytes = new byte[checked((int)buffer.Size)]; Marshal.Copy(buffer.Data,bytes,0,bytes.Length);
             BitmapSource image;

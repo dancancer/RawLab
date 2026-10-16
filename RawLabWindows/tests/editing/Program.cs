@@ -5,6 +5,26 @@ var root = Path.Combine(Path.GetTempPath(), "rawlab-edit-" + Guid.NewGuid());
 Directory.CreateDirectory(root);
 try
 {
+    var exposureSpec = ParameterSpec.All[(int)Parameter.Exposure];
+    Check(exposureSpec.Value(exposureSpec.Position(.13)) == .13, "v08 exposure slider uses 0.01 fine grid");
+    Check(Math.Abs(ParameterSpec.All[(int)Parameter.Tint].Value(ParameterSpec.All[(int)Parameter.Tint].Position(.3)) - .3) < 1e-10,
+        "v08 tint slider retains tenths");
+    var wheel = new ParameterWheel();
+    Check(wheel.Feed(40,0,false,0,true) == (true,0) && wheel.Feed(40,0,false,1,true) == (true,1), "wheel threshold accumulates to 80 pixels");
+    Check(wheel.Feed(800,0,false,126,true) == (true,1) && wheel.Feed(800,0,false,130,true) == (true,0), "wheel limits each event and 125 ms interval");
+    Check(wheel.Feed(-40,0,false,260,true) == (true,0) && wheel.Feed(40,0,false,261,true) == (true,0), "reversing clears wheel remainder");
+    Check(wheel.Feed(40,0,true,262,true) == (true,0) && wheel.Feed(40,0,true,263,true) == (true,1), "Shift resets remainder without changing direction");
+    Check(wheel.Feed(40,0,true,500,true) == (true,0) && wheel.Feed(40,0,true,701,true) == (true,0), "200ms idle clears remainder");
+    Check(wheel.Feed(120,0,false,900,false) == (false,0) && wheel.Feed(0,100,false,901,true) == (false,0) &&
+          wheel.Feed(double.NaN,0,false,902,true) == (false,0), "disabled, horizontal and invalid events bubble");
+    var temperatureRange = NumericRange.For(ParameterSpec.All[(int)Parameter.Temperature]);
+    Check(temperatureRange.Position(50000) == 1 && temperatureRange.Position(2000) == 0 &&
+          temperatureRange.Value(temperatureRange.Position(5200)) == 5200, "inverse temperature warms to the right and roundtrips");
+    Check(new NumericRange(-100,100).Parse("999") == 100 && new NumericRange(-100,100).Parse("NaN") == null,
+        "numeric commit clamps finite values and rejects invalid input");
+    Loc.Initialize("de");Check(new NumericRange(-100,100).Parse("1,2") is {} localized && Math.Abs(localized-1.2)<1e-10 && new NumericRange(-100,100).Format(1.2)=="1,2","German numeric display and commit share one locale");Loc.Initialize("en");
+    var fineEffects=new Adjustments();fineEffects.SetEffect(PhotoEffectParameter.GrainAmount,12.3);
+    Check(Math.Abs(fineEffects.Effects.GrainAmount-12.3)<1e-10,"effect model preserves the v08 tenth-unit grid");
     Check(typeof(Adjustments).GetProperty("MasterRecipeID") != null, "master recipes must be part of persisted adjustments");
     Check(MasterRecipe.All.Count == 14, "all fourteen shared recipes load");
     foreach (var recipe in MasterRecipe.All) {
@@ -35,6 +55,43 @@ try
         Check(preset.MasterRecipeID == null && preset.RenderHsl.Equals(originalHsl), "ordinary HSL remains independent of strength");
     }
     var identityGeometry = new GeometrySettings();
+    Check(typeof(GeometrySettings).GetProperty("PerspectiveHorizontal")!=null,
+        "v08 geometry persists perspective without extending the existing geometry ABI");
+    var perspective=new GeometrySettings(PerspectiveHorizontal:.23,PerspectiveVertical:-.4);
+    Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.PerspectiveConfig>()==16 &&
+          System.Runtime.InteropServices.Marshal.OffsetOf<Native.PerspectiveConfig>(nameof(Native.PerspectiveConfig.Horizontal)).ToInt32()==8 &&
+          perspective.NativePerspectiveConfig() is{Version:1,StructSize:16,Horizontal:.23f,Vertical:-.4f},"additive perspective v1 ABI is 16 bytes");
+    var transform=new TransformDraft();var committed=new Adjustments{Geometry=perspective};
+    var committedSnapshot=committed.Capture();
+    transform.Begin(committed.Geometry,committed.Lens,TransformTool.Geometry);
+    transform.Update(perspective with{CropX=.1,CropWidth=.8,StraightenDegrees=12});
+    Check(transform.Dirty && committed.Capture().SameAs(committedSnapshot) && transform.PreviewGeometry.CropWidth==1,
+        "geometry draft previews full transformed canvas without changing committed/batch snapshot");
+    transform.Cancel();Check(!transform.Active && committed.Capture().SameAs(committedSnapshot),"cancel discards draft only");
+    transform.Begin(committed.Geometry,committed.Lens,TransformTool.Lens);transform.Update(new LensSettings(true,true));
+    Check(committed.Lens==new LensSettings() && transform.Dirty,"lens correction has an independent unsaved draft");
+    var applied=transform.Apply();Check(applied.Lens.Enabled && !transform.Active,"apply returns draft to committed owner");
+    var selection=new CropRect(.2,.2,.6,.6);
+    foreach(var handle in Enum.GetValues<CropHandle>())foreach(var ratio in new double?[]{null,1,3.0/2,16.0/9})
+    {
+        var moved=CropInteraction.Dragging(selection,handle,-2,3,6000,4000,ratio);
+        Check(moved.X>=-1e-12 && moved.Y>=-1e-12 && moved.Right<=1+1e-12 && moved.Bottom<=1+1e-12 && moved.Width>0 && moved.Height>0,
+            "eight crop handles and moving stay inside the canvas: "+handle);
+        if(ratio.HasValue && handle!=CropHandle.Move)Check(Math.Abs(moved.Width*6000/(moved.Height*4000)-ratio.Value)<1e-8,"locked ratio survives boundary drag");
+    }
+    var freeTop=CropInteraction.Dragging(selection,CropHandle.Top,0,.1,6000,4000,null);
+    Check(freeTop.Width==selection.Width && Math.Abs(freeTop.Y-.3)<1e-10,"free edge changes only its own axis");
+    var rotated=(perspective with{CropX=.1,CropY=.2,CropWidth=.3,CropHeight=.4}).Rotate(1);
+    Check(Math.Abs(rotated.CropX-.4)<1e-10 && rotated.CropY==.1 && rotated.CropWidth==.4 && rotated.CropHeight==.3,
+        "quarter turn transforms crop coordinates instead of stretching selection");
+    foreach(var extent in new[]{.1,.2,.3,.01})foreach(var turns in new[]{-1,1,2,3,4})
+    {
+        var edge=CropInteraction.Dragging(new(0,0,extent,extent),CropHandle.Move,2,2,6000,4000,null);
+        var turned=CropInteraction.Applying(edge,new()).Rotate(turns);
+        _=turned.NativeConfig();
+        Check(turned.CropX>=0 && turned.CropY>=0 && turned.CropWidth==extent && turned.CropHeight==extent,
+            "boundary crop remains valid after quarter turns: "+extent+" / "+turns);
+    }
     Check(identityGeometry.IsIdentity && identityGeometry.NativeConfig() is { Version: 1, StructSize: 40, CropWidth: 1, CropHeight: 1 }, "geometry defaults and v1 ABI");
     Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.GeometryConfig>() == 40 &&
           System.Runtime.InteropServices.Marshal.OffsetOf<Native.GeometryConfig>(nameof(Native.GeometryConfig.QuarterTurns)).ToInt32() == 24 &&
@@ -122,6 +179,9 @@ try
     var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
     var oldOutput = Path.Combine(output, "same-Velvia.jpg"); File.WriteAllText(oldOutput, "existing");
     var job = BatchJob.Create(a, saved, null, "Velvia");
+    var invalidTarget=BatchItem.Create(a) with{Selected=true,ValidationError="unsupported RAW"};
+    var preflightJob=BatchJob.Create(a,saved,null,"Velvia");preflightJob.Items.Add(invalidTarget);
+    Check(!invalidTarget.CanSelect && preflightJob.SelectedCount==0,"Failed RAW preflight cannot become a selected batch target");
     job.OutputDirectory = output;
     job.Items.Add(BatchItem.Create(a) with { Selected = true });
     job.Items.Add(BatchItem.Create(b) with { Selected = true });
