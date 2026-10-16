@@ -54,6 +54,15 @@ struct ContentView: View {
 
     var body: some View {
         let _ = localizationLocale
+        let root = editorNavigation
+        let presented = applyEditorPresentation(to: root)
+        let dataObserved = applyEditorDataObservers(to: presented)
+        let draftObserved = applyEditorDraftObservers(to: dataObserved)
+        let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
+        return applyEditorSheets(to: interactionObserved)
+    }
+
+    private var editorNavigation: some View {
         NavigationStack {
             GeometryReader { geometry in
                 editorWorkspace(size: geometry.size, accessibility: dynamicTypeSize.isAccessibilitySize)
@@ -76,6 +85,10 @@ struct ContentView: View {
             .toolbarBackground(Color(.secondarySystemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
+    }
+
+    private func applyEditorPresentation<Content: View>(to content: Content) -> some View {
+        content
         .preferredColorScheme(.dark)
         .tint(.yellow)
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
@@ -87,6 +100,10 @@ struct ContentView: View {
         } message: {
             Text(viewModel.statusMessage ?? "")
         }
+    }
+
+    private func applyEditorDataObservers<Content: View>(to content: Content) -> some View {
+        content
         .onChange(of: settings) { _, newValue in
             settingsRevision = UUID()
             if viewModel.consumeRestoredSettings(newValue) { return }
@@ -120,6 +137,10 @@ struct ContentView: View {
             if phase == .background { batchModel?.cancel(forBackground: true) }
             if phase != .active { cancelRulerFocus() }
         }
+    }
+
+    private func applyEditorDraftObservers<Content: View>(to content: Content) -> some View {
+        content
         .onChange(of: geometryDraft) { _, draft in
             if draft != nil { previewEditorDraft() }
         }
@@ -146,6 +167,10 @@ struct ContentView: View {
         .onChange(of: viewModel.hasImage) { _, hasImage in
             if hasImage { adjustmentsExpanded = true }
         }
+    }
+
+    private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {
+        content
         .onChange(of: adjustmentsExpanded) { _, expanded in
             if !expanded && isAdjustingSlider { setSliderEditing(false) }
         }
@@ -158,13 +183,12 @@ struct ContentView: View {
         }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
-            if !checkedBatchRecovery { checkedBatchRecovery = true; recoverBatchExport() }
-            guard !didAutoLoadSample else { return }
-            if ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] == "1" {
-                didAutoLoadSample = true
-                viewModel.runBundledSampleSmokeTest(settings: settings)
-            }
+            handleEditorAppear()
         }
+    }
+
+    private func applyEditorSheets<Content: View>(to content: Content) -> some View {
+        content
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {
                 BatchExportView(model: batchModel)
@@ -197,6 +221,17 @@ struct ContentView: View {
             Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }
         }
         .onDisappear { cancelRulerFocus(); cancelPhotoImport() }
+    }
+
+    private func handleEditorAppear() {
+        if !checkedBatchRecovery {
+            checkedBatchRecovery = true
+            recoverBatchExport()
+        }
+        guard !didAutoLoadSample else { return }
+        guard ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] == "1" else { return }
+        didAutoLoadSample = true
+        viewModel.runBundledSampleSmokeTest(settings: settings)
     }
 }
 
