@@ -1,6 +1,47 @@
 import XCTest
 
 final class EditorV4UITests: XCTestCase {
+    func testRAWNativeHistoryPerspectiveAndBatchEntry() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_RAW_INTEGRATION_UI"] == "1" else {
+            throw XCTSkip("Run on a dedicated Photos library seeded with one RAW and explicitly enable RAWLAB_RAW_INTEGRATION_UI.")
+        }
+        let app = try launchImportedEditor()
+        XCTAssertTrue(app.buttons["tool.lens"].isEnabled, "The system picker must import the original RAW")
+        try setValue("+0.35", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        try selectTool("geometry", in: app)
+        try setValue("12", title: "Horizontal Perspective", control: "geometry.perspectiveHorizontal", in: app)
+        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "An unapplied RAW draft must block export")
+        applyDraft(in: app)
+        let saved = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Adjustments Saved'")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 10))
+        app.terminate()
+        launchEnglish(app)
+        try importFirstVisiblePhoto(in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.35, accuracy: 0.0001)
+        try selectTool("geometry", in: app)
+        XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 12, accuracy: 0.0001)
+        XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled, "Restored RAW geometry starts as an unchanged draft")
+        app.buttons["editor.draft.cancel"].tap()
+        app.buttons["editor.export"].tap()
+        let batch = app.buttons["editor.batchExport"]
+        waitUntil(timeout: 90) { batch.isEnabled }
+        batch.tap()
+        let pick = app.buttons["batch.pick"]
+        XCTAssertTrue(pick.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["batch.export"].isEnabled)
+        pick.tap()
+        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15))
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let add = app.buttons["Add"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
+        waitUntil(timeout: 90) { app.buttons["batch.export"].isEnabled }
+        XCTAssertTrue(app.staticTexts["DJI_20250602164503_0444_D.DNG"].exists,
+                      "The batch must retain the seeded RAW rather than a preview or JPEG")
+        capture("v08-integrated-raw-history-perspective-batch", in: app)
+    }
+
     func testGeometrySourceRestorationUsesUncroppedPreview() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else {
             throw XCTSkip("Run RawLab/tests/geometry-source-ui.sh to enable the separate source-restoration harness.")

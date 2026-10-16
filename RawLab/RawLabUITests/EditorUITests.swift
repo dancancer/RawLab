@@ -41,6 +41,7 @@ final class EditorUITests: XCTestCase {
     }
 
     private func checkSaveNoticeLayout(orientation: UIDeviceOrientation, contentSizeCategory: String? = nil) {
+        continueAfterFailure = false
         XCUIDevice.shared.orientation = orientation
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = XCUIApplication()
@@ -58,24 +59,54 @@ final class EditorUITests: XCTestCase {
         waitForImportedPhoto(in: app)
         let panel = app.scrollViews["editor.panel"]
         let reset = app.buttons["Reset Adjustments"]
+        let tool = app.buttons["tool.exposure"]
+        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
+        let value = app.buttons["adjustment.value"]
+        XCTAssertTrue(ruler.waitForExistence(timeout: 10))
+        XCTAssertTrue(tool.isSelected, "The save regression must exercise the selected native exposure control")
+        XCTAssertTrue(ruler.isHittable, "The native ruler must be reachable at every text size")
+        let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
+        let scalarReset = app.buttons["adjustment.reset"]
+        if scalarReset.isEnabled {
+            scalarReset.tap()
+            XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        }
+        let transientNotice = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@ OR label == %@", "Adjustments Saved", "Previous Adjustments Restored"
+        )).firstMatch
+        expectation(for: NSPredicate { _, _ in !transientNotice.exists }, evaluatedWith: app)
+        waitForExpectations(timeout: 8)
+        XCTAssertGreaterThanOrEqual(reset.frame.width, 44)
         XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
         XCTAssertTrue(panel.frame.contains(reset.frame), "The reset target must remain inside the panel at every text size")
-        let slider = app.sliders["adjustment.slider"]
-        XCTAssertTrue(slider.waitForExistence(timeout: 10))
-        slider.adjust(toNormalizedSliderPosition: 0.35)
-        slider.adjust(toNormalizedSliderPosition: 0.65)
-        let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
+        let controls = [panel, tool, ruler, reset]
+        let beforeFrames = controls.map(\.frame)
+        let originalValue = value.value as? String
+        ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)))
+        XCTAssertNotEqual(value.value as? String, originalValue, "An actual native ruler drag must commit an adjustment")
         XCTAssertTrue(notice.waitForExistence(timeout: 5))
-        let tool = app.buttons["tool.exposure"]
-        let savedFrames = [panel.frame, tool.frame, slider.frame]
+        let savedFrames = controls.map(\.frame)
+        XCTAssertTrue(reset.isEnabled)
+        XCTAssertTrue(reset.isHittable, "Save feedback must preserve the reset target")
+        assertSaveNoticeFrames(beforeFrames, equalTo: savedFrames)
         capture("save-notice-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
         expectation(for: NSPredicate { _, _ in !notice.exists }, evaluatedWith: app)
         waitForExpectations(timeout: 8)
-        for (saved, idle) in zip(savedFrames, [panel.frame, tool.frame, slider.frame]) {
-            XCTAssertEqual(saved.origin.y, idle.origin.y, accuracy: 0.5, "Save feedback must not move editing controls")
-            XCTAssertEqual(saved.height, idle.height, accuracy: 0.5, "Save feedback must not resize editing controls")
-        }
+        let idleFrames = controls.map(\.frame)
+        assertSaveNoticeFrames(beforeFrames, equalTo: idleFrames)
+        XCTAssertTrue(reset.isHittable)
+        print("SAVE_NOTICE_FRAMES orientation=\(orientation.rawValue) category=\(contentSizeCategory ?? "default") before=\(beforeFrames) saved=\(savedFrames) idle=\(idleFrames)")
         capture("save-notice-dismissed-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+    }
+
+    private func assertSaveNoticeFrames(_ expected: [CGRect], equalTo actual: [CGRect]) {
+        for (before, after) in zip(expected, actual) {
+            XCTAssertEqual(before.origin.x, after.origin.x, accuracy: 0.5, "Save feedback must not move editing controls horizontally")
+            XCTAssertEqual(before.origin.y, after.origin.y, accuracy: 0.5, "Save feedback must not move editing controls vertically")
+            XCTAssertEqual(before.width, after.width, accuracy: 0.5, "Save feedback must not resize editing controls horizontally")
+            XCTAssertEqual(before.height, after.height, accuracy: 0.5, "Save feedback must not resize editing controls vertically")
+        }
     }
 
     func testSixLanguageLensAndDngBatchControlsPreserveState() {
