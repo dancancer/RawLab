@@ -1,9 +1,113 @@
 import XCTest
 
 final class EditorUITests: XCTestCase {
+    func testUsagePrivacyDefaultsOff() {
+        let app = XCUIApplication()
+        app.launch()
+        let privacy = app.buttons["editor.privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 10))
+        privacy.tap()
+        let toggle = app.switches["usage.consent"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertTrue(app.staticTexts["当前构建未配置使用统计，未采集或上报。"].exists)
+        capture("usage-privacy-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["usage.done"].isHittable)
+        capture("usage-privacy-landscape")
+        app.buttons["usage.done"].tap()
+        XCTAssertTrue(app.buttons["editor.import"].exists)
+    }
+
     private let seedPhotoDate = "2025年6月02日, 16:45"
     private let seedPhotoBase = "DJI_20250602164503_0444_D"
     private var verifiedSeedPickerIndex: Int?
+
+    func testSaveNoticeKeepsPortraitControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .portrait)
+    }
+
+    func testSaveNoticeKeepsLandscapeControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .landscapeLeft)
+    }
+
+    func testSaveNoticeKeepsLargeTextControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .portrait, contentSizeCategory: "UICTContentSizeCategoryAccessibilityM")
+    }
+
+    func testSaveNoticeKeepsSmallTextControlsInPlace() {
+        checkSaveNoticeLayout(orientation: .portrait, contentSizeCategory: "UICTContentSizeCategoryXS")
+    }
+
+    private func checkSaveNoticeLayout(orientation: UIDeviceOrientation, contentSizeCategory: String? = nil) {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = orientation
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        if let contentSizeCategory {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSizeCategory]
+        }
+        app.launch()
+        let importer = app.buttons["editor.import.empty"]
+        XCTAssertTrue(importer.waitForExistence(timeout: 10))
+        importer.tap()
+        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15), "Seed one photo with simctl addmedia before running")
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitForImportedPhoto(in: app)
+        let panel = app.scrollViews["editor.panel"]
+        let reset = app.buttons["Reset Adjustments"]
+        let tool = app.buttons["tool.exposure"]
+        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
+        let value = app.buttons["adjustment.value"]
+        XCTAssertTrue(ruler.waitForExistence(timeout: 10))
+        XCTAssertTrue(tool.isSelected, "The save regression must exercise the selected native exposure control")
+        XCTAssertTrue(ruler.isHittable, "The native ruler must be reachable at every text size")
+        let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
+        let scalarReset = app.buttons["adjustment.reset"]
+        if scalarReset.isEnabled {
+            scalarReset.tap()
+            XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        }
+        let transientNotice = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@ OR label == %@", "Adjustments Saved", "Previous Adjustments Restored"
+        )).firstMatch
+        expectation(for: NSPredicate { _, _ in !transientNotice.exists }, evaluatedWith: app)
+        waitForExpectations(timeout: 8)
+        XCTAssertGreaterThanOrEqual(reset.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
+        XCTAssertTrue(panel.frame.contains(reset.frame), "The reset target must remain inside the panel at every text size")
+        let controls = [panel, tool, ruler, reset]
+        let beforeFrames = controls.map(\.frame)
+        let originalValue = value.value as? String
+        ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)))
+        XCTAssertNotEqual(value.value as? String, originalValue, "An actual native ruler drag must commit an adjustment")
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        let savedFrames = controls.map(\.frame)
+        XCTAssertTrue(reset.isEnabled)
+        XCTAssertTrue(reset.isHittable, "Save feedback must preserve the reset target")
+        assertSaveNoticeFrames(beforeFrames, equalTo: savedFrames)
+        capture("save-notice-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+        expectation(for: NSPredicate { _, _ in !notice.exists }, evaluatedWith: app)
+        waitForExpectations(timeout: 8)
+        let idleFrames = controls.map(\.frame)
+        assertSaveNoticeFrames(beforeFrames, equalTo: idleFrames)
+        XCTAssertTrue(reset.isHittable)
+        print("SAVE_NOTICE_FRAMES orientation=\(orientation.rawValue) category=\(contentSizeCategory ?? "default") before=\(beforeFrames) saved=\(savedFrames) idle=\(idleFrames)")
+        capture("save-notice-dismissed-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+    }
+
+    private func assertSaveNoticeFrames(_ expected: [CGRect], equalTo actual: [CGRect]) {
+        for (before, after) in zip(expected, actual) {
+            XCTAssertEqual(before.origin.x, after.origin.x, accuracy: 0.5, "Save feedback must not move editing controls horizontally")
+            XCTAssertEqual(before.origin.y, after.origin.y, accuracy: 0.5, "Save feedback must not move editing controls vertically")
+            XCTAssertEqual(before.width, after.width, accuracy: 0.5, "Save feedback must not resize editing controls horizontally")
+            XCTAssertEqual(before.height, after.height, accuracy: 0.5, "Save feedback must not resize editing controls vertically")
+        }
+    }
 
     func testSixLanguageLensAndDngBatchControlsPreserveState() {
         print("Six-language Lens/DNG integration: native Photos completion and Files save v7")
@@ -123,12 +227,12 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         let names = ["简体中文", "English", "Deutsch", "Français", "日本語", "Español"]
         let copies: [[String]] = [
-            ["语言", "标准显影", "匹配内嵌预览", "传感器基准", "拍摄时", "自定义", "细节优先", "去噪优先", "原始分辨率", "自定义…", "长边 %@ px", "取消", "保存当前照片", "返回", "查看批量任务", "调整来源", "已选 %@ 张 RAW", "导出尺寸", "已保存 %@ 张到照片图库", "完成", "跟随系统"],
-            ["Language", "Standard Development", "Match Embedded Preview", "Sensor Reference", "As Shot", "Custom", "Detail Priority", "Noise Reduction Priority", "Original Resolution", "Custom…", "Long Edge %@ px", "Cancel", "Save Current Photo", "Back", "View Batch Task", "Adjustment Source", "%@ RAW Photos Selected", "Export Size", "%@ Saved to Photos", "Done", "Follow system"],
-            ["Sprache", "Standardentwicklung", "Eingebettete Vorschau abgleichen", "Sensorreferenz", "Wie aufgenommen", "Benutzerdefiniert", "Detailpriorität", "Rauschunterdrückung priorisieren", "Originalauflösung", "Benutzerdefiniert…", "Lange Kante %@ px", "Abbrechen", "Aktuelles Foto sichern", "Zurück", "Stapelauftrag anzeigen", "Anpassungsquelle", "%@ RAW-Fotos ausgewählt", "Exportgröße", "%@ in Fotos gespeichert", "Fertig", "Systemsprache verwenden"],
-            ["Langue", "Développement standard", "Faire correspondre l’aperçu intégré", "Référence du capteur", "Selon la prise", "Personnalisé", "Priorité aux détails", "Priorité à la réduction du bruit", "Résolution originale", "Personnalisé…", "Bord long %@ px", "Annuler", "Enregistrer la photo actuelle", "Retour", "Afficher la tâche par lots", "Source des réglages", "%@ photos RAW sélectionnées", "Taille d’exportation", "%@ enregistrées dans Photos", "Terminé", "Suivre le système"],
-            ["言語", "標準現像", "埋め込みプレビューに一致", "センサー基準", "撮影時", "カスタム", "ディテール優先", "ノイズ低減優先", "元の解像度", "カスタム…", "長辺 %@ px", "キャンセル", "現在の写真を保存", "戻る", "一括タスクを表示", "調整元", "%@枚のRAWを選択", "書き出しサイズ", "写真に%@枚保存しました", "完了", "システムに従う"],
-            ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Resolución original", "Personalizado…", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes", "Origen de los ajustes", "%@ fotos RAW seleccionadas", "Tamaño de exportación", "Se guardaron %@ en Fotos", "Listo", "Seguir el sistema"]
+            ["语言", "标准显影", "匹配内嵌预览", "传感器基准", "拍摄时", "自定义", "细节优先", "去噪优先", "原始分辨率", "自定义…", "长边 %@ px", "取消", "保存当前照片", "返回", "查看批量任务", "调整来源", "已选 %@ 张照片", "导出尺寸", "已保存 %@ 张到照片图库", "完成", "跟随系统"],
+            ["Language", "Standard Development", "Match Embedded Preview", "Sensor Reference", "As Shot", "Custom", "Detail Priority", "Noise Reduction Priority", "Original Resolution", "Custom…", "Long Edge %@ px", "Cancel", "Save Current Photo", "Back", "View Batch Task", "Adjustment Source", "%@ Photos Selected", "Export Size", "%@ Saved to Photos", "Done", "Follow system"],
+            ["Sprache", "Standardentwicklung", "Eingebettete Vorschau abgleichen", "Sensorreferenz", "Wie aufgenommen", "Benutzerdefiniert", "Detailpriorität", "Rauschunterdrückung priorisieren", "Originalauflösung", "Benutzerdefiniert…", "Lange Kante %@ px", "Abbrechen", "Aktuelles Foto sichern", "Zurück", "Stapelauftrag anzeigen", "Anpassungsquelle", "%@ Fotos ausgewählt", "Exportgröße", "%@ in Fotos gespeichert", "Fertig", "Systemsprache verwenden"],
+            ["Langue", "Développement standard", "Faire correspondre l’aperçu intégré", "Référence du capteur", "Selon la prise", "Personnalisé", "Priorité aux détails", "Priorité à la réduction du bruit", "Résolution originale", "Personnalisé…", "Bord long %@ px", "Annuler", "Enregistrer la photo actuelle", "Retour", "Afficher la tâche par lots", "Source des réglages", "%@ photos sélectionnées", "Taille d’exportation", "%@ enregistrées dans Photos", "Terminé", "Suivre le système"],
+            ["言語", "標準現像", "埋め込みプレビューに一致", "センサー基準", "撮影時", "カスタム", "ディテール優先", "ノイズ低減優先", "元の解像度", "カスタム…", "長辺 %@ px", "キャンセル", "現在の写真を保存", "戻る", "一括タスクを表示", "調整元", "%@枚の写真を選択", "書き出しサイズ", "写真に%@枚保存しました", "完了", "システムに従う"],
+            ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Resolución original", "Personalizado…", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes", "Origen de los ajustes", "%@ fotos seleccionadas", "Tamaño de exportación", "Se guardaron %@ en Fotos", "Listo", "Seguir el sistema"]
         ]
         func tapTool(_ id: String) {
             let button = app.buttons["tool." + id]
@@ -221,6 +325,9 @@ final class EditorUITests: XCTestCase {
             XCTAssertTrue(mode.label.contains(c[1]), mode.label)
 
             tapTool("temperature")
+            XCTAssertTrue(app.buttons["tool.temperature"].isSelected)
+            XCTAssertFalse(app.buttons["tool.tint"].exists,
+                           "White balance keeps tint as a parameter rather than a second tool")
             let wb = app.segmentedControls["whiteBalance.mode"]
             XCTAssertTrue(wb.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(wb.buttons[c[4]].exists && wb.buttons[c[5]].exists, app.debugDescription)
@@ -381,7 +488,7 @@ final class EditorUITests: XCTestCase {
         app.sliders["adjustment.slider"].adjust(toNormalizedSliderPosition: 0.6)
         let savedExposure = app.buttons["tool.exposure"].value as? String
         XCTAssertNotEqual(savedExposure, "+0.0 EV")
-        XCTAssertTrue(app.staticTexts["调整已保存"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "调整已保存")).firstMatch.waitForExistence(timeout: 10))
         app.terminate()
         app.launch()
         importPhoto(in: app)
@@ -535,6 +642,9 @@ final class EditorUITests: XCTestCase {
         }
         capture("effects-vignette-portrait")
         scrollPanel(up: false)
+        XCTAssertFalse(app.buttons["effects.vignette.reset"].exists,
+                       "Collapsed vignette does not expose the group reset")
+        app.buttons["effects.vignette.advanced"].tap()
         app.buttons["重置暗角"].tap()
         XCTAssertEqual(app.textFields["effects.vignette.value.vignetteAmount"].value as? String, "0")
         XCTAssertFalse(app.sliders["effects.vignette.slider.vignetteHighlights"].isEnabled)
@@ -725,9 +835,10 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         app.buttons["tool.film"].tap()
         for name in ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
-                     "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia", "WDR"] {
+                     "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"] {
             XCTAssertTrue(app.buttons[name].exists, "Missing built-in LUT: \(name)")
         }
+        XCTAssertFalse(app.buttons["WDR"].exists)
         XCTAssertFalse(app.buttons["FLog2 709"].exists)
         capture("complete-film-list")
     }
@@ -739,29 +850,37 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         let canvas = app.descendants(matching: .any)["editor.photo"]
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         canvas.doubleTap()
         XCTAssertEqual(canvas.value as? String, "100%")
         capture("photo-actual-pixels")
         app.buttons["editor.compare"].tap()
         XCTAssertEqual(canvas.value as? String, "100%")
         canvas.doubleTap()
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         canvas.pinch(withScale: 3, velocity: 1)
-        XCTAssertFalse((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertFalse(isFittedPhoto(canvas))
         canvas.swipeLeft()
         capture("photo-pinched-and-panned")
         canvas.doubleTap()
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         app.buttons["editor.adjustments"].tap()
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
         canvas.doubleTap()
         XCTAssertEqual(canvas.value as? String, "100%")
         app.buttons["editor.adjustments"].tap()
         XCTAssertEqual(canvas.value as? String, "100%")
         capture("photo-actual-pixels-resized")
         importPhoto(in: app)
-        XCTAssertTrue((canvas.value as? String)?.hasPrefix("Fit") == true)
+        XCTAssertTrue(isFittedPhoto(canvas))
+    }
+
+    private func isFittedPhoto(_ canvas: XCUIElement) -> Bool {
+        guard let value = canvas.value as? String else { return false }
+        let parts = value.split(separator: " ")
+        guard parts.count > 1, let percentage = parts.last, percentage.hasSuffix("%"),
+              let number = Int(percentage.dropLast()), number >= 0 else { return false }
+        return parts.dropLast().joined(separator: " ").rangeOfCharacter(from: .letters) != nil
     }
 
     private func importPhoto(in app: XCUIApplication) {
@@ -858,8 +977,10 @@ final class EditorUITests: XCTestCase {
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 32, height: 32))
             let pixels = buffer.bindMemory(to: UInt8.self)
             return stride(from: 0, to: pixels.count, by: 4).filter { offset in
-                Double(pixels[offset]) > 100 && Double(pixels[offset]) > Double(pixels[offset + 1]) * 1.8 &&
-                    Double(pixels[offset]) > Double(pixels[offset + 2]) * 1.8
+                let red = Double(pixels[offset])
+                let green = Double(pixels[offset + 1])
+                let blue = Double(pixels[offset + 2])
+                return red > 100 && red > green * 1.8 && red > blue * 1.8
             }.count
         }
         return redPixels > 4

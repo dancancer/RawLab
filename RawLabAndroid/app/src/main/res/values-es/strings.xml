@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="usage_analytics">Análisis de uso</string>
+    <string name="usage_privacy">Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión. No se recopilan fotos, vistas previas, nombres de archivo, rutas, EXIF ni contenido de IA. Al desactivarse, se detiene la nueva recopilación; las solicitudes ya enviadas no pueden retirarse.</string>
+    <string name="usage_privacy_policy">Política de privacidad de Aliyun</string>
+    <string name="usage_unavailable">El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.</string>
+    <string name="usage_disabled">El análisis de uso está desactivado.</string>
+    <string name="usage_enabled">El análisis de uso está permitido; puede desactivarlo en cualquier momento.</string>
+    <string name="usage_storage_failed">No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso.</string>
+    <string name="usage_start_failed">No se pudo iniciar el servicio de análisis. La edición de fotos no se ve afectada.</string>
+    <string name="usage_record_failed">No se pudo enviar el evento de análisis. La edición de fotos no se ve afectada.</string>
+    <string name="usage_stop_failed">No se pudo detener el servicio de análisis. Reinicie la aplicación antes de volver a intentarlo.</string>
+    <string name="usage_cleanup_failed">No se completó la limpieza local de los datos de análisis. Reinicie la aplicación antes de volver a intentarlo.</string>
+    <string name="usage_restart_required">El análisis se ha detenido. Reinicie la aplicación antes de volver a activarlo.</string>
     <string name="app_name">RawLab</string>
     <string name="about_rawlab">Acerca de RawLab</string>
     <string name="app_version">Versión %1$s</string>
@@ -53,7 +65,7 @@
     <string name="info_capture_missing">No se pudieron leer los parámetros de captura</string>
     <string name="compare">Comparar</string>
     <string name="reset">Restablecer ajustes</string>
-    <string name="empty_title">Abrir foto RAW</string>
+    <string name="empty_title">Abrir foto</string>
     <string name="neutral">Original</string>
     <string name="result">Ajustada</string>
     <string name="film">Película</string>
@@ -70,17 +82,17 @@
     <string name="temperature">Temperatura</string>
     <string name="tint">Matiz</string>
     <string name="sharpening">Enfoque</string>
-    <string name="wb_unavailable">Este RAW no tiene calibración de balance de blancos disponible</string>
+    <string name="wb_unavailable">Esta entrada no tiene calibración de balance de blancos de cámara</string>
     <string name="rendering">Revelando</string>
-    <string name="importing">Leyendo RAW</string>
+    <string name="importing">Leyendo foto</string>
     <string name="exporting">Exportando foto a resolución completa</string>
     <string name="export_done">Foto guardada</string>
     <string name="edit_saved">Ajustes guardados</string>
     <string name="edit_restored">Ajustes anteriores restaurados</string>
     <string name="edit_unsaved">Ajustes no guardados. Toca «Reintentar».</string>
     <string name="edit_storage_error">No se pueden abrir los ajustes locales. Comprueba el permiso de almacenamiento.</string>
-    <string name="process_error">Error de procesamiento. Inténtalo de nuevo o elige otro RAW.</string>
-    <string name="memory_error">No hay memoria suficiente para procesar este RAW</string>
+    <string name="process_error">Error de procesamiento. Inténtalo de nuevo o elige otra foto.</string>
+    <string name="memory_error">No hay memoria suficiente para procesar esta foto</string>
     <string name="retry">Reintentar</string>
     <string name="cancel">Cancelar</string>
     <string name="save_album">Guardar en el álbum</string>
@@ -88,14 +100,14 @@
     <string name="png">PNG · 16 bits</string>
     <string name="jpeg">JPEG</string>
     <string name="permission_title">Permitir acceso a las fotos</string>
-    <string name="permission_body">Selecciona las fotos que RawLab puede explorar. También puedes importar un RAW desde archivos.</string>
+    <string name="permission_body">Selecciona las fotos que RawLab puede explorar. También puedes importar JPEG, PNG o RAW desde archivos.</string>
     <string name="grant_access">Elegir acceso a fotos</string>
-    <string name="partial_access">Mostrar solo los RAW autorizados</string>
+    <string name="partial_access">Mostrar solo las fotos autorizadas</string>
     <string name="select_more">Seleccionar fotos de nuevo</string>
     <string name="settings">Ajustes del sistema</string>
     <string name="refresh">Actualizar</string>
     <string name="back">Atrás</string>
-    <string name="album_empty">No hay fotos RAW accesibles</string>
+    <string name="album_empty">No hay fotos accesibles</string>
     <string name="album_error">No se puede leer el álbum. Comprueba el permiso de fotos.</string>
     <string name="all_albums">Todos los álbumes</string>
     <string name="album_view_options">Opciones de vista</string>
@@ -127,7 +139,8 @@
     <string name="message_the_task_source_or_look_file_is">El origen de la tarea o el archivo de look no está disponible. Crea de nuevo la tarea por lotes.</string>
     <string name="message_saving_to_the_photo_gallery_requires_android">Guardar en la galería de fotos requiere Android 10 o posterior</string>
     <string name="message_output_storage_failed">Error al guardar la salida: %1$s</string>
-    <string name="message_not_a_supported_raw_file">No es un archivo RAW compatible</string>
+    <string name="message_not_a_supported_raw_file">No es un archivo RAW, JPEG o PNG compatible</string>
+    <string name="message_dng_raster_unsupported">La exportación DNG renderizada requiere destinos RAW</string>
     <string name="message_unable_to_read_file">No se puede leer el archivo</string>
     <string name="message_unable_to_read_output_directory">No se puede leer la carpeta de salida</string>
     <string name="message_writing_was_incomplete_and_cleanup_failed_check">La escritura no se completó y no se pudo limpiar. Comprueba la carpeta de salida.</string>
@@ -141,7 +154,7 @@
     <string name="message_select_multiple_from_album">Seleccionar varias del álbum</string>
     <string name="message_select_multiple_files">Seleccionar varios archivos</string>
     <string name="message_target_photos_selected">Fotos de destino (%1$s seleccionadas)</string>
-    <string name="message_select_raw_photos_to_apply_the_current">Selecciona las fotos RAW a las que aplicar los ajustes actuales</string>
+    <string name="message_select_raw_photos_to_apply_the_current">Selecciona las fotos a las que aplicar los ajustes actuales</string>
     <string name="message_view">Ver</string>
     <string name="message_remove">Eliminar</string>
     <string name="message_all_adjustments">Todos los ajustes</string>
@@ -234,6 +247,8 @@
     <string name="grain_roughness">Rugosidad</string>
     <string name="reset_vignette">Restablecer viñeta</string>
     <string name="reset_grain">Restablecer grano</string>
+    <string name="expand_vignette">Mostrar parámetros de viñeta</string>
+    <string name="collapse_vignette">Ocultar parámetros de viñeta</string>
     <string name="exposure_basis">Referencia de exposición</string>
     <string name="hsl_unadjusted">Sin ajustar</string>
     <string name="hsl_adjusted">Ajustado</string>
@@ -305,4 +320,25 @@
     <string name="dng_generated_not_saved_count">Se crearon %1$s archivos DNG revelados, pero no se guardaron en la ubicación elegida</string>
     <string name="dng_file_only">El DNG solo se puede guardar en Archivos</string>
     <string name="preview_wait_export">Espera a que termine la vista previa antes de exportar.</string>
+    <string name="geometry">Geometría</string>
+    <string name="geometry_reset">Restablecer geometría</string>
+    <string name="geometry_rotate_left">Girar a la izquierda</string>
+    <string name="geometry_rotate_right">Girar a la derecha</string>
+    <string name="geometry_flip_horizontal">Voltear horizontalmente</string>
+    <string name="geometry_flip_vertical">Voltear verticalmente</string>
+    <string name="geometry_perspective_horizontal">Perspectiva horizontal</string>
+    <string name="geometry_perspective_vertical">Perspectiva vertical</string>
+    <string name="geometry_perspective_hint">La perspectiva se aplica después del giro y los volteos, antes del enderezado y el recorte. El lienzo se reduce para evitar bordes negros.</string>
+    <string name="geometry_straighten">Enderezar</string>
+    <string name="geometry_crop_x">Izquierda</string>
+    <string name="geometry_crop_y">Arriba</string>
+    <string name="geometry_crop_width">Anchura</string>
+    <string name="geometry_crop_height">Altura</string>
+    <string name="geometry_crop_hint">El recorte se aplica después del giro, los volteos, la perspectiva y el enderezado.</string>
+    <string name="geometry_crop_error" formatted="false">Introduce un recorte con dimensiones positivas dentro del lienzo de 0–100%.</string>
+    <string name="geometry_apply_crop">Aplicar recorte</string>
+    <string name="geometry_summary">Recorte %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Giro %5$d° · Enderezado %6$+.1f°</string>
+    <string name="geometry_swap_ratio">Cambiar orientación del recorte</string>
+    <string name="geometry_ratio_free">Libre</string>
+    <string name="geometry_ratio_original">Original</string>
 </resources>

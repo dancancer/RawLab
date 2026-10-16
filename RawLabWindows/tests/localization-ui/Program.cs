@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.IO;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using RawLab.Windows;
@@ -11,29 +12,42 @@ internal static class Program
 {
     private static int failures;
     private static string preferencePath = "";
-    private static bool hadPreference;
-    private static byte[]? originalPreference;
     private static int changedCount;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)=>Admit(BatchJournal.DefaultDirectory,()=>
+    {
+        if(args.Length==2 && args[0]=="--default-isolation"){AdmissionChecks.Run(args[1]);return 0;}
+        if(args.Length!=0)throw new ArgumentException("Expected no arguments or --default-isolation <output>.");
+        return RunUi();
+    });
+
+    internal static int Admit(string journalDirectory,Func<int> startup)
+    {
+        try{TestWindowState.PreserveExistingBatch(journalDirectory);return startup();}
+        catch(Exception error){Console.Error.WriteLine(error);return 1;}
+    }
+
+    private static int RunUi()
     {
         try
         {
-            var field = typeof(Loc).GetField("preferenceFile", BindingFlags.NonPublic | BindingFlags.Static)
-                ?? throw new InvalidOperationException("Loc preference field is missing.");
-            preferencePath = (string)(field.GetValue(null) ?? throw new InvalidOperationException("Loc preference path is null."));
-            hadPreference = File.Exists(preferencePath);
-            originalPreference = hadPreference ? File.ReadAllBytes(preferencePath) : null;
-
-            Loc.Initialize("en");
-            Loc.SetPreference("en");
-            Loc.Changed += LanguageChanged;
+            var output=Path.Combine(Path.GetTempPath(),"rawlab-localization-"+Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(output);preferencePath=Path.Combine(output,"language.txt");
+            Console.WriteLine("Localization fixtures: "+output);
+            Loc.SetPreference("en",preferencePath);
 
             var app = new App();
             app.InitializeComponent();
-            app.Startup += (_, _) => app.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,
-                new Action(() => RunStartupChecks(app)));
+            EventManager.RegisterClassHandler(typeof(MainWindow),FrameworkElement.LoadedEvent,new RoutedEventHandler((sender,_)=>
+                TestWindowState.Isolate((MainWindow)sender,output)));
+            app.Startup += (_, _) =>
+            {
+                Loc.Initialize(null,preferencePath);
+                ((Action?)typeof(Loc).GetField("Changed",BindingFlags.Static|BindingFlags.NonPublic)!.GetValue(null))?.Invoke();
+                Loc.Changed += LanguageChanged;
+                app.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(() => RunStartupChecks(app)));
+            };
             app.Run();
         }
         catch (Exception error)
@@ -43,7 +57,6 @@ internal static class Program
         finally
         {
             Loc.Changed -= LanguageChanged;
-            RestorePreference();
         }
 
         Console.WriteLine($"RESULT: {(failures == 0 ? "PASS" : "FAIL")} failures={failures} changed={changedCount}");
@@ -59,7 +72,11 @@ internal static class Program
             var window = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault()
                 ?? throw new InvalidOperationException("Application startup did not create the editor window.");
 
-            Check(Loc.Language == "en", "Startup uses persisted English preference");
+            Check(Loc.Language == "en", "Startup test window uses its persisted private English preference");
+            var updates=(UpdateChecker)typeof(MainWindow).GetField("updates",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
+            var updatePath=(string)typeof(UpdateChecker).GetField("settingsPath",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(updates)!;
+            Check(!updates.Automatic && updatePath.StartsWith(Path.GetDirectoryName(preferencePath)!+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),
+                "Production StartupUri window receives private updates before its Loaded handler");
             Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), "Application resources contain the active catalog");
 
             var settingsField = typeof(MainWindow).GetField("settings", BindingFlags.NonPublic | BindingFlags.Instance)
@@ -71,6 +88,7 @@ internal static class Program
             var effects = new PhotoEffectsSettings(-12, 42, 7, 63, 8, 17, 33, 71);
             adjustments.Effects = effects;
             adjustments.Lens = new LensSettings(true, true, true, true, "profile-id");
+            adjustments.Geometry = new(.1, .2, .8, .7, 1, true, false, 3.5);
             var snapshot = JsonSerializer.Serialize(adjustments.Capture());
             var toolsBefore = (Panel)window.FindName("Tools");
             var effectButton = toolsBefore.Children.OfType<Button>()
@@ -80,6 +98,8 @@ internal static class Program
                 ?? throw new InvalidOperationException("Photo effects panel is missing.");
             var lensPanel = (LensPanel?)window.FindName("LensEditor")
                 ?? throw new InvalidOperationException("Lens panel is missing.");
+            var geometryPanel = (GeometryPanel?)window.FindName("GeometryEditor")
+                ?? throw new InvalidOperationException("Geometry panel is missing.");
             var lensInfo = new LensInfo(1, "Maker Camera Lens", "24mm", true, true, 1.25f,
                 [new LensCandidate("profile-id", "Maker", "24mm", true, true, true)]);
             var batchDirectory = Path.Combine(Path.GetTempPath(), "rawlab-localization-batch-" + Guid.NewGuid().ToString("N"));
@@ -94,10 +114,16 @@ internal static class Program
 
             foreach (var language in new[] { "zh-Hans", "en", "de", "fr", "ja", "es" })
             {
-                Loc.SetPreference(language);
+                Loc.SetPreference(language,preferencePath);
                 Pump();
                 lensPanel.Refresh(adjustments.Lens, lensInfo);
+                geometryPanel.Refresh(adjustments.Geometry);
                 Check(Loc.Language == language, $"Resolved language {language}");
+                foreach(var (name,key) in new[]{("AddDirectoryButton","添加目录"),("ExportRevealButton","在资源管理器中查看"),("BatchNotice","继续上次批量任务"),("RetrySave","重试保存"),("RetryButton","重新显影")})
+                {
+                    var button=(Button)window.FindName(name);
+                    Check(UIElementAutomationPeer.CreatePeerForElement(button)?.GetName()==Loc.Text(key),$"Sidebar/status action has a localized automation name: {name}/{language}");
+                }
                 Check(File.ReadAllText(preferencePath).Trim() == language, $"Persisted preference {language}");
                 Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), $"Dynamic catalog resource {language}");
 
@@ -117,6 +143,12 @@ internal static class Program
 
                 Check(Math.Abs(adjustments[Parameter.Exposure] - 1.25) < .0001, $"Exposure preserved {language}");
                 Check(adjustments.Effects == effects, $"Photo effects preserved {language}");
+                Check(adjustments.Geometry is { CropX: .1, QuarterTurns: 1, FlipHorizontal: true, StraightenDegrees: 3.5 },
+                    $"Geometry survives language changes {language}");
+                Check(AutomationProperties.GetName((CheckBox)geometryPanel.FindName("HorizontalFlip")!) == Loc.Text("水平翻转") &&
+                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("宽度 (%)") &&
+                      AutomationProperties.GetName((Slider)geometryPanel.FindName("StraightenSlider")!) == Loc.Text("拉直"),
+                    $"Geometry controls have localized automation names {language}");
                 Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");
                 Check(JsonSerializer.Serialize(adjustments.Capture()) == snapshot, $"Recipe, HSL and editor snapshot preserved {language}");
                 var hslPanel = (HslPanel)window.FindName("HslEditor");
@@ -208,24 +240,4 @@ internal static class Program
         Console.WriteLine($"FAIL: {message}");
     }
 
-    private static void RestorePreference()
-    {
-        try
-        {
-            if (hadPreference)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(preferencePath)!);
-                File.WriteAllBytes(preferencePath, originalPreference!);
-            }
-            else if (File.Exists(preferencePath))
-            {
-                File.Delete(preferencePath);
-            }
-        }
-        catch (Exception error)
-        {
-            failures++;
-            Console.WriteLine($"FAIL: preference restore: {error.Message}");
-        }
-    }
 }

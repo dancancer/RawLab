@@ -29,9 +29,10 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     fi
     for notice in LibRaw-COPYRIGHT LibRaw-LICENSE.CDDL LibRaw-LICENSE.LGPL \
         rawspeed-camera-calibration.inc Adobe-DNG-SDK-LICENSE.txt stb-MIT-LICENSE.txt libtiff-LICENSE.md ThirdPartyNotices.md \
-        RawLab-GPL-3.0.txt RawLab-Licensing.md; do
+        RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensing.md; do
         test -f "$(dirname "$binary")/Licenses/$notice"
     done
+    cmp "$ROOT/../LICENSE-ALIYUN-RUM-EXCEPTION" "$(dirname "$binary")/Licenses/RawLab-Aliyun-RUM-Exception.txt"
     dng_licenses="$(dirname "$binary")/Licenses/dng-sdk"
     test -d "$dng_licenses"
     for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \

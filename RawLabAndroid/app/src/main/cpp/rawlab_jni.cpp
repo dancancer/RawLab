@@ -12,6 +12,10 @@
 
 static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
     "Photo effects config ABI must remain a versioned 40-byte struct");
+static_assert(sizeof(sony2fuji_geometry_config) == 40,
+    "Geometry config ABI must remain a versioned 40-byte struct");
+static_assert(sizeof(sony2fuji_perspective_config) == 16,
+    "Perspective config ABI must remain a versioned 16-byte struct");
 
 namespace {
 struct SessionDeleter {
@@ -66,6 +70,15 @@ struct UtfChars {
         if (s && !chars) throw std::bad_alloc();
     }
     ~UtfChars() { if (chars) env->ReleaseStringUTFChars(value, chars); }
+};
+struct ByteArrayElements {
+    JNIEnv* env;
+    jbyteArray value;
+    jbyte* bytes;
+    ByteArrayElements(JNIEnv* e, jbyteArray array) : env(e), value(array), bytes(array ? e->GetByteArrayElements(array, nullptr) : nullptr) {
+        if (array && !bytes) throw std::bad_alloc();
+    }
+    ~ByteArrayElements() { if (bytes) env->ReleaseByteArrayElements(value, bytes, JNI_ABORT); }
 };
 struct Buffer {
     sony2fuji_buffer value{};
@@ -146,6 +159,40 @@ Java_com_rawlab_android_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, job
             sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()};
         check(sony2fuji_session_set_lens_correction(sessionFor(id), &config));
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
+    jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
+    jboolean horizontal, jboolean vertical, jfloat straighten,
+    jfloat perspectiveHorizontal, jfloat perspectiveVertical) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_geometry_config config{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(config),
+            x, y, width, height, turns, horizontal ? 1 : 0, vertical ? 1 : 0, straighten};
+        auto* session = sessionFor(id);
+        check(sony2fuji_session_set_geometry(session, &config));
+        sony2fuji_perspective_config perspective{SONY2FUJI_PERSPECTIVE_CONFIG_VERSION, sizeof(perspective),
+            perspectiveHorizontal, perspectiveVertical};
+        check(sony2fuji_session_set_perspective(session, &perspective));
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_rawlab_android_NativeProcessor_nativeGeometrySize(JNIEnv* env, jobject, jlong id) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        uint32_t width = 0, height = 0;
+        check(sony2fuji_session_get_geometry_size(sessionFor(id), &width, &height));
+        if (!width || !height || width > INT32_MAX || height > INT32_MAX)
+            throw std::runtime_error("Invalid geometry dimensions");
+        auto result = env->NewIntArray(2);
+        if (!result) return nullptr;
+        const jint dimensions[] = {static_cast<jint>(width), static_cast<jint>(height)};
+        env->SetIntArrayRegion(result, 0, 2, dimensions);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
@@ -254,23 +301,38 @@ Java_com_rawlab_android_NativeProcessor_nativeSetGpuMode(JNIEnv* env, jobject, j
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
-    jstring input, jstring lut, jstring output, jfloat strength, jfloat exposure,
+    jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
+    jstring lut, jstring output, jfloat strength, jfloat exposure,
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
     jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
     jint edge, jboolean interactive, jint format, jint longEdge,
     jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
-    jint exposureMode, jfloatArray hslValues, jboolean recipeActive) {
+    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jintArray backendOut) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
         auto* session = found->second.get();
+        if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
         check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         UtfChars in(env, input), film(env, lut), out(env, output);
+        ByteArrayElements inputBytes(env, inputPixels);
+        const bool displayInput = inputPixels != nullptr;
+        if (displayInput) {
+            if (inputWidth <= 0 || inputHeight <= 0 || inputPixelFormat != SONY2FUJI_PIXEL_RGBA8)
+                throw std::invalid_argument("Invalid display image dimensions");
+            const uint64_t expected = static_cast<uint64_t>(inputWidth) * static_cast<uint64_t>(inputHeight) * 4;
+            if (expected > static_cast<uint64_t>(std::numeric_limits<jsize>::max()) ||
+                env->GetArrayLength(inputPixels) < static_cast<jsize>(expected))
+                throw std::invalid_argument("Invalid display image buffer");
+        } else if (inputWidth != 0 || inputHeight != 0 || inputPixelFormat != 0) {
+            throw std::invalid_argument("Invalid RAW image buffer");
+        }
         bool effectiveCustom = customWb;
-        prepareRecipeWb(session, in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
+        if (!displayInput)
+            prepareRecipeWb(session, in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
         if (!hslValues || env->GetArrayLength(hslValues) != 24) throw std::invalid_argument("Invalid HSL values");
         float hslData[24];
         env->GetFloatArrayRegion(hslValues, 0, 24, hslData);
@@ -283,10 +345,16 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         std::copy(hslData+16, hslData+24, hsl.lightness);
         check(sony2fuji_session_set_hsl(session, &hsl));
         const auto outputFormat = rawlab::parseExportFormat(format);
-        auto request = rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
-            exposure, effectiveCustom, temperature, tint, highlights, shadows, contrast,
-            toneCurve, saturation, sharpening, edge, outputFormat,
-            longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge));
+        auto request = displayInput
+            ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
+                static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),
+                film.chars, out.chars, strength, exposure, effectiveCustom, temperature, tint,
+                highlights, shadows, contrast, toneCurve, saturation, sharpening, edge, outputFormat,
+                longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge))
+            : rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
+                exposure, effectiveCustom, temperature, tint, highlights, shadows, contrast,
+                toneCurve, saturation, sharpening, edge, outputFormat,
+                longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge));
         if (recipeActive) {
             request.exposure_ev *= strength;
             request.highlights *= strength;
@@ -306,6 +374,11 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
+        if (backendOut) {
+            const auto backend = static_cast<jint>(sony2fuji_session_get_last_backend(session));
+            env->SetIntArrayRegion(backendOut, 0, 1, &backend);
+            if (env->ExceptionCheck()) return nullptr;
+        }
         if (output) return nullptr;
         const auto& b = buffer.value;
         const size_t row = static_cast<size_t>(b.width) * 4;
@@ -320,8 +393,10 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
         }
         if (env->ExceptionCheck()) return nullptr;
         float kelvin = NAN, wbTint = NAN;
-        sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);
-        kelvin = std::round(kelvin); wbTint = std::round(wbTint);
+        if (!displayInput) {
+            sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);
+            kelvin = std::round(kelvin); wbTint = std::round(wbTint);
+        }
         auto type = env->FindClass("com/rawlab/android/NativeFrame");
         if (!type) return nullptr;
         auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI)V");
@@ -344,17 +419,34 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
 
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_rawlab_android_NativeProcessor_nativeAutoExposure(JNIEnv* env, jobject, jlong id,
-    jstring input, jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength) {
+    jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
+    jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
         UtfChars in(env, input);
+        ByteArrayElements inputBytes(env, inputPixels);
+        const bool displayInput = inputPixels != nullptr;
+        if (displayInput) {
+            if (inputWidth <= 0 || inputHeight <= 0 || inputPixelFormat != SONY2FUJI_PIXEL_RGBA8)
+                throw std::invalid_argument("Invalid display image dimensions");
+            const uint64_t expected = static_cast<uint64_t>(inputWidth) * static_cast<uint64_t>(inputHeight) * 4;
+            if (expected > static_cast<uint64_t>(std::numeric_limits<jsize>::max()) ||
+                env->GetArrayLength(inputPixels) < static_cast<jsize>(expected))
+                throw std::invalid_argument("Invalid display image buffer");
+        }
         check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         bool effectiveCustom = customWb;
-        prepareRecipeWb(found->second.get(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
-        auto request = rawlab::makeRequest(in.chars, nullptr, nullptr, 0, 0, effectiveCustom,
-            temperature, tint, 0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG);
+        if (!displayInput)
+            prepareRecipeWb(found->second.get(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
+        auto request = displayInput
+            ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
+                static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),
+                nullptr, nullptr, 0, 0, effectiveCustom, temperature, tint,
+                0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG)
+            : rawlab::makeRequest(in.chars, nullptr, nullptr, 0, 0, effectiveCustom,
+                temperature, tint, 0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG);
         check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         float ev = 0;
         const auto status = sony2fuji_session_estimate_auto_exposure(found->second.get(), &request, &ev);

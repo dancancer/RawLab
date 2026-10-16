@@ -8,6 +8,7 @@ struct DirectoryContents {
     let photos: [URL]
     static let rawExtensions: Set<String> = ["arw", "arq", "dng", "nef", "nrw", "cr2", "cr3", "crw", "raf",
         "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos"]
+    static let supportedExtensions = rawExtensions.union(["jpg", "jpeg", "png", "tif", "tiff", "heif", "heic"])
 
     static func read(_ url: URL) throws -> Self {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isPackageKey]
@@ -18,7 +19,7 @@ struct DirectoryContents {
             let values = try entry.resourceValues(forKeys: keys)
             if values.isDirectory == true && values.isSymbolicLink != true && values.isPackage != true {
                 folders.append(entry)
-            } else if values.isRegularFile == true && rawExtensions.contains(entry.pathExtension.lowercased()) {
+            } else if values.isRegularFile == true && supportedExtensions.contains(entry.pathExtension.lowercased()) {
                 photos.append(entry)
             }
         }
@@ -71,8 +72,10 @@ final class PhotoLibrary: ObservableObject {
         didSet { observeRoots() }
     }
     private var rootSubscriptions: [AnyCancellable] = []
-    init() {
-        roots = (UserDefaults.standard.stringArray(forKey: "photoFolders") ?? [])
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        roots = (defaults.stringArray(forKey: "photoFolders") ?? [])
             .map { PhotoFolder(URL(fileURLWithPath: $0)) }
         observeRoots()
     }
@@ -86,17 +89,26 @@ final class PhotoLibrary: ObservableObject {
         panel.title = L10n.text("添加照片目录")
         panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = true
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls.map({ $0.standardizedFileURL.resolvingSymlinksInPath() }) {
+        addDirectories(panel.urls)
+    }
+    @discardableResult func addDirectories(_ urls: [URL]) -> Bool {
+        var accepted = false
+        for candidate in urls where candidate.isFileURL {
+            let url = candidate.standardizedFileURL.resolvingSymlinksInPath()
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]),
+                  values.isDirectory == true, values.isPackage != true else { continue }
+            accepted = true
             if let existing = roots.first(where: { $0.url == url }) {
                 existing.expanded = true; existing.load()
             } else {
                 let folder = PhotoFolder(url); roots.append(folder); folder.toggle()
             }
         }
-        persist()
+        if accepted { persist() }
+        return accepted
     }
     func remove(_ root: PhotoFolder) { roots.removeAll { $0.id == root.id }; persist() }
-    private func persist() { UserDefaults.standard.set(roots.map { $0.url.path }, forKey: "photoFolders") }
+    private func persist() { defaults.set(roots.map { $0.url.path }, forKey: "photoFolders") }
 }
 
 // NSCache and OperationQueue are thread-safe; cached CGImage-backed images are immutable.
@@ -112,7 +124,9 @@ final class PhotoThumbnails: @unchecked Sendable {
         if let image = cache.object(forKey: url as NSURL) { return image }
         return await withCheckedContinuation { continuation in
             queue.addOperation { [self] in
+                let raster = !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
                 let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                    kCGImageSourceCreateThumbnailFromImageAlways: raster,
                     kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 180,
                     kCGImageSourceShouldCache: false]
                 var result: NSImage?

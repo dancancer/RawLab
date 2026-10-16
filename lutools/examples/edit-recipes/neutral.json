@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "input": { "path": "../DJI_20250602164503_0444_D.DNG" },
+  "edits": {
+    "exposure": { "mode": "scene" }
+  },
+  "output": {
+    "path": "../../../build/neutral.jpg",
+    "format": "jpeg"
+  }
+}

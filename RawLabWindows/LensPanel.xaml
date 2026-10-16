@@ -14,15 +14,15 @@
   <Button x:Name="ProfileButton" Click="ChooseClicked" HorizontalContentAlignment="Left" Margin="0,4" Padding="8,4" AutomationProperties.Name="{DynamicResource '选择镜头配置文件'}">
    <TextBlock x:Name="SelectedTitle" Text="{DynamicResource '选择镜头'}" TextTrimming="CharacterEllipsis"/>
   </Button>
-  <WrapPanel><TextBlock x:Name="StatusText" Foreground="#A8ABB4" TextWrapping="Wrap" Margin="0,2,12,0" AutomationProperties.LiveSetting="Polite"/><TextBlock x:Name="CropText" Foreground="#A8ABB4" Margin="0,2,0,0"/></WrapPanel>
+  <WrapPanel><TextBlock x:Name="StatusText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,12,0" AutomationProperties.LiveSetting="Polite"/><TextBlock x:Name="CropText" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/></WrapPanel>
   <Popup x:Name="Chooser" PlacementTarget="{Binding ElementName=ProfileButton}" Placement="Top" StaysOpen="False" AllowsTransparency="True">
-   <Border Background="#25272C" BorderBrush="#626570" BorderThickness="1" Padding="8" CornerRadius="4" Width="500">
+   <Border Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" Padding="8" CornerRadius="4" Width="500">
     <StackPanel>
      <TextBox x:Name="Search" TextChanged="SearchChanged" Margin="0,0,0,8" AutomationProperties.Name="{DynamicResource '搜索镜头'}"/>
      <ListBox x:Name="Profiles" MaxHeight="260" SelectionChanged="ProfileChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{DynamicResource '镜头配置'}">
-      <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="3,4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap"/><TextBlock Text="{Binding Calibration}" FontSize="11" Foreground="#A8ABB4"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+      <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="3,4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap"/><TextBlock Text="{Binding Calibration}" FontSize="11"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
      </ListBox>
-     <TextBlock x:Name="EmptyText" Text="{DynamicResource '未找到镜头'}" Foreground="#A8ABB4" Margin="4" Visibility="Collapsed"/>
+     <TextBlock x:Name="EmptyText" Text="{DynamicResource '未找到镜头'}" Foreground="{DynamicResource Muted}" Margin="4" Visibility="Collapsed"/>
     </StackPanel>
    </Border>
   </Popup>

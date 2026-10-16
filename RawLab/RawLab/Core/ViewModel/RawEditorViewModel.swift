@@ -10,6 +10,7 @@ final class RawEditorViewModel: ObservableObject {
     }
 
     @Published var previewImage: UIImage?
+    @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
     @Published var statusMessage: String?
@@ -50,10 +51,13 @@ final class RawEditorViewModel: ObservableObject {
     var pendingSettings: RawSettings?
     var editSaveWork: DispatchWorkItem?
     var editNoticeID = UUID()
+    var basePreviewGeometry = GeometrySettings()
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
     var latestRenderID = UUID()
+    var activeImportRevision: UUID?
+    let resultDelivery: (@escaping () -> Void) -> Void
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
@@ -73,7 +77,9 @@ final class RawEditorViewModel: ObservableObject {
 
     var editPersistence: EditPersistence?
 
-    init(editPersistence: EditPersistence? = nil) {
+    init(editPersistence: EditPersistence? = nil,
+         resultDelivery: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.resultDelivery = resultDelivery
         do { self.editPersistence = try editPersistence ?? EditPersistence.appStore() }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }

@@ -67,7 +67,15 @@ dotnet run --project RawLabWindows/tests/localization-ui/LocalizationUiChecks.cs
 
 It exercises application resource refresh, tool and HSL accessibility labels,
 preference persistence, and the actual editor settings across all six languages.
-It restores the user's original language preference after the test.
+The Windows test uses a private language file and private window persistence,
+without backing up or rewriting the user's language preference. It refuses an
+existing default batch journal before startup; use an exclusive test account
+without a concurrently running product process. The real App startup/resource
+subscriptions and StartupUri window creation run; a test Loaded class handler
+installs private state before the window's Loaded instance handler. This is not
+a physical desktop or real-profile restart test.
+The standalone `--default-isolation <output>` mode checks journal/staging
+preservation and is also included in `RawLabWindows/tests/run-v08.ps1`.
 
 Android has `LanguageChoiceTest` for resolution and `LanguageResourcesTest` for
 actual resource selection. iOS has `EditorUITests.testLanguageSelectionPersists`

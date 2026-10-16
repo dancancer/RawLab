@@ -1,0 +1,244 @@
+name: Hosted CI
+
+on:
+  pull_request:
+    branches: [development, 'release/**', main]
+  push:
+    branches: [development, 'release/**', main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RAWLAB_RUM_LOCAL: '0'
+  JOBS: '2'
+  CMAKE_BUILD_PARALLEL_LEVEL: '2'
+
+jobs:
+  contracts:
+    name: Contracts and CI policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check verification boundary and static UI contracts
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/contracts.log) 2>&1
+          git rev-parse HEAD
+          python --version
+          python -m pip install -r scripts/ci/requirements.txt
+          python -m pip install -r lutools/requirements-lutprep.txt
+          lint_dir="$(mktemp -d)"
+          trap 'rm -rf "$lint_dir"' EXIT
+          curl -fL --retry 2 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$lint_dir/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
+          tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
+          "$lint_dir/actionlint"
+          python scripts/ci/test_workflow.py
+          python lutools/tests/test_cli_test_encoding.py
+          python RawLabMac/tests/test_single_preview.py
+          python RawLabMac/tests/test_tool_group_ui.py
+          python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
+          git diff --check
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: contracts-results
+          path: build/ci/*.log
+          retention-days: 7
+
+  macos:
+    name: macOS build and parity (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      RAWLAB_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Build default app and exercise CPU-safe regression suites
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/macos.log) 2>&1
+          git rev-parse HEAD
+          sw_vers
+          xcodebuild -version
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          export SDKROOT
+          python -m pip install -r scripts/ci/requirements.txt
+          python RawLabMac/tests/test_photo_copy.py
+          python RawLabMac/tests/test_build_environment.py
+          python lutools/tests/test_lens_dependencies.py
+          bash RawLabMac/tests/horizontal-picker.sh
+          bash RawLabMac/tests/horizontal-picker-native.sh
+          brew install pkg-config autoconf automake libtool
+          bash RawLabMac/build.sh
+          ctest --test-dir lutools/build-macos --output-on-failure --no-tests=error \
+            -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
+            --output-junit "$PWD/build/ci/macos-ctest.xml"
+          raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
+          cli="$PWD/lutools/build-macos/sony2fuji"
+          bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
+          bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
+          bash RawLabMac/tests/batch-export.sh
+          bash RawLabMac/tests/edit-model.sh
+          bash RawLabMac/tests/presentation.sh
+          bash RawLabMac/tests/control-groups.sh
+          bash Shared/tests/usage-analytics.sh
+          bash Shared/tests/usage-transport.sh
+          bash RawLabMac/tests/usage-model.sh
+          bash RawLabMac/tests/usage-termination.sh
+          bash RawLabMac/tests/rum-local.sh
+          bash RawLabMac/tests/localization.sh
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: macos-${{ matrix.arch }}-results
+          path: |
+            build/ci/*.log
+            build/ci/*.xml
+          retention-days: 7
+
+  windows:
+    name: Windows build and parity
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build default self-contained app and exercise CPU-safe suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force build/ci | Out-Null
+          Start-Transcript -Path build/ci/windows.log
+          function Invoke-Checked([string]$Command, [string[]]$Arguments) {
+            & $Command @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "$Command failed: $LASTEXITCODE" }
+          }
+          try {
+            Invoke-Checked git @('rev-parse', 'HEAD')
+            Invoke-Checked dotnet @('--info')
+            Invoke-Checked python @('-m', 'pip', 'install', '-r', 'scripts/ci/requirements.txt')
+            & ./RawLabWindows/build.ps1 -SelfContained -Python (Get-Command python).Source
+            $package = Join-Path $PWD 'build/RawLab-Windows'
+            $env:PATH = "$package;$env:PATH"
+            $tests = '^(windows_display_image|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema)$'
+            Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
+            Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
+            $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,looks'
+          }
+          finally {
+            if (Test-Path build/windows-v08-results) {
+              Copy-Item build/windows-v08-results/*.log, build/windows-v08-results/summary.json build/ci
+            }
+            Stop-Transcript
+          }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: windows-results
+          path: |
+            build/ci/*.log
+            build/ci/*.json
+            build/ci/*.xml
+          retention-days: 7
+
+  android:
+    name: Android build and JVM tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build both ABIs, JVM tests, lint and instrumentation test APK
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/android.log) 2>&1
+          git rev-parse HEAD
+          java -version
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          cd RawLabAndroid
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+          bash scripts/check-native.sh
+          find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: android-results
+          path: |
+            build/ci/*.log
+            build/ci/*.xml
+          retention-days: 7
+
+  ios:
+    name: iOS framework and unsigned app
+    runs-on: macos-26
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build all framework slices and compile simulator app and tests
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/ios.log) 2>&1
+          git rev-parse HEAD
+          sw_vers
+          xcodebuild -version
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          bash lutools/platform/ios/build-framework.sh
+          bash lutools/platform/ios/verify-framework.sh lutools/build-ios/sony2fuji.xcframework
+          xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO build-for-testing
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: ios-results
+          path: build/ci/*.log
+          retention-days: 7

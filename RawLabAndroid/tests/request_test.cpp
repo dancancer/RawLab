@@ -1,7 +1,9 @@
 #include "render_request.h"
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <initializer_list>
+#include <string>
 
 // Only status text is linked here; these tests exercise adapter validation.
 extern "C" const char* sony2fuji_status_message(sony2fuji_status) { return "test status"; }
@@ -75,4 +77,16 @@ int main() {
     assert(truncated);
     padded.size_bytes = 20;
     assert(rawlab::previewByteCount(padded) == 16);
+
+    std::array<unsigned char, 2 * 3 * 4> displayPixels{};
+    auto display = rawlab::makeDisplayRequest("photo.png", displayPixels.data(), 2, 3,
+        SONY2FUJI_PIXEL_RGBA8, nullptr, nullptr, 1, 0, false, 6500, 0,
+        0, 0, 0, 0, 0, 0, 400, rawlab::ExportFormat::PNG);
+    assert(display.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER);
+    assert(display.input_path && std::string(display.input_path) == "photo.png");
+    assert(display.input_pixels == displayPixels.data());
+    assert(display.input_width == 2 && display.input_height == 3);
+    assert(display.input_pixel_format == SONY2FUJI_PIXEL_RGBA8);
+    assert(display.input_color_space == SONY2FUJI_COLOR_SRGB && display.input_is_linear == 0);
+    assert(display.wb_mode == SONY2FUJI_WB_CAMERA && display.temperature == 6500 && display.tint == 0);
 }

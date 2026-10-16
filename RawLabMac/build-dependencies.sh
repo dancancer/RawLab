@@ -1,25 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ARCH="${RAWLAB_ARCH:-$(uname -m)}"
-case "$ARCH" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture: $ARCH" >&2; exit 1 ;; esac
+source "$ROOT/RawLabMac/build-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-15.0}"
 SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
-BASE="$ROOT/build/macos15-deps"
-SOURCES="$BASE/sources"
+BASE="$RAWLAB_DEPS_BASE"
+SOURCES="$BASE/$ARCH/sources"
 BUILD="$BASE/$ARCH"
-PREFIX="$BUILD/install"
+PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 mkdir -p "$SOURCES" "$PREFIX" "$BUILD/lcms"
 
 fetch() {
-    local archive="$1" checksum="$2" url="$3" directory="$4"
-    if [ ! -f "$SOURCES/$archive" ]; then
-        curl -fL --retry 2 "$url" -o "$SOURCES/$archive"
-    fi
-    printf '%s  %s\n' "$checksum" "$SOURCES/$archive" | shasum -a 256 -c -
-    if [ ! -d "$SOURCES/$directory" ]; then tar -xf "$SOURCES/$archive" -C "$SOURCES"; fi
+    rawlab_fetch "$@"
 }
 
 fetch libjpeg-turbo-3.1.3.tar.gz 3a13a5ba767dc8264bc40b185e41368a80d5d5f945944d1dbaa4b2fb0099f4e5 \

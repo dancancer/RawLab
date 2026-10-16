@@ -18,6 +18,7 @@ final class BatchExportModel: ObservableObject {
     @Published private(set) var previewing = false
     @Published private(set) var validating = false
     @Published var previewFile: URL?
+    @Published var sourceEditingGeometry = false
     var onActivity: (Bool) -> Void = { _ in }
     var onDiscard: () -> Void = { }
     private let journal: BatchJournal
@@ -25,14 +26,16 @@ final class BatchExportModel: ObservableObject {
     private var engine: RenderEngine?
     private var cancellation = BatchCancellation()
     private var previewRevision = UUID()
+    private let onUsage: (UsageEvent) -> Void
 
-    init(job: BatchExportJob, journal: BatchJournal) {
+    init(job: BatchExportJob, journal: BatchJournal, onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
+        self.onUsage = onUsage
         error = job.failure
     }
 
-    var canRun: Bool { !running && !validating && job.selectedCount > 0 && job.outputDirectory != nil }
+    var canRun: Bool { !running && !validating && !sourceEditingGeometry && job.selectedCount > 0 && job.outputDirectory != nil }
     var title: String {
         if stopping { return L10n.text("正在停止…") }
         if running { return L10n.text("正在导出") }
@@ -48,10 +51,10 @@ final class BatchExportModel: ObservableObject {
     func addFiles() {
         guard !running, !job.started, !validating else { return }
         let panel = NSOpenPanel()
-        panel.title = L10n.text("选择待导出的 RAW 照片")
+        panel.title = L10n.text("选择待导出的照片")
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = DirectoryContents.rawExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = DirectoryContents.supportedExtensions.compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK { add(panel.urls) }
     }
 
@@ -61,8 +64,8 @@ final class BatchExportModel: ObservableObject {
         var added: [BatchExportItem] = []
         for url in urls {
             do {
-                guard DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased()) else {
-                    throw RenderError.failed(L10n.text("不是支持的 RAW 文件"))
+                guard DirectoryContents.supportedExtensions.contains(url.pathExtension.lowercased()) else {
+                    throw RenderError.failed(L10n.text("不是支持的图像文件"))
                 }
                 var item = try BatchExportItem(url: url)
                 item.selected = true
@@ -150,9 +153,11 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             var work = snapshot
             var failure: String?
+            var attempted = Set<UUID>()
             do {
                 try BatchExportRunner.run(job: &work, journal: journal, scope: scope,
                                          shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
+                    attempted.formUnion(updated.items.filter { $0.status == .running }.map(\.id))
                     DispatchQueue.main.async { self.job = updated }
                 }) { input, settings, look, output in
                     if self.engine == nil { self.engine = try RenderEngine() }
@@ -161,10 +166,14 @@ final class BatchExportModel: ObservableObject {
                 }
             } catch { failure = error.localizedDescription; work.interrupted = true }
             let final = work, message = failure
+            let succeeded = max(0, final.succeededCount - snapshot.succeededCount)
+            let failed = final.items.filter { attempted.contains($0.id) && $0.status == .failed }.count
+            let outcome: UsageBatchOutcome = final.interrupted ? .interrupted : final.cancelled ? .cancelled : failed > 0 ? .partial : .completed
             DispatchQueue.main.async {
                 self.job = final; self.error = message
                 self.running = false; self.stopping = false
                 self.onActivity(false)
+                self.onUsage(.batchExportCompleted(succeeded: succeeded, failed: failed, outcome: outcome))
             }
         }
     }
@@ -184,7 +193,7 @@ final class BatchExportModel: ObservableObject {
         guard !running else { return }
         let revision = UUID()
         previewRevision = revision; previewFile = item.input; preview = nil; previewing = true; error = nil
-        let settings = job.settings, look = job.look
+        let settings = job.settings(for: item.input), look = job.look
         queue.async { [self] in
             let result = Result { () -> RenderedImage? in
                 guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }

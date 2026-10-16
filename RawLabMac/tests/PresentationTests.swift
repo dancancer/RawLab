@@ -68,7 +68,11 @@ struct PresentationTests {
         check(sameWhiteBalance.wb_mode == SONY2FUJI_WB_CAMERA,
               "Choosing Custom at the displayed as-shot values does not shift the image")
         var panel = AdjustmentPanelLayout()
-        check(panel.height(available: 800) == 260, "Adjustment panel starts at its default height")
+        check(panel.height(available: 800) == 252, "Adjustment panel starts at its default height")
+        panel.selectHeight(288)
+        check(panel.height(available: 800) == 288, "Grouped tools request their readable editor height")
+        panel.selectHeight(304)
+        check(panel.height(available: 620) == 304, "Advanced vignette fits within the minimum window bound")
         panel.resize(to: 340, available: 800)
         check(panel.height(available: 800) == 340, "Adjustment panel accepts a dragged height")
         panel.collapsed = true
@@ -80,9 +84,28 @@ struct PresentationTests {
         panel.resize(to: 1000, available: 620)
         check(panel.height(available: 620) <= 310, "Panel resizing preserves half the small window for the canvas")
         let tools = AdjustmentParameter.photoTools
-        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction }),
-              "Photo tools expose every image adjustment exactly once")
-        check(tools.count == 12 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
+        check(tools.filter(\.isWhiteBalance) == [.temperature],
+              "White balance has one tool while retaining separate temperature and tint parameters")
+        wb.resetWhiteBalance()
+        check(wb.isWhiteBalanceDefault, "Unified white balance starts unchanged at the camera baseline")
+        wb.set(.tint, to: 35)
+        check(!wb.isWhiteBalanceDefault && wb.temperature == 5274,
+              "Tint-only edits mark the unified white-balance tool changed")
+        wb.resetWhiteBalance()
+        check(wb.isWhiteBalanceDefault && wb.tint == 12 && wb.whiteBalanceMode == .asShot,
+              "Unified white-balance reset restores both parameters and as-shot mode")
+        wb.applyMasterRecipe(.hamadaDaylightV2)
+        let recipeID = wb.masterRecipeID
+        let recipeExposure = wb.exposure
+        wb.set(.temperature, to: 8000)
+        wb.set(.tint, to: 35)
+        wb.resetWhiteBalance()
+        check(wb.isWhiteBalanceDefault && wb.temperature == 5274 && wb.tint == 0 &&
+              wb.masterRecipeID == recipeID && wb.exposure == recipeExposure,
+              "White-balance group reset keeps the recipe and restores its zero tint offset")
+        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction && $0 != .tint }),
+              "Photo tools expose each adjustment group exactly once")
+        check(tools.count == 11 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
               "Photo tools replace legacy FBDD with chroma denoising")
         for tool in tools {
             check(NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) != nil,
@@ -155,17 +178,45 @@ struct PresentationTests {
         try Data().write(to: folder.appendingPathComponent("photo.ARW"))
         try Data().write(to: folder.appendingPathComponent("photo.dng"))
         try Data().write(to: folder.appendingPathComponent("photo.ARQ"))
+        try Data().write(to: folder.appendingPathComponent("photo.JPG"))
+        try Data().write(to: folder.appendingPathComponent("photo.png"))
+        try Data().write(to: folder.appendingPathComponent("animation.gif"))
         try Data().write(to: folder.appendingPathComponent("style.cube"))
         try Data().write(to: folder.appendingPathComponent(".hidden.ARW"))
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("nested"), withIntermediateDirectories: true)
         let listing = try DirectoryContents.read(folder)
-        check(listing.photos.count == 3 && listing.folders.count == 1,
-              "Directory browsing exposes RAW files and folders, not hidden files or LUTs")
+        check(listing.photos.count == 5 && listing.folders.count == 1,
+              "Directory browsing exposes RAW/JPEG/PNG, not hidden files, GIF or LUTs")
         check(listing.folders[0].lastPathComponent == "nested", "Subfolders remain lazy tree nodes")
         let artworkFolder = URL(fileURLWithPath: CommandLine.arguments[1])
-        check(FilmArtwork.resourceNames.count == 10, "Every bundled film has packaging artwork")
+        check(FilmArtwork.resourceNames.count == 39, "Every bundled film has packaging artwork")
+        let bundledFilms = BundledLook.all.map {
+            Film(name: $0.name, url: URL(fileURLWithPath: "/LUTs/" + $0.fileName))
+        }
+        check(FilmGroup.allCases == [.fuji, .kodak, .other], "Film groups retain Fuji, Kodak, Other order")
+        check(bundledFilms.filter { $0.group == .kodak }.count == 24,
+              "Kodak contains all 23 G'MIC looks and the separate Ektar v2")
+        check(bundledFilms.filter { $0.group == .other }.count == 5,
+              "Camera looks stay in Other, separate from Kodak and Fuji")
+        for path in try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: "lutools/flog-2-new"),
+                                                               includingPropertiesForKeys: nil)
+            where path.pathExtension == "cube" {
+            check(Film(name: path.lastPathComponent, url: path).group == .fuji,
+                  "Legacy Fuji LUT remains in Fuji: \(path.lastPathComponent)")
+        }
+        let customFuji = Film(name: "PROVIA", url: URL(fileURLWithPath: "/custom/FLog2_to_PROVIA.cube"), managedID: "custom:fuji")
+        let customKodak = Film(name: bundledFilms[0].name, url: bundledFilms[0].url, managedID: "custom:kodak")
+        check(customFuji.group == .other && customKodak.group == .other,
+              "Imported looks remain in Other even when names or filenames match built-ins")
+        check(Film(name: "Unknown", url: URL(fileURLWithPath: "/LUTs/unknown.cube")).group == .other,
+              "Unknown looks have a predictable Other fallback")
+        let groupedFilms = FilmGroup.allCases.flatMap { group in bundledFilms.filter { $0.group == group } }
+        check(groupedFilms.count == bundledFilms.count && Set(groupedFilms.map(\.id)) == Set(bundledFilms.map(\.id)),
+              "Flat grouping retains every LUT and its stable identity")
         for name in FilmArtwork.resourceNames.keys.sorted() {
-            guard let url = FilmArtwork.url(for: name, in: artworkFolder),
+            let directory = FileManager.default.fileExists(atPath: artworkFolder.appendingPathComponent(FilmArtwork.resourceNames[name]! + ".png").path)
+                ? artworkFolder : URL(fileURLWithPath: "Shared/BundledLooks/Artwork")
+            guard let url = FilmArtwork.url(for: name, in: directory),
                   let image = NSImage(contentsOf: url) else { fatalError("Missing or invalid artwork: \(name)") }
             check(image.size.width >= 128 && image.size.height >= 128, "Packaging image decodes: \(name)")
             check(url.deletingPathExtension().lastPathComponent == FilmArtwork.resourceNames[name],

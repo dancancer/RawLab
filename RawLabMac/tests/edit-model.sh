@@ -6,11 +6,15 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-edit-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/RawLabMac/Sources/EditPersistence.swift" "$ROOT/RawLabMac/Sources/BatchExport.swift" "$ROOT/RawLabMac/Sources/EditorModel.swift" "$ROOT/RawLabMac/Sources/LookLibrary.swift" "$ROOT/RawLabMac/Sources/RenderScheduling.swift" "$ROOT/RawLabMac/Sources/FileLibrary.swift")
+SOURCES=("$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/RawLabMac/Sources/EditPersistence.swift" "$ROOT/RawLabMac/Sources/BatchExport.swift" "$ROOT/RawLabMac/Sources/EditorModel.swift" "$ROOT/RawLabMac/Sources/LookLibrary.swift" "$ROOT/RawLabMac/Sources/RenderScheduling.swift" "$ROOT/RawLabMac/Sources/FileLibrary.swift")
 if [ -f "$ROOT/RawLabMac/Sources/BatchExportModel.swift" ]; then SOURCES+=("$ROOT/RawLabMac/Sources/BatchExportModel.swift"); fi
 SOURCES+=("$ROOT/RawLabMac/Sources/ExportSizePicker.swift")
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+SOURCES+=("$ROOT/RawLabMac/Sources/MacStraightenPreview.swift")
+SOURCES+=("$ROOT/RawLabMac/Sources/MacCropInteraction.swift")
+swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+    "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
+  "$ROOT/Shared/UsageAnalytics.swift" \
   "${SOURCES[@]}" "$ROOT/RawLabMac/tests/EditModelTests.swift" \
   "$ROOT/lutools/build-macos/libsony2fuji_core.a" -L "$(pkg-config --variable=libdir libraw)" \
   -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"

@@ -1,8 +1,8 @@
 # RawLab Mac
 
-原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。支持独立构建最低 macOS 15 的 Apple Silicon 和 Intel 版本；macOS 15 真机运行仍需验证。默认本机构建继续使用现有 Homebrew 依赖和 macOS 26 目标。
+原生 SwiftUI/AppKit 桌面验证客户端，与 CLI/iOS 共用 C++ 处理管线。0.8 的最低支持目标为 macOS 14，保留 Apple Silicon 和 Intel。应用和源码依赖默认以 14.0 编译，构建目录按最低系统与架构隔离；macOS 14 真机运行验收仍待完成。旧版已发布包的系统要求不因此改变。
 
-A native SwiftUI/AppKit desktop editor for visual verification, sharing the C++ pipeline with the CLI and iOS client. Separate Apple Silicon and Intel builds can target macOS 15; runtime verification on macOS 15 hardware is still pending. The default local build retains the existing Homebrew dependencies and macOS 26 target.
+A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and iOS client. The v0.8 compatibility target is macOS 14 on Apple Silicon and Intel. App and source-built dependencies default to deployment target 14.0, with dependency outputs isolated by target and architecture. Runtime acceptance on macOS 14 is still pending; already-published packages keep their original requirements.
 
 ## 功能预览 / Preview
 
@@ -33,11 +33,11 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。紫绿去边暂未实现。
 
 
-v0.7.0 构建11新增 JPEG XL DNG 解码、渲染型 DNG 导出、镜头配置校正和六语界面，并按当前视口生成预览、复用降噪分析。Sony CPU 整图降噪内存修复已纳入共享核心。详见[发布说明](../docs/releases/v0.7.0.md)和[发布验收](../docs/verification-v0.7.0-release.md)。
+v0.8.0 构建12补齐桌面 Agent 编辑参数、几何编辑和四端普通图像输入，默认单图预览，并统一白平衡和暗角控件。保留既有 RAW、胶片外观、大师配方、HSL、降噪、镜头校正和渲染型 DNG 工作流。详见[发布说明](../docs/releases/v0.8.0.md)和[验收范围](../docs/releases/v0.8.0-preparation.md)。
 
-预编译版本：[GitHub Release v0.7.0](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Mac-0.7.0-macOS15-arm64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低 macOS15.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。Intel 可继续使用[上一版 v0.6.0 x86_64](https://github.com/dancancer/RawLab/releases/download/v0.6.0/RawLab-Mac-0.6.0-macOS15-x86_64.zip)。物理 macOS15 与新版 Intel 包未验证。
+预编译版本：[GitHub Release v0.8.0](https://github.com/dancancer/RawLab/releases/tag/v0.8.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Mac-0.8.0-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Mac-0.8.0-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
 
-Prebuilt app: [v0.7.0 Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.7.0/RawLab-Mac-0.7.0-macOS15-arm64.zip), targeting macOS15 or later, ad-hoc signed without notarization. Intel users may retain the previous v0.6.0 package. See [release verification](../docs/verification-v0.7.0-release.md) for actual coverage.
+Prebuilt apps: [v0.8.0](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) for Apple Silicon and Intel, targeting macOS14 and ad-hoc signed without notarization. See [release acceptance](../docs/releases/v0.8.0-preparation.md) for actual coverage and minimum-OS limits.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 
@@ -52,13 +52,17 @@ bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
 
-依赖 CMake、pkg-config、LibRaw 0.22.2+ 和 Apple Command Line Tools。Panasonic S5 II 的 RW2 使用 encoding 8，旧版 LibRaw 0.21.x 会错误解码为噪点。若 Homebrew 版本不足，使用下方源码依赖构建，不要只替换应用内动态库，因为 LibRaw 0.22 改变了 ABI。脚本默认以 26.0 为 deployment target；具备更低版本依赖时可显式设置 `MACOSX_DEPLOYMENT_TARGET`。CLT 27 的 SwiftUI 宏插件不完整时，脚本使用本机已有的 26.5 SDK，也可用 `SDKROOT` 指定。
+当前 LUT 接入含 28 个再分发授权尚未确认的第三方资源。仓库 owner 已允许公开源码和
+`development` 集成，但不构成原作者许可或正式发布授权；编译不受此记录阻断。
+清单、改造约定和未解决风险见 [LUT 接入记录](../docs/luts/README.md)。
 
-Requires CMake, pkg-config, LibRaw 0.22.2+ and Apple Command Line Tools. Panasonic S5 II RW2 uses encoding 8, which LibRaw 0.21.x incorrectly decodes as noise. If Homebrew is older, use the source dependency build below; do not replace only the bundled dylib because LibRaw 0.22 changes its ABI. The default deployment target is 26.0. Set `MACOSX_DEPLOYMENT_TARGET` only when the dependencies also support the lower target. When the CLT 27 SwiftUI macro plugin is unavailable, the script uses the locally installed 26.5 SDK; `SDKROOT` can override it.
+依赖 CMake 3.24+、pkg-config、Python 3.11+ 和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
 
-构建脚本打包所需 Homebrew 动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
+Requires CMake 3.24+, pkg-config, Python 3.11+ and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.
 
-The build script embeds the required Homebrew libraries and applies a local ad-hoc signature. It does not notarize the app or change Xcode's license acceptance state.
+构建脚本打包源码构建的动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
+
+The build script embeds the source-built libraries and applies a local ad-hoc signature. It does not notarize the app or change Xcode's license acceptance state.
 
 构建时会重新复制动态依赖、将递归依赖改为应用内 `@rpath`，并运行 `tests/bundle.sh` 检查不存在本机 Homebrew 路径。依赖许可证随应用保存在 `Contents/Resources/Licenses`；[第三方说明](Resources/ThirdPartyNotices.md)记录来源，Release 同时提供 LibRaw 对应版本的源代码归档。
 
@@ -68,7 +72,7 @@ Each build refreshes the embedded libraries, rewrites transitive dependencies to
 
 The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the RAW-to-render color transformation, without camera, aperture or brand lettering. The source is `Resources/AppIcon.png`; `build-icon.sh` generates a native 16-1024px `.icns`, registered through `CFBundleIconFile`. Generation provenance is in `Resources/AppIcon.md`.
 
-## macOS 15 双架构构建 / macOS 15 Builds
+## macOS 14 双架构构建 / macOS 14 Builds
 
 从固定版本的上游源码重建第三方动态库，分别输出两个应用，避免覆盖默认产物。需要 CMake、pkg-config、make 和 Apple Command Line Tools；依赖下载使用 curl。Intel 的 libjpeg SIMD 优化需要可选的 NASM，缺失时仍可正常解码。保留 OpenMP、JPEG、DNG deflate 和 LCMS；LibRaw 0.22 不再启用旧 RedCine/JasPer 路径，不承诺原有 JPEG2000 覆盖。
 
@@ -79,14 +83,12 @@ Rebuild third-party libraries from pinned upstream source archives and produce t
 Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
 
 ```bash
-for arch in arm64 x86_64; do
-    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 bash RawLabMac/build-dependencies.sh
-    RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=15.0 \
-      PKG_CONFIG_PATH="$PWD/build/macos15-deps/$arch/install/lib/pkgconfig" \
-      RAWLAB_BUILD_DIR="$PWD/lutools/build-macos15-$arch" \
-      RAWLAB_APP_PATH="$PWD/build/macos15-$arch/RawLab Mac.app" \
-      bash RawLabMac/build.sh
-done
+# Run independently on each target-architecture host.
+arch="$(uname -m)"
+RAWLAB_ARCH="$arch" MACOSX_DEPLOYMENT_TARGET=14.0 \
+  RAWLAB_BUILD_DIR="$PWD/lutools/build-macos14-$arch" \
+  RAWLAB_APP_PATH="$PWD/build/macos14-$arch/RawLab Mac.app" \
+  bash RawLabMac/build.sh
 ```
 
 打包校验会检查主程序及所有内嵌动态库的架构、最低系统版本、签名和依赖完整性。新包仍为 ad-hoc 签名，不是已公证发行版。
@@ -148,6 +150,9 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 每项支持滑杆、直接输入数字、单项重置；另有分组和全部调整重置。黄色进度环以默认值为起点，正向顺时针、负向逆时针，两侧按各自可调范围归一化。重置不会更换当前 RAW 或选中的 LUT。
 
   Each adjustment has a slider, numeric input and individual reset, alongside group/global resets. Yellow rings start at the default: positive values fill clockwise, negative values counterclockwise, normalized separately for each side of the range. Resets do not change the RAW or selected LUT.
+- 几何工具支持左右 90° 旋转、水平/垂直翻转、±45° 拉直，以及按百分比输入裁切左边、上边、宽度和高度。顺序为旋转、翻转、中心内接拉直、裁切；参数随编辑记录保存，并冻结到批量任务。旧记录保持完整画布。开启几何编辑后，预览使用完整质量处理再缩小，原图对比使用同一几何画布；100% 显示和导出由共享核心报告的成片尺寸驱动。几何阶段目前使用 CPU，GPU Auto 正常回退，Force 明确拒绝不支持的几何加速。
+
+  Geometry tools provide left/right 90° rotation, horizontal/vertical flips, ±45° straightening, and percentage crop left/top/width/height. The order is rotation, flips, centered inscribed straightening, then crop. Edits persist and batch jobs freeze them; older records retain the full canvas. Active geometry previews process at full quality before resizing, with the original comparison aligned to the same canvas. Native output dimensions drive 100% display and export. Geometry currently uses CPU; GPU Auto falls back and Force reports unsupported acceleration.
 - 每张照片的参数和胶片选择在本机自动保存，重开同一原始文件可恢复；新照片使用默认调整。保存失败可重试，不写回 RAW，也不创建 sidecar。
 
   Per-photo adjustments and look identities persist locally across launches. New photos start with defaults; failed saves are retryable. No RAW modifications or sidecars are created.

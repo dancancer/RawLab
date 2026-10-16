@@ -15,6 +15,10 @@ class NativeProcessingException(val status: Int, message: String) : IOException(
 class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int) {
     var lens: LensInfo? = null
         internal set
+    var geometryWidth: Int = width
+        internal set
+    var geometryHeight: Int = height
+        internal set
     fun bitmap(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
         it.copyPixelsFromBuffer(ByteBuffer.wrap(pixels))
     }
@@ -24,6 +28,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private var handle = nativeCreate(mode).also { check(it != 0L) }
     private var catalogKey: Triple<String, Long, Long>? = null
     private var candidates: List<LensCandidate> = emptyList()
+    private var rasterKey: Triple<String, Long, Long>? = null
+    private var raster: DecodedRaster? = null
     init {
         try { if (lensDatabase != null) nativeSetLensDatabase(handle, lensDatabase.path) }
         catch (error: Throwable) { close(); throw error }
@@ -37,54 +43,94 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     @Synchronized
-    fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean): NativeFrame {
+    fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): NativeFrame {
         check(handle != 0L) { "Processor is closed" }
-        configureLens(settings.lens)
-        val frame = checkNotNull(nativeProcess(handle, input.path, lut?.path, null, settings.strength,
-            settings.exposure, settings.customWb, settings.temperature, settings.tint,
-            settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
-            settings.saturation, settings.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
-            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
-            settings.displayChromaDenoise, settings.effects.vignetteAmount, settings.effects.vignetteMidpoint,
-            settings.effects.vignetteRoundness, settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
-            settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
-            settings.exposureMode, settings.renderHsl.packed(), settings.recipeID != null))
-        frame.lens = readLens(input)
+        val effective = settings.effectiveFor(inputKind)
+        val pixels = rasterInput(input, inputKind)
+        configureLens(effective.lens)
+        configureGeometry(settings.geometry)
+        val frame = checkNotNull(nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
+            pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
+            effective.exposure, effective.customWb, effective.temperature, effective.tint,
+            effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
+            effective.saturation, effective.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
+            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
+            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
+            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
+            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null))
+        val dimensions = nativeGeometrySize(handle)
+        require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
+        frame.geometryWidth = dimensions[0]
+        frame.geometryHeight = dimensions[1]
+        frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
         return frame
     }
 
     @Synchronized
-    fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null) {
+    fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null,
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): Int {
         check(handle != 0L) { "Processor is closed" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
-        configureLens(settings.lens)
-        nativeProcess(handle, input.path, lut?.path, output.path, settings.strength,
-            settings.exposure, settings.customWb, settings.temperature, settings.tint,
-            settings.highlights, settings.shadows, settings.contrast, settings.toneCurve,
-            settings.saturation, settings.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
-            settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
-            settings.displayChromaDenoise, settings.effects.vignetteAmount, settings.effects.vignetteMidpoint,
-            settings.effects.vignetteRoundness, settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
-            settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
-            settings.exposureMode, settings.renderHsl.packed(), settings.recipeID != null)
+        val effective = settings.effectiveFor(inputKind)
+        val pixels = rasterInput(input, inputKind)
+        configureLens(effective.lens)
+        configureGeometry(settings.geometry)
+        val backend = intArrayOf(-1)
+        nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+            if (pixels == null) 0 else 1, lut?.path, output.path, effective.strength,
+            effective.exposure, effective.customWb, effective.temperature, effective.tint,
+            effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
+            effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
+            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
+            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
+            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
+            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, backend)
+        check(backend[0] >= 0) { "Native export did not report a backend" }
         if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output)
+        return backend[0]
     }
 
     @Synchronized
-    fun autoExposure(input: File, settings: EditSettings): Float {
+    fun autoExposure(input: File, settings: EditSettings,
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): Float {
         check(handle != 0L) { "Processor is closed" }
-        configureLens(settings.lens)
-        return nativeAutoExposure(handle, input.path, settings.customWb, settings.temperature, settings.tint, settings.exposureMode, settings.recipeID != null, settings.strength)
+        val effective = settings.effectiveFor(inputKind)
+        val pixels = rasterInput(input, inputKind)
+        configureLens(effective.lens)
+        configureGeometry(settings.geometry)
+        return nativeAutoExposure(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+            if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
+            effective.exposureMode, effective.recipeID != null, effective.strength)
     }
 
     @Synchronized
     override fun close() {
         if (handle != 0L) { nativeDestroy(handle); handle = 0L }
+        raster = null
+        rasterKey = null
+    }
+
+    private fun rasterInput(input: File, kind: PhotoInputKind): DecodedRaster? {
+        if (kind != PhotoInputKind.RASTER) return null
+        val key = Triple(input.canonicalPath, input.length(), input.lastModified())
+        if (key != rasterKey) {
+            raster = RasterImageDecoder.decode(input)
+            rasterKey = key
+        }
+        return checkNotNull(raster)
     }
 
     private fun configureLens(settings: LensSettings) = nativeSetLensCorrection(handle,
         settings.distortion, settings.tca, settings.autoCrop, settings.coreProfileId.toByteArray(Charsets.UTF_8))
+
+    private fun configureGeometry(settings: GeometrySettings) = nativeSetGeometry(handle,
+        settings.cropX, settings.cropY, settings.cropWidth, settings.cropHeight, settings.quarterTurns,
+        settings.flipHorizontal, settings.flipVertical, settings.straightenDegrees,
+        settings.perspectiveHorizontal, settings.perspectiveVertical)
 
     private fun readLens(input: File): LensInfo {
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
@@ -103,19 +149,25 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
+    private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
+        cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,
+        perspectiveHorizontal: Float, perspectiveVertical: Float)
+    private external fun nativeGeometrySize(handle: Long): IntArray
     private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
     private external fun nativeDestroy(handle: Long)
-    private external fun nativeAutoExposure(handle: Long, input: String, customWb: Boolean,
+    private external fun nativeAutoExposure(handle: Long, input: String, pixels: ByteArray?, width: Int, height: Int,
+        pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float): Float
-    private external fun nativeProcess(handle: Long, input: String, lut: String?, output: String?,
+    private external fun nativeProcess(handle: Long, input: String, pixels: ByteArray?, width: Int, height: Int,
+        pixelFormat: Int, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
         highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
         edge: Int, interactive: Boolean, format: Int, longEdge: Int,
         denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean): NativeFrame?
+        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, backend: IntArray? = null): NativeFrame?
 
     companion object {
         const val CPU = 0

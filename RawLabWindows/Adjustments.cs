@@ -42,16 +42,16 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
     {
         position = Math.Clamp(position, 0, 1);
         var v = Id == Parameter.Temperature ? 1 / (1 / Min - position * (1 / Min - 1 / Max)) : Min + position * (Max - Min);
-        return Math.Clamp(Math.Round(v / Step) * Step, Min, Max);
+        return Math.Clamp(Math.Round(v / Step, MidpointRounding.AwayFromZero) * Step, Min, Max);
     }
-    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) && double.IsFinite(value)
-        ? Math.Clamp(value, Min, Max) : null;
+    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.GetCultureInfo(Loc.Language), out var value) && double.IsFinite(value)
+        ? Math.Clamp(Math.Round(value / Step, MidpointRounding.AwayFromZero) * Step, Min, Max) : null;
     public static readonly ParameterSpec[] All = [
-        new(Parameter.Strength,"强度","胶片",0,200,1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.05,"EV",2),
-        new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,1,""),
-        new(Parameter.Contrast,"对比度","明暗",-100,100,1,"%"), new(Parameter.Highlights,"高光","明暗",-100,100,1,"%"),
-        new(Parameter.Shadows,"阴影","明暗",-100,100,1,"%"), new(Parameter.ToneCurve,"S 曲线","明暗",-100,100,1,"%"),
-        new(Parameter.Saturation,"饱和度","色彩",-100,100,1,"%"), new(Parameter.Sharpening,"锐化","细节",0,200,1,"%")];
+        new(Parameter.Strength,"强度","胶片",0,200,.1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.01,"EV",2),
+        new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,.1,"",1),
+        new(Parameter.Contrast,"对比度","明暗",-100,100,.1,"%",1), new(Parameter.Highlights,"高光","明暗",-100,100,.1,"%",1),
+        new(Parameter.Shadows,"阴影","明暗",-100,100,.1,"%",1), new(Parameter.ToneCurve,"S 曲线","明暗",-100,100,.1,"%",1),
+        new(Parameter.Saturation,"饱和度","色彩",-100,100,.1,"%",1), new(Parameter.Sharpening,"锐化","细节",0,200,.1,"%",1)];
 }
 
 public sealed class Adjustments
@@ -63,6 +63,7 @@ public sealed class Adjustments
     public PhotoEffectsSettings Effects { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
     public LensSettings Lens { get; set; } = new();
+    public GeometrySettings Geometry { get; set; } = new();
     public MasterRecipe? Recipe => MasterRecipeID == null ? null : MasterRecipe.Find(MasterRecipeID);
     public HslSettings RenderHsl => Hsl.Scaled(MasterRecipeID == null ? 1 : this[Parameter.Strength] / 100);
     public void ApplyMasterRecipe(MasterRecipe recipe)
@@ -100,7 +101,7 @@ public sealed class Adjustments
     public double this[Parameter id] => values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
     public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
-        Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens);
+        Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry);
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
         if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
@@ -108,8 +109,10 @@ public sealed class Adjustments
             throw new System.IO.InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
         var denoise = snapshot.Denoise ?? new DenoiseSettings();
         var effects = snapshot.Effects ?? new PhotoEffectsSettings();
+        var geometry = snapshot.Geometry ?? new GeometrySettings();
         _ = denoise.NativeConfig();
         _ = effects.NativeConfig();
+        _ = geometry.NativeConfig();
         if (snapshot.DisplayChromaDenoise is < 0 or > 2)
             throw new System.IO.InvalidDataException("调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。");
         return new Adjustments {
@@ -118,6 +121,7 @@ public sealed class Adjustments
             Hsl = snapshot.Hsl ?? new HslSettings(),
             MasterRecipeID = snapshot.MasterRecipeID,
             Lens = snapshot.Lens ?? new(),
+            Geometry = geometry,
             DisplayChromaDenoise = snapshot.DisplayChromaDenoise,
             values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
             CameraWhiteBalance = snapshot.CameraWhiteBalance,
@@ -149,7 +153,7 @@ public sealed class Adjustments
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
         var spec = PhotoEffectSpec.For(id);
-        value = Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
+        value = Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
         Effects = id switch {
             PhotoEffectParameter.VignetteAmount => Effects with { VignetteAmount = value },
             PhotoEffectParameter.VignetteMidpoint => Effects with { VignetteMidpoint = value },
@@ -176,8 +180,9 @@ public sealed class Adjustments
         if (group == "细节") { Denoise = new(); DisplayChromaDenoise = 0; }
         if (group == "效果") Effects = new();
         if (group == "镜头") Lens = new();
+        if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); }
+    public void ResetAll() { MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))

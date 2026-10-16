@@ -19,7 +19,8 @@ data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
 }
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
-    val identity: PhotoIdentity = PhotoIdentity(uri.toString()))
+    val identity: PhotoIdentity = PhotoIdentity(uri.toString()),
+    val inputKind: PhotoInputKind = PhotoInputKind.RAW)
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
     if (width <= 0 || height <= 0) return null
@@ -34,6 +35,7 @@ class PhotoStorage(
     private val resolver = context.contentResolver
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator)
+    private val films = Film.all + BundledLooks.load(context)
     private var lensDirectory: File? = null
 
     @Synchronized
@@ -64,7 +66,7 @@ class PhotoStorage(
         resolver.query(collection, projection, null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
             while (cursor.moveToNext()) {
                 val name = cursor.getString(1) ?: "RAW"
-                if (RawFiles.accepts(name, cursor.getString(2))) {
+                if (PhotoFiles.accepts(name, cursor.getString(2))) {
                     result += AlbumPhoto(ContentUris.withAppendedId(collection, cursor.getLong(0)), name, cursor.getString(3) ?: "RAW",
                         cursor.getInt(4), cursor.getInt(5), cursor.getInt(6))
                 }
@@ -95,12 +97,13 @@ class PhotoStorage(
         val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
-        if (!RawFiles.accepts(name, resolver.getType(uri))) throw IOException("Selected item is not a supported RAW")
+        val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
+            ?: throw IOException("Selected item is not a supported photo")
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream), PhotoIdentity(uri.toString()))
+        return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream), PhotoIdentity(uri.toString()), inputKind)
     }
 
-    fun looks(): List<LookChoice> = LookChoice.builtIns + lookLibrary.list().map {
+    fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
         LookChoice(it.id, it.name, managed = true, available = it.available)
     }
 
@@ -121,10 +124,10 @@ class PhotoStorage(
     fun deleteLook(id: String) = lookLibrary.remove(id)
 
     fun filmPath(id: String): File? {
-        val film = Film.all.firstOrNull { it.id == id }
+        val film = films.firstOrNull { it.id == id }
         if (film == null) return lookLibrary.fileFor(id)
             ?: throw IllegalArgumentException("Unknown look: ${id}")
-        val name = film.file?.let { "FLog2_to_${it}_65grid_V.1.00.cube" } ?: return null
+        val name = film.fileName ?: return null
         val destination = File(directory, name)
         if (!destination.exists()) {
             directory.mkdirs()
@@ -153,7 +156,7 @@ class PhotoStorage(
     }
 
     fun saveDocument(file: File, destination: Uri, original: Uri) {
-        require(destination != original) { "Cannot overwrite original RAW" }
+        require(destination != original) { "Cannot overwrite source photo" }
         val stream = resolver.openOutputStream(destination, "wt") ?: throw IOException("Cannot open destination")
         stream.use { output -> file.inputStream().use { it.copyTo(output) } }
     }

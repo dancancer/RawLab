@@ -8,6 +8,8 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -85,13 +88,15 @@ internal fun PhotoCanvas(
     infoMode: Int = 0,
     onInfoClick: () -> Unit = {},
     onPreviewSizeChange: (Int) -> Unit = {},
+    bottomOverlayInset: Dp = 0.dp,
+    bottomOverlay: @Composable () -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.comparison_wipe)
     val fitDescription = stringResource(R.string.zoom_fit)
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 8.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         // Keep exact-preview geometry while a smaller interactive preview is displayed.
-        val viewport = PhotoViewport(pair.neutral.width.toFloat(), pair.neutral.height.toFloat(),
+        val viewport = PhotoViewport(pair.comparisonWidth, pair.comparisonHeight,
             constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         val zoom = state.zoom?.resize(state.viewport ?: viewport, viewport) ?: PhotoZoom(viewport.fitScale)
         SideEffect { if (state.viewport != viewport) state.resize(viewport) }
@@ -135,13 +140,19 @@ internal fun PhotoCanvas(
                         color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
             }
-            PhotoInfoOverlay(info, infoMode, onInfoClick)
+            // 两种反馈共享叠加层的可用高度，首帧测量也不会互相遮挡。
+            Column(Modifier.fillMaxSize().padding(bottom = bottomOverlayInset)) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight)
+                }
+                bottomOverlay()
+            }
         }
     }
 }
 
 @Composable
-private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit) {
+private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp) {
     val modeDescription = when (mode) {
         1 -> stringResource(R.string.info_file)
         2 -> stringResource(R.string.info_capture)
@@ -158,19 +169,19 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
     }
     if (mode != 0 && info != null) {
         Column(
-            Modifier.padding(start = 60.dp, top = 12.dp).widthIn(max = 360.dp)
+            Modifier.heightIn(max = availableHeight).padding(start = 60.dp, top = 12.dp).widthIn(max = 360.dp)
                 .background(Color.Black.copy(alpha = .72f))
                 .padding(horizontal = 10.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
                 .testTag("photo-info-panel"),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             if (mode == 1) {
                 InfoLine(stringResource(R.string.info_filename), info.fileName)
-                info.captureTime?.let { InfoLine(stringResource(R.string.info_capture_time), it) }
-                info.orientationCorrection?.let { InfoLine(stringResource(R.string.info_orientation), it) }
-                if (info.originalWidth != null && info.originalHeight != null) {
-                    InfoLine(stringResource(R.string.info_original_dimensions), "${info.originalWidth} × ${info.originalHeight}")
-                }
+                InfoLine(stringResource(R.string.info_capture_time), info.captureTime)
+                InfoLine(stringResource(R.string.info_orientation), info.orientationCorrection)
+                InfoLine(stringResource(R.string.info_original_dimensions),
+                    if (info.originalWidth != null && info.originalHeight != null) "${info.originalWidth} × ${info.originalHeight}" else null)
             } else {
                 InfoLine(stringResource(R.string.info_filename), info.fileName)
                 val hasCaptureParameters = info.camera != null || info.lens != null || info.shutter != null ||
@@ -178,21 +189,21 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
                 if (!hasCaptureParameters) {
                     Text(stringResource(R.string.info_capture_missing), color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
-                info.camera?.let { InfoLine(stringResource(R.string.info_camera), it) }
-                info.lens?.let { InfoLine(stringResource(R.string.info_lens), it) }
-                info.shutter?.let { InfoLine(stringResource(R.string.info_shutter), it) }
-                info.aperture?.let { InfoLine(stringResource(R.string.info_aperture), "f/${it}") }
-                info.iso?.let { InfoLine(stringResource(R.string.info_iso), it) }
-                info.focalLength?.let { InfoLine(stringResource(R.string.info_focal_length), it) }
+                InfoLine(stringResource(R.string.info_camera), info.camera)
+                InfoLine(stringResource(R.string.info_lens), info.lens)
+                InfoLine(stringResource(R.string.info_shutter), info.shutter)
+                InfoLine(stringResource(R.string.info_aperture), info.aperture?.let { "f/$it" })
+                InfoLine(stringResource(R.string.info_iso), info.iso)
+                InfoLine(stringResource(R.string.info_focal_length), info.focalLength)
             }
         }
     }
 }
 
 @Composable
-private fun InfoLine(title: String, value: String) {
+private fun InfoLine(title: String, value: String?) {
     Text(
-        "${title}  ${value}",
+        "${title}  ${value ?: stringResource(R.string.info_unavailable)}",
         color = Color.White,
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier.fillMaxWidth(),

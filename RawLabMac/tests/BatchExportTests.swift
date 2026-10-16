@@ -23,9 +23,18 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         hsl.set(.saturation, channel: 5, value: -65)
         settings.hsl = hsl
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        settings.setGeometry(.cropWidth, to: 0.6)
+        settings.setGeometry(.cropX, to: 0.2)
+        settings.setGeometry(.cropHeight, to: 0.75)
+        settings.rotateGeometry(clockwise: true)
+        settings.flipGeometry(horizontal: true)
+        settings.setGeometry(.straightenDegrees, to: 4.5)
+        let frozenGeometry = settings.geometrySettings
         var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Velvia")
         job.longEdge = 2048
         let encodedJob = try JSONEncoder().encode(job)
+        try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).settings.geometrySettings == frozenGeometry,
+                  "batch journal round-trip preserves geometry")
         var dngRecord = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
         dngRecord["outputFormat"] = "dng"
         dngRecord["version"] = 2
@@ -67,6 +76,40 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(frozenHSLJob.settings.hslSettings.value(.hue, channel: 0) == 37 &&
                   frozenHSLJob.settings.renderHSLSettings.value(.hue, channel: 0) == 18.5,
                   "new recipe jobs freeze visible HSL and its strength semantics, not static defaults")
+        let rasterSource = root.appendingPathComponent("source.png")
+        try Data("raster source identity".utf8).write(to: rasterSource)
+        var dormant = frozenHSLJob.settings
+        dormant.whiteBalanceMode = .custom
+        dormant.temperature = 4200
+        dormant.tint = 35
+        dormant.exposureMode = .sensor
+        dormant.rawNoiseReduction = 2
+        dormant.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        var rasterJob = BatchExportJob(source: rasterSource, settings: dormant, look: nil, lookName: "Mixed")
+        rasterJob.outputDirectory = output
+        var rawTarget = try BatchExportItem(url: inputs[0])
+        rawTarget.selected = true
+        rasterJob.items = [rawTarget]
+        var resolved: Adjustments?
+        try BatchExportRunner.run(job: &rasterJob, journal: hslJournal, scope: .unfinished,
+                                 shouldCancel: { false }) { _, snapshot, _, destination in
+            resolved = snapshot
+            try Data("mixed".utf8).write(to: destination)
+        }
+        try check(resolved?.whiteBalanceMode == .asShot && resolved?.temperature == 6500 &&
+                  resolved?.tint == dormant.tint && resolved?.exposureMode == .preview &&
+                  resolved?.rawNoiseReduction == 0 && resolved?.lensSettings == LensCorrectionSettings(),
+                  "raster-source batch cannot apply dormant camera controls to a RAW target")
+        try check(resolved?.masterRecipeID == dormant.masterRecipeID && resolved?.strength == dormant.strength &&
+                  resolved?.exposure == dormant.exposure && resolved?.renderHSLSettings == dormant.renderHSLSettings &&
+                  rasterJob.settings == dormant,
+                  "mixed batch preserves common style and the immutable source snapshot")
+        var independentSettings = dormant
+        independentSettings.masterRecipeID = nil
+        let independentRasterJob = BatchExportJob(source: rasterSource, settings: independentSettings,
+                                                  look: nil, lookName: "Independent")
+        try check(independentRasterJob.settings(for: inputs[0]).tint == 0,
+                  "mixed batch drops dormant camera tint when no master recipe is active")
         var v2Job = try JSONSerialization.jsonObject(with: JSONEncoder().encode(hslJob)) as! [String: Any]
         var v2Settings = v2Job["settings"] as! [String: Any]
         v2Settings["masterRecipeSettingsVersion"] = 2
@@ -87,8 +130,11 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         job.outputDirectory = output
         job.items = try inputs.map { try BatchExportItem(url: $0) }
         try check(job.items.allSatisfy { !$0.selected }, "candidates start unselected")
+        try check(!BatchExportFailure.noSelection.localizedDescription.contains("RAW"),
+                  "empty selection guidance applies to RAW and ordinary photos")
         for index in job.items.indices { job.items[index].selected = true }
         settings.exposure = -1
+        settings.reset(.geometry)
         settings.hsl = nil
         settings.exposureMode = .scene
         settings.lensCorrection = LensCorrectionSettings(distortion: true, mode: .manual, profileID: "live-profile")
@@ -115,6 +161,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) { input, snapshot, _, destination in
             calls.append(input.lastPathComponent)
             try check(snapshot.exposure == 0.75, "snapshot must not follow live edits")
+            try check(snapshot.geometrySettings == frozenGeometry, "batch freezes crop, rotation, flips and straightening")
             try check(snapshot.lensSettings == LensCorrectionSettings(distortion: true, tca: true) && snapshot.lensSettings.coreProfileID.isEmpty,
                       "batch freezes automatic mode, not a resolved source lens")
             try check(snapshot.waveletSettings == WaveletDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100), "batch keeps frozen denoise settings")

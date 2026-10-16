@@ -16,6 +16,12 @@ struct BatchExportTests {
     }
 
     static func main() throws {
+        guard let profile = ProcessInfo.processInfo.environment["RAWLAB_TEST_PROFILE"] else {
+            throw NSError(domain: "BatchTestIsolation", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Run with the batch-export.sh private profile"])
+        }
+        check(BatchFileOutputStore.root().standardizedFileURL.path.hasPrefix(profile + "/"),
+              "batch file publication stays inside the test's private profile")
         check(ExportSize.isValid(nil), "native export size is valid")
         check(ExportSize.presets == [2048, 3000, 4096], "standard export sizes are available")
         check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),
@@ -29,6 +35,11 @@ struct BatchExportTests {
         try Data("source".utf8).write(to: sourceURL)
         var settings = RawSettings.default
         settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
+        settings.geometry.cropX = 0.2
+        settings.geometry.cropWidth = 0.6
+        settings.geometry.quarterTurns = 3
+        settings.geometry.flipVertical = true
+        settings.geometry.straightenDegrees = 6
         settings.lutStrength = 0.5
         settings.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
         settings.photoEffects.vignetteMidpoint = 62
@@ -38,6 +49,29 @@ struct BatchExportTests {
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
                                           sourceURL: sourceURL, displayName: "source.ARW", settings: settings)
+        var rasterSettings = settings
+        rasterSettings.masterRecipeID = nil
+        rasterSettings.whiteBalanceMode = .custom
+        rasterSettings.exposureMode = .scene
+        rasterSettings.temperature = 7200
+        rasterSettings.tint = 18
+        rasterSettings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        let rasterSource = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "raster-source"),
+                                                sourceURL: root.appendingPathComponent("source.jpg"),
+                                                displayName: "source.jpg", sourceKind: .raster,
+                                                settings: rasterSettings)
+        let rawTargetSettings = rasterSource.settings(for: .raw)
+        check(rawTargetSettings.whiteBalanceMode == .camera && rawTargetSettings.temperature == 6500 &&
+              rawTargetSettings.tint == 0 && rawTargetSettings.exposureMode == .preview &&
+              rawTargetSettings.lensCorrection == nil,
+              "mixed batch does not leak raster-only camera WB, exposure, or lens settings into RAW targets")
+        check(rawTargetSettings.geometry == rasterSettings.geometry &&
+              rawTargetSettings.hsl == rasterSettings.hsl &&
+              rawTargetSettings.photoEffects == rasterSettings.photoEffects &&
+              rawTargetSettings.denoise == rasterSettings.denoise,
+              "mixed batch keeps raster style settings frozen while resolving target camera defaults")
+        check(rasterSource.settings(for: .raster) == rasterSettings,
+              "raster target keeps its frozen settings without mutating the batch source")
         let targets = (1...6).map { index in
             BatchTarget(identity: PhotoIdentity(resourceIdentifier: "target-\(index)"),
                         sourceURL: root.appendingPathComponent("target-\(index).ARW"),
@@ -49,6 +83,7 @@ struct BatchExportTests {
         try journal.save(job)
         let reopenedJob = try journal.load(id: job.id)
         let pendingJobs = try journal.pendingJobs()
+        check(reopenedJob?.source.settings.geometry == settings.geometry, "journal freezes geometry settings")
         check(reopenedJob?.targets.count == 6, "journal round-trips the selected rows")
         check(reopenedJob?.source.settings.lensCorrection == settings.lensCorrection &&
               reopenedJob?.source.settings.lensSettings.coreProfileID.isEmpty == true,
@@ -101,6 +136,7 @@ struct BatchExportTests {
         job = try BatchExportRunner.run(job: job, journalStore: journal,
                                         render: { target, settings in
                                             renderCount += 1
+                                            check(settings.geometry == source.settings.geometry, "batch uses frozen geometry settings")
                                             check(settings.denoise == source.settings.denoise, "batch uses frozen denoise settings")
                                             check(settings.photoEffects == source.settings.photoEffects,
                                                   "batch uses frozen photo effects settings")
@@ -155,6 +191,7 @@ struct BatchExportTests {
                                                    render: { _, _ in Data([9]) },
                                                    write: { data, name, _, _ in try data.write(to: root.appendingPathComponent(name)) })
         check(retry.targets.filter { $0.status == .succeeded }.count == 6, "retry only reruns the failed row")
+        check(retry.source.settings.geometry == source.settings.geometry, "retry retains frozen geometry settings")
         check(retry.longEdge == 3000, "retry retains the frozen export long edge")
         check(retry.targets.first(where: { $0.id == successfulID })?.status == .succeeded,
               "retry preserves the original successful row")
@@ -166,10 +203,16 @@ struct BatchExportTests {
         let completedDNGPendingJobs = try journal.pendingJobs()
         check(completedDNGPendingJobs.contains(where: { $0.id == completedDNG.id }),
               "completed DNG journal remains recoverable until explicit discard")
+        _ = try BatchFileOutputStore.directory(for: completedDNG.id)
+        let exportedDNG = Data("durable DNG output".utf8)
+        try exportedDNG.write(to: durableDNG)
         try journal.discard(id: completedDNG.id)
         let afterDiscardDNGJobs = try journal.pendingJobs()
         check(!afterDiscardDNGJobs.contains(where: { $0.id == completedDNG.id }),
               "explicit DNG discard removes the durable journal")
+        let retainedDNG = try Data(contentsOf: durableDNG)
+        check(retainedDNG == exportedDNG,
+              "discarding a DNG journal preserves the exported image")
         try journal.save(cancelled)
         let resumableCancelled = try journal.pendingJobs()
         check(resumableCancelled.contains(where: { $0.id == cancelled.id }), "cancelled work remains accessible for resume")

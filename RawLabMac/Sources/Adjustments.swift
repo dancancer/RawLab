@@ -220,6 +220,7 @@ struct Adjustments: Equatable, Codable {
     var photoEffects: PhotoEffectsSettings?
     var hsl: HSLSettings?
     var lensCorrection: LensCorrectionSettings?
+    var geometry: GeometrySettings?
     private(set) var supportsRawNoiseReduction = false
     var masterRecipeID: String? = nil
     private var masterRecipeSettingsVersion: Int? = 3
@@ -238,6 +239,36 @@ struct Adjustments: Equatable, Codable {
         hsl = state.isIdentity ? nil : state
     }
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
+    var geometrySettings: GeometrySettings { geometry ?? GeometrySettings() }
+
+    mutating func setGeometry(_ parameter: GeometryParameter, to value: Double) {
+        guard value.isFinite else { return }
+        var state = geometrySettings
+        let range = parameter.range(for: state)
+        state[keyPath: parameter.keyPath] = min(range.upperBound, max(range.lowerBound, value))
+        geometry = state.isIdentity ? nil : state
+    }
+
+    mutating func rotateGeometry(clockwise: Bool) {
+        var state = geometrySettings
+        state.quarterTurns = (state.quarterTurns + (clockwise ? 1 : 3)) % 4
+        geometry = state.isIdentity ? nil : state
+    }
+
+    mutating func flipGeometry(horizontal: Bool) {
+        var state = geometrySettings
+        if horizontal { state.flipHorizontal.toggle() } else { state.flipVertical.toggle() }
+        geometry = state.isIdentity ? nil : state
+    }
+
+    // Compare the color edit on the same geometric canvas without changing the
+    // immutable original cached by EditorModel.
+    var neutralGeometrySettings: Adjustments {
+        var neutral = Adjustments()
+        neutral.geometry = geometry
+        neutral.lensCorrection = lensCorrection
+        return neutral
+    }
     var vignetteAmount: Double {
         get { effectSettings.vignetteAmount }
         set { setEffect(.vignetteAmount, to: newValue) }
@@ -250,7 +281,7 @@ struct Adjustments: Equatable, Codable {
     mutating func setEffect(_ parameter: PhotoEffectParameter, to value: Double) {
         guard value.isFinite else { return }
         var state = effectSettings
-        state[keyPath: parameter.keyPath] = min(parameter.range.upperBound, max(parameter.range.lowerBound, value.rounded()))
+        state[keyPath: parameter.keyPath] = min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10))
         photoEffects = state == PhotoEffectsSettings() ? nil : state
     }
 
@@ -310,7 +341,7 @@ struct Adjustments: Equatable, Codable {
     mutating func setDenoiseParameter(_ parameter: DenoiseParameter, to value: Double) {
         guard value.isFinite else { return }
         var state = waveletSettings
-        let value = min(100, max(0, value.rounded()))
+        let value = min(100, max(0, (value * 10).rounded() / 10))
         guard state[keyPath: parameter.keyPath] != value else { return }
         state[keyPath: parameter.keyPath] = value
         state.preset = .custom
@@ -390,6 +421,7 @@ struct Adjustments: Equatable, Codable {
         if group == .color { hsl = nil }
         if group == .effects { photoEffects = nil }
         if group == .lens { lensCorrection = nil }
+        if group == .geometry { geometry = nil }
     }
 
     func isDefault(_ group: AdjustmentGroup) -> Bool {
@@ -400,6 +432,7 @@ struct Adjustments: Equatable, Codable {
             && (group != .effects || effectSettings == PhotoEffectsSettings())
             && (group != .film || masterRecipeID == nil)
             && (group != .lens || lensSettings == LensCorrectionSettings())
+            && (group != .geometry || geometrySettings.isIdentity)
     }
 
     mutating func resolveWhiteBalance(_ camera: WhiteBalance?) {
@@ -414,6 +447,12 @@ struct Adjustments: Equatable, Codable {
         temperature = asShotWhiteBalance?.temperature ?? 6500
         tint = masterRecipe != nil ? 0 : (asShotWhiteBalance?.tint ?? 0)
         whiteBalanceMode = .asShot
+    }
+
+    var isWhiteBalanceDefault: Bool {
+        [AdjustmentParameter.temperature, .tint].allSatisfy {
+            self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue
+        }
     }
 
     mutating func resolveRawNoiseReductionSupport(_ supported: Bool) {
@@ -468,6 +507,10 @@ extension Adjustments {
         photoEffects = try values.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects)
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl)
         lensCorrection = try values.decodeIfPresent(LensCorrectionSettings.self, forKey: .lensCorrection)
+        geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry)
+        guard geometrySettings.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
+        }
         supportsRawNoiseReduction = try values.decodeIfPresent(Bool.self, forKey: .supportsRawNoiseReduction) ?? false
         guard hslSettings.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .hsl, in: values, debugDescription: "Invalid HSL parameters")
@@ -491,7 +534,7 @@ extension Adjustments {
 }
 
 enum AdjustmentGroup: String, CaseIterable, Identifiable {
-    case film = "胶片模拟", input = "输入调整", tone = "明暗", color = "色彩", detail = "细节", effects = "效果", lens = "镜头校正"
+    case film = "胶片模拟", input = "输入调整", tone = "明暗", color = "色彩", detail = "细节", effects = "效果", lens = "镜头校正", geometry = "几何编辑"
     var id: String { rawValue }
     var title: String { L10n.text(rawValue) }
     var parameters: [AdjustmentParameter] {
@@ -502,7 +545,54 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
         case .color: return [.saturation]
         case .detail: return [.denoiseMode, .sharpening]
         case .effects: return [.vignetteAmount, .grainAmount]
-        case .lens: return []
+        case .lens, .geometry: return []
+        }
+    }
+}
+
+enum GeometryParameter: String, CaseIterable, Identifiable {
+    case cropX, cropY, cropWidth, cropHeight, straightenDegrees
+    case perspectiveHorizontal, perspectiveVertical
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .cropX: return L10n.text("裁切左边")
+        case .cropY: return L10n.text("裁切上边")
+        case .cropWidth: return L10n.text("裁切宽度")
+        case .cropHeight: return L10n.text("裁切高度")
+        case .straightenDegrees: return L10n.text("拉直")
+        case .perspectiveHorizontal: return L10n.text("水平透视")
+        case .perspectiveVertical: return L10n.text("垂直透视")
+        }
+    }
+    var keyPath: WritableKeyPath<GeometrySettings, Double> {
+        switch self {
+        case .cropX: return \.cropX
+        case .cropY: return \.cropY
+        case .cropWidth: return \.cropWidth
+        case .cropHeight: return \.cropHeight
+        case .straightenDegrees: return \.straightenDegrees
+        case .perspectiveHorizontal: return \.perspectiveHorizontal
+        case .perspectiveVertical: return \.perspectiveVertical
+        }
+    }
+    var multiplier: Double { self == .straightenDegrees ? 1 : 100 }
+    var defaultValue: Double { GeometrySettings()[keyPath: keyPath] }
+    var unit: String {
+        switch self {
+        case .straightenDegrees: return "°"
+        case .perspectiveHorizontal, .perspectiveVertical: return ""
+        default: return "%"
+        }
+    }
+    func range(for state: GeometrySettings) -> ClosedRange<Double> {
+        switch self {
+        case .cropX: return 0...max(0, 1 - state.cropWidth)
+        case .cropY: return 0...max(0, 1 - state.cropHeight)
+        case .cropWidth: return min(0.001, 1 - state.cropX)...(1 - state.cropX)
+        case .cropHeight: return min(0.001, 1 - state.cropY)...(1 - state.cropY)
+        case .straightenDegrees: return -45...45
+        case .perspectiveHorizontal, .perspectiveVertical: return -1...1
         }
     }
 }
@@ -533,7 +623,9 @@ struct AdjustmentSpec {
     }
 
     func text(_ value: Double) -> String {
-        String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, value * multiplier)
+        let displayed = value * multiplier
+        let places = decimals == 1 && abs(displayed - displayed.rounded()) < 0.0000001 ? 0 : decimals
+        return String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), places, displayed == 0 ? 0 : displayed)
     }
 
     func parse(_ text: String) -> Double? {
@@ -561,7 +653,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         return value
     }
     static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .tint, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
+                                    .saturation, .temperature, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"
@@ -581,20 +673,20 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     }
     var spec: AdjustmentSpec {
         switch self {
-        case .strength: return AdjustmentSpec(title: L10n.text("强度"), keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.01, unit: "%", multiplier: 100)
-        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.05, unit: "EV", decimals: 2)
+        case .strength: return AdjustmentSpec(title: L10n.text("强度"), keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.001, unit: "%", multiplier: 100, decimals: 1)
+        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.01, unit: "EV", decimals: 2)
         case .temperature: return AdjustmentSpec(title: L10n.text("色温"), keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
-        case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 1, unit: "")
-        case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .toneCurve: return AdjustmentSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .saturation: return AdjustmentSpec(title: L10n.text("饱和度"), keyPath: \.saturation, range: -100...100, defaultValue: 0, step: 1, unit: "%")
-        case .sharpening: return AdjustmentSpec(title: L10n.text("锐化"), keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 1, unit: "%")
+        case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
+        case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .toneCurve: return AdjustmentSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .saturation: return AdjustmentSpec(title: L10n.text("饱和度"), keyPath: \.saturation, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .sharpening: return AdjustmentSpec(title: L10n.text("锐化"), keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .rawNoiseReduction: return AdjustmentSpec(title: L10n.text("RAW 降噪"), keyPath: \.rawNoiseReduction, range: 0...2, defaultValue: 0, step: 1, unit: "")
         case .denoiseMode: return AdjustmentSpec(title: L10n.text("降噪"), keyPath: \.denoiseMode, range: 0...2, defaultValue: 0, step: 1, unit: "")
-        case .vignetteAmount: return AdjustmentSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, range: -100...100, defaultValue: 0, step: 1, unit: "")
-        case .grainAmount: return AdjustmentSpec(title: L10n.text("颗粒"), keyPath: \.grainAmount, range: 0...100, defaultValue: 0, step: 1, unit: "")
+        case .vignetteAmount: return AdjustmentSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, range: -100...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
+        case .grainAmount: return AdjustmentSpec(title: L10n.text("颗粒"), keyPath: \.grainAmount, range: 0...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
         }
     }
 }

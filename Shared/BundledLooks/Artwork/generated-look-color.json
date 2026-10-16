@@ -1,0 +1,73 @@
+{
+  "generator": "OpenAI built-in image_gen",
+  "created": "2026-10-16",
+  "packaging": "Eight original square images generated independently, then resized to 256x256 RGB PNG with sips; no creative post-processing.",
+  "purpose": "Original flat printed concept-label illustrations for RawLab look thumbnails. They are not actual LUT-rendered previews, Kodak products, Kodak artwork, endorsements, or reproductions.",
+  "conceptStatement": "Every asset is a fictional RawLab look concept using RAWLAB and LOOK CONCEPT labels. The artwork is not official Kodak packaging and does not claim Kodak authorship, endorsement, calibration, or an actual LUT sample.",
+  "assets": [
+    {
+      "id": "look-ektar-100",
+      "file": "look-ektar-100.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-cdb70cc9-cc89-4c6c-aa76-8b46ab01ffc4.png",
+      "sha256": "c9369be5e7a35a838927954696998fd2f2e3eeb13726d9a7879b469c348e5754",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat printed concept package label, front-facing and perfectly rectangular, full bleed to all edges, no perspective, no physical box, no border, no margin, no rounded corners, no shadow. Visual direction: bold warm golden-yellow and deep ink-black fields with crisp vermilion-red and cobalt-blue registration blocks, plus a small original illustrated 35mm film roll and a simple sunburst motif. Make the graphics substantial and clearly visible at 64px, not just typography. Style: restrained photographic-film packaging graphic, modernist screenprint, subtly tactile matte paper grain, strong geometric layout, no gradients. Text exactly, spelled and placed cleanly: at top small RAWLAB; a clear small line LOOK CONCEPT; main title EKTAR 100 on two prominent lines. No other words or numbers. This is an original fictional RawLab look concept, not official Kodak artwork or a physical product and not an actual LUT sample. Do not use Kodak logo, Kodak wordmark, any manufacturer logo, barcode, camera, people, or copied package design. Keep all text inside safe area, high contrast and legible.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-portra-160",
+      "file": "look-portra-160.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-423a36e2-74dc-4386-b7db-d0c4ebbb06be.png",
+      "sha256": "7e4673a4676e21ecf5aedf84369ca37f9bc9a3dddbcb39075b7e7a57f44c5233",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat printed concept package label, front-facing, perfectly rectangular, edge-to-edge, no perspective, no physical box, no border, no margin, no rounded corners, no shadow. Visual direction: pale coral, dusty rose, cream and soft teal blocks with an original simplified line illustration of wildflowers and a tiny illustrated film roll, with broad horizontal panels and a gentle offset-grid structure. Graphics must be prominent and readable at 64px, not a text-only poster. Style: calm editorial photographic-film packaging, clean screenprint shapes, subtle matte paper texture, no gradients. Text exactly: small RAWLAB at top; small line LOOK CONCEPT; main title PORTRA 160 large and unmistakable. No other words or numbers. Original fictional RawLab look concept, not official Kodak artwork or a physical product and not an actual LUT sample. No Kodak logo, Kodak wordmark, manufacturer logo, barcode, camera, people, or copied package design. Keep lettering undistorted and inside safe area.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-portra-400",
+      "file": "look-portra-400.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-a8bab2e5-56b8-4022-ad74-2c4dfea41098.png",
+      "sha256": "31b3a6e03693554b5f9357283982a9aa86ab95cf138715b9eca3dc4083dccc64",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat printed concept package label, straight-on and perfectly square, full bleed to every edge, no perspective, no physical package sides, no border, no margin, no rounded corners, no shadow. Visual direction: muted sage green, cream, terracotta orange and charcoal. Include an original bold graphic of a mountain ridge beneath a rising circle sun, with a small illustrated film canister and stepped color bars; use large simple shapes that survive thumbnail scale. Style: tactile matte screenprint film-label design, balanced editorial grid, crisp ink, no gradients. Text exactly: top small RAWLAB; compact line LOOK CONCEPT; main title PORTRA 400 large, with 400 highly readable. No other words or numbers. This is an original fictional RawLab concept, not official Kodak artwork, not a physical product and not an actual LUT sample. No Kodak logo or wordmark, no manufacturer branding, no barcode, no camera, no people, no copied package layout. Lettering must be accurate and fit the safe area.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-portra-800",
+      "file": "look-portra-800.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-4fdd16d3-42d6-40fc-8bb2-629dc4e126ba.png",
+      "sha256": "1b58b04d7e7cc78a35b779ba082a337cc4c50a9ccd4f812499517e13856e3371",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat front-label concept package, perfectly front-facing and edge-to-edge, no perspective, no box sides, no border, no margin, no rounded corners, no shadow. Visual direction: deep navy, electric cyan, warm apricot and magenta-red color blocks. Include original printed graphic motifs: a large abstract night-sky arc, a simple moonlit mountain silhouette, star-like registration dots and a small illustrated film roll. Keep graphic forms bold, sparse and clearly visible at 64px; do not make it text-only. Style: contemporary screenprinted photographic-film label, matte paper grain, crisp flat ink, no gradients. Exact text only: small RAWLAB; small LOOK CONCEPT; main title PORTRA 800. No other words or numbers. Fictional RawLab look concept, not official Kodak artwork, not a physical product and not an actual LUT sample. No Kodak logo, Kodak wordmark, manufacturer logo, barcode, camera, people, or copied package design. Preserve accurate, legible typography.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-elite-color-200",
+      "file": "look-elite-color-200.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-c2594709-c377-4c79-82eb-853c0569325c.png",
+      "sha256": "382a60ead273d11d9711f5dfc108633793c022ea0d5ec5ca084bf1e480a2dcba",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat, front-facing printed concept package label that fills the square canvas edge to edge. No perspective, physical box, top/side panel, border, outside margin, rounded corners or shadow. Visual direction: saturated emerald green, lemon yellow, black and warm ivory. Include a large original abstract sunlit leaf/flower silhouette, a small printed 35mm film roll, and offset color swatches arranged as a confident geometric composition; substantial illustration, not text-only. Style: vintage-modern screenprint for a photographic film label, subtle matte ink texture, crisp hard-edged shapes, no gradients. Exact text: small RAWLAB; small LOOK CONCEPT; main title ELITE COLOR 200. No extra words or numbers. Original fictional RawLab look concept, not official Kodak artwork, not a physical product and not an actual LUT sample. Do not use Kodak logo, Kodak wordmark, any manufacturer logo, barcode, camera, people or copied packaging. Keep all lettering correctly spelled and thumbnail-legible.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-elite-color-400",
+      "file": "look-elite-color-400.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-613b2778-40a8-4830-952a-4ab2784df8a5.png",
+      "sha256": "e16f2391cac1b64ab85ee702c7185faf6d18884fd75b80ffe8d6a98e241ef7c3",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original full-bleed flat package-front label, straight-on and perfectly rectangular, with no perspective, box sides, border, margin, rounded corners or shadow. Visual direction: deep plum, burnt orange, pale sky-blue and soft cream. Add an original graphic of layered desert hills and a low sun, a small stylized film canister, and narrow offset color strips; use large bold forms rather than a text-only design. Style: tactile matte screenprint and editorial photo-film packaging, crisp flat ink, subtle paper grain, no gradients. Exact text only: small RAWLAB; small LOOK CONCEPT; large main title ELITE COLOR 400. No additional words or numbers. Original fictional RawLab look concept, not official Kodak art or a physical product and not an actual LUT sample. No Kodak logo/wordmark, manufacturer branding, barcode, camera, people or copied package layout. Typography must remain accurate and legible at thumbnail size.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-elite-extracolor-100",
+      "file": "look-elite-extracolor-100.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-e8418d89-3ede-42e3-84a9-5a745fe227a9.png",
+      "sha256": "a70d7dd6e46e3da6903e24ec4671e3b93a30503f1cbdd21962612b7b5802e16e",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat printed concept label, front-facing, perfectly square, full bleed to all edges, no perspective, no physical package, no frame, no border, no margin, no rounded corners, no shadow. Visual direction: vivid turquoise, coral red, violet and off-white, with an original geometric tropical flower/foliage motif, a simplified illustrated film roll, and diagonal color blocks inspired by modernist print registration. Graphics must be visually substantial and readable at 64px, not merely typography. Style: exuberant but disciplined screenprinted photographic-film packaging, matte paper texture, clean hard-edged ink, no gradients. Exact text: small RAWLAB; small LOOK CONCEPT; main title ELITE EXTRA 100. No other words or numbers. Original fictional RawLab look concept, not official Kodak artwork, not a physical product and not an actual LUT sample. No Kodak logo or wordmark, manufacturer logo, barcode, camera, people or copied package design. Preserve exact spelling, strong contrast and safe margins.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    },
+    {
+      "id": "look-elite-100-xpro",
+      "file": "look-elite-100-xpro.png",
+      "sourceImage": "/Users/xupeng/.codex/generated_images/01a14378-a2d4-7f01-bf96-6e79f18094dc/exec-8546d0c1-6527-4b66-a28b-18374812f91d.png",
+      "sha256": "e20609ec105510ef30535f1763856adacb91ffb18e0f20af6bab6d8d6f9efc30",
+      "prompt": "Use case: product-mockup. Asset type: square 1:1 bitmap front-label artwork for a RawLab macOS film-look thumbnail, later resized to 256x256. Create ONE original flat front-label concept package artwork, perfectly straight-on and full bleed edge to edge, no perspective, no physical box, no border, no margin, no rounded corners, no shadow. Visual direction: high-contrast black, acid lime, hot pink and pale blue, with an original angular prism/split-color landscape graphic, a small printed 35mm film roll and bold offset registration marks. Use clear large shapes that stay readable at 64px, not a text-only poster. Style: experimental cross-process-inspired screenprint film-label design, subtly tactile matte print texture, crisp flat colors, no gradients. Exact text only: small RAWLAB; small LOOK CONCEPT; main title ELITE 100 XPRO. No extra words or numbers. This is an original fictional RawLab concept, not official Kodak artwork, not a physical product and not an actual LUT sample. No Kodak logo, Kodak wordmark, manufacturer logo, barcode, camera, people or copied package design. Keep lettering accurate, bold and inside a safe area.",
+      "conceptDeclaration": "Original fictional RawLab look concept label; not official Kodak artwork, not a Kodak product, and not an actual LUT sample."
+    }
+  ]
+}

@@ -12,6 +12,7 @@ public sealed class EditorIcon : FrameworkElement
     {
         ["Info"]=Geometry.Parse("M12,2 A10,10 0 1 1 11.99,2 M12,11 V17 M12,7 V7.1"),
         ["Lens"]=Geometry.Parse("M9,3 H5 A2,2 0 0 0 3,5 V9 M15,3 H19 A2,2 0 0 1 21,5 V9 M21,15 V19 A2,2 0 0 1 19,21 H15 M9,21 H5 A2,2 0 0 1 3,19 V15 M12,8 A4,4 0 1 1 11.99,8"),
+        ["Geometry"]=Geometry.Parse("M6,2 V18 H22 M2,6 H18 V22 M10,10 H14 V14 H10 Z"),
         // Lucide Film, ISC license; converted from its SVG to WPF path geometry.
         ["Film"]=Geometry.Parse("M5,3 H19 A2,2 0 0 1 21,5 V19 A2,2 0 0 1 19,21 H5 A2,2 0 0 1 3,19 V5 A2,2 0 0 1 5,3 Z M7,3 V21 M3,7.5 H7 M3,12 H21 M3,16.5 H7 M17,3 V21 M17,7.5 H21 M17,16.5 H21"),
         ["Strength"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,7 A5,5 0 1 1 11.99,7"),
@@ -27,6 +28,8 @@ public sealed class EditorIcon : FrameworkElement
         ["Neutral"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,3 V21"),
         ["Add"]=Geometry.Parse("M12,4 V20 M4,12 H20"),
         ["Reset"]=Geometry.Parse("M4,10 A8,8 0 1 1 5,18 M4,4 V10 H10"),
+        ["RotateLeft"]=Geometry.Parse("M3,10 A9,9 0 1 1 5,19 M3,3 V10 H10"),
+        ["RotateRight"]=Geometry.Parse("M21,10 A9,9 0 1 0 19,19 M21,3 V10 H14"),
         ["Histogram"]=Geometry.Parse("M3,21 V14 H7 V8 H11 V3 H15 V10 H19 V16 H22 V21 Z"),
         ["ChevronDown"]=Geometry.Parse("M5,9 L12,16 19,9"),
         ["Photo"]=Geometry.Parse("M3,4 H21 V20 H3 Z M3,17 L9,11 14,16 17,13 21,17 M15,7 A1.5,1.5 0 1 1 14.99,7")

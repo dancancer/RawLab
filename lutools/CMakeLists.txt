@@ -153,6 +153,7 @@ set(CORE_SOURCES
     src/core/chroma_denoise.cpp
     src/core/wavelet_denoise.cpp
     src/core/photo_effects.cpp
+    src/core/photo_geometry.cpp
     src/core/photo_color.cpp
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
@@ -163,6 +164,11 @@ set(CORE_SOURCES
     src/gpu/denoise.cpp
     src/gpu/compute_denoise.cpp
 )
+if(WIN32)
+    list(APPEND CORE_SOURCES src/platform/display_image_windows.cpp)
+else()
+    list(APPEND CORE_SOURCES src/platform/display_image.cpp)
+endif()
 
 if(SONY2FUJI_ENABLE_GPU)
     if(WIN32)
@@ -183,10 +189,16 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+if(WIN32)
+    target_link_libraries(sony2fuji_core windowscodecs ole32)
+endif()
 if(SONY2FUJI_ENABLE_GPU AND WIN32)
     target_link_libraries(sony2fuji_core d3d11 dxgi d3dcompiler)
 endif()
 target_link_libraries(sony2fuji_core ${LIBRAW_LIBRARY})
+if(APPLE)
+    target_link_libraries(sony2fuji_core "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation")
+endif()
 if(SONY2FUJI_ENABLE_LENSFUN)
     target_link_libraries(sony2fuji_core ${LENSFUN_LIBRARY})
 endif()
@@ -220,10 +232,16 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    if(WIN32)
+        target_link_libraries(sony2fuji windowscodecs ole32)
+    endif()
     if(SONY2FUJI_ENABLE_GPU AND WIN32)
         target_link_libraries(sony2fuji d3d11 dxgi d3dcompiler)
     endif()
     target_link_libraries(sony2fuji ${LIBRAW_LIBRARY})
+    if(APPLE)
+        target_link_libraries(sony2fuji "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation")
+    endif()
     if(SONY2FUJI_ENABLE_LENSFUN)
         target_link_libraries(sony2fuji ${LENSFUN_LIBRARY})
     endif()
@@ -267,9 +285,15 @@ if(BUILD_SHARED_LIB)
 endif()
 
 # 命令行工具
+if(BUILD_CLI OR (BUILD_TESTING AND NOT IOS AND NOT ANDROID))
+    # Opt-in protocol adapter: native C ABI and client builds stay unchanged.
+    add_library(rawlab_edit_protocol STATIC src/cli/edit_recipe.cpp)
+    target_include_directories(rawlab_edit_protocol PUBLIC include PRIVATE third_party)
+endif()
 if(BUILD_CLI)
-    add_executable(sony2fuji_cli src/cli/main.cpp)
-    target_link_libraries(sony2fuji_cli sony2fuji_core)
+    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/raw_info.cpp)
+    target_include_directories(sony2fuji_cli PRIVATE third_party)
+    target_link_libraries(sony2fuji_cli sony2fuji_core rawlab_edit_protocol)
     set_target_properties(sony2fuji_cli PROPERTIES OUTPUT_NAME sony2fuji)
 endif()
 
@@ -277,6 +301,12 @@ endif()
 if(BUILD_EXAMPLES)
     add_executable(sony2fuji_example examples/simple_example.cpp)
     target_link_libraries(sony2fuji_example sony2fuji_core)
+endif()
+
+if(ANDROID AND SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    add_executable(wavelet_denoise_tests EXCLUDE_FROM_ALL tests/wavelet_denoise_tests.cpp)
+    target_link_libraries(wavelet_denoise_tests sony2fuji_core ${SONY2FUJI_DENOISE_LIBRARIES})
+    target_compile_options(wavelet_denoise_tests PRIVATE -UNDEBUG)
 endif()
 
 if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY2FUJI_ENABLE_WAVELET_DENOISE)
@@ -291,6 +321,78 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set(SONY2FUJI_TEST_LENS_WAVELET_RAW "" CACHE FILEPATH "External RAW with calibrated Lens and applied wavelet NR")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_LENS_WAVELET_RAW}" SONY2FUJI_TEST_LENS_WAVELET_RAW)
     find_package(Threads REQUIRED)
+    add_executable(display_render_tests tests/display_render_tests.cpp)
+    target_link_libraries(display_render_tests sony2fuji_core)
+    add_test(NAME display_render COMMAND display_render_tests)
+    if(APPLE)
+        add_executable(display_image_tests tests/display_image_tests.cpp)
+        target_link_libraries(display_image_tests sony2fuji_core)
+        add_test(NAME display_image COMMAND display_image_tests)
+    endif()
+    add_executable(photo_geometry_tests tests/photo_geometry_tests.cpp src/core/photo_geometry.cpp)
+    add_test(NAME photo_geometry COMMAND photo_geometry_tests)
+    add_executable(perspective_tests tests/perspective_tests.cpp src/core/photo_geometry.cpp)
+    add_test(NAME perspective COMMAND perspective_tests)
+    add_executable(perspective_api_tests tests/perspective_api_tests.cpp)
+    target_link_libraries(perspective_api_tests sony2fuji_core)
+    add_test(NAME perspective_api COMMAND perspective_api_tests)
+    if(SONY2FUJI_TEST_RAW AND EXISTS "${SONY2FUJI_TEST_RAW}")
+        add_test(NAME perspective_raw COMMAND perspective_api_tests "${SONY2FUJI_TEST_RAW}")
+    endif()
+    add_executable(geometry_api_tests tests/geometry_api_tests.cpp)
+    target_link_libraries(geometry_api_tests sony2fuji_core)
+    add_test(NAME geometry_api COMMAND geometry_api_tests)
+    if(EXISTS "${SONY2FUJI_TEST_RAW}")
+        add_test(NAME geometry_raw COMMAND geometry_api_tests "${SONY2FUJI_TEST_RAW}")
+    endif()
+    add_executable(edit_recipe_tests tests/edit_recipe_tests.cpp)
+    target_link_libraries(edit_recipe_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe COMMAND edit_recipe_tests)
+    add_executable(edit_recipe_raster_tests tests/edit_recipe_raster_tests.cpp)
+    target_include_directories(edit_recipe_raster_tests PRIVATE third_party)
+    target_link_libraries(edit_recipe_raster_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe_raster COMMAND edit_recipe_raster_tests)
+    add_executable(edit_recipe_geometry_tests tests/edit_recipe_geometry_tests.cpp)
+    target_link_libraries(edit_recipe_geometry_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe_geometry COMMAND edit_recipe_geometry_tests)
+    add_executable(edit_recipe_perspective_tests tests/edit_recipe_perspective_tests.cpp)
+    target_link_libraries(edit_recipe_perspective_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe_perspective COMMAND edit_recipe_perspective_tests)
+    if(BUILD_CLI)
+        find_package(Python3 QUIET COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            set(CLI_TEST_RAW "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+            if(WIN32 AND EXISTS "${SONY2FUJI_TEST_RAW}")
+                set(CLI_TEST_RAW "${SONY2FUJI_TEST_RAW}")
+            endif()
+            add_test(NAME geometry_cli COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_geometry_cli.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CLI_TEST_RAW}"
+                --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+            add_test(NAME agent_preview COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_preview.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CLI_TEST_RAW}"
+                --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+            add_test(NAME raw_info_cli COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_raw_info_cli.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CLI_TEST_RAW}"
+                --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+            add_test(NAME agent_commands COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_commands.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CLI_TEST_RAW}")
+            add_test(NAME edit_recipe_cli COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_cli.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>
+                --raw "${CLI_TEST_RAW}")
+            add_test(NAME edit_recipe_schema COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_schema.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>)
+        endif()
+    endif()
     add_executable(rendered_dng_tests tests/rendered_dng_tests.cpp)
     target_link_libraries(rendered_dng_tests sony2fuji_core)
     if(SONY2FUJI_ENABLE_DNGSDK AND SONY2FUJI_ENABLE_LENSFUN)
@@ -529,6 +631,8 @@ if(BUILD_CLI)
     install(TARGETS sony2fuji_cli
         RUNTIME DESTINATION bin
     )
+    install(TARGETS rawlab_edit_protocol ARCHIVE DESTINATION lib)
+    install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION share/licenses/rawlab-edit-protocol)
 endif()
 
 install(DIRECTORY include/sony2fuji

@@ -34,7 +34,10 @@ typedef enum sony2fuji_status {
 
 typedef enum sony2fuji_input_type {
     SONY2FUJI_INPUT_RAW = 0,
-    SONY2FUJI_INPUT_BUFFER = 1
+    SONY2FUJI_INPUT_BUFFER = 1,
+    // Opaque SDR display-sRGB pixels. Unlike legacy scene buffers, neutral
+    // rendering only re-encodes sRGB; no RAW baseline or scene view curve.
+    SONY2FUJI_INPUT_DISPLAY_BUFFER = 2
 } sony2fuji_input_type;
 
 typedef enum sony2fuji_pixel_format {
@@ -205,6 +208,28 @@ typedef struct sony2fuji_hsl_config {
     float lightness[SONY2FUJI_HSL_CHANNELS];  // +/-0.5 display-HSL lightness.
 } sony2fuji_hsl_config;
 
+#define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
+typedef struct sony2fuji_geometry_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float crop_x;                // Normalized left; default 0.
+    float crop_y;                // Normalized top; default 0.
+    float crop_width;            // Positive normalized width; default 1.
+    float crop_height;           // Positive normalized height; default 1.
+    int32_t quarter_turns;       // 0..3 clockwise turns; default 0.
+    int32_t flip_horizontal;     // 0 or 1 in the rotated canvas; default 0.
+    int32_t flip_vertical;       // 0 or 1 in the rotated canvas; default 0.
+    float straighten_degrees;   // -45..45 clockwise; default 0.
+} sony2fuji_geometry_config;
+
+#define SONY2FUJI_PERSPECTIVE_CONFIG_VERSION 1u
+typedef struct sony2fuji_perspective_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float horizontal; // -1..1 in the rotated/flipped canvas; default 0.
+    float vertical;   // -1..1 in the rotated/flipped canvas; default 0.
+} sony2fuji_perspective_config;
+
 #define SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION 1u
 typedef struct sony2fuji_lens_correction_config {
     uint32_t version;
@@ -266,6 +291,15 @@ typedef enum sony2fuji_render_backend {
 // ============================================================================
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
+
+// File adapters: single-frame opaque 8-bit SDR RGB.
+// macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
+// Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
+// Rejects transparency, high-bit-depth/HDR and unsupported encodings.
+// Pass a zero-initialized or previously returned buffer; release with
+// sony2fuji_release_buffer. Android clients decode validated files with the
+// platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
+sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 
@@ -343,6 +377,43 @@ sony2fuji_status sony2fuji_session_set_photo_effects(
 // Force requires GPU success, as with the other photo adjustments.
 sony2fuji_status sony2fuji_session_set_hsl(
     sony2fuji_session* session, const sony2fuji_hsl_config* config
+);
+
+// Additive API; request v2 is unchanged. Identity is an exact bypass.
+// Already-oriented pixels rotate, flip, apply perspective, straighten within a
+// centered inscribed canvas, then crop (floor start/ceil end) before output resizing.
+// Crop coordinates refer to that transformed canvas. Invalid values preserve
+// the previous configuration. Normalized ends tolerate at most 1e-6 beyond
+// one for Float UI rounding and clamp to the canvas. Active geometry uses an
+// exact RAW source even for interactive/viewport previews. Geometry is CPU-only:
+// GPU Auto may render
+// color on GPU, but the mixed result reports CPU; Force returns UNSUPPORTED.
+sony2fuji_status sony2fuji_session_set_geometry(
+    sony2fuji_session* session, const sony2fuji_geometry_config* config
+);
+
+// Additive API; request v2 and geometry config v1 are unchanged. Changes only
+// perspective, preserving crop/turns/flips/straightening. The geometry setter
+// likewise preserves perspective. Finite -1..1 controls default to zero.
+// Inverse centered offsets are divided by 1 + .25*horizontal*u + .25*vertical*v,
+// where u/v are normalized using the original rotated width/height. The safe
+// centered canvas is scaled by 1/(1 + .25*abs(horizontal) + .25*abs(vertical))
+// before straightening and crop. Perspective and straightening sample once
+// bilinearly; zero perspective retains the exact existing geometry path.
+// Invalid values preserve all state. Success clears the last geometry size.
+// Active perspective has the same exact-source and GPU semantics as geometry.
+sony2fuji_status sony2fuji_session_set_perspective(
+    sony2fuji_session* session, const sony2fuji_perspective_config* config
+);
+
+// Native canvas from the last successful process, after geometry and before
+// output resizing. Identity records the decoded input dimensions even when
+// its preview is reduced later. Active geometry always uses the exact source.
+// Successful geometry/perspective setters and every new process clear the size.
+// Failed processes, including output I/O failures, leave the size unavailable.
+// Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.
+sony2fuji_status sony2fuji_session_get_geometry_size(
+    const sony2fuji_session* session, uint32_t* width, uint32_t* height
 );
 
 // One-shot absolute user EV in [-4,4], not a delta from current exposure.

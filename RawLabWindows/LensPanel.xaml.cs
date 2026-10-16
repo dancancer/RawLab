@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace RawLab.Windows;
 
@@ -13,6 +14,10 @@ public partial class LensPanel : UserControl
     public LensPanel()
     {
         InitializeComponent();
+        Chooser.Closed+=(_,_)=>ProfileButton.Focus();
+        Search.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){Chooser.IsOpen=false;e.Handled=true;}else if(e.Key==Key.Down){Profiles.Focus();e.Handled=true;}};
+        Profiles.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){Chooser.IsOpen=false;e.Handled=true;}else if(e.Key==Key.Enter){UseSelectedProfile();e.Handled=true;}};
+        Profiles.PreviewMouseLeftButtonUp+=(_,_)=>UseSelectedProfile();
         Loaded += (_, _) => Loc.Changed += RefreshLanguage;
         Unloaded += (_, _) => Loc.Changed -= RefreshLanguage;
         Refresh(value, null);
@@ -57,6 +62,9 @@ public partial class LensPanel : UserControl
         syncing = previous;
     }
     private void ProfileChanged(object sender, SelectionChangedEventArgs e) {
+        // 方向键只移动候选，Enter 或鼠标确认后才修改草稿。
+    }
+    private void UseSelectedProfile() {
         if (syncing || !Chooser.IsOpen || Profiles.SelectedItem is not LensCandidate profile) return;
         Chooser.IsOpen = false;
         Publish(value with { Manual = true, ProfileId = profile.Id });

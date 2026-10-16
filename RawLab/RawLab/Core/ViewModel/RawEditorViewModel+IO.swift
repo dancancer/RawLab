@@ -44,7 +44,7 @@ extension RawEditorViewModel {
         let orientation: CGImagePropertyOrientation?
     }
 
-    func buildRawPreviewBase(url: URL) throws -> RawPreviewBase {
+    func buildRawPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings()) throws -> RawPreviewBase {
         let rawBase = try processor.processRaw(
             url: url,
             settings: .default,
@@ -57,8 +57,12 @@ extension RawEditorViewModel {
             previewLongEdge: interactivePreviewMaxDimension,
             lutURL: nil
         )
-        let basePreviewImage = processor.makeUIImage(from: rawBase.buffer, orientation: rawBase.orientation)
-        let baseHistogram = processor.computeHistogram(from: rawBase.buffer, bins: histogramBins)
+        var neutral = RawSettings.default
+        neutral.geometry = geometry
+        let comparison = geometry.isIdentity ? rawBase : try processor.processRaw(
+            url: url, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
+        let basePreviewImage = processor.makeUIImage(from: comparison.buffer, orientation: .up)
+        let baseHistogram = processor.computeHistogram(from: comparison.buffer, bins: histogramBins)
 
         return RawPreviewBase(
             buffer: rawBase.buffer,
@@ -72,8 +76,8 @@ extension RawEditorViewModel {
         )
     }
 
-    func buildRasterPreviewBase(url: URL) throws -> RasterPreviewBase {
-        let rasterBase = try processor.loadRasterBuffer(url: url)
+    func buildRasterPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings()) throws -> RasterPreviewBase {
+        let rasterBase = try processor.loadRasterBuffer(url: url, applyingOrientation: true)
         let baseBuffer = try processor.processBuffer(
             buffer: rasterBase.buffer,
             settings: .default,
@@ -86,11 +90,15 @@ extension RawEditorViewModel {
             previewLongEdge: interactivePreviewMaxDimension,
             lutURL: nil
         )
-        let basePreviewImage = processor.makeUIImage(from: baseBuffer, orientation: rasterBase.orientation)
-        let baseHistogram = processor.computeHistogram(from: baseBuffer, bins: histogramBins)
+        var neutral = RawSettings.default
+        neutral.geometry = geometry
+        let comparison = geometry.isIdentity ? baseBuffer : try processor.processBuffer(
+            buffer: rasterBase.buffer, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
+        let basePreviewImage = processor.makeUIImage(from: comparison, orientation: .up)
+        let baseHistogram = processor.computeHistogram(from: comparison, bins: histogramBins)
 
         return RasterPreviewBase(
-            buffer: baseBuffer,
+            buffer: rasterBase.buffer,
             previewBuffer: previewBuffer,
             basePreviewImage: basePreviewImage,
             baseHistogram: baseHistogram,
@@ -100,26 +108,22 @@ extension RawEditorViewModel {
 }
 
 extension RawEditorViewModel {
+    @discardableResult
     func importImage(
         from source: PhotoImportSource,
         identity: PhotoIdentity? = nil,
         settings: RawSettings = .default,
+        onImported: (() -> Void)? = nil,
         onSettingsRestored: ((RawSettings) -> Void)? = nil
-    ) {
+    ) -> UUID {
         statusMessage = nil
         isBusy = true
-        sourceRevision = UUID()
-        previewResizeWorkItem?.cancel()
-        previewResizeWorkItem = nil
-        previewResizePending = false
-        previewRendering = false
+        let importRevision = UUID()
+        activeImportRevision = importRevision
+        sourceRevision = importRevision
+        invalidatePreviewRequests()
         previewLongEdge = Int(previewMaxDimension)
         requestedPreviewLongEdge = previewLongEdge
-        previewWorkItem?.cancel()
-        previewWorkItem = nil
-        cancelHistogramWorkItem()
-        setLatestRenderID(UUID())
-        lastPreviewRequest = nil
 
         let sourceKind: ImageSourceKind = source.isRaw ? .raw : .raster
 
@@ -139,7 +143,7 @@ extension RawEditorViewModel {
                 let missingLook = !self.isLookAvailable(for: restoredSettings)
                 let localURL = try self.copyToCache(source.url, identity: resolvedIdentity)
                 if sourceKind == .raw {
-                    let rawBase = try self.buildRawPreviewBase(url: localURL)
+                    let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry)
                     let lutURL = self.lutURL(for: restoredSettings)
                     let previewResult = try self.processor.processRaw(
                         url: localURL,
@@ -157,36 +161,43 @@ extension RawEditorViewModel {
                         bins: self.histogramBins
                     )
 
-                    DispatchQueue.main.async {
+                    self.resultDelivery {
+                        guard self.activeImportRevision == importRevision else { return }
+                        self.invalidatePreviewRequests()
+                        self.activeImportRevision = nil
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
                         self.sourceDisplayName = source.displayName
                         self.restoredSettings = restoredSettings
+                        self.currentPreviewSettings = restoredSettings
                         self.pendingSettings = nil
                         self.sourceOrientation = previewResult.orientation ?? rawBase.orientation
                         self.draftBuffer = rawBase.buffer
                         self.draftPreviewBuffer = rawBase.previewBuffer
                         self.basePreviewImage = rawBase.basePreviewImage
                         self.baseHistogram = rawBase.baseHistogram
+                        self.basePreviewGeometry = restoredSettings.geometry
                         self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
                         self.lensInfo = previewResult.lensInfo
                         self.rawLUTID = restoredSettings.lutID
                         self.rawLUTApplied = restoredSettings.lutID != nil && restoredSettings.lutStrength > 0
                         self.previewImage = adjustedImage
+                        self.nativeImageSize = previewResult.buffer.nativeSize
                         self.histogram = adjustedHistogram
                         self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
                         self.isBusy = false
                         self.sourceRevision = UUID()
                         if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                         onSettingsRestored?(restoredSettings)
+                        if self.hasImage && adjustedImage != nil { onImported?() }
                         if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。") }
                         if adjustedImage == nil {
                             self.statusMessage = L10n.text("Preview render failed.")
                         }
                     }
                 } else {
-                    let rasterBase = try self.buildRasterPreviewBase(url: localURL)
+                    let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry)
                     let adjustedBuffer = try self.processor.processBuffer(
                         buffer: rasterBase.buffer,
                         settings: restoredSettings,
@@ -202,29 +213,36 @@ extension RawEditorViewModel {
                         bins: self.histogramBins
                     )
 
-                    DispatchQueue.main.async {
+                    self.resultDelivery {
+                        guard self.activeImportRevision == importRevision else { return }
+                        self.invalidatePreviewRequests()
+                        self.activeImportRevision = nil
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
                         self.sourceDisplayName = source.displayName
                         self.restoredSettings = restoredSettings
+                        self.currentPreviewSettings = restoredSettings
                         self.pendingSettings = nil
                         self.sourceOrientation = rasterBase.orientation
                         self.draftBuffer = rasterBase.buffer
                         self.draftPreviewBuffer = rasterBase.previewBuffer
                         self.basePreviewImage = rasterBase.basePreviewImage
                         self.baseHistogram = rasterBase.baseHistogram
+                        self.basePreviewGeometry = restoredSettings.geometry
                         self.rawLUTID = nil
                         self.rawLUTApplied = false
                         self.rawWhiteBalance = nil
                         self.lensInfo = nil
                         self.previewImage = adjustedImage
+                        self.nativeImageSize = adjustedBuffer.nativeSize
                         self.histogram = adjustedHistogram
                         self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
                         self.isBusy = false
                         self.sourceRevision = UUID()
                         if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                         onSettingsRestored?(restoredSettings)
+                        if self.hasImage && adjustedImage != nil { onImported?() }
                         if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。") }
                         if adjustedImage == nil {
                             self.statusMessage = L10n.text("Preview render failed.")
@@ -232,11 +250,15 @@ extension RawEditorViewModel {
                     }
                 }
             } catch {
-                DispatchQueue.main.async {
+                self.resultDelivery {
+                    guard self.activeImportRevision == importRevision else { return }
+                    self.invalidatePreviewRequests()
+                    self.activeImportRevision = nil
                     self.statusMessage = error.localizedDescription
                     self.isBusy = false
                     self.previewImage = nil
                     self.basePreviewImage = nil
+                    self.nativeImageSize = nil
                     self.draftPreviewBuffer = nil
                     self.draftBuffer = nil
                     self.sourceURL = nil
@@ -256,6 +278,16 @@ extension RawEditorViewModel {
                 }
             }
         }
+        return importRevision
+    }
+
+    func cancelImageImport(_ requestID: UUID? = nil) {
+        guard let activeImportRevision,
+              requestID == nil || requestID == activeImportRevision else { return }
+        self.activeImportRevision = nil
+        invalidatePreviewRequests()
+        sourceRevision = UUID()
+        isBusy = false
     }
 
     func consumeRestoredSettings(_ settings: RawSettings) -> Bool {
@@ -368,7 +400,7 @@ extension RawEditorViewModel {
                     )
                     data = output
                 } else {
-                    let raster = try self.processor.loadRasterBuffer(url: sourceURL)
+                    let raster = try self.processor.loadRasterBuffer(url: sourceURL, applyingOrientation: true)
                     let outputBuffer = try self.processor.processBuffer(
                         buffer: raster.buffer,
                         settings: settings,
@@ -431,14 +463,14 @@ extension RawEditorViewModel {
                     try self.processor.exportDNG(buffer: raster.buffer, settings: settings, lutURL: lutURL,
                                                  outputURL: outputURL, exportLongEdge: longEdge)
                 }
-                DispatchQueue.main.async {
+                self.resultDelivery {
                     self.isBusy = false
                     completion(.success(outputURL))
                     self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                 }
             } catch {
                 try? FileManager.default.removeItem(at: outputURL)
-                DispatchQueue.main.async {
+                self.resultDelivery {
                     self.isBusy = false
                     completion(.failure(error))
                     self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
@@ -460,7 +492,7 @@ extension RawEditorViewModel {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let rawPreview = try self.buildRawPreviewBase(url: url)
+                let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry)
                 let previewResult = try self.processor.processRaw(
                     url: url,
                     settings: settings,
@@ -498,10 +530,12 @@ extension RawEditorViewModel {
                     self.draftPreviewBuffer = rawPreview.previewBuffer
                     self.basePreviewImage = rawPreview.basePreviewImage
                     self.baseHistogram = rawPreview.baseHistogram
+                    self.basePreviewGeometry = settings.geometry
                     self.lensInfo = previewResult.lensInfo
                     self.rawLUTID = settings.lutID
                     self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
                     self.previewImage = previewImage
+                    self.nativeImageSize = previewResult.buffer.nativeSize
                     self.histogram = previewHistogram
                     self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
                     self.isBusy = false
@@ -517,6 +551,7 @@ extension RawEditorViewModel {
                     self.isBusy = false
                     self.previewImage = nil
                     self.basePreviewImage = nil
+                    self.nativeImageSize = nil
                     self.draftPreviewBuffer = nil
                     self.draftBuffer = nil
                     self.sourceURL = nil

@@ -4,6 +4,8 @@ import SwiftUI
 import UIKit
 
 final class BatchExportModel: ObservableObject {
+    typealias JPEGWriter = (Data, String, BatchTarget, (String) throws -> Void) throws -> Void
+
     @Published private(set) var job: BatchExportJob
     @Published private(set) var isRunning = false
     @Published private(set) var isPreparing = false
@@ -14,8 +16,10 @@ final class BatchExportModel: ObservableObject {
     @Published var shouldPresentFileExport = false
     @Published var validationMessage: String?
     var onDiscard: () -> Void = { }
+    var onUsage: (UsageEvent) -> Void = { _ in }
 
     private let journalStore: BatchJournalStore?
+    private let jpegWriter: JPEGWriter?
     private let queue = DispatchQueue(label: "com.rawlab.batch", qos: .userInitiated)
     private let cancellation = NSLock()
     private var didCancel = false
@@ -32,6 +36,7 @@ final class BatchExportModel: ObservableObject {
         var source = source
         source.lookName = source.settings.masterRecipe?.name ?? editor.availableLUTs.first { $0.id == source.settings.lutID }?.name ?? "中性"
         job = BatchExportJob(source: source, targets: [])
+        jpegWriter = nil
         do { journalStore = try BatchJournalStore.appStore() }
         catch { journalStore = nil; validationMessage = L10n.format("无法保存批量任务：%@", String(describing: error.localizedDescription)) }
         guard let journalStore else { return }
@@ -51,12 +56,13 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    init(job: BatchExportJob, journalStore: BatchJournalStore) {
+    init(job: BatchExportJob, journalStore: BatchJournalStore, jpegWriter: JPEGWriter? = nil) {
         let recovered = job.outputFormat == .renderedDNG
             ? job.recovered()
             : job.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
         self.job = recovered
         self.journalStore = journalStore
+        self.jpegWriter = jpegWriter
         isReady = true
         validationMessage = recovered.globalError
         if recovered.outputFormat == .renderedDNG {
@@ -75,7 +81,7 @@ final class BatchExportModel: ObservableObject {
     var canChangeTargets: Bool { isReady && !isRunning && !isPreparing && job.status == .draft }
     var canStart: Bool { isReady && !isRunning && !isPreparing && journalStore != nil && pendingCount + failedCount > 0 }
     var stateTitle: String {
-        if isPreparing { return L10n.text("正在准备 RAW…") }
+        if isPreparing { return L10n.text("正在准备照片…") }
         if isStopping { return L10n.text("正在停止…") }
         if isRunning { return L10n.text("正在导出") }
         switch job.status {
@@ -125,16 +131,41 @@ final class BatchExportModel: ObservableObject {
             do {
                 let file = try await PhotoImportFile.load(from: item)
                 defer { PhotoImportFile.release(file.url) }
-                guard file.isRaw else { failures.append(L10n.text("普通图片未加入，请选择 RAW。")); continue }
-                let target: BatchTarget = try await perform {
-                    let identity = try item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-                        ?? PhotoIdentity.fallback(for: file.url)
-                    let owned = try BatchInputStore.copy(file.url, identity: identity, jobID: jobID, root: journalStore.directory)
-                    _ = try Sony2FujiProcessor().processRaw(url: owned, settings: .default, previewLongEdge: 160, lutURL: nil)
-                    return BatchTarget(identity: identity, sourceURL: owned, displayName: file.url.lastPathComponent)
+                let itemIdentity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+                let identity = try await perform {
+                    try itemIdentity ?? PhotoIdentity.fallback(for: file.url)
                 }
+                let target = try await prepareTarget(file, identity: identity, jobID: jobID,
+                                                     journalStore: journalStore)
                 targets.append(target)
-            } catch { failures.append(L10n.format("所选 RAW：%@", String(describing: error.localizedDescription))) }
+            } catch { failures.append(L10n.format("所选照片：%@", String(describing: error.localizedDescription))) }
+        }
+        let loaded = targets, errors = failures
+        await MainActor.run {
+            isPreparing = false
+            addTargets(loaded)
+            if !errors.isEmpty { validationMessage = errors.joined(separator: "\n") }
+        }
+    }
+
+    func addFiles(_ urls: [URL]) async {
+        guard canChangeTargets, let journalStore else { return }
+        await MainActor.run { isPreparing = true; validationMessage = nil }
+        let jobID = job.id
+        var targets: [BatchTarget] = []
+        var failures: [String] = []
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let source = try await perform { try PhotoImportFile.retainSource(url) }
+                defer { PhotoImportFile.release(source.url) }
+                let identity = try await perform { try PhotoIdentity.fallback(for: source.url) }
+                targets.append(try await prepareTarget(source, identity: identity, jobID: jobID,
+                                                       journalStore: journalStore))
+            } catch {
+                failures.append(L10n.format("所选照片：%@", String(describing: error.localizedDescription)))
+            }
         }
         let loaded = targets, errors = failures
         await MainActor.run {
@@ -162,15 +193,18 @@ final class BatchExportModel: ObservableObject {
         backgroundInterruption = false
         let failedIDs = failuresOnly ? Set(snapshot.targets.filter { $0.status == .failed }.map(\.id)) : nil
         let frozenLongEdge = snapshot.longEdge
+        let succeededBefore = snapshot.targets.filter { $0.status == .succeeded }.count
         queue.async { [self] in
+            var attempted = Set<String>()
             do {
                 let result: BatchExportJob
                 if snapshot.outputFormat == .renderedDNG {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
-                        render: { target, settings in
-                            try self.renderDNG(target: target, settings: settings,
-                                               look: snapshot.source.lookURL,
-                                               longEdge: frozenLongEdge, jobID: snapshot.id)
+                        render: { target, _ in
+                            let resolvedSettings = snapshot.source.settings(for: target.sourceKind)
+                            return try self.renderDNG(target: target, settings: resolvedSettings,
+                                                      look: snapshot.source.lookURL,
+                                                      longEdge: frozenLongEdge, jobID: snapshot.id)
                         },
                         write: { file, name, _, checkpoint in
                             try BatchFileWriter.write(file: file, outputName: name,
@@ -179,6 +213,23 @@ final class BatchExportModel: ObservableObject {
                         cleanup: { file in try? FileManager.default.removeItem(at: file) },
                         shouldCancel: { self.isCancellationRequested },
                         didUpdate: { updated in
+                            attempted.formUnion(updated.targets.filter { $0.status == .processing }.map(\.id))
+                            snapshot = updated
+                            DispatchQueue.main.async { self.job = updated }
+                        },
+                        onlyIDs: failedIDs)
+                } else if let jpegWriter {
+                    result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
+                        render: { target, _ in
+                            let resolvedSettings = snapshot.source.settings(for: target.sourceKind)
+                            return try self.render(target: target, settings: resolvedSettings,
+                                                   look: snapshot.source.lookURL,
+                                                   longEdge: frozenLongEdge)
+                        },
+                        write: jpegWriter,
+                        shouldCancel: { self.isCancellationRequested },
+                        didUpdate: { updated in
+                            attempted.formUnion(updated.targets.filter { $0.status == .processing }.map(\.id))
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
@@ -186,10 +237,11 @@ final class BatchExportModel: ObservableObject {
                 } else {
                     try PhotoLibraryBatchWriter.authorize()
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
-                        render: { target, settings in
-                            try self.render(target: target, settings: settings,
-                                            look: snapshot.source.lookURL,
-                                            longEdge: frozenLongEdge)
+                        render: { target, _ in
+                            let resolvedSettings = snapshot.source.settings(for: target.sourceKind)
+                            return try self.render(target: target, settings: resolvedSettings,
+                                                   look: snapshot.source.lookURL,
+                                                   longEdge: frozenLongEdge)
                         },
                         write: { data, name, target, checkpoint in
                             try PhotoLibraryBatchWriter.write(data: data, outputName: name,
@@ -197,11 +249,13 @@ final class BatchExportModel: ObservableObject {
                         },
                         shouldCancel: { self.isCancellationRequested },
                         didUpdate: { updated in
+                            attempted.formUnion(updated.targets.filter { $0.status == .processing }.map(\.id))
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
                         onlyIDs: failedIDs)
                 }
+                let failed = result.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
                     self.job = result
                     if self.backgroundInterruption && result.status == .cancelled { self.job.status = .interrupted }
@@ -216,12 +270,14 @@ final class BatchExportModel: ObservableObject {
                         }
                     }
                     self.saveJournal()
+                    self.reportUsage(succeededBefore: succeededBefore, failed: failed)
                 }
             } catch {
                 let recovered = snapshot.outputFormat == .renderedDNG
                     ? snapshot.recovered()
                     : snapshot.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
                 let message = error.localizedDescription
+                let failed = recovered.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
                     self.job = recovered
                     self.job.status = .interrupted
@@ -229,9 +285,22 @@ final class BatchExportModel: ObservableObject {
                     self.validationMessage = message
                     self.isRunning = false; self.isStopping = false
                     self.saveJournal()
+                    self.reportUsage(succeededBefore: succeededBefore, failed: failed)
                 }
             }
         }
+    }
+
+    private func reportUsage(succeededBefore: Int, failed: Int) {
+        let succeeded = max(0, job.targets.filter { $0.status == .succeeded }.count - succeededBefore)
+        let outcome: UsageBatchOutcome
+        switch job.status {
+        case .completed: outcome = .completed
+        case .partialFailure: outcome = .partial
+        case .cancelled: outcome = .cancelled
+        default: outcome = .interrupted
+        }
+        onUsage(.batchExportCompleted(succeeded: succeeded, failed: failed, outcome: outcome))
     }
 
     func cancel(forBackground: Bool = false) {
@@ -309,8 +378,18 @@ final class BatchExportModel: ObservableObject {
                 throw BatchExportError.global(L10n.text("任务外观不可用。"))
             }
             let processor = Sony2FujiProcessor()
-            let result = try processor.processRaw(url: target.sourceURL, settings: snapshot.settings,
-                                                   previewLongEdge: 1280, lutURL: snapshot.lookURL)
+            let result: Sony2FujiProcessor.ProcessResult
+            let targetSettings = snapshot.settings(for: target.sourceKind)
+            if target.sourceKind == .raw {
+                result = try processor.processRaw(url: target.sourceURL, settings: targetSettings,
+                                                  previewLongEdge: 1280, lutURL: snapshot.lookURL)
+            } else {
+                let raster = try processor.loadRasterBuffer(url: target.sourceURL)
+                let buffer = try processor.processBuffer(buffer: raster.buffer, settings: targetSettings,
+                                                         previewLongEdge: 1280, lutURL: snapshot.lookURL)
+                result = Sony2FujiProcessor.ProcessResult(buffer: buffer, orientation: .up,
+                                                          rawWhiteBalance: nil)
+            }
             guard let image = processor.makeUIImage(from: result.buffer, orientation: result.orientation) else {
                 throw BatchExportError.target(L10n.text("无法显示预览。"))
             }
@@ -319,26 +398,41 @@ final class BatchExportModel: ObservableObject {
     }
 
     private func render(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?) throws -> Data {
-        guard target.sourceKind == .raw else { throw BatchExportError.target(L10n.text("不是 RAW 照片。")) }
         return try autoreleasepool {
             let processor = Sony2FujiProcessor()
-            let result = try processor.processRaw(url: target.sourceURL, settings: settings,
-                                                   previewLongEdge: nil, lutURL: look,
-                                                   exportLongEdge: longEdge)
+            let result: Sony2FujiProcessor.ProcessResult
+            if target.sourceKind == .raw {
+                let raw = try processor.processRaw(url: target.sourceURL, settings: settings,
+                                                    previewLongEdge: nil, lutURL: look,
+                                                    exportLongEdge: longEdge)
+                result = raw
+            } else {
+                let raster = try processor.loadRasterBuffer(url: target.sourceURL)
+                let buffer = try processor.processBuffer(buffer: raster.buffer, settings: settings,
+                                                         previewLongEdge: nil, lutURL: look,
+                                                         exportLongEdge: longEdge)
+                result = Sony2FujiProcessor.ProcessResult(buffer: buffer, orientation: .up,
+                                                          rawWhiteBalance: nil)
+            }
             return try processor.makeJPEGData(from: result.buffer, sourceURL: target.sourceURL,
                                               orientation: result.orientation, quality: 0.92)
         }
     }
 
     private func renderDNG(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?, jobID: UUID) throws -> URL {
-        guard target.sourceKind == .raw else { throw BatchExportError.target(L10n.text("不是 RAW 照片。")) }
         return try autoreleasepool {
             let processor = Sony2FujiProcessor()
             let output = BatchFileOutputStore.temporaryURL(for: jobID, outputName: target.outputName)
             _ = try BatchFileOutputStore.directory(for: jobID)
             do {
-                try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,
-                                        outputURL: output, exportLongEdge: longEdge)
+                if target.sourceKind == .raw {
+                    try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,
+                                            outputURL: output, exportLongEdge: longEdge)
+                } else {
+                    let raster = try processor.loadRasterBuffer(url: target.sourceURL)
+                    try processor.exportDNG(buffer: raster.buffer, settings: settings, lutURL: look,
+                                            outputURL: output, exportLongEdge: longEdge)
+                }
                 return output
             } catch let error as Sony2FujiProcessor.ProcessorError {
                 try? FileManager.default.removeItem(at: output)
@@ -356,6 +450,26 @@ final class BatchExportModel: ObservableObject {
     private func perform<T>(_ operation: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { continuation.resume(with: Result { try operation() }) }
+        }
+    }
+
+    private func prepareTarget(_ source: PhotoImportSource, identity: PhotoIdentity, jobID: UUID,
+                               journalStore: BatchJournalStore) async throws -> BatchTarget {
+        try await perform {
+            let owned = try BatchInputStore.copy(source.url, identity: identity, jobID: jobID,
+                                                 root: journalStore.directory)
+            let processor = Sony2FujiProcessor()
+            if source.isRaw {
+                _ = try processor.processRaw(url: owned, settings: .default,
+                                             previewLongEdge: 160, lutURL: nil)
+            } else {
+                let raster = try processor.loadRasterBuffer(url: owned)
+                _ = try processor.processBuffer(buffer: raster.buffer, settings: .default,
+                                                previewLongEdge: 160, lutURL: nil)
+            }
+            return BatchTarget(identity: identity, sourceURL: owned,
+                               displayName: source.displayName,
+                               sourceKind: source.isRaw ? .raw : .raster)
         }
     }
 

@@ -1,0 +1,33 @@
+{
+  "schema_version": 3,
+  "input": {
+    "path": "photo.DNG"
+  },
+  "edits": {
+    "exposure": {
+      "mode": "preview"
+    },
+    "geometry": {
+      "quarter_turns": 1,
+      "flip_horizontal": true,
+      "straighten_degrees": 2,
+      "crop": {
+        "x": 0.1,
+        "y": 0.1,
+        "width": 0.8,
+        "height": 0.8
+      },
+      "perspective": {
+        "horizontal": 0.3,
+        "vertical": -0.2
+      }
+    }
+  },
+  "output": {
+    "path": "edited.png",
+    "format": "png",
+    "size": {
+      "mode": "native"
+    }
+  }
+}

@@ -3,37 +3,71 @@ import UIKit
 
 struct AdjustmentToolLabel: View {
     @Environment(\.locale) private var localizationLocale
-    @ScaledMetric(relativeTo: .title3) private var diameter = 44.0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title3) private var diameter = 48.0
     let title: String
     let symbol: String
     let selected: Bool
     let progress: Double
     let width: CGFloat
     let height: CGFloat
+    var currentValue: String? = nil
 
     var body: some View {
         let _ = localizationLocale
-        VStack(spacing: 5) {
-            ZStack {
-                Circle().fill(selected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
-                Circle().strokeBorder(selected ? Color.yellow.opacity(0.5) : Color.white.opacity(0.25), lineWidth: 1)
-                if progress != 0 {
-                    Circle().trim(from: 0, to: abs(progress))
-                        .stroke(Color.yellow, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .scaleEffect(x: progress < 0 ? -1 : 1, y: 1)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: 8) {
+                    symbolCircle(size: 44, compact: true)
+                    Text(title).font(.body)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                Image(systemName: symbol).font(.title3)
+                .padding(.horizontal, 8)
+                .frame(minWidth: 44, minHeight: 44)
+                .frame(height: height)
+            } else {
+                VStack(spacing: 5) {
+                    symbolCircle(size: diameter, compact: false)
+                    Text(title).font(.caption).lineLimit(2)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    Circle().fill(progress != 0 ? Color.yellow : Color.clear).frame(width: 3, height: 3)
+                }
+                .frame(width: width, height: height)
             }
-            .frame(width: diameter, height: diameter)
-            Text(title).font(.caption).lineLimit(1)
-            Circle().fill(progress != 0 ? Color.yellow : Color.clear).frame(width: 3, height: 3)
         }
         .foregroundStyle(selected ? Color.yellow : Color.primary)
-        .frame(width: width, height: height)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
+    }
+
+    private func symbolCircle(size: CGFloat, compact: Bool) -> some View {
+        ZStack {
+            Circle().fill(selected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
+            Circle().strokeBorder(selected ? Color.yellow.opacity(0.5) : Color.white.opacity(0.25), lineWidth: 1)
+            if progress != 0 {
+                Circle().trim(from: 0, to: min(1, abs(progress)) * 0.75)
+                    .stroke(Color.yellow, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .scaleEffect(x: progress < 0 ? -1 : 1, y: 1)
+            }
+            if let badgeValue {
+                Text(badgeValue).font(.caption.monospacedDigit().weight(.medium))
+            } else if compact {
+                Image(systemName: symbol).font(.title3)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            } else {
+                Image(systemName: symbol).font(.title3)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var badgeValue: String? {
+        guard selected, !dynamicTypeSize.isAccessibilitySize, let currentValue else { return nil }
+        let font = UIFont.preferredFont(forTextStyle: .caption1)
+        let width = (currentValue as NSString).size(withAttributes: [.font: font]).width
+        return width <= diameter - 8 ? currentValue : nil
     }
 }
 
@@ -41,6 +75,8 @@ struct FilmLabel: View {
     @Environment(\.locale) private var localizationLocale
     @ScaledMetric(relativeTo: .caption) private var labelHeight = 30.0
     @ScaledMetric(relativeTo: .caption) private var minimumWidth = 82.0
+    @ScaledMetric(relativeTo: .caption) private var bundledLookWidth = 138.0
+    @ScaledMetric(relativeTo: .caption) private var bundledLookLabelHeight = 34.0
     let name: String
     let artworkName: String?
     let neutral: Bool
@@ -49,6 +85,9 @@ struct FilmLabel: View {
 
     var body: some View {
         let _ = localizationLocale
+        let isBundledLook = BundledLook.all.contains(where: { $0.name == name })
+        let itemWidth = max(minimumWidth, imageSize + 18,
+                            isBundledLook ? bundledLookWidth : 0)
         VStack(spacing: 6) {
             Group {
                 if let artworkName, let image = Self.artwork[artworkName] {
@@ -62,12 +101,12 @@ struct FilmLabel: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
             Text(name).font(.caption)
                 .lineLimit(2).multilineTextAlignment(.center)
-                .frame(width: max(minimumWidth, imageSize + 18) - 12)
+                .frame(width: itemWidth - 12)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(height: labelHeight)
+                .frame(height: isBundledLook ? bundledLookLabelHeight : labelHeight)
         }
         .padding(6)
-        .frame(width: max(minimumWidth, imageSize + 18))
+        .frame(width: itemWidth)
         .foregroundStyle(selected ? Color.yellow : Color.primary)
         .background(selected ? Color.yellow.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? Color.yellow : .clear, lineWidth: 1) }
@@ -77,7 +116,8 @@ struct FilmLabel: View {
     private static let artwork: [String: UIImage] = {
         var images: [String: UIImage] = [:]
         for name in FilmPresentation.artworkNames.values {
-            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+            if let url = Bundle.main.url(forResource: name, withExtension: "png")
+                ?? Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "BundledLooks/Artwork"),
                let image = UIImage(contentsOfFile: url.path) {
                 images[name] = image
             }

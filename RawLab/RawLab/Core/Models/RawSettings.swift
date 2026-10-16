@@ -213,6 +213,7 @@ struct RawSettings: Codable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
 
+    var geometry = GeometrySettings()
     var denoise = RawDenoiseSettings()
     var lensCorrection: LensCorrectionSettings?
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
@@ -270,7 +271,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection
+        case masterRecipeID, lensCorrection, geometry
     }
 
     var clampedLUTStrength: Float {
@@ -331,6 +332,10 @@ struct RawSettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
+        guard geometry.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
+        }
         exposureMode = RawExposureMode(rawValue: try values.decodeIfPresent(Int.self, forKey: .exposureMode) ?? 0) ?? .scene
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl) ?? HSLSettings()
         guard hsl.isValid else {

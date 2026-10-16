@@ -31,19 +31,47 @@ static class Program
         }
     }
     [STAThread]
-    private static int Main(string[] args)
+    private static int Main(string[] args)=>Run(args,BatchJournal.DefaultDirectory);
+    internal static int Run(string[] args,string journalDirectory)
     {
         try
         {
+            TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==3 && args[0]=="--comparison-default") { ComparisonDefaultChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} comparison default checks");return 0; }
+            if(args.Length==3 && args[0]=="--comparison-ui-host")return ComparisonDefaultChecks.Host(args[1],args[2]);
+            if(args.Length==4 && args[0]=="--raster") { RasterChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} raster checks");return 0; }
+            if(args.Length==4 && args[0]=="--agent-recipe") { AgentRecipeChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} Agent recipe checks");return 0; }
+            if(args.Length==3 && args[0]=="--entry-selection") { EntrySelectionChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} entry selection checks");return 0; }
+            if(args.Length==3 && args[0]=="--resources") { ResourceChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} resource checks");return 0; }
+            if(args.Length==2 && args[0]=="--default-isolation") { DefaultIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} default isolation checks");return 0; }
+            if(args.Length==2 && args[0]=="--profile-isolation") { ProfileIsolationChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} profile isolation checks");return 0; }
+            if(args.Length==2 && args[0]=="--status-layout") { StatusLayoutChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} status layout checks");return 0; }
+            if(args.Length==2 && args[0]=="--appearance") { AppearanceChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} appearance checks");return 0; }
+            if(args.Length is 3 or 4 && args[0]=="--editor-review") { EditorReviewChecks.Run(args[1],args[2],Check,args.Length==4 ? args[3] : "all");return 0; }
+            if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
+            if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==1 && args[0]=="--about") { AboutChecks.Run(Check);Console.WriteLine($"PASS {checks} about checks");return 0; }
+            if(args.Length==3 && args[0]=="--geometry") { GeometryChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--lens") { LensChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--rendered-dng") { RenderedDngChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--master-recipes") { MasterRecipeChecks.Run(args[1],args[2]);return 0; }
+            if(args.Length==3 && args[0]=="--tool-groups") { ToolGroupChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--photo-features") { PhotoFeatureChecks.Run(args[1],args[2]);return 0; }
-            if(args.Length==3 && args[0]=="--denoise") { DenoiseChecks.Run(args[1],args[2]);return 0; }
+            if(args.Length is 3 or 4 && args[0]=="--denoise") { DenoiseChecks.Run(args[1],args[2],args.Length==4 ? args[3] : null);return 0; }
             if(args.Length==3 && args[0]=="--interactions") { InteractionChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark") { PerformanceChecks.Run(args[1],args[2]);return 0; }
             if(args.Length==3 && args[0]=="--benchmark-ui") { PerformanceChecks.Run(args[1],args[2],true);return 0; }
+            if(args.Length is not(2 or 3) || args[0].StartsWith("--",StringComparison.Ordinal) ||
+                (args.Length==3 && args[2]!="--ui-only"))throw new ArgumentException("Unknown command or invalid arguments. Supply <repo> <raw> [--ui-only], or a named mode with its required arguments.");
+            return RunDefault(args,journalDirectory);
+        }
+        catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
+    }
+    private static int RunDefault(string[] args,string journalDirectory)
+    {
+        try
+        {
             var repo=Path.GetFullPath(args[0]); var output=Path.Combine(repo,"build","windows-verification");Directory.CreateDirectory(output);
             var settings=new Adjustments();
             FeatureRegressionChecks.Run(Check);
@@ -170,15 +198,18 @@ static class Program
             }
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
-            var app=new App();app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
-            foreach(var pair in Loc.Strings) app.Resources[pair.Key]=pair.Value;
+            TestWindowState.PreserveExistingBatch(journalDirectory);
+            var app=TestWindowState.CreateApplication();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             var window=new MainWindow {Width=1440,Height=920};
+            TestWindowState.Isolate(window,output);
+            typeof(MainWindow).GetField("editStore",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(window,new EditStore(Path.Combine(output,"edits",Guid.NewGuid().ToString("N"))));
             window.Show();
             var folder=new LibraryEntry(Path.GetDirectoryName(raw)!,true);
             window.Files.ItemsSource=new[]{folder};
             var loading=folder.Load();PumpUntil(()=>loading.IsCompleted,TimeSpan.FromSeconds(30));loading.GetAwaiter().GetResult();
-            Check(folder.Children.Any(p=>!p.IsFolder) && folder.Children.Where(p=>!p.IsFolder).All(p=>LibraryEntry.IsRaw(p.Path)),"Lazy file library lists RAW files and filters JPEGs");
+            Check(folder.Children.Any(p=>!p.IsFolder) && folder.Children.Where(p=>!p.IsFolder).All(p=>LibraryEntry.IsImage(p.Path)),"Lazy file library lists supported RAW and ordinary images");
             window.Measure(new Size(1440,920));window.Arrange(new Rect(0,0,1440,920));window.UpdateLayout();
             var proxyPublished=false;var proxyAllowedExport=false;var openClock=Stopwatch.StartNew();double proxyMs=0;
             var statusText=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
@@ -208,6 +239,13 @@ static class Program
             window.OpenFile(raw);Check(Math.Abs(window.ValueSlider.Value-.625)<.001,"Photo switch restores its own exposure");
             window.ValueSlider.Value=.5;PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             Check(window.BackendLabel.Text.Contains("Direct3D 11"),"WPF reports actual GPU backend");
+            var filmDividers=window.FilmStrip.Children.OfType<Border>().Select(
+                System.Windows.Automation.AutomationProperties.GetAutomationId).ToArray();
+            Check(filmDividers.SequenceEqual(new[]{"film.group-divider.Kodak","film.group-divider.Other"}),
+                "Film picker has only two flat group boundaries, Fuji then Kodak then Other");
+            Check(window.FilmStrip.Children.OfType<Button>().Any(button=>
+                System.Windows.Automation.AutomationProperties.GetName(button)=="EKTAR 100 RawLab edition"),
+                "Grouped film picker retains the RawLab Ektar display name");
             foreach(var picker in new[] {
                 (Category:window.FilmCategory,Strip:window.FilmStrip,Scroller:window.FilmScroller,Left:window.FilmScrollLeft,Right:window.FilmScrollRight),
                 (Category:window.MasterRecipeCategory,Strip:window.RecipeStrip,Scroller:window.RecipeScroller,Left:window.RecipeScrollLeft,Right:window.RecipeScrollRight) })

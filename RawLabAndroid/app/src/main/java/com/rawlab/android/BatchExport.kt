@@ -3,10 +3,13 @@ package com.rawlab.android
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -15,12 +18,16 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.util.Properties
 import java.util.UUID
 
 class BatchGlobalFailure(message: String, cause: Throwable? = null) : IOException(message, cause)
 class BatchPublicationUncertain(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+private fun String?.toInputKind(): PhotoInputKind = runCatching {
+    PhotoInputKind.valueOf(this.orEmpty())
+}.getOrDefault(PhotoInputKind.RAW)
 
 internal fun asBatchOutputFailure(error: Throwable): Throwable =
     if (error is NativeProcessingException && error.status == NativeProcessingException.OUTPUT_IO_ERROR)
@@ -35,13 +42,27 @@ data class BatchSourceSnapshot(
     val settings: EditSettings,
     val displayName: String = sourceFile.name,
     val lookFile: File? = null,
-)
+    val inputKind: PhotoInputKind = PhotoInputKind.RAW,
+) {
+    /** Resolve camera-only state for a target without mutating the frozen source edit. */
+    fun settingsFor(targetKind: PhotoInputKind): EditSettings {
+        if (inputKind != PhotoInputKind.RASTER || targetKind != PhotoInputKind.RAW) return settings
+        return settings.copy(
+            exposureMode = EditSettings().exposureMode,
+            customWb = false,
+            temperature = 6500f,
+            tint = if (settings.recipeID == null) 0f else settings.tint,
+            lens = LensSettings(),
+        )
+    }
+}
 
 data class BatchTarget(
     val identity: PhotoIdentity,
     val sourceFile: File,
     val displayName: String,
     val sourceUri: String? = null,
+    val inputKind: PhotoInputKind = PhotoInputKind.RAW,
 ) {
     val id: String get() = identity.value
 }
@@ -119,7 +140,7 @@ object BatchRunner {
             commit()
             try {
                 val row = current.rows[index]
-                val payload = render(row.target, current.source.settings)
+                val payload = render(row.target, current.source.settingsFor(row.target.inputKind))
                 try {
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
                     commit()
@@ -175,6 +196,7 @@ class BatchJournal(private val directory: File) {
         properties.setProperty("source.path", job.source.sourceFile.path)
         properties.setProperty("source.name", job.source.displayName)
         properties.setProperty("source.look", job.source.lookFile?.path.orEmpty())
+        properties.setProperty("source.kind", job.source.inputKind.name)
         properties.setProperty("global.error", job.globalError.orEmpty())
         properties.setProperty("source.settings", SettingsCodec.encode(job.source.settings))
         properties.setProperty("journal.version", JOURNAL_VERSION.toString())
@@ -190,6 +212,7 @@ class BatchJournal(private val directory: File) {
             properties.setProperty(prefix + "path", row.target.sourceFile.path)
             properties.setProperty(prefix + "name", row.target.displayName)
             properties.setProperty(prefix + "uri", row.target.sourceUri.orEmpty())
+            properties.setProperty(prefix + "kind", row.target.inputKind.name)
             properties.setProperty(prefix + "status", row.status.name)
             properties.setProperty(prefix + "error", row.error.orEmpty())
             properties.setProperty(prefix + "output", row.outputName)
@@ -214,12 +237,14 @@ class BatchJournal(private val directory: File) {
         val properties = Properties().also { file.inputStream().use(it::load) }
         val source = BatchSourceSnapshot(PhotoIdentity(properties.getProperty("source.identity")),
             File(properties.getProperty("source.path")), SettingsCodec.decode(properties.getProperty("source.settings")),
-            properties.getProperty("source.name"), properties.getProperty("source.look").orEmpty().takeIf { it.isNotEmpty() }?.let(::File))
+            properties.getProperty("source.name"), properties.getProperty("source.look").orEmpty().takeIf { it.isNotEmpty() }?.let(::File),
+            properties.getProperty("source.kind").toInputKind())
         val count = properties.getProperty("row.count", "0").toInt()
         val targets = (0 until count).map { index ->
             val prefix = "row.${index}."
             BatchTarget(PhotoIdentity(properties.getProperty(prefix + "id")), File(properties.getProperty(prefix + "path")),
-                properties.getProperty(prefix + "name"), properties.getProperty(prefix + "uri").ifBlank { null })
+                properties.getProperty(prefix + "name"), properties.getProperty(prefix + "uri").ifBlank { null },
+                properties.getProperty(prefix + "kind").toInputKind())
         }
         val journalVersion = properties.getProperty("journal.version", "1").toIntOrNull() ?: 1
         if (journalVersion > JOURNAL_VERSION) throw IOException("Unsupported batch journal version: $journalVersion")
@@ -278,7 +303,26 @@ data class BatchExportState(
     val selectedCount: Int get() = job.rows.size
     val successCount: Int get() = job.rows.count { it.status == BatchRowStatus.SUCCESS }
     val failedCount: Int get() = job.rows.count { it.status == BatchRowStatus.FAILED }
+    val confirmationCount: Int get() = job.rows.count { it.status == BatchRowStatus.NEEDS_CONFIRMATION }
+    val completionFraction: Float get() = successCount.toFloat() / selectedCount.coerceAtLeast(1)
     val unfinishedCount: Int get() = job.rows.count { it.status !in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION) }
+}
+
+internal class BatchCancellation {
+    private val reason = AtomicReference<UsageBatchOutcome?>(null)
+
+    fun get(): Boolean = reason.get() != null
+    fun reset() { reason.set(null) }
+    fun request(interrupted: Boolean = false) {
+        reason.compareAndSet(null, if (interrupted) UsageBatchOutcome.Interrupted else UsageBatchOutcome.Cancelled)
+    }
+
+    fun outcome(job: BatchJob): UsageBatchOutcome = when {
+        job.globalError != null || job.rows.any { it.status == BatchRowStatus.NEEDS_CONFIRMATION } -> UsageBatchOutcome.Interrupted
+        job.rows.any { it.status == BatchRowStatus.CANCELLED } -> reason.get() ?: UsageBatchOutcome.Cancelled
+        job.rows.any { it.status == BatchRowStatus.FAILED } -> UsageBatchOutcome.Partial
+        else -> UsageBatchOutcome.Completed
+    }
 }
 
 class BatchExportModel(
@@ -286,11 +330,15 @@ class BatchExportModel(
     private val storage: PhotoStorage,
     source: BatchSourceSnapshot,
     initial: BatchJob? = null,
+    private val gpuMode: Int = NativeProcessor.AUTO,
+    private val processorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
+    private val onTerminal: (succeeded: Int, failed: Int, outcome: UsageBatchOutcome) -> Unit = { _, _, _ -> },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val resolver = context.contentResolver
-    private val cancelRequested = AtomicBoolean(false)
+    private val cancelRequested = BatchCancellation()
     private var running: Job? = null
+    private var discardCompletion: CompletableDeferred<Unit>? = null
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
     private val initialJob = initial ?: BatchJob(source, emptyList())
     private val mutable = MutableStateFlow(BatchExportState(initialJob, phase = BatchPhase.PREPARING,
@@ -313,7 +361,7 @@ class BatchExportModel(
 
     fun addUris(uris: List<Uri>) {
         if (uris.isEmpty() || mutable.value.phase != BatchPhase.SELECTING) return
-        cancelRequested.set(false)
+        cancelRequested.reset()
         mutable.value = mutable.value.copy(phase = BatchPhase.PREPARING)
         scope.launch {
             val failures = mutableListOf<String>()
@@ -347,6 +395,16 @@ class BatchExportModel(
         val current = mutable.value
         if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
         if (retry && current.unfinishedCount == 0) return
+        val successBefore = current.successCount
+        val attempted = mutableSetOf<String>()
+        var terminalReported = false
+        suspend fun reportTerminal(job: BatchJob, outcome: UsageBatchOutcome) {
+            if (terminalReported) return
+            terminalReported = true
+            val succeeded = (job.rows.count { it.status == BatchRowStatus.SUCCESS } - successBefore).coerceAtLeast(0)
+            val failed = job.rows.count { it.id in attempted && it.status == BatchRowStatus.FAILED }
+            withContext(Dispatchers.Main) { onTerminal(succeeded, failed, outcome) }
+        }
         if (!ExportSize.isValid(longEdge)) {
             mutable.value = current.copy(error = AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and))
             return
@@ -359,7 +417,7 @@ class BatchExportModel(
             outputLongEdge = longEdge,
             rows = current.job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) })
         mutable.value = current.copy(job = configured, phase = BatchPhase.PREPARING, outputFormat = format, destination = destination, error = null, stopping = false)
-        cancelRequested.set(false)
+        cancelRequested.reset()
         running = scope.launch(Dispatchers.IO) {
             try {
                 val materialized = configured
@@ -367,13 +425,15 @@ class BatchExportModel(
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)
-                val processor = NativeProcessor(lensDatabase = storage.lensDatabase())
+                val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val result = try {
                     val render: (BatchTarget, EditSettings) -> File = { target, settings ->
                         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
                         try {
-                            processor.export(target.sourceFile, materialized.source.lookFile, settings, temporary, format,
-                                materialized.outputLongEdge)
+                            val backend = processor.export(target.sourceFile, materialized.source.lookFile,
+                                settings, temporary, format, materialized.outputLongEdge,
+                                target.inputKind)
+                            android.util.Log.i("RawLabBatch", "job=${materialized.id} exportBackend=$backend")
                             temporary
                         } catch (error: Throwable) {
                             temporary.delete()
@@ -396,8 +456,10 @@ class BatchExportModel(
                     }
                     mutable.value = mutable.value.copy(phase = BatchPhase.RUNNING)
                     BatchRunner.run(materialized, render, { _, _, _ -> }, cancelRequested::get, journal,
-                        didUpdate = { mutable.value = mutable.value.copy(job = it) },
-                        dispose = { it.delete() }, publish = publish)
+                        didUpdate = {
+                            attempted.addAll(it.rows.filter { row -> row.status == BatchRowStatus.PROCESSING }.map { row -> row.id })
+                            mutable.value = mutable.value.copy(job = it)
+                        }, dispose = { it.delete() }, publish = publish)
                 } finally { processor.close() }
                 mutable.value = BatchExportState(result,
                     phase = when {
@@ -406,9 +468,11 @@ class BatchExportModel(
                         result.rows.any { it.status == BatchRowStatus.FAILED } -> BatchPhase.FAILED
                         else -> BatchPhase.COMPLETE
                     }, outputFormat = format, destination = destination, error = result.globalError)
+                reportTerminal(result, cancelRequested.outcome(result))
             } catch (error: Throwable) {
                 mutable.value = mutable.value.copy(phase = BatchPhase.FAILED,
                     error = error.message ?: error.javaClass.simpleName)
+                reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
     }
@@ -418,23 +482,26 @@ class BatchExportModel(
         startInternal(mutable.value.outputFormat, mutable.value.destination, mutable.value.job.outputLongEdge, retry = true)
     }
 
-    fun cancel() {
-        cancelRequested.set(true)
+    fun cancel(forBackground: Boolean = false) {
+        cancelRequested.request(interrupted = forBackground)
         if (mutable.value.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) mutable.value = mutable.value.copy(stopping = true)
     }
 
     private fun copyTarget(uri: Uri): BatchTarget {
         val identity = PhotoIdentity(uri.toString())
         val name = displayName(uri)
-        if (!RawFiles.accepts(name, resolver.getType(uri))) throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
+        val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
+            ?: throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
         val destination = inputFile(mutable.value.job.id, identity, name)
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
-                NativeProcessor(lensDatabase = storage.lensDatabase()).use { it.preview(destination, null, EditSettings(), 256, false) }
+                processorFactory(gpuMode, storage.lensDatabase()).use {
+                    it.preview(destination, null, EditSettings(), 256, false, inputKind)
+                }
             } catch (error: Exception) { destination.delete(); throw error }
         }
-        return BatchTarget(identity, destination, name, uri.toString())
+        return BatchTarget(identity, destination, name, uri.toString(), inputKind)
     }
 
     private fun displayName(uri: Uri): String = runCatching {
@@ -487,9 +554,15 @@ class BatchExportModel(
     }
 
     suspend fun preview(target: BatchTarget): android.graphics.Bitmap = withContext(Dispatchers.IO) {
-        val source = mutable.value.job.source
-        // 效果查看先限长再降噪，避免处理整张 RAW；最终导出仍保留完整质量。
-        NativeProcessor(lensDatabase = storage.lensDatabase()).use { it.preview(target.sourceFile, source.lookFile, source.settings, 1280, true).bitmap() }
+        // 取消对话框不能中断 JNI；所有预览仍由 model 持有，关闭后等它们退出再删输入。
+        val work = scope.async(Dispatchers.IO) {
+            val source = mutable.value.job.source
+            // 效果查看先限长再降噪，最终导出仍保留完整质量。
+            processorFactory(gpuMode, storage.lensDatabase()).use {
+                it.preview(target.sourceFile, source.lookFile, source.settingsFor(target.inputKind), 1280, true, target.inputKind)
+            }
+        }
+        try { work.await().bitmap() } finally { work.cancel() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {
@@ -520,18 +593,29 @@ class BatchExportModel(
 
     fun setDestination(destination: Uri?) { mutable.value = mutable.value.copy(destination = destination) }
 
-    fun discardDraftOrCompleted() {
-        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) BatchJournal(journalRoot).discard(initialJob.id)
+    fun discardDraftOrCompleted(): Deferred<Unit>? {
+        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
+        return discardCompletion
     }
 
     fun discard(): Boolean {
         if (mutable.value.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING)) return false
-        return try { BatchJournal(journalRoot).discard(initialJob.id); true }
+        return try { discardAfterWork(); true }
         catch (error: Exception) { mutable.value = mutable.value.copy(error = error.message); false }
     }
 
+    private fun discardAfterWork() {
+        if (discardCompletion != null) return
+        val completion = CompletableDeferred<Unit>().also { discardCompletion = it }
+        scope.coroutineContext[Job]!!.invokeOnCompletion {
+            try { BatchJournal(journalRoot).discard(initialJob.id); completion.complete(Unit) }
+            catch (error: Exception) { completion.completeExceptionally(error) }
+        }
+        close()
+    }
+
     override fun close() {
-        cancelRequested.set(true)
+        cancelRequested.request(interrupted = true)
         val job = running
         if (job?.isActive == true) job.invokeOnCompletion { scope.coroutineContext[Job]?.cancel() }
         else scope.coroutineContext[Job]?.cancel()
@@ -550,11 +634,12 @@ internal object SettingsCodec {
         settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
     ).plus(settings.exposureMode).plus(settings.hsl.packed().toList()).plus(settings.recipeID ?: "")
         .plus(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(settings.lens.encode().toByteArray(Charsets.UTF_8)))
+        .plus(settings.geometry.encode())
         .joinToString("|")
 
     fun decode(value: String): EditSettings {
         val fields = value.split('|')
-        require(fields.size in listOf(12, 16, 25, 50, 51, 52))
+        require(fields.size in listOf(12, 16, 25, 50, 51, 52, 53))
         return EditSettings(film = fields[0], strength = fields[1].toFloat(), exposure = fields[2].toFloat(),
             highlights = fields[3].toFloat(), shadows = fields[4].toFloat(), contrast = fields[5].toFloat(),
             toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = fields[8].toBoolean(),
@@ -568,7 +653,8 @@ internal object SettingsCodec {
             exposureMode = if (fields.size >= 50) parseChromaMode(fields[25]) else 0,
             hsl = if (fields.size >= 50) HslSettings(fields.subList(26, 50).map(String::toFloat)) else HslSettings(),
             recipeID = if (fields.size >= 51) fields[50].ifEmpty { null } else null,
-            lens = if (fields.size == 52) LensSettings.decode(String(java.util.Base64.getUrlDecoder().decode(fields[51]), Charsets.UTF_8)) else LensSettings(),
+            lens = if (fields.size >= 52) LensSettings.decode(String(java.util.Base64.getUrlDecoder().decode(fields[51]), Charsets.UTF_8)) else LensSettings(),
+            geometry = GeometrySettings.decode(fields.getOrNull(52)),
             effects = if (fields.size >= 25) PhotoEffectsSettings(
                 vignetteAmount = fields[17].toFloat(), vignetteMidpoint = fields[18].toFloat(),
                 vignetteRoundness = fields[19].toFloat(), vignetteFeather = fields[20].toFloat(),

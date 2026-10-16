@@ -7,25 +7,35 @@ OUT="$(mktemp -d /tmp/rawlab-ios-publication.XXXXXX)"
 BUNDLE_ID=com.rawlab.tests.batch-publication
 HARNESS="$OUT/BatchPublicationTests.app"
 trap 'xcrun simctl uninstall "$DEVICE" "$BUNDLE_ID" >/dev/null 2>&1 || true; rm -rf "$OUT"' EXIT
-mkdir -p "$HARNESS"
+mkdir -p "$HARNESS/Frameworks"
 cp "$APP/Info.plist" "$HARNESS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $BUNDLE_ID" \
     -c "Set CFBundleExecutable batch-publication" "$HARNESS/Info.plist"
+RAW_FIXTURE="${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DNG}"
+if [[ -f "$RAW_FIXTURE" ]]; then
+    cp "$RAW_FIXTURE" "$HARNESS/batch-raw-fixture.DNG"
+fi
+cp -R "$APP/Frameworks/sony2fuji.framework" "$HARNESS/Frameworks/"
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TARGET=arm64-apple-ios18.0-simulator
 xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
     -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
 SOURCES=()
 while IFS= read -r source; do SOURCES+=("$source"); done < <(
-    rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' | sort
+    rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort
 )
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -sdk "$SDK" -target "$TARGET" \
+    -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" \
     "$ROOT/RawLab/tests/BatchPublicationTests.swift" "$OUT/bridge.o" \
-    -F "$APP/Frameworks" -framework sony2fuji -lc++ \
-    -Xlinker -rpath -Xlinker "$APP/Frameworks" -o "$HARNESS/batch-publication"
+    -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
+    -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/batch-publication"
 codesign --force --sign - "$HARNESS" >/dev/null
 xcrun simctl install "$DEVICE" "$HARNESS"
 xcrun simctl privacy "$DEVICE" revoke photos "$BUNDLE_ID"
-xcrun simctl spawn "$DEVICE" "$HARNESS/batch-publication"
+if [[ -n "${RAWLAB_TEST_RAW:-}" ]]; then
+    SIMCTL_CHILD_RAWLAB_TEST_RAW="$RAWLAB_TEST_RAW" xcrun simctl spawn "$DEVICE" "$HARNESS/batch-publication"
+else
+    xcrun simctl spawn "$DEVICE" "$HARNESS/batch-publication"
+fi

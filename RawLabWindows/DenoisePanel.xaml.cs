@@ -1,33 +1,29 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
 
 namespace RawLab.Windows;
 
 public partial class DenoisePanel : UserControl
 {
     private DenoiseSettings value=new();
-    private bool syncing=true,dragging;
+    private bool syncing=true;
+    private readonly ParameterRow[] rows=[new(),new(),new()];
+    private static readonly string[] titles=["亮度降噪","色彩降噪","粗色斑抑制"];
     public event Action<DenoiseSettings,bool>? Changed;
     public DenoisePanel()
     {
         InitializeComponent();
-        foreach(var slider in new[]{LumaSlider,ChromaSlider,CoarseSlider})
-        {
-            slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>dragging=true));
-            slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{dragging=false;Changed?.Invoke(value,false);}));
-        }
+        for(var i=0;i<rows.Length;++i){var axis=i;Parameters.Children.Add(rows[i]);rows[i].Changed+=(number,dragging)=>Set(axis,number,dragging);}
         Refresh(value);
     }
     public void Refresh(DenoiseSettings settings)
     {
         syncing=true;value=settings;
         EnabledBox.IsChecked=value.Enabled;PresetBox.SelectedIndex=value.Preset;
-        LumaSlider.Value=value.Luma;ChromaSlider.Value=value.Chroma;CoarseSlider.Value=value.Coarse;
-        LumaText.Text=value.Luma.ToString("F0");ChromaText.Text=value.Chroma.ToString("F0");CoarseText.Text=value.Coarse.ToString("F0");
-        Parameters.IsEnabled=value.Enabled;syncing=false;
+        Summary.Text=$"{Loc.Text(titles[0])} {value.Luma:0.#} / {Loc.Text(titles[1])} {value.Chroma:0.#} / {Loc.Text(titles[2])} {value.Coarse:0.#}";
+        var numbers=new[]{value.Luma,value.Chroma,value.Coarse};var defaults=new[]{0.0,46,50};
+        for(var i=0;i<rows.Length;++i)rows[i].Refresh(Loc.Text(titles[i]),new(0,100),numbers[i],defaults[i],"%",value.Enabled);
+        syncing=false;
     }
     private void Publish(DenoiseSettings next,bool interactive=false)
     {
@@ -37,28 +33,9 @@ public partial class DenoisePanel : UserControl
     private void EnabledChanged(object sender,RoutedEventArgs e)=>Publish(value with {Enabled=EnabledBox.IsChecked==true});
     private void PresetChanged(object sender,SelectionChangedEventArgs e)
     {
-        if(!syncing && PresetBox.SelectedIndex<2)Publish(PresetBox.SelectedIndex==0 ? DenoiseSettings.Detail : DenoiseSettings.Clean);
+        if(!syncing && PresetBox.SelectedIndex is 0 or 1)Publish((PresetBox.SelectedIndex==0 ? DenoiseSettings.Detail : DenoiseSettings.Clean) with {Enabled=value.Enabled});
     }
     private void ResetClicked(object sender,RoutedEventArgs e)=>Publish(new());
-    private void Set(string name,double number,bool interactive=false)
-    {
-        number=Math.Clamp(Math.Round(number),0,100);
-        Publish(name switch {"Luma"=>value with {Luma=number},"Chroma"=>value with {Chroma=number},_=>value with {Coarse=number}},interactive);
-    }
-    private void SliderChanged(object sender,RoutedPropertyChangedEventArgs<double> e)
-    { if(!syncing && sender is Slider slider)Set((string)slider.Tag,e.NewValue,dragging); }
-    private void Commit(TextBox box)
-    {
-        if(double.TryParse(box.Text,NumberStyles.Float,CultureInfo.CurrentCulture,out var number) && double.IsFinite(number))
-            Set((string)box.Tag,number);
-        else Refresh(value);
-    }
-    private void ValueCommitted(object sender,KeyboardFocusChangedEventArgs e) { if(!syncing)Commit((TextBox)sender); }
-    private void ValueKeyDown(object sender,KeyEventArgs e)
-    {
-        if(e.Key==Key.Enter){Commit((TextBox)sender);e.Handled=true;}
-        if(e.Key==Key.Escape){Refresh(value);e.Handled=true;}
-    }
-    private void ResetValue(object sender,RoutedEventArgs e)
-    { var name=(string)((Button)sender).Tag;Set(name,name=="Luma" ? 0 : name=="Chroma" ? 46 : 50); }
+    private void Set(int axis,double number,bool interactive)=>Publish(axis switch {
+        0=>value with {Luma=number},1=>value with {Chroma=number},_=>value with {Coarse=number}},interactive);
 }

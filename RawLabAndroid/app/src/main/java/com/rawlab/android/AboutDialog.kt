@@ -20,7 +20,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun AboutDialog(state: UpdateState, onAutomatic: (Boolean) -> Unit, onCheck: () -> Unit, onClose: () -> Unit) {
+fun AboutDialog(
+    state: UpdateState,
+    onAutomatic: (Boolean) -> Unit,
+    onCheck: () -> Unit,
+    onClose: () -> Unit,
+    usageState: UsageAnalyticsState = UsageAnalyticsState(available = false, enabled = false),
+    onUsage: (Boolean) -> Unit = {},
+) {
     val context = LocalContext.current
     val automaticLabel = stringResource(R.string.auto_update_check)
     var linkFailed by remember { mutableStateOf(false) }
@@ -48,6 +55,34 @@ fun AboutDialog(state: UpdateState, onAutomatic: (Boolean) -> Unit, onCheck: () 
                     Switch(checked = state.automatic, onCheckedChange = onAutomatic,
                         modifier = Modifier.semantics { contentDescription = automaticLabel })
                 }
+                HorizontalDivider()
+                Text(stringResource(R.string.usage_privacy), style = MaterialTheme.typography.bodySmall)
+                val usageLabel = stringResource(R.string.usage_analytics)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(usageLabel, Modifier.weight(1f))
+                    Switch(
+                        checked = usageState.enabled,
+                        onCheckedChange = onUsage,
+                        enabled = usageState.available || usageState.enabled,
+                        modifier = Modifier.semantics { contentDescription = usageLabel },
+                    )
+                }
+                Text(when {
+                    usageState.issue == UsageIssue.STORAGE_FAILED -> stringResource(R.string.usage_storage_failed)
+                    usageState.issue == UsageIssue.STOP_FAILED -> stringResource(R.string.usage_stop_failed)
+                    usageState.issue == UsageIssue.CLEANUP_FAILED -> stringResource(R.string.usage_cleanup_failed)
+                    usageState.issue == UsageIssue.RESTART_REQUIRED -> stringResource(R.string.usage_restart_required)
+                    !usageState.available -> stringResource(R.string.usage_unavailable)
+                    usageState.issue == UsageIssue.START_FAILED -> stringResource(R.string.usage_start_failed)
+                    usageState.issue == UsageIssue.RECORD_FAILED -> stringResource(R.string.usage_record_failed)
+                    usageState.enabled -> stringResource(R.string.usage_enabled)
+                    else -> stringResource(R.string.usage_disabled)
+                }, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { open("https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html") }) {
+                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.usage_privacy_policy))
+                }
                 Text(when (state.status) {
                     UpdateStatus.UNCHECKED -> stringResource(R.string.update_unchecked)
                     UpdateStatus.CHECKING -> stringResource(R.string.update_checking)
@@ -67,7 +102,7 @@ fun AboutDialog(state: UpdateState, onAutomatic: (Boolean) -> Unit, onCheck: () 
 }
 
 @Composable
-private fun LanguageMenu() {
+internal fun LanguageMenu() {
     val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }

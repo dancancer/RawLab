@@ -1,3 +1,6 @@
+import java.security.MessageDigest
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +8,30 @@ plugins {
 }
 
 val repo = rootDir.parentFile
+val rawlabRumLocalProperty = providers.gradleProperty("rawlabRumLocal")
+val rawlabRumLocal = rawlabRumLocalProperty.map { value ->
+    value.toBooleanStrictOrNull() ?: throw GradleException("rawlabRumLocal must be true or false")
+}.orElse(false).get()
+val localRumAar = repo.resolve(".cache/shared/aliyun-rum/android/2.3.2/alibabacloud-android-rum-sdk-2.3.2.aar")
+val localRumAarSha256 = "681592df6727230a4ff7aef951636afb7d566fbcf486b15b25294b29154c5b1f"
+
+fun java.io.File.sha256(): String = MessageDigest.getInstance("SHA-256").digest(readBytes())
+    .joinToString("") { byte -> "%02x".format(byte) }
+
+fun invokesReleaseTask(task: String): Boolean {
+    val name = task.substringAfterLast(':')
+    return name.equals("assemble", ignoreCase = true) ||
+        name.equals("build", ignoreCase = true) ||
+        name.contains("release", ignoreCase = true)
+}
+
+if (rawlabRumLocal && gradle.startParameter.taskNames.any(::invokesReleaseTask)) {
+    throw GradleException("rawlabRumLocal is a Debug-only local validation flag; Release tasks are rejected")
+}
+if (rawlabRumLocal && (!localRumAar.isFile || localRumAar.sha256() != localRumAarSha256)) {
+    throw GradleException("Missing or unexpected Aliyun RUM 2.3.2 AAR at ${localRumAar.path}")
+}
+
 val testRaw = providers.gradleProperty("rawlabTestRaw").orElse(providers.environmentVariable("RAWLAB_TEST_RAW"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
@@ -20,6 +47,10 @@ val prepareAssets by tasks.registering(Sync::class) {
         exclude("*FLog2-709*", "*WDR*")
     }
     from(repo.resolve("RawLabMac/Resources/FilmIcons")) { into("artwork"); include("*.png") }
+    from(repo.resolve("Shared/BundledLooks")) { into("films"); include("*.cube") }
+    from(repo.resolve("Shared/BundledLooks/catalog.json")) { rename { "bundled-looks.json" } }
+    from(repo.resolve("Shared/BundledLooks/Artwork")) { into("artwork"); include("*.png") }
+    from(repo.resolve("Shared/BundledLooks/NOTICE.md")) { into("licenses"); rename { "Bundled-Looks.md" } }
     from(repo.resolve("Shared/master-recipes.json"))
     from(repo.resolve("RawLabMac/Resources/MasterRecipes")) { into("MasterRecipes"); include("*.cube") }
     from(repo.resolve("RawLabMac/Resources/MasterRecipeIcons")) { into("MasterRecipeIcons"); include("*.png") }
@@ -38,6 +69,7 @@ val prepareAssets by tasks.registering(Sync::class) {
     }
     from("src/main/notices") { into("licenses") }
     from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }
+    from(repo.resolve("LICENSE-ALIYUN-RUM-EXCEPTION")) { into("licenses"); rename { "RawLab-Aliyun-RUM-Exception.txt" } }
     from(repo.resolve("docs/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
     from(androidComponents.sdkComponents.ndkDirectory) {
         include("toolchains/llvm/prebuilt/*/sysroot/NOTICE")
@@ -45,15 +77,6 @@ val prepareAssets by tasks.registering(Sync::class) {
         includeEmptyDirs = false
     }
 }
-val generatedResources = layout.buildDirectory.dir("generated/rawlabResources")
-val prepareIcon by tasks.registering(Sync::class) {
-    into(generatedResources)
-    from(repo.resolve("RawLabMac/Resources/AppIcon.png")) {
-        into("drawable-nodpi")
-        rename { "rawlab_icon.png" }
-    }
-}
-
 android {
     namespace = "com.rawlab.android"
     compileSdk = 35
@@ -62,13 +85,21 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.7.0"
+        versionCode = 12
+        versionName = "0.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
     }
     buildFeatures { compose = true }
+    if (rawlabRumLocal) {
+        sourceSets["main"].java.exclude("**/DefaultUsageAnalyticsRegistry.kt")
+        sourceSets["main"].java.exclude("**/DefaultRumLocalConfigurationProvider.kt")
+        sourceSets["debug"].java.srcDir("src/local/java")
+        sourceSets["debug"].assets.srcDir("src/local/assets")
+        sourceSets["debug"].manifest.srcFile("src/local/AndroidManifest.xml")
+        sourceSets["androidTest"].java.srcDir("src/localAndroidTest/java")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -76,19 +107,29 @@ android {
     kotlinOptions { jvmTarget = "17" }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     sourceSets["main"].assets.srcDir(generatedAssets)
-    sourceSets["main"].res.srcDir(generatedResources)
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    if (rawlabRumLocal) buildTypes.getByName("debug").applicationIdSuffix = ".rumlocal"
 }
 
-tasks.named("preBuild").configure { dependsOn(prepareAssets, prepareIcon) }
+if (rawlabRumLocal) {
+    tasks.withType<KotlinCompile>().configureEach {
+        if (name == "compileDebugKotlin") {
+            exclude("**/DefaultUsageAnalyticsRegistry.kt")
+            exclude("**/DefaultRumLocalConfigurationProvider.kt")
+        }
+    }
+}
+
+tasks.named("preBuild").configure { dependsOn(prepareAssets) }
 tasks.matching {
     it.name.endsWith("AndroidTestAssets") || it.name.endsWith("AndroidTestLintModel") ||
         (it.name.startsWith("lintAnalyze") && it.name.endsWith("AndroidTest"))
 }.configureEach { dependsOn(prepareTestAssets) }
 
 dependencies {
+    if (rawlabRumLocal) add("debugImplementation", files(localRumAar))
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.exifinterface:exifinterface:1.4.2")

@@ -57,13 +57,67 @@ same uncompressed pixels, including a Stage1-only required MapTable, a required
 Stage2 GainMap with internal ActiveArea, orientation, WB reload and decoder
 reuse. The SDK allocation-failure hook verifies the C ABI memory status.
 
+### Display-Referred Raster Input
+
+The additive `SONY2FUJI_INPUT_DISPLAY_BUFFER=2` consumes tightly packed opaque
+RGB8/RGBA8 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
+their rendering are unchanged. The shared macOS/iOS ImageIO adapter applies EXIF orientation
+once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
+single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF. Transparency, higher bit depth,
+floating-point/HDR, multi-frame/page and CMYK inputs are rejected, not flattened
+or silently quantized. Untagged grayscale/indexed images are not inferred to use
+a particular gray transfer function and are rejected.
+
+Display input is inverse-sRGB-decoded once, uses the existing linear exposure,
+wavelet, look, tone/HSL, chroma/detail/effects and geometry stages, and re-encodes
+sRGB instead of adding the RAW scene sigmoid. With defaults its RGB8 pixels
+round-trip exactly. It receives no RAW exposure baseline, as-shot WB, FBDD or
+lens calibration. The native clients disable camera-specific controls; mixed
+batch snapshots resolve those controls independently for each input. Agent v4
+uses explicit `input.type=raster`, `exposure.mode=sensor` and WB `none` and rejects
+explicit RAW-only edits. A RAW film/DCP look applied to already rendered pixels
+is a creative effect, not recovery of sensor latitude or a calibrated camera match.
+
+This display-referred path reuses the reference CPU stages. GPU Auto explicitly
+falls back to CPU and Force returns unsupported until the scene-view GPU
+shaders have a matching display-input mode. Rendered DNG output preserves the
+result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
+The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
+and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
+Mac results; HEIF and BigTIFF are not enabled. Unknown non-sRGB PNG color metadata
+without a supported ICC profile is rejected instead of guessed. Android uses a
+separate API-26-compatible platform decoder for validated JPEG/PNG files and
+passes their oriented opaque display-sRGB pixels through the same explicit
+display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
+entry point remains unsupported rather than pretending to decode those files.
+The native clients resolve camera-only settings separately for every mixed-batch
+target and retain the original frozen recipe. A raster source's dormant camera
+WB, lens and exposure-baseline values do not become active on a RAW target:
+the target uses its own as-shot WB and the client's default RAW exposure mode.
+An active master recipe's tint remains a relative style offset against that
+target WB, not a source-camera WB value to copy or discard.
+Mobile Agent interfaces remain out
+of scope. Desktop evidence and remaining ICC/physical-device limits are recorded
+in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
+`../../docs/verification-raster-input-all-platforms-2026-10-16.md`.
+
 ## Rendering Order
 
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
-5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, and final resizing.
+5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, optional geometry, and final resizing.
+
+Geometry uses the oriented, lens-processed full source: clockwise quarter turns,
+flips in that canvas, centered horizontal/vertical perspective, centered inscribed
+straightening, then normalized crop. Perspective and straightening share one
+bilinear sampling pass; zero perspective preserves basic geometry exactly.
+It bypasses interactive proxies and early resizing while active. Integer geometry
+copies pixels; straightening samples once with bilinear edge extension, without
+clipping linear values. Identity preserves existing rendering. The common CPU
+geometry stage also finishes GPU Auto output; Force with active geometry returns
+unsupported. Units, canvas rounding and API lifecycle are in [Edit JSON](edit-json.md#geometry-in-recipe-v2).
 6. Write RGB/RGBA preview, JPEG, actual 16-bit PNG, or rendered DNG. PNG includes an sRGB chunk. Photo outputs use an sRGB display interpretation; the film-simulation names alone do not establish camera-to-camera colorimetric equivalence or a measured display EOTF. JPEG consumers must use this sRGB interpretation.
 
 ### Rendered DNG

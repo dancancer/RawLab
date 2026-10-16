@@ -9,10 +9,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.7.0</Version>
-    <FileVersion>0.7.0.11</FileVersion>
-    <InformationalVersion>0.7.0+build.11</InformationalVersion>
+    <Version>0.8.0</Version>
+    <FileVersion>0.8.0.12</FileVersion>
+    <InformationalVersion>0.8.0+build.12</InformationalVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RawLabRumLocal)' == 'true' and '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);RAWLAB_RUM_LOCAL</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
@@ -20,10 +23,33 @@
     <EmbeddedResource Include="Resources/Localization/*.json" />
     <Content Include="../lutools/flog-2-new/*.cube" Exclude="../lutools/flog-2-new/*FLog2-709*;../lutools/flog-2-new/*WDR*" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/FilmIcons/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/*.cube" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/catalog.json" Link="bundled-looks.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/Artwork/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/NOTICE.md" Link="Licenses/Bundled-Looks.md" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="../RawLabMac/Resources/AppIcon.png" Link="AppIcon.png" />
     <Content Include="../Shared/master-recipes.json" Link="master-recipes.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../lutools/third_party/lensfun/version_1/*.xml" Link="Lensfun/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/MasterRecipes/*.cube" Link="MasterRecipes/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/MasterRecipeIcons/*.png" Link="MasterRecipeIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup Condition="'$(RawLabRumLocal)' == 'true' and '$(Configuration)' != 'Release'">
+    <Content Include="$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll"
+             Link="alibabacloud_rum.dll" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+  <Target Name="ValidateRawLabRumLocalBuild" BeforeTargets="PrepareForBuild"
+          Condition="'$(RawLabRumLocal)' == 'true'">
+    <Error Condition="'$(Configuration)' == 'Release'"
+           Text="RawLabRumLocal=true is restricted to non-Release builds." />
+    <Error Condition="'$(RawLabRumSdkRoot)' == ''"
+           Text="RawLabRumLocal=true requires RawLabRumSdkRoot pointing to the extracted Windows 0.4.4 SDK." />
+    <Error Condition="'$(RawLabRumSdkRoot)' != '' and !Exists('$(RawLabRumSdkRoot)/include/alibabacloud_rum.h')"
+           Text="RawLabRumSdkRoot must contain the official alibabacloud_rum.h header." />
+    <Error Condition="'$(Configuration)' != 'Release' and !Exists('$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll')"
+           Text="The Windows 0.4.4 Release SDK DLL is missing under RawLabRumSdkRoot." />
+  </Target>
+  <Target Name="RemoveRawLabRumLocalBinary" BeforeTargets="PrepareForBuild"
+          Condition="'$(RawLabRumLocal)' != 'true'">
+    <Delete Files="$(TargetDir)alibabacloud_rum.dll" />
+  </Target>
 </Project>

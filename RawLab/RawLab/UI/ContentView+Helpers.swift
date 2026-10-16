@@ -73,7 +73,7 @@ extension ContentView {
         }
     }
 
-    var editingLocked: Bool { isImporting || isSaving || batchModel?.isRunning == true }
+    var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
     var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || editingLocked }
     var selectedFilmName: String {
         settings.masterRecipe?.name ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
@@ -94,13 +94,35 @@ extension ContentView {
     }
 
     func adjustmentProgress(_ adjustment: AdjustmentKind) -> Double {
+        if viewModel.sourceKind == .raster && (adjustment == .temperature || adjustment == .tint) {
+            return 0
+        }
+        if adjustment == .temperature {
+            if viewModel.sourceKind == .raw, settings.whiteBalanceMode == .custom,
+               let camera = viewModel.rawWhiteBalance {
+                let temperatureOrigin = RawSettings.reciprocalSliderValue(for: camera.temperature)
+                let temperaturePosition = RawSettings.reciprocalSliderValue(for: settings.temperature)
+                let temperatureDelta = temperaturePosition - temperatureOrigin
+                let temperatureDistance = temperatureDelta < 0 ? temperatureOrigin : 1 - temperatureOrigin
+                let temperatureProgress = temperatureDistance > 0
+                    ? min(1, max(-1, temperatureDelta / temperatureDistance)) : 0
+                let tintOrigin = (camera.tint + 150) / 300
+                let tintPosition = (settings.tint + 150) / 300
+                let tintDelta = tintPosition - tintOrigin
+                let tintDistance = tintDelta < 0 ? tintOrigin : 1 - tintOrigin
+                let tintProgress = tintDistance > 0 ? min(1, max(-1, tintDelta / tintDistance)) : 0
+                return abs(temperatureProgress) >= abs(tintProgress) ? temperatureProgress : tintProgress
+            }
+            if viewModel.sourceKind == .raw {
+                return settings.masterRecipeID == nil ? 0 : settings.tint / 150
+            }
+            return adjustment.progress(in: settings)
+        }
         if adjustment == .tint && settings.masterRecipeID != nil { return settings.tint / 150 }
-        if viewModel.sourceKind == .raw,
-           adjustment == .temperature || adjustment == .tint {
+        if viewModel.sourceKind == .raw, adjustment == .tint {
             guard settings.whiteBalanceMode == .custom, let camera = viewModel.rawWhiteBalance else { return 0 }
-            let isTemperature = adjustment == .temperature
-            let origin = isTemperature ? RawSettings.reciprocalSliderValue(for: camera.temperature) : (camera.tint + 150) / 300
-            let position = isTemperature ? RawSettings.reciprocalSliderValue(for: settings.temperature) : (settings.tint + 150) / 300
+            let origin = (camera.tint + 150) / 300
+            let position = (settings.tint + 150) / 300
             let delta = position - origin
             let distance = delta < 0 ? origin : 1 - origin
             return distance > 0 ? min(1, max(-1, delta / distance)) : 0
@@ -114,6 +136,7 @@ extension ContentView {
     }
 
     func exportJPEG(longEdge: Int? = nil) {
+        guard !isEditorDraftActive else { return }
         isSaving = true
         viewModel.exportJPEG(settings: settings, longEdge: longEdge) { result in
             switch result {
@@ -127,6 +150,7 @@ extension ContentView {
     }
 
     func exportDNG(longEdge: Int? = nil) {
+        guard !isEditorDraftActive else { return }
         isSaving = true
         viewModel.exportDNG(settings: settings, longEdge: longEdge) { result in
             switch result {
@@ -183,6 +207,27 @@ extension ContentView {
         applySettingsChange(updated)
     }
 
+    func resetTool(_ adjustment: AdjustmentKind) {
+        if adjustment == .temperature || adjustment == .tint {
+            resetWhiteBalance()
+        } else {
+            reset(adjustment)
+        }
+    }
+
+    func resetSelectedAdjustment() {
+        guard let selectedAdjustment else { return }
+        resetTool(selectedAdjustment)
+    }
+
+    func resetWhiteBalance() {
+        var updated = settings
+        AdjustmentKind.resetWhiteBalance(in: &updated,
+                                          cameraTemperature: viewModel.rawWhiteBalance?.temperature,
+                                          cameraTint: viewModel.rawWhiteBalance?.tint)
+        applySettingsChange(updated)
+    }
+
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
         var updated = settings
         if mode == .custom,
@@ -200,6 +245,7 @@ extension ContentView {
     }
 
     var displayedTemperature: Double {
+        guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
         if viewModel.sourceKind == .raw,
            settings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
@@ -209,6 +255,7 @@ extension ContentView {
     }
 
     var displayedTint: Double {
+        guard viewModel.sourceKind != .raster else { return 0 }
         if settings.masterRecipeID != nil { return settings.tint }
         if viewModel.sourceKind == .raw,
            settings.whiteBalanceMode == .camera,
@@ -224,7 +271,7 @@ extension ContentView {
             set: { value in
                 var updated = manualWhiteBalanceSettings
                 updated.temperature = RawSettings.temperature(forReciprocalSliderValue: value)
-                updated.whiteBalanceMode = .custom
+                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -238,21 +285,29 @@ extension ContentView {
                 var updated = manualWhiteBalanceSettings
                 updated.temperature = min(max(value.rounded(), RawSettings.temperatureRange.lowerBound),
                                           RawSettings.temperatureRange.upperBound)
-                updated.whiteBalanceMode = .custom
+                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
     }
 
     func setSliderEditing(_ editing: Bool) {
+        guard !editorBusy else {
+            isAdjustingSlider = false
+            cancelRulerFocus()
+            return
+        }
+        let wasEditing = isAdjustingSlider
         isAdjustingSlider = editing
+        updateRulerFocus(editing: editing, wasEditing: wasEditing)
         if !editing {
-            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
+            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
         }
     }
 
     func photoImportButton(isEnabled: Bool) -> some View {
-        PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
+        PhotosPicker(selection: $selectedPhotoItem, matching: .images,
+                     preferredItemEncoding: .current, photoLibrary: .shared()) {
             Image(systemName: "photo.badge.plus")
         }
         .accessibilityLabel(L10n.text("导入照片"))
@@ -261,40 +316,119 @@ extension ContentView {
         .disabled(!isEnabled)
     }
 
-    func importFromPhotoItem(_ item: PhotosPickerItem) async {
-        guard viewModel.saveCurrentSettings(settings) else { selectedPhotoItem = nil; return }
+    func fileImportButton(isEnabled: Bool) -> some View {
+        Button { showingFileImporter = true } label: {
+            Image(systemName: "folder.badge.plus")
+        }
+        .accessibilityLabel(L10n.text("从文件导入"))
+        .help(L10n.text("从文件导入"))
+        .accessibilityIdentifier("editor.import.file")
+        .disabled(!isEnabled)
+    }
+
+    @MainActor
+    func importFromPhotoItem(_ item: PhotosPickerItem, requestID: UUID) async {
+        guard photoImportRequestID == requestID, !Task.isCancelled else { return }
+        guard viewModel.saveCurrentSettings(settings) else {
+            selectedPhotoItem = nil
+            photoImportTask = nil
+            photoImportRequestID = nil
+            return
+        }
         isImporting = true
         showingBefore = false
         do {
             let source = try await loadPhotoSource(from: item)
+            guard photoImportRequestID == requestID, !Task.isCancelled else {
+                PhotoImportFile.release(source.url)
+                return
+            }
             let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
                 ?? (try? PhotoIdentity.fallback(for: source.url))
-            await MainActor.run {
-                viewModel.importImage(from: source, identity: identity, settings: .default) { restored in
+            viewModel.importImage(from: source, identity: identity, settings: .default,
+                onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
+                guard photoImportRequestID == requestID else { return }
+                settings = restored
+            }
+            selectedPhotoItem = nil
+            photoImportTask = nil
+        } catch {
+            guard photoImportRequestID == requestID else { return }
+            photoImportTask = nil
+            photoImportRequestID = nil
+            isImporting = false
+            selectedPhotoItem = nil
+            if !Task.isCancelled && !(error is CancellationError) {
+                viewModel.statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func cancelPhotoImport() {
+        photoImportRequestID = nil
+        photoImportTask?.cancel()
+        photoImportTask = nil
+        selectedPhotoItem = nil
+        viewModel.cancelImageImport()
+        isImporting = false
+    }
+
+    @MainActor
+    func importFromFile(_ result: Result<[URL], Error>) {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        guard let url = try? result.get().first else {
+            if case .failure(let error) = result, !(error is CancellationError) {
+                viewModel.statusMessage = error.localizedDescription
+            }
+            return
+        }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        photoImportTask?.cancel()
+        let requestID = UUID()
+        photoImportRequestID = requestID
+        viewModel.cancelImageImport()
+        isImporting = true
+        showingBefore = false
+        photoImportTask = Task {
+            let prepared: Result<(PhotoImportSource, PhotoIdentity?), Error> = await Task.detached(priority: .userInitiated) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let source = try PhotoImportFile.retainSource(url)
+                    return .success((source, try? PhotoIdentity.fallback(for: source.url)))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            guard !Task.isCancelled, photoImportRequestID == requestID else {
+                if case .success(let value) = prepared { PhotoImportFile.release(value.0.url) }
+                return
+            }
+            switch prepared {
+            case .success(let value):
+                photoImportTask = nil
+                viewModel.importImage(from: value.0, identity: value.1, settings: .default,
+                                      onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
                 }
-                selectedPhotoItem = nil
-            }
-        } catch {
-            await MainActor.run {
+            case .failure(let error):
+                photoImportTask = nil
+                photoImportRequestID = nil
                 isImporting = false
-                viewModel.statusMessage = error.localizedDescription
-                selectedPhotoItem = nil
+                if !Task.isCancelled { viewModel.statusMessage = error.localizedDescription }
             }
         }
     }
 
     func openBatchExport() {
+        guard !isEditorDraftActive else { return }
         if batchModel != nil { showingBatchExport = true; return }
         guard let source = viewModel.currentBatchSource(settings: settings) else {
-            viewModel.statusMessage = L10n.text("请先导入一张 RAW 照片。")
-            return
-        }
-        guard source.sourceKind == .raw else {
-            viewModel.statusMessage = L10n.text("批量导出目前仅支持 RAW 照片。")
+            viewModel.statusMessage = L10n.text("请先导入一张照片。")
             return
         }
         batchModel = BatchExportModel(source: source, editor: viewModel)
+        batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
         batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false }
         showingBatchExport = true
     }
@@ -304,13 +438,14 @@ extension ContentView {
             let journal = try BatchJournalStore.appStore()
             if let job = try journal.pendingJobs().first {
                 batchModel = BatchExportModel(job: job, journalStore: journal)
+                batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
                 batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
             }
         } catch { viewModel.statusMessage = L10n.format("无法恢复批量任务：%@", String(describing: error.localizedDescription)) }
     }
 
     func loadPhotoSource(from item: PhotosPickerItem) async throws -> PhotoImportSource {
-        try await PhotoImportFile.load(from: item)
+        try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }
     }
 
     func saveToPhotoLibrary(_ data: Data) {
@@ -332,6 +467,7 @@ extension ContentView {
                     if let error = error {
                         viewModel.statusMessage = error.localizedDescription
                     } else if success {
+                        UsageAnalytics.shared.record(.exportCompleted)
                         viewModel.statusMessage = L10n.text("已保存到照片。")
                     } else {
                         viewModel.statusMessage = L10n.text("保存失败，请重试。")

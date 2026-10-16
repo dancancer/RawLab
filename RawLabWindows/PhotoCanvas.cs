@@ -30,8 +30,17 @@ public sealed class Viewport
         return (int)Math.Min(edge,Math.Max(64,Math.Ceiling(edge*fit*Zoom/64)*64));
     }
 }
-public sealed class PhotoCanvas : FrameworkElement
+public sealed partial class PhotoCanvas : FrameworkElement
 {
+    private static readonly DependencyProperty CanvasBrushProperty=DependencyProperty.Register("CanvasBrush",typeof(Brush),typeof(PhotoCanvas),new FrameworkPropertyMetadata(new SolidColorBrush(Color.FromRgb(28,28,30)),FrameworkPropertyMetadataOptions.AffectsRender));
+    private static DependencyProperty OverlayBrush(string name,Brush fallback)=>DependencyProperty.Register(name,typeof(Brush),typeof(PhotoCanvas),
+        new FrameworkPropertyMetadata(fallback,(owner,_)=>{var canvas=(PhotoCanvas)owner;canvas.UpdateComparison();canvas.DrawCrop();}));
+    private static readonly DependencyProperty OverlayInkProperty=OverlayBrush("OverlayInk",Brushes.White);
+    private static readonly DependencyProperty OverlayPaperProperty=OverlayBrush("OverlayPaper",new SolidColorBrush(Color.FromRgb(36,39,45)));
+    private static readonly DependencyProperty OverlayAccentProperty=OverlayBrush("OverlayAccent",Brushes.Gold);
+    private static readonly DependencyProperty OverlayGridWidthProperty=DependencyProperty.Register("OverlayGridWidth",typeof(double),typeof(PhotoCanvas),new FrameworkPropertyMetadata(.6,(owner,_)=>((PhotoCanvas)owner).DrawCrop()));
+    private Brush OverlayInk=>(Brush)GetValue(OverlayInkProperty);
+    private Brush OverlayPaper=>(Brush)GetValue(OverlayPaperProperty);
     private BitmapSource? image,mask,comparison,comparisonMask;
     private Viewport? viewport;
     private Point? drag;
@@ -55,14 +64,18 @@ public sealed class PhotoCanvas : FrameworkElement
     public void SetComparison(BitmapSource? source,BitmapSource? clipping) { comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
     public PhotoCanvas()
     {
-        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay};
+        SetResourceReference(CanvasBrushProperty,"CanvasSurface");
+        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay,cropOverlay};
+        SetResourceReference(OverlayInkProperty,"OverlayInk");SetResourceReference(OverlayPaperProperty,"OverlayPaper");SetResourceReference(OverlayAccentProperty,"OverlayAccent");
+        SetResourceReference(OverlayGridWidthProperty,"OverlayGridWidth");
         referenceLayer.Children.Add(referenceDrawing);editedLayer.Children.Add(editedDrawing);
         referenceDrawing.Transform=editedDrawing.Transform=imageTransform;
         RenderOptions.SetBitmapScalingMode(this,BitmapScalingMode.LowQuality);
         ClipToBounds=true; Focusable=true; Cursor=Cursors.Hand;
-        MouseWheel+=(_,e)=> { Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=true; };
+        MouseWheel+=(_,e)=> { if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=image!=null; };
         MouseLeftButtonDown+=(_,e)=> {
             Focus();var point=e.GetPosition(this);
+            if(HandleCropDown(point)){e.Handled=true;return;}
             draggingDivider=ComparisonEnabled && Math.Abs(point.X-ActualWidth*Divider)<=18;
             if(e.ClickCount==2 && !draggingDivider && image!=null)
             {
@@ -73,13 +86,14 @@ public sealed class PhotoCanvas : FrameworkElement
         };
         MouseMove+=(_,e)=> {
             var next=e.GetPosition(this);
+            if(HandleCropMove(next)){e.Handled=true;return;}
             Cursor=ComparisonEnabled && (draggingDivider || Math.Abs(next.X-ActualWidth*Divider)<=18) ? Cursors.SizeWE : Cursors.Hand;
             if(draggingDivider){if(ActualWidth>0)Divider=next.X/ActualWidth;return;}
             if(drag is not {} point)return;Viewport?.Move(next-point);drag=next;
         };
-        MouseLeftButtonUp+=(_,_)=> { drag=null;draggingDivider=false;ReleaseMouseCapture(); };
-        LostMouseCapture+=(_,_)=>{drag=null;draggingDivider=false;};
-        KeyDown+=(_,e)=> { if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        MouseLeftButtonUp+=(_,_)=> { EndCropDrag();drag=null;draggingDivider=false;ReleaseMouseCapture(); };
+        LostMouseCapture+=(_,_)=>{EndCropDrag();drag=null;draggingDivider=false;};
+        KeyDown+=(_,e)=> { if(HandleCropKey(e)){e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{UpdateTransform();UpdateComparison();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
@@ -88,7 +102,7 @@ public sealed class PhotoCanvas : FrameworkElement
     protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi) {base.OnDpiChanged(oldDpi,newDpi);UpdateTransform();}
     protected override void OnRender(DrawingContext dc)
     {
-        dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(20,21,24)),null,new Rect(RenderSize));
+        dc.DrawRectangle((Brush)GetValue(CanvasBrushProperty),null,new Rect(RenderSize));
     }
     private void DrawImages()
     {
@@ -119,6 +133,7 @@ public sealed class PhotoCanvas : FrameworkElement
         }
         var edge=Viewport.PreviewLongEdge(RenderSize,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
+        DrawCrop();
     }
     private void UpdateComparison()
     {
@@ -130,13 +145,13 @@ public sealed class PhotoCanvas : FrameworkElement
         if(wipe)
         {
             var x=ActualWidth*Divider;var y=ActualHeight/2;
-            var pen=new Pen(Brushes.White,1.5);
-            dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(120,0,0,0)),4),new Point(x,0),new Point(x,ActualHeight));
+            var pen=new Pen(OverlayInk,1.5);
+            dc.DrawLine(new Pen(OverlayPaper,4),new Point(x,0),new Point(x,ActualHeight));
             dc.DrawLine(pen,new Point(x,0),new Point(x,ActualHeight));
-            dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(36,39,45)),pen,new Point(x,y),16,16);
+            dc.DrawEllipse(OverlayPaper,pen,new Point(x,y),16,16);
             dc.DrawLine(pen,new Point(x-4,y-4),new Point(x-8,y));dc.DrawLine(pen,new Point(x-8,y),new Point(x-4,y+4));
             dc.DrawLine(pen,new Point(x+4,y-4),new Point(x+8,y));dc.DrawLine(pen,new Point(x+8,y),new Point(x+4,y+4));
-            if(IsKeyboardFocused)dc.DrawEllipse(null,new Pen(new SolidColorBrush(Color.FromRgb(242,210,89)),2),new Point(x,y),19,19);
+            if(IsKeyboardFocused){dc.DrawEllipse(null,new Pen(OverlayPaper,4),new Point(x,y),19,19);dc.DrawEllipse(null,new Pen((Brush)GetValue(OverlayAccentProperty),2),new Point(x,y),19,19);}
         }
     }
     protected override AutomationPeer OnCreateAutomationPeer()=>new ComparisonPeer(this);
@@ -157,6 +172,8 @@ public sealed class PhotoCanvas : FrameworkElement
 
 public sealed class HistogramView : FrameworkElement
 {
+    private static readonly DependencyProperty OutlineBrushProperty=DependencyProperty.Register("OutlineBrush",typeof(Brush),typeof(HistogramView),new FrameworkPropertyMetadata(Brushes.Transparent,FrameworkPropertyMetadataOptions.AffectsRender));
+    public HistogramView()=>SetResourceReference(OutlineBrushProperty,"HistogramOutline");
     public uint[]? Bins { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
@@ -175,17 +192,29 @@ public sealed class HistogramView : FrameworkElement
                 dc.DrawRectangle(new SolidColorBrush(color),null,new Rect(x*ActualWidth/256,top,ActualWidth/256+.2,bottom-top));
             }
         }
+        var outline=(Brush)GetValue(OutlineBrushProperty);
+        if(outline is SolidColorBrush { Color.A:0 })return;
+        var pen=new Pen(outline,2);
+        for(var x=0;x<256;x++)
+        {
+            var envelope=ActualHeight*(1-Math.Max(Bins[x],Math.Max(Bins[256+x],Bins[512+x]))/(double)peak);
+            dc.DrawLine(pen,new Point(x*ActualWidth/256,envelope),new Point((x+1)*ActualWidth/256,envelope));
+        }
     }
 }
 
 public sealed class AdjustmentRing : FrameworkElement
 {
+    private static readonly DependencyProperty TrackBrushProperty=DependencyProperty.Register("TrackBrush",typeof(Brush),typeof(AdjustmentRing),new FrameworkPropertyMetadata(Brushes.Gray,FrameworkPropertyMetadataOptions.AffectsRender));
+    private static readonly DependencyProperty ProgressBrushProperty=DependencyProperty.Register("ProgressBrush",typeof(Brush),typeof(AdjustmentRing),new FrameworkPropertyMetadata(Brushes.Gold,FrameworkPropertyMetadataOptions.AffectsRender));
+    public AdjustmentRing(){SetResourceReference(TrackBrushProperty,"Outline");SetResourceReference(ProgressBrushProperty,"Indicator");}
     public double Progress { get; set; }
     public bool Selected { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
         var center=new Point(ActualWidth/2,ActualHeight/2); var radius=Math.Min(ActualWidth,ActualHeight)/2-3;
-        dc.DrawEllipse(Selected ? new SolidColorBrush(Color.FromArgb(24,242,210,89)) : null,new Pen(new SolidColorBrush(Selected ? Color.FromRgb(242,210,89) : Color.FromRgb(91,95,104)),1),center,radius,radius);
+        var active=Selected ? System.Windows.Documents.TextElement.GetForeground(this) : (Brush)GetValue(ProgressBrushProperty);
+        dc.DrawEllipse(null,new Pen(Selected ? active : (Brush)GetValue(TrackBrushProperty),1),center,radius,radius);
         if(Math.Abs(Progress)<.001)return;
         var geometry=new StreamGeometry();
         using(var context=geometry.Open())
@@ -194,6 +223,6 @@ public sealed class AdjustmentRing : FrameworkElement
             var angle=Math.Clamp(Progress,-.99999,.99999)*Math.PI*2;
             context.ArcTo(new Point(center.X+radius*Math.Sin(angle),center.Y-radius*Math.Cos(angle)),new Size(radius,radius),0,Math.Abs(Progress)>.5,Progress>0 ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,true,false);
         }
-        dc.DrawGeometry(null,new Pen(new SolidColorBrush(Color.FromRgb(242,210,89)),3),geometry);
+        dc.DrawGeometry(null,new Pen(active,3),geometry);
     }
 }

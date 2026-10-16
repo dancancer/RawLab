@@ -3,7 +3,44 @@ import Foundation
 import ImageIO
 import UIKit
 
+// =========================================================================
+// Immutable as-shot metadata, independent of the current render settings.
+// =========================================================================
+final class RecipeWhiteBalanceCache {
+    private struct Key: Equatable {
+        let url: URL
+        let size: Int
+        let modified: Date
+    }
+
+    private let lock = NSLock()
+    private var key: Key?
+    private var camera: Sony2FujiProcessor.RawWhiteBalance?
+
+    func resolve(url: URL, load: () throws -> Sony2FujiProcessor.RawWhiteBalance) throws -> Sony2FujiProcessor.RawWhiteBalance {
+        lock.lock()
+        defer { lock.unlock() }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        guard let size = (attributes?[.size] as? NSNumber)?.intValue,
+              let modified = attributes?[.modificationDate] as? Date else {
+            key = nil
+            camera = nil
+            return try load()
+        }
+        let next = Key(url: url.standardizedFileURL, size: size, modified: modified)
+        if key == next, let camera { return camera }
+        let loaded = try load()
+        key = next
+        camera = loaded
+        return loaded
+    }
+}
+
 extension Sony2FujiProcessor {
+    func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
+        buffer.semantic == .display ? SONY2FUJI_INPUT_DISPLAY_BUFFER : SONY2FUJI_INPUT_BUFFER
+    }
+
     func loadMetadata(from url: URL) throws -> ImageMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
@@ -39,6 +76,7 @@ extension Sony2FujiProcessor {
 
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
+        try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
         guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK,
@@ -92,15 +130,69 @@ extension Sony2FujiProcessor {
         guard viewportStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(viewportStatus)) }
     }
 
+    func geometrySize(_ session: OpaquePointer) -> CGSize? {
+        var width: UInt32 = 0, height: UInt32 = 0
+        guard sony2fuji_session_get_geometry_size(session, &width, &height) == SONY2FUJI_STATUS_OK,
+              width > 0, height > 0 else { return nil }
+        return CGSize(width: Int(width), height: Int(height))
+    }
+
+    func configureGeometry(_ session: OpaquePointer, settings: GeometrySettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid geometry parameters.")) }
+        var config = sony2fuji_geometry_config()
+        config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)
+        config.crop_x = Float(settings.cropX)
+        config.crop_y = Float(settings.cropY)
+        config.crop_width = Float(settings.cropWidth)
+        config.crop_height = Float(settings.cropHeight)
+        config.quarter_turns = Int32(settings.quarterTurns)
+        config.flip_horizontal = settings.flipHorizontal ? 1 : 0
+        config.flip_vertical = settings.flipVertical ? 1 : 0
+        config.straighten_degrees = Float(settings.straightenDegrees)
+        let status = sony2fuji_session_set_geometry(session, &config)
+        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
+        var perspective = sony2fuji_perspective_config()
+        perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
+        perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
+        perspective.horizontal = Float(settings.perspectiveHorizontal)
+        perspective.vertical = Float(settings.perspectiveVertical)
+        let perspectiveStatus = sony2fuji_session_set_perspective(session, &perspective)
+        guard perspectiveStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(statusMessage(perspectiveStatus))
+        }
+    }
+
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {
         guard settings.masterRecipeID != nil else { return settings }
         guard let url else { return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0) }
         if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
             return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
         }
-        // 相机基线必须来自本次目标 RAW，而非源照片的保存记录。
+        let camera = try recipeWhiteBalance.resolve(url: url) {
+            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode)
+        }
+        return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+    }
+
+    func effectiveSettings(_ settings: RawSettings, session: OpaquePointer, url: URL?,
+                           inputType: sony2fuji_input_type) throws -> RawSettings {
+        var result = try prepareRecipe(settings, session: session, url: url)
+        guard inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER else { return result }
+        result.exposureMode = .sensor
+        result.whiteBalanceMode = .camera
+        result.temperature = 6500
+        result.tint = 0
+        result.noiseReduction = 0
+        result.lensCorrection = nil
+        return result
+    }
+
+    func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
+                               exposureMode: RawExposureMode) throws -> RawWhiteBalance {
+        // Read the target RAW once; saved recipe values are not its as-shot WB.
         var neutral = RawSettings.default
-        neutral.exposureMode = settings.exposureMode
+        neutral.exposureMode = exposureMode
         try configureSession(session, settings: neutral, interactive: false)
         var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)
         request.preview_long_edge = 32
@@ -110,7 +202,7 @@ extension Sony2FujiProcessor {
         guard status == SONY2FUJI_STATUS_OK, let camera = readRawWhiteBalance(from: session), camera.isCalibrated else {
             throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
         }
-        return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+        return camera
     }
 
     func makeBaseRequest(settings: RawSettings, inputType: sony2fuji_input_type) -> sony2fuji_request {
@@ -120,6 +212,7 @@ extension Sony2FujiProcessor {
         request.output_target = SONY2FUJI_TARGET_BUFFER
         request.output_format = SONY2FUJI_OUTPUT_RGBA8
         request.jpeg_quality = 95
+        let displayInput = inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER
         request.wb_mode = inputType == SONY2FUJI_INPUT_RAW && settings.whiteBalanceMode == .custom
             ? SONY2FUJI_WB_TEMPERATURE
             : SONY2FUJI_WB_CAMERA
@@ -128,18 +221,18 @@ extension Sony2FujiProcessor {
         request.brightness = 1
         request.contrast = Float(settings.contrast)
         request.saturation = Float(settings.saturation)
-        // Camera RAW WB is already applied before demosaic. Raster inputs keep
-        // the old post-RGB temperature/tint path and therefore remain separate.
-        request.temperature = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+        // RAW white balance is applied before demosaic. Display input stays
+        // neutral; legacy scene buffers retain their existing post-RGB path.
+        request.temperature = displayInput || (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW)
             ? 6500
             : Float(settings.temperature)
-        request.tint = request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW
+        request.tint = displayInput || (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW)
             ? 0
             : Float(settings.tint)
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
         request.tone_curve = Float(settings.toneCurve)
-        request.noise_reduction = settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
+        request.noise_reduction = displayInput || settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request
     }
@@ -261,7 +354,7 @@ extension Sony2FujiProcessor {
         }
     }
 
-    func copyBuffer(_ buffer: sony2fuji_buffer) throws -> Buffer {
+    func copyBuffer(_ buffer: sony2fuji_buffer, semantic: Buffer.Semantic = .legacy) throws -> Buffer {
         guard let baseAddress = buffer.data,
               buffer.width > 0,
               buffer.height > 0,
@@ -276,7 +369,8 @@ extension Sony2FujiProcessor {
             width: Int(buffer.width),
             height: Int(buffer.height),
             stride: Int(buffer.stride_bytes),
-            pixelFormat: buffer.pixel_format
+            pixelFormat: buffer.pixel_format,
+            semantic: semantic
         )
     }
 

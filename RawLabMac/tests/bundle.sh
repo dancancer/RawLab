@@ -3,6 +3,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cmp "$ROOT/Shared/master-recipes.json" "${1:-$ROOT/build/RawLab Mac.app}/Contents/Resources/master-recipes.json"
 APP="${1:-$ROOT/build/RawLab Mac.app}"
+cmp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
+for asset in "$ROOT"/Shared/BundledLooks/*.cube; do
+    cmp "$asset" "$APP/Contents/Resources/LUTs/$(basename "$asset")"
+done
+cmp "$ROOT/RawLabMac/Resources/FilmIcons/ektar-100-phuket.png" "$APP/Contents/Resources/FilmIcons/ektar-100-phuket.png"
+for asset in "$ROOT"/Shared/BundledLooks/Artwork/*.png; do
+    cmp "$asset" "$APP/Contents/Resources/FilmIcons/$(basename "$asset")"
+done
+cmp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
 for language in en zh-Hans de fr ja es; do
     cmp "$ROOT/RawLabMac/Resources/$language.lproj/Localizable.strings" "$APP/Contents/Resources/$language.lproj/Localizable.strings"
 done
@@ -13,8 +22,12 @@ for asset in "$ROOT"/RawLabMac/Resources/MasterRecipes/*.cube "$ROOT"/RawLabMac/
         echo "FAIL: missing or stale recipe asset $(basename "$asset")"; exit 1;
     }
 done
-for notice in RawLab-GPL-3.0.txt RawLab-Licensing.md libtiff-LICENSE.md; do
+for notice in RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensing.md libtiff-LICENSE.md; do
     test -f "$APP/Contents/Resources/Licenses/$notice"
+done
+cmp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
+for notice in GLib-COPYING PCRE2-LICENCE proxy-libintl-COPYING zlib-LICENSE; do
+    test -f "$APP/Contents/Resources/Licenses/Lensfun/$notice"
 done
 for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \
         Highway-LICENSE.txt Highway-LICENSE-BSD3.txt skcms-LICENSE.txt; do

@@ -3,8 +3,9 @@ import AppKit
 
 @main
 struct RawLabMacApp: App {
+    @NSApplicationDelegateAdaptor(RawLabMacDelegate.self) private var appDelegate
     @AppStorage(L10n.preferenceKey) private var languagePreference = AppLanguage.system.rawValue
-    @StateObject private var model = EditorModel()
+    @StateObject private var model = EditorModel(onUsage: { UsageAnalytics.shared.record($0) })
     @StateObject private var updates = UpdateChecker()
     @Environment(\.openWindow) private var openWindow
     init() {
@@ -49,6 +50,9 @@ struct RawLabMacApp: App {
                 exit(0)
             } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
         }
+        #if RAWLAB_RUM_LOCAL
+        LocalRUM.configure()
+        #endif
         NSApplication.shared.setActivationPolicy(.regular)
     }
     var body: some Scene {
@@ -62,7 +66,14 @@ struct RawLabMacApp: App {
                     }.padding(8)
                 }
                 EditorView(model: model)
-            }.task { await updates.check(manual: false) }
+                    .onAppear { appDelegate.model = model }
+            }.task {
+                UsageAnalytics.shared.beginSession()
+                await updates.check(manual: false)
+            }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    UsageAnalytics.shared.endSession()
+                }
                 .environment(\.locale, selectedLocale)
         }
             .defaultSize(width: 1320, height: 850)
@@ -80,18 +91,18 @@ struct RawLabMacApp: App {
                     }.disabled(updates.checking)
                 }
                 CommandGroup(replacing: .newItem) {
-                    Button(L10n.text("打开 RAW…"), action: model.openPanel).keyboardShortcut("o")
+                    Button(L10n.text("打开照片"), action: model.openPanel).keyboardShortcut("o")
                     Button(L10n.text("导入外观…"), action: model.importLUT)
-                        .disabled(model.lookLibraryBusy || model.exporting)
+                        .disabled(model.lookLibraryBusy || model.exporting || model.geometryDraft != nil)
                     Divider()
                     Button(L10n.text("导出 JPEG…")) { model.export(png: false) }
                         .keyboardShortcut("e", modifiers: [.command, .shift])
-                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                     Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
-                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                     Button(L10n.text("使用当前调整批量导出…")) {
                         if model.prepareBatch() { openWindow(id: "batch-export") }
-                    }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm)
+                    }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }.disabled(model.batch == nil)
                 }
             }

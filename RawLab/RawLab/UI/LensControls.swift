@@ -18,17 +18,18 @@ struct IOSLensControls: View {
                     Text(L10n.text("自动")).tag(LensProfileMode.automatic)
                     Text(L10n.text("手动")).tag(LensProfileMode.manual)
                 }.pickerStyle(.segmented).id(localizationLocale.identifier).accessibilityIdentifier("lens.mode")
+                    .frame(minHeight: 44)
                 Button { settings.lensCorrection = nil } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                 }.accessibilityLabel(L10n.text("重置镜头校正")).accessibilityIdentifier("lens.reset")
                     .disabled(lens == LensCorrectionSettings())
             }
-            Toggle(L10n.text("畸变矫正"), isOn: value(\.distortion)).accessibilityIdentifier("lens.distortion")
-            Toggle(L10n.text("横向色差"), isOn: value(\.tca)).accessibilityIdentifier("lens.tca")
-            Toggle(L10n.text("自动裁边"), isOn: value(\.autoCrop)).accessibilityIdentifier("lens.crop")
+            Toggle(L10n.text("畸变矫正"), isOn: value(\.distortion)).frame(minHeight: 44).accessibilityIdentifier("lens.distortion")
+            Toggle(L10n.text("横向色差"), isOn: value(\.tca)).frame(minHeight: 44).accessibilityIdentifier("lens.tca")
+            Toggle(L10n.text("自动裁边"), isOn: value(\.autoCrop)).frame(minHeight: 44).accessibilityIdentifier("lens.crop")
             Button { choosingProfile = true } label: {
                 HStack {
-                    Text(selectedTitle).multilineTextAlignment(.leading)
+                    Text(selectedTitle).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.right")
                 }.frame(minHeight: 44)
@@ -36,9 +37,11 @@ struct IOSLensControls: View {
                 .accessibilityLabel(L10n.text("选择镜头配置文件")).accessibilityIdentifier("lens.profile")
                 .accessibilityValue(selectedTitle)
             Text(info?.message ?? L10n.text("镜头信息尚未就绪")).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("lens.status")
             if let info, !info.detectedLens.isEmpty {
                 Text(info.detectedLens).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let scale = info?.cropScale, scale > 1.0001 {
                 Text(L10n.format("裁边 %@%%", String(format: "%.1f", locale: L10n.locale, Double((1 - 1 / scale) * 100))))

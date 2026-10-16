@@ -1,8 +1,10 @@
 # Documentation
 
-Use the guides below for the current source. Published downloads remain
-[v0.6.0, build 10](releases/v0.6.0.md); [v0.7.0 preparation](releases/v0.7.0-preparation.md)
-tracks the next version.
+The current source targets [v0.8.0, build 12](releases/v0.8.0.md). Use the
+[GitHub release record](https://github.com/dancancer/RawLab/releases) for actual
+published packages and checksums. Candidate gates are tracked in
+[v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
+retain their original candidate scope.
 
 ## Using RawLab
 
@@ -27,8 +29,20 @@ tracks the next version.
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
 - [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
 - [Licensing and attribution](licensing.md)
+- [Hosted verification and its coverage boundaries](ci.md)
 
-## v0.7.0 Candidate
+## v0.8.0 Preparation
+
+- [Release notes](releases/v0.8.0.md) and [corresponding-source instructions](releases/v0.8.0-source.md)
+- [Release blockers, scope decisions and remaining acceptance](releases/v0.8.0-preparation.md)
+- [macOS Agent and ordinary-image verification](verification-agent-v08.md)
+- [Windows Agent and integrated-source verification](../RawLabWindows/VERIFICATION-agent-v08.md)
+- [All-platform ordinary-image input and current acceptance](verification-raster-input-all-platforms-2026-10-16.md)
+- [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
+- [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
+- [Optional local RUM and default SDK-free verification](verification-rum-analytics-2026-10-16.md)
+
+## v0.7.0 Release Records
 
 - [Candidate notes](releases/v0.7.0.md) and [corresponding-source instructions](releases/v0.7.0-source.md)
 - [Feature deliveries and final verification](verification-v0.7.0.md)
@@ -37,13 +51,17 @@ tracks the next version.
 - [Version and release preparation checklist](releases/v0.7.0-preparation.md)
 - [JPEG XL DNG verification](verification-dng-jpeg-xl-2026-10-12.md)
 
-All five features are integrated in development. The final composition report
-distinguishes new execution from evidence reused through identical source.
-Candidate packages are local preparation; published downloads remain v0.6.0.
+The five v0.7 features were integrated before that release. Its final composition
+report distinguishes new execution from evidence reused through identical source.
+These candidate records retain their original local scope; the versioned
+[v0.7.0 Release](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)
+records that publication, not the current v0.8 candidate state.
 
 ## Published Releases and History
 
 - [Changelog](../CHANGELOG.md)
+- [v0.8.0 notes](releases/v0.8.0.md) and [corresponding source](releases/v0.8.0-source.md)
+- [v0.7.0 release](releases/v0.7.0.md) and [corresponding source](releases/v0.7.0-source.md)
 - [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)
 - [v0.5.1 release](releases/v0.5.1.md) and [v0.5.0 release](releases/v0.5.0.md)
 - [Historical plans, feature checks, reviews and experiment references](archive/README.md)

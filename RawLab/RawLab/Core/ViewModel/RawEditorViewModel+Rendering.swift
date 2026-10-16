@@ -4,7 +4,7 @@ import UIKit
 
 extension RawEditorViewModel {
     func updatePreviewSize(_ edge: Int, settings: RawSettings) {
-        guard hasImage, edge > 0,
+        guard activeImportRevision == nil, hasImage, edge > 0,
               edge != requestedPreviewLongEdge || (edge != previewLongEdge && previewResizeWorkItem == nil) else { return }
         currentPreviewSettings = settings
         requestedPreviewLongEdge = min(Int(previewMaxDimension), edge)
@@ -12,10 +12,12 @@ extension RawEditorViewModel {
         previewResizeWorkItem?.cancel()
         previewResizePending = false
         guard requestedPreviewLongEdge != previewLongEdge else { return }
+        let sourceRevision = self.sourceRevision
         let commit = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.sourceRevision == sourceRevision, self.activeImportRevision == nil else { return }
             self.previewResizePending = false
             self.previewResizeWorkItem = nil
+            guard !self.isBusy else { return }
             self.previewLongEdge = self.requestedPreviewLongEdge
             self.updatePreview(settings: self.currentPreviewSettings)
         }
@@ -34,6 +36,7 @@ extension RawEditorViewModel {
         quality: PreviewQuality = .final,
         histogramDelay: TimeInterval? = nil
     ) {
+        guard !isBusy else { return }
         currentPreviewSettings = settings
         if !settings.denoise.enabled, previewResizeWorkItem != nil {
             previewResizeWorkItem?.cancel()
@@ -59,6 +62,7 @@ extension RawEditorViewModel {
         previewRendering = true
 
         let renderID = UUID()
+        let sourceRevision = self.sourceRevision
         setLatestRenderID(renderID)
         cancelHistogramWorkItem()
 
@@ -69,12 +73,15 @@ extension RawEditorViewModel {
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
         let sourceURL = self.sourceURL
+        let comparisonChanged = basePreviewGeometry != settings.geometry
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             defer {
-                DispatchQueue.main.async {
-                    if self.isLatestRenderID(renderID) { self.previewRendering = false }
+                self.resultDelivery {
+                    if self.sourceRevision == sourceRevision && self.isLatestRenderID(renderID) {
+                        self.previewRendering = false
+                    }
                 }
             }
             guard self.isLatestRenderID(renderID) else {
@@ -87,6 +94,8 @@ extension RawEditorViewModel {
                 }
 
                 do {
+                    let comparison = comparisonChanged ? try self.renderComparison(
+                        url: sourceURL, buffer: nil, geometry: settings.geometry) : nil
                     let result = try self.processor.processRaw(
                         url: sourceURL,
                         settings: settings,
@@ -100,11 +109,13 @@ extension RawEditorViewModel {
                         orientation: result.orientation ?? existingOrientation
                     )
 
-                    DispatchQueue.main.async {
-                        guard self.isLatestRenderID(renderID) else {
+                    self.resultDelivery {
+                        guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                             return
                         }
                         self.previewImage = previewImage
+                        self.nativeImageSize = result.buffer.nativeSize
+                        if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
                         self.lensInfo = result.lensInfo
                         if self.sourceOrientation == nil {
                             self.sourceOrientation = result.orientation
@@ -115,12 +126,13 @@ extension RawEditorViewModel {
                         self.scheduleHistogramUpdate(
                             for: result.buffer,
                             renderID: renderID,
+                            sourceRevision: sourceRevision,
                             delay: finalHistogramDelay
                         )
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.isLatestRenderID(renderID) else {
+                    self.resultDelivery {
+                        guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                             return
                         }
                         self.statusMessage = error.localizedDescription
@@ -135,7 +147,10 @@ extension RawEditorViewModel {
             }
 
             let outputBuffer: Sony2FujiProcessor.Buffer
+            let comparison: (UIImage?, [CGFloat])?
             do {
+                comparison = comparisonChanged ? try self.renderComparison(
+                    url: nil, buffer: inputBuffer, geometry: settings.geometry) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,
@@ -145,8 +160,8 @@ extension RawEditorViewModel {
                     viewportPreview: true
                 )
             } catch {
-                DispatchQueue.main.async {
-                    guard self.isLatestRenderID(renderID) else {
+                self.resultDelivery {
+                    guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                         return
                     }
                     self.statusMessage = error.localizedDescription
@@ -154,13 +169,15 @@ extension RawEditorViewModel {
                 return
             }
 
-            let previewImage = self.processor.makeUIImage(from: outputBuffer, orientation: existingOrientation)
+            let previewImage = self.processor.makeUIImage(from: outputBuffer, orientation: .up)
 
-            DispatchQueue.main.async {
-                guard self.isLatestRenderID(renderID) else {
+            self.resultDelivery {
+                guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                     return
                 }
                 self.previewImage = previewImage
+                self.nativeImageSize = outputBuffer.nativeSize
+                if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
                 self.lensInfo = nil
             }
 
@@ -168,12 +185,35 @@ extension RawEditorViewModel {
                 self.scheduleHistogramUpdate(
                     for: outputBuffer,
                     renderID: renderID,
+                    sourceRevision: sourceRevision,
                     delay: finalHistogramDelay
                 )
             }
         }
         previewWorkItem = workItem
         renderQueue.async(execute: workItem)
+    }
+
+    func renderComparison(url: URL?, buffer: Sony2FujiProcessor.Buffer?,
+                          geometry: GeometrySettings) throws -> (UIImage?, [CGFloat]) {
+        var neutral = RawSettings.default
+        neutral.geometry = geometry
+        let output: Sony2FujiProcessor.Buffer
+        if let url {
+            output = try processor.processRaw(url: url, settings: neutral,
+                previewLongEdge: previewMaxDimension, lutURL: nil).buffer
+        } else if let buffer {
+            output = try processor.processBuffer(buffer: buffer, settings: neutral,
+                previewLongEdge: previewMaxDimension, lutURL: nil)
+        } else { throw EditorError.noImageLoaded }
+        return (processor.makeUIImage(from: output, orientation: .up),
+                processor.computeHistogram(from: output, bins: histogramBins))
+    }
+
+    func applyComparison(_ comparison: (UIImage?, [CGFloat]), geometry: GeometrySettings) {
+        basePreviewImage = comparison.0
+        baseHistogram = comparison.1
+        basePreviewGeometry = geometry
     }
 
     func schedulePreviewUpdate(
@@ -183,13 +223,16 @@ extension RawEditorViewModel {
         quality: PreviewQuality = .final,
         histogramDelay: TimeInterval? = nil
     ) {
+        guard !isBusy else { return }
         currentPreviewSettings = settings
         previewWorkItem?.cancel()
         setLatestRenderID(UUID())
         previewRendering = true
 
+        let sourceRevision = self.sourceRevision
         let workItem = DispatchWorkItem { [weak self] in
-            self?.updatePreview(
+            guard let self, self.sourceRevision == sourceRevision, !self.isBusy else { return }
+            self.updatePreview(
                 settings: settings,
                 includeHistogram: includeHistogram,
                 quality: quality,
@@ -206,6 +249,18 @@ extension RawEditorViewModel {
 }
 
 extension RawEditorViewModel {
+    func invalidatePreviewRequests() {
+        previewWorkItem?.cancel()
+        previewWorkItem = nil
+        previewResizeWorkItem?.cancel()
+        previewResizeWorkItem = nil
+        previewResizePending = false
+        cancelHistogramWorkItem()
+        setLatestRenderID(UUID())
+        lastPreviewRequest = nil
+        previewRendering = false
+    }
+
     func setLatestRenderID(_ renderID: UUID) {
         renderStateLock.lock()
         latestRenderID = renderID
@@ -236,6 +291,7 @@ extension RawEditorViewModel {
     func scheduleHistogramUpdate(
         for buffer: Sony2FujiProcessor.Buffer,
         renderID: UUID,
+        sourceRevision: UUID,
         delay: TimeInterval
     ) {
         let workItem = DispatchWorkItem { [weak self] in
@@ -245,8 +301,8 @@ extension RawEditorViewModel {
             }
 
             let histogram = self.computeHistogram(from: buffer, bins: self.histogramBins)
-            DispatchQueue.main.async {
-                guard self.isLatestRenderID(renderID) else {
+            self.resultDelivery {
+                guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                     return
                 }
                 self.histogram = histogram

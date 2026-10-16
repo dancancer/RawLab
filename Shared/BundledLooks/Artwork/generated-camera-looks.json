@@ -1,0 +1,67 @@
+{
+  "generation_tool": "built-in image_gen",
+  "postprocess": "sips -z 256 256",
+  "reference_images": [
+    {
+      "path": "/Users/xupeng/.codex/worktrees/bbe6/rawtools/RawLabMac/Resources/FilmIcons/custom-look.png",
+      "role": "style reference; inspected with view_image before generation"
+    },
+    {
+      "path": "/Users/xupeng/.codex/worktrees/bbe6/rawtools/RawLabMac/Resources/FilmIcons/ektar-100-phuket.png",
+      "role": "style reference; inspected with view_image before generation"
+    }
+  ],
+  "concept_declaration": "These are original RawLab look-concept label illustrations, not product photographs, official trademark logos, endorsements, authorized products, or samples claiming real-camera color-science fidelity.",
+  "assets": [
+    {
+      "filename": "camera-contax-nd-std.png",
+      "main_text": "CONTAX ND STD",
+      "required_text": ["RAWLAB", "CONTAX ND STD", "LOOK CONCEPT"],
+      "generation_tool": "built-in image_gen",
+      "original_path": "/Users/xupeng/.codex/generated_images/01a14378-800d-7731-a3e9-bdb948f1bbd5/exec-8a90d3d1-cc2e-454e-95eb-5597e58a10fd.png",
+      "sha256": "03070ea739ea3605f5046e74e6ea3b1f0a56f774af044543de89b1f58666d826",
+      "prompt": "Use case: product-mockup\nAsset type: RawLab bundled film-look icon, square thumbnail artwork\nPrimary request: Create a single full-frame flat front-label packaging concept for a camera look called CONTAX ND STD. It must look like printed editorial packaging artwork, not a physical box and not a photograph of a product.\nScene/backdrop: Entire square canvas is the front label, no surrounding background.\nSubject: A clearly recognizable early digital SLR camera line drawing with a compact lens, aperture markings and a few technical dial marks, arranged as an original illustration. Keep the camera graphic prominent and readable at thumbnail size.\nStyle/medium: bold 1980s/1990s technical camera manual meets film-package label, clean screenprint vector-like shapes with subtle paper grain; flat graphic only.\nComposition/framing: square 1:1 full bleed label, no perspective, no border, no box sides, no 3D mockup. Put RAWLAB small at top, CONTAX ND STD as the exact large main title, and LOOK CONCEPT small below. Main title must be legible, centered, and spelled exactly.\nLighting/mood: crisp, practical, archival design.\nColor palette: silver gray, charcoal black, and restrained red accents; high contrast.\nMaterials/textures: lightly printed paper texture, solid ink blocks, thin camera linework.\nText (verbatim): RAWLAB; CONTAX ND STD; LOOK CONCEPT.\nConstraints: concept artwork only; the words are a look identity, not a real product, endorsement, or official trademark logo. Use plain custom typography, no brand logo, no trademark symbols, no authorized-product claim. No barcode, no watermark.\nAvoid: photorealism, 3D perspective, bevels, rounded app icon treatment, border frame, side panels, extra captions, unreadable tiny text, spelling variants.",
+      "visual_check": "Silver-gray and charcoal full-bleed label with restrained red accents; a large early digital SLR line drawing and prominent exact title are readable at thumbnail size."
+    },
+    {
+      "filename": "camera-lumix-s1r-vivid.png",
+      "main_text": "LUMIX S1R VIVID",
+      "required_text": ["RAWLAB", "LUMIX S1R VIVID", "LOOK CONCEPT"],
+      "generation_tool": "built-in image_gen",
+      "original_path": "/Users/xupeng/.codex/generated_images/01a14378-800d-7731-a3e9-bdb948f1bbd5/exec-41c4692f-fbd6-4b28-b7f3-cc2cafc19c83.png",
+      "sha256": "2c336e4fb636bcb0f119453921a1b8a36be6bba48f089fdbc765791ee553f3f5",
+      "prompt": "Use case: product-mockup\nAsset type: RawLab bundled film-look icon, square thumbnail artwork\nPrimary request: Create one single full-frame flat front-label packaging concept for a camera look called LUMIX S1R VIVID. It is original concept artwork, not a physical box and not a product photograph.\nScene/backdrop: Entire square canvas is the front label, no surrounding background.\nSubject: A bold readable landscape illustration of layered mountain peaks and a faceted glass prism, with a compact mirrorless camera and lens line drawing integrated as a small foreground motif. The mountain and prism shapes must be obvious at thumbnail size.\nStyle/medium: modern 1970s color-slide package plus editorial screenprint, crisp flat ink shapes with restrained paper grain; graphic illustration only.\nComposition/framing: 1:1 full bleed square label, straight-on front view, no perspective, no border, no box sides, no 3D mockup. Put RAWLAB small at top, exact large main title LUMIX S1R VIVID across the upper-middle, and LOOK CONCEPT small below. Text must be legible and spelled exactly.\nLighting/mood: energetic, clear, outdoorsy, high-contrast.\nColor palette: cobalt blue, teal green, bright red accents, a little warm white; clearly unlike gray/red or green/orange labels.\nMaterials/textures: solid screenprinted ink, lightly worn paper, clean geometric mountain facets and prism rays.\nText (verbatim): RAWLAB; LUMIX S1R VIVID; LOOK CONCEPT.\nConstraints: concept artwork only; use plain custom typography, no vendor logo, no trademark symbol, no endorsement or authorized-product claim, no barcode, no watermark.\nAvoid: photorealism, glossy 3D rendering, border frame, tiny unreadable captions, extra words, spelling variants, app icon styling.",
+      "visual_check": "Cobalt blue and teal mountain lake label with red accents, a faceted prism and compact camera; exact title is large and readable."
+    },
+    {
+      "filename": "camera-pentax-k5-reversal.png",
+      "main_text": "PENTAX K-5 REVERSAL",
+      "required_text": ["RAWLAB", "PENTAX K-5 REVERSAL", "LOOK CONCEPT"],
+      "generation_tool": "built-in image_gen",
+      "original_path": "/Users/xupeng/.codex/generated_images/01a14378-800d-7731-a3e9-bdb948f1bbd5/exec-060dfeeb-93fa-4641-ac67-0d3b240fdd7f.png",
+      "sha256": "d1b866e88bd38ddd6b64100b6f221370f2cb216497eb0366847d9e35889bccdc",
+      "prompt": "Use case: product-mockup\nAsset type: RawLab bundled film-look icon, square thumbnail artwork\nPrimary request: Create one single full-frame flat front-label packaging concept for a camera look called PENTAX K-5 REVERSAL. It is original concept artwork, not a physical box and not a product photograph.\nScene/backdrop: Entire square canvas is the front label, no surrounding background.\nSubject: A clearly recognizable five-sided camera pentaprism diagram as the central icon, accompanied by a simplified SLR body outline, aperture ring marks and a small slide-frame motif. The pentaprism must be unmistakable and remain readable when small.\nStyle/medium: darkroom reversal-film package meets mid-century technical diagram, crisp flat screenprint shapes and lightly textured paper.\nComposition/framing: 1:1 full bleed square label, straight-on front view, no perspective, no border, no box sides, no 3D mockup. Put RAWLAB small at top, exact large main title PENTAX K-5 REVERSAL in a stable horizontal band, and LOOK CONCEPT small below. Text must be legible and spelled exactly.\nLighting/mood: precise, archival, deep and confident.\nColor palette: deep forest green, white, and orange accents; high contrast and clearly different from other labels.\nMaterials/textures: flat ink blocks, fine technical linework, subtle paper fiber, no bevels.\nText (verbatim): RAWLAB; PENTAX K-5 REVERSAL; LOOK CONCEPT.\nConstraints: concept artwork only; use plain custom typography, no vendor logo, no trademark symbol, no endorsement or authorized-product claim, no barcode, no watermark.\nAvoid: photorealism, glossy 3D rendering, border frame, generic green-only artwork, tiny unreadable captions, extra words, spelling variants, app icon styling.",
+      "visual_check": "Deep forest-green full-bleed technical label with white/orange ink, a prominent five-sided pentaprism diagram, SLR outline and slide frame; exact title is highly legible."
+    },
+    {
+      "filename": "camera-ricoh-gr2-hibw.png",
+      "main_text": "RICOH GR II HI-BW",
+      "required_text": ["RAWLAB", "RICOH GR II HI-BW", "LOOK CONCEPT"],
+      "generation_tool": "built-in image_gen",
+      "original_path": "/Users/xupeng/.codex/generated_images/01a14378-800d-7731-a3e9-bdb948f1bbd5/exec-ce213892-66bd-4150-92b7-5c70a8c09fce.png",
+      "sha256": "24fb9a8eefc6cba5d6c82149f9b0c068f9b487ba9f82851bfea6c1a237f85f7d",
+      "prompt": "Use case: product-mockup\nAsset type: RawLab bundled film-look icon, square thumbnail artwork\nPrimary request: Create one single full-frame flat front-label packaging concept for a camera look called RICOH GR II HI-BW. It is original concept artwork, not a physical box and not a product photograph.\nScene/backdrop: Entire square canvas is the front label, no surrounding background.\nSubject: A compact street camera line drawing beside a dramatic high-contrast city geometry composition: stepped building silhouettes, window grids, a hard diagonal street stripe and a small sun disk. The city geometry must be obvious and graphic at thumbnail size.\nStyle/medium: stark black-and-white high-contrast urban darkroom label, bold photocopy/screenprint geometry, minimal paper grain; graphic illustration only.\nComposition/framing: 1:1 full bleed square label, straight-on front view, no perspective, no border, no box sides, no 3D mockup. Put RAWLAB small at top, exact large main title RICOH GR II HI-BW prominent, and LOOK CONCEPT small below. Text must be legible and spelled exactly.\nLighting/mood: severe, graphic, monochrome, crisp.\nColor palette: only black, white, and gray; no color accents.\nMaterials/textures: high-contrast ink, halftone city blocks, clean white negative space.\nText (verbatim): RAWLAB; RICOH GR II HI-BW; LOOK CONCEPT.\nConstraints: concept artwork only; use plain custom typography, no vendor logo, no trademark symbol, no endorsement or authorized-product claim, no barcode, no watermark.\nAvoid: photorealism, colored accents, glossy 3D rendering, border frame, tiny unreadable captions, extra words, spelling variants, app icon styling.",
+      "visual_check": "Strict black/white/gray high-contrast label with compact camera line art, stepped city blocks, window geometry and diagonal street stripe; exact title is readable."
+    },
+    {
+      "filename": "camera-ricoh-gr2-vivid.png",
+      "main_text": "RICOH GR II VIVID",
+      "required_text": ["RAWLAB", "RICOH GR II VIVID", "LOOK CONCEPT"],
+      "generation_tool": "built-in image_gen",
+      "original_path": "/Users/xupeng/.codex/generated_images/01a14378-800d-7731-a3e9-bdb948f1bbd5/exec-853a4354-8668-4a60-a26a-85f7f4d5ef59.png",
+      "sha256": "351b3d9ea58acef0798bc27fe753a8264f9bbe960144827ed3bcbf8681469f3c",
+      "prompt": "Use case: product-mockup\nAsset type: RawLab bundled film-look icon, square thumbnail artwork\nPrimary request: Create one single full-frame flat front-label packaging concept for a camera look called RICOH GR II VIVID. It is original concept artwork, not a physical box and not a product photograph.\nScene/backdrop: Entire square canvas is the front label, no surrounding background.\nSubject: A compact street camera line drawing paired with an unmistakable abstract city geometry: stacked façades, window grids, crosswalk bars, and angular skyline blocks. Keep these graphic forms prominent and easy to read at thumbnail size.\nStyle/medium: exuberant color-print package label inspired by bold screenprint and risograph posters, crisp flat shapes with subtle paper grain; graphic illustration only.\nComposition/framing: 1:1 full bleed square label, straight-on front view, no perspective, no border, no box sides, no 3D mockup. Put RAWLAB small at top, exact large main title RICOH GR II VIVID prominent, and LOOK CONCEPT small below. Text must be legible and spelled exactly.\nLighting/mood: lively, saturated, graphic, optimistic.\nColor palette: magenta, cyan, and yellow with deep black for linework; distinctly multicolor and unlike the monochrome label.\nMaterials/textures: flat ink overlaps, offset-print registration character, clean geometric city forms.\nText (verbatim): RAWLAB; RICOH GR II VIVID; LOOK CONCEPT.\nConstraints: concept artwork only; use plain custom typography, no vendor logo, no trademark symbol, no endorsement or authorized-product claim, no barcode, no watermark.\nAvoid: photorealism, glossy 3D rendering, border frame, tiny unreadable captions, extra words, spelling variants, app icon styling.",
+      "visual_check": "Saturated magenta/cyan/yellow label with deep-black city geometry, crosswalk bars, skyline blocks and a compact camera; exact title is readable at thumbnail size."
+    }
+  ]
+}

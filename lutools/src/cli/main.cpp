@@ -1,5 +1,6 @@
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "agent_commands.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -7,6 +8,10 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>
+#include <utility>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 using namespace sony2fuji;
 
@@ -15,6 +20,12 @@ void printUsage(const char* programName) {
     std::cout << "Sony to Fuji LUT Tool v" << getVersionString() << "\n\n";
     std::cout << "用法:\n";
     std::cout << "  " << programName << " <输入RAW文件> -o <输出文件> [选项]\n\n";
+    std::cout << "  " << programName << " --recipe <编辑JSON文件> [--print-recipe]\n";
+    std::cout << "  " << programName << " --capabilities --json\n";
+    std::cout << "  --json 输出结构化结果和错误 (与 --recipe 配合)\n";
+    std::cout << "  " << programName << " --info <image> --json\n";
+    std::cout << "  " << programName << " --recipe <JSON> --preview <PNG> [--long-edge <pixels>] --json\n";
+    std::cout << "  --print-recipe 校验并输出补全默认值的配方，不处理图片\n\n";
     std::cout << "必需参数:\n";
     std::cout << "  <输入RAW文件>        Sony RAW 文件路径 (.ARW)\n";
     std::cout << "  -o, --output <file>  输出文件路径 (.jpg、.png 或渲染型 .dng)\n\n";
@@ -168,7 +179,35 @@ OutputFormat getOutputFormat(const std::string& filename) {
     return OutputFormat::JPEG;  // 默认
 }
 
-int main(int argc, char* argv[]) {
+int processRequest(const sony2fuji_request& request, sony2fuji_raw_exposure_mode exposureMode) {
+    sony2fuji_session* session = nullptr;
+    auto status = sony2fuji_session_create(&session);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_raw_exposure_mode(session, exposureMode);
+    if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session, &request, nullptr);
+    sony2fuji_session_destroy(session);
+    if (status != SONY2FUJI_STATUS_OK) {
+        std::cerr << "Processing failed: " << sony2fuji_status_message(status)
+                  << ". Use a declared Fuji F-Log/F-Log2/F-Log2C CUBE with BT.709 output or compiled DCP .rlook.\n";
+        return 1;
+    }
+    std::cout << "Saved: " << request.output_path << '\n';
+    return 0;
+}
+
+static int runMain(int argc, char* argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--json" || arg == "--capabilities" || arg == "--info" || arg == "--preview" ||
+            (i == 1 && (arg == "--recipe" || arg == "--lens-database" || arg == "--print-recipe")))
+            return runAgentCommands(argc, argv);
+        // Legacy option values may themselves be filenames such as "--json".
+        if (arg == "-o" || arg == "--output" || arg == "-l" || arg == "--lut" ||
+            arg == "-q" || arg == "--quality" || arg == "--raw-exposure" ||
+            arg == "--exposure" || arg == "--brightness") {
+            if (i + 1 < argc) ++i;
+        }
+    }
     Options options;
 
     if (!parseArguments(argc, argv, options)) {
@@ -198,16 +237,34 @@ int main(int argc, char* argv[]) {
         case OutputFormat::DNG: request.output_format = SONY2FUJI_OUTPUT_DNG; break;
     }
     request.jpeg_quality = options.quality;
-    sony2fuji_session* session = nullptr;
-    auto status = sony2fuji_session_create(&session);
-    if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_session_set_raw_exposure_mode(session,options.rawExposure);
-    if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session, &request, nullptr);
-    sony2fuji_session_destroy(session);
-    if (status != SONY2FUJI_STATUS_OK) {
-        std::cerr << "Processing failed: " << sony2fuji_status_message(status)
-                  << ". Use a declared Fuji F-Log/F-Log2/F-Log2C CUBE with BT.709 output or compiled DCP .rlook.\n";
-        return 1;
-    }
-    std::cout << "Saved: " << options.outputFile << '\n';
-    return 0;
+    return processRequest(request, options.rawExposure);
 }
+
+#if defined(_WIN32)
+int wmain(int argc, wchar_t* argv[]) {
+    std::vector<std::string> arguments;
+    arguments.reserve(argc);
+    for (int index = 0; index < argc; ++index) {
+        const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+            argv[index], -1, nullptr, 0, nullptr, nullptr);
+        if (size <= 0) {
+            std::cerr << "Invalid Unicode command-line argument\n";
+            return 1;
+        }
+        std::string value(static_cast<size_t>(size), '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, argv[index], -1,
+                value.data(), size, nullptr, nullptr) != size) return 1;
+        value.pop_back();
+        arguments.push_back(std::move(value));
+    }
+    std::vector<char*> pointers;
+    pointers.reserve(static_cast<size_t>(argc) + 1);
+    for (auto& argument : arguments) pointers.push_back(argument.data());
+    pointers.push_back(nullptr);
+    return runMain(argc, pointers.data());
+}
+#else
+int main(int argc, char* argv[]) {
+    return runMain(argc, argv);
+}
+#endif

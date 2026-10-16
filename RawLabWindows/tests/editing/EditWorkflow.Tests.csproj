@@ -5,7 +5,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
+    <Compile Include="../../GeometrySettings.cs" Link="GeometrySettings.cs" />
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
+    <Compile Include="../../ParameterInteraction.cs" Link="ParameterInteraction.cs" />
+    <Compile Include="../../TransformDraft.cs" Link="TransformDraft.cs" />
+    <Compile Include="../../CropInteraction.cs" Link="CropInteraction.cs" />
     <Compile Include="../../MasterRecipe.cs" Link="MasterRecipe.cs" />
     <Compile Include="../../HslSettings.cs" Link="HslSettings.cs" />
     <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
@@ -15,6 +19,7 @@
     <Compile Include="../../ExportFormat.cs" Link="ExportFormat.cs" />
     <Compile Include="../../WindowsFileIdentity.cs" Link="WindowsFileIdentity.cs" />
     <Compile Include="../../PhotoInfo.cs" Link="PhotoInfo.cs" />
+    <Compile Include="../../PhotoInput.cs" Link="PhotoInput.cs" />
     <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />

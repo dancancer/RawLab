@@ -64,6 +64,20 @@ struct BatchExportJob: Codable {
         set { outputFormat = newValue; png = newValue == .png; version = 2 }
     }
     var suffix: String { format.suffix }
+
+    func settings(for input: URL) -> Adjustments {
+        guard RenderEngine.isRasterInput(source), !RenderEngine.isRasterInput(input) else { return settings }
+        // 普通图像上不可用的相机参数不能在 RAW 目标上重新生效。
+        var resolved = settings
+        let recipeTint = resolved.masterRecipe != nil ? resolved.tint : nil
+        resolved.exposureMode = Adjustments().exposureMode
+        resolved.resolveWhiteBalance(nil)
+        resolved.resetWhiteBalance()
+        if let recipeTint { resolved.tint = recipeTint }
+        resolved.rawNoiseReduction = 0
+        resolved.lensCorrection = nil
+        return resolved
+    }
 }
 
 final class BatchJournal {
@@ -140,7 +154,7 @@ enum BatchExportFailure: LocalizedError {
         case .destination: return L10n.text("无法写入输出目录，请检查访问权限和剩余空间。")
         case .changedInput: return L10n.text("原始文件已被替换，请重新选择照片。")
         case .missingLook: return L10n.text("任务使用的外观文件不可用，请重新创建任务。")
-        case .noSelection: return L10n.text("请至少选择一张 RAW 照片。")
+        case .noSelection: return L10n.text("请至少选择一张照片。")
         }
     }
 }
@@ -190,7 +204,7 @@ enum BatchExportRunner {
         defer { try? FileManager.default.removeItem(at: temp) }
         do {
             guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
-            try render(item.input, job.settings, job.look, temp)
+            try render(item.input, job.settings(for: item.input), job.look, temp)
         } catch {
             job.items[index].status = .failed
             job.items[index].error = error.localizedDescription

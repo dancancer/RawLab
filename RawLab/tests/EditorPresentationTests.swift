@@ -7,7 +7,7 @@ struct EditorPresentationTests {
         print("PASS: \(message)")
     }
 
-    static func main() {
+    static func main() throws {
         var settings = RawSettings.default
         check(AdjustmentKind.contrast.range == -100...100 && AdjustmentKind.sharpening.range == 0...200,
               "iOS contrast and sharpening expose the full Mac ranges")
@@ -40,6 +40,31 @@ struct EditorPresentationTests {
         }
         check(AdjustmentKind.exposure.step == 0.05 && AdjustmentKind.temperature.step == 10 &&
               AdjustmentKind.shadows.step == 1 && AdjustmentKind.saturation.step == 1, "iOS steps match Mac")
+        check(AdjustmentKind.allCases.contains(.temperature) && AdjustmentKind.allCases.contains(.tint) &&
+              AdjustmentKind.temperature.title == L10n.text("白平衡"),
+              "White balance keeps both lower-level parameters in the complete adjustment list")
+        check(AdjustmentKind.toolCases.contains(.temperature) && !AdjustmentKind.toolCases.contains(.tint),
+              "The editor tool list presents white balance once through temperature")
+        var tintOnlyWhiteBalance = RawSettings.default
+        tintOnlyWhiteBalance.tint = 24
+        check(AdjustmentKind.temperature.progress(in: tintOnlyWhiteBalance) > 0,
+              "White balance progress reflects a tint-only edit")
+        let restoredTint = try! JSONDecoder().decode(RawSettings.self,
+                                                       from: JSONEncoder().encode(tintOnlyWhiteBalance))
+        check(restoredTint.tint == 24 && AdjustmentKind.tint.value(from: restoredTint) == 24,
+              "Tint remains a persisted lower-level white balance parameter")
+        var recipeWhiteBalance = RawSettings.default
+        let recipeID = MasterRecipe.allRecipes[0].id
+        recipeWhiteBalance.masterRecipeID = recipeID
+        recipeWhiteBalance.temperature = 9000
+        recipeWhiteBalance.tint = 31
+        recipeWhiteBalance.whiteBalanceMode = .custom
+        recipeWhiteBalance.exposure = 0.35
+        AdjustmentKind.resetWhiteBalance(in: &recipeWhiteBalance, cameraTemperature: 5200, cameraTint: 8)
+        check(recipeWhiteBalance.masterRecipeID == recipeID && recipeWhiteBalance.temperature == 5200 &&
+              recipeWhiteBalance.tint == 0 && recipeWhiteBalance.whiteBalanceMode == .camera &&
+              recipeWhiteBalance.exposure == 0.35,
+              "Whole white balance reset keeps the selected recipe and unrelated edits")
         check(!EditorLayoutPolicy.usesSidePanel(width: 834, height: 1100, accessibility: false), "Portrait iPad keeps a wide photo above the adjustment region")
         check(EditorLayoutPolicy.usesSidePanel(width: 1100, height: 834, accessibility: false), "Landscape iPad separates photo and adjustment regions")
         check(!EditorLayoutPolicy.usesSidePanel(width: 500, height: 900, accessibility: false), "Narrow iPad windows use compact layout")
@@ -164,6 +189,26 @@ struct EditorPresentationTests {
         let custom = FilmPresentation(fileName: "My_Custom_Look")
         check(custom.name == "My_Custom_Look" && custom.artworkName == nil,
               "Unknown names remain intact and do not borrow film artwork")
+        check(film.group == .fuji && wdr.group == .fuji && custom.group == .other,
+              "Legacy Fuji and unknown looks retain their flat-list groups")
+        let groups = FilmGroup.sections(BundledLook.all, group: { FilmPresentation(fileName: $0.id).group })
+        check(groups.map(\.count) == [24, 5], "Shared iOS looks have 24 Kodak and 5 Other entries")
+        check(FilmGroup.sections([FilmGroup](), group: { $0 }).isEmpty,
+              "An empty look list has no empty sections or separators")
+        check(FilmGroup.sections([FilmGroup.other, .fuji, .kodak, .other], group: { $0 }) == [[.fuji], [.kodak], [.other, .other]],
+              "Flat sections follow Fuji, Kodak, Other without dropping or duplicating looks")
+        let ektar = FilmPresentation(fileName: "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
+        check(ektar.name == "EKTAR 100 RawLab edition" && ektar.artworkName == "ektar-100-phuket",
+              "Project Ektar keeps its distinct name and existing artwork")
+        for look in BundledLook.all {
+            let item = FilmPresentation(fileName: look.id)
+            check(item.name == look.name && item.artworkName == look.artworkName,
+                  "Shared catalog presentation resolves \(look.id)")
+            var saved = RawSettings.default
+            saved.lutID = look.id
+            let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(saved))
+            check(restored.lutID == look.id, "Bundled look identity survives iOS persistence")
+        }
         let modernFilms: [(String, String, String?)] = [
             ("ACROS", "ACROS", "acros"), ("ASTIA", "ASTIA", "astia"),
             ("CLASSIC-CHROME", "CLASSIC CHROME", "classic-chrome"),

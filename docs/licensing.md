@@ -6,20 +6,46 @@ Copyright (c) 2026 RawLab contributors.
 
 Unless an individual file or resource specifies otherwise, original RawLab
 project code in this release is distributed under version 3 of the GNU General
-Public License only (`SPDX-License-Identifier: GPL-3.0-only`). The full terms are
-in [LICENSE](../LICENSE), using the unmodified
-[GNU GPLv3 text](https://www.gnu.org/licenses/gpl-3.0.txt).
+Public License only (base SPDX identifier: `GPL-3.0-only`), with the additional
+permission described below. The full GPL terms are in [LICENSE](../LICENSE),
+using the unmodified [GNU GPLv3 text](https://www.gnu.org/licenses/gpl-3.0.txt).
 
 RawLab is free software: you can redistribute it and/or modify it under the
 terms of version 3 of the GNU General Public License as published by the Free
 Software Foundation. It is distributed without any warranty, including the
 implied warranties of merchantability or fitness for a particular purpose.
 
-Release packages include `RawLab-GPL-3.0.txt` and this notice. The release tag
-identifies the corresponding project source; the release source archive also
-includes pinned native dependency sources and the scripts needed to rebuild
-them. Signing keys, build-machine credentials and personal RAW files are not
-distributed.
+Release packages include `RawLab-GPL-3.0.txt`,
+`RawLab-Aliyun-RUM-Exception.txt` and this notice. The release tag identifies
+the corresponding project source; the release source archive also includes
+pinned native dependency sources and the scripts needed to rebuild them,
+subject to the narrow exception below. Signing keys, build-machine
+credentials and personal RAW files are not distributed.
+
+## Alibaba Cloud RUM Linking Exception
+
+On 16 October 2026, the owner of the original RawLab project code authorized
+the [RawLab Alibaba Cloud RUM SDK Linking Exception](../LICENSE-ALIYUN-RUM-EXCEPTION)
+as an additional permission under GPLv3 section 7. GPLv3 remains the base
+license; this is not a change to MIT or a general permission to link with
+arbitrary non-GPL libraries.
+
+Version 1.0 covers the native macOS/Windows SDK 0.4.4, Android SDK 2.3.2,
+and iOS AlibabaCloudRUM/AlibabaCloudRUMSDK 2.4.2. It permits linking and
+conveying combinations with those SDKs without requiring their source solely
+under RawLab's GPL terms. RawLab's own code, modifications, integration code
+and required build/install scripts remain subject to GPLv3 source obligations.
+Other SDK releases are not automatically covered; see the exception's exact
+scope for bundled runtime components and permitted SDK modifications.
+
+The exception grants no rights in the SDKs or other third-party components.
+Their own licenses, redistribution permissions, source obligations and
+notices still apply. It does not establish that the SDKs may be redistributed
+or that a combined package is ready for release.
+
+The current RUM integration remains restricted to explicitly enabled private
+local validation builds. Default and Release builds do not include the SDKs.
+The exception does not authorize publishing or remove those build guards.
 
 ## Third-Party Code and Resources
 
@@ -48,6 +74,11 @@ the iOS GLib availability-probe adjustment and complete rebuild commands live in
 `lutools/cmake/lens-dependencies.json`, `build-lens-dependencies.py` and
 [the native platform notes](lens-correction-platforms.md). Preserve those sources
 and the application's corresponding source when redistributing a binary.
+
+The optional edit JSON CLI adapter uses unmodified nlohmann JSON 3.12.0 (MIT).
+Its source and license are retained in
+[the dependency directory](../lutools/third_party/nlohmann/README.md).
+CLI installations include its MIT license; native clients do not link this adapter.
 
 ## Historical MIT Notice
 

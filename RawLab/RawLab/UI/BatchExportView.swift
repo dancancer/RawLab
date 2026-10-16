@@ -7,6 +7,7 @@ struct BatchExportView: View {
     @ObservedObject var model: BatchExportModel
     @Environment(\.dismiss) private var dismiss
     @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showingFileImporter = false
     @State private var selectedTarget: BatchTarget?
     @State private var confirmTarget: BatchTarget?
     @State private var showDiscard = false
@@ -59,6 +60,12 @@ struct BatchExportView: View {
                 guard !items.isEmpty else { return }
                 pickerItems = []
                 Task { await model.addPickerItems(items) }
+            }
+            .fileImporter(isPresented: $showingFileImporter,
+                          allowedContentTypes: PhotoImportFile.supportedContentTypes,
+                          allowsMultipleSelection: true) { result in
+                guard let urls = try? result.get() else { return }
+                Task { await model.addFiles(urls) }
             }
             .confirmationDialog(L10n.text("放弃此任务？已保存的照片会保留。"), isPresented: $showDiscard, titleVisibility: .visible) {
                 Button(L10n.text("放弃任务"), role: .destructive) { if model.discard() { dismiss() } }
@@ -140,10 +147,16 @@ struct BatchExportView: View {
                     PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
                         Label(model.job.targets.isEmpty ? L10n.text("选择") : L10n.text("添加"), systemImage: "plus")
                     }.disabled(!model.canChangeTargets).accessibilityIdentifier("batch.pick")
+                    Button { showingFileImporter = true } label: {
+                        Image(systemName: "folder.badge.plus")
+                    }
+                    .accessibilityLabel(L10n.text("从文件导入"))
+                    .disabled(!model.canChangeTargets)
+                    .accessibilityIdentifier("batch.filePick")
                 }
             }.padding(.horizontal, 20).padding(.top, 12)
             if model.job.targets.isEmpty {
-                Text(L10n.text("尚未选择 RAW")).foregroundStyle(.secondary).padding(.horizontal, 20)
+                Text(L10n.text("尚未选择照片")).foregroundStyle(.secondary).padding(.horizontal, 20)
             } else if model.job.status == .draft {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 12) {
@@ -190,7 +203,7 @@ struct BatchExportView: View {
                     }
                 }.padding(.horizontal, 20)
             }
-            Text(L10n.format("已选 %@ 张 RAW", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
+            Text(L10n.format("已选 %@ 张照片", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
                 .padding(.horizontal, 20).padding(.bottom, 16)
         }
     }
@@ -218,7 +231,7 @@ struct BatchExportView: View {
     private var actionBar: some View {
         VStack(spacing: 10) {
             if model.isPreparing {
-                ProgressView(L10n.text("正在准备 RAW…")).frame(maxWidth: .infinity)
+                ProgressView(L10n.text("正在准备照片…")).frame(maxWidth: .infinity)
             } else if model.isRunning {
                 ProgressView(value: Double(model.completedCount + model.failedCount), total: Double(max(1, model.selectedCount)))
                 Text(L10n.format("已处理 %@ / %@", String(describing: model.completedCount + model.failedCount), String(describing: model.selectedCount)))

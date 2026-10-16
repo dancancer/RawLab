@@ -23,6 +23,7 @@ data class EditSettings(
     val hsl: HslSettings = HslSettings(),
     val recipeID: String? = null,
     val lens: LensSettings = LensSettings(),
+    val geometry: GeometrySettings = GeometrySettings(),
 ) {
     init {
         require(exposureMode in 0..2)
@@ -39,6 +40,20 @@ data class EditSettings(
         require(displayChromaDenoise in 0..2)
     }
     fun reset() = EditSettings(film = film)
+
+    /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
+    fun effectiveFor(input: PhotoInputKind): EditSettings = if (input == PhotoInputKind.RASTER) copy(
+        exposureMode = 2,
+        customWb = false,
+        temperature = 6500f,
+        tint = 0f,
+        lens = LensSettings(),
+    ) else this
+    fun resetWhiteBalance(asShotTemperature: Float?, asShotTint: Float?): EditSettings = copy(
+        customWb = false,
+        temperature = asShotTemperature ?: 6500f,
+        tint = if (recipeID == null) asShotTint ?: 0f else 0f,
+    )
     val recipeScale get() = if (recipeID == null) 1f else strength
     val renderHsl get() = hsl.scaled(recipeScale)
     fun applyRecipe(recipe: MasterRecipe) = copy(film = "neutral", recipeID = recipe.id, strength = 1f,
@@ -178,7 +193,8 @@ data class PhotoEffectsSettings(
             .all { value(it) == it.defaultValue }
 }
 
-data class Film(val id: String, val name: String, val file: String?) {
+data class Film(val id: String, val name: String, val file: String?, val artworkName: String = id) {
+    val fileName: String? get() = file?.let { if (it.endsWith(".cube")) it else "FLog2_to_${it}_65grid_V.1.00.cube" }
     companion object {
         val all = listOf(
             Film("neutral", "中性", null),
