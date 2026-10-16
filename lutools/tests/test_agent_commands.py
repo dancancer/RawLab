@@ -1,11 +1,13 @@
 """Agent CLI contract tests; all outputs live in a temporary directory."""
 import argparse
+import errno
 import itertools
 import json
 import pathlib
 import subprocess
 import tempfile
 import unittest
+import sys
 
 
 ERROR_CODES = {
@@ -85,9 +87,9 @@ class AgentCommands(unittest.TestCase):
 
     def test_capabilities_and_flag_order(self):
         expected = {
-            "recipe_versions": [1, 2, 3],
+            "recipe_versions": [1, 2, 3, 4],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
-            "input_types": ["raw"],
+            "input_types": ["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"],
             "output_formats": ["jpeg", "png", "dng"],
             "exposure_modes": ["scene", "preview", "sensor"],
             "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
@@ -97,6 +99,11 @@ class AgentCommands(unittest.TestCase):
                 result = self.envelope(self.run_cli(*arguments), "capabilities")
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
+                features = result["result"]["optional_features"]
+                if sys.platform == "win32":
+                    self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff"])
+                self.assertEqual(set(features), {"wavelet_denoise", "chroma_denoise", "lens_correction"})
+                self.assertTrue(all(isinstance(value, bool) for value in features.values()))
         self.assertFalse((self.root / "edited.jpg").exists())
 
     def test_validate_recipe_and_flag_order(self):
@@ -113,6 +120,15 @@ class AgentCommands(unittest.TestCase):
                 self.assertEqual(result["output"]["jpeg_quality"], 95)
                 self.assertEqual(result["output"]["size"], {"mode": "native"})
         self.assertFalse((self.root / "edited.jpg").exists())
+
+    def test_lens_database_validation_flag_order(self):
+        self.write_recipe()
+        for groups in itertools.permutations((("--recipe", self.recipe), ("--lens-database", self.root / "lenses.xml"), ("--print-recipe",))):
+            arguments = [item for group in groups for item in group]
+            with self.subTest(arguments=arguments):
+                process = self.run_cli(*arguments)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertEqual(json.loads(process.stdout)["schema_version"], 1)
 
     def test_validation_retains_unicode_relative_paths(self):
         self.document["input"]["path"] = "样片/日落 🌅.ARW"
@@ -187,11 +203,24 @@ class AgentCommands(unittest.TestCase):
                 self.envelope(self.run_cli(*arguments, cwd=self.root.parent), "export", "io_error")
                 self.assertFalse((self.root / "edited.jpg").exists())
 
+    def create_link(self, alias, source, kind):
+        try:
+            if kind == "symlink": alias.symlink_to(source)
+            else: alias.hardlink_to(source)
+        except NotImplementedError as failure:
+            self.skipTest(f"{kind} unsupported: {failure}")
+        except OSError as failure:
+            unavailable = {errno.EACCES, errno.EPERM, errno.ENOSYS,
+                           getattr(errno, "ENOTSUP", -1), getattr(errno, "EOPNOTSUPP", -1)}
+            if failure.errno in unavailable or getattr(failure, "winerror", None) in {1, 5, 50, 1314}:
+                self.skipTest(f"{kind} unavailable: {failure}")
+            raise
+
     def use_raw_fixture(self):
         if RAW is None or not RAW.is_file():
             self.skipTest("real RAW fixture not provided")
         # A symlink exercises recipe-relative input without copying or modifying RAWs.
-        (self.root / "photo.DNG").symlink_to(RAW)
+        self.create_link(self.root / "photo.DNG", RAW, "symlink")
         self.document["input"]["path"] = "photo.DNG"
         self.document["output"]["size"] = {"mode": "limit_long_edge", "long_edge": 64}
 
@@ -222,6 +251,29 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(result["error"]["status"], 4)
         self.assertTrue(target.is_dir())
         self.assertEqual(list(target.iterdir()), [])
+
+    def test_sources_are_protected_through_output_aliases(self):
+        # The look guard originates in core-owner commit 4f95bceb.
+        sources = {"recipe": self.recipe, "input": self.root / "source.DNG", "look": self.root / "look.cube"}
+        sources["input"].write_bytes(b"read only input")
+        sources["look"].write_bytes(b"read only look")
+        self.document["input"]["path"] = str(sources["input"])
+        self.document["edits"]["look"] = {"path": str(sources["look"])}
+        for name, source in sources.items():
+            for kind in ("direct", "normalized", "symlink", "hardlink"):
+                for preview in (False, True):
+                    with self.subTest(source=name, alias=kind, preview=preview):
+                        alias = self.root / f"{name}-{kind}-{preview}.png"
+                        if kind == "direct": alias = source
+                        elif kind == "normalized": alias = source.parent / "unused" / ".." / source.name
+                        else: self.create_link(alias, source, kind)
+                        self.document["output"]["path"] = str(alias)
+                        self.write_recipe()
+                        original = {key: value.read_bytes() for key, value in sources.items()}
+                        arguments = ["--recipe", self.recipe, "--json"]
+                        if preview: arguments += ["--preview", alias]
+                        self.envelope(self.run_cli(*arguments), "preview" if preview else "export", "invalid_argument")
+                        self.assertEqual(original, {key: value.read_bytes() for key, value in sources.items()})
 
     def test_real_raw_dng_unwritable_destination(self):
         self.use_raw_fixture()

@@ -7,12 +7,12 @@ Check(settings.Denoise==new DenoiseSettings(false,0,46,50),"Default is off with 
 Check(settings.Effects==new PhotoEffectsSettings(),"Photo effects use canonical disabled defaults");
 Check(settings.DisplayChromaDenoise==0,"Display chroma denoise defaults off independently of wavelet chroma");
 var signedEffects=PhotoEffectSpec.For(PhotoEffectParameter.VignetteAmount);
-Check(PhotoEffectSpec.For(PhotoEffectParameter.VignetteMidpoint).Value(.005)==1 && signedEffects.Value(.4975)==-1,
-    "Photo effect slider rounds half steps away from zero");
-settings.SetEffect(PhotoEffectParameter.VignetteAmount,.5);
-Check(settings.Effects.VignetteAmount==1,"Photo effect input rounds positive half steps away from zero");
-settings.SetEffect(PhotoEffectParameter.VignetteAmount,-.5);
-Check(settings.Effects.VignetteAmount==-1,"Photo effect input rounds negative half steps away from zero");
+Check(PhotoEffectSpec.For(PhotoEffectParameter.VignetteMidpoint).Value(.005)==.5 && signedEffects.Value(.4975)==-.5,
+    "Photo effect slider preserves the v08 fine grid");
+settings.SetEffect(PhotoEffectParameter.VignetteAmount,.05);
+Check(settings.Effects.VignetteAmount==.1,"Photo effect input rounds positive half grid away from zero");
+settings.SetEffect(PhotoEffectParameter.VignetteAmount,-.05);
+Check(settings.Effects.VignetteAmount==-.1,"Photo effect input rounds negative half grid away from zero");
 settings.Denoise=DenoiseSettings.Clean;
 Check(settings.Denoise==new DenoiseSettings(true,10,72,100),"Clean preset retains light luminance grain");
 settings.SetEffect(PhotoEffectParameter.VignetteAmount,-40);

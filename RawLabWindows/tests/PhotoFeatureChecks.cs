@@ -58,15 +58,51 @@ internal static class PhotoFeatureChecks
         Check(info!.DisplayWidth > 0 && info.DisplayHeight > 0 && info.CaptureTime != null,
             "Production ExifTool reports oriented source dimensions and capture time");
 
-        var app = new App(); app.InitializeComponent(); app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
+        var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
+        TestWindowState.Isolate(window,output);
         var store = new EditStore(Path.Combine(output, "edits")); SetField(window, "editStore", store);
         window.GpuMode.SelectedIndex = 1;
         window.Show();
         try
         {
+            var invalidRaw=Path.Combine(output,"invalid.ARW");File.WriteAllText(invalidRaw,"not a RAW file");
+            var frozen=new Adjustments();frozen.Set(Parameter.Exposure,.37);
+            var preflightJob=BatchJob.Create(source,frozen.Capture(),null,"Neutral");
+            var preflightJournal=new BatchJournal(Path.Combine(output,"preflight-journal"));
+            var preflightWindow=new BatchExportWindow(preflightJob,preflightJournal){Owner=window};preflightWindow.Show();
+            var busyEvents=new List<bool>();preflightWindow.BusyChanged+=busyEvents.Add;
+            var validation=preflightWindow.AddInputs([invalidRaw,target]);
+            Check(preflightWindow.Busy && !preflightWindow.PrimaryAction.IsEnabled && !preflightWindow.SelectionActions.IsEnabled,
+                "RAW preflight locks export and selection until validation finishes");
+            InteractionChecks.PumpUntil(()=>validation.IsCompleted);validation.GetAwaiter().GetResult();
+            Check(preflightJob.SelectedCount==1 && preflightJob.Items.Single(item=>item.Input==target).CanSelect,
+                "RAW preflight accepts a decodable target");
+            Check(busyEvents.SequenceEqual(new[]{true,false}),"RAW preflight reports its full busy lifetime to the main-window gate");
+            Check(preflightJob.Items.Single(item=>item.Input==invalidRaw) is {CanSelect:false,Selected:false,ValidationError:not null},
+                "RAW preflight retains a failed target as unselectable with an error");
+            preflightWindow.GetType().GetMethod("SelectAll",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(preflightWindow,[true]);
+            Check(!preflightJob.Items.Single(item=>item.Input==invalidRaw).Selected && preflightJob.Settings.SameAs(frozen.Capture()),
+                "Select-all cannot bypass RAW validation or mutate frozen settings");
+            preflightWindow.Close();
+            Check(preflightWindow.Discarded && preflightJournal.Load()==null,"Closing an unstarted batch discards its draft journal");
+
+            var closingJob=BatchJob.Create(source,frozen.Capture(),null,"Neutral");
+            var closingJournal=new BatchJournal(Path.Combine(output,"closing-preflight-journal"));
+            var closingWindow=new BatchExportWindow(closingJob,closingJournal){Owner=window};closingWindow.Show();
+            closingJournal.Save(closingJob);
+            using(var journalLock=new FileStream(Path.Combine(closingJournal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
+            {
+                var closingValidation=closingWindow.AddInputs([target]);closingWindow.Close();
+                InteractionChecks.PumpUntil(()=>closingValidation.IsCompleted);closingValidation.GetAwaiter().GetResult();
+                Check(closingWindow.IsVisible && closingWindow.CloseFailed && !closingWindow.Discarded && closingWindow.Job.Error!=null,
+                    "A failed journal cleanup keeps the batch visible for retry after validation");
+            }
+            closingWindow.Close();
+            Check(!closingWindow.IsVisible && closingWindow.Discarded && closingJournal.Load()==null,
+                "Close during RAW validation waits for native work and does not recreate a discarded journal");
+
             var job = BatchJob.Create(source, new Adjustments().Capture(), null, "Neutral");
             job.OutputDirectory = output; job.Items = [BatchItem.Create(target) with { Selected = true }];
             var journal = new BatchJournal(Path.Combine(output, "journal"));
@@ -137,12 +173,13 @@ internal static class PhotoFeatureChecks
             var vignetteTool = window.Tools.Children.OfType<Button>().Single(button =>
                 AutomationProperties.GetAutomationId(button) == "Vignette");
             Click(vignetteTool); window.UpdateLayout();
+            ((Expander)window.PhotoEffectsEditor.FindName("VignetteDetails")).IsExpanded=true;window.UpdateLayout();
             var vignetteAmount = Descendants<Slider>(window).Single(slider =>
                 AutomationProperties.GetName(slider) == "暗角强度");
             var vignetteHighlights = Descendants<Slider>(window).Single(slider =>
                 AutomationProperties.GetName(slider) == "暗角高光保护");
             Check(!vignetteHighlights.IsEnabled, "Zero vignette disables highlights protection");
-            vignetteAmount.Value = -40;
+            vignetteAmount.Value = .3;
             Check(vignetteHighlights.IsEnabled, "Negative vignette enables highlights protection");
             Screenshot(window, Path.Combine(output, "vignette.png"));
             var labels = Descendants<TextBlock>(window.PhotoEffectsEditor).Where(label => label.IsVisible &&

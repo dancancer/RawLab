@@ -7,10 +7,18 @@ public enum CropComponent { X, Y, Width, Height }
 // Coordinates refer to the oriented canvas after rotation, flipping and straightening.
 public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double CropWidth = 1,
     double CropHeight = 1, int QuarterTurns = 0, bool FlipHorizontal = false,
-    bool FlipVertical = false, double StraightenDegrees = 0)
+    bool FlipVertical = false, double StraightenDegrees = 0,
+    double PerspectiveHorizontal = 0, double PerspectiveVertical = 0)
 {
     public bool IsIdentity => this == new GeometrySettings();
-    public GeometrySettings Rotate(int turns) => this with { QuarterTurns = ((QuarterTurns + turns) % 4 + 4) % 4 };
+    public GeometrySettings Rotate(int turns)
+    {
+        var next=this;
+        for(var i=0;i<((turns%4+4)%4);++i)next=next with {
+            QuarterTurns=(next.QuarterTurns+1)%4,CropX=Math.Max(0,1-next.CropY-next.CropHeight),CropY=next.CropX,
+            CropWidth=next.CropHeight,CropHeight=next.CropWidth };
+        return next;
+    }
 
     public GeometrySettings WithCropPercent(CropComponent component, double percent)
     {
@@ -33,11 +41,19 @@ public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double
         if (!double.IsFinite(CropX) || !double.IsFinite(CropY) || !double.IsFinite(CropWidth) ||
             !double.IsFinite(CropHeight) || (float)CropWidth <= 0 || (float)CropHeight <= 0 || CropX < 0 || CropY < 0 || CropWidth <= 0 || CropHeight <= 0 ||
             CropX + CropWidth > 1 + 1e-12 || CropY + CropHeight > 1 + 1e-12 || QuarterTurns is < 0 or > 3 ||
-            !double.IsFinite(StraightenDegrees) || StraightenDegrees is < -45 or > 45)
+            !double.IsFinite(StraightenDegrees) || StraightenDegrees is < -45 or > 45 ||
+            !double.IsFinite(PerspectiveHorizontal) || PerspectiveHorizontal is < -1 or > 1 ||
+            !double.IsFinite(PerspectiveVertical) || PerspectiveVertical is < -1 or > 1)
             throw new ArgumentOutOfRangeException(nameof(GeometrySettings), Loc.Text("几何调整无效。"));
         return new() { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.GeometryConfig>(),
             CropX = (float)CropX, CropY = (float)CropY, CropWidth = (float)CropWidth, CropHeight = (float)CropHeight,
             QuarterTurns = QuarterTurns, FlipHorizontal = FlipHorizontal ? 1 : 0,
             FlipVertical = FlipVertical ? 1 : 0, StraightenDegrees = (float)StraightenDegrees };
+    }
+    internal Native.PerspectiveConfig NativePerspectiveConfig()
+    {
+        _=NativeConfig();
+        return new(){Version=1,StructSize=(uint)Marshal.SizeOf<Native.PerspectiveConfig>(),
+            Horizontal=(float)PerspectiveHorizontal,Vertical=(float)PerspectiveVertical};
     }
 }

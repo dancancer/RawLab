@@ -164,6 +164,11 @@ set(CORE_SOURCES
     src/gpu/denoise.cpp
     src/gpu/compute_denoise.cpp
 )
+if(WIN32)
+    list(APPEND CORE_SOURCES src/platform/display_image_windows.cpp)
+else()
+    list(APPEND CORE_SOURCES src/platform/display_image.cpp)
+endif()
 
 if(SONY2FUJI_ENABLE_GPU)
     if(WIN32)
@@ -184,10 +189,16 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+if(WIN32)
+    target_link_libraries(sony2fuji_core windowscodecs ole32)
+endif()
 if(SONY2FUJI_ENABLE_GPU AND WIN32)
     target_link_libraries(sony2fuji_core d3d11 dxgi d3dcompiler)
 endif()
 target_link_libraries(sony2fuji_core ${LIBRAW_LIBRARY})
+if(APPLE AND NOT IOS)
+    target_link_libraries(sony2fuji_core "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation")
+endif()
 if(SONY2FUJI_ENABLE_LENSFUN)
     target_link_libraries(sony2fuji_core ${LENSFUN_LIBRARY})
 endif()
@@ -221,10 +232,16 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    if(WIN32)
+        target_link_libraries(sony2fuji windowscodecs ole32)
+    endif()
     if(SONY2FUJI_ENABLE_GPU AND WIN32)
         target_link_libraries(sony2fuji d3d11 dxgi d3dcompiler)
     endif()
     target_link_libraries(sony2fuji ${LIBRAW_LIBRARY})
+    if(APPLE AND NOT IOS)
+        target_link_libraries(sony2fuji "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation")
+    endif()
     if(SONY2FUJI_ENABLE_LENSFUN)
         target_link_libraries(sony2fuji ${LENSFUN_LIBRARY})
     endif()
@@ -304,6 +321,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set(SONY2FUJI_TEST_LENS_WAVELET_RAW "" CACHE FILEPATH "External RAW with calibrated Lens and applied wavelet NR")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_LENS_WAVELET_RAW}" SONY2FUJI_TEST_LENS_WAVELET_RAW)
     find_package(Threads REQUIRED)
+    add_executable(display_render_tests tests/display_render_tests.cpp)
+    target_link_libraries(display_render_tests sony2fuji_core)
+    add_test(NAME display_render COMMAND display_render_tests)
+    if(APPLE)
+        add_executable(display_image_tests tests/display_image_tests.cpp)
+        target_link_libraries(display_image_tests sony2fuji_core)
+        add_test(NAME display_image COMMAND display_image_tests)
+    endif()
     add_executable(photo_geometry_tests tests/photo_geometry_tests.cpp src/core/photo_geometry.cpp)
     add_test(NAME photo_geometry COMMAND photo_geometry_tests)
     add_executable(perspective_tests tests/perspective_tests.cpp src/core/photo_geometry.cpp)
@@ -323,6 +348,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(edit_recipe_tests tests/edit_recipe_tests.cpp)
     target_link_libraries(edit_recipe_tests rawlab_edit_protocol)
     add_test(NAME edit_recipe COMMAND edit_recipe_tests)
+    add_executable(edit_recipe_raster_tests tests/edit_recipe_raster_tests.cpp)
+    target_include_directories(edit_recipe_raster_tests PRIVATE third_party)
+    target_link_libraries(edit_recipe_raster_tests rawlab_edit_protocol)
+    add_test(NAME edit_recipe_raster COMMAND edit_recipe_raster_tests)
     add_executable(edit_recipe_geometry_tests tests/edit_recipe_geometry_tests.cpp)
     target_link_libraries(edit_recipe_geometry_tests rawlab_edit_protocol)
     add_test(NAME edit_recipe_geometry COMMAND edit_recipe_geometry_tests)
@@ -332,29 +361,36 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     if(BUILD_CLI)
         find_package(Python3 QUIET COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
+            set(CLI_TEST_RAW "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+            if(WIN32 AND EXISTS "${SONY2FUJI_TEST_RAW}")
+                set(CLI_TEST_RAW "${SONY2FUJI_TEST_RAW}")
+            endif()
             add_test(NAME geometry_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_geometry_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+                --raw "${CLI_TEST_RAW}"
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME agent_preview COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_preview.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+                --raw "${CLI_TEST_RAW}"
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME raw_info_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_raw_info_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+                --raw "${CLI_TEST_RAW}"
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME agent_commands COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_commands.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+                --raw "${CLI_TEST_RAW}")
             add_test(NAME edit_recipe_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+                --raw "${CLI_TEST_RAW}")
+            add_test(NAME edit_recipe_schema COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_schema.py"
+                --cli $<TARGET_FILE:sony2fuji_cli>)
         endif()
     endif()
     add_executable(rendered_dng_tests tests/rendered_dng_tests.cpp)

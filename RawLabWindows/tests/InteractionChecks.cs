@@ -37,6 +37,7 @@ internal static class InteractionChecks
         app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window=new MainWindow{Width=1440,Height=920};
+        TestWindowState.Isolate(window,Path.Combine(repo,"build","windows-interactions"));
         window.Show();
         try
         {
