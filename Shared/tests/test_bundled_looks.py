@@ -16,7 +16,7 @@ class BundledLooksTests(unittest.TestCase):
         self.assertEqual(len(catalog), 29)
         look = catalog[0]
         self.assertEqual(look["id"], "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
-        self.assertEqual(look["name"], "EKTAR 100 Phuket v2 Strong")
+        self.assertEqual(look["name"], "EKTAR 100 RawLab edition")
         self.assertEqual(look["artworkName"], "ektar-100-phuket")
         cube = folder / look["fileName"]
         self.assertEqual(hashlib.sha256(cube.read_bytes()).hexdigest(), look["sha256"])

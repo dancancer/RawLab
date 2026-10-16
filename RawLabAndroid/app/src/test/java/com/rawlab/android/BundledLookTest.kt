@@ -6,8 +6,8 @@ import org.junit.Test
 class BundledLookTest {
     @Test fun projectEktarHasItsOwnStableIdentityAndResources() {
         val id = "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65"
-        val film = Film(id, "EKTAR 100 Phuket v2 Strong", "$id.cube", "ektar-100-phuket")
-        assertEquals("EKTAR 100 Phuket v2 Strong", film.name)
+        val film = Film(id, "EKTAR 100 RawLab edition", "$id.cube", "ektar-100-phuket")
+        assertEquals("EKTAR 100 RawLab edition", film.name)
         assertEquals("$id.cube", film.fileName)
         assertEquals("ektar-100-phuket", film.artworkName)
         val settings = EditSettings().selectFilm(id)

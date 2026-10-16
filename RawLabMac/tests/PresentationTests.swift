@@ -171,6 +171,29 @@ struct PresentationTests {
         check(listing.folders[0].lastPathComponent == "nested", "Subfolders remain lazy tree nodes")
         let artworkFolder = URL(fileURLWithPath: CommandLine.arguments[1])
         check(FilmArtwork.resourceNames.count == 39, "Every bundled film has packaging artwork")
+        let bundledFilms = BundledLook.all.map {
+            Film(name: $0.name, url: URL(fileURLWithPath: "/LUTs/" + $0.fileName))
+        }
+        check(FilmGroup.allCases == [.fuji, .kodak, .other], "Film groups retain Fuji, Kodak, Other order")
+        check(bundledFilms.filter { $0.group == .kodak }.count == 24,
+              "Kodak contains all 23 G'MIC looks and the separate Ektar v2")
+        check(bundledFilms.filter { $0.group == .other }.count == 5,
+              "Camera looks stay in Other, separate from Kodak and Fuji")
+        for path in try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: "lutools/flog-2-new"),
+                                                               includingPropertiesForKeys: nil)
+            where path.pathExtension == "cube" {
+            check(Film(name: path.lastPathComponent, url: path).group == .fuji,
+                  "Legacy Fuji LUT remains in Fuji: \(path.lastPathComponent)")
+        }
+        let customFuji = Film(name: "PROVIA", url: URL(fileURLWithPath: "/custom/FLog2_to_PROVIA.cube"), managedID: "custom:fuji")
+        let customKodak = Film(name: bundledFilms[0].name, url: bundledFilms[0].url, managedID: "custom:kodak")
+        check(customFuji.group == .other && customKodak.group == .other,
+              "Imported looks remain in Other even when names or filenames match built-ins")
+        check(Film(name: "Unknown", url: URL(fileURLWithPath: "/LUTs/unknown.cube")).group == .other,
+              "Unknown looks have a predictable Other fallback")
+        let groupedFilms = FilmGroup.allCases.flatMap { group in bundledFilms.filter { $0.group == group } }
+        check(groupedFilms.count == bundledFilms.count && Set(groupedFilms.map(\.id)) == Set(bundledFilms.map(\.id)),
+              "Flat grouping retains every LUT and its stable identity")
         for name in FilmArtwork.resourceNames.keys.sorted() {
             let directory = FileManager.default.fileExists(atPath: artworkFolder.appendingPathComponent(FilmArtwork.resourceNames[name]! + ".png").path)
                 ? artworkFolder : URL(fileURLWithPath: "Shared/BundledLooks/Artwork")

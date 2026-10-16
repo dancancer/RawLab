@@ -15,7 +15,7 @@ Fuji effects and master recipes are unchanged.
 
 | Picker Name | Catalog ID / Filename Stem |
 | --- | --- |
-| EKTAR 100 Phuket v2 Strong | `EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65` |
+| EKTAR 100 RawLab edition | `EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65` |
 | Contax ND STD | `RawLab_camera_contax_nd_std_sRGB_v1` |
 | Lumix S1R Vivid | `RawLab_camera_lumix_s1r_vivid_sRGB_v1` |
 | Pentax K-5 Reversal | `RawLab_camera_pentax_k5_reversal_sRGB_v1` |
@@ -46,8 +46,10 @@ Fuji effects and master recipes are unchanged.
 | Kodak TRI-X 400 | `RawLab_look_trix_400_sRGB_v1` |
 
 Names are stock/camera identifiers, not new UI sentences, and remain the same
-in the six supported languages. `Ektar 100 G'MIC` and `EKTAR 100 Phuket v2
-Strong` are different tables with different identities and artwork.
+in the six supported languages. `Ektar 100 G'MIC` and `EKTAR 100 RawLab edition`
+are different tables with different identities and artwork. The latter was
+previously displayed as `EKTAR 100 Phuket v2 Strong`; only its display name was
+changed. Its original file, ID, artwork and saved-photo compatibility remain.
 
 Catalog IDs equal filename stems. iOS/Android use those IDs in their existing
 edit stores. Mac/Windows retain their established `builtin:<filename>` identity;
@@ -161,6 +163,12 @@ Only the new picker entries receive wider two-line name layouts. Existing
 horizontal picker behavior, legacy widths and custom-look artwork behavior
 are preserved. iOS reserves 34 scaled caption points for new two-line labels;
 native UIFont measurement found that 30 points clipped a 32-point caption.
+
+The Mac film picker remains one flat horizontal list, ordered Fujifilm, Kodak,
+then Other, with vertical dividers between groups and no tabs or filtering.
+The 10 legacy Fuji looks stay together; Kodak contains 23 G'MIC looks plus
+Ektar v2; the 5 camera looks and every imported look follow in Other. Neutral
+and import remain common actions. Grouping does not change selected LUTs or IDs.
 
 ## Reproduction
 

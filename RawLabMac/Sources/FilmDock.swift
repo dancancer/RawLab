@@ -11,18 +11,23 @@ struct FilmDock: View {
             HorizontalPicker(selectedID: model.selectedFilmID, name: L10n.text("胶片")) {
                 HStack(spacing: 8) {
                     filmButton(name: L10n.text("中性"), id: "", imageSize: imageSize, height: itemHeight)
-                    ForEach(model.films) { film in
-                        filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
-                                   isCustom: film.managedID != nil)
-                            .contextMenu {
-                                if film.managedID != nil {
-                                    Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
-                                    Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
-                                        .disabled(model.lookLibraryBusy || model.exporting)
-                                    Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
-                                        .disabled(model.lookLibraryBusy || model.exporting)
+                    ForEach(FilmGroup.allCases, id: \.self) { group in
+                        if group != .fuji {
+                            Divider().frame(height: itemHeight - 16).padding(.horizontal, 12)
+                        }
+                        ForEach(model.films.filter { $0.group == group }) { film in
+                            filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
+                                       isCustom: film.managedID != nil)
+                                .contextMenu {
+                                    if film.managedID != nil {
+                                        Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
+                                        Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
+                                            .disabled(model.lookLibraryBusy || model.exporting)
+                                        Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
+                                            .disabled(model.lookLibraryBusy || model.exporting)
+                                    }
                                 }
-                            }
+                        }
                     }
                     Button(action: model.importLUT) {
                         VStack(spacing: 5) {

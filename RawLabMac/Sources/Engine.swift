@@ -440,11 +440,23 @@ private func nativeText<T>(_ value: T) -> String {
     return withUnsafeBytes(of: &copy) { bytes in String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self) }
 }
 
+enum FilmGroup: String, CaseIterable {
+    case fuji, kodak, other
+}
+
 struct Film: Identifiable, Hashable {
     var id: String { managedID ?? url.path }
     let name: String
     let url: URL
     var managedID: String? = nil
+    var group: FilmGroup {
+        guard managedID == nil else { return .other }
+        if let look = BundledLook.file(url.lastPathComponent) {
+            return look.id.hasPrefix("RawLab_look_") || look.id == "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65"
+                ? .kodak : .other
+        }
+        return url.lastPathComponent.hasPrefix("FLog2_to_") ? .fuji : .other
+    }
     static func bundled() -> [Film] {
         let root = Bundle.main.resourceURL!.appendingPathComponent("LUTs")
         return ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [])

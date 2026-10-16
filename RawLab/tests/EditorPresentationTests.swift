@@ -165,7 +165,7 @@ struct EditorPresentationTests {
         check(custom.name == "My_Custom_Look" && custom.artworkName == nil,
               "Unknown names remain intact and do not borrow film artwork")
         let ektar = FilmPresentation(fileName: "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
-        check(ektar.name == "EKTAR 100 Phuket v2 Strong" && ektar.artworkName == "ektar-100-phuket",
+        check(ektar.name == "EKTAR 100 RawLab edition" && ektar.artworkName == "ektar-100-phuket",
               "Project Ektar keeps its distinct name and existing artwork")
         for look in BundledLook.all {
             let item = FilmPresentation(fileName: look.id)
