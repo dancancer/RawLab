@@ -4,9 +4,10 @@ Date: 2026-10-16. UI worktree started from the CI/macOS-14 preparation
 revision `1949b6d`. These changes are separate from that CI PR and from the
 new bundled-LUT work. Initial verification preceded delivery; consult the UI
 PR for the current push, CI and merge state. No formal release is authorized.
-The final local branch is rebased onto CI preparation revision `8b1b841`;
-only its release-evidence document differs from the tested pre-rebase tree.
-All production sources, tests and workflow hooks are byte-identical.
+The branch was rebased onto CI preparation revision `8b1b841`; at that rebase,
+only its release-evidence document differed from the tested pre-rebase tree.
+Production sources and workflow hooks remain unchanged by the later test-only
+compiler compatibility fix described below.
 
 ## Scope
 
@@ -118,6 +119,25 @@ not `7000 K`; signed small values must retain their `+` prefix; numeric test
 parsing must accept grouped values. The vignette test now performs its initial
 group reset only after expansion makes that action available. These were test
 assumption fixes, not reasons to weaken assertions or restore folded resets.
+
+### Hosted Compiler Compatibility
+
+UI PR #60 revision `7178106` passed contracts, both macOS architectures, Windows
+and Android in [run 38879785197](https://github.com/dancancer/RawLab/actions/runs/38879785197).
+iOS built and verified every framework slice and compiled the app, then Xcode
+26.6 exceeded its type-check budget at the optional `map(String.init).flatMap`
+sign extraction in `EditorV4UITests.swift`. That overall run failed.
+
+The test helper now uses an explicitly typed `String` and `if`/`else` to preserve
+the same empty/unsigned/positive/negative behavior without overloaded generic
+initializer inference. No production code, thresholds or assertions changed.
+The complete local Xcode 27 simulator app/test build passed again. Both targeted
+iPhone tests passed again with positive/negative values and grouped Kelvin
+input (`/tmp/rawlab-v08-ui-sign-tests.xcresult`, two passed, zero failed).
+An isolated copy of the old expression also compiles with the local command-line
+toolchain, so that isolated check is not a local reproduction of the hosted failure.
+Fresh current-head hosted verification remains required; the PR records its
+result without rewriting this historical failed-run evidence.
 
 Windows reproduction from the isolated build workspace:
 
