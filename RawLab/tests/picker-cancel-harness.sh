@@ -65,7 +65,7 @@ while IFS= read -r file; do
         */ContentView.swift|*/ContentView+Helpers.swift) ;;
         *) SOURCES+=("$file") ;;
     esac
-done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' | sort)
+done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort)
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name PickerCancelHarness -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \

@@ -67,7 +67,7 @@ while IFS= read -r file; do
         */ContentView.swift|*/ContentView+Panels.swift) ;;
         *) SOURCES+=("$file") ;;
     esac
-done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' | sort)
+done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort)
 cp "$ROOT/RawLab/tests/GeometrySourceHarness.swift" "$OUT/source/GeometrySourceHarness.swift"
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name GeometrySourceHarness -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
