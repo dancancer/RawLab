@@ -13,9 +13,10 @@ for asset in "$ROOT"/RawLabMac/Resources/MasterRecipes/*.cube "$ROOT"/RawLabMac/
         echo "FAIL: missing or stale recipe asset $(basename "$asset")"; exit 1;
     }
 done
-for notice in RawLab-GPL-3.0.txt RawLab-Licensing.md libtiff-LICENSE.md; do
+for notice in RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensing.md libtiff-LICENSE.md; do
     test -f "$APP/Contents/Resources/Licenses/$notice"
 done
+cmp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
 for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \
         Highway-LICENSE.txt Highway-LICENSE-BSD3.txt skcms-LICENSE.txt; do
     test -f "$APP/Contents/Resources/Licenses/dng-sdk/$notice"

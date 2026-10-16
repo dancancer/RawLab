@@ -13,6 +13,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,12 +38,11 @@ internal fun ExportSizeControls(
     val customValue = ExportSize.parseCustom(customText)
     var menu by remember { mutableStateOf(false) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.output_size), style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.weight(1f))
             Box {
-                TextButton(onClick = { menu = true }) {
-                    Text(exportSizeLabel(selected))
+                OutlinedButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(exportSizeLabel(selected), Modifier.weight(1f))
                     Icon(Icons.Outlined.ArrowDropDown, contentDescription = null)
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

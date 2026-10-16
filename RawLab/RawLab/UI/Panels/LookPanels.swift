@@ -108,6 +108,9 @@ extension ContentView {
 
     func filmButton(name: String, id: String?, imageSize: CGFloat) -> some View {
         Button {
+            if settings.masterRecipeID != nil || settings.lutID != id {
+                UsageAnalytics.shared.record(.filmSelected(id == nil ? .none : .builtIn))
+            }
             var updated = settings
             updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
             updated.lutID = id

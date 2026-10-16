@@ -28,7 +28,7 @@ class SourcePackageTest(unittest.TestCase):
             (root / 'lutools/deleted.cpp').unlink()
             for name in ['lutools/cmake/patch-libraw.cmake',
                          'lutools/third_party/rawspeed-camera-calibration.inc',
-                         'LICENSE', 'docs/licensing.md',
+                         'LICENSE', 'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/licensing.md',
                          'lutools/tests/fixtures/linear-jxl.dng',
                          'lutools/tests/fixtures/linear-uncompressed.dng',
                          'lutools/tests/fixtures/linear-jxl-gain.dng',
@@ -53,6 +53,7 @@ class SourcePackageTest(unittest.TestCase):
             self.assertIn('lutools/cmake/patch-libraw.cmake', files)
             self.assertIn('lutools/third_party/rawspeed-camera-calibration.inc', files)
             self.assertIn('LICENSE', files)
+            self.assertIn('LICENSE-ALIYUN-RUM-EXCEPTION', files)
             self.assertIn('docs/licensing.md', files)
             self.assertNotIn('lutools/deleted.cpp', files)
             self.assertNotIn('build/cache.bin', files)
@@ -69,6 +70,7 @@ class SourcePackageTest(unittest.TestCase):
                 self.assertIn('lutools/tests/fixtures/' + name, files)
             with zipfile.ZipFile(archive) as package:
                 self.assertEqual(package.read('RawLabWindows/build.ps1'), b'current dirty contents')
+                self.assertEqual(package.read('LICENSE-ALIYUN-RUM-EXCEPTION'), b'fixture')
 
 
 if __name__ == '__main__':

@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
+import androidx.compose.foundation.background
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -35,27 +37,37 @@ class MainActivity : ComponentActivity() {
     }
     val model: EditorViewModel by lazy { ViewModelProvider(this)[EditorViewModel::class.java] }
     val updates: UpdateViewModel by lazy { ViewModelProvider(this)[UpdateViewModel::class.java] }
+    val usage: UsageAnalytics by lazy { UsageAnalyticsRegistry.get(applicationContext) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent { RawLabTheme { RawLabApp(model, updates) } }
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        usage.beginSession()
+        setContent { RawLabTheme { RawLabApp(model, updates, usage) } }
     }
 }
 
 @Composable
 fun RawLabTheme(content: @Composable () -> Unit) {
-    val scheme = if (isSystemInDarkTheme()) darkColorScheme(
-        primary = Color(0xFFE9CE55), onPrimary = Color(0xFF29250A), secondary = Color(0xFF7ED4D3),
-        surface = Color(0xFF202122), surfaceContainer = Color(0xFF292A2B), background = Color(0xFF18191A),
-    ) else lightColorScheme(primary = Color(0xFF6E5900), secondary = Color(0xFF00696B),
-        surface = Color(0xFFF9F9F9), background = Color(0xFFF0F1F2))
+    val scheme = darkColorScheme(
+        primary = Color(0xFFF2CE48), onPrimary = Color(0xFF252110), secondary = Color(0xFF63CDD6),
+        primaryContainer = Color(0xFF3D351C), onPrimaryContainer = Color(0xFFF2CE48),
+        secondaryContainer = Color(0xFF3D351C), onSecondaryContainer = Color(0xFFF2CE48),
+        surface = Color(0xFF272729), surfaceContainer = Color(0xFF272729),
+        surfaceContainerHigh = Color(0xFF303033), surfaceContainerLow = Color(0xFF212124),
+        surfaceContainerHighest = Color(0xFF303033), background = Color(0xFF1C1C1E),
+        onSurface = Color(0xFFEEEEF2), onSurfaceVariant = Color(0xFFB9B9C3),
+        outline = Color(0xFF85858E), outlineVariant = Color(0xFF444449), error = Color(0xFFFFB09B),
+    )
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
 @Composable
-private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
+@OptIn(ExperimentalMaterial3Api::class)
+private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
     val state by model.state.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
+    val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(updates) { updates.check(manual = false) }
     var album by rememberSaveable { mutableStateOf(false) }
@@ -72,25 +84,27 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
     }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var format by rememberSaveable { mutableStateOf(ExportFormat.JPEG) }
+    var exportToAlbum by rememberSaveable { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
     var exportSizeKey by rememberSaveable { mutableStateOf(ExportSizeChoice.ORIGINAL.key) }
     var exportCustomSize by rememberSaveable { mutableStateOf("") }
     var pendingExportLongEdgeText by rememberSaveable { mutableStateOf("") }
     var licenses by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) { album = false; model.importPhoto(uri) }
+        if (uri != null) album = false
+        model.importPhoto(uri)
     }
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
     }
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
-        if (it == null) model.cancelExport() else model.export(it, ExportFormat.JPEG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) exportDialog = true else model.export(it, ExportFormat.JPEG, pendingExportLongEdgeText.toIntOrNull())
     }
     val savePng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) {
-        if (it == null) model.cancelExport() else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) exportDialog = true else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
     }
     val saveDng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/x-adobe-dng")) {
-        if (it == null) model.cancelExport() else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) exportDialog = true else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
     }
     if (batch != null) {
         BatchExportScreen(model = batch!!, storage = model.storage, onBack = model::closeBatch)
@@ -100,11 +114,11 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
                 onPhoto = { album = false; model.importPhoto(it) })
         }
     } else {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         pendingBatch.firstOrNull()?.let { job ->
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text(AppStrings.text(R.string.message_unfinished_batch_export), Modifier.weight(1f))
-                TextButton(onClick = { model.resumeBatch(job) }) { Text(AppStrings.text(R.string.message_view_task)) }
+                TextButton(onClick = { model.resumeBatch(job) }, enabled = state.draft == null) { Text(AppStrings.text(R.string.message_view_task)) }
             }
         }
         Box(Modifier.weight(1f)) {
@@ -112,6 +126,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
             onEdit = model::edit, onReset = model::reset, onRetry = model::retry,
             onSaveRetry = model::retrySave,
             onAutoExposure = model::autoExposure,
+            onFilmSelected = { usage.record(UsageEvent.FilmSelected(it)) },
             onExport = {
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
@@ -123,25 +138,24 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
-            onPreviewSizeChange = model::updatePreviewSize)
+            onPreviewSizeChange = model::updatePreviewSize,
+            onBeginDraft = model::beginDraft, onDraftEdit = model::changeDraft,
+            onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft)
         }
         }
     }
-    if (exportDialog) AlertDialog(
+    if (exportDialog) ModalBottomSheet(
         onDismissRequest = { exportDialog = false; model.cancelExport() },
-        title = { Text(stringResource(R.string.export)) },
-        text = {
-            Column {
-                Row {
-                    FilterChip(selected = format == ExportFormat.JPEG, onClick = { format = ExportFormat.JPEG }, label = { Text(stringResource(R.string.jpeg)) })
-                    Spacer(Modifier.width(8.dp))
-                    FilterChip(selected = format == ExportFormat.PNG, onClick = { format = ExportFormat.PNG }, label = { Text(stringResource(R.string.png)) })
-                    Spacer(Modifier.width(8.dp))
-                    FilterChip(selected = format == ExportFormat.DNG, onClick = { format = ExportFormat.DNG }, label = { Text(stringResource(R.string.dng)) })
-                }
-                val selectedSize = ExportSizeChoice.fromKey(exportSizeKey)
-                val longEdge = ExportSize.parse(selectedSize, exportCustomSize)
-                val sizeValid = selectedSize != ExportSizeChoice.CUSTOM || longEdge != null
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        EditorSheetSystemBars()
+        Column(Modifier.fillMaxWidth().fillMaxHeight(.94f).imePadding().padding(horizontal = 24.dp)) {
+            Text(stringResource(R.string.export), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+            val selectedSize = ExportSizeChoice.fromKey(exportSizeKey)
+            val longEdge = ExportSize.parse(selectedSize, exportCustomSize)
+            val sizeValid = selectedSize != ExportSizeChoice.CUSTOM || longEdge != null
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                ExportFormatControls(format, { format = it })
                 ExportSizeControls(
                     selected = selectedSize,
                     customText = exportCustomSize,
@@ -149,11 +163,22 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
                     onCustomText = { exportCustomSize = it },
                     modifier = Modifier.padding(top = 12.dp),
                 )
-                if (Build.VERSION.SDK_INT >= 29) TextButton(onClick = {
-                    exportDialog = false; model.export(null, format, longEdge)
-                }, enabled = sizeValid && format.allowsGallery) { Text(stringResource(R.string.save_album)) }
-                TextButton(onClick = {
+                Text(stringResource(R.string.output_destination), style = MaterialTheme.typography.titleSmall)
+                if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) {
+                    OutlinedButton(onClick = { exportToAlbum = true }, modifier = Modifier.fillMaxWidth()) {
+                        RadioButton(exportToAlbum, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.save_album))
+                    }
+                }
+                OutlinedButton(onClick = { exportToAlbum = false }, modifier = Modifier.fillMaxWidth()) {
+                    RadioButton(!exportToAlbum || !format.allowsGallery, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.save_file))
+                }
+            }
+            Button(onClick = {
                     exportDialog = false
+                    if (exportToAlbum && format.allowsGallery && Build.VERSION.SDK_INT >= 29) {
+                        model.export(null, format, longEdge)
+                        return@Button
+                    }
                     pendingExportLongEdgeText = longEdge?.toString().orEmpty()
                     val name = "RawLab-${System.currentTimeMillis()}"
                     when (format) {
@@ -161,14 +186,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel) {
                         ExportFormat.PNG -> savePng.launch("$name.png")
                         ExportFormat.DNG -> saveDng.launch("$name.dng")
                     }
-                }, enabled = sizeValid) { Text(stringResource(R.string.save_file)) }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = { exportDialog = false; model.cancelExport() }) { Text(stringResource(R.string.cancel)) } },
-    )
+                }, enabled = sizeValid, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(stringResource(R.string.export)) }
+            TextButton(onClick = { exportDialog = false; model.cancelExport() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
+        }
+    }
     if (licenses) LicenseDialog { licenses = false }
-    if (about) AboutDialog(updateState, updates::setAutomatic, { updates.check(manual = true) }) { about = false }
+    if (about) AboutDialog(updateState, updates::setAutomatic, { updates.check(manual = true) }, { about = false },
+        usageState = usageState, onUsage = usage::setEnabled)
 }
 
 @Composable

@@ -18,6 +18,7 @@ final class BatchExportModel: ObservableObject {
     @Published private(set) var previewing = false
     @Published private(set) var validating = false
     @Published var previewFile: URL?
+    @Published var sourceEditingGeometry = false
     var onActivity: (Bool) -> Void = { _ in }
     var onDiscard: () -> Void = { }
     private let journal: BatchJournal
@@ -25,14 +26,16 @@ final class BatchExportModel: ObservableObject {
     private var engine: RenderEngine?
     private var cancellation = BatchCancellation()
     private var previewRevision = UUID()
+    private let onUsage: (UsageEvent) -> Void
 
-    init(job: BatchExportJob, journal: BatchJournal) {
+    init(job: BatchExportJob, journal: BatchJournal, onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
+        self.onUsage = onUsage
         error = job.failure
     }
 
-    var canRun: Bool { !running && !validating && job.selectedCount > 0 && job.outputDirectory != nil }
+    var canRun: Bool { !running && !validating && !sourceEditingGeometry && job.selectedCount > 0 && job.outputDirectory != nil }
     var title: String {
         if stopping { return L10n.text("正在停止…") }
         if running { return L10n.text("正在导出") }
@@ -150,9 +153,11 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             var work = snapshot
             var failure: String?
+            var attempted = Set<UUID>()
             do {
                 try BatchExportRunner.run(job: &work, journal: journal, scope: scope,
                                          shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
+                    attempted.formUnion(updated.items.filter { $0.status == .running }.map(\.id))
                     DispatchQueue.main.async { self.job = updated }
                 }) { input, settings, look, output in
                     if self.engine == nil { self.engine = try RenderEngine() }
@@ -161,10 +166,14 @@ final class BatchExportModel: ObservableObject {
                 }
             } catch { failure = error.localizedDescription; work.interrupted = true }
             let final = work, message = failure
+            let succeeded = max(0, final.succeededCount - snapshot.succeededCount)
+            let failed = final.items.filter { attempted.contains($0.id) && $0.status == .failed }.count
+            let outcome: UsageBatchOutcome = final.interrupted ? .interrupted : final.cancelled ? .cancelled : failed > 0 ? .partial : .completed
             DispatchQueue.main.async {
                 self.job = final; self.error = message
                 self.running = false; self.stopping = false
                 self.onActivity(false)
+                self.onUsage(.batchExportCompleted(succeeded: succeeded, failed: failed, outcome: outcome))
             }
         }
     }

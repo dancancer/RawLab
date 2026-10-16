@@ -9,7 +9,7 @@ import subprocess
 import zipfile
 
 SOURCE_PATHS = ['RawLabWindows', 'lutools', 'RawLabMac/Resources', 'Shared', 'LICENSE',
-                'docs/licensing.md']
+                'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/licensing.md']
 RAW_SUFFIXES = {'.arw', '.nef', '.cr2', '.cr3', '.raf', '.rw2', '.orf', '.3fr', '.dng', '.pef'}
 SYNTHETIC_RAW_FIXTURES = {
     'lutools/tests/fixtures/' + name for name in

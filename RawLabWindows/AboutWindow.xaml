@@ -16,6 +16,10 @@
       <TextBlock Margin="0,8,0,16"><Hyperlink Click="AuthorClicked" Foreground="{StaticResource Accent}"><Run Text="{DynamicResource '作者的小红书主页'}"/></Hyperlink></TextBlock>
       <Separator/>
       <CheckBox Content="{DynamicResource '自动检查更新'}" IsChecked="{Binding Automatic, Mode=TwoWay}" Foreground="{StaticResource Foreground}" Margin="0,16,0,12"/>
+      <CheckBox x:Name="UsageConsent" Content="允许使用统计" Checked="UsageConsentChanged" Unchecked="UsageConsentChanged" Foreground="{StaticResource Foreground}" Margin="0,0,0,6"/>
+      <TextBlock x:Name="UsageStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock Text="开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,12"/>
+      <TextBlock Margin="0,0,0,12"><Hyperlink Click="PrivacyClicked" Foreground="{StaticResource Accent}">阿里云隐私政策</Hyperlink></TextBlock>
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
       <TextBlock Text="{Binding StorageWarning}" TextWrapping="Wrap" Foreground="{StaticResource Accent}" Margin="0,6"/>
       <StackPanel Orientation="Horizontal" Margin="0,8">

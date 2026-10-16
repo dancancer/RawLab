@@ -42,6 +42,7 @@ struct ContentView: View {
     @State var photoInfoMode = PhotoInfoMode.hidden
     @State var photoInformation: PhotoInformation?
     @State var showingExportSize = false
+    @State var showingPrivacy = false
     @State var exportLongEdge: Int?
     @State var singleExportFormat: BatchOutputFormat = .jpeg
     @State var fileExportRequest: FileExportRequest?
@@ -49,6 +50,7 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .caption) var toolHeight = 92.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
     @ScaledMetric(relativeTo: .body) var panelHeight = 256.0
+    @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
 
     var body: some View {
         let _ = localizationLocale
@@ -76,6 +78,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .tint(.yellow)
+        .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
             set: { if !$0 { viewModel.statusMessage = nil } }
@@ -181,6 +184,7 @@ struct ContentView: View {
         .sheet(item: $fileExportRequest) { request in
             FileExportPicker(urls: request.urls) { exported in
                 fileExportRequest = nil
+                if exported { UsageAnalytics.shared.record(.exportCompleted) }
                 if request.removeAfterExport {
                     for url in request.urls { try? FileManager.default.removeItem(at: url) }
                 }
@@ -193,6 +197,36 @@ struct ContentView: View {
             Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }
         }
         .onDisappear { cancelRulerFocus(); cancelPhotoImport() }
+    }
+}
+
+private struct UsagePrivacyView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var usage = UsageAnalytics.shared
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("允许使用统计", isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
+                        .disabled(!usage.isAvailable && !usage.isEnabled)
+                        .accessibilityIdentifier("usage.consent")
+                    Text(usage.status).foregroundStyle(.secondary)
+                }
+                Section("数据与提供方") {
+                    Text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。")
+                    Text("不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。")
+                    Link("阿里云隐私政策", destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
+                }
+            }
+            .navigationTitle("隐私设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.accessibilityIdentifier("usage.done")
+                }
+            }
+        }.preferredColorScheme(.dark).tint(.yellow)
     }
 }
 
