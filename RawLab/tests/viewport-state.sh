@@ -17,6 +17,7 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK
 SOURCES=()
 while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -g '*.swift')
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+    -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/tests/ViewportStateTests.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
