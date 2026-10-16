@@ -221,10 +221,18 @@ Verified locally on this branch:
   Xcode native resource bundle using the same folder-reference form was built;
   iPhone/iPad simulator UIKit checks decoded all 29 icons, checked CUBE hashes
   and measured every default caption within the reserved two-line height.
-  This was not a full RawLab iOS app build or screen-level test.
+  Those resource checks were not a full app or screen-level test.
 - Shared Apple grouping tests cover the catalog's 24 Kodak / 5 Other entries,
   legacy Fuji (including iOS WDR), empty groups and stable group order. The
   current iOS app's complete Swift sources typecheck against the simulator SDK.
+- The iOS XCFramework was subsequently built from the current source for
+  device arm64 and simulator arm64/x86_64; architecture, notices and runtime
+  dependency validation passed. The complete simulator Debug app built and
+  ran on a dedicated iPhone 17 Pro / iOS 27 simulator with an isolated bundle
+  ID. Its shared resource folder matches the source byte-for-byte. Native UI
+  inspection confirmed 11 Fuji, 24 Kodak and 5 Other looks, both dividers,
+  the Ektar display name, artwork and selection/scroll-to-selected behavior.
+  The packaged framework also passed the simulator JPEG XL DNG/C ABI suite.
 - Windows Debug WPF app and WPF test projects cross-compile with .NET 8 (zero
   warnings/errors). The standalone `tests/looks/LookGrouping.Tests.csproj`
   passes all 9 grouping checks; the Windows runner includes the `looks` suite.
@@ -247,11 +255,12 @@ The broader localization suite has two pre-existing baseline source-coverage
 failures (Android `output_destination`, Apple crop hint); this change adds no
 new translatable UI key and does not silently fix those unrelated issues.
 
-Not verified: full iOS/Android app/native builds, mobile device/GLES runs,
-Windows UI/D3D11 runtime, macOS 14 hardware, CI, every dynamic-type size, or
-global camera/film fidelity. The full iOS build stops at the missing worktree
-`lutools/build-ios/sony2fuji.xcframework`; no compiled framework was copied from
-another checkout. Do not infer runtime results from source or resource tests.
+Not verified: full Android app/native builds, physical iOS devices or Android
+device/GLES runs, Windows UI/D3D11 runtime, macOS 14 hardware, CI, every
+dynamic-type size, or global camera/film fidelity. The initial missing iOS
+framework was resolved by a source build in this worktree, not by copying a
+compiled framework from another checkout. The interactive grouping preview
+uses a repository JPEG fixture, not a RAW camera-fidelity comparison.
 
 ## Redistribution Gate
 
