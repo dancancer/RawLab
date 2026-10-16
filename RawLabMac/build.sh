@@ -1,12 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -f "$ROOT/Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md" ]; then
-    if [ "${RAWLAB_ALLOW_UNCLEARED_LUTS:-0}" != 1 ] || [ "${RAWLAB_RELEASE:-0}" = 1 ] || [ "${CONFIGURATION:-}" = Release ]; then
-        echo "Bundled LUT redistribution is unconfirmed. Only explicit private validation is allowed:" >&2
-        echo "RAWLAB_ALLOW_UNCLEARED_LUTS=1 bash RawLabMac/build.sh (never Release)." >&2; exit 2
-    fi
-fi
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 source "$ROOT/RawLabMac/build-env.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"

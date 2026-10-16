@@ -8,11 +8,6 @@ plugins {
 }
 
 val repo = rootDir.parentFile
-if (gradle.startParameter.taskNames.any { it.substringAfterLast(':').let { name ->
-        name.equals("assemble", true) || name.equals("build", true) || name.contains("release", true)
-    } } && repo.resolve("Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md").exists()) {
-    throw GradleException("Bundled LUT redistribution is unconfirmed; Release builds are blocked")
-}
 val rawlabRumLocalProperty = providers.gradleProperty("rawlabRumLocal")
 val rawlabRumLocal = rawlabRumLocalProperty.map { value ->
     value.toBooleanStrictOrNull() ?: throw GradleException("rawlabRumLocal must be true or false")

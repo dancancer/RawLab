@@ -1,4 +1,4 @@
-"""Prepare explicitly interpreted local LUTs; redistribution remains blocked separately."""
+"""Prepare explicitly interpreted LUTs; redistribution permission remains unconfirmed."""
 
 import argparse
 import hashlib
@@ -67,7 +67,7 @@ def prepare(source_root, output, force=False):
     base = json.loads((ROOT / "Shared/BundledLooks/catalog.json").read_text())[:1]
     output.mkdir(parents=True, exist_ok=True)
     catalog, reports = list(base), []
-    with tempfile.TemporaryDirectory(prefix="rawlab-adapt-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="rawlab-adapt-", dir=output) as temporary:
         temporary = Path(temporary)
         for look in plan["looks"]:
             source = source_root / look["source"]
@@ -105,7 +105,7 @@ def prepare(source_root, output, force=False):
                             "artworkName": look["artworkName"], "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
                             "input": "neutral display-sRGB / BT.709 / D65 / full range",
                             "output": "display-sRGB / BT.709 / D65 / full range",
-                            "license": "UNCONFIRMED - local validation only", "source": look["source"]})
+                            "license": "UNCONFIRMED - redistribution permission not verified", "source": look["source"]})
             reports.append({"id": look["id"], **metadata})
         for look in catalog[1:]:
             os.replace(temporary / look["fileName"], output / look["fileName"])

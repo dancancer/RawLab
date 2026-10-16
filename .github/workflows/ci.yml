@@ -38,6 +38,7 @@ jobs:
           git rev-parse HEAD
           python --version
           python -m pip install -r scripts/ci/requirements.txt
+          python -m pip install -r lutools/requirements-lutprep.txt
           lint_dir="$(mktemp -d)"
           trap 'rm -rf "$lint_dir"' EXIT
           curl -fL --retry 2 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$lint_dir/actionlint.tar.gz"
@@ -48,6 +49,7 @@ jobs:
           python lutools/tests/test_cli_test_encoding.py
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
+          python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
           git diff --check
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()

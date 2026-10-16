@@ -48,10 +48,6 @@
     <Error Condition="'$(Configuration)' != 'Release' and !Exists('$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll')"
            Text="The Windows 0.4.4 Release SDK DLL is missing under RawLabRumSdkRoot." />
   </Target>
-  <Target Name="ValidateBundledLookDistribution" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
-    <Error Condition="Exists('../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md')"
-           Text="Bundled LUT redistribution is unconfirmed; Release builds are blocked." />
-  </Target>
   <Target Name="RemoveRawLabRumLocalBinary" BeforeTargets="PrepareForBuild"
           Condition="'$(RawLabRumLocal)' != 'true'">
     <Delete Files="$(TargetDir)alibabacloud_rum.dll" />

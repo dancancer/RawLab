@@ -1,9 +1,10 @@
 # Bundled RawLab Looks
 
-Status: private local validation on 2026-10-16. The 28 third-party derivatives
-are technically integrated, but redistribution permission remains UNCONFIRMED.
-Do not push or distribute these files or an app containing them until the
-per-source license review is resolved. Color adaptation is not license clearance.
+Status on 2026-10-16: the repository owner explicitly approved public source
+publication with the unconfirmed-permission notice retained and integration into
+`development`. The 28 third-party derivatives remain UNCONFIRMED for
+redistribution. The owner's approval is not an original-author license grant or
+formal release authorization. Color adaptation is not license clearance.
 
 ## Inventory and Identity
 
@@ -192,6 +193,10 @@ cmp Shared/BundledLooks/EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube /tmp/raw
 
 The adapter emits the 28 derivatives and their report/catalog; the retained
 Ektar entry in that catalog refers to the separately maintained Ektar file.
+It stages every derivative inside the output directory and validates the full
+set before replacing destination CUBEs. Keeping staging on the output filesystem
+avoids cross-device `os.replace` failures when output is on another mounted
+volume; a regression simulates `EXDEV` without requiring an external drive.
 Generation used NumPy 2.5.4 and OpenColorIO 2.6.0. Dependency version changes
 require comparing actual output and error metrics, not assuming byte identity.
 `--force` is required to replace generated derivatives; it is not a release flag.
@@ -202,7 +207,11 @@ Verified locally on this branch:
 
 - Shared audit/catalog/adapter tests, including source-tree write prevention,
   native sRGB identity behavior, resource uniqueness, PNG decode structure and
-  content hashes. All originals remain unchanged after generation.
+  content hashes. All originals remain unchanged after generation. The expanded
+  11-test suite also covers same-filesystem staging and the retained unconfirmed
+  status without compile blockers; it now runs in hosted CI's contracts job
+  with the existing LUT-preparation requirements. Other default CI builds are
+  not reduced or replaced by LUT-specific overrides.
 - Mac private app build, bundle resource byte equality and signatures, native
   name/artwork presentation, and actual picker inspection with Ektar, Ricoh
   Hi-BW and Kodak 2383 RGB. The user's pre-existing custom looks remain present.
@@ -242,8 +251,11 @@ Verified locally on this branch:
   warnings/errors). The standalone `tests/looks/LookGrouping.Tests.csproj`
   passes all 9 grouping checks; the Windows runner includes the `looks` suite.
   WPF group-divider/name assertions compile but were not executed on Windows.
-- Release blockers were checked for Mac and Android; iOS PBX and Windows XML
-  configurations were inspected. No Release/public artifact was produced.
+- The original compile-time blockers were subsequently removed from all four
+  platforms under the owner's source/development integration exception. A
+  regression first failed on all four build configurations, then passed after
+  removal; it also retains the 28 UNCONFIRMED catalog entries and notices. This
+  does not grant permission to publish an installer or other release artifact.
 
 The generic LUT validator accepts all 29 files in non-strict mode, but reports
 real artistic quality warnings: camera-table interior clipping is 4.89% Lumix,
@@ -276,12 +288,19 @@ for every contributed preset. [G'MIC credits](https://gmic.eu/color_presets/),
 [Pat David's article](https://patdavid.net/2013/08/film-emulation-presets-in-gmic-gimp/)
 and the PFE page are evidence leads, not a completed per-file license review.
 
-While [REDISTRIBUTION_BLOCKED.md](../../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md)
-exists, iOS/Android/Windows Release and the default Mac package command reject
-the bundled candidates. Explicit Mac private validation is available with
-`RAWLAB_ALLOW_UNCLEARED_LUTS=1 bash RawLabMac/build.sh`; setting Release still
-rejects. Use explicit Android Debug tasks, not `build` or `assemble` aggregates.
-These are ordinary build guards, not authorization to distribute Debug outputs.
+[REDISTRIBUTION_BLOCKED.md](../../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md)
+is retained as an unresolved release-risk record, not a build switch. At the
+owner's request the four compile/default-packaging hard blocks were removed:
+Release compilation is not itself an external release. The default Mac and
+Windows Release build commands and the other platform configurations require no
+LUT-specific override, CI bypass or substitute configuration. Existing unrelated
+RUM private-validation restrictions remain unchanged.
+
+The owner explicitly accepted public source publication and `development`
+integration while this evidence is unresolved. That exception does not establish
+third-party rights, replace a per-source review, or authorize a tag, official
+Release, installer upload, signing or deployment. Successful tests and CI do not
+clear the risk.
 
 Before clearing the gate, record permission for each source (including derivative
 redistribution), retain required author/license notices, update catalog and

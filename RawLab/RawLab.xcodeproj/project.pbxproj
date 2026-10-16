@@ -459,7 +459,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 86048109104C15A6E77F6FC2 /* Build configuration list for PBXNativeTarget "RawLab" */;
 			buildPhases = (
-				D01100000000000000000020 /* Validate bundled LUT distribution */,
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
@@ -550,20 +549,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-        D01100000000000000000020 /* Validate bundled LUT distribution */ = {
-            isa = PBXShellScriptBuildPhase;
-            buildActionMask = 2147483647;
-            files = ();
-            inputPaths = ("$(SRCROOT)/../Shared/BundledLooks", );
-            name = "Validate bundled LUT distribution";
-            outputPaths = ();
-            runOnlyForDeploymentPostprocessing = 0;
-            shellPath = /bin/sh;
-            shellScript = "if [ \"$CONFIGURATION\" = Release ] && [ -f \"$SRCROOT/../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md\" ]; then\n  echo 'error: Bundled LUT redistribution is unconfirmed; Release builds are blocked.' >&2\n  exit 2\nfi\n";
-        };
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		AB1300000000000000000006 = {

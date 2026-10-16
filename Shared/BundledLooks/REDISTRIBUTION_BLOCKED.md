@@ -1,10 +1,16 @@
 # Bundled Look Redistribution Is Not Cleared
 
-This snapshot is for the user's explicitly requested local integration and
-validation. Do not push, publish, upload, redistribute these adapted third-party
-LUTs, or ship an installer containing them until the underlying rights and
-required notices have been confirmed. All four clients reject Release builds
-while this marker is present. Debug/private validation is not release clearance.
+On 2026-10-16 the repository owner explicitly approved publishing this snapshot
+in the public source repository with the unconfirmed-permission notice retained,
+and approved integration into `development`. This owner exception is not a
+license grant from the original authors and does not authorize an official
+release, installer upload, signing or deployment.
+
+This file remains an unresolved release-risk record, not a compile-time switch.
+Normal builds, including Release configuration, are not blocked by its presence.
+A successful build or CI run is not redistribution clearance. Before an official
+release containing these derivatives, resolve the underlying rights and required
+notices and obtain the separate release authorization required by `agent.md`.
 
 The 28 third-party derivatives have UNCONFIRMED redistribution permission.
 Public download, a creator credit, and permission to use a LUT are not assumed

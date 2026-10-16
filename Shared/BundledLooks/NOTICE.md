@@ -1,9 +1,12 @@
 # RawLab Bundled Look Attribution
 
-Status on 2026-10-16: 28 adapted third-party LUTs are UNCONFIRMED for
-redistribution and are included solely in the user's private validation work.
-No public distribution is authorized by this notice. Release builds are blocked
-by `REDISTRIBUTION_BLOCKED.md`. Color adaptation does not grant copyright rights.
+Status on 2026-10-16: 28 adapted third-party LUTs remain UNCONFIRMED for
+redistribution. The repository owner explicitly approved public source
+publication with this notice and integration into `development`. That approval
+is not a license grant from the original authors or authorization for an
+official release. Color adaptation does not grant copyright rights.
+`REDISTRIBUTION_BLOCKED.md` retains the unresolved release risk; it does not
+block compilation, including Release builds. CI success is not license clearance.
 
 Camera source: u/Aggressive-Win-6351's public share, with ROGER WANG credited in
 some source headers. Source and author statements:

@@ -1,7 +1,11 @@
+import errno
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -11,6 +15,41 @@ spec.loader.exec_module(prepare)
 
 
 class AdapterTests(unittest.TestCase):
+    def test_output_on_another_filesystem_uses_local_staging(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            source, output = root / "source", root / "other-volume/output"
+            source.mkdir()
+            shared = root / "Shared"
+            (shared / "BundledLooks").mkdir(parents=True)
+            cube = source / "original.cube"
+            prepare.write_display_cube(cube, lambda x: x, 2)
+            original = cube.read_bytes()
+            digest = hashlib.sha256(original).hexdigest()
+            plan = {"sourceAudit": "audit.json", "notes": {"gmic-rgb-creative": "test interpretation"},
+                    "looks": [{"source": cube.name, "id": "test-look", "name": "Test look",
+                               "artworkName": "test", "adaptation": "gmic-rgb-creative"}]}
+            (shared / "bundled-look-plan.json").write_text(json.dumps(plan))
+            (root / "audit.json").write_text(json.dumps({"entries": [{"path": cube.name, "sha256": digest}]}))
+            (shared / "BundledLooks/catalog.json").write_text('[{"id": "existing-project-look"}]')
+            replace = prepare.os.replace
+
+            def same_volume_replace(staged, target):
+                if not staged.is_relative_to(output):
+                    raise OSError(errno.EXDEV, "Invalid cross-device link")
+                replace(staged, target)
+
+            with mock.patch.object(prepare, "ROOT", root), \
+                    mock.patch.object(prepare.os, "replace", side_effect=same_volume_replace):
+                reports = prepare.prepare(source, output)
+            self.assertEqual(len(reports), 1)
+            self.assertIn(original, (output / "test-look.cube").read_bytes())
+            catalog = json.loads((output / "catalog.json").read_text())
+            self.assertEqual(catalog[1]["sha256"], hashlib.sha256((output / "test-look.cube").read_bytes()).hexdigest())
+            self.assertEqual(json.loads((output / "adaptation-report.json").read_text()), reports)
+            self.assertEqual(cube.read_bytes(), original)
+            self.assertFalse(list(output.glob("rawlab-adapt-*")))
+
     def test_source_and_output_trees_cannot_overlap(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

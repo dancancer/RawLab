@@ -1,7 +1,6 @@
 import hashlib
 import json
 import struct
-import subprocess
 from pathlib import Path
 import unittest
 
@@ -62,12 +61,17 @@ class BundledLooksTests(unittest.TestCase):
                 self.assertTrue(entry["sourcePayloadByteIdentical"])
             self.assertEqual(entry["redistribution"], "unconfirmed")
 
-    def test_mac_packaging_requires_explicit_private_validation(self):
-        for environment in [{}, {"RAWLAB_ALLOW_UNCLEARED_LUTS": "1", "RAWLAB_RELEASE": "1"}]:
-            result = subprocess.run(["bash", str(ROOT / "RawLabMac/build.sh")], cwd=ROOT,
-                                    env={"PATH": "/usr/bin:/bin", **environment}, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 2)
-            self.assertIn("redistribution is unconfirmed", result.stderr)
+    def test_unconfirmed_permissions_remain_recorded_without_blocking_compilation(self):
+        folder = ROOT / "Shared/BundledLooks"
+        catalog = json.loads((folder / "catalog.json").read_text())
+        self.assertEqual(sum(entry["license"] == "UNCONFIRMED - redistribution permission not verified"
+                             for entry in catalog), 28)
+        self.assertTrue((folder / "REDISTRIBUTION_BLOCKED.md").is_file())
+        self.assertTrue((folder / "NOTICE.md").is_file())
+        for relative in ["RawLabMac/build.sh", "RawLabAndroid/app/build.gradle.kts",
+                         "RawLabWindows/RawLabWindows.csproj", "RawLab/RawLab.xcodeproj/project.pbxproj"]:
+            with self.subTest(platform=relative):
+                self.assertNotIn("REDISTRIBUTION_BLOCKED.md", (ROOT / relative).read_text())
 
     def test_all_new_artwork_has_matching_generation_provenance(self):
         folder = ROOT / "Shared/BundledLooks/Artwork"
