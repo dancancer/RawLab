@@ -239,6 +239,13 @@ static class Program
             window.OpenFile(raw);Check(Math.Abs(window.ValueSlider.Value-.625)<.001,"Photo switch restores its own exposure");
             window.ValueSlider.Value=.5;PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             Check(window.BackendLabel.Text.Contains("Direct3D 11"),"WPF reports actual GPU backend");
+            var filmDividers=window.FilmStrip.Children.OfType<Border>().Select(
+                System.Windows.Automation.AutomationProperties.GetAutomationId).ToArray();
+            Check(filmDividers.SequenceEqual(new[]{"film.group-divider.Kodak","film.group-divider.Other"}),
+                "Film picker has only two flat group boundaries, Fuji then Kodak then Other");
+            Check(window.FilmStrip.Children.OfType<Button>().Any(button=>
+                System.Windows.Automation.AutomationProperties.GetName(button)=="EKTAR 100 RawLab edition"),
+                "Grouped film picker retains the RawLab Ektar display name");
             foreach(var picker in new[] {
                 (Category:window.FilmCategory,Strip:window.FilmStrip,Scroller:window.FilmScroller,Left:window.FilmScrollLeft,Right:window.FilmScrollRight),
                 (Category:window.MasterRecipeCategory,Strip:window.RecipeStrip,Scroller:window.RecipeScroller,Left:window.RecipeScrollLeft,Right:window.RecipeScrollRight) })

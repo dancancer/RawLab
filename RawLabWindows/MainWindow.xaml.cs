@@ -18,7 +18,7 @@ public partial class MainWindow : Window
     internal Slider ValueSlider => OrdinaryParameter.Slider;
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
-    private record Film(string Name,string? Path,string? Artwork);
+    private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
     private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration);
     private readonly Library library=new();
     private readonly Viewport viewport=new();
@@ -120,7 +120,11 @@ public partial class MainWindow : Window
         if(Directory.Exists(root))foreach(var path in Directory.GetFiles(root,"*.cube").Order())
         {
             var name=Path.GetFileNameWithoutExtension(path).Replace("FLog2_to_","").Replace("_65grid_V.1.00","").Replace('-', ' ');
-            films.Add(new(name,path,artwork.TryGetValue(name,out var icon) ? Path.Combine(AppContext.BaseDirectory,"FilmIcons",icon+".png") : null));
+            BundledLook.All.TryGetValue(Path.GetFileName(path), out var bundled);
+            name=bundled?.Name ?? name;
+            var icon=bundled?.ArtworkName ?? (artwork.TryGetValue(name,out var oldIcon) ? oldIcon : null);
+            films.Add(new(name,path,icon != null ? Path.Combine(AppContext.BaseDirectory,"FilmIcons",icon+".png") : null,
+                FilmGrouping.ForBuiltIn(Path.GetFileName(path))));
         }
         lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
         BuildTools(); BuildFilms(); BuildMasterRecipes();
@@ -223,15 +227,25 @@ public partial class MainWindow : Window
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear();
-        foreach(var film in films)
+        foreach(var item in FilmGrouping.Arrange(films,film=>film.Path==null,film=>film.Group))
         {
+            var film=item.Value;
+            if(item.StartsGroup)
+            {
+                var divider=new Border{Width=1,Height=84,Margin=new Thickness(12,0,12,0)};
+                divider.SetResourceReference(Border.BackgroundProperty,"Outline");
+                AutomationProperties.SetAutomationId(divider,"film.group-divider."+film.Group);
+                FilmStrip.Children.Add(divider);
+            }
             var stack=new StackPanel();
             if(film.Artwork!=null && File.Exists(film.Artwork))stack.Children.Add(new Image{Source=new BitmapImage(new Uri(film.Artwork)),Width=64,Height=64});
             else stack.Children.Add(new EditorIcon{Kind=film.Path==null ? "Neutral" : "Film",Width=32,Height=64});
             var displayName=film.Path==null ? Loc.Text("中性") : film.Name;
-            var caption=new TextBlock{Text=displayName,Width=80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
+            var additional=film.Path!=null && BundledLook.All.ContainsKey(Path.GetFileName(film.Path));
+            var caption=new TextBlock{Text=displayName,Width=additional ? 132 : 80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? Loc.Text("中性显影")};
+            if(additional)button.Width=146;
             AutomationProperties.SetName(button,displayName);
             button.Click+=(_,_)=>{
                 if(exporting || !ResolveTransformDraft() || (settings.MasterRecipeID == null && lut == film.Path))return;

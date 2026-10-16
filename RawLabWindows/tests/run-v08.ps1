@@ -11,7 +11,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
     if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
@@ -58,6 +58,7 @@ Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $destination -Rec
 $runner=Join-Path $target 'RawLabWindows.Tests.dll'
 $localizationRunner=Join-Path $uiTarget 'LocalizationUiChecks.dll'
 Invoke-Check 'editing' @('run','--project',"$PSScriptRoot/editing/EditWorkflow.Tests.csproj",'-c','Release')
+Invoke-Check 'looks' @('run','--project',"$PSScriptRoot/looks/LookGrouping.Tests.csproj",'-c','Release')
 Invoke-Check 'denoise-model' @('run','--project',"$PSScriptRoot/denoise/DenoiseSettingsTests.csproj",'-c','Release')
 Invoke-Check 'localization' @('run','--project',"$PSScriptRoot/localization/LocalizationChecks.csproj",'-c','Release')
 Invoke-Check 'updates' @('run','--project',"$PSScriptRoot/updates/UpdateChecks.csproj",'-c','Release')

@@ -301,6 +301,8 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     val edits = state.visibleEdits
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
+    val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
+    val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
     val calibrated = state.preview?.temperature?.isFinite() == true
     var menuLookId by remember { mutableStateOf<String?>(null) }
     var renameLookId by remember { mutableStateOf<String?>(null) }
@@ -338,41 +340,47 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                             maxLines = 3, style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                items(state.looks, key = { it.id }) { look ->
-                    val builtIn = Film.all.firstOrNull { it.id == look.id }
-                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${look.id}.png") else null
-                    Box(Modifier.width(96.dp)) {
-                        Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
-                            enabled = state.controlsEnabled && look.available,
-                            role = Role.RadioButton, onClick = {
-                                onEdit(edits.selectFilm(look.id, state.preview?.tint), false)
-                                if (filmSelectionChanged(edits, look.id)) onFilmSelected(when {
-                                    look.managed -> UsageFilmKind.Custom
-                                    look.id == "neutral" -> UsageFilmKind.None
-                                    else -> UsageFilmKind.BuiltIn
-                                })
-                            }),
-                            horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(80.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
-                                if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
-                                if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
-                                else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                items(filmItems, key = { it.look.id }) { item ->
+                    val look = item.look
+                    val builtIn = bundledFilms.firstOrNull { it.id == look.id }
+                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${builtIn.artworkName}.png") else null
+                    val additional = builtIn != null && Film.all.none { it.id == builtIn.id }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (item.startsGroup) VerticalDivider(Modifier.height(122.dp).padding(horizontal = 12.dp)
+                            .testTag("film-group-divider-${look.id}"))
+                        Box(Modifier.width(if (additional) 132.dp else 96.dp)) {
+                            Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
+                                enabled = state.controlsEnabled && look.available,
+                                role = Role.RadioButton, onClick = {
+                                    onEdit(edits.selectFilm(look.id, state.preview?.tint), false)
+                                    if (filmSelectionChanged(edits, look.id)) onFilmSelected(when {
+                                        look.managed -> UsageFilmKind.Custom
+                                        look.id == "neutral" -> UsageFilmKind.None
+                                        else -> UsageFilmKind.BuiltIn
+                                    })
+                                }),
+                                horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(80.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
+                                    if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
+                                    if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
+                                    else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                                }
+                                Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else look.name,
+                                    Modifier.heightIn(min = 42.dp).padding(top = 4.dp), style = MaterialTheme.typography.labelSmall)
                             }
-                            Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else look.name,
-                                Modifier.heightIn(min = 42.dp).padding(top = 4.dp), style = MaterialTheme.typography.labelSmall)
-                        }
-                        if (look.managed) {
-                            Box(Modifier.align(Alignment.TopEnd)) {
-                                ToolIcon(Icons.Outlined.MoreVert, R.string.more, state.operation == Operation.NONE) { menuLookId = look.id }
-                                DropdownMenu(expanded = menuLookId == look.id, onDismissRequest = { menuLookId = null }) {
-                                    DropdownMenuItem(text = { Text(stringResource(R.string.rename_look)) },
-                                        leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = {
-                                            menuLookId = null; renameLookId = look.id; renameText = look.name
-                                        })
-                                    DropdownMenuItem(text = { Text(stringResource(R.string.delete_look)) },
-                                        leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = {
-                                            menuLookId = null; deleteLookId = look.id
-                                        })
+                            if (look.managed) {
+                                Box(Modifier.align(Alignment.TopEnd)) {
+                                    ToolIcon(Icons.Outlined.MoreVert, R.string.more, state.operation == Operation.NONE) { menuLookId = look.id }
+                                    DropdownMenu(expanded = menuLookId == look.id, onDismissRequest = { menuLookId = null }) {
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.rename_look)) },
+                                            leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = {
+                                                menuLookId = null; renameLookId = look.id; renameText = look.name
+                                            })
+                                        DropdownMenuItem(text = { Text(stringResource(R.string.delete_look)) },
+                                            leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = {
+                                                menuLookId = null; deleteLookId = look.id
+                                            })
+                                    }
                                 }
                             }
                         }

@@ -43,8 +43,19 @@ class EditorV08ControlsTest {
 
     @Test fun bundledFilmLabelsDecodeOnAndroid() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        Film.all.filter { it.file != null }.forEach { film ->
-            context.assets.open("artwork/${film.id}.png").use { input ->
+        val films = Film.all + BundledLooks.load(context)
+        assertEquals(40, films.size)
+        val items = filmStripItems(films.map { LookChoice(it.id, it.name, false) }, films)
+        assertEquals("neutral", items.first().look.id)
+        assertEquals(Film.all.drop(1).map { it.id }, items.drop(1).take(10).map { it.look.id })
+        val kodak = items.drop(11).take(24)
+        assertTrue(kodak.all { it.look.id.startsWith("RawLab_look_") ||
+            it.look.id == "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65" })
+        assertTrue(items.takeLast(5).all { it.look.id.startsWith("RawLab_camera_") })
+        assertEquals(listOf(11, 35), items.indices.filter { items[it].startsGroup })
+        films.filter { it.file != null }.forEach { film ->
+            context.assets.open("films/${film.fileName}").close()
+            context.assets.open("artwork/${film.artworkName}.png").use { input ->
                 assertNotNull(film.id, android.graphics.BitmapFactory.decodeStream(input, null,
                     android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }))
             }

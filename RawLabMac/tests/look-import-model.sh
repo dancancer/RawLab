@@ -8,6 +8,7 @@ BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d /tmp/rawlab-look-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
+    "$ROOT/Shared/BundledLook.swift" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/UsageAnalytics.swift" \

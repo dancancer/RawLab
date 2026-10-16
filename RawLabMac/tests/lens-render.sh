@@ -7,6 +7,7 @@ RAW="${1:-${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DSC06251.ARW}}"
 if [ ! -f "$RAW" ]; then echo "Real RAW fixture unavailable: $RAW" >&2; exit 1; fi
 mkdir -p "$ROOT/build/mac-tests"
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+    "$ROOT/Shared/BundledLook.swift" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
     "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLabMac/tests/LensRenderTests.swift" \

@@ -1,0 +1,55 @@
+{
+  "generator": "built-in image_gen",
+  "date": "2026-10-16",
+  "concept": "Original RawLab concept labels; not official packaging or LUT-rendered samples. Only resized with sips.",
+  "assets": [
+    {
+      "id": "look-kodachrome-25",
+      "sha256": "85b277f723f8c65f27f43dd81c03ef149c20728714df35d9fa7881794c96cd01",
+      "prompt": "Use case: product-mockup. Create one original full-bleed square 2D printed film-package concept label for a RawLab LUT picker, clear at 64 pixels. Text exactly: RAWLAB, KODACHROME, 25, LOOK CONCEPT. Ivory and burgundy panels with a small saffron yellow accent; a large original abstract rising sun over stacked geometric mountains printed as flat ink, not only text. Dominant large 25 and KODACHROME. The printed label fills the complete square, no outside margin, no box, no perspective, no side faces, no shadows, no rounded border, no manufacturer logos, not official packaging. Restrained matte print texture, crisp geometric design matching traditional film-label artwork. Not a photo or a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-1fd40e59-a9ed-4f2a-84d4-d4e25bfc3982.png"
+    },
+    {
+      "id": "look-kodachrome-64",
+      "sha256": "b6471fadc68822f442b86052cce45ca0493d495fb16b7be6fe183aa5786a2b29",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, KODACHROME, 64, LOOK CONCEPT. Palette: scarlet, ivory, black. Feature a large flat-ink interlocking prism, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-5b3f1779-1cab-4159-9dfb-d2234ba8117c.png"
+    },
+    {
+      "id": "look-kodachrome-200",
+      "sha256": "f0ee1bd43d11f4608305d3958ad7f59aab8535c9b4fed701437b478c978ff61b",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, KODACHROME, 200, LOOK CONCEPT. Palette: burgundy, golden yellow, charcoal. Feature a large flat-ink mountain and sunburst, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-b37111ea-7d22-4acb-a1b8-d96c684870aa.png"
+    },
+    {
+      "id": "look-e100-gx",
+      "sha256": "75c1f99388b405e14998d6f8e7dc303fe4f929cc5859657707070c16cf7c08cd",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, E100 GX, LOOK CONCEPT. Palette: cobalt blue, white, magenta. Feature a large faceted crystal silhouette, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-24f0108c-06b4-4fd1-9e85-e562146e4d98.png"
+    },
+    {
+      "id": "look-ektachrome-100-vs",
+      "sha256": "c5e527104e6a7fd0593b56caee234930d87d03ba0b17043b1c67f9b71f2acd62",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, EKTACHROME, 100 VS, LOOK CONCEPT. Palette: deep blue, silver white, yellow. Feature a large flat-ink concentric circles and spectrum wedge, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-533a874e-2630-4c38-8daf-26fb6dbd0ebf.png"
+    },
+    {
+      "id": "look-elite-chrome-200",
+      "sha256": "ebe71beaa951b392bd0e9e1e1b006f42c78d788bcdbc070de99b88c17911385c",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, ELITE CHROME, 200, LOOK CONCEPT. Palette: turquoise, navy, silver. Feature a large stylized ocean wave and sun, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-737f20fd-0ba1-4b57-b2ee-75cad935ef1b.png"
+    },
+    {
+      "id": "look-elite-chrome-400",
+      "sha256": "b7e5cebc68f05b85ee2b7fe376ac4de1692348f752bec23565cf45448cb3d13d",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, ELITE CHROME, 400, LOOK CONCEPT. Palette: violet, silver, lime accent. Feature a large stacked angular mountain peaks, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-6513d534-8bfa-4e3e-9824-a993278231a2.png"
+    },
+    {
+      "id": "look-2393",
+      "sha256": "4802e8fa8c0053f07fe6dc0a40b5a1e20b5b655e97d21de4c7587ef1e3053157",
+      "prompt": "Use case: product-mockup. Create ONE original full-bleed square 2D printed film-package concept label used at 64 pixels in RawLab. Text exactly: RAWLAB, PRINT, 2393, LOOK CONCEPT. Palette: yellow, black, crimson accent. Feature a large circular cinema reel graphic, not only text. Very large bold identifying name and number. Printed flat ink with restrained matte paper texture, polished vintage film-label composition. Whole square filled, no margins, no box, no perspective, no shadows, no side panels, no rounded border, no manufacturer logos, not a copy of actual official packaging. Not a LUT output sample.",
+      "original": "/Users/xupeng/.codex/generated_images/01a14376-e16c-77b2-b586-87b78392888c/exec-d779905f-565b-494d-a1d6-65e10f29722f.png"
+    }
+  ]
+}

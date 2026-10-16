@@ -144,10 +144,11 @@ private fun BatchConfirmContent(
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
+    val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val sourceSettings = state.job.source.settings
     val sourceLookName = recipes.firstOrNull { it.id == sourceSettings.recipeID }?.name
         ?: if (sourceSettings.film == "neutral") stringResource(R.string.neutral_look)
-        else Film.all.firstOrNull { it.id == sourceSettings.film }?.name ?: sourceSettings.film
+        else bundledFilms.firstOrNull { it.id == sourceSettings.film }?.name ?: sourceSettings.film
     Column(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {

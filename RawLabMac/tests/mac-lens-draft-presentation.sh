@@ -15,6 +15,7 @@ for dependency in libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
 done
 swiftc -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+    "$ROOT/Shared/BundledLook.swift" \
     -module-cache-path "$STAGE/module-cache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/ExportMetadata.swift" \

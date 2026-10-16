@@ -3,12 +3,19 @@ import UIKit
 
 extension ContentView {
     func filmPanel(imageSize: CGFloat) -> some View {
-        ScrollViewReader { proxy in
+        let sections = FilmGroup.sections(viewModel.availableLUTs, group: { FilmPresentation(fileName: $0.id).group })
+        return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     filmButton(name: L10n.text("中性"), id: nil, imageSize: imageSize)
-                    ForEach(viewModel.availableLUTs) { lut in
-                        filmButton(name: lut.name, id: lut.id, imageSize: imageSize)
+                    ForEach(sections.indices, id: \.self) { index in
+                        if index > 0 {
+                            Divider().frame(height: imageSize + 30).padding(.horizontal, 12)
+                                .accessibilityIdentifier("film.group-divider.\(index)")
+                        }
+                        ForEach(sections[index]) { lut in
+                            filmButton(name: lut.name, id: lut.id, imageSize: imageSize)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)

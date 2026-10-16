@@ -5,24 +5,30 @@ struct FilmDock: View {
     @ObservedObject var model: EditorModel
     var body: some View {
         let _ = localizationLocale
+        let sections = FilmGroup.sections(model.films, group: { $0.group })
         GeometryReader { geometry in
             let itemHeight = max(66, geometry.size.height - 16)
             let imageSize = max(32, min(96, itemHeight - 34))
             HorizontalPicker(selectedID: model.selectedFilmID, name: L10n.text("胶片")) {
                 HStack(spacing: 8) {
                     filmButton(name: L10n.text("中性"), id: "", imageSize: imageSize, height: itemHeight)
-                    ForEach(model.films) { film in
-                        filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
-                                   isCustom: film.managedID != nil)
-                            .contextMenu {
-                                if film.managedID != nil {
-                                    Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
-                                    Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
-                                        .disabled(model.lookLibraryBusy || model.exporting)
-                                    Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
-                                        .disabled(model.lookLibraryBusy || model.exporting)
+                    ForEach(sections.indices, id: \.self) { index in
+                        if index > 0 {
+                            Divider().frame(height: itemHeight - 16).padding(.horizontal, 12)
+                        }
+                        ForEach(sections[index]) { film in
+                            filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
+                                       isCustom: film.managedID != nil)
+                                .contextMenu {
+                                    if film.managedID != nil {
+                                        Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
+                                        Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
+                                            .disabled(model.lookLibraryBusy || model.exporting)
+                                        Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
+                                            .disabled(model.lookLibraryBusy || model.exporting)
+                                    }
                                 }
-                            }
+                        }
                     }
                     Button(action: model.importLUT) {
                         VStack(spacing: 5) {
@@ -42,6 +48,7 @@ struct FilmDock: View {
     private func filmButton(name: String, id: String, imageSize: CGFloat, height: CGFloat,
                             isCustom: Bool = false) -> some View {
         let selected = model.settings.masterRecipeID == nil && model.selectedFilmID == id
+        let labelWidth: CGFloat = !isCustom && BundledLook.all.contains(where: { $0.name == name }) ? 132 : 88
         return Button { model.selectFilm(id) } label: {
             VStack(spacing: 5) {
                 FilmPackageImage(name: name, neutral: id.isEmpty, isCustom: isCustom)
@@ -49,8 +56,8 @@ struct FilmDock: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                 Text(name).font(.system(size: 11, weight: selected ? .semibold : .regular))
                     .lineLimit(2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    .frame(width: 88, height: 28)
-            }.frame(width: max(88, imageSize + 12), height: height)
+                    .frame(width: labelWidth, height: 28)
+            }.frame(width: max(labelWidth, imageSize + 12), height: height)
                 .contentShape(Rectangle())
                 .foregroundStyle(selected ? Color.yellow : Color.primary)
                 .background(selected ? Color.yellow.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))

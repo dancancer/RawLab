@@ -52,6 +52,10 @@ bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
 
+当前 LUT 接入含 28 个再分发授权尚未确认的第三方资源。仓库 owner 已允许公开源码和
+`development` 集成，但不构成原作者许可或正式发布授权；编译不受此记录阻断。
+清单、改造约定和未解决风险见 [LUT 接入记录](../docs/luts/README.md)。
+
 依赖 CMake 3.24+、pkg-config、Python 3.11+ 和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
 
 Requires CMake 3.24+, pkg-config, Python 3.11+ and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.

@@ -6,7 +6,7 @@ enum FilmArtwork {
         "PRO NEG.STD": "pro-neg-std", "CLASSIC NEG.": "classic-neg",
         "ETERNA": "eterna", "ETERNA BB": "eterna-bb",
         "CLASSIC CHROME": "classic-chrome", "REALA ACE": "reala-ace"
-    ]
+    ].merging(Dictionary(uniqueKeysWithValues: BundledLook.all.map { ($0.name.uppercased(), $0.artworkName) })) { _, new in new }
     private static let cache = NSCache<NSString, NSImage>()
 
     private static func resourceName(for name: String, isCustom: Bool) -> String {

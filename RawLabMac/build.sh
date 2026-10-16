@@ -83,6 +83,10 @@ for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     case "$lut" in *FLog2-709*|*to_WDR*) continue ;; esac
     cp "$lut" "$APP/Contents/Resources/LUTs/"
 done
+cp "$ROOT"/Shared/BundledLooks/*.cube "$APP/Contents/Resources/LUTs/"
+cp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
+cp "$ROOT"/Shared/BundledLooks/Artwork/*.png "$APP/Contents/Resources/FilmIcons/"
+cp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
 if [ -d "$ROOT/RawLabMac/Resources/MasterRecipes" ]; then
     cp -R "$ROOT/RawLabMac/Resources/MasterRecipes/." "$APP/Contents/Resources/MasterRecipes/"
 fi

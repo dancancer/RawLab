@@ -15,6 +15,7 @@ OUT="$(mktemp -d /tmp/rawlab-agent-recipe.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
+  "$ROOT/Shared/BundledLook.swift" \
   -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/RawLabMac/Sources/Engine.swift" "$ROOT/RawLabMac/Sources/AgentRecipe.swift" \
