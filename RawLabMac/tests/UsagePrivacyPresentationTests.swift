@@ -4,7 +4,7 @@ import SwiftUI
 @main struct UsagePrivacyPresentationTests {
     @MainActor static func main() throws {
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.prohibited)
         let suite = "rawlab-usage-ui-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -16,9 +16,10 @@ import SwiftUI
         }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.contentView = nil; window.close() }
         window.contentView = view
         window.appearance = NSAppearance(named: .darkAqua)
-        window.orderFront(nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         view.layoutSubtreeIfNeeded()
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
@@ -27,7 +28,7 @@ import SwiftUI
             try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
         }
         guard !UsageAnalytics.shared.isAvailable else { throw CocoaError(.featureUnsupported) }
+        guard !window.isVisible else { throw CocoaError(.validationMissingMandatoryProperty) }
         print("PASS: native privacy surface \(Int(size.width))x\(Int(size.height)), unavailable by default")
-        window.orderOut(nil)
     }
 }

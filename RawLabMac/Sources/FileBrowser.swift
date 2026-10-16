@@ -73,7 +73,7 @@ struct FileBrowser: View {
                     .buttonStyle(.borderless).help(L10n.text("重新读取目录")).accessibilityLabel(L10n.text("重新读取目录"))
             }
         case .empty:
-            Text(L10n.text("无 RAW 照片")).font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
+            Text(L10n.text("无照片")).font(.caption).foregroundStyle(.secondary).padding(.leading, 18)
         }
     }
 
