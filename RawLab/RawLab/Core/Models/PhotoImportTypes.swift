@@ -83,6 +83,18 @@ enum PhotoImportFile {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    static func loadSource(using load: () async throws -> PhotoImportSource) async throws -> PhotoImportSource {
+        try Task.checkCancellation()
+        let source = try await load()
+        do {
+            try Task.checkCancellation()
+            return source
+        } catch {
+            release(source.url)
+            throw error
+        }
+    }
+
     static func load(from item: PhotosPickerItem) async throws -> PhotoImportSource {
         let supportsRaw = item.supportedContentTypes.contains(where: { $0.conforms(to: .rawImage) })
         var rawError: Error?

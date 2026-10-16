@@ -8,7 +8,8 @@ extension ContentView {
             Button { showingPrivacy = true } label: { Image(systemName: "gearshape") }
                 .accessibilityLabel("隐私设置").help("隐私设置")
                 .accessibilityIdentifier("editor.privacy")
-            photoImportButton(isEnabled: !editorBusy)
+            photoImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
+                .opacity(rulerFocusOpacity)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Menu {
@@ -16,9 +17,11 @@ extension ContentView {
                     ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
                 }
                 .id(localizationLocale.identifier)
+                Toggle(L10n.text("调整触觉反馈"), isOn: $adjustmentHapticsEnabled)
             } label: { Image(systemName: "globe") }
                 .accessibilityLabel(L10n.text("语言"))
                 .accessibilityIdentifier("settings.language")
+                .opacity(rulerFocusOpacity)
             Button { showingBefore.toggle() } label: {
                 Image(systemName: "circle.lefthalf.filled")
                     .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
@@ -28,6 +31,7 @@ extension ContentView {
             .help(L10n.text("切换调整前后"))
             .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.compare")
+            .opacity(rulerFocusOpacity)
 
             Button { adjustmentsExpanded.toggle() } label: {
                 Image(systemName: "slider.horizontal.3")
@@ -37,6 +41,7 @@ extension ContentView {
             .help(L10n.text("显示或收起调整栏"))
             .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.adjustments")
+            .opacity(rulerFocusOpacity)
 
             Menu {
                 Button(L10n.text("保存当前照片")) {
@@ -44,15 +49,15 @@ extension ContentView {
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                 Button(L10n.text("导出渲染型 DNG…")) {
                     singleExportFormat = .renderedDNG
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                 Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                    .disabled(viewModel.sourceKind != .raw || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                     .accessibilityIdentifier("editor.batchExport")
                 if batchModel != nil { Button(L10n.text("查看批量任务")) { showingBatchExport = true } }
             } label: {
@@ -60,8 +65,9 @@ extension ContentView {
             }
             .accessibilityLabel(L10n.text("导出"))
             .help(L10n.text("导出照片"))
-            .disabled((!viewModel.hasImage || editorBusy) && batchModel == nil)
+            .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
             .accessibilityIdentifier("editor.export")
+            .opacity(rulerFocusOpacity)
         }
     }
 
@@ -72,9 +78,20 @@ extension ContentView {
                 if let image = currentPreviewImage {
                     ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
                                   label: showingBefore ? L10n.text("调整前的照片") : L10n.text("调整后的照片"),
-                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: settings) })
+                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
                         .id(viewModel.basePreviewImage)
                         .frame(width: geometry.size.width, height: geometry.size.height)
+                        .allowsHitTesting(!geometrySelected)
+                        .overlay {
+                            if geometrySelected && !showingBefore {
+                                EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,
+                                                  aspectRatio: geometryDraftAspectRatio,
+                                                  isEnabled: !editorBusy && viewModel.hasImage,
+                                                  sourceRevision: viewModel.sourceRevision,
+                                                  onEditingChanged: setSliderEditing)
+                                    .id(viewModel.sourceRevision)
+                            }
+                        }
                 } else {
                     ScrollView {
                         VStack(spacing: 24) {
@@ -82,14 +99,11 @@ extension ContentView {
                                 .font(.largeTitle)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
-                            Text(L10n.text("RAW 照片")).font(.title2.weight(.semibold))
                             PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
-                                Label {
-                                    Text(L10n.text("导入照片"))
-                                } icon: {
-                                    Image(systemName: "photo.badge.plus").accessibilityHidden(true)
-                                }
+                                Text(L10n.text("导入照片"))
                                     .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
                                     .padding(.horizontal, 16)
                                     .frame(minHeight: 44)
                             }
@@ -112,6 +126,7 @@ extension ContentView {
                     FloatingHistogram(values: currentHistogram, expanded: $histogramExpanded)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
+                        .opacity(rulerFocusOpacity)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -122,6 +137,7 @@ extension ContentView {
                         max(80, geometry.size.width - min(180, geometry.size.width * 0.48) - 56)
                     )
                 ))
+                .opacity(rulerFocusOpacity)
             }
             .overlay(alignment: .bottomLeading) {
                 if showingBefore && viewModel.hasImage {
@@ -142,6 +158,17 @@ extension ContentView {
                         .allowsHitTesting(false)
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if viewModel.hasImage && !editorBusy && (viewModel.previewRendering || viewModel.previewResizePending) {
+                    ProgressView(L10n.text("正在生成效果预览…"))
+                        .font(.caption)
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("editor.preview.updating")
+                }
+            }
             .clipped()
         }
     }
@@ -157,7 +184,7 @@ extension ContentView {
                 Spacer(minLength: 8)
                 editSaveStatus
                 Menu {
-                    Button(L10n.text("重置全部调整"), role: .destructive) {
+                    Button(L10n.text("重置所有调整并返回中性"), role: .destructive) {
                         applySettingsChange(.default)
                     }
                     if let adjustment = selectedAdjustment {
@@ -168,12 +195,12 @@ extension ContentView {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.text("重置调整"))
-                .disabled(!viewModel.hasImage || editingLocked || settings == .default)
+                .disabled(!viewModel.hasImage || editingLocked || settings == .default || geometrySelected || lensSelected)
             }
             .frame(height: max(44, panelHeaderHeight))
             .padding(.horizontal, 16)
+            .opacity(rulerFocusOpacity)
 
-            toolStrip
             valuePanel
         }
         .padding(.bottom, 12)
@@ -216,53 +243,60 @@ extension ContentView {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    Button { geometrySelected = false; lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                    Button { selectEditorTool(.film) } label: {
                         AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected,
-                                            progress: 0, width: toolWidth, height: toolHeight)
+                                            progress: 0, width: toolWidth, height: editorToolHeight)
                     }
                     .accessibilityValue(selectedFilmName)
                     .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? .isSelected : [])
                     .accessibilityIdentifier("tool.film")
+                    .opacity(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
                     .id("film")
-                    Button { geometrySelected = false; lensSelected = false; choosingMasterRecipe = true; selectedAdjustment = nil } label: {
-                        AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "photo.stack", selected: choosingMasterRecipe,
-                                            progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: toolHeight)
+                    Button { selectEditorTool(.recipe) } label: {
+                        AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "square.stack.3d.up", selected: choosingMasterRecipe,
+                                            progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: editorToolHeight)
                     }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? L10n.text("无配方"))
+                        .accessibilityAddTraits(choosingMasterRecipe ? .isSelected : [])
+                        .opacity(choosingMasterRecipe ? 1 : rulerFocusOpacity)
                         .id("masterRecipe")
-                    Button { geometrySelected = false; lensSelected = true; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                    Button { selectEditorTool(.lens) } label: {
                         AdjustmentToolLabel(title: L10n.text("镜头"), symbol: "viewfinder", selected: lensSelected,
                                             progress: settings.lensSettings.isEnabled ? 1 : 0,
-                                            width: toolWidth, height: toolHeight)
+                                            width: toolWidth, height: editorToolHeight)
                     }.disabled(viewModel.sourceKind != .raw)
                         .accessibilityIdentifier("tool.lens")
+                        .opacity(lensSelected ? 1 : rulerFocusOpacity)
                         .accessibilityAddTraits(lensSelected ? .isSelected : []).id("lens")
-                    Button { geometrySelected = true; lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = nil } label: {
+                    Button { selectEditorTool(.geometry) } label: {
                         AdjustmentToolLabel(title: L10n.text("几何"), symbol: "crop.rotate", selected: geometrySelected,
-                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: toolHeight)
+                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: editorToolHeight)
                     }
                     .accessibilityIdentifier("tool.geometry")
+                    .opacity(geometrySelected ? 1 : rulerFocusOpacity)
                     .accessibilityAddTraits(geometrySelected ? .isSelected : []).id("geometry")
                     ForEach(AdjustmentKind.allCases) { adjustment in
-                        Button { geometrySelected = false; lensSelected = false; choosingMasterRecipe = false; selectedAdjustment = adjustment } label: {
+                        Button { selectEditorTool(.adjustment(adjustment)) } label: {
                             AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
                                                 selected: selectedAdjustment == adjustment && !lensSelected && !geometrySelected,
                                                 progress: adjustmentProgress(adjustment),
-                                                width: toolWidth, height: toolHeight)
+                                                width: toolWidth, height: editorToolHeight,
+                                                currentValue: selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? selectedScalarBadge(adjustment) : nil)
                         }
                         .disabled(adjustment == .strength && !settings.hasLook)
                         .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
                         .accessibilityAddTraits(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? .isSelected : [])
                         .accessibilityIdentifier("tool.\(adjustment.rawValue)")
+                        .opacity(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
                         .contextMenu {
                             Button(L10n.format("重置%@", String(describing: adjustment.title))) { reset(adjustment) }
-                            .disabled(!viewModel.hasImage || adjustmentProgress(adjustment) == 0 || editingLocked)
+                            .disabled(!viewModel.hasImage || adjustmentProgress(adjustment) == 0 || editingLocked || lensSelected || geometrySelected)
                         }
                         .id(adjustment.rawValue)
                     }
                 }
                 .padding(.horizontal, 12)
             }
-            .frame(height: toolHeight)
+            .frame(height: editorToolHeight)
             .onGeometryChange(for: CGFloat.self) { geometry in geometry.size.width } action: { _ in
                 proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
             }
@@ -280,386 +314,7 @@ extension ContentView {
             }
         }
         .buttonStyle(.plain)
+        .disabled(editorBusy)
     }
 
-    @ViewBuilder
-    var valuePanel: some View {
-        if geometrySelected {
-            IOSGeometryControls(settings: $settings.geometry, onEditingChanged: setSliderEditing)
-                .padding(.horizontal, 16)
-                .disabled(!viewModel.hasImage || editingLocked)
-        } else if lensSelected {
-            IOSLensControls(settings: $settings, info: viewModel.lensInfo)
-                .padding(.horizontal, 16)
-                .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)
-        } else if choosingMasterRecipe {
-            masterRecipePanel
-        } else if selectedAdjustment == .hsl {
-            HSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
-                     onEditingChanged: setSliderEditing)
-                .disabled(!viewModel.hasImage || editingLocked)
-        } else if selectedAdjustment == .vignette {
-            IOSPhotoEffectsControls(effect: .vignette, settings: Binding(
-                get: { settings.photoEffects },
-                set: { settings.photoEffects = $0 }
-            ), onEditingChanged: setSliderEditing)
-                .padding(.horizontal, 16)
-                .disabled(!viewModel.hasImage || editingLocked)
-        } else if selectedAdjustment == .grain {
-            IOSPhotoEffectsControls(effect: .grain, settings: Binding(
-                get: { settings.photoEffects },
-                set: { settings.photoEffects = $0 }
-            ), onEditingChanged: setSliderEditing)
-                .padding(.horizontal, 16)
-                .disabled(!viewModel.hasImage || editingLocked)
-        } else if selectedAdjustment == .noiseReduction {
-            IOSDenoiseControls(settings: Binding(
-                get: { settings.denoise },
-                set: { settings.denoise = $0; settings.noiseReduction = 0 }
-            ), onEditingChanged: setSliderEditing)
-                .padding(.horizontal, 16)
-                .disabled(!viewModel.hasImage || editingLocked)
-        } else if let adjustment = selectedAdjustment {
-            if (adjustment == .temperature || adjustment == .tint), viewModel.sourceKind == .raw {
-                whiteBalancePanel
-            } else {
-                VStack(spacing: 4) {
-                HStack {
-                    Text(adjustment.title).font(.subheadline)
-                    Spacer()
-                    if adjustment == .exposure {
-                        Button(action: autoExposure) { Label(L10n.text("自动"), systemImage: "wand.and.stars") }
-                            .font(.caption).disabled(autoExposing || viewModel.isBusy)
-                            .accessibilityIdentifier("exposure.auto")
-                    }
-                    Text(adjustment.valueLabel(for: adjustment.value(from: settings)))
-                        .font(.subheadline.weight(.semibold)).monospacedDigit()
-                        .foregroundStyle(adjustmentProgress(adjustment) == 0 ? Color.secondary : .yellow)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .accessibilityIdentifier("adjustment.value")
-                    Button { reset(adjustment) } label: {
-                        Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel(L10n.format("重置%@", String(describing: adjustment.title)))
-                    .disabled(adjustmentProgress(adjustment) == 0)
-                }
-                Slider(value: adjustmentBinding(adjustment), in: adjustment.range, step: adjustment.step,
-                       onEditingChanged: setSliderEditing)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel(adjustment.title)
-                    .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
-                    .accessibilityIdentifier("adjustment.slider")
-                    .overlay(alignment: .bottom) {
-                        DefaultValueMarker(range: adjustment.range, value: adjustment.value(from: .default))
-                            .frame(height: 4).offset(y: 5).allowsHitTesting(false)
-                    }
-                if adjustment == .exposure, viewModel.sourceKind == .raw {
-                    Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
-                        ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.menu).id(localizationLocale.identifier).accessibilityIdentifier("exposure.mode")
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
-                .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && !settings.hasLook))
-                }
-        } else {
-            filmPanel(imageSize: filmSize)
-        }
-    }
-
-    var whiteBalancePanel: some View {
-        VStack(spacing: 8) {
-            Picker(L10n.text("白平衡模式"), selection: Binding(
-                get: { settings.whiteBalanceMode },
-                set: { setWhiteBalanceMode($0) }
-            )) {
-                Text(L10n.text("拍摄时")).tag(RawWhiteBalanceMode.camera)
-                Text(L10n.text("自定义")).tag(RawWhiteBalanceMode.custom)
-            }
-            .pickerStyle(.segmented)
-            .id(localizationLocale.identifier)
-            .disabled(viewModel.rawWhiteBalance == nil)
-            .accessibilityIdentifier("whiteBalance.mode")
-
-            HStack {
-                Text(L10n.text("色温")).font(.subheadline)
-                Spacer()
-                if settings.whiteBalanceMode == .camera, viewModel.rawWhiteBalance == nil {
-                    Text(L10n.text("拍摄时设置")).foregroundStyle(.secondary)
-                } else {
-                    TextField(L10n.text("色温"), value: temperatureNumberBinding(), format: .number.precision(.fractionLength(0)))
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 96)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
-                        .accessibilityIdentifier("whiteBalance.temperature")
-                    Text("K")
-                }
-            }
-            if settings.whiteBalanceMode == .custom || viewModel.rawWhiteBalance != nil {
-                Slider(value: reciprocalTemperatureBinding(), in: 0...1, step: 0.001,
-                       onEditingChanged: setSliderEditing)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel(L10n.text("色温"))
-                    .disabled(settings.whiteBalanceMode == .camera || viewModel.rawWhiteBalance == nil)
-                    .overlay(alignment: .bottom) {
-                        DefaultValueMarker(range: 0...1, value: RawSettings.reciprocalSliderValue(for: RawSettings.default.temperature))
-                            .frame(height: 4).offset(y: 5).allowsHitTesting(false)
-                    }
-                HStack {
-                    Text("2000 K")
-                    Spacer()
-                    Text("50000 K")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            HStack {
-                Text(L10n.text("色调")).font(.subheadline)
-                Spacer()
-                TextField(L10n.text("色调"), value: Binding(
-                    get: { displayedTint },
-                    set: { value in
-                        var updated = settings
-                        updated.tint = min(max(value.rounded(), RawSettings.tintRange.lowerBound), RawSettings.tintRange.upperBound)
-                        if updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
-                        applySettingsChange(updated)
-                    }
-                ), format: .number.precision(.fractionLength(0)))
-                    .keyboardType(.numbersAndPunctuation)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 96)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
-                    .accessibilityIdentifier("whiteBalance.tint")
-                Slider(value: adjustmentBinding(.tint), in: RawSettings.tintRange, step: 1,
-                       onEditingChanged: setSliderEditing)
-                    .frame(minHeight: 44)
-                    .disabled((settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil) || viewModel.rawWhiteBalance == nil)
-            }
-            .disabled((settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil) || viewModel.rawWhiteBalance == nil)
-            if let whiteBalance = viewModel.rawWhiteBalance {
-                Text(settings.whiteBalanceMode == .camera
-                     ? String(format: L10n.text("拍摄时：%.0f K · 色调 %+.0f"), whiteBalance.temperature, whiteBalance.tint)
-                     : L10n.text("自定义白平衡"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text(L10n.text("缺少有效相机校准，保留拍摄时白平衡"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 12)
-    }
-
-    func filmPanel(imageSize: CGFloat) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    filmButton(name: L10n.text("中性"), id: nil, imageSize: imageSize)
-                    ForEach(viewModel.availableLUTs) { lut in
-                        filmButton(name: lut.name, id: lut.id, imageSize: imageSize)
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-            .accessibilityIdentifier("film.choices")
-            .onAppear { proxy.scrollTo(settings.lutID ?? "neutral", anchor: .center) }
-            .onChange(of: settings.lutID) { _, id in proxy.scrollTo(id ?? "neutral", anchor: .center) }
-        }
-        .overlay {
-            if viewModel.isLoadingLUTs {
-                ProgressView(L10n.text("正在加载胶片")).padding(8).background(.regularMaterial)
-            } else if viewModel.availableLUTs.isEmpty {
-                Text(L10n.text("未找到胶片 LUT")).font(.caption).foregroundStyle(.secondary)
-                    .padding(8).background(.regularMaterial)
-            }
-        }
-        .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs)
-    }
-
-    var masterRecipePanel: some View {
-        let recipes = MasterRecipe.allRecipes
-        let tileWidth = max(120, filmSize + 40)
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    masterRecipeButton(nil, width: tileWidth).id("neutral")
-                    ForEach(recipes) { recipe in masterRecipeButton(recipe, width: tileWidth).id(recipe.id) }
-                }
-                .padding(.horizontal, 16)
-            }
-            .onAppear { proxy.scrollTo(settings.masterRecipeID ?? "neutral", anchor: .center) }
-        }.buttonStyle(.plain).accessibilityIdentifier("masterRecipe.choices")
-    }
-
-    func masterRecipeButton(_ recipe: MasterRecipe?, width: CGFloat) -> some View {
-        Button {
-            var updated = settings
-            if let recipe { updated.applyMasterRecipe(recipe) }
-            else { updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint); updated.lutID = nil }
-            applySettingsChange(updated)
-        } label: {
-            VStack(spacing: 4) {
-                Group {
-                    if let url = recipe?.artworkURL(), let image = UIImage(contentsOfFile: url.path) {
-                        Image(uiImage: image).resizable().scaledToFit()
-                    } else { Image(systemName: "circle.lefthalf.filled").font(.title) }
-                }.frame(width: filmSize, height: filmSize)
-                Text(recipe?.name ?? L10n.text("无配方")).font(.caption).lineLimit(2).frame(height: 32)
-                    .foregroundStyle(settings.masterRecipeID == recipe?.id ? Color.yellow : Color.primary)
-                Text(L10n.text(recipe?.subtitle ?? "中性直出")).font(.caption2).foregroundStyle(.secondary).lineLimit(2).frame(height: 32)
-            }.frame(width: width)
-        }.disabled(!viewModel.hasImage || editingLocked)
-            .accessibilityLabel(recipe?.name ?? L10n.text("无配方")).accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
-            .accessibilityAddTraits(settings.masterRecipeID == recipe?.id ? .isSelected : [])
-    }
-
-    func filmButton(name: String, id: String?, imageSize: CGFloat) -> some View {
-        Button {
-            if settings.masterRecipeID != nil || settings.lutID != id {
-                UsageAnalytics.shared.record(.filmSelected(id == nil ? .none : .builtIn))
-            }
-            var updated = settings
-            updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
-            updated.lutID = id
-            applySettingsChange(updated)
-        } label: {
-            FilmLabel(name: name, artworkName: id.flatMap { FilmPresentation(fileName: $0).artworkName },
-                      neutral: id == nil, selected: settings.lutID == id, imageSize: imageSize)
-        }
-        .buttonStyle(.plain)
-        .id(id ?? "neutral")
-        .accessibilityLabel(name)
-        .accessibilityAddTraits(settings.lutID == id ? .isSelected : [])
-    }
-}
-
-private struct IOSDenoiseControls: View {
-    @Environment(\.locale) private var localizationLocale
-    @Binding var settings: RawDenoiseSettings
-    let onEditingChanged: (Bool) -> Void
-    private var parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] { [
-        (L10n.text("亮度降噪"), \.luma, 0), (L10n.text("色彩降噪"), \.chroma, 46), (L10n.text("粗色斑抑制"), \.coarse, 50)
-    ] }
-
-    var body: some View {
-        let _ = localizationLocale
-        VStack(spacing: 0) {
-            HStack {
-                Toggle(L10n.text("降噪"), isOn: $settings.enabled).fixedSize()
-                    .accessibilityIdentifier("denoise.enabled")
-                Spacer(minLength: 4)
-                Button { settings = RawDenoiseSettings() } label: {
-                    Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 44)
-                }.accessibilityLabel(L10n.text("重置降噪"))
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.text("预设")).font(.subheadline)
-                Picker(L10n.text("预设"), selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
-                    Text(RawDenoisePreset.detail.title).tag(RawDenoisePreset.detail)
-                    Text(RawDenoisePreset.clean.title).tag(RawDenoisePreset.clean)
-                    if settings.preset == .custom { Text(L10n.text("自定义")).tag(RawDenoisePreset.custom) }
-                }.labelsHidden().pickerStyle(.menu).id(localizationLocale.identifier).accessibilityIdentifier("denoise.preset")
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            ForEach(parameters.indices, id: \.self) { index in
-                let parameter = parameters[index]
-                let value = Binding(get: { settings[keyPath: parameter.1] }, set: { number in
-                    if number.isFinite { settings[keyPath: parameter.1] = min(100, max(0, number.rounded())) }
-                })
-                HStack(spacing: 6) {
-                    Text(parameter.0).font(.caption).frame(width: 78, alignment: .leading)
-                    Slider(value: value, in: 0...100, step: 1, onEditingChanged: onEditingChanged)
-                        .accessibilityLabel(parameter.0).accessibilityIdentifier("denoise.slider.\(index)")
-                    TextField(parameter.0, value: value, format: .number.precision(.fractionLength(0)))
-                        .keyboardType(.numberPad).multilineTextAlignment(.trailing)
-                        .textFieldStyle(.roundedBorder).frame(width: 42)
-                        .accessibilityLabel(L10n.format("%@数值", String(describing: parameter.0))).accessibilityIdentifier("denoise.value.\(index)")
-                    Button { value.wrappedValue = parameter.2 } label: {
-                        Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 44)
-                    }.accessibilityLabel(L10n.format("重置%@", String(describing: parameter.0))).disabled(value.wrappedValue == parameter.2)
-                }.disabled(!settings.enabled).frame(minHeight: 44)
-            }
-        }
-    }
-}
-
-private struct IOSPhotoEffectsControls: View {
-    let effect: AdjustmentKind
-    @Binding var settings: PhotoEffectsSettings
-    let onEditingChanged: (Bool) -> Void
-
-    private var parameters: [PhotoEffectParameter] {
-        PhotoEffectParameter.allCases.filter { $0.isVignette == (effect == .vignette) }
-    }
-
-    private var effectIsDefault: Bool {
-        parameters.allSatisfy { settings[keyPath: $0.keyPath] == $0.defaultValue }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(effect.title).font(.subheadline)
-                Spacer(minLength: 4)
-                Button { resetEffect() } label: {
-                    Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 44)
-                }
-                .accessibilityLabel(L10n.format("重置%@", String(describing: effect.title)))
-                .disabled(effectIsDefault)
-            }
-            ForEach(parameters) { parameter in
-                let value = binding(for: parameter)
-                HStack(spacing: 6) {
-                    Text(parameter.title).font(.caption).frame(width: 72, alignment: .leading)
-                    Slider(value: value, in: parameter.range, step: 1, onEditingChanged: onEditingChanged)
-                        .accessibilityLabel(parameter.title)
-                        .accessibilityIdentifier("effects.\(effect.rawValue).slider.\(parameter.rawValue)")
-                    TextField(parameter.title, value: value,
-                              format: .number.precision(.fractionLength(0)))
-                        .keyboardType(parameter.range.lowerBound < 0 ? .numbersAndPunctuation : .numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 48)
-                        .accessibilityLabel(L10n.format("%@数值", String(describing: parameter.title)))
-                        .accessibilityIdentifier("effects.\(effect.rawValue).value.\(parameter.rawValue)")
-                    Button { value.wrappedValue = parameter.defaultValue } label: {
-                        Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 44)
-                    }
-                    .accessibilityLabel(L10n.format("重置%@", String(describing: parameter.title)))
-                    .disabled(value.wrappedValue == parameter.defaultValue)
-                }
-                .disabled(parameter == .vignetteHighlights && settings.vignetteAmount >= 0)
-                .frame(minHeight: 44)
-            }
-        }
-    }
-
-    private func binding(for parameter: PhotoEffectParameter) -> Binding<Double> {
-        Binding(
-            get: { settings[keyPath: parameter.keyPath] },
-            set: { value in
-                guard value.isFinite else { return }
-                settings[keyPath: parameter.keyPath] = min(parameter.range.upperBound,
-                                                           max(parameter.range.lowerBound, value.rounded()))
-            }
-        )
-    }
-
-    private func resetEffect() {
-        if effect == .vignette {
-            settings.resetVignette()
-        } else {
-            settings.resetGrain()
-        }
-    }
 }

@@ -108,27 +108,22 @@ extension RawEditorViewModel {
 }
 
 extension RawEditorViewModel {
+    @discardableResult
     func importImage(
         from source: PhotoImportSource,
         identity: PhotoIdentity? = nil,
         settings: RawSettings = .default,
         onImported: (() -> Void)? = nil,
         onSettingsRestored: ((RawSettings) -> Void)? = nil
-    ) {
+    ) -> UUID {
         statusMessage = nil
         isBusy = true
-        sourceRevision = UUID()
-        previewResizeWorkItem?.cancel()
-        previewResizeWorkItem = nil
-        previewResizePending = false
-        previewRendering = false
+        let importRevision = UUID()
+        activeImportRevision = importRevision
+        sourceRevision = importRevision
+        invalidatePreviewRequests()
         previewLongEdge = Int(previewMaxDimension)
         requestedPreviewLongEdge = previewLongEdge
-        previewWorkItem?.cancel()
-        previewWorkItem = nil
-        cancelHistogramWorkItem()
-        setLatestRenderID(UUID())
-        lastPreviewRequest = nil
 
         let sourceKind: ImageSourceKind = source.isRaw ? .raw : .raster
 
@@ -166,12 +161,16 @@ extension RawEditorViewModel {
                         bins: self.histogramBins
                     )
 
-                    DispatchQueue.main.async {
+                    self.resultDelivery {
+                        guard self.activeImportRevision == importRevision else { return }
+                        self.invalidatePreviewRequests()
+                        self.activeImportRevision = nil
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
                         self.sourceDisplayName = source.displayName
                         self.restoredSettings = restoredSettings
+                        self.currentPreviewSettings = restoredSettings
                         self.pendingSettings = nil
                         self.sourceOrientation = previewResult.orientation ?? rawBase.orientation
                         self.draftBuffer = rawBase.buffer
@@ -214,12 +213,16 @@ extension RawEditorViewModel {
                         bins: self.histogramBins
                     )
 
-                    DispatchQueue.main.async {
+                    self.resultDelivery {
+                        guard self.activeImportRevision == importRevision else { return }
+                        self.invalidatePreviewRequests()
+                        self.activeImportRevision = nil
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
                         self.sourceDisplayName = source.displayName
                         self.restoredSettings = restoredSettings
+                        self.currentPreviewSettings = restoredSettings
                         self.pendingSettings = nil
                         self.sourceOrientation = rasterBase.orientation
                         self.draftBuffer = rasterBase.buffer
@@ -247,7 +250,10 @@ extension RawEditorViewModel {
                     }
                 }
             } catch {
-                DispatchQueue.main.async {
+                self.resultDelivery {
+                    guard self.activeImportRevision == importRevision else { return }
+                    self.invalidatePreviewRequests()
+                    self.activeImportRevision = nil
                     self.statusMessage = error.localizedDescription
                     self.isBusy = false
                     self.previewImage = nil
@@ -272,6 +278,16 @@ extension RawEditorViewModel {
                 }
             }
         }
+        return importRevision
+    }
+
+    func cancelImageImport(_ requestID: UUID? = nil) {
+        guard let activeImportRevision,
+              requestID == nil || requestID == activeImportRevision else { return }
+        self.activeImportRevision = nil
+        invalidatePreviewRequests()
+        sourceRevision = UUID()
+        isBusy = false
     }
 
     func consumeRestoredSettings(_ settings: RawSettings) -> Bool {
@@ -447,14 +463,14 @@ extension RawEditorViewModel {
                     try self.processor.exportDNG(buffer: raster.buffer, settings: settings, lutURL: lutURL,
                                                  outputURL: outputURL, exportLongEdge: longEdge)
                 }
-                DispatchQueue.main.async {
+                self.resultDelivery {
                     self.isBusy = false
                     completion(.success(outputURL))
                     self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                 }
             } catch {
                 try? FileManager.default.removeItem(at: outputURL)
-                DispatchQueue.main.async {
+                self.resultDelivery {
                     self.isBusy = false
                     completion(.failure(error))
                     self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)

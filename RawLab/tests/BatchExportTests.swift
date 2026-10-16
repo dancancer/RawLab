@@ -16,6 +16,12 @@ struct BatchExportTests {
     }
 
     static func main() throws {
+        guard let profile = ProcessInfo.processInfo.environment["RAWLAB_TEST_PROFILE"] else {
+            throw NSError(domain: "BatchTestIsolation", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Run with the batch-export.sh private profile"])
+        }
+        check(BatchFileOutputStore.root().standardizedFileURL.path.hasPrefix(profile + "/"),
+              "batch file publication stays inside the test's private profile")
         check(ExportSize.isValid(nil), "native export size is valid")
         check(ExportSize.presets == [2048, 3000, 4096], "standard export sizes are available")
         check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),

@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T19:06:39Z",
+  "title": "RawLab iOS / iPadOS design extension",
+  "extensions": {
+    "motion": [
+      {
+        "name": "ios-ruler-tick-height",
+        "value": "minor 13pt / major 22pt → peak 28pt; shared baseline",
+        "purpose": "Local upward growth of ruler strokes; reading anchors stay fixed."
+      },
+      {
+        "name": "ios-ruler-tick-pulse",
+        "value": "24pt radius; max(0, 1 - (distance / 24)^2); max(existing residual, new weight)",
+        "purpose": "Actual horizontal tape movement excites nearby individual strokes."
+      },
+      {
+        "name": "ios-ruler-tick-decay",
+        "value": "180ms; (1 - progress)^2",
+        "purpose": "Residuals relax during pauses without replaying or bouncing."
+      },
+      {
+        "name": "ios-ruler-settlement",
+        "value": "120ms; 1 - (1 - progress)^2",
+        "purpose": "Settle tape to the already committed grid value without changing parameters."
+      },
+      {
+        "name": "ios-ruler-focus",
+        "value": "100ms easeOut",
+        "purpose": "Fade surroundings when horizontal adjustment begins."
+      },
+      {
+        "name": "ios-ruler-release-hold",
+        "value": "160ms",
+        "purpose": "Keep peripheral focus during the short release hold."
+      },
+      {
+        "name": "ios-ruler-return",
+        "value": "180ms easeOut",
+        "purpose": "Restore surroundings; new input cancels the pending return."
+      },
+      {
+        "name": "ios-ruler-focus-opacity-phone",
+        "value": "0.08",
+        "purpose": "Keep iPhone peripheral control slots and accessibility names present."
+      },
+      {
+        "name": "ios-ruler-focus-opacity-pad",
+        "value": "0.42",
+        "purpose": "Retain more iPad peripheral context."
+      },
+      {
+        "name": "ios-ruler-reduce-motion",
+        "value": "static 13/22pt strokes; immediate release restore; no settlement/hold/return animation",
+        "purpose": "Preserve current value, arc, fixed marker and default without extra spatial motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "ios-editor-side-panel",
+        "value": "available width >= 600pt && width > height && !accessibilitySize"
+      },
+      {
+        "name": "ios-wheel-wide-short-content",
+        "value": "content width > 480pt && content height < 400pt"
+      }
+    ],
+    "native": {
+      "platforms": [
+        "iOS",
+        "iPadOS"
+      ],
+      "authority": "Implemented SwiftUI/UIKit source; desktop DESIGN.md prose is preserved and excluded from this extraction.",
+      "measurements": "Frontmatter lengths are native points at base size. ScaledMetric and preferredFont determine actual Dynamic Type dimensions.",
+      "webPreview": "Native component descriptions and source excerpts are recorded without HTML/CSS substitutes. They do not render a native control in a web panel.",
+      "colorSources": [
+        {
+          "name": "ios-photo-canvas",
+          "source": "Color(white: 0.12)",
+          "purpose": "Dark neutral photographic workspace."
+        },
+        {
+          "name": "ios-workspace",
+          "source": "Color(.systemBackground)",
+          "purpose": "Native workspace background."
+        },
+        {
+          "name": "ios-controls",
+          "source": "Color(.secondarySystemBackground)",
+          "purpose": "Continuous tool, parameter and toolbar surfaces."
+        },
+        {
+          "name": "ios-primary-text",
+          "source": "Color.primary / UIColor.label",
+          "purpose": "Readable primary control text."
+        },
+        {
+          "name": "ios-secondary-text",
+          "source": "Color.secondary / UIColor.secondaryLabel",
+          "purpose": "References, ruler ticks and separate default dot."
+        },
+        {
+          "name": "ios-state-accent",
+          "source": "Color.yellow / UIColor.systemYellow",
+          "purpose": "Selected tools, signed scalar badge, fixed indicator and primary actions."
+        }
+      ],
+      "typographySources": [
+        {
+          "name": "ios-parameter-name",
+          "source": "Font.subheadline",
+          "purpose": "Complete parameter labels."
+        },
+        {
+          "name": "ios-parameter-value",
+          "source": "Font.body.weight(.semibold).monospacedDigit()",
+          "purpose": "Complete tappable value and unit."
+        },
+        {
+          "name": "ios-tool-caption",
+          "source": "Font.caption; UIFont.preferredFont(forTextStyle: .caption1)",
+          "purpose": "Two-line tool title and measured supplementary scalar badge."
+        },
+        {
+          "name": "ios-accessibility-tool-title",
+          "source": "Font.body",
+          "purpose": "Complete title beside a 44pt glyph circle."
+        },
+        {
+          "name": "ios-reference",
+          "source": "Font.caption",
+          "purpose": "Default, range and status explanation."
+        },
+        {
+          "name": "ios-ruler-label",
+          "source": "UIFont.preferredFont(forTextStyle: .caption2)",
+          "purpose": "Sparse legal major-tick labels."
+        },
+        {
+          "name": "ios-wheel-title",
+          "source": "Font.headline",
+          "purpose": "Persistent parameter context in the native value task."
+        },
+        {
+          "name": "ios-wheel-value",
+          "source": "Font.body.monospacedDigit(); UIFont.preferredFont(forTextStyle: .body)",
+          "purpose": "Complete temporary value and Dynamic Type picker rows."
+        }
+      ],
+      "layout": {
+        "touchTargetMinimum": "44×44pt",
+        "accessibilityToolCircle": "44pt",
+        "accessibilityToolRowHeight": "max(44pt, preferred body lineHeight + 16pt)",
+        "sidePanelWidth": "min(320pt, available width × 0.48)",
+        "stackedPanelBudget": "body-scaled 256pt plus tool-specific room, bounded by available height",
+        "accessibilityPhotoReservation": "up to 96pt after the tool row and separators",
+        "wheelRegularPopoverHeight": "min(440pt, presenting-window available height)",
+        "wheelAccessibilityPopoverHeight": "min(600pt, presenting-window available height)",
+        "wheelAvailableHeight": "max(0, window height - safeArea.top - safeArea.bottom - 40pt)",
+        "wheelRegularWidth": "min 280pt / ideal 360pt / max 480pt",
+        "wheelPickerHeight": "ordinary 200…220pt; accessibility 100…264pt",
+        "wheelRowHeight": "max(44pt, preferred body lineHeight + 16pt)",
+        "wheelWideContextWidth": "44% of content width",
+        "wheelContext": "Persistent title, complete temporary value/unit and range; no automatic scroll-to-picker."
+      },
+      "behaviors": {
+        "nativeValuePresentation": "Explicit iPhone sheet, including landscape regular horizontal size class; iPad anchored popover with compact system adaptation to a large sheet. Wide/short content reflow is available in a genuinely wide sheet.",
+        "nativeValueDraft": "Picker selection changes local draft only. Changed draft disables interactive dismissal; Cancel preserves entering value; Apply commits; focus returns to the original value button.",
+        "nativeValueCandidates": "Sorted, deduplicated legal grid and endpoints plus valid current/default extras. One complete-value UIPickerView column.",
+        "editorDraft": "Geometry/lens draft preview stays staged. Fixed Apply/Cancel commit/discard and return to Exposure. Dirty navigation asks Apply/Discard/Continue. Lens editing is RAW-only; raster UI evidence does not demonstrate a RAW lens draft.",
+        "exportGuard": "isEditorDraftActive covers unchanged and changed geometry/lens drafts. Export actions also guard previewRendering, previewResizePending, editor busy state and look availability.",
+        "importGuard": "Single-photo import guards isEditorDraftChanged.",
+        "sourceSupport": "Single JPEG/rendered DNG export supports RAW and raster; batch export remains RAW-only.",
+        "hapticEventPolicy": "Shared >=125ms gate; default > endpoint > major tick; one accepted feedback per change, no queue; app feedback suppressed for VoiceOver and omitted for native picker selection.",
+        "hapticVerification": "Source policy is recorded. Physical hardware feedback and comfort are unverified.",
+        "verificationLimits": [
+          "Physical haptics",
+          "Performance improvement",
+          "RAW export correctness"
+        ]
+      },
+      "sources": [
+        "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift",
+        "RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift",
+        "RawLab/RawLab/UI/Adjustments/AdjustmentScale.swift",
+        "RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift",
+        "RawLab/RawLab/UI/EditorState/EditorLayout.swift",
+        "RawLab/RawLab/UI/EditorState/EditorDrafts.swift",
+        "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
+        "RawLab/RawLab/UI/Panels/LookPanels.swift",
+        "RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift",
+        "RawLab/RawLab/UI/ContentView.swift",
+        "RawLab/RawLab/UI/ContentView+Panels.swift",
+        "RawLab/RawLab/UI/ContentView+Helpers.swift",
+        "RawLab/RawLab/UI/EditorComponents.swift",
+        "RawLab/RawLab/Core/Models/FilmPresentation.swift"
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "iOS Adjustment Tool",
+      "kind": "nav",
+      "refersTo": "ios-adjustment-circle-base",
+      "description": "Scaled circle, supplementary fitting scalar badge, signed arc and two-line caption; accessibility uses a glyph/body-title row.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/EditorComponents.swift",
+        "symbol": "AdjustmentToolLabel"
+      }
+    },
+    {
+      "name": "iOS Parameter Control",
+      "kind": "input",
+      "description": "Complete value button, named reset, horizontal ruler, Fine action and readable default/range.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift",
+        "symbol": "AdjustmentControl"
+      }
+    },
+    {
+      "name": "iOS Adjustment Ruler",
+      "kind": "input",
+      "description": "UIKit adjustable ruler with fixed indicator, moving tape/default, local tick residuals and legal discrete commits.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift",
+        "symbol": "AdjustmentRulerView"
+      }
+    },
+    {
+      "name": "iOS Native Value Wheel",
+      "kind": "input",
+      "description": "One complete-value UIPickerView column, protected local draft, persistent context and fixed Cancel/Apply.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift",
+        "symbol": "NativeValueWheel / WholeValuePicker"
+      }
+    },
+    {
+      "name": "iOS Film Choice",
+      "kind": "custom",
+      "refersTo": "ios-film-selection",
+      "description": "Bundled square artwork, complete two-line name, yellow selected fill and outline.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/EditorComponents.swift",
+        "symbol": "FilmLabel"
+      }
+    },
+    {
+      "name": "iOS HSL Channel",
+      "kind": "chip",
+      "refersTo": "ios-hsl-swatch",
+      "description": "Named channel swatch inside a 44pt action target, selected outline and three independent axes.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift",
+        "symbol": "IOSHSLMixer"
+      }
+    },
+    {
+      "name": "iOS Luminance Histogram",
+      "kind": "custom",
+      "refersTo": "ios-histogram-header",
+      "description": "Collapsible edge overlay with a 44pt header and current-preview luminance distribution.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/EditorComponents.swift",
+        "symbol": "FloatingHistogram"
+      }
+    },
+    {
+      "name": "iOS Editor Draft Actions",
+      "kind": "button",
+      "description": "Fixed Cancel/Apply actions for staged geometry and lens changes; both return to Exposure.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
+        "symbol": "editorDraftActions"
+      }
+    }
+  ],
+  "narrative": {
+    "northStar": "RawLab photo-first editor",
+    "overview": "The native iOS and iPadOS editor uses the same restrained gray-and-yellow identity for an Operate surface: import a photo, inspect a real preview, adjust it and export. The photograph leads; system navigation, sheets, menus, SF Symbols and semantic text styles carry the interface.\n\nThis extension is scoped to `RawLab/RawLab/UI/ContentView.swift`, its Adjustments, EditorState and Panels, and `EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.",
+    "keyCharacteristics": [
+      "A dark photo workspace with yellow functional selection.",
+      "Continuous control surfaces, a scrollable tool strip and complete numeric readouts.",
+      "Window-dependent iPhone/iPad composition and a stacked accessibility layout.",
+      "A moving horizontal ruler, a single-column system value wheel and explicit local drafts."
+    ],
+    "rules": [
+      {
+        "name": "The iOS State Color Rule",
+        "body": "Preserve semantic text colors and express selection with a visible shape or label as well as tint.",
+        "section": "colors"
+      },
+      {
+        "name": "The iOS Photo Budget Rule",
+        "body": "Reflow and scroll controls as the window and reading size change; keep the photograph available for evaluating the adjustment.",
+        "section": "layout"
+      }
+    ],
+    "dos": [
+      "**Do** preserve the shared processing contract, semantic system colors, system text styles and native navigation/task presentations.",
+      "**Do** keep complete values and units visible, provide 44-point action targets and retain named defaults, ranges and explicit draft actions.",
+      "**Do** preserve the fixed indicator, moving tape, local residual decay and static Reduce Motion state.",
+      "**Do** reflow by the available window and Dynamic Type; keep the selected tool and wheel draft stable across layout changes."
+    ],
+    "donts": [
+      "**Don't** invent aggregate values for multi-parameter tools, shrink text into a badge, split numeric signs/decimals into separate wheels or introduce a custom numeric keyboard.",
+      "**Don't** export an active geometry/lens draft or label an unfinished preview as current.",
+      "**Don't** turn the custom ruler's lack of inertia into a change to the native picker's system behavior.",
+      "**Don't** describe authored timing as an Apple measurement, or claim Simulator images prove physical haptics, performance improvement or RAW output correctness."
+    ]
+  }
+}

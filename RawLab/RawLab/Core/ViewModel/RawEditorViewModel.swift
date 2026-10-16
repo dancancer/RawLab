@@ -56,6 +56,8 @@ final class RawEditorViewModel: ObservableObject {
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
     var latestRenderID = UUID()
+    var activeImportRevision: UUID?
+    let resultDelivery: (@escaping () -> Void) -> Void
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
@@ -75,7 +77,9 @@ final class RawEditorViewModel: ObservableObject {
 
     var editPersistence: EditPersistence?
 
-    init(editPersistence: EditPersistence? = nil) {
+    init(editPersistence: EditPersistence? = nil,
+         resultDelivery: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.resultDelivery = resultDelivery
         do { self.editPersistence = try editPersistence ?? EditPersistence.appStore() }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }
