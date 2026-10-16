@@ -29,7 +29,8 @@ internal class PendingPhotoImport {
 
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
-    val comparisonHeight: Float = neutral.height.toFloat())
+    val comparisonHeight: Float = neutral.height.toFloat(),
+    val originalAspect: Float = neutral.width.toFloat() / neutral.height)
 data class EditorState(
     val photo: ImportedPhoto? = null,
     val edits: EditSettings = EditSettings(),
@@ -95,6 +96,7 @@ class EditorViewModel @JvmOverloads constructor(
     val pendingBatch = mutablePendingBatch.asStateFlow()
     private var processor: NativeProcessor? = null
     private var original: Pair<java.io.File, Bitmap>? = null
+    private var originalAspect = 1f
     private var transformedNeutral: Pair<ComparisonPreviewKey, Bitmap>? = null
     private var currentRevision = 0L
     private var previewLongEdge = 1600
@@ -151,7 +153,9 @@ class EditorViewModel @JvmOverloads constructor(
             if (original?.first != work.photo.file) {
                 original = null
                 transformedNeutral = null
-                original = work.photo.file to native.preview(work.photo.file, null, EditSettings(), 1600, false).bitmap()
+                val source = native.preview(work.photo.file, null, EditSettings(), 1600, false)
+                originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
+                original = work.photo.file to source.bitmap()
             }
             val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
                 val key = ComparisonPreviewKey(work.photo.file.path, work.edits.geometry, work.edits.lens, edge, work.interactive)
@@ -164,11 +168,9 @@ class EditorViewModel @JvmOverloads constructor(
             }
             val lut = storage.lookPath(work.edits)
             val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive)
-            val dimensions = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled)
-                original!!.second.width.toFloat() to original!!.second.height.toFloat()
-            else comparisonDimensions(film.geometryWidth, film.geometryHeight)
+            val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
             WorkResult.Preview(work, PreviewPair(neutral, film.bitmap(), film.temperature, film.tint, film.lens,
-                dimensions.first, dimensions.second))
+                dimensions.first, dimensions.second, originalAspect))
         }
         is Work.Export -> {
             val output = storage.temporaryOutput(work.format)
@@ -220,8 +222,11 @@ class EditorViewModel @JvmOverloads constructor(
                 is WorkResult.Preview -> {
                     val request = value.request
                     if (request.draft) {
-                        if (mutable.value.draft != null) mutable.value = EditorStateReducer.renderFinished(mutable.value)
-                            .copy(preview = value.pair, exact = !request.interactive, error = null)
+                        val current = mutable.value
+                        val draft = current.draft ?: return@fold
+                        val refitted = draft.acceptGeometryCanvas(value.pair.comparisonWidth / value.pair.comparisonHeight)
+                        mutable.value = EditorStateReducer.renderFinished(current)
+                            .copy(draft = refitted, preview = value.pair, exact = !request.interactive, error = null)
                         return@fold
                     }
                     val imported = pendingPhotoImport.complete(request.photo.identity)
@@ -408,7 +413,9 @@ class EditorViewModel @JvmOverloads constructor(
         if (!current.canExport) return
         previewResizeJob?.cancel()
         previewResizeJob = null
-        mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits), previewResizePending = false, error = null)
+        val pair = current.preview ?: return
+        mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits, pair.originalAspect,
+            pair.comparisonWidth / pair.comparisonHeight), previewResizePending = false, error = null)
         if (group == AdjustmentGroup.GEOMETRY && current.edits.geometry != current.edits.geometry.uncropped()) renderDraft(false)
     }
 
@@ -433,6 +440,13 @@ class EditorViewModel @JvmOverloads constructor(
         }
         mutable.value = current.copy(rendering = true, exact = false, error = null)
         currentRevision = queue.submit(Work.Preview(photo, edits, interactive, gpuMode(), edge = 1600, draft = true))
+    }
+
+    fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {
+        val current = mutable.value
+        val draft = current.draft ?: return
+        if (!current.controlsEnabled || (ratio != GeometryRatio.FREE && !current.canApplyDraft)) return
+        mutable.value = current.copy(draft = draft.selectGeometryRatio(ratio, portrait))
     }
 
     fun applyDraft() {

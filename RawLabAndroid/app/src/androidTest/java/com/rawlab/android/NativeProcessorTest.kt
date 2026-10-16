@@ -13,6 +13,54 @@ import java.nio.ByteBuffer
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun eachPerspectiveAxisReachesFinalExportAndForceRejectsIt() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val root = File(instrumentation.targetContext.cacheDir, "perspective-axes-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val input = File(root, "source.RAW")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        val sourceHash = java.security.MessageDigest.getInstance("SHA-256").digest(input.readBytes())
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val original = processor.preview(input, null, EditSettings(), 300, false)
+                for ((horizontal, vertical) in listOf(.35f to 0f, 0f to -.25f, .35f to -.25f)) {
+                    val settings = EditSettings(geometry = GeometrySettings(perspectiveHorizontal = horizontal, perspectiveVertical = vertical))
+                    val exact = processor.preview(input, null, settings, 300, false)
+                    assertTrue("Each perspective axis changes the full canvas", exact.geometryWidth != original.geometryWidth || exact.geometryHeight != original.geometryHeight)
+                    assertFalse(original.pixels.contentEquals(exact.pixels))
+                    val output = File(root, "$horizontal-$vertical.png")
+                    assertEquals(0, processor.export(input, null, settings, output, ExportFormat.PNG, 300))
+                    val reference = File(root, "reference.png")
+                    NativeProcessor(NativeProcessor.CPU).use { fresh ->
+                        fresh.export(input, null, settings, reference, ExportFormat.PNG, 300)
+                    }
+                    assertArrayEquals("FINAL is independent of preview/session history", reference.readBytes(), output.readBytes())
+                    val exported = checkNotNull(android.graphics.BitmapFactory.decodeFile(output.path))
+                    assertEquals(exact.width, exported.width)
+                    assertEquals(exact.height, exported.height)
+                    exported.recycle()
+                    processor.setGpuMode(NativeProcessor.FORCE)
+                    assertThrows(java.io.IOException::class.java) { processor.preview(input, null, settings, 300, false) }
+                    val sentinel = output.readBytes()
+                    assertThrows(java.io.IOException::class.java) { processor.export(input, null, settings, output, ExportFormat.PNG, 300) }
+                    assertArrayEquals(sentinel, output.readBytes())
+                    processor.setGpuMode(NativeProcessor.AUTO)
+                    val automatic = processor.preview(input, null, settings, 300, false)
+                    assertEquals(exact.geometryWidth, automatic.geometryWidth)
+                    assertEquals(exact.geometryHeight, automatic.geometryHeight)
+                    assertEquals(0, automatic.backend)
+                    assertEquals(0, processor.export(input, null, settings, output, ExportFormat.PNG, 300))
+                    NativeProcessor(NativeProcessor.AUTO).use { fresh ->
+                        assertEquals(0, fresh.export(input, null, settings, reference, ExportFormat.PNG, 300))
+                    }
+                    assertArrayEquals("AUTO FINAL keeps the active-geometry CPU reporting contract", reference.readBytes(), output.readBytes())
+                    processor.setGpuMode(NativeProcessor.CPU)
+                }
+                assertArrayEquals(original.pixels, processor.preview(input, null, EditSettings(), 300, false).pixels)
+            }
+            assertArrayEquals(sourceHash, java.security.MessageDigest.getInstance("SHA-256").digest(input.readBytes()))
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun geometryReachesExactInteractivePreviewFinalExportAndSessionReset() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -22,7 +70,7 @@ class NativeProcessorTest {
         try {
             NativeProcessor(NativeProcessor.CPU).use { processor ->
                 val original = processor.preview(input, null, EditSettings(), 300, false)
-                val settings = EditSettings(geometry = GeometrySettings(.15f, .1f, .75f, .8f, 1, true, false, 8f))
+                val settings = EditSettings(geometry = GeometrySettings(.15f, .1f, .75f, .8f, 1, true, false, 8f, .35f, -.25f))
                 val exact = processor.preview(input, null, settings, 300, false)
                 val interactive = processor.preview(input, null, settings, 300, true)
                 assertEquals(exact.width, interactive.width)
@@ -35,12 +83,38 @@ class NativeProcessorTest {
                 val exported = checkNotNull(android.graphics.BitmapFactory.decodeFile(output.path))
                 assertEquals(exact.width, exported.width)
                 assertEquals(exact.height, exported.height)
+                assertTrue(processor.autoExposure(input, settings).isFinite())
                 val reset = processor.preview(input, null, EditSettings(), 300, false)
                 assertEquals(original.width, reset.width)
                 assertEquals(original.height, reset.height)
                 assertArrayEquals(original.pixels, reset.pixels)
             }
         } finally { input.delete(); output.delete() }
+    }
+
+    @Test fun perspectiveAloneChangesNeutralCanvasAndZeroValuesClearReusedSession() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val input = File(instrumentation.targetContext.cacheDir, "perspective-test.RAW")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val identity = EditSettings()
+                val original = processor.preview(input, null, identity, 300, false)
+                val settings = identity.copy(geometry = GeometrySettings(perspectiveHorizontal = -.4f, perspectiveVertical = .3f))
+                val transformed = processor.preview(input, null, settings, 300, false)
+                assertFalse(original.pixels.contentEquals(transformed.pixels))
+                assertTrue(transformed.geometryWidth < original.geometryWidth || transformed.geometryHeight < original.geometryHeight)
+                val interactive = processor.preview(input, null, settings, 300, true)
+                assertEquals(transformed.geometryWidth, interactive.geometryWidth)
+                assertEquals(transformed.geometryHeight, interactive.geometryHeight)
+                assertArrayEquals(transformed.pixels, interactive.pixels)
+                assertEquals(processor.autoExposure(input, settings), processor.autoExposure(input, identity), .000001f)
+                val reset = processor.preview(input, null, identity, 300, false)
+                assertEquals(original.geometryWidth, reset.geometryWidth)
+                assertEquals(original.geometryHeight, reset.geometryHeight)
+                assertArrayEquals(original.pixels, reset.pixels)
+            }
+        } finally { input.delete() }
     }
 
     @Test fun lensCorrectionReachesPreviewExportAndReset() {

@@ -11,7 +11,7 @@ class BatchExportTest {
         val settings = EditSettings(exposureMode = 2, hsl = HslSettings().withValue(1, 0, -60f),
             recipeID = "recipe", displayChromaDenoise = 2,
             effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f), lens = lens,
-            geometry = GeometrySettings(.2f, .1f, .8f, .75f, 3, true, true, -8.5f))
+            geometry = GeometrySettings(.2f, .1f, .8f, .75f, 3, true, true, -8.5f, -.7f, .25f))
         val fields = SettingsCodec.encode(settings).split('|')
         assertEquals(53, fields.size)
         assertEquals(settings, SettingsCodec.decode(fields.joinToString("|")))

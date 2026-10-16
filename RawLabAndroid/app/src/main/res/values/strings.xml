@@ -323,13 +323,19 @@
     <string name="geometry_rotate_right">Rotate right</string>
     <string name="geometry_flip_horizontal">Flip horizontal</string>
     <string name="geometry_flip_vertical">Flip vertical</string>
+    <string name="geometry_perspective_horizontal">Horizontal perspective</string>
+    <string name="geometry_perspective_vertical">Vertical perspective</string>
+    <string name="geometry_perspective_hint">Perspective follows rotation and flips, before straightening and cropping. The canvas is trimmed to avoid black edges.</string>
     <string name="geometry_straighten">Straighten</string>
     <string name="geometry_crop_x">Left</string>
     <string name="geometry_crop_y">Top</string>
     <string name="geometry_crop_width">Width</string>
     <string name="geometry_crop_height">Height</string>
-    <string name="geometry_crop_hint">Crop percentages apply after rotation, flips and straightening.</string>
+    <string name="geometry_crop_hint">Crop percentages apply after rotation, flips, perspective and straightening.</string>
     <string name="geometry_crop_error" formatted="false">Enter a positive crop within the 0–100% canvas.</string>
     <string name="geometry_apply_crop">Apply crop</string>
     <string name="geometry_summary">Crop %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Rotate %5$d° · Straighten %6$+.1f°</string>
+    <string name="geometry_swap_ratio">Swap crop orientation</string>
+    <string name="geometry_ratio_free">Free</string>
+    <string name="geometry_ratio_original">Original</string>
 </resources>

@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="usage_analytics">Análisis de uso</string>
+    <string name="usage_privacy">Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión. No se recopilan fotos, vistas previas, nombres de archivo, rutas, EXIF ni contenido de IA. Al desactivarse, se detiene la nueva recopilación; las solicitudes ya enviadas no pueden retirarse.</string>
+    <string name="usage_privacy_policy">Política de privacidad de Aliyun</string>
+    <string name="usage_unavailable">El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.</string>
+    <string name="usage_disabled">El análisis de uso está desactivado.</string>
+    <string name="usage_enabled">El análisis de uso está permitido; puede desactivarlo en cualquier momento.</string>
+    <string name="usage_storage_failed">No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso.</string>
+    <string name="usage_start_failed">No se pudo iniciar el servicio de análisis. La edición de fotos no se ve afectada.</string>
+    <string name="usage_record_failed">No se pudo enviar el evento de análisis. La edición de fotos no se ve afectada.</string>
+    <string name="usage_stop_failed">No se pudo detener el servicio de análisis. Reinicie la aplicación antes de volver a intentarlo.</string>
+    <string name="usage_cleanup_failed">No se completó la limpieza local de los datos de análisis. Reinicie la aplicación antes de volver a intentarlo.</string>
+    <string name="usage_restart_required">El análisis se ha detenido. Reinicie la aplicación antes de volver a activarlo.</string>
     <string name="app_name">RawLab</string>
     <string name="about_rawlab">Acerca de RawLab</string>
     <string name="app_version">Versión %1$s</string>
@@ -311,13 +323,19 @@
     <string name="geometry_rotate_right">Girar a la derecha</string>
     <string name="geometry_flip_horizontal">Voltear horizontalmente</string>
     <string name="geometry_flip_vertical">Voltear verticalmente</string>
+    <string name="geometry_perspective_horizontal">Perspectiva horizontal</string>
+    <string name="geometry_perspective_vertical">Perspectiva vertical</string>
+    <string name="geometry_perspective_hint">La perspectiva se aplica después del giro y los volteos, antes del enderezado y el recorte. El lienzo se reduce para evitar bordes negros.</string>
     <string name="geometry_straighten">Enderezar</string>
     <string name="geometry_crop_x">Izquierda</string>
     <string name="geometry_crop_y">Arriba</string>
     <string name="geometry_crop_width">Anchura</string>
     <string name="geometry_crop_height">Altura</string>
-    <string name="geometry_crop_hint">El recorte se aplica después del giro, los volteos y el enderezado.</string>
+    <string name="geometry_crop_hint">El recorte se aplica después del giro, los volteos, la perspectiva y el enderezado.</string>
     <string name="geometry_crop_error" formatted="false">Introduce un recorte con dimensiones positivas dentro del lienzo de 0–100%.</string>
     <string name="geometry_apply_crop">Aplicar recorte</string>
     <string name="geometry_summary">Recorte %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Giro %5$d° · Enderezado %6$+.1f°</string>
+    <string name="geometry_swap_ratio">Cambiar orientación del recorte</string>
+    <string name="geometry_ratio_free">Libre</string>
+    <string name="geometry_ratio_original">Original</string>
 </resources>

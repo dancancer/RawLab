@@ -71,6 +71,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onPreviewSizeChange: (Int) -> Unit = {},
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
     onApplyDraft: () -> Unit = {}, onDiscardDraft: () -> Unit = {},
+    onGeometryRatio: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
     onFilmSelected: (UsageFilmKind) -> Unit = {}) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
@@ -188,7 +189,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         AdjustmentDock(state, Modifier.width(sideDockWidth).fillMaxHeight(), tool, selectTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected)
+                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected, onGeometryRatio)
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
@@ -199,7 +200,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, selectTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected)
+                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected, onGeometryRatio)
                     }
                 }
             }
@@ -219,7 +220,9 @@ private fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Phot
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
             if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
-                enabled = state.canApplyDraft) { value -> onDraftEdit(state.visibleEdits.copy(geometry = value), false) }
+                enabled = state.canApplyDraft, physicalAspect = state.draft.geometryAspect) { value ->
+                onDraftEdit(state.visibleEdits.copy(geometry = value), false)
+            }
             else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -293,7 +296,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
     onImportLook: () -> Unit, onRenameLook: (String, String) -> Unit, onDeleteLook: (String) -> Unit,
     onAutoExposure: () -> Unit, onDraftEdit: (EditSettings, Boolean) -> Unit,
     onApplyDraft: () -> Unit, onDiscardDraft: () -> Unit,
-    onFilmSelected: (UsageFilmKind) -> Unit) {
+    onFilmSelected: (UsageFilmKind) -> Unit, onGeometryRatio: (GeometryRatio, Boolean) -> Unit) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val recipes = remember(context) { MasterRecipe.load(context) }
@@ -439,7 +442,9 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 onDraftEdit(edits.copy(lens = value), false)
             }
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
-                canvasAspect = state.preview?.let { it.comparisonWidth / it.comparisonHeight } ?: 1f) { value, dragging ->
+                ratio = state.draft?.geometryRatio ?: GeometryRatio.FREE,
+                portrait = state.draft?.geometryPortrait ?: false,
+                ratioEnabled = state.canApplyDraft, onRatioChange = onGeometryRatio) { value, dragging ->
                 onDraftEdit(edits.copy(geometry = value), dragging)
             }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->

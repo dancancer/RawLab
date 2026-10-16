@@ -47,6 +47,25 @@ class BatchGpuModeInstrumentedTest {
         } finally { compose.runOnUiThread { store.clear() } }
     }
 
+    @Test fun perspectiveSnapshotReachesNewAndResumedBatchPreviewAndFinal() {
+        val settings = EditSettings(customWb = true, exposure = .25f,
+            geometry = GeometrySettings(cropX = .1f, cropY = .1f, cropWidth = .8f, cropHeight = .7f,
+                quarterTurns = 1, perspectiveHorizontal = .3f, perspectiveVertical = -.2f))
+        for (gpuEnabled in listOf(false, true)) for (resumed in listOf(false, true)) {
+            val mode = if (gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
+            withBatch(gpuEnabled = gpuEnabled, settings = settings, resumed = resumed, longEdge = 300) { batch ->
+                val source = batch.state.value.job.source
+                assertEquals(settings, source.settings)
+                val target = batch.state.value.job.rows.single().target
+                val expected = NativeProcessor(mode).use { it.preview(target.sourceFile, null, settings, 1280, true).bitmap() }
+                val actual = runBlocking { batch.preview(target) }
+                try { assertTrue("Frozen perspective reaches batch preview", actual.sameAs(expected)) }
+                finally { actual.recycle(); expected.recycle() }
+                exportAndCompare(batch, mode, "${if (resumed) "resumed" else "new"}-perspective-$mode")
+            }
+        }
+    }
+
     @Test fun resumedBatchWithGpuDisabledUsesCpuForPreviewAndOriginalSizeCleanExport() {
         val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
             denoise = DenoiseSettings(true, 10f, 72f, 100f))

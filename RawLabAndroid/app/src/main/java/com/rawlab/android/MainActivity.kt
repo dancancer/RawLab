@@ -140,7 +140,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,
             onBeginDraft = model::beginDraft, onDraftEdit = model::changeDraft,
-            onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft)
+            onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
+            onGeometryRatio = model::chooseGeometryRatio)
         }
         }
     }
