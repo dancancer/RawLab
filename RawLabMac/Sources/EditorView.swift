@@ -196,7 +196,7 @@ struct EditorView: View {
         if let result = model.result {
             HStack(spacing: 1) {
                 if compare, model.canComparePreview, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
-                imagePane(result, title: model.selectedMasterRecipe?.name ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
+                imagePane(result, title: model.selectedMasterRecipe?.title ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
             }
         } else {
             VStack(spacing: 16) {
