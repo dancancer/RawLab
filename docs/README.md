@@ -26,6 +26,7 @@ retain their original candidate scope.
 
 - [Gitflow, integration and release procedure](../agent.md) and [repository instructions](../AGENTS.md)
 - [Desktop design](../DESIGN.md) and [product scope](../PRODUCT.md)
+- [Product roadmap (Chinese)](roadmap.md), with dated planning status and links to current delivery records
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
 - [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
 - [Licensing and attribution](licensing.md)
