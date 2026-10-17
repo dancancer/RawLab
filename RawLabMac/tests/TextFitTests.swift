@@ -17,6 +17,7 @@ struct TextFitTests {
         })
         var failures: [String] = []
         failures += recipeSubtitles(root, catalogs)
+        failures += toolCaptions(catalogs)
         guard failures.isEmpty else {
             failures.forEach { print("FAIL: \($0)") }
             exit(1)
@@ -29,6 +30,10 @@ struct TextFitTests {
             throw CocoaError(.fileReadCorruptFile)
         }
         return strings
+    }
+
+    @MainActor static func singleLineWidth(_ text: String, size: CGFloat) -> CGFloat {
+        NSHostingView(rootView: Text(text).font(.system(size: size)).fixedSize()).fittingSize.width
     }
 
     @MainActor static func fittingHeight(_ text: String, size: CGFloat, width: CGFloat) -> CGFloat {
@@ -62,6 +67,30 @@ struct TextFitTests {
             }
         }
         if failures.isEmpty { print("PASS: recipe subtitles fit \(card.subtitleLines) lines in every language") }
+        return failures
+    }
+
+    // ------------------------------------------------------------------------
+    //  工具栏名称只在空格处换行：日文、德文的长词不能从中间断开（"ホワイトバラ/ンス"）
+    //  名称与 AdjustmentDock 的工具按钮一一对应
+    // ------------------------------------------------------------------------
+    @MainActor static func toolCaptions(_ catalogs: [String: [String: String]]) -> [String] {
+        let keys = ["胶片", "大师配方", "强度", "曝光", "高光", "阴影", "对比度", "S 曲线", "饱和度", "HSL",
+                    "白平衡", "降噪", "锐化", "暗角", "颗粒", "几何", "镜头"]
+        let caption = AdjustmentPanelLayout.ToolCaption.self
+        var failures: [String] = []
+        for language in languages {
+            for key in keys {
+                let text = catalogs[language]?[key] ?? key
+                // 空格处断开，连字符留在前一段末尾（"Master-" / "Rezept"）
+                let words = text.replacingOccurrences(of: "-", with: "- ").split(separator: " ")
+                for word in words {
+                    let width = singleLineWidth(String(word), size: caption.size) * caption.minimumScale(for: text)
+                    if width > caption.width { failures.append("\(language): \(word) in \(text) is \(width) pt wide") }
+                }
+            }
+        }
+        if failures.isEmpty { print("PASS: tool captions only wrap between words in every language") }
         return failures
     }
 }

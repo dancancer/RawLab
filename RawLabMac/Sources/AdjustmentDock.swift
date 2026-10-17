@@ -112,7 +112,9 @@ struct AdjustmentDock: View {
     }
 
     private func toolCaption(_ title: String) -> some View {
-        Text(title).font(.system(size: 11)).lineLimit(2)
+        let caption = AdjustmentPanelLayout.ToolCaption.self
+        return Text(title).font(.system(size: caption.size))
+            .lineLimit(caption.lineLimit(for: title)).minimumScaleFactor(caption.minimumScale(for: title))
             .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             .frame(height: 27, alignment: .top)
     }
