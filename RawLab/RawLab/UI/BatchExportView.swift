@@ -92,7 +92,7 @@ struct BatchExportView: View {
                 BatchPhotoThumbnail(url: model.job.source.sourceURL).frame(width: 92, height: 72)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(model.job.source.displayName).font(.body.weight(.medium)).lineLimit(2)
-                    Text(L10n.format("%@ · %@%%", model.job.source.settings.hasLook ? model.job.source.lookName ?? L10n.text("中性") : L10n.text("中性"), String(Int(model.job.source.settings.lutStrength * 100))))
+                    Text(L10n.format("%@ · %@%%", model.job.source.settings.hasLook ? L10n.text(model.job.source.lookName ?? "中性") : L10n.text("中性"), String(Int(model.job.source.settings.lutStrength * 100))))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)

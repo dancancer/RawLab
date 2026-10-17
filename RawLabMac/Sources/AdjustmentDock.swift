@@ -67,7 +67,7 @@ struct AdjustmentDock: View {
                             }.frame(width: 72, height: 70)
                                 .foregroundStyle(active ? Color.yellow : Color.primary)
                         }.buttonStyle(.plain).id("masterRecipe").help(L10n.text("选择大师配方")).accessibilityLabel(L10n.text("大师配方"))
-                            .accessibilityValue(model.settings.masterRecipe?.name ?? L10n.text("无配方"))
+                            .accessibilityValue(model.settings.masterRecipe?.title ?? L10n.text("无配方"))
                             .accessibilityAddTraits(selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe ? .isSelected : [])
                         ForEach([AdjustmentParameter.strength, .exposure, .highlights, .shadows, .contrast, .toneCurve, .saturation]) { tool($0) }
                         Button { finishCurrentInput(); hslSelected = true; onPreferredHeight(288) } label: {

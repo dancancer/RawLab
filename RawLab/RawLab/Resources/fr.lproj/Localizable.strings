@@ -388,3 +388,6 @@
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.";
 "裁切选区" = "Zone de recadrage";
 "更多" = "Plus";
+"滨田英明" = "Hideaki Hamada";
+"保井崇志" = "Takashi Yasui";
+"酒井贵弘" = "Takahiro Sakai";

@@ -467,7 +467,7 @@ final class EditorModel: ObservableObject {
         do {
             if let batch { try batchJournal.discard(batch.job) }
             let lookURL = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
-            let lookName = settings.masterRecipe?.name ?? selectedFilm?.name ?? "中性"
+            let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "中性"
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
             job.longEdge = exportLongEdge
             job.look = try batchJournal.snapshotLook(lookURL, for: job.id)
@@ -822,7 +822,7 @@ final class EditorModel: ObservableObject {
         guard !busy, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, geometryDraft == nil, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.contentType]
-        let lookName = settings.masterRecipe?.name ?? selectedFilm?.name ?? "neutral"
+        let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "neutral"
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-" +
             lookName + "." + format.suffix
         let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self).padding(12).frame(width: 360))

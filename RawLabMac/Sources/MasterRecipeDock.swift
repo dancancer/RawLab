@@ -42,7 +42,7 @@ struct MasterRecipeDock: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .accessibilityHidden(true)
                 VStack(spacing: 2) {
-                    Text(recipe?.name ?? L10n.text("无配方"))
+                    Text(recipe?.title ?? L10n.text("无配方"))
                         .font(.system(size: 11, weight: selected ? .semibold : .regular))
                         .lineLimit(2).multilineTextAlignment(.center)
                         .frame(width: 112, height: 28)
@@ -62,8 +62,8 @@ struct MasterRecipeDock: View {
         }
         .buttonStyle(.plain)
         .id(recipe?.id ?? "")
-        .help(recipe.map { "\($0.name) · \(L10n.text($0.summary))" } ?? L10n.text("中性直出"))
-        .accessibilityLabel(recipe.map { "\($0.name), \(L10n.text($0.subtitle))" } ?? L10n.text("无配方"))
+        .help(recipe.map { "\($0.title) · \(L10n.text($0.summary))" } ?? L10n.text("中性直出"))
+        .accessibilityLabel(recipe.map { "\($0.title), \(L10n.text($0.subtitle))" } ?? L10n.text("无配方"))
         .accessibilityValue(selected ? L10n.text("已选中") : L10n.text("未选中"))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

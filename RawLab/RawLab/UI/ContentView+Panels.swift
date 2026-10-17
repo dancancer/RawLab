@@ -270,7 +270,7 @@ extension ContentView {
                     Button { selectEditorTool(.recipe) } label: {
                         AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "square.stack.3d.up", selected: choosingMasterRecipe,
                                             progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: editorToolHeight)
-                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? L10n.text("无配方"))
+                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.title ?? L10n.text("无配方"))
                         .accessibilityAddTraits(choosingMasterRecipe ? .isSelected : [])
                         .opacity(choosingMasterRecipe ? 1 : rulerFocusOpacity)
                         .id("masterRecipe")

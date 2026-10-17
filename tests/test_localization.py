@@ -76,6 +76,29 @@ class LocalizationTests(unittest.TestCase):
             catalog = windows_catalog(language)
             self.assertTrue(keys <= catalog.keys(), (language, keys - catalog.keys()))
 
+    def test_recipe_names_are_localized(self):
+        # 配方名是数据：汉字写的人名也要按语言显示（拉丁字母语言用罗马字，日文用日文汉字）
+        recipes = json.loads((ROOT / "Shared/master-recipes.json").read_text())
+        names = {recipe["name"] for recipe in recipes if CJK.search(recipe["name"])}
+        self.assertTrue(names)
+        for language in LANGUAGES:
+            catalogs = {client: apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
+                        for client in APPLE_CLIENTS}
+            catalogs["RawLabWindows"] = windows_catalog(language)
+            for client, catalog in catalogs.items():
+                self.assertTrue(names <= catalog.keys(), (client, language, names - catalog.keys()))
+                if language in ("en", "de", "fr", "es"):
+                    self.assertEqual([catalog[n] for n in names if CJK.search(catalog[n])], [], (client, language))
+        # 界面只经由翻译显示配方名：用翻译后的 title，或直接包在翻译调用里
+        raw = re.compile(r"(?<!L10n\.text\()(?<!Loc\.Text\()\b(?:recipe|masterRecipe)\??\.(?:name|Name)\b")
+        # 对配方做 map 时闭包里的 $0 也是配方
+        mapped = re.compile(r"[Rr]ecipe\w*\??\.map\b.*\$0\.name\b")
+        sources = [*(ROOT / "RawLabMac/Sources").glob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
+                   *(ROOT / "RawLabWindows").glob("*.cs")]
+        hits = [f"{p.relative_to(ROOT)}:{n}" for p in sources for n, line in enumerate(p.read_text().splitlines(), 1)
+                if raw.search(line) or mapped.search(line)]
+        self.assertEqual(hits, [])
+
     def assert_parity(self, catalogs, signature):
         english = catalogs["en"]
         self.assertGreater(len(english), 100)

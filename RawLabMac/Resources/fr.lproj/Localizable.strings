@@ -501,3 +501,6 @@
 "拖动边角裁切，拖动画面内移动选区。" = "Faites glisser un coin pour recadrer ; faites glisser à l’intérieur de la zone pour la déplacer.";
 "调整裁切边角" = "Ajuster le coin de recadrage";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.";
+"滨田英明" = "Hideaki Hamada";
+"保井崇志" = "Takashi Yasui";
+"酒井贵弘" = "Takahiro Sakai";
