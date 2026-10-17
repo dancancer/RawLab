@@ -109,7 +109,9 @@ struct RawLabMacApp: App {
         Window(L10n.text("关于 RawLab"), id: "about") { AboutView(updates: updates).environment(\.locale, selectedLocale) }
             .windowResizability(.contentSize)
         Window(L10n.text("批量导出"), id: "batch-export") {
-            if let batch = model.batch { BatchExportView(model: batch).environment(\.locale, selectedLocale) }
+            if let batch = model.batch { BatchExportView(model: batch).environment(\.locale, selectedLocale) } else {
+                BatchExportEmptyView().environment(\.locale, selectedLocale)
+            }
         }.defaultSize(width: 1040, height: 720)
     }
 

@@ -224,6 +224,25 @@ struct BatchExportView: View {
     }
 }
 
+// ----------------------------------------------------------------------------
+//  还没有批量任务时（例如从"窗口"菜单打开）说明从哪里开始，而不是一片空白
+// ----------------------------------------------------------------------------
+struct BatchExportEmptyView: View {
+    @Environment(\.locale) private var localizationLocale
+
+    var body: some View {
+        let _ = localizationLocale
+        VStack(spacing: 12) {
+            Image(systemName: "square.stack.3d.up").font(.system(size: 32)).foregroundStyle(.secondary)
+            Text(L10n.text("没有批量任务")).font(.headline)
+            Text(L10n.format("在编辑器中打开照片，然后选择“%@”。", L10n.text("使用当前调整批量导出…")))
+                .foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }.padding(40).frame(minWidth: 900, minHeight: 620)
+            .preferredColorScheme(.dark)
+            .navigationTitle(L10n.text("批量导出"))
+    }
+}
+
 private struct BatchThumbnail: View {
     @Environment(\.locale) private var localizationLocale
     let url: URL

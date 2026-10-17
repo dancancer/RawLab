@@ -172,6 +172,14 @@ class InterfaceCopy(unittest.TestCase):
         for state in ("compare", "infoMode != .hidden", "!adjustmentPanel.collapsed"):
             self.assertIn(f".activeTint({state})", toolbar)
 
+    # ------------------------------------------------------------------------
+    #  "窗口"菜单里的"批量导出"随时可点：还没有任务时不能打开一个空白窗口
+    # ------------------------------------------------------------------------
+    def test_batch_window_has_an_empty_state(self):
+        app = (ROOT / "Sources/RawLabMacApp.swift").read_text()
+        scene = app[app.index('Window(L10n.text("批量导出"), id: "batch-export")'):]
+        self.assertRegex(scene[:400], r"if let batch = model\.batch \{.*\} else \{\s*BatchExportEmptyView\(\)")
+
 
 if __name__ == "__main__":
     unittest.main()

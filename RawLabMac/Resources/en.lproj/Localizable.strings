@@ -505,3 +505,5 @@
 "保井崇志" = "Takashi Yasui";
 "酒井贵弘" = "Takahiro Sakai";
 "%@：%@" = "%@: %@";
+"没有批量任务" = "No Batch Export";
+"在编辑器中打开照片，然后选择“%@”。" = "Open a photo in the editor, then choose “%@”.";
