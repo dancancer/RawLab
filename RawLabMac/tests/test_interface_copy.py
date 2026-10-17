@@ -41,15 +41,37 @@ GLOSSARY = {
              "ja": ("ルック", "外観|スキン")},
     "导出": {"ja": (None, "エクスポート|輸出")},
     "导入": {"ja": (None, "インポート|輸入")},
-    "显影": {"ja": ("現像", "開発")},
-    "降噪": {"ja": (None, "ノイズ軽減|ノイズリダクション|ノイズ除去")},
-    "目录": {"ja": ("フォルダ", "ディレクトリ|カタログ")},
-    "张": {"ja": (None, "シート")},
-    "序号": {"ja": (None, "シリアル")},
-    "小红书": {"ja": ("小紅書", "Little Red Book")},
+    "显影": {"fr": ("[Dd]éveloppement", None), "es": ("[Rr]evela", "[Dd]esarroll"), "ja": ("現像", "開発")},
+    "渲染型": {"de": ("ntwickelt", "gerendert"), "fr": ("développé", "rendu"), "es": ("revelado", "renderizado"),
+              "ja": ("現像済み", "レンダリング")},
+    "降噪": {"de": (None, "Geräusch"), "es": (None, "crudo"), "ja": (None, "ノイズ軽減|ノイズリダクション|ノイズ除去")},
+    "RAW": {"es": (None, "crudo")},
+    "目录": {"en": ("folder", "director|catalog"), "de": ("Ordner", "Verzeichnis|Katalog"),
+             "fr": ("dossier", "répertoire|catalogue"), "es": ("carpeta", "directorio|catálogo"),
+             "ja": ("フォルダ", "ディレクトリ|カタログ")},
+    "张": {"en": (None, "sheet"), "de": (None, "Blatt|Blätt"), "fr": (None, "feuille"), "es": (None, "hoja"),
+           "ja": (None, "シート")},
+    "序号": {"en": (None, "serial"), "de": (None, "Serien"), "fr": (None, "série"), "es": (None, "serie"),
+             "ja": (None, "シリアル")},
+    "小红书": {"en": ("Xiaohongshu", "Little Red Book"), "de": ("Xiaohongshu", "Little Red Book"),
+              "fr": ("Xiaohongshu", "Petit Livre"), "es": ("Xiaohongshu", "Pequeño Libro"),
+              "ja": ("小紅書", "Little Red Book")},
+    "羽化": {"de": (None, "^Federn$"), "fr": (None, "drapeau")},
+    "高光保护": {"fr": (None, "surbrillance"), "es": (None, "destacada")},
+    # "=" 开头只匹配整个键：白平衡的色调（Tint）不能与 HSL 的色相（Farbton）同名
+    "=色调": {"de": ("^Tönung$", None)},
 }
-# 机器翻译留下、与词条无关的错词
+# 机器翻译留下、与词条无关的错词；按钮、菜单和提示用动词原形，不用命令式整句
 MISTRANSLATIONS = {
+    "en": "Already turned|Display in film|after application|benchmark|Close prompt|Haven't|Projects and authors"
+          "|^Select photo…$",
+    "de": "Eingabeaufforderung|Habe noch|im Film|nach der Anwendung|Benchmark|Benutzerauftritt|Einzelheiten"
+          "|^Ergebnisse importieren$|^(Suchen|Versuchen|Geben|Wählen|Zeigen|Entfernen|Setzen|Öffnen|Verwenden"
+          "|Passen|Exportieren|Gehen) Sie",
+    "fr": "Je n'ai|au cinéma|après application|Projets et auteurs|^Importer les résultats$|l'invite"
+          "|^Développer…$|^N'en sélectionner|^(Vérifiez|Sélectionnez|Ouvrez|Réessayez|Allez)",
+    "es": "Aún no he|en película|de la aplicación|Proyectos y autores|^Importar resultados$|^No seleccionar ninguno$"
+          "|^(Busque|Seleccione|Utilice|Ajuste el|Inténtalo)",
     "ja": "未開封|原画|申請|スライス|閉店|すでに|リセットノイズ|してください…|を選択します$|何も選択しない",
 }
 
@@ -59,7 +81,7 @@ def glossary_violations(language, strings):
     for term, rules in GLOSSARY.items():
         required, forbidden = rules.get(language, (None, None))
         for key, value in strings.items():
-            if term not in key:
+            if (key != term[1:]) if term.startswith("=") else (term not in key):
                 continue
             if required and not re.search(required, value, re.I):
                 found.append(f"{key} = {value} (needs {required})")
