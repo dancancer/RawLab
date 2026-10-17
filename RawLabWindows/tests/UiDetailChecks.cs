@@ -49,6 +49,7 @@ internal static class UiDetailChecks
                     ToolTips(window,language,check);
                     ActiveLook(window,language,check);
                     TypeNames(window,output,language,check);
+                    IdleStatus(window,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -103,6 +104,19 @@ internal static class UiDetailChecks
         var group=new PhotoGroup([new LibraryEntry(Path.Combine(output,"a.ARW"),false)]);
         check(group.ToString()==Loc.Text("照片"),"Photo group is announced as photos: "+group);
         window.Files.ItemsSource=Array.Empty<LibraryEntry>();window.UpdateLayout();
+    }
+    // 空闲状态栏既不重复也不违背旁边的 GPU 选择
+    private static void IdleStatus(MainWindow window,Action<bool,string> check)
+    {
+        foreach(var index in new[]{0,1})
+        {
+            window.GpuMode.SelectedIndex=index;
+            var mode=((ComboBoxItem)window.GpuMode.SelectedItem).Content.ToString()!;
+            var other=((ComboBoxItem)window.GpuMode.Items[1-index]).Content.ToString()!;
+            check(!window.BackendLabel.Text.Contains(mode,StringComparison.Ordinal) && !window.BackendLabel.Text.Contains(other,StringComparison.Ordinal),
+                $"Idle status bar neither repeats nor contradicts the GPU selector: {window.BackendLabel.Text} / {mode}");
+        }
+        window.GpuMode.SelectedIndex=0;
     }
 
     private static AboutWindow About(MainWindow window,string output)

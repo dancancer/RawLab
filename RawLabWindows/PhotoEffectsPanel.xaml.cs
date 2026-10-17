@@ -40,7 +40,6 @@ public partial class PhotoEffectsPanel : UserControl
     public void Refresh(PhotoEffectsSettings settings,PhotoEffectTool selected)
     {
         syncing=true;value=settings;tool=selected;
-        Title.Text=Loc.Text(selected==PhotoEffectTool.Vignette ? "暗角" : "颗粒");
         VignetteParameters.Visibility=VignetteDetails.Visibility=selected==PhotoEffectTool.Vignette ? Visibility.Visible : Visibility.Collapsed;
         GrainParameters.Visibility=selected==PhotoEffectTool.Grain ? Visibility.Visible : Visibility.Collapsed;
         RefreshResetVisibility();

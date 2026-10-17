@@ -10,7 +10,10 @@
    </ComboBox>
    <Button Click="ResetClicked" ToolTip="{DynamicResource '重置降噪'}" AutomationProperties.Name="{DynamicResource '重置降噪'}" Padding="6,2"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
   </WrapPanel>
-  <TextBlock x:Name="Summary" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
-  <Expander Header="{DynamicResource '精细调整'}" IsExpanded="True"><StackPanel x:Name="Parameters"/></Expander>
+  <!-- 精细调整展开时各行已经列出名称和数值，摘要只在收起时出现，免得同一组数值显示两遍 -->
+  <TextBlock x:Name="Summary" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,0,0,4">
+   <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding IsExpanded, ElementName=Details}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+  </TextBlock>
+  <Expander x:Name="Details" Header="{DynamicResource '精细调整'}" IsExpanded="True"><StackPanel x:Name="Parameters"/></Expander>
  </StackPanel>
 </UserControl>

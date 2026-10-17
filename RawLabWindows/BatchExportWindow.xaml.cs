@@ -219,7 +219,6 @@ public partial class BatchExportWindow : Window
                 editingCustomSize=index == 4;
             }
             CustomLongEdge.Visibility=editingCustomSize ? Visibility.Visible : Visibility.Collapsed;
-            SizeHint.Text=editingCustomSize && ExportSize.Parse(CustomLongEdge.Text) == null ? Loc.Text("自定义长边") : ExportSize.Label(job.LongEdge);
         }
         finally { refreshingSize=false; }
     }

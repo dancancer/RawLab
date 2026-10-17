@@ -17,6 +17,7 @@ internal static class UiPanelChecks
     {
         GeometryIcons(check);
         LensSeparator(check);
+        DuplicateValues(output,language,check);
     }
 
     // 几何面板的旋转、交换宽高与重置并排出现：图标不同，形状也不能相近
@@ -40,6 +41,36 @@ internal static class UiPanelChecks
     {
         var message=new LensInfo(1,"","",true,true,1,[]).Message;
         check(UiDetailChecks.Cjk.IsMatch(Loc.Text("畸变")) || !message.Contains('、'),$"Lens status list uses the interface language separator: {message}");
+    }
+    // 同一名称或数值不在相邻位置显示两次：降噪摘要、效果标题、批量导出尺寸
+    private static void DuplicateValues(string output,string language,Action<bool,string> check)
+    {
+        var denoise=new DenoisePanel();
+        Host(denoise,()=>{
+            denoise.Refresh(new DenoiseSettings());
+            int Mentions()=>VisibleTexts(denoise).Count(text=>text.Contains(Loc.Text("色彩降噪"),StringComparison.Ordinal));
+            check(Mentions()==1,$"Expanded denoise rows are not repeated by a summary line: {Mentions()} ({language})");
+            UiDetailChecks.Descendants(denoise).OfType<Expander>().Single().IsExpanded=false;denoise.UpdateLayout();
+            check(Mentions()==1,$"Collapsed denoise panel still summarizes its values: {Mentions()} ({language})");
+        });
+        var effects=new PhotoEffectsPanel();
+        Host(effects,()=>{
+            foreach(var (tool,title) in new[]{(PhotoEffectTool.Vignette,"暗角"),(PhotoEffectTool.Grain,"颗粒")})
+            {
+                effects.Refresh(new PhotoEffectsSettings(),tool);effects.UpdateLayout();
+                check(!VisibleTexts(effects).Contains(Loc.Text(title)),$"Effect panel does not repeat the selected tool name {title}: {language}");
+            }
+        });
+        var job=BatchJob.Create("missing.arw",new Adjustments().Capture(),null,"中性");
+        var batch=new BatchExportWindow(job,new BatchJournal(Path.Combine(output,"batch-"+Guid.NewGuid().ToString("N")[..8])));
+        batch.Show();batch.UpdateLayout();
+        try
+        {
+            var texts=VisibleTexts((FrameworkElement)((FrameworkElement)batch.SizeSelection.Parent).Parent);
+            check(!texts.Contains(Loc.Text("原尺寸")) && !texts.Contains("px"),
+                $"Batch size row does not repeat the selected size or show px for original size: {string.Join(" | ",texts)}");
+        }
+        finally { batch.Close(); }
     }
 
     // ------------------------------------------------------------------
