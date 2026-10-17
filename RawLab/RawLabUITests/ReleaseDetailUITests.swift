@@ -42,6 +42,23 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertEqual(title.frame.midY, reset.frame.midY, accuracy: 3)
     }
 
+    // 换工具后面板回到顶部：不能沿用上一个面板的滚动位置，把新面板的标题行藏起来
+    func testSwitchingToolsShowsTheNewPanelFromTheTop() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        try selectTool("geometry", in: app)
+        let panel = app.scrollViews["editor.panel"]
+        for _ in 0..<3 {
+            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.85))
+                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.15)))
+        }
+        XCTAssertFalse(panel.frame.contains(app.buttons["geometry.reset"].frame), "the geometry panel must be scrolled first")
+        try selectTool("hsl", in: app)
+        let header = app.buttons["Reset Adjustments"]
+        XCTAssertTrue(header.waitForExistence(timeout: 10))
+        XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
+    }
+
     // ------------------------------------------------------------------------
     //  工具函数
     // ------------------------------------------------------------------------

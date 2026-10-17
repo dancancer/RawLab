@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-enum EditorToolSelection: Equatable {
+enum EditorToolSelection: Hashable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
 }
@@ -66,7 +66,7 @@ extension ContentView {
         activateEditorTool(selection)
     }
 
-    private var currentEditorTool: EditorToolSelection {
+    var currentEditorTool: EditorToolSelection {
         if geometrySelected { return .geometry }
         if lensSelected { return .lens }
         if choosingMasterRecipe { return .recipe }
