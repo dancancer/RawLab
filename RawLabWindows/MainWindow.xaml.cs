@@ -81,7 +81,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            BuildTools(); BuildFilms(); BuildMasterRecipes(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -127,7 +127,7 @@ public partial class MainWindow : Window
                 FilmGrouping.ForBuiltIn(Path.GetFileName(path))));
         }
         lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
-        BuildTools(); BuildFilms(); BuildMasterRecipes();
+        BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Denoise=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();

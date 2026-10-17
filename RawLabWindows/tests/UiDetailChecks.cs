@@ -52,6 +52,7 @@ internal static class UiDetailChecks
                     IdleStatus(window,check);
                     Selection(window,language,check);
                     MenuPlacement(window,check);
+                    ResetMenus(window,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -138,6 +139,19 @@ internal static class UiDetailChecks
                 $"Toolbar menu opens under its button, not at the pointer: {AutomationProperties.GetName(button)} ({menu.Placement})");
             menu.IsOpen=false;
         }
+    }
+    // 编辑菜单与调整栏重置菜单：分组重置写成“重置…”，两处叫法一致
+    private static void ResetMenus(MainWindow window,string language,Action<bool,string> check)
+    {
+        var edit=(MenuItem)window.MainMenu.Items[1];
+        var editLabels=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(Group:(string)item.Tag,Header:(string)item.Header)).ToList();
+        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group))).Select(item=>"\n  "+item.Header).ToList();
+        check(editLabels.Count==6 && unnamed.Count==0,"Edit menu names each group reset as a reset action: "+language+string.Concat(unnamed));
+        Click(window.ResetAllButton);
+        var reset=window.ResetAllButton.ContextMenu;
+        var resetLabels=reset?.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(string)item.Header).ToList() ?? [];
+        check(resetLabels.SequenceEqual(editLabels.Select(item=>item.Header)),"Dock reset menu and Edit menu use the same group names: "+language);
+        if(reset!=null)reset.IsOpen=false;
     }
 
     private static AboutWindow About(MainWindow window,string output)

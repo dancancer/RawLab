@@ -49,14 +49,29 @@ public partial class MainWindow
         else settings.Reset(selectedParameter);
         MarkEdited();RefreshControls();Schedule();
     }
+    // ┌─ 分组重置的唯一来源：编辑菜单与调整栏的重置菜单都按它生成，叫法一致 ─────┐
+    // │ 菜单项写成“重置输入”“重置胶片”这样的动作，不只列出分组名                  │
+    // └──────────────────────────────────────────────────────────────────────────┘
+    private static readonly string[] ResetGroups=["输入","明暗","色彩","细节","效果","胶片"];
+    private MenuItem ResetGroupItem(string group)
+    {
+        var item=new MenuItem{Header=Loc.Format("重置{0}",Loc.Text(group)),Tag=group};
+        item.Click+=ResetNamedGroupClicked;return item;
+    }
+    private void BuildResetMenu()
+    {
+        var edit=(MenuItem)MainMenu.Items[1];
+        foreach(var item in edit.Items.OfType<MenuItem>().Where(item=>item.Tag is string).ToList())edit.Items.Remove(item);
+        foreach(var (group,index) in ResetGroups.Select((group,index)=>(group,index)))edit.Items.Insert(index+1,ResetGroupItem(group));
+    }
     private void ResetMenuClicked(object sender,RoutedEventArgs e)
     {
         var menu=new ContextMenu{PlacementTarget=ResetAllButton,Placement=PlacementMode.Top};
-        MenuItem Add(string title,RoutedEventHandler action,string? group=null){var item=new MenuItem{Header=Loc.Text(title),Tag=group};item.Click+=action;menu.Items.Add(item);return item;}
+        void Add(string title,RoutedEventHandler action){var item=new MenuItem{Header=Loc.Text(title)};item.Click+=action;menu.Items.Add(item);}
         Add("重置当前工具",ResetCurrentToolClicked);
         menu.Items.Add(new Separator());
-        foreach(var group in new[]{"输入","明暗","色彩","细节","效果"})Add(group,ResetNamedGroupClicked,group);
-        Add("强度",ResetNamedGroupClicked,"胶片");menu.Items.Add(new Separator());Add("全部重置",ResetAllClicked);
-        menu.IsOpen=true;
+        foreach(var group in ResetGroups)menu.Items.Add(ResetGroupItem(group));
+        menu.Items.Add(new Separator());Add("全部重置",ResetAllClicked);
+        ResetAllButton.ContextMenu=menu;menu.IsOpen=true;
     }
 }

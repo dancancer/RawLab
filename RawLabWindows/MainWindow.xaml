@@ -13,13 +13,8 @@
         <Separator/><MenuItem Header="{DynamicResource '退出'}" Click="ExitClicked"/>
       </MenuItem>
       <MenuItem Header="{DynamicResource '编辑(_E)'}">
+        <!-- 分组重置项由 BuildResetMenu 按 ResetGroups 插在这里，与调整栏的重置菜单同源 -->
         <MenuItem Header="{DynamicResource '重置当前工具'}" Click="ResetCurrentToolClicked"/>
-        <MenuItem Header="{DynamicResource '输入'}" Tag="输入" Click="ResetNamedGroupClicked"/>
-        <MenuItem Header="{DynamicResource '明暗'}" Tag="明暗" Click="ResetNamedGroupClicked"/>
-        <MenuItem Header="{DynamicResource '色彩'}" Tag="色彩" Click="ResetNamedGroupClicked"/>
-        <MenuItem Header="{DynamicResource '细节'}" Tag="细节" Click="ResetNamedGroupClicked"/>
-        <MenuItem Header="{DynamicResource '效果'}" Tag="效果" Click="ResetNamedGroupClicked"/>
-        <MenuItem Header="{DynamicResource '强度'}" Tag="胶片" Click="ResetNamedGroupClicked"/>
         <Separator/><MenuItem Header="{DynamicResource '全部重置'}" Click="ResetAllClicked"/>
       </MenuItem>
       <MenuItem Header="{DynamicResource '查看(_V)'}">
