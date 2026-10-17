@@ -20,6 +20,7 @@ internal static class UiPanelChecks
         DuplicateValues(output,language,check);
         WhiteBalance(language,check);
         Alignment(language,check);
+        LensCrop(check);
     }
 
     // 几何面板的旋转、交换宽高与重置并排出现：图标不同，形状也不能相近
@@ -116,6 +117,14 @@ internal static class UiPanelChecks
                 $"Export size dialog buttons share one height and top: {string.Join(", ",buttons.Select(b=>b.ActualHeight))} ({language})");
         }
         finally { dialog.Close();owner.Close(); }
+    }
+    private static void LensCrop(Action<bool,string> check)
+    {
+        var panel=new LensPanel();
+        Host(panel,()=>{
+            panel.Refresh(new LensSettings(Distortion:true),new LensInfo(1,"","",true,false,1.0003f,[]));
+            check(panel.CropText.Text.Length==0,$"Negligible lens crop is not reported as 0.0%: {panel.CropText.Text}");
+        });
     }
 
     // ------------------------------------------------------------------
