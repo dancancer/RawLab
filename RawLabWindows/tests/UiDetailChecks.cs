@@ -51,6 +51,7 @@ internal static class UiDetailChecks
                     TypeNames(window,output,language,check);
                     IdleStatus(window,check);
                     Selection(window,language,check);
+                    MenuPlacement(window,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -125,6 +126,18 @@ internal static class UiDetailChecks
         check(Equals(window.MasterRecipeCategory.Tag,"selected") && window.FilmCategory.Tag==null,"Master recipe tool shows the selected state: "+language);
         Click(window.FilmCategory);
         check(window.MasterRecipeCategory.Tag==null && Equals(window.FilmCategory.Tag,"selected"),"Leaving master recipes clears its selected state: "+language);
+    }
+    // 工具栏下拉菜单贴着按钮弹出；键盘打开时不跟着鼠标跑到别处
+    private static void MenuPlacement(MainWindow window,Action<bool,string> check)
+    {
+        foreach(var button in Descendants(Toolbar(window)).OfType<Button>().Where(button=>button.ContextMenu!=null))
+        {
+            Click(button);
+            var menu=button.ContextMenu!;
+            check(menu.IsOpen && menu.Placement==PlacementMode.Bottom && ReferenceEquals(menu.PlacementTarget,button),
+                $"Toolbar menu opens under its button, not at the pointer: {AutomationProperties.GetName(button)} ({menu.Placement})");
+            menu.IsOpen=false;
+        }
     }
 
     private static AboutWindow About(MainWindow window,string output)
