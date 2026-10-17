@@ -124,7 +124,7 @@
           </StackPanel>
           <Border x:Name="HistogramSurface" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
             <StackPanel><Button x:Name="HistogramButton" Click="HistogramClicked" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" Padding="6,2" ToolTip="{DynamicResource '展开或收起直方图'}" AutomationProperties.Name="{DynamicResource '直方图'}"><local:EditorIcon Kind="Histogram" Width="18" Height="18"/></Button>
-              <StackPanel x:Name="HistogramPanel"><local:HistogramView x:Name="Histogram" Height="105" Margin="2,8"/><TextBlock x:Name="ClipStats" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}"/></StackPanel>
+              <StackPanel x:Name="HistogramPanel"><local:HistogramView x:Name="Histogram" Height="105" Margin="2,8"/><TextBlock x:Name="ClipStats" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/></StackPanel>
             </StackPanel>
           </Border>
         </Grid>
@@ -136,7 +136,7 @@
               <Button Content="{DynamicResource '收起'}" Click="DockToggle" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}"/>
               <Button x:Name="ResetAllButton" Click="ResetMenuClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '重置'}" AutomationProperties.Name="{DynamicResource '重置'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
               <WrapPanel VerticalAlignment="Center"><TextBlock x:Name="ActiveFilm" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/><TextBlock Text="{DynamicResource '曝光基准'}" VerticalAlignment="Center" Margin="5,0,8,0"/>
-              <ComboBox x:Name="ExposureMode" MinWidth="130" MaxWidth="240" SelectedIndex="0" SelectionChanged="ExposureModeChanged" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
+              <ComboBox x:Name="ExposureMode" MinWidth="130" SelectedIndex="0" SelectionChanged="ExposureModeChanged" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
               <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="12,0"/>
               <Button Content="{DynamicResource '拍摄时白平衡'}" x:Name="AsShotButton" Click="AsShotClicked" Padding="8,3" Style="{StaticResource QuietButton}"/></WrapPanel>
             </DockPanel>

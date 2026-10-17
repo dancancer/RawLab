@@ -57,6 +57,7 @@ internal static class UiDetailChecks
                     FailedOpen(window,output,language,check);
                     AboutFooter(window,output,check);
                     ToolCaptions(window,language,check);
+                    WholeText(window,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -205,6 +206,19 @@ internal static class UiDetailChecks
         FlowDirection.LeftToRight,new System.Windows.Media.Typeface(text.FontFamily,text.FontStyle,text.FontWeight,text.FontStretch),text.FontSize,
         System.Windows.Media.Brushes.Black,1).Height;
     private static void BuildTools(MainWindow window)=>typeof(MainWindow).GetMethod("BuildTools",PrivateInstance)!.Invoke(window,null);
+    // 直方图统计与曝光基准选择框：译文完整显示，不被硬生生截掉半个词
+    private static void WholeText(MainWindow window,string language,Action<bool,string> check)
+    {
+        window.HistogramSurface.Visibility=Visibility.Visible;
+        window.ClipStats.Text=Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",0.0,0.0);window.UpdateLayout();
+        check(System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(window.ClipStats)==null,$"Histogram statistics are not clipped: {window.ClipStats.Text}");
+        window.HistogramSurface.Visibility=Visibility.Collapsed;
+        window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
+        var widest=window.ExposureMode.Items.OfType<ComboBoxItem>().Max(item=>new System.Windows.Media.FormattedText(item.Content.ToString()!,
+            System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new System.Windows.Media.Typeface(window.ExposureMode.FontFamily,
+            window.ExposureMode.FontStyle,window.ExposureMode.FontWeight,window.ExposureMode.FontStretch),window.ExposureMode.FontSize,System.Windows.Media.Brushes.Black,1).WidthIncludingTrailingWhitespace);
+        check(window.ExposureMode.ActualWidth+.5>=widest+37,$"Exposure baseline selector fits its longest choice: {window.ExposureMode.ActualWidth:0} / {widest+37:0} ({language})");
+    }
 
     private static AboutWindow About(MainWindow window,string output)
     {
