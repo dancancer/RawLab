@@ -18,6 +18,7 @@ internal static class UiPanelChecks
         GeometryIcons(check);
         LensSeparator(check);
         DuplicateValues(output,language,check);
+        WhiteBalance(language,check);
     }
 
     // 几何面板的旋转、交换宽高与重置并排出现：图标不同，形状也不能相近
@@ -71,6 +72,18 @@ internal static class UiPanelChecks
                 $"Batch size row does not repeat the selected size or show px for original size: {string.Join(" | ",texts)}");
         }
         finally { batch.Close(); }
+    }
+    // 白平衡：每行一个重置图标；分组重置写明文字（与“重置分组”“重置 HSL”一致），不再是第三个无字图标
+    private static void WhiteBalance(string language,Action<bool,string> check)
+    {
+        var panel=new WhiteBalancePanel();
+        Host(panel,()=>{
+            panel.Refresh(new Adjustments(),true);panel.UpdateLayout();
+            var buttons=UiDetailChecks.Descendants(panel).OfType<Button>().Where(button=>button.IsVisible).ToList();
+            var bare=buttons.Count(button=>button.Content is EditorIcon);
+            var labeled=buttons.Count(button=>Equals(button.Content,Loc.Text("重置白平衡")));
+            check(bare==2 && labeled==1,$"White balance has one reset icon per row and a labeled group reset: {bare} icons, {labeled} labeled ({language})");
+        });
     }
 
     // ------------------------------------------------------------------
