@@ -56,6 +56,7 @@ internal static class UiDetailChecks
                     LibraryHint(window,output,language,check);
                     FailedOpen(window,output,language,check);
                     AboutFooter(window,output,check);
+                    ToolCaptions(window,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -188,6 +189,22 @@ internal static class UiDetailChecks
         }
         finally { about.Close(); }
     }
+    // 工具条：说明文字只在空格或连字符处换行，不把一个词拆成两行；图标保持同一高度
+    private static void ToolCaptions(MainWindow window,string language,Action<bool,string> check)
+    {
+        BuildTools(window);window.AdjustmentPanel.Visibility=Visibility.Visible;window.DockRow.Height=new GridLength(288);window.UpdateLayout();
+        var buttons=window.Tools.Children.OfType<Button>().ToList();
+        var broken=buttons.Select(button=>Descendants(button).OfType<TextBlock>().Last()).Where(caption=>
+            caption.ActualHeight>LineHeight(caption)*1.5 && !caption.Text.Any(c=>c is ' ' or '-'))
+            .Select(caption=>"\n  "+caption.Text).ToList();
+        check(broken.Count==0,"Tool captions never break inside a word: "+language+string.Concat(broken));
+        var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
+        check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language})");
+    }
+    private static double LineHeight(TextBlock text)=>new System.Windows.Media.FormattedText("Ag",System.Globalization.CultureInfo.InvariantCulture,
+        FlowDirection.LeftToRight,new System.Windows.Media.Typeface(text.FontFamily,text.FontStyle,text.FontWeight,text.FontStretch),text.FontSize,
+        System.Windows.Media.Brushes.Black,1).Height;
+    private static void BuildTools(MainWindow window)=>typeof(MainWindow).GetMethod("BuildTools",PrivateInstance)!.Invoke(window,null);
 
     private static AboutWindow About(MainWindow window,string output)
     {

@@ -215,7 +215,7 @@ public partial class MainWindow : Window
             button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
-        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);
+        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);FitToolCaptions();
     }
     private void FilmCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
     private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
