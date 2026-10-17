@@ -218,6 +218,10 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 `localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
 状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
 不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
+`ui-details`（`RawLabWindows.Tests.dll --ui-details <output>`）不需要 RAW 或 native DLL，按六语检查发布前的界面细节：
+工具栏与工具条图标不重复、几何操作图标形状不相近，中日文不夹英文原词、外观名称按语言显示，
+语言下拉框与文件树显示名称而非类型名，相邻位置不重复同一名称或数值，重置按钮不多余且对齐，
+色块与文字不被截断，工具说明不在词中间断行，选中状态、下拉菜单位置、启动目录提示与打开失败状态正确。
 
 普通图像和单张预览的功能回归可通过同一入口选择：
 
