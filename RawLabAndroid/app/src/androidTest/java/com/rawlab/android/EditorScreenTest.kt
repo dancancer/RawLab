@@ -12,7 +12,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.semantics.SemanticsActions
@@ -65,16 +68,16 @@ class EditorScreenTest {
         compose.onNodeWithTag("comparison-wipe").assertExists().performSemanticsAction(SemanticsActions.SetProgress) { it(.3f) }
         compose.onNodeWithContentDescription("收起调整").performClick()
         compose.onNodeWithText("色温").assertDoesNotExist()
+        compose.onNodeWithTag("adjustment-slider").assertDoesNotExist()
         capture("editor-collapsed.png")
         compose.onNodeWithContentDescription("展开调整").performClick()
         val adjustments = compose.onAllNodes(hasScrollToIndexAction() and
             SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)).onLast()
-        adjustments.performScrollToNode(hasText("色温"))
-        compose.onNodeWithText("色温").performClick()
-        compose.onNodeWithTag("adjustment-slider").assertIsDisplayed()
-        adjustments.performScrollToNode(hasText("色调"))
-        compose.onNodeWithText("色调").performClick()
-        compose.onNodeWithTag("adjustment-slider").assertIsDisplayed()
+        // 色温与色调自 e2edc19 起同在“白平衡”分组：先选中分组，两条轴各自的滑杆都要可见
+        adjustments.performScrollToNode(hasContentDescription("白平衡"))
+        compose.onNodeWithContentDescription("白平衡").performClick()
+        compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色温")).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色调")).performScrollTo().assertIsDisplayed()
         capture("editor-tint.png")
         adjustments.performScrollToNode(hasText("胶片"))
         compose.onNodeWithText("胶片").performClick()

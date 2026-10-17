@@ -19,7 +19,6 @@
     <string name="jpeg_description">sRGB · quality 95 · capture metadata</string>
     <string name="png_description">sRGB · 16-bit lossless · capture metadata</string>
     <string name="dng_description">Baked appearance, not sensor RAW. No editable history or capture EXIF. Files only.</string>
-    <string name="geometry_free">Free</string>
     <string name="geometry_full">Reset crop</string>
     <string name="geometry_drag_hint">Crop rectangle</string>
     <string name="geometry_move_left">Move crop left</string>

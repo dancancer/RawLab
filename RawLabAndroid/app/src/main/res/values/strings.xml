@@ -66,7 +66,6 @@
     <string name="info_capture_missing">Capture settings unavailable</string>
     <string name="compare">Compare</string>
     <string name="reset">Reset adjustments</string>
-    <string name="empty_title">Open photo</string>
     <string name="neutral">Original</string>
     <string name="result">Adjusted</string>
     <string name="film">Film</string>
@@ -79,7 +78,6 @@
     <string name="saturation">Saturation</string>
     <string name="white_balance">White balance</string>
     <string name="as_shot">As shot</string>
-    <string name="custom_wb">Custom</string>
     <string name="temperature">Temperature</string>
     <string name="tint">Tint</string>
     <string name="sharpening">Sharpening</string>
@@ -141,7 +139,6 @@
     <string name="message_saving_to_the_photo_gallery_requires_android">Saving to the photo gallery requires Android 10 or later</string>
     <string name="message_output_storage_failed">Output storage failed: %1$s</string>
     <string name="message_not_a_supported_raw_file">Not a supported RAW, JPEG, or PNG file</string>
-    <string name="message_dng_raster_unsupported">Rendered DNG export requires RAW targets</string>
     <string name="message_unable_to_read_file">Unable to read file</string>
     <string name="message_unable_to_read_output_directory">Unable to read output directory</string>
     <string name="message_writing_was_incomplete_and_cleanup_failed_check">Writing was incomplete and cleanup failed. Check the output directory.</string>
@@ -189,7 +186,6 @@
     <string name="message_failed">Failed</string>
     <string name="message_cancelled">Cancelled</string>
     <string name="message_film">Film</string>
-    <string name="message_strength">Strength</string>
     <string name="message_exposure">Exposure</string>
     <string name="message_highlights">Highlights</string>
     <string name="message_shadows">Shadows</string>
@@ -284,16 +280,11 @@
     <string name="lens_reset">Reset Lens Correction</string>
     <string name="lens_choose_profile">Choose Lens Profile</string>
     <string name="lens_choose">Choose Lens</string>
-    <string name="lens_choose_more">Choose Lens…</string>
     <string name="lens_unmatched">No Lens Match</string>
     <string name="lens_info_not_ready">Lens Information Not Ready</string>
-    <string name="lens_info_loading">Reading Lens Information…</string>
     <string name="lens_search">Search Lenses</string>
-    <string name="lens_profiles">Lens Profiles</string>
     <string name="lens_none_found">No Lenses Found</string>
     <string name="lens_metadata_match">Metadata Match</string>
-    <string name="lens_matches_photo">Matches Photo</string>
-    <string name="lens_tca_not_applied">Lateral Chromatic Aberration Not Applied</string>
     <string name="lens_crop_percent">Crop %1$.1f%%</string>
     <string name="lens_off">Lens Correction Off</string>
     <string name="lens_matched">Lens Matched</string>
@@ -306,24 +297,8 @@
     <string name="lens_embedded_geometry">Embedded DNG Stage 3 Already Applied; Additional Correction Skipped</string>
     <string name="lens_input_unsupported">Lens Correction Unsupported for This Input</string>
     <string name="lens_manual_required">No Lens Match; Choose Manually</string>
-    <string name="lens_profiles_read_failed">Could Not Read Lens Profiles</string>
-    <string name="lens_database_missing">Lens Database Missing from the App Bundle</string>
-    <string name="lens_settings_invalid">Invalid or Unavailable Lens Correction Settings</string>
     <string name="dng">DNG · Rendered</string>
-    <string name="export_rendered_dng">Export Rendered DNG</string>
-    <string name="export_rendered_dng_more">Export Rendered DNG…</string>
-    <string name="rawlab_files">RawLab Files</string>
-    <string name="dng_exported">Rendered DNG Exported.</string>
-    <string name="dng_generated_not_saved">Rendered DNG Created, but Not Saved to the Selected Location.</string>
-    <string name="dng_verify_files">Verify DNG Files</string>
-    <string name="dng_verify_saved_files">Verify Saved DNG Files</string>
-    <string name="export_to_files">Export to Files…</string>
-    <string name="dng_export_completed_files">Export Completed DNGs to Files…</string>
-    <string name="dng_exported_count">%1$s Rendered DNG Files Exported</string>
-    <string name="dng_generated_count">%1$s Rendered DNG Files Created</string>
-    <string name="dng_generated_not_saved_count">%1$s Rendered DNG Files Created, but Not Saved to the Selected Location</string>
     <string name="dng_file_only">DNG Can Only Be Saved to Files</string>
-    <string name="preview_wait_export">Wait for the Preview to Finish Before Exporting.</string>
     <string name="geometry">Geometry</string>
     <string name="geometry_reset">Reset geometry</string>
     <string name="geometry_rotate_left">Rotate left</string>
@@ -339,8 +314,6 @@
     <string name="geometry_crop_width">Width</string>
     <string name="geometry_crop_height">Height</string>
     <string name="geometry_crop_hint">Crop percentages apply after rotation, flips, perspective and straightening.</string>
-    <string name="geometry_crop_error" formatted="false">Enter a positive crop within the 0–100% canvas.</string>
-    <string name="geometry_apply_crop">Apply crop</string>
     <string name="geometry_summary">Crop %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Rotate %5$d° · Straighten %6$+.1f°</string>
     <string name="geometry_swap_ratio">Swap crop orientation</string>
     <string name="geometry_ratio_free">Free</string>

@@ -66,7 +66,6 @@
     <string name="info_capture_missing">Aufnahmeeinstellungen konnten nicht gelesen werden</string>
     <string name="compare">Vergleichen</string>
     <string name="reset">Anpassungen zurücksetzen</string>
-    <string name="empty_title">Foto öffnen</string>
     <string name="neutral">Original</string>
     <string name="result">Angepasst</string>
     <string name="film">Film</string>
@@ -79,7 +78,6 @@
     <string name="saturation">Sättigung</string>
     <string name="white_balance">Weißabgleich</string>
     <string name="as_shot">Wie aufgenommen</string>
-    <string name="custom_wb">Benutzerdefiniert</string>
     <string name="temperature">Temperatur</string>
     <string name="tint">Farbton</string>
     <string name="sharpening">Schärfen</string>
@@ -141,7 +139,6 @@
     <string name="message_saving_to_the_photo_gallery_requires_android">Zum Speichern in der Fotogalerie ist Android 10 oder höher erforderlich</string>
     <string name="message_output_storage_failed">Fehler beim Speichern der Ausgabe: %1$s</string>
     <string name="message_not_a_supported_raw_file">Keine unterstützte RAW-, JPEG- oder PNG-Datei</string>
-    <string name="message_dng_raster_unsupported">Render-DNG-Export erfordert RAW-Ziele</string>
     <string name="message_unable_to_read_file">Datei konnte nicht gelesen werden</string>
     <string name="message_unable_to_read_output_directory">Ausgabeverzeichnis konnte nicht gelesen werden</string>
     <string name="message_writing_was_incomplete_and_cleanup_failed_check">Der Schreibvorgang wurde nicht abgeschlossen und die Bereinigung ist fehlgeschlagen. Prüfen Sie das Ausgabeverzeichnis.</string>
@@ -189,7 +186,6 @@
     <string name="message_failed">Fehlgeschlagen</string>
     <string name="message_cancelled">Abgebrochen</string>
     <string name="message_film">Film</string>
-    <string name="message_strength">Stärke</string>
     <string name="message_exposure">Belichtung</string>
     <string name="message_highlights">Lichter</string>
     <string name="message_shadows">Schatten</string>
@@ -284,16 +280,11 @@
     <string name="lens_reset">Objektivkorrektur zurücksetzen</string>
     <string name="lens_choose_profile">Objektivprofil auswählen</string>
     <string name="lens_choose">Objektiv auswählen</string>
-    <string name="lens_choose_more">Objektiv auswählen…</string>
     <string name="lens_unmatched">Kein passendes Objektiv</string>
     <string name="lens_info_not_ready">Objektivinformationen noch nicht verfügbar</string>
-    <string name="lens_info_loading">Objektivinformationen werden gelesen…</string>
     <string name="lens_search">Objektive suchen</string>
-    <string name="lens_profiles">Objektivprofile</string>
     <string name="lens_none_found">Keine Objektive gefunden</string>
     <string name="lens_metadata_match">Metadatenübereinstimmung</string>
-    <string name="lens_matches_photo">Passt zum Foto</string>
-    <string name="lens_tca_not_applied">Laterale chromatische Aberration nicht korrigiert</string>
     <string name="lens_crop_percent">Beschnitt %1$.1f%%</string>
     <string name="lens_off">Objektivkorrektur deaktiviert</string>
     <string name="lens_matched">Objektiv zugeordnet</string>
@@ -306,24 +297,8 @@
     <string name="lens_embedded_geometry">Eingebettete DNG-Stage-3-Verarbeitung bereits angewendet; zusätzliche Korrektur übersprungen</string>
     <string name="lens_input_unsupported">Objektivkorrektur für diese Eingabe nicht unterstützt</string>
     <string name="lens_manual_required">Kein passendes Objektiv; bitte manuell auswählen</string>
-    <string name="lens_profiles_read_failed">Objektivprofile konnten nicht gelesen werden</string>
-    <string name="lens_database_missing">Objektivdatenbank fehlt im App-Paket</string>
-    <string name="lens_settings_invalid">Ungültige oder nicht verfügbare Objektivkorrektureinstellungen</string>
     <string name="dng">DNG · Entwickelt</string>
-    <string name="export_rendered_dng">Entwickeltes DNG exportieren</string>
-    <string name="export_rendered_dng_more">Entwickeltes DNG exportieren…</string>
-    <string name="rawlab_files">RawLab-Dateien</string>
-    <string name="dng_exported">Entwickeltes DNG exportiert.</string>
-    <string name="dng_generated_not_saved">Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.</string>
-    <string name="dng_verify_files">DNG-Dateien prüfen</string>
-    <string name="dng_verify_saved_files">Gespeicherte DNG-Dateien prüfen</string>
-    <string name="export_to_files">In Dateien exportieren…</string>
-    <string name="dng_export_completed_files">Fertige DNGs in Dateien exportieren…</string>
-    <string name="dng_exported_count">%1$s entwickelte DNG-Dateien exportiert</string>
-    <string name="dng_generated_count">%1$s entwickelte DNG-Dateien erstellt</string>
-    <string name="dng_generated_not_saved_count">%1$s entwickelte DNG-Dateien erstellt, aber nicht am gewählten Ort gespeichert</string>
     <string name="dng_file_only">DNG kann nur in Dateien gespeichert werden</string>
-    <string name="preview_wait_export">Warten Sie vor dem Export, bis die Vorschau fertig ist.</string>
     <string name="geometry">Geometrie</string>
     <string name="geometry_reset">Geometrie zurücksetzen</string>
     <string name="geometry_rotate_left">Nach links drehen</string>
@@ -339,8 +314,6 @@
     <string name="geometry_crop_width">Breite</string>
     <string name="geometry_crop_height">Höhe</string>
     <string name="geometry_crop_hint">Die Zuschnittwerte beziehen sich auf das gedrehte, gespiegelte, perspektivisch korrigierte und begradigte Bild.</string>
-    <string name="geometry_crop_error" formatted="false">Einen Zuschnitt mit positiver Breite und Höhe innerhalb von 0–100% eingeben.</string>
-    <string name="geometry_apply_crop">Zuschnitt anwenden</string>
     <string name="geometry_summary">Zuschnitt %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · Drehung %5$d° · Begradigung %6$+.1f°</string>
     <string name="geometry_swap_ratio">Zuschnittausrichtung wechseln</string>
     <string name="geometry_ratio_free">Frei</string>

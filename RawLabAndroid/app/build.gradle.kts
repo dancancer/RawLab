@@ -134,6 +134,9 @@ android {
     sourceSets["main"].assets.srcDir(generatedAssets)
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    // SDK 的 webview-sdk.js 只在给 WebView 注入 H5 采集时读取（2.3.2 字节码核实）；本应用没有 WebView，
+    // h5 采集也已关闭，不打包。前半段是 aapt 的默认忽略规则，原样保留
+    androidResources { ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!webview-sdk.js" }
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 

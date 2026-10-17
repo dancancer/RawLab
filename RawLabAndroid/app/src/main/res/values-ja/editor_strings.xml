@@ -19,7 +19,6 @@
     <string name="jpeg_description">sRGB · 品質 95 · 撮影メタデータ</string>
     <string name="png_description">sRGB · 16 ビット可逆画像 · 撮影メタデータ</string>
     <string name="dng_description">最終的な見た目を保存します。センサー RAW ではありません。編集履歴と撮影 EXIF は含まず、ファイルのみに保存します。</string>
-    <string name="geometry_free">自由</string>
     <string name="geometry_full">切り抜きをリセット</string>
     <string name="geometry_drag_hint">切り抜き矩形</string>
     <string name="geometry_move_left">左へ移動</string>

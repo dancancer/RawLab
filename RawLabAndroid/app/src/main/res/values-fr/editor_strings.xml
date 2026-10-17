@@ -19,7 +19,6 @@
     <string name="jpeg_description">sRGB · qualité 95 · métadonnées de prise de vue</string>
     <string name="png_description">sRGB · 16 bits sans perte · métadonnées de prise de vue</string>
     <string name="dng_description">Rendu final, pas un RAW du capteur. Sans historique modifiable ni EXIF de prise de vue. Fichiers uniquement.</string>
-    <string name="geometry_free">Libre</string>
     <string name="geometry_full">Réinitialiser le recadrage</string>
     <string name="geometry_drag_hint">Rectangle de recadrage</string>
     <string name="geometry_move_left">Déplacer à gauche</string>

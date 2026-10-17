@@ -66,7 +66,6 @@
     <string name="info_capture_missing">撮影情報を読み取れません</string>
     <string name="compare">比較</string>
     <string name="reset">調整をリセット</string>
-    <string name="empty_title">写真を開く</string>
     <string name="neutral">元画像</string>
     <string name="result">調整後</string>
     <string name="film">フィルム</string>
@@ -79,7 +78,6 @@
     <string name="saturation">彩度</string>
     <string name="white_balance">ホワイトバランス</string>
     <string name="as_shot">撮影時の設定</string>
-    <string name="custom_wb">カスタム</string>
     <string name="temperature">色温度</string>
     <string name="tint">色かぶり補正</string>
     <string name="sharpening">シャープ</string>
@@ -141,7 +139,6 @@
     <string name="message_saving_to_the_photo_gallery_requires_android">フォトギャラリーへの保存には Android 10 以降が必要です</string>
     <string name="message_output_storage_failed">出力の保存に失敗しました: %1$s</string>
     <string name="message_not_a_supported_raw_file">サポートされている RAW、JPEG、PNG ファイルではありません</string>
-    <string name="message_dng_raster_unsupported">レンダリング DNG の書き出しには RAW の対象が必要です</string>
     <string name="message_unable_to_read_file">ファイルを読み込めません</string>
     <string name="message_unable_to_read_output_directory">出力フォルダを読み込めません</string>
     <string name="message_writing_was_incomplete_and_cleanup_failed_check">書き込みが完了せず、クリーンアップにも失敗しました。出力フォルダを確認してください。</string>
@@ -189,7 +186,6 @@
     <string name="message_failed">失敗</string>
     <string name="message_cancelled">キャンセル済み</string>
     <string name="message_film">フィルム</string>
-    <string name="message_strength">強度</string>
     <string name="message_exposure">露出</string>
     <string name="message_highlights">ハイライト</string>
     <string name="message_shadows">シャドウ</string>
@@ -284,16 +280,11 @@
     <string name="lens_reset">レンズ補正をリセット</string>
     <string name="lens_choose_profile">レンズプロファイルを選択</string>
     <string name="lens_choose">レンズを選択</string>
-    <string name="lens_choose_more">レンズを選択…</string>
     <string name="lens_unmatched">一致するレンズなし</string>
     <string name="lens_info_not_ready">レンズ情報を取得できていません</string>
-    <string name="lens_info_loading">レンズ情報を読み込み中…</string>
     <string name="lens_search">レンズを検索</string>
-    <string name="lens_profiles">レンズプロファイル</string>
     <string name="lens_none_found">レンズが見つかりません</string>
     <string name="lens_metadata_match">メタデータ一致</string>
-    <string name="lens_matches_photo">写真に一致</string>
-    <string name="lens_tca_not_applied">倍率色収差補正は未適用</string>
     <string name="lens_crop_percent">クロップ %1$.1f%%</string>
     <string name="lens_off">レンズ補正はオフ</string>
     <string name="lens_matched">レンズを照合しました</string>
@@ -306,24 +297,8 @@
     <string name="lens_embedded_geometry">DNGの埋め込みStage 3処理が適用済みのため追加補正は未適用です</string>
     <string name="lens_input_unsupported">この入力ではレンズ補正に対応していません</string>
     <string name="lens_manual_required">一致するレンズがありません。手動で選択してください</string>
-    <string name="lens_profiles_read_failed">レンズプロファイルを読み込めません</string>
-    <string name="lens_database_missing">アプリにレンズデータベースが含まれていません</string>
-    <string name="lens_settings_invalid">レンズ補正の設定が無効または利用できません</string>
     <string name="dng">DNG · 現像済み</string>
-    <string name="export_rendered_dng">現像済みDNGを書き出す</string>
-    <string name="export_rendered_dng_more">現像済みDNGを書き出す…</string>
-    <string name="rawlab_files">RawLabファイル</string>
-    <string name="dng_exported">現像済みDNGを書き出しました。</string>
-    <string name="dng_generated_not_saved">現像済みDNGを生成しましたが選択した場所には保存していません。</string>
-    <string name="dng_verify_files">DNGファイルを確認</string>
-    <string name="dng_verify_saved_files">DNGファイルの保存結果を確認</string>
-    <string name="export_to_files">ファイルに書き出す…</string>
-    <string name="dng_export_completed_files">完成したDNGをファイルに書き出す…</string>
-    <string name="dng_exported_count">現像済みDNGを%1$s個書き出しました</string>
-    <string name="dng_generated_count">現像済みDNGを%1$s個生成しました</string>
-    <string name="dng_generated_not_saved_count">現像済みDNGを%1$s個生成しましたが選択した場所には保存していません</string>
     <string name="dng_file_only">DNGはファイルにのみ保存できます</string>
-    <string name="preview_wait_export">プレビューの完了後に書き出してください。</string>
     <string name="geometry">ジオメトリ</string>
     <string name="geometry_reset">ジオメトリをリセット</string>
     <string name="geometry_rotate_left">左に回転</string>
@@ -339,8 +314,6 @@
     <string name="geometry_crop_width">幅</string>
     <string name="geometry_crop_height">高さ</string>
     <string name="geometry_crop_hint">切り抜きの割合は、回転・反転・遠近補正・傾き補正後の画像に適用されます。</string>
-    <string name="geometry_crop_error" formatted="false">0–100% の画像内で、幅と高さが正の切り抜き範囲を入力してください。</string>
-    <string name="geometry_apply_crop">切り抜きを適用</string>
     <string name="geometry_summary">切り抜き %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · 回転 %5$d° · 傾き %6$+.1f°</string>
     <string name="geometry_swap_ratio">切り抜きの縦横を切り替え</string>
     <string name="geometry_ratio_free">自由</string>

@@ -66,7 +66,6 @@
     <string name="info_capture_missing">未读取到拍摄参数</string>
     <string name="compare">对比</string>
     <string name="reset">重置调整</string>
-    <string name="empty_title">打开照片</string>
     <string name="neutral">原图</string>
     <string name="result">调整后</string>
     <string name="film">胶片</string>
@@ -79,7 +78,6 @@
     <string name="saturation">饱和度</string>
     <string name="white_balance">白平衡</string>
     <string name="as_shot">拍摄时设置</string>
-    <string name="custom_wb">自定义</string>
     <string name="temperature">色温</string>
     <string name="tint">色调</string>
     <string name="sharpening">锐化</string>
@@ -141,7 +139,6 @@
     <string name="message_saving_to_the_photo_gallery_requires_android">相册保存需要 Android 10 或更高版本</string>
     <string name="message_output_storage_failed">输出存储失败：%1$s</string>
     <string name="message_not_a_supported_raw_file">不是受支持的 RAW、JPEG 或 PNG 文件</string>
-    <string name="message_dng_raster_unsupported">渲染型 DNG 导出需要 RAW 目标</string>
     <string name="message_unable_to_read_file">无法读取文件</string>
     <string name="message_unable_to_read_output_directory">无法读取输出目录</string>
     <string name="message_writing_was_incomplete_and_cleanup_failed_check">写入未完成且无法清理，请核对输出目录</string>
@@ -189,7 +186,6 @@
     <string name="message_failed">失败</string>
     <string name="message_cancelled">已取消</string>
     <string name="message_film">胶片</string>
-    <string name="message_strength">强度</string>
     <string name="message_exposure">曝光</string>
     <string name="message_highlights">高光</string>
     <string name="message_shadows">阴影</string>
@@ -284,16 +280,11 @@
     <string name="lens_reset">重置镜头校正</string>
     <string name="lens_choose_profile">选择镜头配置文件</string>
     <string name="lens_choose">选择镜头</string>
-    <string name="lens_choose_more">选择镜头…</string>
     <string name="lens_unmatched">未匹配镜头</string>
     <string name="lens_info_not_ready">镜头信息尚未就绪</string>
-    <string name="lens_info_loading">正在读取镜头信息…</string>
     <string name="lens_search">搜索镜头</string>
-    <string name="lens_profiles">镜头配置</string>
     <string name="lens_none_found">未找到镜头</string>
     <string name="lens_metadata_match">元数据匹配</string>
-    <string name="lens_matches_photo">匹配照片</string>
-    <string name="lens_tca_not_applied">横向色差未应用</string>
     <string name="lens_crop_percent">裁边 %1$.1f%%</string>
     <string name="lens_off">镜头校正已关闭</string>
     <string name="lens_matched">已匹配镜头</string>
@@ -306,24 +297,8 @@
     <string name="lens_embedded_geometry">DNG 已执行内嵌 Stage3 处理，未叠加校正</string>
     <string name="lens_input_unsupported">此输入不支持镜头校正</string>
     <string name="lens_manual_required">未匹配镜头，请手动选择</string>
-    <string name="lens_profiles_read_failed">无法读取镜头配置列表</string>
-    <string name="lens_database_missing">镜头数据库未打包到应用中</string>
-    <string name="lens_settings_invalid">无效或不可用的镜头校正设置</string>
     <string name="dng">DNG · 渲染型</string>
-    <string name="export_rendered_dng">导出渲染型 DNG</string>
-    <string name="export_rendered_dng_more">导出渲染型 DNG…</string>
-    <string name="rawlab_files">RawLab 文件</string>
-    <string name="dng_exported">已导出渲染型 DNG。</string>
-    <string name="dng_generated_not_saved">已生成渲染型 DNG，未另存到所选位置。</string>
-    <string name="dng_verify_files">核对 DNG 文件</string>
-    <string name="dng_verify_saved_files">核对 DNG 文件保存结果</string>
-    <string name="export_to_files">导出到文件…</string>
-    <string name="dng_export_completed_files">导出已完成的 DNG 到文件…</string>
-    <string name="dng_exported_count">已导出 %1$s 个渲染型 DNG</string>
-    <string name="dng_generated_count">已生成 %1$s 个渲染型 DNG</string>
-    <string name="dng_generated_not_saved_count">已生成 %1$s 个渲染型 DNG，未另存到所选位置</string>
     <string name="dng_file_only">DNG 只能保存到文件</string>
-    <string name="preview_wait_export">请等待预览完成后导出。</string>
     <string name="geometry">几何</string>
     <string name="geometry_reset">重置几何</string>
     <string name="geometry_rotate_left">向左旋转</string>
@@ -339,8 +314,6 @@
     <string name="geometry_crop_width">宽度</string>
     <string name="geometry_crop_height">高度</string>
     <string name="geometry_crop_hint">裁切百分比基于旋转、翻转、透视校正和拉直后的画面。</string>
-    <string name="geometry_crop_error" formatted="false">请输入 0–100% 画面内的裁切区域，宽高须大于零。</string>
-    <string name="geometry_apply_crop">应用裁切</string>
     <string name="geometry_summary">裁切 %1$.1f,%2$.1f · %3$.1f × %4$.1f%% · 旋转 %5$d° · 拉直 %6$+.1f°</string>
     <string name="geometry_swap_ratio">切换裁切横竖方向</string>
     <string name="geometry_ratio_free">自由</string>
