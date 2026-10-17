@@ -48,6 +48,7 @@ internal static class UiDetailChecks
                     Icons(window,language,check);
                     ToolTips(window,language,check);
                     ActiveLook(window,language,check);
+                    TypeNames(window,output,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -84,6 +85,24 @@ internal static class UiDetailChecks
             $"Active look and comparison label show the recipe name in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
         settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
+    }
+    // 语言下拉框、文件树的读屏名称：显示名字，不显示记录或类的类型名
+    private static void TypeNames(MainWindow window,string output,string language,Action<bool,string> check)
+    {
+        var expected=Loc.Choices.Single(choice=>choice.Code==language).NativeName;
+        var settings=new SettingsWindow(0){Owner=window};settings.Show();settings.UpdateLayout();
+        try { var box=Descendants(settings).OfType<ComboBox>().First();check(Shown(box)==expected,$"Settings language picker shows {expected}: {Shown(box)}"); }
+        finally { settings.Close(); }
+        var about=About(window,output);
+        try { check(Shown(about.LanguageBox)==expected,$"About language picker shows {expected}: {Shown(about.LanguageBox)}"); }
+        finally { about.Close(); }
+        var folder=new LibraryEntry(Path.GetFullPath(output),true);
+        window.Files.ItemsSource=new[]{folder};window.UpdateLayout();
+        var names=UIElementAutomationPeer.CreatePeerForElement(window.Files)!.GetChildren()?.Select(child=>child.GetName()).ToList() ?? [];
+        check(names.SequenceEqual(new[]{folder.Name}),"Folder tree items are announced by name: "+string.Join(" / ",names));
+        var group=new PhotoGroup([new LibraryEntry(Path.Combine(output,"a.ARW"),false)]);
+        check(group.ToString()==Loc.Text("照片"),"Photo group is announced as photos: "+group);
+        window.Files.ItemsSource=Array.Empty<LibraryEntry>();window.UpdateLayout();
     }
 
     private static AboutWindow About(MainWindow window,string output)

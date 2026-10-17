@@ -60,8 +60,13 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     public void ReleaseThumbnail() { if(IsFolder)return;thumbnailVisible=false;loaded=false;Thumbnail=null; }
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName]string? name=null)=>PropertyChanged?.Invoke(this,new(name));
+    // 文件树的读屏名称取自 ToString：读目录或文件名，不读类型名
+    public override string ToString()=>Name;
 }
-public sealed record PhotoGroup(IReadOnlyList<LibraryEntry> Photos);
+public sealed record PhotoGroup(IReadOnlyList<LibraryEntry> Photos)
+{
+    public override string ToString()=>Loc.Text("照片");
+}
 internal sealed class Library
 {
     private readonly string settingsPath=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","folders.json");
