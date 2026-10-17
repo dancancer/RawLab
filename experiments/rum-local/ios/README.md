@@ -1,12 +1,12 @@
 # RawLab iOS local RUM validation
 
-This directory is only for the explicit `RAWLAB_RUM_LOCAL` simulator build. The normal `RawLab` Debug and Release builds do not link AlibabaCloudRUM. The local app uses bundle ID `com.example.RawLab.rumlocal` and a separate `usage-consent-local.json` store.
+This directory is only for the explicit `RAWLAB_RUM_LOCAL` simulator build. Since 2026-10-17 the normal `RawLab` Release configuration links AlibabaCloudRUM (prepare it with `bash scripts/rum/prepare-ios.sh`, which links `RawLab/Vendor/AlibabaCloudRUM` to the shared cache) and reports to `env=PROD`; Debug does not link it. The local app uses bundle ID `com.example.RawLab.rumlocal` and separate `usage-consent-local.json` / `usage-install-id-local` stores.
 
 Run the configuration and default-transport checks without a vendor framework:
 
 ```bash
-bash RawLab/tests/rum-local-configuration.sh
-bash RawLab/tests/rum-local-transport.sh
+bash RawLab/tests/rum-configuration.sh
+bash RawLab/tests/rum-transport.sh
 ```
 
 Prepare the cached official tag `2.4.2`, compile the Objective-C wrapper and build the local simulator app:

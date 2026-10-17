@@ -7,14 +7,17 @@ import Darwin
               ProcessInfo.processInfo.environment["RAWLAB_RUM_NETWORK"] == "china-telecom" else {
             fatalError("Local validation requires the operator-confirmed cap and direct network")
         }
-        let configuration = try RUMPCConfiguration()
-        guard configuration.validationRun != nil else { fatalError("A random validation UUID is required") }
+        // RAWLAB_RUM_TARGET=production 时走正式包写死的上报目标（env=prod），否则为本地验证配置
+        let production = ProcessInfo.processInfo.environment["RAWLAB_RUM_TARGET"] == "production"
+        let configuration = production ? try RUMPCConfiguration.production() : try RUMPCConfiguration()
+        guard let marker = configuration.validationRun else { fatalError("A random validation UUID is required") }
         alarm(60)
         guard let parent = ProcessInfo.processInfo.environment["RAWLAB_RUM_CACHE_PARENT"] else {
             fatalError("Run through local-adapter.sh for parent-owned cache cleanup")
         }
+        // 探针用验证标记当设备标识，不碰本机真实的安装标识
         let transport = SerialUsageTransport(backend: AliyunRUMBackend(configuration: configuration,
-            cacheParent: URL(fileURLWithPath: parent)))
+            deviceID: { marker }, cacheParent: URL(fileURLWithPath: parent)))
         let failure = DispatchSemaphore(value: 0)
         transport.onFailure = { failure.signal() }
         try transport.start()

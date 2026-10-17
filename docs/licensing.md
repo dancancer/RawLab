@@ -43,9 +43,12 @@ Their own licenses, redistribution permissions, source obligations and
 notices still apply. It does not establish that the SDKs may be redistributed
 or that a combined package is ready for release.
 
-The current RUM integration remains restricted to explicitly enabled private
-local validation builds. Default and Release builds do not include the SDKs.
-The exception does not authorize publishing or remove those build guards.
+Since 2026-10-17 release builds of all four clients include the listed SDK
+versions by the copyright holder's decision; debug builds do not, and an
+explicit opt-out produces a release package without them. The copyright holder
+has taken responsibility for confirming each vendor SDK's redistribution terms;
+until written confirmation exists, the packaged notices state that those terms
+are pending. The exception itself still grants no rights in the SDKs.
 
 ## Third-Party Code and Resources
 

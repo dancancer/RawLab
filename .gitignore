@@ -64,3 +64,8 @@ RawLabWindows/**/obj/
 
 # Historical Windows handoff binaries remain available in Git history.
 /release-artifacts/windows/2026-10-08/*.zip.part*
+# 阿里云 RUM iOS SDK：由 scripts/rum/prepare-ios.sh 链到共享缓存，不进仓库
+RawLab/Vendor/
+# Windows RUM 探针：直接 dotnet build 时的输出（run.sh 已把输出放到 .cache/tmp）
+experiments/rum-local/windows/bin/
+experiments/rum-local/windows/obj/

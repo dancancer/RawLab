@@ -1,17 +1,60 @@
+import hashlib
 import importlib.util
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
+
+
+def load_module():
+    path = Path(__file__).resolve().parents[1] / 'build-remote.py'
+    spec = importlib.util.spec_from_file_location('remote_build', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class RumSdkArgumentsTest(unittest.TestCase):
+    """远程构建默认带统计 SDK：本地有缓存就上传固定哈希的归档，否则由远端按固定地址下载"""
+
+    def setUp(self):
+        self.module = load_module()
+
+    def test_pin_matches_the_build_rules(self):
+        project = ET.parse(Path(__file__).resolve().parents[1] / 'RumSdk.targets').getroot()
+        pins = [node.text for node in project.iter('RawLabRumSdkZipSha256')]
+        self.assertEqual(pins, [self.module.RUM_SDK_SHA256])
+
+    def test_offline_package_skips_the_sdk(self):
+        self.assertEqual(self.module.rum_build_args(True, Path('/missing.zip'), 'C:/in'), ('-NoRumSdk', None))
+
+    def test_missing_local_cache_lets_the_remote_download(self):
+        self.assertEqual(self.module.rum_build_args(False, Path('/missing.zip'), 'C:/in'), ('', None))
+
+    def test_cached_archive_is_verified_and_uploaded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = Path(folder) / 'sdk.zip'
+            archive.write_bytes(b'vendor archive')
+            self.module.RUM_SDK_SHA256 = hashlib.sha256(b'vendor archive').hexdigest()
+            self.assertEqual(self.module.rum_build_args(False, archive, 'C:/RawLabBuild/incoming/1'),
+                             ("-RumSdkZip 'C:/RawLabBuild/incoming/1/rum-sdk.zip'", archive))
+            archive.write_bytes(b'tampered')
+            with self.assertRaises(SystemExit):
+                self.module.rum_build_args(False, archive, 'C:/in')
+
+    def test_default_cache_is_in_the_main_worktree(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            self.assertEqual(self.module.rum_sdk_cache(root),
+                             root / '.cache/shared/aliyun-rum/windows/0.4.4/sdk.zip')
 
 
 class SourcePackageTest(unittest.TestCase):
     def test_includes_dirty_and_untracked_source_but_not_outputs_or_raws(self):
-        path = Path(__file__).resolve().parents[1] / 'build-remote.py'
-        spec = importlib.util.spec_from_file_location('remote_build', path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        module = load_module()
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             subprocess.run(['git', 'init', '-q', str(root)], check=True)

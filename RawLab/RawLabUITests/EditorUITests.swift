@@ -1,25 +1,29 @@
 import XCTest
 
 final class EditorUITests: XCTestCase {
-    func testUsagePrivacyDefaultsOff() {
+    func testUsagePrivacyDefaultsOn() {
         // 英文界面下隐私设置整页都是英文：入口、标题、开关与状态说明
+        // 从未选择过时统计默认开启；调试构建不带 SDK，状态行说明未配置
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
         app.launch()
         let menu = app.buttons["editor.privacy"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
-        XCTAssertEqual(menu.label, "Privacy settings")
+        XCTAssertEqual(menu.label, "More")
         menu.tap()
         let open = app.buttons["editor.privacy.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 5), app.debugDescription)
         open.tap()
         let toggle = app.switches["usage.consent"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "0")
-        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertTrue(toggle.isEnabled, "a saved or default consent stays withdrawable")
         XCTAssertEqual(toggle.label, "Allow usage analytics")
         XCTAssertTrue(app.navigationBars["Privacy settings"].exists, app.debugDescription)
         XCTAssertTrue(app.staticTexts["Usage analytics is not configured in this build; nothing is collected or reported."].exists)
+        // 按文字查询最长 128 个字符，长句用前缀匹配
+        let installID = NSPredicate(format: "label BEGINSWITH %@", "To count active devices, the app stores a randomly generated installation ID")
+        XCTAssertTrue(app.staticTexts.matching(installID).firstMatch.exists, app.debugDescription)
         capture("usage-privacy-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["usage.done"].isHittable)

@@ -47,6 +47,10 @@ internal static class ProfileIsolationChecks
             check(handler.Count==0 && !updates.Checking,"Test window Loaded sends no update request");
             check(transport.Starts==0 && usageBefore==Stamp(usagePath),
                 "Test window Loaded leaves existing analytics consent bytes/timestamp and transport untouched");
+            var privateConsent=(string)typeof(UsageAnalytics).GetField("settingsPath",Private)!.GetValue(usage)!;
+            check(File.ReadAllText(privateConsent).Contains("false") && !File.Exists(UsageAnalytics.InstallIdPathFor(privateConsent)) &&
+                !File.Exists(UsageAnalytics.InstallIdPathFor(usagePath)),
+                "Default-on analytics never reaches test windows: private consent is explicitly off and no install ID is created");
             check(before.SequenceEqual(File.ReadAllBytes(protectedPath)) && written==File.GetLastWriteTimeUtc(protectedPath) && !File.Exists(protectedPath+".tmp"),
                 "Test window preserves existing update preferences and temporary files");
             foreach(var field in new[]{"editStore","batchJournal","library","updates","usageAnalytics"})
@@ -73,7 +77,7 @@ internal static class ProfileIsolationChecks
     {
         internal int Starts;
         public bool IsAvailable=>true;
-        public Task StartAsync(CancellationToken cancellationToken){Starts++;return Task.CompletedTask;}
+        public Task StartAsync(string installId,CancellationToken cancellationToken){Starts++;return Task.CompletedTask;}
         public Task SendAsync(UsageEvent usageEvent,CancellationToken cancellationToken)=>Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken)=>Task.CompletedTask;
     }

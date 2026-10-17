@@ -497,5 +497,7 @@
   "统计服务未能启动，照片编辑不受影响": "The analytics service could not start. Photo editing is unaffected.",
   "统计服务关闭失败，未再尝试关闭；请退出应用完成清理": "The analytics service could not stop and was not retried. Quit the app to finish cleanup.",
   "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限": "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.",
+  "无法读取统计设置，已保持关闭。": "The analytics setting could not be read, so analytics stays off.",
+  "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。": "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.",
   "无法读取文件身份。": "Unable to read the file identity."
 }

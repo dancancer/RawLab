@@ -18,7 +18,8 @@ extension ContentView {
             } label: {
                 Image(systemName: "gearshape")
             }
-            .accessibilityLabel(L10n.text("隐私设置")).help(L10n.text("隐私设置"))
+            // 菜单里不止隐私设置（还有"从文件导入"），读屏名称按通用的"更多"
+            .accessibilityLabel(L10n.text("更多")).help(L10n.text("更多"))
             .accessibilityIdentifier("editor.privacy")
             photoImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
                 .opacity(rulerFocusOpacity)

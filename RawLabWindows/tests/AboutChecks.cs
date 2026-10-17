@@ -125,6 +125,11 @@ internal static class AboutChecks
             Text = actualText, ExpectedText = label + " " + updates.CurrentVersion, Language = selectedLanguage, ExpectedLanguage = language }));
         check(localized,
             $"About title, version label and language selection follow the {language} catalog");
+        var texts = Descendants(about).OfType<TextBlock>().Select(text => text.Text).ToList();
+        var privacy = texts.IndexOf(Loc.Text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"));
+        check(privacy >= 0 && privacy + 1 < texts.Count &&
+              texts[privacy + 1] == Loc.Text("为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。"),
+            $"About explains the random install ID right after the privacy paragraph ({language})");
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

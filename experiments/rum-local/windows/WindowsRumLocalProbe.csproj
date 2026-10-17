@@ -1,20 +1,32 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ┌─ Windows 实网验证探针 ─────────────────────────────────────────────────┐
+    │ 编进与正式包相同的统计代码和正式配置（env=PROD），只额外带验证标记。     │
+    │ SDK 与哈希规则复用 RawLabWindows/RumSdk.targets；版本号取 RawLab 本身。 │
+    └──────────────────────────────────────────────────────────────────────┘
+  -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <DefineConstants>$(DefineConstants);RAWLAB_RUM_LOCAL</DefineConstants>
+    <PlatformTarget>x64</PlatformTarget>
+    <RawLabRumSdk>true</RawLabRumSdk>
   </PropertyGroup>
+  <Import Project="../../../RawLabWindows/RumSdk.targets" />
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../../RawLabWindows/UsageAnalytics.cs" Link="UsageAnalytics.cs" />
-    <Compile Include="../../../RawLabWindows/RumLocalConfiguration.cs" Link="RumLocalConfiguration.cs" />
-    <Compile Include="../../../RawLabWindows/RumLocalUsageAnalyticsTransport.cs" Link="RumLocalUsageAnalyticsTransport.cs" />
+    <Compile Include="../../../RawLabWindows/RumConfiguration.cs" Link="RumConfiguration.cs" />
+    <Compile Include="../../../RawLabWindows/RumUsageAnalyticsTransport.cs" Link="RumUsageAnalyticsTransport.cs" />
+    <AssemblyMetadata Include="RawLabRumDllSha256" Value="$(RawLabRumDllSha256)" />
   </ItemGroup>
-  <ItemGroup Condition="'$(RawLabRumSdkRoot)' != ''">
-    <Content Include="$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll"
-             Link="alibabacloud_rum.dll" CopyToOutputDirectory="Always" />
-  </ItemGroup>
+  <!-- 探针上报的版本号与 RawLab 正式包一致 -->
+  <Target Name="UseRawLabVersion" BeforeTargets="GetAssemblyVersion">
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)../../../RawLabWindows/RawLabWindows.csproj"
+             Query="/Project/PropertyGroup/Version/text()">
+      <Output TaskParameter="Result" PropertyName="Version" />
+    </XmlPeek>
+  </Target>
 </Project>

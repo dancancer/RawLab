@@ -3,6 +3,7 @@
 import argparse
 import base64
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -20,6 +21,29 @@ SYNTHETIC_RAW_FIXTURES = {
      'linear-jxl-channel-levels.dng', 'linear-channel-levels.dng', 'linear-normalized.dng',
      'linear-jxl-lens.dng', 'linear-lens.dng', 'linear-jxl-stage3-lens.dng')
 }
+
+# 与 RumSdk.targets 的 RawLabRumSdkZipSha256 一致（测试会核对）
+RUM_SDK_SHA256 = 'bfa05c0718a57eb7e94c9494499bd3c84305a3cc39b76d6a9096667553928994'
+
+
+def rum_sdk_cache(root):
+    """主工作区共享缓存里的 Windows RUM SDK 归档；worktree 也指向主工作区"""
+    common = subprocess.run(['git', '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                            capture_output=True, text=True)
+    main = Path(common.stdout.strip()).parent if common.returncode == 0 else root
+    return main / '.cache/shared/aliyun-rum/windows/0.4.4/sdk.zip'
+
+
+def rum_build_args(no_rum_sdk, archive, incoming):
+    """build.ps1 的统计 SDK 参数和要上传的本地归档。本地没有缓存时不传参数，
+    由远端 build.ps1 从供应商固定地址下载并校验；离线包显式 -NoRumSdk"""
+    if no_rum_sdk:
+        return '-NoRumSdk', None
+    if not archive.is_file():
+        return '', None
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != RUM_SDK_SHA256:
+        raise SystemExit(f'Unexpected RUM SDK archive SHA-256: {archive}')
+    return f"-RumSdkZip '{incoming}/rum-sdk.zip'", archive
 
 
 def package_source(root, archive):
@@ -45,9 +69,13 @@ def main():
     parser.add_argument('--test', action='store_true', help='Run the full native/WPF/GPU suite')
     parser.add_argument('--raw', type=Path, help='External RAW fixture required by --test')
     parser.add_argument('--workspace', default='C:/RawLabBuild/workspace', help='Isolated remote build checkout')
+    parser.add_argument('--rum-sdk-zip', type=Path, help='Vendor AlibabaCloud_RUM_Windows_0.4.4.zip (default: shared cache)')
+    parser.add_argument('--no-rum-sdk', action='store_true', help='Offline package without usage analytics')
     args = parser.parse_args()
     if args.test and (args.raw is None or not args.raw.is_file()):
         parser.error('--test requires --raw pointing to an existing external fixture')
+    if args.rum_sdk_zip is not None and not args.rum_sdk_zip.is_file():
+        parser.error('--rum-sdk-zip must point to the vendor archive')
     root = Path(__file__).resolve().parents[1]
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     output = root / 'build/windows-remote' / stamp
@@ -75,6 +103,9 @@ def main():
     powershell(f"New-Item -ItemType Directory -Force '{incoming}' | Out-Null")
     subprocess.run(['scp', *options, str(output / 'source.zip'),
                     f'{args.host}:{incoming}/source.zip'], check=True)
+    rum_args, rum_archive = rum_build_args(args.no_rum_sdk, args.rum_sdk_zip or rum_sdk_cache(root), incoming)
+    if rum_archive:
+        subprocess.run(['scp', *options, str(rum_archive), f'{args.host}:{incoming}/rum-sdk.zip'], check=True)
     if args.test:
         subprocess.run(['scp', *options, str(args.raw.resolve()),
                         f'{args.host}:{incoming}/fixture{args.raw.suffix.lower()}'], check=True)
@@ -102,7 +133,7 @@ if (Test-Path $previousManifest) {{
 }}
 New-Item -ItemType Directory -Force $workspace | Out-Null
 Copy-Item "$staging/*" $workspace -Recurse -Force
-& "$workspace/RawLabWindows/build.ps1" -SelfContained {test_args}
+& "$workspace/RawLabWindows/build.ps1" -SelfContained {rum_args} {test_args}
 if ($LASTEXITCODE -ne 0) {{ throw 'Windows build failed.' }}
 Compress-Archive -Path "$workspace/build/RawLab-Windows/*" -DestinationPath "$incoming/RawLab-Windows.zip"
 Write-Output 'PASS: Windows build and artifact packaging'

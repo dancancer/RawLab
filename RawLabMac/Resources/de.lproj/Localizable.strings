@@ -496,7 +496,8 @@
 "无法读取统计设置，已保持关闭。" = "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.";
 "统计服务未能启动，照片编辑不受影响。" = "Der Analysedienst konnte nicht gestartet werden. Die Fotobearbeitung ist nicht betroffen.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt. Prüfen Sie vor dem Neustart die Speicherberechtigung.";
-"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "Das lokale Validierungs-SDK wurde gestoppt. Starten Sie die App neu, bevor Sie die Analyse wieder aktivieren.";
+"统计已停止，请重启应用后再开启。" = "Die Analyse wurde gestoppt. Starten Sie die App neu, bevor Sie sie wieder aktivieren.";
+"为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Um aktive Geräte zu zählen, speichert die App eine zufällig erzeugte Installations-ID auf diesem Gerät. Sie enthält keine personenbezogenen Daten und wird gelöscht, wenn Sie die Analyse deaktivieren.";
 "拖动边角裁切，拖动画面内移动选区。" = "Ziehen Sie eine Ecke, um zuzuschneiden; ziehen Sie innerhalb der Auswahl, um sie zu verschieben.";
 "调整裁切边角" = "Zuschnittecke anpassen";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen. Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";

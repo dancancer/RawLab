@@ -10,19 +10,24 @@ var root = Path.Combine(Path.GetTempPath(), "RawLabUsageTests-" + Guid.NewGuid()
 Directory.CreateDirectory(root);
 try
 {
-    RumLocalConfigurationTests.Run();
+    RumConfigurationTests.Run();
+    await UsageLifecycleTests.Run(root);
     var unavailableTransport = new FakeTransport(false);
     var unavailablePath = Path.Combine(root, "unavailable.json");
     await using (var unavailable = new UsageAnalytics(unavailablePath, unavailableTransport))
     {
-        Check(!unavailable.ConsentGiven && !unavailable.IsActive, "default consent is disabled");
-        Check(!await unavailable.SetConsentAsync(true), "unavailable provider cannot be enabled");
+        Check(unavailable.ConsentGiven && !unavailable.CanEnable && !unavailable.IsActive && unavailable.Status.Contains("未配置"),
+            "build without the SDK reflects default consent but reports it is unavailable");
         await unavailable.RecordAsync(new AppStartedEvent());
         Check(unavailableTransport.StartCalls == 0 && unavailableTransport.Events.Count == 0,
             "unavailable provider never initializes or sends");
+        Check(await unavailable.SetConsentAsync(false) && !unavailable.ConsentGiven && File.ReadAllText(unavailablePath).Contains("false"),
+            "build without the SDK still lets the user turn analytics off");
+        Check(!await unavailable.SetConsentAsync(true), "unavailable provider cannot be enabled");
     }
 
     var path = Path.Combine(root, "usage.json");
+    File.WriteAllText(path, "{\"Enabled\":false}");
     var transport = new FakeTransport(true);
     await using (var analytics = new UsageAnalytics(path, transport))
     {
@@ -109,6 +114,7 @@ try
             "close failure blocks re-enable without retrying native close");
     }
     var blockedPath = Path.Combine(root, "blocked.json");
+    File.WriteAllText(blockedPath, "{\"Enabled\":false}");
     var blockedTransport = new FakeTransport(true);
     await using (var blocked = new UsageAnalytics(blockedPath, blockedTransport))
     {
@@ -126,7 +132,9 @@ try
             "failed opt-out persistence never rolls back consent in this process");
     }
     var inFlightTransport = new FakeTransport(true);
-    await using (var inFlight = new UsageAnalytics(Path.Combine(root, "in-flight.json"), inFlightTransport))
+    var inFlightPath = Path.Combine(root, "in-flight.json");
+    File.WriteAllText(inFlightPath, "{\"Enabled\":false}");
+    await using (var inFlight = new UsageAnalytics(inFlightPath, inFlightTransport))
     {
         await inFlight.RecordAsync(new AppStartedEvent());
         await inFlight.SetConsentAsync(true);
@@ -157,13 +165,17 @@ sealed class FakeTransport(bool available) : IUsageAnalyticsTransport
     public bool ThrowOnSend { get; set; }
     public bool ThrowOnStart { get; set; }
     public bool ThrowOnStop { get; set; }
+    public int StopsCompleted { get; private set; }
     public Task? BeforeSend { get; set; }
+    public Task? BeforeStop { get; set; }
     public List<UsageEvent> Events { get; } = [];
+    public List<string> InstallIds { get; } = [];
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(string installId, CancellationToken cancellationToken)
     {
         StartCalls++;
         if (ThrowOnStart) throw new InvalidOperationException("synthetic startup failure");
+        InstallIds.Add(installId);
         return Task.CompletedTask;
     }
 
@@ -175,10 +187,11 @@ sealed class FakeTransport(bool available) : IUsageAnalyticsTransport
         Events.Add(usageEvent);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         StopCalls++;
+        if (BeforeStop != null) await BeforeStop;
         if (ThrowOnStop) throw new InvalidOperationException("synthetic close failure");
-        return Task.CompletedTask;
+        StopsCompleted++;
     }
 }

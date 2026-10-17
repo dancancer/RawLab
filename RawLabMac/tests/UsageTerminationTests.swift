@@ -16,8 +16,8 @@ final class EditorModel {
     }
 }
 
-#if RAWLAB_RUM_LOCAL
-enum LocalRUM {
+#if RAWLAB_RUM
+enum UsageRUM {
     static var completions: [() -> Void] = []
     static func shutdown(_ completion: @escaping () -> Void) { completions.append(completion) }
 }
@@ -50,10 +50,11 @@ struct UsageTerminationTests {
         model.geometryDraftHasChanges = false
         model.geometryDraftDeparturePending = false
         model.leave?()
-#if RAWLAB_RUM_LOCAL
-        check(application.replies.isEmpty && LocalRUM.completions.count == 1, "local termination waits for SDK shutdown")
-        LocalRUM.completions[0]()
-        LocalRUM.completions[0]()
+#if RAWLAB_RUM
+        check(application.replies.isEmpty && UsageRUM.completions.count == 1, "termination waits for SDK shutdown")
+        check(RawLabMacDelegate.usageShutdownLimit <= 3, "offline SDK shutdown cannot hold exit for long")
+        UsageRUM.completions[0]()
+        UsageRUM.completions[0]()
         drain()
 #endif
         check(application.replies == [true], "confirmed draft exit replies exactly once")
@@ -74,11 +75,11 @@ struct UsageTerminationTests {
 
         model.canSave = true
         let result = delegate.applicationShouldTerminate(application)
-#if RAWLAB_RUM_LOCAL
-        check(result == .terminateLater && LocalRUM.completions.count == 2, "clean local exit waits for SDK")
-        LocalRUM.completions[1]()
+#if RAWLAB_RUM
+        check(result == .terminateLater && UsageRUM.completions.count == 2, "clean exit waits for SDK")
+        UsageRUM.completions[1]()
         drain()
-        check(application.replies == [true], "clean local exit replies after shutdown")
+        check(application.replies == [true], "clean exit replies after shutdown")
 #else
         check(result == .terminateNow && application.replies.isEmpty, "clean default exit returns directly")
 #endif

@@ -496,7 +496,8 @@
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
 "统计服务未能启动，照片编辑不受影响。" = "The analytics service could not start. Photo editing is unaffected.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.";
-"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "The local validation SDK has stopped. Restart the app before turning analytics on again.";
+"统计已停止，请重启应用后再开启。" = "Analytics has stopped. Restart the app before enabling it again.";
+"为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.";
 "拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
 "调整裁切边角" = "Adjust crop corner";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data. Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";

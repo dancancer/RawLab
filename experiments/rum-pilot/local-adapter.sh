@@ -9,9 +9,9 @@ for name in HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; d
 done
 OUT="$(mktemp -d /tmp/rawlab-rum-local.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-bash "$ROOT/experiments/rum-pilot/prepare-macos.sh" "$OUT/sdk"
+bash "$ROOT/scripts/rum/prepare-macos.sh" "$OUT/sdk"
 LIB="$OUT/sdk/AlibabaCloud_RUM_macOS_0.4.4/lib/$(uname -m)/Release"
-swiftc -swift-version 5 -D RAWLAB_RUM_LOCAL -I "$OUT/sdk/module" \
+swiftc -swift-version 5 -D RAWLAB_RUM -D RAWLAB_RUM_LOCAL -I "$OUT/sdk/module" \
     "$ROOT/Shared/UsageAnalytics.swift" "$ROOT/Shared/SerialUsageTransport.swift" \
     "$ROOT/RawLabMac/Sources/RUMPCConfiguration.swift" "$ROOT/RawLabMac/Sources/AliyunRUMTransport.swift" \
     "$ROOT/experiments/rum-pilot/LocalAdapterProbe.swift" -L "$LIB" -lalibabacloud_rum \

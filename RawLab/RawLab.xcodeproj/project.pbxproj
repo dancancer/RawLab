@@ -25,9 +25,9 @@
 		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
 		AB2100000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000006; };
 		AB3900000000000000000001 /* UsageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000002 /* UsageAnalytics.swift */; };
-		AB3900000000000000000003 /* RUMLocalConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000004 /* RUMLocalConfiguration.swift */; };
+		AB3900000000000000000003 /* RUMConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000004 /* RUMConfiguration.swift */; };
 		AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000006 /* RUMUsageTransport.swift */; };
-		AB3900000000000000000007 /* RUMLocalValidationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000008 /* RUMLocalValidationProbe.swift */; };
+		AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000008 /* RUMValidationProbe.swift */; };
 		AB3900000000000000000009 /* SerialUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB390000000000000000000A /* SerialUsageTransport.swift */; };
 		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
 		AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000012 /* ZoomablePhoto.swift */; };
@@ -124,9 +124,9 @@
 		AB2100000000000000000014 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		AB2100000000000000000015 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB3900000000000000000002 /* UsageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageAnalytics.swift; path = "../Shared/UsageAnalytics.swift"; sourceTree = SOURCE_ROOT; };
-		AB3900000000000000000004 /* RUMLocalConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMLocalConfiguration.swift; sourceTree = "<group>"; };
+		AB3900000000000000000004 /* RUMConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMConfiguration.swift; sourceTree = "<group>"; };
 		AB3900000000000000000006 /* RUMUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMUsageTransport.swift; sourceTree = "<group>"; };
-		AB3900000000000000000008 /* RUMLocalValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMLocalValidationProbe.swift; sourceTree = "<group>"; };
+		AB3900000000000000000008 /* RUMValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMValidationProbe.swift; sourceTree = "<group>"; };
 		AB390000000000000000000A /* SerialUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SerialUsageTransport.swift; path = "../Shared/SerialUsageTransport.swift"; sourceTree = SOURCE_ROOT; };
 		AB1800000000000000000011 /* PhotoZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoZoomGeometry.swift; sourceTree = "<group>"; };
 		AB1800000000000000000012 /* ZoomablePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomablePhoto.swift; sourceTree = "<group>"; };
@@ -241,9 +241,9 @@
 		AB390000000000000000000B /* Usage */ = {
 			isa = PBXGroup;
 			children = (
-				AB3900000000000000000004 /* RUMLocalConfiguration.swift */,
+				AB3900000000000000000004 /* RUMConfiguration.swift */,
 				AB3900000000000000000006 /* RUMUsageTransport.swift */,
-				AB3900000000000000000008 /* RUMLocalValidationProbe.swift */,
+				AB3900000000000000000008 /* RUMValidationProbe.swift */,
 				AB390000000000000000000A /* SerialUsageTransport.swift */,
 			);
 			path = Usage;
@@ -459,6 +459,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 86048109104C15A6E77F6FC2 /* Build configuration list for PBXNativeTarget "RawLab" */;
 			buildPhases = (
+				AB4000000000000000000001 /* Embed RUM SDK */,
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
@@ -550,6 +551,25 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AB4000000000000000000001 /* Embed RUM SDK */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Embed RUM SDK";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/../scripts/rum/embed-ios.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		AB1300000000000000000006 = {
 			isa = PBXSourcesBuildPhase;
@@ -581,9 +601,9 @@
 				AB1700000000000000000003 /* PhotoInformation.swift in Sources */,
 				AB2100000000000000000001 /* Localization.swift in Sources */,
 				AB3900000000000000000001 /* UsageAnalytics.swift in Sources */,
-				AB3900000000000000000003 /* RUMLocalConfiguration.swift in Sources */,
+				AB3900000000000000000003 /* RUMConfiguration.swift in Sources */,
 				AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */,
-				AB3900000000000000000007 /* RUMLocalValidationProbe.swift in Sources */,
+				AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */,
 				AB3900000000000000000009 /* SerialUsageTransport.swift in Sources */,
 				AB1200000000000000000001 /* EditorComponents.swift in Sources */,
 				AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */,
@@ -710,6 +730,23 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(RAWLAB_RUM_SDK_DIR)/AlibabaCloudRUM.xcframework/$(RAWLAB_RUM_SLICE)",
+					"$(RAWLAB_RUM_SDK_DIR)/AlibabaCloudRUMSDK.xcframework/$(RAWLAB_RUM_SLICE)",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					AlibabaCloudRUM,
+					"-framework",
+					AlibabaCloudRUMSDK,
+				);
+				RAWLAB_RUM_SDK_DIR = "$(PROJECT_DIR)/Vendor/AlibabaCloudRUM";
+				RAWLAB_RUM_SLICE = "ios-arm64";
+				"RAWLAB_RUM_SLICE[sdk=iphonesimulator*]" = "ios-arm64_x86_64-simulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = RAWLAB_RUM;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;

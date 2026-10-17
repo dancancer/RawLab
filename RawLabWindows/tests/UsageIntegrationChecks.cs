@@ -97,6 +97,7 @@ internal static class UsageIntegrationChecks
             release.SetResult();InteractionChecks.PumpUntil(()=>!window.IsVisible);
             check(Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null && transport.Stops==stops+1,
                 "Deferred analytics close disposes exactly once before releasing the editor engine");
+            BoundedExit(output,check);
 
             void RunBatch()
             {
@@ -122,17 +123,32 @@ internal static class UsageIntegrationChecks
         }
         void Ready()=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
     }
+    // ─── 离线时 SDK 关闭一直不返回：主窗口最多等 ShutdownLimit 就退出，且只关闭一次 ───
+    private static void BoundedExit(string output,Action<bool,string> check)
+    {
+        var hung=new Transport{StopHold=new TaskCompletionSource().Task};
+        var analytics=new UsageAnalytics(Path.Combine(output,"offline-usage.json"),hung);
+        var window=new MainWindow(analytics);TestWindowState.Isolate(window,output);
+        typeof(MainWindow).GetField("usageAnalytics",Private)!.SetValue(window,analytics);
+        window.Show();InteractionChecks.PumpUntil(()=>analytics.IsActive);
+        check(hung.InstallIds.Count==1 && Guid.TryParse(hung.InstallIds[0],out _),"Default-on analytics starts with a private random install ID");
+        var clock=System.Diagnostics.Stopwatch.StartNew();
+        window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
+        check(clock.Elapsed<UsageAnalytics.ShutdownLimit+TimeSpan.FromSeconds(5) && hung.Stops==1 && Get<object?>(window,"engine")==null,
+            "Main window exits after the bounded wait when the SDK close hangs offline");
+    }
     private static T Get<T>(object target,string field)=>(T)target.GetType().GetField(field,Private)!.GetValue(target)!;
     private static object? Invoke(object target,string method,params object?[] args)=>target.GetType().GetMethod(method,Private)!.Invoke(target,args);
     private sealed class Transport:IUsageAnalyticsTransport
     {
         internal int Starts,Stops;
-        internal Task? Hold;
+        internal Task? Hold,StopHold;
         internal List<UsageEvent> Events=[];
+        internal List<string> InstallIds=[];
         public bool IsAvailable=>true;
-        public Task StartAsync(CancellationToken cancellationToken){Starts++;return Task.CompletedTask;}
+        public Task StartAsync(string installId,CancellationToken cancellationToken){Starts++;InstallIds.Add(installId);return Task.CompletedTask;}
         public async Task SendAsync(UsageEvent usageEvent,CancellationToken cancellationToken)
         { if(Hold is {} hold)await hold;Events.Add(usageEvent); }
-        public Task StopAsync(CancellationToken cancellationToken){Stops++;return Task.CompletedTask;}
+        public Task StopAsync(CancellationToken cancellationToken){Stops++;return StopHold ?? Task.CompletedTask;}
     }
 }

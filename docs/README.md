@@ -41,7 +41,7 @@ retain their original candidate scope.
 - [All-platform ordinary-image input and current acceptance](verification-raster-input-all-platforms-2026-10-16.md)
 - [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
 - [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
-- [Optional local RUM and default SDK-free verification](verification-rum-analytics-2026-10-16.md)
+- [RUM local SDK verification (2026-10-16, before release builds carried the SDK)](verification-rum-analytics-2026-10-16.md)
 
 ## v0.7.0 Release Records
 

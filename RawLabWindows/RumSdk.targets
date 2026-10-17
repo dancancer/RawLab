@@ -1,0 +1,59 @@
+<Project>
+  <!--
+    ┌─ 阿里云 RUM PC SDK 0.4.4（使用统计）──────────────────────────────────────┐
+    │ Release 默认带 SDK，上报正式配置 env=PROD；Debug 默认不带。                  │
+    │   -p:RawLabRumSdk=false    正式包显式不带 SDK（离线打包）                    │
+    │   -p:RawLabRumSdkZip=...   供应商 zip，默认取本检出的 .cache/shared 缓存     │
+    │   -p:RawLabRumSdkRoot=...  已解包的 SDK 目录，跳过 zip                       │
+    │   -p:RawLabRumLocal=true   本地验证：环境变量配置、env=LOCAL、独立同意文件， │
+    │                            不能用于 Release                                  │
+    │ zip 与 x64 Release DLL 都按 SHA-256 固定，不符即失败；SDK 二进制不进 git。   │
+    │ 应用与 experiments/rum-local/windows 的验证探针共用这一份规则。              │
+    └──────────────────────────────────────────────────────────────────────────┘
+  -->
+  <PropertyGroup>
+    <RawLabRumSdkVersion>0.4.4</RawLabRumSdkVersion>
+    <RawLabRumSdkZipSha256>bfa05c0718a57eb7e94c9494499bd3c84305a3cc39b76d6a9096667553928994</RawLabRumSdkZipSha256>
+    <RawLabRumDllSha256>33cec949309f8025be35ff19d7ae7f7bfc0f59a9ff0bef3e05c40460f0bf6e8d</RawLabRumDllSha256>
+    <RawLabRumSdk Condition="'$(RawLabRumSdk)' == '' and ('$(Configuration)' == 'Release' or '$(RawLabRumLocal)' == 'true')">true</RawLabRumSdk>
+    <RawLabRumSdkZip Condition="'$(RawLabRumSdkZip)' == ''">$(MSBuildThisFileDirectory)../.cache/shared/aliyun-rum/windows/$(RawLabRumSdkVersion)/sdk.zip</RawLabRumSdkZip>
+    <DefineConstants Condition="'$(RawLabRumSdk)' == 'true'">$(DefineConstants);RAWLAB_RUM_SDK</DefineConstants>
+    <DefineConstants Condition="'$(RawLabRumLocal)' == 'true'">$(DefineConstants);RAWLAB_RUM_LOCAL</DefineConstants>
+  </PropertyGroup>
+  <Target Name="ValidateRawLabRumLocalBuild" BeforeTargets="PrepareForBuild" Condition="'$(RawLabRumLocal)' == 'true'">
+    <Error Condition="'$(Configuration)' == 'Release'"
+           Text="RawLabRumLocal=true is a local validation build (env=LOCAL); it cannot be a Release build." />
+    <Error Condition="'$(RawLabRumSdk)' != 'true'"
+           Text="RawLabRumLocal=true needs the RUM SDK; do not combine it with RawLabRumSdk=false." />
+  </Target>
+  <!-- zip 先校验再解到 obj；无论来源，最终只认固定哈希的 DLL，并随 build 与 publish 输出 -->
+  <Target Name="PrepareRawLabRumSdk" BeforeTargets="AssignTargetPaths" Condition="'$(RawLabRumSdk)' == 'true'">
+    <Error Condition="'$(RawLabRumSdkRoot)' == '' and !Exists('$(RawLabRumSdkZip)')"
+           Text="Release builds include the Aliyun RUM PC SDK $(RawLabRumSdkVersion). Missing $(RawLabRumSdkZip); pass -p:RawLabRumSdkZip=&lt;AlibabaCloud_RUM_Windows_$(RawLabRumSdkVersion).zip&gt;, or -p:RawLabRumSdk=false for an offline package without analytics." />
+    <GetFileHash Condition="'$(RawLabRumSdkRoot)' == ''" Files="$(RawLabRumSdkZip)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="RawLabRumSdkZipActualSha256" />
+    </GetFileHash>
+    <Error Condition="'$(RawLabRumSdkRoot)' == '' and '$(RawLabRumSdkZipActualSha256)' != '$(RawLabRumSdkZipSha256)'"
+           Text="Unexpected Aliyun RUM SDK archive SHA-256 $(RawLabRumSdkZipActualSha256): $(RawLabRumSdkZip)" />
+    <Unzip Condition="'$(RawLabRumSdkRoot)' == ''" SourceFiles="$(RawLabRumSdkZip)"
+           DestinationFolder="$(BaseIntermediateOutputPath)rum-sdk/$(RawLabRumSdkVersion)" SkipUnchangedFiles="true" />
+    <PropertyGroup>
+      <RawLabRumSdkRoot Condition="'$(RawLabRumSdkRoot)' == ''">$(BaseIntermediateOutputPath)rum-sdk/$(RawLabRumSdkVersion)/AlibabaCloud_RUM_Windows_$(RawLabRumSdkVersion)</RawLabRumSdkRoot>
+      <RawLabRumDll>$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll</RawLabRumDll>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(RawLabRumDll)')" Text="The Aliyun RUM $(RawLabRumSdkVersion) x64 Release DLL is missing: $(RawLabRumDll)" />
+    <GetFileHash Files="$(RawLabRumDll)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="RawLabRumDllActualSha256" />
+    </GetFileHash>
+    <Error Condition="'$(RawLabRumDllActualSha256)' != '$(RawLabRumDllSha256)'"
+           Text="Unexpected Aliyun RUM DLL SHA-256 $(RawLabRumDllActualSha256): $(RawLabRumDll)" />
+    <ItemGroup>
+      <Content Include="$(RawLabRumDll)" Link="alibabacloud_rum.dll"
+               CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+  <!-- 不带 SDK 的构建清掉上次留下的 DLL，免得包里有 SDK 而程序没接 -->
+  <Target Name="RemoveRawLabRumBinary" BeforeTargets="PrepareForBuild" Condition="'$(RawLabRumSdk)' != 'true'">
+    <Delete Files="$(TargetDir)alibabacloud_rum.dll;$(PublishDir)alibabacloud_rum.dll" />
+  </Target>
+</Project>

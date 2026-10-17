@@ -29,8 +29,10 @@ protection settings or grant permission to bypass them.
 
 - Default builds retain Adobe DNG SDK, Lensfun, chroma and wavelet denoise. No
   optional product feature is disabled to obtain a green check.
-- RUM vendor SDKs remain opt-in private-local dependencies. These jobs use the
-  default SDK-free path, no secrets and no real RUM traffic.
+- Release-style builds (macOS `build.sh`, Windows `build.ps1`) download the
+  pinned vendor RUM SDK from its versioned public URL and fail on a SHA-256
+  mismatch; the Android and iOS jobs build Debug, which carries no SDK. No job
+  launches a packaged app, uses secrets or sends RUM traffic.
 - macOS explicitly excludes `native_dcp_metal`, `gpu_photo` and `metal_denoise`
   from the hosted CTest invocation. Other tests may exercise an available GPU
   opportunistically; this is not a guaranteed physical GPU gate.

@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../TestWindowState.cs" Link="TestWindowState.cs" />
-    <ProjectReference Include="../../RawLabWindows.csproj" />
+    <!-- 测试永远不带统计 SDK：只用不可用或假的 transport，不可能发出正式数据 -->
+    <ProjectReference Include="../../RawLabWindows.csproj" AdditionalProperties="RawLabRumSdk=false" />
   </ItemGroup>
 </Project>

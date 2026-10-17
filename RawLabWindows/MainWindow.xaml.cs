@@ -1054,7 +1054,8 @@ public partial class MainWindow : Window
         if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting) return;
         analyticsDisposed = true;
         IsEnabled = false;
-        await usageAnalytics.DisposeAsync();
+        // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出
+        await usageAnalytics.CloseAsync(UsageAnalytics.ShutdownLimit);
         closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();
     }
 }

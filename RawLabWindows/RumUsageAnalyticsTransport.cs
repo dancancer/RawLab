@@ -1,53 +1,61 @@
-#if RAWLAB_RUM_LOCAL
+#if RAWLAB_RUM_SDK
 using System.IO;
 using System.Runtime.InteropServices;
 
 namespace RawLab.Windows;
 
-public sealed class RumLocalUsageAnalyticsTransport : IUsageAnalyticsTransport
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │ 阿里云 RUM PC SDK 0.4.4 适配：只开自定义事件，关闭崩溃/网络/CEF 自动采集。 │
+// │ 设备标识由 UsageAnalytics 传入（本机随机安装标识），不读取任何硬件编号。   │
+// │ 原生 options 只在 alibabacloud_rum_close() 确认成功后才释放；关闭失败或   │
+// │ 退出时放弃等待，都不会提前释放 SDK 仍可能在用的指针。                     │
+// └──────────────────────────────────────────────────────────────────────┘
+public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
 {
     private const string LibraryName = "alibabacloud_rum.dll";
-    // Values from alibabacloud_rum.h; the local build does not compile the C header.
-    private const int RumEnvLocal = 5;
+    private const string AppName = "RawLab";
+    // 取值来自 alibabacloud_rum.h；构建不编译 C 头文件
     private const int RumLevelFatal = 1;
     private static readonly object NativeGate = new();
-    private static RumLocalUsageAnalyticsTransport? active;
+    private static RumUsageAnalyticsTransport? active;
 
-    private readonly RumLocalConfiguration configuration;
-    private readonly string utdid = Guid.NewGuid().ToString();
+    private readonly RumConfiguration configuration;
     private bool started;
     private volatile bool lifecycleFailed;
     private Exception? lifecycleFailure;
     private IntPtr options;
     private string? cachePath;
 
-    public RumLocalUsageAnalyticsTransport(RumLocalConfiguration configuration)
+    public RumUsageAnalyticsTransport(RumConfiguration configuration)
     {
         this.configuration = configuration;
     }
 
     public bool IsAvailable => !lifecycleFailed;
 
-    public static bool TryCreate(out RumLocalUsageAnalyticsTransport? transport)
+    // ─── 正式构建用写死的正式配置，本地验证构建用环境变量配置；SDK 不在程序旁边就当作不可用 ───
+    public static IUsageAnalyticsTransport CreateDefault()
     {
-        if (RumLocalConfiguration.TryLoad(out var configuration) && configuration != null)
-        {
-            transport = new RumLocalUsageAnalyticsTransport(configuration);
-            return true;
-        }
-
-        transport = null;
-        return false;
+        var environment = RumConfiguration.ProcessEnvironment();
+        var version = typeof(RumUsageAnalyticsTransport).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+#if RAWLAB_RUM_LOCAL
+        var configured = RumConfiguration.TryLocal(environment, version, out var configuration);
+#else
+        var configured = RumConfiguration.TryProduction(environment, version, out var configuration);
+#endif
+        return configured && configuration != null && File.Exists(Path.Combine(AppContext.BaseDirectory, LibraryName))
+            ? new RumUsageAnalyticsTransport(configuration)
+            : new UnavailableUsageAnalyticsTransport();
     }
 
-    public Task StartAsync(CancellationToken cancellationToken) => Task.Run(StartCore);
+    public Task StartAsync(string installId, CancellationToken cancellationToken) => Task.Run(() => StartCore(installId));
 
     public Task SendAsync(UsageEvent usageEvent, CancellationToken cancellationToken) =>
         Task.Run(() => SendCore(usageEvent));
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.Run(StopCore);
 
-    private void StartCore()
+    private void StartCore(string installId)
     {
         lock (NativeGate)
         {
@@ -78,10 +86,10 @@ public sealed class RumLocalUsageAnalyticsTransport : IUsageAnalyticsTransport
             {
                 Native.alibabacloud_rum_options_set_config_address(options, configuration.ConfigAddress);
                 Native.alibabacloud_rum_options_set_app_id(options, configuration.AppId);
-                Native.alibabacloud_rum_options_set_app_name(options, "RawLab Local Validation");
-                Native.alibabacloud_rum_options_set_app_version(options, "0.0.0-local");
-                Native.alibabacloud_rum_options_set_env(options, RumEnvLocal);
-                Native.alibabacloud_rum_options_set_utdid(options, utdid);
+                Native.alibabacloud_rum_options_set_app_name(options, AppName);
+                Native.alibabacloud_rum_options_set_app_version(options, configuration.AppVersion);
+                Native.alibabacloud_rum_options_set_env(options, (int)configuration.Env);
+                Native.alibabacloud_rum_options_set_utdid(options, installId);
                 Native.alibabacloud_rum_options_set_debug_level(options, RumLevelFatal);
                 Native.alibabacloud_rum_options_set_cache_path(options, cache);
                 Native.alibabacloud_rum_options_set_auto_crash_tracking(options, 0);

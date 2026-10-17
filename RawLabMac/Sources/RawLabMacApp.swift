@@ -50,8 +50,8 @@ struct RawLabMacApp: App {
                 exit(0)
             } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
         }
-        #if RAWLAB_RUM_LOCAL
-        LocalRUM.configure()
+        #if RAWLAB_RUM
+        UsageRUM.configure()
         #endif
         NSApplication.shared.setActivationPolicy(.regular)
     }

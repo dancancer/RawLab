@@ -40,6 +40,13 @@ libtiff 4.7.1 源码。
 默认包需要 .NET 8 Desktop Runtime，`-SelfContained` 包含运行时。
 支持 `-DotNet <dotnet.exe>` / `-CMake <cmake.exe>` 指定工具。
 脚本也会使用仓库 `build/tools/dotnet` 下的本地 SDK（若存在）。
+
+Release 包默认带阿里云 RUM PC SDK 0.4.4（`alibabacloud_rum.dll`），使用统计默认开启、以
+`env=PROD` 上报。SDK 取主工作区 `.cache/shared/aliyun-rum/windows/0.4.4/sdk.zip`，缺失时从供应商
+带版本号的地址下载；压缩包和 DLL 的 SHA-256 都固定，不符即停止。`-RumSdkZip <zip>` 指定自备的
+压缩包，`-NoRumSdk` 出不带 SDK 的离线包。打包后可用
+`experiments/rum-local/windows/verify-licenses.ps1 -Package build/RawLab-Windows` 核对 SDK 与许可文件。
+Debug 构建不带 SDK。
 未签名，不自动安装、不修改系统文件关联。第三方许可证与说明随程序复制。
 
 ### 从 Mac 远程编译
