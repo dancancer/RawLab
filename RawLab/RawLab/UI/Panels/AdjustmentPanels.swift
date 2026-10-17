@@ -137,23 +137,23 @@ extension ContentView {
                 .disabled(isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
                           (viewModel.sourceKind == .raw && settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil))
 
-            if viewModel.sourceKind == .raw, let whiteBalance = viewModel.rawWhiteBalance {
-                Text(settings.whiteBalanceMode == .camera
-                     ? AdjustmentKind.asShotCaption(temperature: whiteBalance.temperature, tint: whiteBalance.tint)
-                     : L10n.text("自定义白平衡"))
+            if let note = whiteBalanceNote {
+                Text(note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(rulerFocusOpacity)
-            } else if viewModel.sourceKind == .raw {
-                Text(L10n.text("缺少有效相机校准，保留拍摄时白平衡"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+    }
+
+    // 底部说明：RAW 缺少相机校准时提示；有校准时给出拍摄时数值作参照
+    private var whiteBalanceNote: String? {
+        guard viewModel.sourceKind == .raw else { return nil }
+        guard let camera = viewModel.rawWhiteBalance else { return L10n.text("缺少有效相机校准，保留拍摄时白平衡") }
+        return AdjustmentKind.asShotNote(for: settings, cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
     private var whiteBalanceTemperatureBinding: Binding<Double> {

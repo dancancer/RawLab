@@ -29,6 +29,19 @@ struct EditorPresentationTests {
         let caption = AdjustmentKind.asShotCaption(temperature: 4928, tint: 13)
         check(caption.contains(AdjustmentKind.temperature.formatted(4928)) && caption.contains("+13"),
               "as-shot caption \(caption) uses the temperature value format \(AdjustmentKind.temperature.formatted(4928))")
+        // 拍摄时说明只在面板数值不是拍摄时数值时出现，也不重复分段控件已选中的"自定义"
+        var asShot = RawSettings.default
+        asShot.whiteBalanceMode = .camera
+        check(AdjustmentKind.asShotNote(for: asShot, cameraTemperature: 4928, cameraTint: 13) == nil,
+              "camera white balance does not repeat the as-shot values the controls already show")
+        var custom = asShot
+        custom.whiteBalanceMode = .custom
+        check(AdjustmentKind.asShotNote(for: custom, cameraTemperature: 4928, cameraTint: 13) == caption,
+              "custom white balance keeps the as-shot values as a reference")
+        var recipe = asShot
+        recipe.masterRecipeID = MasterRecipe.allRecipes[0].id
+        check(AdjustmentKind.asShotNote(for: recipe, cameraTemperature: 4928, cameraTint: 13) == caption,
+              "a recipe tint offset keeps the as-shot tint as a reference")
         UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"])
         check(AdjustmentKind.hsl.badge(for: 10) == nil && AdjustmentKind.temperature.badge(for: 5000) == nil,
               "multi-parameter tools keep their glyph instead of a badge")

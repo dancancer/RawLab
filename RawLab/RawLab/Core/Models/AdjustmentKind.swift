@@ -306,6 +306,12 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         L10n.format("拍摄时：%.0f K · 色调 %+.0f", temperature, tint)
     }
 
+    // 白平衡面板底部的拍摄时参照：色温、色调已经显示拍摄时数值时（拍摄时模式且无配方偏移）不再重复
+    static func asShotNote(for settings: RawSettings, cameraTemperature: Double, cameraTint: Double) -> String? {
+        let showsAsShot = settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil
+        return showsAsShot ? nil : asShotCaption(temperature: cameraTemperature, tint: cameraTint)
+    }
+
     static func resetWhiteBalance(in settings: inout RawSettings,
                                   cameraTemperature: Double?, cameraTint: Double?) {
         settings.temperature = cameraTemperature ?? RawSettings.default.temperature
