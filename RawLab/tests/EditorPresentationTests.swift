@@ -20,6 +20,10 @@ struct EditorPresentationTests {
                 }
             }
         }
+        // 零不带正负号：高光的默认值算出来是 -0.0，参数行"默认"和数值都不能显示"-0"
+        let signedDefaults = AdjustmentKind.allCases.filter { $0.formatted($0.value(from: .default)).hasPrefix("-") }
+        check(signedDefaults.isEmpty, "every default value is shown without a sign: \(signedDefaults)")
+        check(AdjustmentKind.highlights.formatted(-0.0) == "0", "negative zero is shown as 0")
         // 拍摄时说明与上方色温数值同一数字格式（德语千位用点）
         UserDefaults.standard.register(defaults: [L10n.preferenceKey: "de"])
         let caption = AdjustmentKind.asShotCaption(temperature: 4928, tint: 13)

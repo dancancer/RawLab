@@ -224,7 +224,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     }
 
     func formatted(_ value: Double) -> String {
-        let number = self == .strength ? value * 100 : value
+        let scaled = self == .strength ? value * 100 : value
+        let number = scaled == 0 ? 0 : scaled   // -0.0（如高光默认值）按 0 显示
         let signed = number != 0 && self != .strength && self != .temperature
         let format = (signed ? "%+" : "%") + (self == .exposure ? ".2f" : ".0f")
         return String(format: format, locale: L10n.locale, number)
