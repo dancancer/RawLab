@@ -202,7 +202,7 @@ public partial class MainWindow : Window
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
         foreach(var (tool,title,icon) in new[] {
-            (PhotoEffectTool.Vignette,Loc.Text("暗角"),"Clipping"), (PhotoEffectTool.Grain,Loc.Text("颗粒"),"Film")
+            (PhotoEffectTool.Vignette,Loc.Text("暗角"),"Vignette"), (PhotoEffectTool.Grain,Loc.Text("颗粒"),"Grain")
         })
         {
             var ring=new AdjustmentRing{Width=40,Height=40};

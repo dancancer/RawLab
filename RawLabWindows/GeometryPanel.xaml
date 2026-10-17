@@ -12,7 +12,7 @@
   </WrapPanel>
   <WrapPanel Margin="0,0,0,6">
    <ComboBox x:Name="AspectBox" MinWidth="140" SelectionChanged="AspectChanged" AutomationProperties.Name="{DynamicResource '比例'}"/>
-   <Button Click="SwapClicked" ToolTip="{DynamicResource '交换宽高'}" AutomationProperties.Name="{DynamicResource '交换宽高'}"><local:EditorIcon Kind="RotateRight" Width="18" Height="18"/></Button>
+   <Button Click="SwapClicked" ToolTip="{DynamicResource '交换宽高'}" AutomationProperties.Name="{DynamicResource '交换宽高'}"><local:EditorIcon Kind="Swap" Width="18" Height="18"/></Button>
    <CheckBox x:Name="GridBox" Content="{DynamicResource '网格'}" IsChecked="True" Checked="GridChanged" Unchecked="GridChanged" Margin="8,4" VerticalAlignment="Center"/>
   </WrapPanel>
   <local:StraightenRuler x:Name="Ruler" Height="32" Margin="130,0,132,0" AutomationProperties.Name="{DynamicResource '拉直'}"/>

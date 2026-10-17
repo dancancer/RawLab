@@ -1,0 +1,108 @@
+using System.IO;
+using System.Reflection;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Threading;
+using RawLab.Windows;
+
+// ┌─ 发布前界面细节回归：主窗口与对话框 ──────────────────────────────────────────────┐
+// │ 不需要 RAW、native DLL 或网络；窗口用 TestWindowState 的私有配置。               │
+// │ 每类细节问题一个检查方法；调整面板、对话框与图标形状的检查在 UiPanelChecks。     │
+// └──────────────────────────────────────────────────────────────────────────────────┘
+internal static class UiDetailChecks
+{
+    private const BindingFlags PrivateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
+    internal static readonly Regex Cjk=new("[㐀-鿿]");
+
+    internal static void Run(string output,Action<bool,string> strict)
+    {
+        // 逐项记录失败、跑完全部语言再汇总，一次看清所有细节问题
+        var failures=new List<string>();
+        void check(bool success,string name){try{strict(success,name);}catch(Exception){failures.Add(name);}}
+        try { RunAll(output,check); }
+        finally { foreach(var failure in failures)Console.WriteLine("FAILED "+failure); }
+        if(failures.Count>0)throw new Exception($"{failures.Count} UI detail checks failed");
+    }
+
+    private static void RunAll(string output,Action<bool,string> check)
+    {
+        TestWindowState.PreserveExistingBatch(BatchJournal.DefaultDirectory);
+        Directory.CreateDirectory(output);
+        var previous=Loc.Preference;
+        Loc.Initialize("zh-Hans");
+        var app=TestWindowState.CreateApplication();
+        // 打开照片的异步续体回到界面线程，与产品里的 Dispatcher 同步上下文一致
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        try
+        {
+            foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
+            {
+                Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
+                var window=new MainWindow();TestWindowState.Isolate(window,output);window.Show();window.UpdateLayout();
+                try
+                {
+                    Icons(window,language,check);
+                }
+                finally { window.Close(); }
+                UiPanelChecks.Run(output,language,check);
+            }
+        }
+        finally { Loc.Initialize(previous);app.Shutdown(); }
+    }
+
+    // 工具栏、工具条与“自动”按钮：每个功能一个图标，不能两个按钮长得一样
+    private static void Icons(MainWindow window,string language,Action<bool,string> check)
+    {
+        var buttons=Descendants(Toolbar(window)).OfType<Button>().Concat(window.Tools.Children.OfType<Button>()).Append(window.AutoExposureButton)
+            .Select(button=>(Name:AutomationProperties.GetName(button),Icon:Descendants(button).OfType<EditorIcon>().FirstOrDefault()))
+            .Where(item=>item.Icon!=null).ToList();
+        var repeated=buttons.GroupBy(item=>item.Icon!.Kind).Where(group=>group.Count()>1)
+            .Select(group=>"\n  "+group.Key+": "+string.Join(" / ",group.Select(item=>item.Name))).ToList();
+        check(buttons.Count>=25 && repeated.Count==0,$"Toolbar and adjustment tools use distinct icons ({language}){string.Concat(repeated)}");
+    }
+
+    private static AboutWindow About(MainWindow window,string output)
+    {
+        var root=Path.Combine(output,"about-"+Guid.NewGuid().ToString("N")[..8]);Directory.CreateDirectory(root);
+        var updates=new UpdateChecker("0.8.0",Path.Combine(root,"updates.json")){Automatic=false};
+        var usage=new UsageAnalytics(Path.Combine(root,"usage.json"),new UnavailableUsageAnalyticsTransport());
+        var about=new AboutWindow(updates,usage){Owner=window};about.Show();about.UpdateLayout();
+        return about;
+    }
+    private static void Refresh(MainWindow window)=>typeof(MainWindow).GetMethod("RefreshControls",PrivateInstance)!.Invoke(window,null);
+    internal static FrameworkElement Toolbar(MainWindow window)=>(FrameworkElement)((FrameworkElement)window.OpenPhoto.Parent).Parent;
+    internal static void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    private static string Caption(Button button)=>string.Concat(Descendants(button).OfType<TextBlock>().Select(text=>text.Text));
+    private static string Shown(ComboBox box)=>string.Concat(Visuals(box).OfType<TextBlock>().Select(text=>text.Text));
+    private static void Pump(Func<bool> done,TimeSpan timeout)
+    {
+        var deadline=DateTime.UtcNow+timeout;
+        while(!done() && DateTime.UtcNow<deadline)
+        {
+            var frame=new DispatcherFrame();
+            var timer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(30)};
+            timer.Tick+=(_,_)=>{timer.Stop();frame.Continue=false;};timer.Start();Dispatcher.PushFrame(frame);
+        }
+    }
+    internal static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            yield return child;
+            foreach(var descendant in Descendants(child))yield return descendant;
+        }
+    }
+    private static IEnumerable<DependencyObject> Visuals(DependencyObject root)
+    {
+        for(var i=0;i<System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);i++)
+        {
+            var child=System.Windows.Media.VisualTreeHelper.GetChild(root,i);
+            yield return child;
+            foreach(var descendant in Visuals(child))yield return descendant;
+        }
+    }
+}

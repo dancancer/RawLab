@@ -37,8 +37,8 @@
     <Border Grid.Row="1" MinHeight="48" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,0,1">
       <DockPanel Margin="8,2">
         <TextBlock Text="RAWLAB" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource Foreground}" VerticalAlignment="Center" Margin="6,0,22,0"/>
-        <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '关于 RawLab / 检查更新'}" AutomationProperties.Name="{DynamicResource '关于 RawLab'}"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
-        <Button Click="SettingsClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '设置'}" AutomationProperties.Name="{DynamicResource '设置'}"><local:EditorIcon Kind="Adjust" Width="22" Height="22"/></Button>
+        <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '关于 RawLab / 检查更新'}" AutomationProperties.Name="{DynamicResource '关于 RawLab'}"><local:EditorIcon Kind="Help" Width="22" Height="22"/></Button>
+        <Button Click="SettingsClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '设置'}" AutomationProperties.Name="{DynamicResource '设置'}"><local:EditorIcon Kind="Settings" Width="22" Height="22"/></Button>
         <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '查看更新'}"/>
         <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="{DynamicResource '导出照片'}" AutomationProperties.Name="{DynamicResource '导出'}">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
@@ -153,7 +153,7 @@
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="MasterRecipeCategoryRing"/><local:EditorIcon Kind="Photo" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '大师配方'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
               <Button x:Name="DenoiseCategory" Click="DenoiseCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '降噪'}" AutomationProperties.Name="{DynamicResource '降噪'}">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="DenoiseCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '降噪'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="DenoiseCategoryRing"/><local:EditorIcon Kind="Denoise" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '降噪'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
               <Button x:Name="LensCategory" Click="LensCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '镜头匹配'}" AutomationProperties.Name="{DynamicResource '镜头'}">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="LensCategoryRing"/><local:EditorIcon Kind="Lens" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '镜头'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
@@ -162,7 +162,7 @@
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '几何'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Adjust" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Hsl" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
               <Button x:Name="WhiteBalanceCategory" Click="WhiteBalanceCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '白平衡'}" AutomationProperties.Name="{DynamicResource '白平衡'}" AutomationProperties.AutomationId="WhiteBalance">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="WhiteBalanceCategoryRing"/><local:EditorIcon Kind="Temperature" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '白平衡'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
@@ -171,7 +171,7 @@
             <ScrollViewer x:Name="ParameterPanel" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center" Margin="0,5">
               <local:ParameterRow x:Name="OrdinaryParameter"/>
               <WrapPanel HorizontalAlignment="Center">
-              <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Adjust" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
+              <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Auto" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
               </WrapPanel>
             </StackPanel></ScrollViewer>
