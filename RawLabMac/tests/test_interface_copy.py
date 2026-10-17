@@ -161,6 +161,17 @@ class InterfaceCopy(unittest.TestCase):
         for language in ("en", "de", "fr", "es", "ja"):
             self.assertEqual(glossary_violations(language, catalog(language)), [], language)
 
+    # ------------------------------------------------------------------------
+    #  工具栏开关要看得出开没开：macOS 26 的工具栏忽略 .tint，对比、照片信息、
+    #  调整栏三个开关打开后外观毫无变化；改为开启时把图标染成黄色
+    # ------------------------------------------------------------------------
+    def test_toolbar_toggles_show_their_state(self):
+        editor = (ROOT / "Sources/EditorView.swift").read_text()
+        toolbar = editor[editor.index("private var editorToolbar"):editor.index("private func reset(")]
+        self.assertNotIn(".tint(", toolbar)
+        for state in ("compare", "infoMode != .hidden", "!adjustmentPanel.collapsed"):
+            self.assertIn(f".activeTint({state})", toolbar)
+
 
 if __name__ == "__main__":
     unittest.main()

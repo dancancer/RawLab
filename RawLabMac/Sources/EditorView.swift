@@ -256,15 +256,13 @@ struct EditorView: View {
                 .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
         }
         ToolbarItemGroup {
-            Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
-                .tint(compare ? .yellow : nil)
+            Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(compare) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || !model.canComparePreview)
             Button {
                 if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
                 infoMode = infoMode.next
-            } label: { Image(systemName: "info.circle") }
-                .tint(infoMode == .hidden ? nil : .yellow)
+            } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
                 .help(L10n.text("照片信息")).accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
                 .keyboardShortcut("i", modifiers: []).disabled(model.file == nil)
             Menu {
@@ -281,8 +279,7 @@ struct EditorView: View {
             Button {
                 if adjustmentPanel.collapsed { adjustmentPanel.collapsed = false }
                 else { collapsePanel() }
-            } label: { Image(systemName: "slider.horizontal.3") }
-                .tint(adjustmentPanel.collapsed ? nil : .yellow)
+            } label: { Image(systemName: "slider.horizontal.3").activeTint(!adjustmentPanel.collapsed) }
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
@@ -367,6 +364,15 @@ struct EditorView: View {
                 if model.fullResolution != previous.fullResolution { model.fullResolution = previous.fullResolution }
             } else { fit() }
         }
+    }
+}
+
+// ----------------------------------------------------------------------------
+//  工具栏开关的开启状态：macOS 26 的工具栏不理会 .tint，开启时直接把图标染成黄色
+// ----------------------------------------------------------------------------
+private extension View {
+    @ViewBuilder func activeTint(_ active: Bool) -> some View {
+        if active { foregroundStyle(Color.yellow) } else { self }
     }
 }
 
