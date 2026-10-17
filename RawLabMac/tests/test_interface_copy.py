@@ -77,6 +77,18 @@ class InterfaceCopy(unittest.TestCase):
             self.assertNotRegex(block, r"\.frame\((max)?[wW]idth:", name)
         self.assertNotIn("maxWidth:", look)
 
+    # ------------------------------------------------------------------------
+    #  开关状态统一用"开启/停用"的译法：键"关闭"是关窗口的动词，英文是 "Close"；
+    #  "已开启/已关闭"曾被译成 "Already turned on/Closed"、"閉店"
+    # ------------------------------------------------------------------------
+    def test_on_off_states_use_state_words(self):
+        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        self.assertEqual(view.count('L10n.text("开启") : L10n.text("关闭")'), 0)
+        for language in ("en", "de", "fr", "es", "ja"):
+            strings = catalog(language)
+            self.assertEqual(strings["已开启"], strings["开启"], language)
+            self.assertEqual(strings["已关闭"], strings["停用"], language)
+
 
 if __name__ == "__main__":
     unittest.main()

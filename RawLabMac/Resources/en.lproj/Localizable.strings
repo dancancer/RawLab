@@ -95,13 +95,13 @@
 "尚未选择 RAW" = "No RAW Photos Selected";
 "展开直方图" = "Expand histogram";
 "展开调整栏" = "Expand Adjustments";
-"已关闭" = "Closed";
+"已关闭" = "Off";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "%@ appearances imported, %@ files failed to import: \n";
 "已导出" = "Exported";
 "已导出：%@" = "Exported: %@";
 "已将当前设置应用到 %@ 张照片" = "Current settings applied to %@ photo";
 "已展开" = "Expanded";
-"已开启" = "Already turned on";
+"已开启" = "On";
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已收起" = "Collapsed";
 "已选 %@ 张" = "%@ selected";

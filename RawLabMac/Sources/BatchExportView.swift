@@ -124,16 +124,16 @@ struct BatchExportView: View {
                                  ? L10n.text("按每张照片") : spec.text(model.job.settings[keyPath: spec.keyPath]) + spec.unit)
                     }
                     if let denoise = model.job.settings.waveletNoiseReduction {
-                        valueRow(L10n.text("小波降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("关闭"))
+                        valueRow(L10n.text("小波降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))
                         valueRow(L10n.text("亮度降噪"), String(format: "%.0f", denoise.luma))
                         valueRow(L10n.text("色彩降噪"), String(format: "%.0f", denoise.chroma))
                         valueRow(L10n.text("粗颗粒降噪"), String(format: "%.0f", denoise.coarse))
                     }
                     let lens = model.job.settings.lensSettings
                     valueRow(L10n.text("镜头匹配"), lens.mode == .automatic ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))" : L10n.text("手动"))
-                    valueRow(L10n.text("畸变矫正"), lens.distortion ? L10n.text("开启") : L10n.text("关闭"))
-                    valueRow(L10n.text("横向色差"), lens.tca ? L10n.text("开启") : L10n.text("关闭"))
-                    valueRow(L10n.text("自动裁边"), lens.autoCrop ? L10n.text("开启") : L10n.text("关闭"))
+                    valueRow(L10n.text("畸变矫正"), lens.distortion ? L10n.text("开启") : L10n.text("停用"))
+                    valueRow(L10n.text("横向色差"), lens.tca ? L10n.text("开启") : L10n.text("停用"))
+                    valueRow(L10n.text("自动裁边"), lens.autoCrop ? L10n.text("开启") : L10n.text("停用"))
                 }.padding(.top, 12)
             }
             Divider().padding(.vertical, 4)
