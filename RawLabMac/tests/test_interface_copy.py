@@ -34,7 +34,11 @@ def literals(path):
 #  {中文词: {语言: (必须出现的写法, 不许出现的写法)}}，作用于键里含该中文词的所有条目
 # ----------------------------------------------------------------------------
 GLOSSARY = {
-    "外观": {"ja": ("ルック", "外観|スキン")},
+    "外观": {"en": (r"\blooks?\b", "appearance|skin"),
+             "de": (r"\bLooks?\b", "Erscheinungsbild|Darstellung|Auftritt|Aussehen|Skin"),
+             "fr": (r"\blooks?\b", "apparence|rendu|skin"),
+             "es": (r"\blooks?\b", "aparienc|aspecto|máscara"),
+             "ja": ("ルック", "外観|スキン")},
     "导出": {"ja": (None, "エクスポート|輸出")},
     "导入": {"ja": (None, "インポート|輸入")},
     "显影": {"ja": ("現像", "開発")},
