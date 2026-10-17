@@ -49,7 +49,9 @@ struct PhotoEffectsPresentationTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        let model = EditorModel(lookDirectory: root.appendingPathComponent("looks"))
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("looks"),
+                                editDirectory: root.appendingPathComponent("edits"),
+                                batchDirectory: root.appendingPathComponent("batch"))
         model.open(URL(fileURLWithPath: CommandLine.arguments[1]))
         try await waitForRender(model)
         model.settings.setEffect(.vignetteAmount, to: -55)
