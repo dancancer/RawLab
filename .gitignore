@@ -47,3 +47,20 @@ RawLabWindows/**/bin/
 RawLabWindows/**/obj/
 *.p12
 *.mobileprovision
+
+# Local promotional material and acceptance evidence.
+/docs/releases/media/
+/docs/superpowers/plans/*-launch-video.md
+/docs/superpowers/specs/*-launch-video-design.md
+/reviews/pr-54-macos-v08-native-acceptance-20261015/
+/.impeccable/review/**/*.png
+/.impeccable/review/**/*.jpg
+/.impeccable/review/**/*.jpeg
+/experiments/ektar100-phuket-v1/comparisons/
+/experiments/ektar100-phuket-v1/reference/thumbnails/
+/experiments/ektar100-phuket-v1/reference/scans-*.jpg
+/experiments/ektar100-phuket-v1/curves-and-gradients.png
+/experiments/ektar100-phuket-v1/EKTAR_100_Phuket_v1_FLog2_FGamut_65.cube
+
+# Historical Windows handoff binaries remain available in Git history.
+/release-artifacts/windows/2026-10-08/*.zip.part*

@@ -75,6 +75,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 - [Installation and distribution notes](docs/installation.md)
 - [iPhone installation guide](docs/ios-installation.md)
 - [Changelog](CHANGELOG.md)
+- [Product roadmap (Chinese)](docs/roadmap.md)
 - [Windows client](RawLabWindows/README.md)
 - [macOS client](RawLabMac/README.md)
 - [Android client](RawLabAndroid/README.md)
