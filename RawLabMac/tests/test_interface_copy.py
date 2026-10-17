@@ -29,6 +29,43 @@ def literals(path):
                 yield number, token[1:-1]
 
 
+# ----------------------------------------------------------------------------
+#  术语表：同一个中文概念在一种语言里只用一种叫法
+#  {中文词: {语言: (必须出现的写法, 不许出现的写法)}}，作用于键里含该中文词的所有条目
+# ----------------------------------------------------------------------------
+GLOSSARY = {
+    "外观": {"ja": ("ルック", "外観|スキン")},
+    "导出": {"ja": (None, "エクスポート|輸出")},
+    "导入": {"ja": (None, "インポート|輸入")},
+    "显影": {"ja": ("現像", "開発")},
+    "降噪": {"ja": (None, "ノイズ軽減|ノイズリダクション|ノイズ除去")},
+    "目录": {"ja": ("フォルダ", "ディレクトリ|カタログ")},
+    "张": {"ja": (None, "シート")},
+    "序号": {"ja": (None, "シリアル")},
+    "小红书": {"ja": ("小紅書", "Little Red Book")},
+}
+# 机器翻译留下、与词条无关的错词
+MISTRANSLATIONS = {
+    "ja": "未開封|原画|申請|スライス|閉店|すでに|リセットノイズ|してください…|を選択します$|何も選択しない",
+}
+
+
+def glossary_violations(language, strings):
+    found = []
+    for term, rules in GLOSSARY.items():
+        required, forbidden = rules.get(language, (None, None))
+        for key, value in strings.items():
+            if term not in key:
+                continue
+            if required and not re.search(required, value, re.I):
+                found.append(f"{key} = {value} (needs {required})")
+            if forbidden and re.search(forbidden, value, re.I):
+                found.append(f"{key} = {value} (uses {forbidden})")
+    pattern = MISTRANSLATIONS.get(language)
+    found += [f"{key} = {value}" for key, value in strings.items() if pattern and re.search(pattern, value)]
+    return found
+
+
 def hits(pattern, skip=()):
     return [f"{path.name}:{number}: {line.strip()}"
             for path in SOURCES if path.name not in skip
@@ -36,6 +73,8 @@ def hits(pattern, skip=()):
 
 
 class InterfaceCopy(unittest.TestCase):
+    maxDiff = None
+
     # ------------------------------------------------------------------------
     #  配方名是翻译键：界面只能显示 title
     #  共享检查按单词边界匹配 recipe/masterRecipe，漏掉 selectedMasterRecipe 这类写法
@@ -88,6 +127,13 @@ class InterfaceCopy(unittest.TestCase):
             strings = catalog(language)
             self.assertEqual(strings["已开启"], strings["开启"], language)
             self.assertEqual(strings["已关闭"], strings["停用"], language)
+
+    # ------------------------------------------------------------------------
+    #  译文按术语表统一，不再出现"輸入外観""開発中""写真は未開封です"这类错词
+    # ------------------------------------------------------------------------
+    def test_catalogs_follow_the_glossary(self):
+        for language in ("en", "de", "fr", "es", "ja"):
+            self.assertEqual(glossary_violations(language, catalog(language)), [], language)
 
 
 if __name__ == "__main__":
