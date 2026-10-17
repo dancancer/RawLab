@@ -76,8 +76,8 @@ extension ContentView {
             AdjustmentControl(title: adjustment.title, value: adjustmentBinding(adjustment),
                               range: adjustment.range, step: adjustment.step,
                               defaultValue: adjustment.value(from: .default),
-                              unit: scalarUnit(adjustment),
-                              formatter: { scalarValue($0, for: adjustment) },
+                              unit: adjustment.unit,
+                              formatter: adjustment.formatted,
                               reciprocal: adjustment == .temperature,
                               identifier: "adjustment", onEditingChanged: setSliderEditing)
                 .id(adjustment.rawValue)
@@ -188,21 +188,5 @@ extension ContentView {
             if viewModel.sourceKind == .raw, updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
             applySettingsChange(updated)
         })
-    }
-
-    private func scalarUnit(_ adjustment: AdjustmentKind) -> String {
-        switch adjustment {
-        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening: return "%"
-        case .exposure: return "EV"
-        case .temperature: return "K"
-        default: return ""
-        }
-    }
-
-    private func scalarValue(_ value: Double, for adjustment: AdjustmentKind) -> String {
-        let number = adjustment == .strength ? value * 100 : value
-        let format = adjustment == .exposure ? (number == 0 ? "%.2f" : "%+.2f")
-            : adjustment == .temperature || adjustment == .strength || number == 0 ? "%.0f" : "%+.0f"
-        return String(format: format, locale: L10n.locale, number)
     }
 }

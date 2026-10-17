@@ -7,8 +7,27 @@ struct EditorPresentationTests {
         print("PASS: \(message)")
     }
 
+    // ------------------------------------------------------------------------
+    //  选中工具的数值徽标与参数行同一格式：德语用逗号作小数点，零不带正负号
+    // ------------------------------------------------------------------------
+    static func checkBadgeMatchesParameterRow() {
+        for language in ["de", "en"] {
+            UserDefaults.standard.register(defaults: [L10n.preferenceKey: language])
+            for kind in AdjustmentKind.badgeKinds {
+                for value in [kind.value(from: .default), kind.range.lowerBound, kind.range.upperBound, kind.step * 7] {
+                    check(kind.badge(for: value) == kind.formatted(value),
+                          "\(language) \(kind.rawValue) badge \(kind.badge(for: value) ?? "nil") matches the parameter row \(kind.formatted(value))")
+                }
+            }
+        }
+        UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"])
+        check(AdjustmentKind.hsl.badge(for: 10) == nil && AdjustmentKind.temperature.badge(for: 5000) == nil,
+              "multi-parameter tools keep their glyph instead of a badge")
+    }
+
     static func main() throws {
         var settings = RawSettings.default
+        checkBadgeMatchesParameterRow()
         check(AdjustmentKind.contrast.range == -100...100 && AdjustmentKind.sharpening.range == 0...200,
               "iOS contrast and sharpening expose the full Mac ranges")
         AdjustmentKind.highlights.setValue(25, in: &settings)

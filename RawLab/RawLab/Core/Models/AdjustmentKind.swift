@@ -234,6 +234,14 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         "\(formatted(value)) \(unit)".trimmingCharacters(in: .whitespaces)
     }
 
+    // 选中工具圆圈里的数值徽标：只给单一数值的工具
+    static let badgeKinds: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows,
+                                                  .contrast, .toneCurve, .saturation, .sharpening]
+
+    func badge(for value: Double) -> String? {
+        Self.badgeKinds.contains(self) ? formatted(value) : nil
+    }
+
     func valueLabel(for value: Double) -> String {
         switch self {
         case .strength:
