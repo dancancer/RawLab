@@ -54,6 +54,7 @@ internal static class UiDetailChecks
                     MenuPlacement(window,check);
                     ResetMenus(window,language,check);
                     LibraryHint(window,output,language,check);
+                    FailedOpen(window,output,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -161,6 +162,16 @@ internal static class UiDetailChecks
         check(window.LibraryHint.Visibility==Visibility.Visible,"Folder hint follows restored library folders: "+language);
         window.Files.ItemsSource=Array.Empty<LibraryEntry>();window.UpdateLayout();
         check(window.LibraryHint.Visibility==Visibility.Collapsed,"Folder hint hides without folders: "+language);
+    }
+    // 打开失败：状态栏不再显示“正在显影”，也不留下空的直方图框
+    private static void FailedOpen(MainWindow window,string output,string language,Action<bool,string> check)
+    {
+        var broken=Path.Combine(output,"broken-"+language+".ARW");File.WriteAllText(broken,"not a raw file");
+        window.OpenFile(broken);
+        var failed=typeof(MainWindow).GetField("renderFailed",PrivateInstance)!;
+        Pump(()=>(bool)failed.GetValue(window)!,TimeSpan.FromSeconds(20));
+        check((bool)failed.GetValue(window)! && window.BackendLabel.Text!=Loc.Text("相机预览 · 正在显影"),$"Failed open does not keep reporting development: {window.BackendLabel.Text}");
+        check(window.HistogramSurface.Visibility!=Visibility.Visible,"Failed open leaves no empty histogram box: "+language);
     }
 
     private static AboutWindow About(MainWindow window,string output)
