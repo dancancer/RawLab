@@ -317,7 +317,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 TextButton(onClick = { onEdit(edits.resetWhiteBalance(state.preview?.temperature, state.preview?.tint), false) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
             } else {
-                val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.name
+                val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.let(AppStrings::recipeName)
                     ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
                     else state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film
                 Text(displayLook, Modifier.weight(1f),
@@ -515,7 +515,7 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                         contentScale = ContentScale.Crop)
                     else Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(recipe?.name ?: stringResource(R.string.no_recipe), Modifier.heightIn(min = 22.dp),
+                Text(recipe?.let(AppStrings::recipeName) ?: stringResource(R.string.no_recipe), Modifier.heightIn(min = 22.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 Text(recipe?.let { AppStrings.recipeSubtitle(it) } ?: AppStrings.text(R.string.neutral_direct_output), Modifier.heightIn(min = 36.dp),

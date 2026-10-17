@@ -54,6 +54,15 @@ def xaml_literals(path):
                 yield f"{path.name}:{number}: {text.strip()}"
 
 
+def android_catalogs():
+    directories = {"en": "values", "zh-Hans": "values-b+zh+Hans", "de": "values-de",
+                   "fr": "values-fr", "ja": "values-ja", "es": "values-es"}
+    return {language: {element.attrib["name"]: "".join(element.itertext())
+                       for path in (ROOT / "RawLabAndroid/app/src/main/res" / directory).glob("*.xml")
+                       for element in ET.parse(path).getroot() if element.tag == "string"}
+            for language, directory in directories.items()}
+
+
 class LocalizationTests(unittest.TestCase):
     def test_macos_photography_terms(self):
         catalog = apple_catalog(ROOT / "RawLabMac/Resources/en.lproj/Localizable.strings")
@@ -142,18 +151,30 @@ class LocalizationTests(unittest.TestCase):
                 self.assertEqual(lower, {}, (client, language))
 
     def test_android_catalogs(self):
-        directories = {"en": "values", "zh-Hans": "values-b+zh+Hans", "de": "values-de",
-                       "fr": "values-fr", "ja": "values-ja", "es": "values-es"}
-        catalogs = {language: {element.attrib["name"]: "".join(element.itertext())
-                               for path in (ROOT / "RawLabAndroid/app/src/main/res" / directory).glob("*.xml")
-                               for element in ET.parse(path).getroot() if element.tag == "string"}
-                    for language, directory in directories.items()}
+        catalogs = android_catalogs()
         self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
         missing = sorted({(source.name, key) for source in (ROOT / "RawLabAndroid/app/src/main/java").rglob("*.kt")
                           for key in re.findall(r"R\.string\.(\w+)", source.read_text()) if key not in catalogs["en"]})
         self.assertEqual(missing, [])
         for recipe in json.loads((ROOT / "Shared/master-recipes.json").read_text()):
             self.assertIn("recipe_subtitle_" + recipe["id"], catalogs["en"])
+
+    def test_android_recipe_names_are_localized(self):
+        # 汉字写的人名配方按语言显示：资源名 recipe_name_<id>；拉丁字母语言不得出现汉字
+        catalogs = android_catalogs()
+        recipes = json.loads((ROOT / "Shared/master-recipes.json").read_text())
+        keys = {"recipe_name_" + recipe["id"] for recipe in recipes if CJK.search(recipe["name"])}
+        self.assertTrue(keys)
+        for language, catalog in catalogs.items():
+            self.assertTrue(keys <= catalog.keys(), (language, keys - catalog.keys()))
+            if language in ("en", "de", "fr", "es"):
+                self.assertEqual([key for key in keys if CJK.search(catalog[key])], [], language)
+        # 界面只经由 AppStrings.recipeName 显示配方名，不直接取原始 name
+        raw = re.compile(r"\b(?:recipe|masterRecipe)\??\.name\b|recipes\.\w+\s*\{[^}]*\}\??\.name\b")
+        sources = [path for path in (ROOT / "RawLabAndroid/app/src/main/java").rglob("*.kt") if path.name != "AppStrings.kt"]
+        hits = [f"{p.relative_to(ROOT)}:{n}" for p in sources for n, line in enumerate(p.read_text().splitlines(), 1)
+                if raw.search(line)]
+        self.assertEqual(hits, [])
 
     def test_windows_catalogs(self):
         catalogs = {language: windows_catalog(language) for language in LANGUAGES}

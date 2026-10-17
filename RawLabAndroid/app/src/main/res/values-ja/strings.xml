@@ -257,6 +257,9 @@
     <string name="neutral_direct_output">ニュートラルな撮って出し</string>
     <string name="vignette_summary">強度 %1$+.0f · 中間点 %2$.0f · 丸み %3$+.0f · ぼかし %4$.0f · ハイライト保護 %5$.0f</string>
     <string name="grain_summary">強度 %1$.0f · サイズ %2$.0f · 粗さ %3$.0f</string>
+    <string name="recipe_name_hamada_daylight_v2">濱田英明</string>
+    <string name="recipe_name_takashi_yasui_zen">保井崇志</string>
+    <string name="recipe_name_takahiro_sakai_blue">酒井貴弘</string>
     <string name="recipe_subtitle_hamada_daylight_v2">日系の青空 · ハイキーな日光</string>
     <string name="recipe_subtitle_takashi_yasui_zen">ミニマルな禅 · 日本のストリートスナップ</string>
     <string name="recipe_subtitle_takahiro_sakai_blue">透明感のある空気 · 少女の淡いブルー</string>

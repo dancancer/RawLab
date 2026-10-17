@@ -146,7 +146,7 @@ private fun BatchConfirmContent(
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val sourceSettings = state.job.source.settings
-    val sourceLookName = recipes.firstOrNull { it.id == sourceSettings.recipeID }?.name
+    val sourceLookName = recipes.firstOrNull { it.id == sourceSettings.recipeID }?.let(AppStrings::recipeName)
         ?: if (sourceSettings.film == "neutral") stringResource(R.string.neutral_look)
         else bundledFilms.firstOrNull { it.id == sourceSettings.film }?.name ?: sourceSettings.film
     Column(Modifier.fillMaxSize()) {

@@ -49,6 +49,15 @@ internal object AppStrings {
     fun text(id: Int): String = localizedContext(application).getString(id)
     fun format(id: Int, vararg arguments: Any): String = localizedContext(application).getString(id, *arguments)
 
+    // 汉字写的人名配方按语言显示；表里没有的配方名本身就是拉丁字母，原样显示
+    private val recipeNames = mapOf(
+        "hamada_daylight_v2" to R.string.recipe_name_hamada_daylight_v2,
+        "takashi_yasui_zen" to R.string.recipe_name_takashi_yasui_zen,
+        "takahiro_sakai_blue" to R.string.recipe_name_takahiro_sakai_blue,
+    )
+
+    fun recipeName(recipe: MasterRecipe): String = recipeNames[recipe.id]?.let(::text) ?: recipe.name
+
     fun recipeSubtitle(recipe: MasterRecipe): String {
         val resource = when (recipe.id) {
             "hamada_daylight_v2" -> R.string.recipe_subtitle_hamada_daylight_v2

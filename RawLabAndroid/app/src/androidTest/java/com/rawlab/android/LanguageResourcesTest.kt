@@ -63,10 +63,15 @@ class LanguageResourcesTest {
             geometry = GeometrySettings(perspectiveHorizontal = .45f, perspectiveVertical = -.3f),
         )
         val encoded = SettingsCodec.encode(settings)
+        // 汉字写的人名配方：拉丁字母语言用罗马字，日文用日文汉字，中文用原名
+        val hamada = MasterRecipe.load(context).first { it.id == "hamada_daylight_v2" }
+        val hamadaNames = mapOf("en" to "Hideaki Hamada", "zh-Hans" to "滨田英明", "de" to "Hideaki Hamada",
+            "fr" to "Hideaki Hamada", "ja" to "濱田英明", "es" to "Hideaki Hamada")
         try {
             languages.forEach { language ->
                 AppStrings.setPreference(context, language)
                 val localized = AppStrings.localizedContext(context)
+                assertEquals(hamadaNames.getValue(language), AppStrings.recipeName(hamada))
                 assertEquals(automatic.getValue(language), localized.getString(R.string.lens_automatic))
                 assertEquals(automatic.getValue(language), AppStrings.text(R.string.lens_automatic))
                 listOf(R.string.lens_matching, R.string.lens_off, R.string.dng).forEach {

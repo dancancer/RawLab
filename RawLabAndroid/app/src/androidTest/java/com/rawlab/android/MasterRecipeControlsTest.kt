@@ -16,11 +16,13 @@ import org.junit.Test
 import java.io.File
 
 class MasterRecipeControlsTest {
-    @get:Rule val compose = createComposeRule()
+    // 配方名随界面语言变化：固定为中文，断言用原名
+    val compose = createComposeRule()
+    @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
     @Test fun presetSelectionAndDragScrollingAreReachable() {
         val recipes = MasterRecipe.load(InstrumentationRegistry.getInstrumentation().targetContext)
         var current = EditSettings()
-        compose.setContent {
+        compose.setChineseContent {
             var selected by remember { mutableStateOf<String?>(null) }
             RawLabTheme {
                 Surface(Modifier.width(360.dp)) {
