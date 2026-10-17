@@ -449,9 +449,14 @@ final class EditorUITests: XCTestCase {
         app.launch()
         importPhoto(in: app)
         let toolbar = app.scrollViews.containing(.button, identifier: "tool.masterRecipe").allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
-        for _ in 0..<3 where !app.buttons["tool.masterRecipe"].isHittable { toolbar.swipeRight() }
+        // 工具栏默认滚到选中的"曝光"，配方按钮在左侧屏外；屏外元素查询可点击性会直接报错，改看位置
+        for _ in 0..<3 where app.buttons["tool.masterRecipe"].frame.minX < toolbar.frame.minX { toolbar.swipeRight() }
         app.buttons["tool.masterRecipe"].tap()
         XCTAssertTrue(app.buttons["recipe.hamada_daylight_v2"].waitForExistence(timeout: 10))
+        // 有插图的配方卡只显示插图，替代图标只给没有插图的"无配方"卡：两种卡的图片区等高，整卡高度相近
+        let neutralTile = app.buttons["recipe.neutral"].frame, artworkTile = app.buttons["recipe.hamada_daylight_v2"].frame
+        XCTAssertLessThan(abs(artworkTile.height - neutralTile.height), 30,
+                          "artwork tile \(artworkTile.height) vs neutral \(neutralTile.height): no second icon under the artwork")
         XCTAssertFalse(app.buttons["向左滚动大师配方"].exists)
         XCTAssertFalse(app.buttons["向右滚动大师配方"].exists)
         let recipes = app.scrollViews["masterRecipe.choices"]
@@ -472,6 +477,9 @@ final class EditorUITests: XCTestCase {
         let recipeFrame = app.buttons["recipe.hamada_daylight_v2"].frame
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: recipeFrame.midX, dy: recipeFrame.midY)).tap()
         XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "滨田英明")
+        // 面板标题行已显示当前配方名，面板内只留说明，不再重复一遍名字（配方卡自身的名字不算）
+        let recipeName = NSPredicate(format: "label == %@", "滨田英明")
+        XCTAssertEqual(app.staticTexts.matching(recipeName).count - recipes.staticTexts.matching(recipeName).count, 1)
         capture("master-recipes-portrait")
         for _ in 0..<8 {
             let frame = app.buttons["tool.hsl"].frame
@@ -486,7 +494,9 @@ final class EditorUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: hslFrame.midX, dy: hslFrame.midY)).tap()
         XCTAssertTrue(app.buttons["hsl.channel.4"].waitForExistence(timeout: 10))
         app.buttons["hsl.channel.4"].tap()
-        XCTAssertTrue(app.staticTexts["+4"].exists && app.staticTexts["-1"].exists, app.debugDescription)
+        // 数值显示在可点按输入的数值按钮上，不再是独立文字
+        XCTAssertEqual(app.buttons["hsl.saturation.value"].value as? String, "+4")
+        XCTAssertEqual(app.buttons["hsl.lightness.value"].value as? String, "-1")
         capture("master-recipe-hsl-portrait")
     }
 
