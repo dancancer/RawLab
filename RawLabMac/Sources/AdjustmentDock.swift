@@ -155,7 +155,7 @@ struct AdjustmentDock: View {
                     .disabled(parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil)
                     .disabled(parameter.isWhiteBalance && model.settings.asShotWhiteBalance == nil)
                 } else if dockCategory == .masterRecipe {
-                    MasterRecipeDock(model: model).frame(height: 124)
+                    MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
                 } else {
                     FilmDock(model: model).frame(height: 124)
                 }

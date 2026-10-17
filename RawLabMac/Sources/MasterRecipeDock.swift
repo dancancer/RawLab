@@ -7,9 +7,10 @@ struct MasterRecipeDock: View {
     var body: some View {
         GeometryReader { geometry in
             // 留出水平滚动条的位置，避免覆盖底部文字。
+            let card = AdjustmentPanelLayout.RecipeCard.self
             let height = max(54, geometry.size.height - 16)
-            let showsSubtitle = height >= 90
-            let imageSize = max(32, min(96, height - (showsSubtitle ? 64 : 36)))
+            let showsSubtitle = height >= 32 + card.textHeight(subtitle: true)
+            let imageSize = max(32, min(96, height - card.textHeight(subtitle: showsSubtitle)))
             HorizontalPicker(selectedID: model.settings.masterRecipeID ?? "", name: L10n.text("大师配方")) {
                 HStack(spacing: 8) {
                     recipeButton(recipe: nil, imageSize: imageSize, height: height, showsSubtitle: showsSubtitle)
@@ -45,14 +46,15 @@ struct MasterRecipeDock: View {
                     Text(recipe?.title ?? L10n.text("无配方"))
                         .font(.system(size: 11, weight: selected ? .semibold : .regular))
                         .lineLimit(2).multilineTextAlignment(.center)
-                        .frame(width: 112, height: 28)
+                        .frame(width: AdjustmentPanelLayout.RecipeCard.width, height: AdjustmentPanelLayout.RecipeCard.titleHeight)
                     if showsSubtitle {
                         Text(L10n.text(recipe?.subtitle ?? "中性直出"))
-                            .font(.system(size: 10))
+                            .font(.system(size: AdjustmentPanelLayout.RecipeCard.subtitleSize))
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(AdjustmentPanelLayout.RecipeCard.subtitleLines)
                             .multilineTextAlignment(.center)
-                            .frame(width: 112, height: 24, alignment: .top)
+                            .frame(width: AdjustmentPanelLayout.RecipeCard.width,
+                                   height: AdjustmentPanelLayout.RecipeCard.subtitleHeight, alignment: .top)
                     }
                 }
             }
