@@ -50,6 +50,7 @@ internal static class UiDetailChecks
                     ActiveLook(window,language,check);
                     TypeNames(window,output,language,check);
                     IdleStatus(window,check);
+                    Selection(window,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -117,6 +118,13 @@ internal static class UiDetailChecks
                 $"Idle status bar neither repeats nor contradicts the GPU selector: {window.BackendLabel.Text} / {mode}");
         }
         window.GpuMode.SelectedIndex=0;
+    }
+    private static void Selection(MainWindow window,string language,Action<bool,string> check)
+    {
+        Click(window.MasterRecipeCategory);
+        check(Equals(window.MasterRecipeCategory.Tag,"selected") && window.FilmCategory.Tag==null,"Master recipe tool shows the selected state: "+language);
+        Click(window.FilmCategory);
+        check(window.MasterRecipeCategory.Tag==null && Equals(window.FilmCategory.Tag,"selected"),"Leaving master recipes clears its selected state: "+language);
     }
 
     private static AboutWindow About(MainWindow window,string output)
