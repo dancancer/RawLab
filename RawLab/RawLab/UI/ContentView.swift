@@ -9,6 +9,7 @@ struct ContentView: View {
     @AppStorage(L10n.preferenceKey) var languagePreference = AppLanguage.system.rawValue
     @AppStorage("rawlab.adjustmentHaptics.enabled") var adjustmentHapticsEnabled = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
@@ -80,7 +81,8 @@ struct ContentView: View {
                     }.background(Color(.secondarySystemBackground)).accessibilityIdentifier("batch.resume")
                 }
             }
-            .navigationTitle("RawLab")
+            // 紧凑宽度下两侧按钮已占满导航栏，标题只会被挤成"…"，干脆不显示
+            .navigationTitle(horizontalSizeClass == .compact ? "" : "RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
             .toolbarBackground(Color(.secondarySystemBackground), for: .navigationBar)
