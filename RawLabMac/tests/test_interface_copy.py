@@ -180,6 +180,18 @@ class InterfaceCopy(unittest.TestCase):
         scene = app[app.index('Window(L10n.text("批量导出"), id: "batch-export")'):]
         self.assertRegex(scene[:400], r"if let batch = model\.batch \{.*\} else \{\s*BatchExportEmptyView\(\)")
 
+    # ------------------------------------------------------------------------
+    #  工具栏"导出"菜单与批量导出的格式选择用同一套格式名：
+    #  曾是"JPEG… / PNG · 16 位… / 导出渲染型 DNG…"，对面是"JPEG / 16 位 PNG / DNG · 渲染型"
+    # ------------------------------------------------------------------------
+    def test_export_menu_uses_the_format_names(self):
+        editor = (ROOT / "Sources/EditorView.swift").read_text()
+        menu = editor[editor.index("Menu {", editor.index('.keyboardShortcut("a"')):editor.index('L10n.text("使用当前调整批量导出…")')]
+        self.assertIn("ForEach(ExportFormat.allCases)", menu)
+        self.assertIn('format.title + "…"', menu)
+        for label in ('"JPEG…"', '"PNG · 16-bit…"', '"导出渲染型 DNG…"'):
+            self.assertNotIn(label, menu)
+
 
 if __name__ == "__main__":
     unittest.main()

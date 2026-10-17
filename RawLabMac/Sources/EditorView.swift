@@ -284,12 +284,11 @@ struct EditorView: View {
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
-                Button("JPEG…") { model.export(png: false) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
-                Button(L10n.text("PNG · 16-bit…")) { model.export(png: true) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
-                Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
+                ForEach(ExportFormat.allCases) { format in
+                    Button(format.title + "…") { model.export(format: format) }
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                }
                 Divider()
                 Button(L10n.text("使用当前调整批量导出…")) {
                     if model.prepareBatch() { openWindow(id: "batch-export") }
