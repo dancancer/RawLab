@@ -29,9 +29,13 @@ private fun String?.toInputKind(): PhotoInputKind = runCatching {
     PhotoInputKind.valueOf(this.orEmpty())
 }.getOrDefault(PhotoInputKind.RAW)
 
-internal fun asBatchOutputFailure(error: Throwable): Throwable =
+/** 输出端 I/O 失败升级为整批失败；describe 把底层原因变成界面文案（JVM 测试可换成不依赖资源的写法） */
+internal fun asBatchOutputFailure(
+    error: Throwable,
+    describe: (String) -> String = { AppStrings.format(R.string.message_output_storage_failed, it) },
+): Throwable =
     if (error is NativeProcessingException && error.status == NativeProcessingException.OUTPUT_IO_ERROR)
-        BatchGlobalFailure(AppStrings.format(R.string.message_output_storage_failed, error.message.orEmpty()), error)
+        BatchGlobalFailure(describe(error.message.orEmpty()), error)
     else error
 
 enum class BatchRowStatus { PENDING, PROCESSING, PUBLISHING, NEEDS_CONFIRMATION, SUCCESS, FAILED, CANCELLED }

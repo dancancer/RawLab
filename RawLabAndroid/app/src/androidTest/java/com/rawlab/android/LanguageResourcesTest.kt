@@ -49,7 +49,6 @@ class LanguageResourcesTest {
     @Test fun lensStatesAndEditSnapshotStayStableAcrossAllSixLanguages() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val previous = AppStrings.preference(context)
-        AppStrings.initialize(context)
         val languages = listOf("en", "zh-Hans", "de", "fr", "ja", "es")
         val automatic = mapOf("en" to "Automatic", "zh-Hans" to "自动", "de" to "Automatisch",
             "fr" to "Automatique", "ja" to "自動", "es" to "Automático")

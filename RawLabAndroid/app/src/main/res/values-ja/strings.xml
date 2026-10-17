@@ -2,6 +2,7 @@
 <resources>
     <string name="usage_analytics">利用状況の分析</string>
     <string name="usage_privacy">有効にすると、Aliyun が機能の利用回数を処理し、中国本土にデータを保存します。SDK は端末識別子、端末とシステムの情報、ネットワーク/IP、地域、セッションデータを収集する場合があります。写真、プレビュー、ファイル名、パス、EXIF、AI コンテンツは収集しません。無効にすると新たな収集は停止しますが、送信済みのリクエストは取り消せません。</string>
+    <string name="usage_install_id">アクティブな端末数を数えるため、アプリはランダムに生成したインストール ID をこの端末に保存します。個人情報は含まれず、分析を無効にすると削除されます。</string>
     <string name="usage_privacy_policy">Aliyun のプライバシーポリシー</string>
     <string name="usage_unavailable">このビルドでは利用状況の分析が設定されていないため、収集や送信は行われません。</string>
     <string name="usage_disabled">利用状況の分析は無効です。</string>

@@ -21,7 +21,7 @@ class UsageFilmSelectionTest {
             RawLabTheme {
                 EditorScreen(
                     state = EditorState(
-                        photo = ImportedPhoto(Uri.EMPTY, "Fixture", File("unused")),
+                        photo = ImportedPhoto(Uri.parse("content://fixture/photo"), "Fixture", File("unused")),
                         looks = listOf(LookChoice("missing", "Missing look", managed = true, available = false)),
                     ),
                     onAlbum = {}, onFile = {}, onEdit = { _, _ -> edits++ }, onReset = {},

@@ -112,7 +112,9 @@ class BatchExportTest {
     @Test fun sourceIoFailureStaysPerTargetButOutputIoStopsBatch() {
         val sourceFailure = asBatchOutputFailure(NativeProcessingException(NativeProcessingException.IO_ERROR, "source missing"))
         assertTrue(sourceFailure is NativeProcessingException)
-        val outputFailure = asBatchOutputFailure(NativeProcessingException(NativeProcessingException.OUTPUT_IO_ERROR, "disk full"))
+        // 界面文案来自 Android 资源，JVM 上没有；这里只验证路由与原因保留
+        val describe = { detail: String -> "output: $detail" }
+        val outputFailure = asBatchOutputFailure(NativeProcessingException(NativeProcessingException.OUTPUT_IO_ERROR, "disk full"), describe)
         assertTrue(outputFailure is BatchGlobalFailure)
         assertTrue(outputFailure.message!!.contains("disk full"))
         assertEquals(IllegalStateException::class.java, asBatchOutputFailure(IllegalStateException())::class.java)
@@ -133,7 +135,7 @@ class BatchExportTest {
 
             val global = BatchRunner.run(BatchJob(source, targets), render = { target, _ ->
                 if (target.id == "bad") throw asBatchOutputFailure(
-                    NativeProcessingException(NativeProcessingException.OUTPUT_IO_ERROR, "disk full"))
+                    NativeProcessingException(NativeProcessingException.OUTPUT_IO_ERROR, "disk full"), describe)
                 byteArrayOf(1)
             }, write = { _, _, _ -> })
             assertEquals(BatchRowStatus.FAILED, global.rows[0].status)

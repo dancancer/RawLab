@@ -23,7 +23,6 @@ class LanguageTestRule : TestWatcher() {
         previous = AppStrings.preference(context)
         if (Build.VERSION.SDK_INT >= 33) previousLocales = context.getSystemService(LocaleManager::class.java).applicationLocales
         configuration = Configuration(context.resources.configuration)
-        AppStrings.initialize(context)
         AppStrings.setPreference(context, "zh-Hans")
         val chinese = Configuration(context.resources.configuration)
         chinese.setLocales(LocaleList(Locale.forLanguageTag("zh-Hans")))

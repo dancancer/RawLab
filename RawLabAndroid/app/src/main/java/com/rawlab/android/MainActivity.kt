@@ -32,7 +32,6 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
-        AppStrings.initialize(newBase)
         super.attachBaseContext(AppStrings.localizedContext(newBase))
     }
     val model: EditorViewModel by lazy { ViewModelProvider(this)[EditorViewModel::class.java] }

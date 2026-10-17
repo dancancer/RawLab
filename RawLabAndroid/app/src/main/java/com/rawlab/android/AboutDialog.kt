@@ -57,6 +57,7 @@ fun AboutDialog(
                 }
                 HorizontalDivider()
                 Text(stringResource(R.string.usage_privacy), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.usage_install_id), style = MaterialTheme.typography.bodySmall)
                 val usageLabel = stringResource(R.string.usage_analytics)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(usageLabel, Modifier.weight(1f))
@@ -67,17 +68,7 @@ fun AboutDialog(
                         modifier = Modifier.semantics { contentDescription = usageLabel },
                     )
                 }
-                Text(when {
-                    usageState.issue == UsageIssue.STORAGE_FAILED -> stringResource(R.string.usage_storage_failed)
-                    usageState.issue == UsageIssue.STOP_FAILED -> stringResource(R.string.usage_stop_failed)
-                    usageState.issue == UsageIssue.CLEANUP_FAILED -> stringResource(R.string.usage_cleanup_failed)
-                    usageState.issue == UsageIssue.RESTART_REQUIRED -> stringResource(R.string.usage_restart_required)
-                    !usageState.available -> stringResource(R.string.usage_unavailable)
-                    usageState.issue == UsageIssue.START_FAILED -> stringResource(R.string.usage_start_failed)
-                    usageState.issue == UsageIssue.RECORD_FAILED -> stringResource(R.string.usage_record_failed)
-                    usageState.enabled -> stringResource(R.string.usage_enabled)
-                    else -> stringResource(R.string.usage_disabled)
-                }, style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(usageState.statusMessage()), style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { open("https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html") }) {
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, null)
                     Spacer(Modifier.width(8.dp))
@@ -99,6 +90,13 @@ fun AboutDialog(
                 }
             }
         }, confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.confirm)) } })
+}
+
+/** 状态行：有故障先说明故障；否则说明本构建能否统计，以及用户当前的选择 */
+private fun UsageAnalyticsState.statusMessage(): Int = issue?.message ?: when {
+    !available -> R.string.usage_unavailable
+    enabled -> R.string.usage_enabled
+    else -> R.string.usage_disabled
 }
 
 @Composable

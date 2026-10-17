@@ -2,6 +2,7 @@
 <resources>
     <string name="usage_analytics">Analyse d\'utilisation</string>
     <string name="usage_privacy">Lorsque cette option est activée, Aliyun traite le nombre d\'utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d\'appareil, des informations sur l\'appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.</string>
+    <string name="usage_install_id">Pour compter les appareils actifs, l\'application enregistre sur cet appareil un identifiant d\'installation généré aléatoirement. Il ne contient aucune information personnelle et est supprimé lorsque vous désactivez l\'analyse.</string>
     <string name="usage_privacy_policy">Politique de confidentialité d\'Aliyun</string>
     <string name="usage_unavailable">L\'analyse d\'utilisation n\'est pas configurée dans cette version. Aucune donnée n\'est collectée ni transmise.</string>
     <string name="usage_disabled">L\'analyse d\'utilisation est désactivée.</string>

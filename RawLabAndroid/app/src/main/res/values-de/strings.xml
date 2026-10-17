@@ -2,6 +2,7 @@
 <resources>
     <string name="usage_analytics">Nutzungsanalyse</string>
     <string name="usage_privacy">Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen. Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.</string>
+    <string name="usage_install_id">Um aktive Geräte zu zählen, speichert die App eine zufällig erzeugte Installations-ID auf diesem Gerät. Sie enthält keine personenbezogenen Daten und wird gelöscht, wenn Sie die Analyse deaktivieren.</string>
     <string name="usage_privacy_policy">Datenschutzerklärung von Aliyun</string>
     <string name="usage_unavailable">Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.</string>
     <string name="usage_disabled">Die Nutzungsanalyse ist deaktiviert.</string>

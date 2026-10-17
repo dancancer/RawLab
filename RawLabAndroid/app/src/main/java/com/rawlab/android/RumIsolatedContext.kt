@@ -4,10 +4,11 @@ import android.content.Context
 import android.content.ContextWrapper
 import java.io.File
 
+/** SDK 的文件、数据库与偏好全部落在应用私有的 rum-sdk 目录与 rum_sdk_ 前缀下，关闭统计时整体删除 */
 internal class RumIsolatedContext(base: Context) : ContextWrapper(base.applicationContext ?: base) {
     private val preferenceNames = mutableSetOf<String>()
     private val preferenceLock = Any()
-    private val root = File(baseContext.filesDir, "rum-local-sdk").also(File::mkdirs)
+    private val root = File(baseContext.filesDir, "rum-sdk").also(File::mkdirs)
 
     override fun getApplicationContext(): Context = this
     override fun getDataDir(): File = root
@@ -36,6 +37,6 @@ internal class RumIsolatedContext(base: Context) : ContextWrapper(base.applicati
     private fun isOwnedPreference(name: String): Boolean = name.startsWith(PREFERENCE_PREFIX)
 
     private companion object {
-        const val PREFERENCE_PREFIX = "rum_local_sdk_"
+        const val PREFERENCE_PREFIX = "rum_sdk_"
     }
 }

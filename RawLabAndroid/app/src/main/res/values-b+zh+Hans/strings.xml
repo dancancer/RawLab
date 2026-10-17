@@ -10,6 +10,7 @@
     <string name="auto_update_check">自动检查更新</string>
     <string name="usage_analytics">使用统计</string>
     <string name="usage_privacy">开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。</string>
+    <string name="usage_install_id">为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。</string>
     <string name="usage_privacy_policy">阿里云隐私政策</string>
     <string name="usage_unavailable">当前构建未配置使用统计，未采集或上报。</string>
     <string name="usage_disabled">使用统计已关闭。</string>

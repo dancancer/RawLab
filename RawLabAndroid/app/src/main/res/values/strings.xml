@@ -10,6 +10,7 @@
     <string name="auto_update_check">Check for updates automatically</string>
     <string name="usage_analytics">Usage analytics</string>
     <string name="usage_privacy">When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data. Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.</string>
+    <string name="usage_install_id">To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.</string>
     <string name="usage_privacy_policy">Aliyun privacy policy</string>
     <string name="usage_unavailable">Usage analytics is not configured in this build; nothing is collected or reported.</string>
     <string name="usage_disabled">Usage analytics is off.</string>

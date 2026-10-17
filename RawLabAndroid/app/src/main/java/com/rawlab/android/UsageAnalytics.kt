@@ -1,9 +1,12 @@
 package com.rawlab.android
 
 import android.content.SharedPreferences
+import androidx.annotation.StringRes
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 enum class UsagePlatform(val value: String) { Android("android") }
 
@@ -46,13 +49,22 @@ data class UsageRecord(
     val group: String = "usage",
 )
 
+// ============================================================================
+//  本机存储：同意值与安装标识，同在一个 SharedPreferences 文件
+//  （正式 usage_analytics；本地验证构建用独立文件，见 BuildConfig.USAGE_PREFERENCES）
+// ============================================================================
+
 interface UsageConsentStore {
     fun load(): Boolean
     fun save(enabled: Boolean)
 }
 
-class SharedPreferencesUsageConsentStore(private val preferences: SharedPreferences) : UsageConsentStore {
-    override fun load(): Boolean = preferences.getBoolean(KEY_ENABLED, false)
+/** 没存过选择 → defaultEnabled；存为关闭 → 关闭；类型损坏读不出 → 抛出，调用方按关闭处理并提示 */
+class SharedPreferencesUsageConsentStore(
+    private val preferences: SharedPreferences,
+    private val defaultEnabled: Boolean = true,
+) : UsageConsentStore {
+    override fun load(): Boolean = preferences.getBoolean(KEY_ENABLED, defaultEnabled)
     override fun save(enabled: Boolean) {
         check(preferences.edit().putBoolean(KEY_ENABLED, enabled).commit()) { "Unable to save usage consent" }
     }
@@ -60,9 +72,36 @@ class SharedPreferencesUsageConsentStore(private val preferences: SharedPreferen
     private companion object { const val KEY_ENABLED = "enabled" }
 }
 
+/** 统计活跃设备数用的安装标识：应用自己随机生成，不读取任何硬件编号 */
+interface UsageInstallId {
+    /** 已有则沿用；没有或不是 UUID v4 就生成新的并保存 */
+    fun obtain(): String
+    fun delete()
+}
+
+class SharedPreferencesUsageInstallId(private val preferences: SharedPreferences) : UsageInstallId {
+    override fun obtain(): String = preferences.getString(KEY_INSTALL_ID, null)?.takeIf(::isVersion4) ?: create()
+
+    override fun delete() {
+        check(preferences.edit().remove(KEY_INSTALL_ID).commit()) { "Unable to delete the install ID" }
+    }
+
+    private fun create(): String = UUID.randomUUID().toString().also { id ->
+        check(preferences.edit().putString(KEY_INSTALL_ID, id).commit()) { "Unable to save the install ID" }
+    }
+
+    private fun isVersion4(value: String): Boolean = runCatching { UUID.fromString(value).version() == 4 }.getOrDefault(false)
+
+    private companion object { const val KEY_INSTALL_ID = "install_id" }
+}
+
+// ============================================================================
+//  传输层：带 SDK 的构建是 RumUsageAnalyticsTransport，其余是 UnavailableUsageTransport
+// ============================================================================
+
 interface UsageAnalyticsTransport {
     val isAvailable: Boolean
-    fun start()
+    fun start(installId: String)
     fun record(record: UsageRecord)
     fun stop()
     fun setIssueListener(listener: (UsageIssue) -> Unit) = Unit
@@ -70,28 +109,38 @@ interface UsageAnalyticsTransport {
 
 object UnavailableUsageTransport : UsageAnalyticsTransport {
     override val isAvailable = false
-    override fun start() = Unit
+    override fun start(installId: String) = Unit
     override fun record(record: UsageRecord) = Unit
     override fun stop() = Unit
 }
 
-enum class UsageIssue {
-    STORAGE_FAILED,
-    START_FAILED,
-    RECORD_FAILED,
-    STOP_FAILED,
-    CLEANUP_FAILED,
-    RESTART_REQUIRED,
+/** disablesProcess：本进程的统计从此不可用；只是标记，绝不改写用户的同意值 */
+enum class UsageIssue(@StringRes val message: Int, val disablesProcess: Boolean) {
+    STORAGE_FAILED(R.string.usage_storage_failed, false),
+    START_FAILED(R.string.usage_start_failed, true),
+    RECORD_FAILED(R.string.usage_record_failed, false),
+    STOP_FAILED(R.string.usage_stop_failed, true),
+    CLEANUP_FAILED(R.string.usage_cleanup_failed, true),
+    RESTART_REQUIRED(R.string.usage_restart_required, true),
 }
 
+/** enabled 是用户的同意值；available 是本进程能否真正统计，两者互不改写 */
 data class UsageAnalyticsState(
     val available: Boolean,
     val enabled: Boolean,
     val issue: UsageIssue? = null,
 )
 
+// ============================================================================
+//  同意与生命周期
+//  - 开启且可用时，会话开始即启动一次传输层，并只记一次 app_started
+//  - 关闭：停止传输、保存关闭、删除安装标识；重新开启时生成新的安装标识
+//  - 故障只把本进程标为不可用，不写入同意值：一次偶发故障不该永久关掉统计
+// ============================================================================
+
 class UsageAnalytics(
     private val store: UsageConsentStore,
+    private val installId: UsageInstallId,
     private val transport: UsageAnalyticsTransport,
     private val platform: UsagePlatform = UsagePlatform.Android,
 ) {
@@ -99,16 +148,18 @@ class UsageAnalytics(
     val state: StateFlow<UsageAnalyticsState> = mutableState.asStateFlow()
 
     private var sessionBegan = false
-    private var active = false
+    @Volatile private var active = false
     private var launchRecorded = false
 
     init {
         transport.setIssueListener(::handleTransportIssue)
         val stored = runCatching { store.load() }.getOrElse {
-            mutableState.value = mutableState.value.copy(issue = UsageIssue.STORAGE_FAILED)
+            mutableState.update { it.copy(issue = UsageIssue.STORAGE_FAILED) }
             false
         }
-        mutableState.value = mutableState.value.copy(enabled = stored)
+        mutableState.update { it.copy(enabled = stored) }
+        // 关闭状态下不应留有安装标识：补删上次关闭时没能删掉的
+        if (!stored) runCatching { installId.delete() }
     }
 
     fun beginSession() {
@@ -117,82 +168,60 @@ class UsageAnalytics(
         startIfAllowed()
     }
 
-    fun setEnabled(enabled: Boolean): Boolean {
-        if (enabled && !transport.isAvailable) return false
-        if (!enabled) {
-            mutableState.value = mutableState.value.copy(enabled = false, issue = null)
-            stop()
-            return try {
-                store.save(false)
-                true
-            } catch (_: Throwable) {
-                mutableState.value = mutableState.value.copy(issue = UsageIssue.STORAGE_FAILED)
-                false
-            }
-        }
-        return try {
-            store.save(true)
-            mutableState.value = mutableState.value.copy(enabled = true, issue = null)
-            startIfAllowed()
-            state.value.enabled
-        } catch (_: Throwable) {
-            mutableState.value = mutableState.value.copy(enabled = false, issue = UsageIssue.STORAGE_FAILED)
-            stop()
-            false
-        }
-    }
+    /** 返回用户的选择是否已保存；启动等故障另由 state.issue 说明 */
+    fun setEnabled(enabled: Boolean): Boolean = if (enabled) enable() else disable()
 
     fun record(event: UsageEvent) {
         if (!state.value.enabled || !active) return
         try {
             transport.record(event.toRecord(platform))
         } catch (_: Throwable) {
-            mutableState.value = mutableState.value.copy(issue = UsageIssue.RECORD_FAILED)
+            mutableState.update { it.copy(issue = UsageIssue.RECORD_FAILED) }
         }
     }
 
     fun endSession() = stop()
 
-    private fun handleTransportIssue(issue: UsageIssue) {
-        when (issue) {
-            UsageIssue.START_FAILED -> {
-                active = false
-                mutableState.value = mutableState.value.copy(enabled = false, issue = issue)
-                runCatching { store.save(false) }
-            }
-            UsageIssue.RECORD_FAILED -> {
-                mutableState.value = mutableState.value.copy(issue = issue)
-            }
-            UsageIssue.STORAGE_FAILED -> {
-                mutableState.value = mutableState.value.copy(issue = issue)
-            }
-            UsageIssue.STOP_FAILED,
-            UsageIssue.CLEANUP_FAILED,
-            UsageIssue.RESTART_REQUIRED -> {
-                active = false
-                mutableState.value = mutableState.value.copy(
-                    available = false,
-                    enabled = false,
-                    issue = issue,
-                )
-                runCatching { store.save(false) }
-            }
+    private fun enable(): Boolean {
+        if (!state.value.available || !transport.isAvailable) return false
+        return try {
+            store.save(true)
+            mutableState.update { it.copy(enabled = true, issue = null) }
+            startIfAllowed()
+            true
+        } catch (_: Throwable) {
+            mutableState.update { it.copy(enabled = false, issue = UsageIssue.STORAGE_FAILED) }
+            false
         }
     }
 
+    // 进程级故障的说明保留：关闭后仍要告诉用户为什么不能再开
+    private fun disable(): Boolean {
+        mutableState.update { it.copy(enabled = false, issue = it.issue?.takeIf(UsageIssue::disablesProcess)) }
+        stop()
+        val saved = runCatching { store.save(false) }.isSuccess
+        val forgotten = runCatching { installId.delete() }.isSuccess
+        if (saved && forgotten) return true
+        mutableState.update { it.copy(issue = UsageIssue.STORAGE_FAILED) }
+        return false
+    }
+
+    private fun handleTransportIssue(issue: UsageIssue) {
+        if (issue.disablesProcess) active = false
+        mutableState.update { it.copy(available = it.available && !issue.disablesProcess, issue = issue) }
+    }
+
     private fun startIfAllowed() {
-        if (!sessionBegan || !state.value.enabled || !transport.isAvailable || active) return
+        if (!sessionBegan || !state.value.enabled || !state.value.available || active) return
         try {
-            transport.start()
+            transport.start(installId.obtain())
             active = true
             if (!launchRecorded) {
                 record(UsageEvent.AppStarted)
                 launchRecorded = true
             }
         } catch (_: Throwable) {
-            active = false
-            mutableState.value = mutableState.value.copy(enabled = false, issue = UsageIssue.START_FAILED)
-            runCatching { store.save(false) }
+            handleTransportIssue(UsageIssue.START_FAILED)
         }
     }
 

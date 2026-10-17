@@ -1,5 +1,7 @@
+import com.android.build.api.dsl.AndroidSourceSet
+import com.android.build.api.dsl.VariantDimension
 import java.security.MessageDigest
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -8,28 +10,50 @@ plugins {
 }
 
 val repo = rootDir.parentFile
-val rawlabRumLocalProperty = providers.gradleProperty("rawlabRumLocal")
-val rawlabRumLocal = rawlabRumLocalProperty.map { value ->
-    value.toBooleanStrictOrNull() ?: throw GradleException("rawlabRumLocal must be true or false")
-}.orElse(false).get()
-val localRumAar = repo.resolve(".cache/shared/aliyun-rum/android/2.3.2/alibabacloud-android-rum-sdk-2.3.2.aar")
-val localRumAarSha256 = "681592df6727230a4ff7aef951636afb7d566fbcf486b15b25294b29154c5b1f"
+fun flag(name: String, default: Boolean): Boolean = providers.gradleProperty(name).map { value ->
+    value.toBooleanStrictOrNull() ?: throw GradleException("$name must be true or false")
+}.orElse(default).get()
 
-fun java.io.File.sha256(): String = MessageDigest.getInstance("SHA-256").digest(readBytes())
+// ============================================================================
+//  使用统计 SDK 的去留
+//  正式包默认携带阿里云 RUM SDK（env=PROD）；离线打包才显式 -PrawlabRumRelease=false。
+//  Debug 默认不带 SDK；-PrawlabRumLocal=true 是本地验证路径：Debug 带 SDK、env=LOCAL、
+//  独立包名与同意存储、默认不开启（只由探针或手动开关发送）。两个开关互不影响。
+// ============================================================================
+val rawlabRumLocal = flag("rawlabRumLocal", false)
+val rawlabRumRelease = flag("rawlabRumRelease", true)
+
+// 版本与 SHA-256 只写在 scripts/rum-sdk.env（下载脚本同读）；AAR 不进 Git，放主工作区共享缓存，
+// 位置由仓库的 scripts/rum/shared-cache.sh 决定（worktree 里也指向主工作区）
+val rumSdkPin = Properties().apply { rootDir.resolve("scripts/rum-sdk.env").reader().use(::load) }
+val rumSdkVersion: String = rumSdkPin.getProperty("RUM_ANDROID_VERSION")
+val rumSdkSha256: String = rumSdkPin.getProperty("RUM_ANDROID_SHA256")
+val rumCacheRoot = providers.exec {
+    commandLine("bash", "-c", "source \"\$0\" && printf %s \"\$RUM_CACHE_ROOT\"", repo.resolve("scripts/rum/shared-cache.sh").path)
+}.standardOutput.asText
+
+fun File.sha256(): String = MessageDigest.getInstance("SHA-256").digest(readBytes())
     .joinToString("") { byte -> "%02x".format(byte) }
 
-fun invokesReleaseTask(task: String): Boolean {
-    val name = task.substringAfterLast(':')
-    return name.equals("assemble", ignoreCase = true) ||
-        name.equals("build", ignoreCase = true) ||
-        name.contains("release", ignoreCase = true)
+// 只在真正需要 SDK 的变体解析依赖时才检查，Debug/CI 不受影响；缺失或不符即失败，不悄悄出没统计的包
+val verifiedRumSdk = provider {
+    val aar = File(rumCacheRoot.get(), "android/$rumSdkVersion/alibabacloud-android-rum-sdk-$rumSdkVersion.aar")
+    val fetch = "Fetch it with `bash scripts/fetch-rum-sdk.sh`, or build an offline release with -PrawlabRumRelease=false."
+    if (!aar.isFile) throw GradleException("Aliyun RUM Android SDK $rumSdkVersion is missing at $aar. $fetch")
+    if (aar.sha256() != rumSdkSha256) throw GradleException("Unexpected SHA-256 for $aar. Delete it. $fetch")
+    aar
 }
 
-if (rawlabRumLocal && gradle.startParameter.taskNames.any(::invokesReleaseTask)) {
-    throw GradleException("rawlabRumLocal is a Debug-only local validation flag; Release tasks are rejected")
+// 统计的构建差异只有两处：BuildConfig 里的存储/环境/默认值，和 UsageTransportFactory 的来源目录
+fun VariantDimension.usageProfile(preferences: String, environment: String, defaultEnabled: Boolean) {
+    buildConfigField("String", "USAGE_PREFERENCES", "\"$preferences\"")
+    buildConfigField("String", "RUM_ENVIRONMENT", "\"$environment\"")
+    buildConfigField("boolean", "USAGE_DEFAULT_ENABLED", "$defaultEnabled")
 }
-if (rawlabRumLocal && (!localRumAar.isFile || localRumAar.sha256() != localRumAarSha256)) {
-    throw GradleException("Missing or unexpected Aliyun RUM 2.3.2 AAR at ${localRumAar.path}")
+fun AndroidSourceSet.usageTransport(withSdk: Boolean) {
+    val root = if (withSdk) "src/rum" else "src/nosdk"
+    java.srcDir("$root/java")
+    assets.srcDir("$root/assets")
 }
 
 val testRaw = providers.gradleProperty("rawlabTestRaw").orElse(providers.environmentVariable("RAWLAB_TEST_RAW"))
@@ -90,16 +114,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
+        usageProfile(preferences = "usage_analytics", environment = "PROD", defaultEnabled = true)
     }
-    buildFeatures { compose = true }
-    if (rawlabRumLocal) {
-        sourceSets["main"].java.exclude("**/DefaultUsageAnalyticsRegistry.kt")
-        sourceSets["main"].java.exclude("**/DefaultRumLocalConfigurationProvider.kt")
-        sourceSets["debug"].java.srcDir("src/local/java")
-        sourceSets["debug"].assets.srcDir("src/local/assets")
-        sourceSets["debug"].manifest.srcFile("src/local/AndroidManifest.xml")
-        sourceSets["androidTest"].java.srcDir("src/localAndroidTest/java")
+    buildFeatures { compose = true; buildConfig = true }
+    if (rawlabRumLocal) buildTypes.getByName("debug") {
+        applicationIdSuffix = ".rumlocal"
+        usageProfile(preferences = "usage_analytics_rumlocal", environment = "LOCAL", defaultEnabled = false)
     }
+    sourceSets["debug"].usageTransport(withSdk = rawlabRumLocal)
+    sourceSets["release"].usageTransport(withSdk = rawlabRumRelease)
+    // 实网验证探针要直接调用 SDK 适配层，只随本地验证构建编译
+    if (rawlabRumLocal) sourceSets["androidTest"].java.srcDir("src/localAndroidTest/java")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -110,16 +135,6 @@ android {
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { unitTests.isReturnDefaultValues = true }
-    if (rawlabRumLocal) buildTypes.getByName("debug").applicationIdSuffix = ".rumlocal"
-}
-
-if (rawlabRumLocal) {
-    tasks.withType<KotlinCompile>().configureEach {
-        if (name == "compileDebugKotlin") {
-            exclude("**/DefaultUsageAnalyticsRegistry.kt")
-            exclude("**/DefaultRumLocalConfigurationProvider.kt")
-        }
-    }
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareAssets) }
@@ -129,7 +144,8 @@ tasks.matching {
 }.configureEach { dependsOn(prepareTestAssets) }
 
 dependencies {
-    if (rawlabRumLocal) add("debugImplementation", files(localRumAar))
+    if (rawlabRumLocal) add("debugImplementation", files(verifiedRumSdk))
+    if (rawlabRumRelease) add("releaseImplementation", files(verifiedRumSdk))
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.exifinterface:exifinterface:1.4.2")
