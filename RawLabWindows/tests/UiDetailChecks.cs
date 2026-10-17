@@ -55,6 +55,7 @@ internal static class UiDetailChecks
                     ResetMenus(window,language,check);
                     LibraryHint(window,output,language,check);
                     FailedOpen(window,output,language,check);
+                    AboutFooter(window,output,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -172,6 +173,20 @@ internal static class UiDetailChecks
         Pump(()=>(bool)failed.GetValue(window)!,TimeSpan.FromSeconds(20));
         check((bool)failed.GetValue(window)! && window.BackendLabel.Text!=Loc.Text("相机预览 · 正在显影"),$"Failed open does not keep reporting development: {window.BackendLabel.Text}");
         check(window.HistogramSurface.Visibility!=Visibility.Visible,"Failed open leaves no empty histogram box: "+language);
+    }
+    // 关于窗口变矮时，“关闭”按钮仍完整可见，不随内容一起被截掉
+    private static void AboutFooter(MainWindow window,string output,Action<bool,string> check)
+    {
+        var about=About(window,output);
+        try
+        {
+            about.SizeToContent=SizeToContent.Manual;about.Height=420;about.UpdateLayout();
+            var close=Descendants(about).OfType<Button>().Single(button=>button.IsCancel);
+            var content=(FrameworkElement)about.Content;
+            var bottom=close.TransformToAncestor(content).TransformBounds(new Rect(close.RenderSize)).Bottom;
+            check(close.IsVisible && bottom<=content.ActualHeight+.5,$"About close button stays visible in a short window: {bottom:0} / {content.ActualHeight:0}");
+        }
+        finally { about.Close(); }
     }
 
     private static AboutWindow About(MainWindow window,string output)
