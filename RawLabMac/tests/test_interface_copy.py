@@ -1,11 +1,32 @@
 """界面文案契约：显示给用户的名称都要经过当前界面语言。"""
+import json
 import pathlib
 import re
+import subprocess
 import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCES = sorted((ROOT / "Sources").glob("*.swift"))
+# 字符串字面量或行注释，谁先出现取谁：注释里的引号不算字面量
+TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
+CJK_PUNCTUATION = re.compile(r"[：，。、；！？（）「」]")
+
+
+def catalog(language):
+    path = ROOT / "Resources" / (language + ".lproj") / "Localizable.strings"
+    return json.loads(subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(path)]))
+
+
+def literals(path):
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        for token in TOKEN.findall(line):
+            if token.startswith("//"):
+                break
+            try:
+                yield number, json.loads(token)
+            except ValueError:  # Swift 插值等非 JSON 转义，原样比较
+                yield number, token[1:-1]
 
 
 def hits(pattern, skip=()):
@@ -31,6 +52,15 @@ class InterfaceCopy(unittest.TestCase):
         shown = view.count("model.job.lookName")
         self.assertGreater(shown, 0)
         self.assertEqual(view.count("L10n.text(model.job.lookName)"), shown)
+
+    # ------------------------------------------------------------------------
+    #  中文标点只能出现在翻译键里：拼接出来的"名称：原因"在英文界面也会带全角冒号
+    # ------------------------------------------------------------------------
+    def test_cjk_punctuation_only_lives_in_catalog_keys(self):
+        keys = catalog("en")
+        found = [f"{path.name}:{number}: {text}" for path in SOURCES for number, text in literals(path)
+                 if CJK_PUNCTUATION.search(text) and text not in keys]
+        self.assertEqual(found, [])
 
 
 if __name__ == "__main__":

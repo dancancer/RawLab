@@ -570,7 +570,7 @@ final class EditorModel: ObservableObject {
                     selectedID = try library.importLook(from: url).id
                     imported += 1
                 } catch {
-                    failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
+                    failures.append(L10n.format("%@：%@", url.lastPathComponent, error.localizedDescription))
                 }
             }
             let report = failures.isEmpty ? nil :

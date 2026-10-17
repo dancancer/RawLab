@@ -213,7 +213,7 @@ struct AdjustmentDock: View {
         .accessibilityLabel(title).accessibilityValue(valueText)
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("tool.\(parameter.rawValue)")
-        .help(parameter == .denoiseMode ? noiseReductionHelp : "\(title)：\(valueText)")
+        .help(parameter == .denoiseMode ? noiseReductionHelp : L10n.format("%@：%@", title, valueText))
         .contextMenu {
             Button(L10n.format("重置%@", String(describing: title))) {
                 if parameter.isWhiteBalance { model.settings.resetWhiteBalance() }
