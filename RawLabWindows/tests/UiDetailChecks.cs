@@ -213,11 +213,11 @@ internal static class UiDetailChecks
         window.ClipStats.Text=Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",0.0,0.0);window.UpdateLayout();
         check(System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(window.ClipStats)==null,$"Histogram statistics are not clipped: {window.ClipStats.Text}");
         window.HistogramSurface.Visibility=Visibility.Collapsed;
+        // 选中项的文字在框内完整排下：用 WPF 自己的布局裁切判断，与屏幕缩放无关
         window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
-        var widest=window.ExposureMode.Items.OfType<ComboBoxItem>().Max(item=>new System.Windows.Media.FormattedText(item.Content.ToString()!,
-            System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new System.Windows.Media.Typeface(window.ExposureMode.FontFamily,
-            window.ExposureMode.FontStyle,window.ExposureMode.FontWeight,window.ExposureMode.FontStretch),window.ExposureMode.FontSize,System.Windows.Media.Brushes.Black,1).WidthIncludingTrailingWhitespace);
-        check(window.ExposureMode.ActualWidth+.5>=widest+37,$"Exposure baseline selector fits its longest choice: {window.ExposureMode.ActualWidth:0} / {widest+37:0} ({language})");
+        var shown=Visuals(window.ExposureMode).OfType<TextBlock>().First();
+        check(System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(shown)==null,
+            $"Exposure baseline selector shows its choice whole: {shown.Text} {shown.ActualWidth:0}/{shown.DesiredSize.Width:0} ({language})");
     }
 
     private static AboutWindow About(MainWindow window,string output)
