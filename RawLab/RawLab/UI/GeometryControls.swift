@@ -55,7 +55,7 @@ struct IOSGeometryControls: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
+        HStack {
             Text(L10n.text("裁切与旋转"))
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)

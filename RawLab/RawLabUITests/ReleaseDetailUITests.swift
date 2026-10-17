@@ -31,6 +31,17 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertGreaterThan(difference, 1, "header reset and parameter reset render the same glyph")
     }
 
+    // 几何面板标题与右侧重置按钮垂直居中对齐
+    func testGeometryResetIsCenteredOnItsTitle() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        try selectTool("geometry", in: app)
+        let title = app.staticTexts["Crop and Rotate"]
+        let reset = app.buttons["geometry.reset"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10) && reset.exists, app.debugDescription)
+        XCTAssertEqual(title.frame.midY, reset.frame.midY, accuracy: 3)
+    }
+
     // ------------------------------------------------------------------------
     //  工具函数
     // ------------------------------------------------------------------------
