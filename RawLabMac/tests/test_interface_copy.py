@@ -62,6 +62,21 @@ class InterfaceCopy(unittest.TestCase):
                  if CJK_PUNCTUATION.search(text) and text not in keys]
         self.assertEqual(found, [])
 
+    # ------------------------------------------------------------------------
+    #  选项文字随语言变长：弹出菜单按最长选项取宽度，外观名不设固定上限
+    #  写死宽度时德文"An eingebettete Vorschau anpassen""Einstellung wie aufgenommen"被截断
+    # ------------------------------------------------------------------------
+    def test_localized_pickers_and_look_label_are_not_capped(self):
+        editor = (ROOT / "Sources/EditorView.swift").read_text()
+        dock = (ROOT / "Sources/AdjustmentDock.swift").read_text()
+        exposure = editor[editor.index('Picker(L10n.text("曝光基准")'):editor.index('.help(L10n.text("曝光基准"))')]
+        balance = dock[dock.index('Picker(L10n.text("白平衡")'):dock.index("parameterRow(.temperature)")]
+        look = editor[editor.index('"%@ · 大师配方"'):editor.index("Spacer(minLength: 8)")]
+        for name, block in (("exposure reference", exposure), ("white balance", balance)):
+            self.assertIn(".fixedSize()", block, name)
+            self.assertNotRegex(block, r"\.frame\((max)?[wW]idth:", name)
+        self.assertNotIn("maxWidth:", look)
+
 
 if __name__ == "__main__":
     unittest.main()

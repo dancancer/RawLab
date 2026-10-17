@@ -146,7 +146,7 @@ struct AdjustmentDock: View {
                                 }
                             )) {
                                 ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
-                            }.frame(width: 240).controlSize(.small).padding(.bottom, 4)
+                            }.fixedSize().controlSize(.small).padding(.bottom, 4)
                                 .id(localizationLocale.identifier)
                             parameterRow(.temperature)
                             parameterRow(.tint)

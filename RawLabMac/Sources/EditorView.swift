@@ -137,11 +137,11 @@ struct EditorView: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性")).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle).frame(maxWidth: 160, alignment: .leading)
+                    .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
                 Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().frame(maxWidth: 210)
+                }.labelsHidden().fixedSize()
                     .id(localizationLocale.identifier)
                     .disabled(RenderEngine.isRasterInput(model.file))
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
