@@ -210,6 +210,30 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         }
     }
 
+    // ------------------------------------------------------------------------
+    //  看得见的数值：参数行、工具徽标与批量摘要共用一份格式，小数点随界面语言；
+    //  零不带正负号。读屏数值仍由下面的 valueLabel 提供
+    // ------------------------------------------------------------------------
+    var unit: String {
+        switch self {
+        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening: return "%"
+        case .exposure: return "EV"
+        case .temperature: return "K"
+        default: return ""
+        }
+    }
+
+    func formatted(_ value: Double) -> String {
+        let number = self == .strength ? value * 100 : value
+        let signed = number != 0 && self != .strength && self != .temperature
+        let format = (signed ? "%+" : "%") + (self == .exposure ? ".2f" : ".0f")
+        return String(format: format, locale: L10n.locale, number)
+    }
+
+    func displayValue(_ value: Double) -> String {
+        "\(formatted(value)) \(unit)".trimmingCharacters(in: .whitespaces)
+    }
+
     func valueLabel(for value: Double) -> String {
         switch self {
         case .strength:

@@ -77,6 +77,7 @@
 		D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */; };
 		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
 		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
+		A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */; };
 		D00100000000000000000004 /* UI/BatchExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000014 /* UI/BatchExportView.swift */; };
 		D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000015 /* Core/Models/ExportSize.swift */; };
 		D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */; };
@@ -180,6 +181,7 @@
 		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
 		D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportCore.swift; sourceTree = "<group>"; };
 		D00100000000000000000013 /* Core/Batch/BatchExport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExport.swift; sourceTree = "<group>"; };
+		A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchSettingsSummary.swift; sourceTree = "<group>"; };
 		D00100000000000000000014 /* UI/BatchExportView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportView.swift; sourceTree = "<group>"; };
 		D00100000000000000000015 /* Core/Models/ExportSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSize.swift; sourceTree = "<group>"; };
 		D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ContentView+PhotoInfo.swift"; sourceTree = "<group>"; };
@@ -262,6 +264,7 @@
 			children = (
 				D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */,
 				D00100000000000000000013 /* Core/Batch/BatchExport.swift */,
+				A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */,
 			);
 			path = Batch;
 			sourceTree = "<group>";
@@ -624,6 +627,7 @@
 				D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */,
 				D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */,
 				D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */,
+				A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */,
 				D00100000000000000000004 /* UI/BatchExportView.swift in Sources */,
 				D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */,
 				D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */,
