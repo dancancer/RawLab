@@ -63,7 +63,10 @@
           AllowDrop="True" PreviewDragEnter="LibraryDragOver" PreviewDragOver="LibraryDragOver" PreviewDrop="LibraryDropped">
         <DockPanel Margin="8">
           <StackPanel DockPanel.Dock="Top"><TextBlock Text="{DynamicResource '照片目录'}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="10,14,0,8"/><Button x:Name="AddDirectoryButton" AutomationProperties.Name="{DynamicResource '添加目录'}" Click="AddFolderClicked" HorizontalContentAlignment="Stretch"><TextBlock Text="{DynamicResource '添加目录'}" TextWrapping="Wrap" TextAlignment="Center"/></Button></StackPanel>
-          <TextBlock x:Name="LibraryHint" DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="7" TextWrapping="Wrap" Visibility="Collapsed"/>
+          <!-- 提示跟随文件树是否有目录：启动时从磁盘恢复的目录也算，不依赖之后的增删通知 -->
+          <TextBlock x:Name="LibraryHint" DockPanel.Dock="Bottom" Text="{DynamicResource '右键根目录可移除；不会删除文件'}" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="7" TextWrapping="Wrap">
+            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=Files}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+          </TextBlock>
           <TreeView x:Name="Files" AllowDrop="True" Background="Transparent" BorderThickness="0" TreeViewItem.Expanded="FolderExpanded" SelectedItemChanged="FileSelected" PreviewMouseRightButtonDown="FilesPreviewMouseRightButtonDown" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
             <TreeView.Resources>
               <ResourceDictionary>

@@ -53,6 +53,7 @@ internal static class UiDetailChecks
                     Selection(window,language,check);
                     MenuPlacement(window,check);
                     ResetMenus(window,language,check);
+                    LibraryHint(window,output,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -152,6 +153,14 @@ internal static class UiDetailChecks
         var resetLabels=reset?.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(string)item.Header).ToList() ?? [];
         check(resetLabels.SequenceEqual(editLabels.Select(item=>item.Header)),"Dock reset menu and Edit menu use the same group names: "+language);
         if(reset!=null)reset.IsOpen=false;
+    }
+    // 启动时从磁盘恢复的目录同样显示右键提示
+    private static void LibraryHint(MainWindow window,string output,string language,Action<bool,string> check)
+    {
+        window.Files.ItemsSource=new[]{new LibraryEntry(Path.GetFullPath(output),true)};window.UpdateLayout();
+        check(window.LibraryHint.Visibility==Visibility.Visible,"Folder hint follows restored library folders: "+language);
+        window.Files.ItemsSource=Array.Empty<LibraryEntry>();window.UpdateLayout();
+        check(window.LibraryHint.Visibility==Visibility.Collapsed,"Folder hint hides without folders: "+language);
     }
 
     private static AboutWindow About(MainWindow window,string output)

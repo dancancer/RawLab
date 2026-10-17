@@ -98,7 +98,6 @@ public partial class MainWindow : Window
         Closed += (_, _) => updateCancellation.Cancel();
         Files.ItemsSource=library.Roots;
         Files.PreviewKeyDown+=FilesContextKeyDown;
-        library.Roots.CollectionChanged+=(_,_)=>LibraryHint.Visibility=library.Roots.Count>0 ? Visibility.Visible : Visibility.Collapsed;
         AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Collapsed;DockRow.MinHeight=0;DockRow.Height=new(0);SplitterRow.Height=new(0);
         thumbnailRefresh.Tick+=(_,_)=>{thumbnailRefresh.Stop();RefreshVisibleThumbnails();};
         Files.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,_)=>QueueThumbnailRefresh()));
