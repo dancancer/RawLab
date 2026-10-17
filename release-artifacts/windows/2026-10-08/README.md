@@ -6,10 +6,14 @@
 
 ## 在 Mac 上恢复并校验
 
-ZIP 按最多 64 MiB 分为两个二进制片段，直接随 Git 保存，无需 Git LFS。它们是同一个 ZIP 的字节分片，不能分别解压。从仓库根目录执行：
+ZIP 当时按最多 64 MiB 分为两个二进制片段随 Git 保存，无需 Git LFS。它们是同一个 ZIP 的字节分片，不能分别解压。当前源码树已移除这两个历史安装包分片，保留交接说明、清单和校验值；这不删除 Git 历史，也不改变已发布的附件。
+
+如需恢复本次历史交接包，从仓库根目录将原始提交中的目录导出到临时目录，再按原校验值重组：
 
 ```sh
-cd release-artifacts/windows/2026-10-08
+RECOVERY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-windows-20261008.XXXXXX")"
+git archive 0b3e19a -- release-artifacts/windows/2026-10-08 | tar -x -C "$RECOVERY_DIR"
+cd "$RECOVERY_DIR/release-artifacts/windows/2026-10-08"
 shasum -a 256 -c SHA256SUMS.parts.txt &&
 cat RawLab-Windows-interaction-20261008-win-x64.zip.part01 \
     RawLab-Windows-interaction-20261008-win-x64.zip.part02 \
