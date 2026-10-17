@@ -206,10 +206,15 @@ extension ContentView {
                         Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetSelectedAdjustment() }
                     }
                 } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .frame(width: 44, height: 44)
+                    // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
+                    HStack(spacing: 1) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                    }
+                    .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.text("重置调整"))
+                .accessibilityIdentifier("editor.reset")
                 .disabled(!viewModel.hasImage || editingLocked || settings == .default || geometrySelected || lensSelected)
             }
             .frame(height: max(44, panelHeaderHeight))

@@ -18,6 +18,19 @@ final class ReleaseDetailUITests: XCTestCase {
                       "navigation title squeezed to \(title.frame.width) pt")
     }
 
+    // 标题行的重置菜单（含"全部重置"）和参数自己的重置按钮紧挨着，两者不能长得一模一样
+    func testHeaderResetMenuLooksDifferentFromTheParameterReset() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        let header = app.buttons["Reset Adjustments"]
+        let parameter = app.buttons["adjustment.reset"]
+        XCTAssertTrue(header.waitForExistence(timeout: 10) && parameter.exists, app.debugDescription)
+        XCTAssertEqual(header.isEnabled, parameter.isEnabled, "compare both in the same state")
+        // 同一图标、同一状态时两张截图逐像素相同（差为 0）
+        let difference = meanDifference(header.screenshot().image, parameter.screenshot().image)
+        XCTAssertGreaterThan(difference, 1, "header reset and parameter reset render the same glyph")
+    }
+
     // ------------------------------------------------------------------------
     //  工具函数
     // ------------------------------------------------------------------------
