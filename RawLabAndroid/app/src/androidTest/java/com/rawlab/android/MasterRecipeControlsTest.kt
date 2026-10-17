@@ -31,6 +31,10 @@ class MasterRecipeControlsTest {
                 }
             }
         }
+        // 配方卡显示随包附带的插图，而不是通用图标
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("recipe-artwork-${recipes[0].id}", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("向左滚动大师配方").assertDoesNotExist()
         compose.onNodeWithContentDescription("向右滚动大师配方").assertDoesNotExist()
         val list = compose.onNodeWithTag("master-recipe-choices")

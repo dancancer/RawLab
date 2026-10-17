@@ -1,7 +1,6 @@
 package com.rawlab.android
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,6 +28,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
@@ -344,7 +344,7 @@ private fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, se
                 items(filmItems, key = { it.look.id }) { item ->
                     val look = item.look
                     val builtIn = bundledFilms.firstOrNull { it.id == look.id }
-                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${builtIn.artworkName}.png") else null
+                    val artwork = if (builtIn?.file != null) assetBitmap("artwork/${builtIn.artworkName}.png", 80.dp) else null
                     val additional = builtIn != null && Film.all.none { it.id == builtIn.id }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (item.startsGroup) VerticalDivider(Modifier.height(122.dp).padding(horizontal = 12.dp)
@@ -510,7 +510,10 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
             Column(Modifier.width(112.dp).selectable(selected == recipe?.id, enabled = enabled,
                 role = Role.RadioButton, onClick = { onSelect(recipe) }), horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.size(64.dp).border(1.dp, if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    val artwork = recipe?.let { assetBitmap("MasterRecipeIcons/${it.id}.png", 64.dp) }
+                    if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("recipe-artwork-${recipe?.id}"),
+                        contentScale = ContentScale.Crop)
+                    else Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(recipe?.name ?: stringResource(R.string.no_recipe), Modifier.heightIn(min = 22.dp),
                     style = MaterialTheme.typography.labelMedium,
@@ -520,15 +523,4 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
             }
         }
     }
-}
-
-@Composable
-private fun assetBitmap(path: String): Bitmap? {
-    val context = LocalContext.current
-    val bitmap by produceState<Bitmap?>(null, path) {
-        value = withContext(Dispatchers.IO) {
-            context.assets.open(path).use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 4 }) }
-        }
-    }
-    return bitmap
 }

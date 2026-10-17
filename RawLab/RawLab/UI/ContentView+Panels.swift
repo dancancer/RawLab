@@ -9,6 +9,7 @@ extension ContentView {
                 Button { showingPrivacy = true } label: {
                     Label(L10n.text("隐私设置"), systemImage: "gearshape")
                 }
+                .accessibilityIdentifier("editor.privacy.open")
                 Button { showingFileImporter = true } label: {
                     Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
                 }

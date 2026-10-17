@@ -486,5 +486,16 @@
   "验证失败": "Validation failed",
     "正在检查 RAW…": "Checking photos…",
   "停止": "Stop",
-  "当前项完成后停止，已完成的输出会保留。": "Stop after the current item finishes; completed outputs will be kept."
+  "当前项完成后停止，已完成的输出会保留。": "Stop after the current item finishes; completed outputs will be kept.",
+  "允许使用统计": "Allow usage analytics",
+  "阿里云隐私政策": "Aliyun privacy policy",
+  "当前构建未配置使用统计，未采集或上报。": "Usage analytics is not configured in this build; nothing is collected or reported.",
+  "已允许使用统计；可随时关闭。": "Usage analytics is allowed; you can turn it off at any time.",
+  "使用统计已关闭。": "Usage analytics is off.",
+  "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data. Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.",
+  "统计服务生命周期失败，未再尝试；请退出应用完成清理": "The analytics service lifecycle failed and was not retried. Quit the app to finish cleanup.",
+  "统计服务未能启动，照片编辑不受影响": "The analytics service could not start. Photo editing is unaffected.",
+  "统计服务关闭失败，未再尝试关闭；请退出应用完成清理": "The analytics service could not stop and was not retried. Quit the app to finish cleanup.",
+  "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限": "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.",
+  "无法读取文件身份。": "Unable to read the file identity."
 }

@@ -99,7 +99,8 @@ final class UsageAnalytics: ObservableObject {
     private var active = false
     private var countedLaunch = false
     var isAvailable: Bool { transport.isAvailable }
-    var status: String {
+    // 返回翻译键，由界面层按当前语言翻译；模型本身不依赖本地化模块
+    var statusKey: String {
         if let issue { return issue }
         if !isAvailable {
             return (transport as? UsageTransportAvailability)?.unavailableReason ?? "当前构建未配置使用统计，未采集或上报。"

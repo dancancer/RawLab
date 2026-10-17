@@ -8,10 +8,50 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
+APPLE_CLIENTS = {"RawLabMac": "RawLabMac/Sources", "RawLab/RawLab": "RawLab/RawLab"}
+CJK = re.compile(r"[一-鿿]")
+# 字符串字面量或行注释，谁先出现取谁：注释里的引号不算字面量
+TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
 
 
 def apple_catalog(path):
     return json.loads(subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(path)]))
+
+
+def windows_catalog(language):
+    return json.loads((ROOT / "RawLabWindows/Resources/Localization" / (language + ".json")).read_text())
+
+
+def decode(literal):
+    try:
+        return json.loads(literal)
+    except ValueError:  # Swift 插值等非 JSON 转义，原样比较
+        return literal[1:-1]
+
+
+def code_literals(path):
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        for token in TOKEN.findall(line):
+            if token.startswith("//"):
+                break
+            yield number, line, decode(token)
+
+
+def untranslated(files, catalog, call):
+    """既不是翻译键、也不在翻译调用里的中文字面量；本地化模块自身的母语名称除外"""
+    return sorted(f"{path.relative_to(ROOT)}:{number}: {text}"
+                  for path in files if path.stem != "Localization"
+                  for number, line, text in code_literals(path)
+                  if CJK.search(text) and text not in catalog and call not in line)
+
+
+def xaml_literals(path):
+    """XAML 属性值或元素正文里的中文：界面文字只能经由 DynamicResource；Tag 是给代码用的标识，不显示"""
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        for name, value, body in re.findall(r'([\w.:]+)="([^"{][^"]*)"|>([^<>]+)<', line):
+            text = body or (value if name != "Tag" else "")
+            if CJK.search(text):
+                yield f"{path.name}:{number}: {text.strip()}"
 
 
 class LocalizationTests(unittest.TestCase):
@@ -30,10 +70,10 @@ class LocalizationTests(unittest.TestCase):
         keys = {recipe[field] for recipe in recipes for field in ("subtitle", "summary")}
         keys.update(("色相", "饱和度", "明度", "红", "橙", "黄", "绿", "青", "蓝", "紫", "洋红", "重置 HSL"))
         for language in LANGUAGES:
-            for client in ("RawLabMac", "RawLab/RawLab"):
+            for client in APPLE_CLIENTS:
                 catalog = apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
                 self.assertTrue(keys <= catalog.keys(), (client, language, keys - catalog.keys()))
-            catalog = json.loads((ROOT / "RawLabWindows/Resources/Localization" / (language + ".json")).read_text())
+            catalog = windows_catalog(language)
             self.assertTrue(keys <= catalog.keys(), (language, keys - catalog.keys()))
 
     def assert_parity(self, catalogs, signature):
@@ -48,44 +88,60 @@ class LocalizationTests(unittest.TestCase):
                     self.assertEqual(expected, signature(value), (language, key))
 
     def test_apple_catalogs_and_source_coverage(self):
-        for client, sources in (("RawLabMac", ROOT / "RawLabMac/Sources"),
-                                ("RawLab/RawLab", ROOT / "RawLab/RawLab")):
+        for client, sources in APPLE_CLIENTS.items():
             catalogs = {lang: apple_catalog(ROOT / client / "Resources" / (lang + ".lproj") / "Localizable.strings")
                         for lang in LANGUAGES}
             self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
-            for source in list(sources.rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift")):
-                for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text()):
-                    key = json.loads('"' + raw + '"')
-                    self.assertTrue(key in catalogs["en"], (source, key))
+            missing = sorted({(source.name, json.loads('"' + raw + '"'))
+                              for source in list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
+                              for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
+                              if json.loads('"' + raw + '"') not in catalogs["en"]})
+            self.assertEqual(missing, [], client)
             for key in ("细节优先", "去噪优先", "自定义", "跟随系统"):
                 self.assertIn(key, catalogs["en"])
+
+    def test_source_literals_are_translated(self):
+        for client, sources in APPLE_CLIENTS.items():
+            catalog = apple_catalog(ROOT / client / "Resources/en.lproj/Localizable.strings")
+            files = list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
+            self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
+        windows = ROOT / "RawLabWindows"
+        self.assertEqual(untranslated(windows.glob("*.cs"), windows_catalog("en"), "Loc."), [], "RawLabWindows")
+        self.assertEqual([hit for path in windows.glob("*.xaml") for hit in xaml_literals(path)], [], "XAML")
+
+    def test_ui_labels_start_with_capital(self):
+        for language in ("en", "de", "fr", "es"):
+            catalogs = {client: apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
+                        for client in APPLE_CLIENTS}
+            catalogs["RawLabWindows"] = windows_catalog(language)
+            for client, catalog in catalogs.items():
+                lower = {key: value for key, value in catalog.items() if value[:1].islower()}
+                self.assertEqual(lower, {}, (client, language))
 
     def test_android_catalogs(self):
         directories = {"en": "values", "zh-Hans": "values-b+zh+Hans", "de": "values-de",
                        "fr": "values-fr", "ja": "values-ja", "es": "values-es"}
         catalogs = {language: {element.attrib["name"]: "".join(element.itertext())
-                               for element in ET.parse(ROOT / "RawLabAndroid/app/src/main/res" / directory / "strings.xml").getroot()}
+                               for path in (ROOT / "RawLabAndroid/app/src/main/res" / directory).glob("*.xml")
+                               for element in ET.parse(path).getroot() if element.tag == "string"}
                     for language, directory in directories.items()}
         self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
-        for source in (ROOT / "RawLabAndroid/app/src/main/java").rglob("*.kt"):
-            for key in re.findall(r"R\.string\.(\w+)", source.read_text()):
-                self.assertIn(key, catalogs["en"], (source, key))
+        missing = sorted({(source.name, key) for source in (ROOT / "RawLabAndroid/app/src/main/java").rglob("*.kt")
+                          for key in re.findall(r"R\.string\.(\w+)", source.read_text()) if key not in catalogs["en"]})
+        self.assertEqual(missing, [])
         for recipe in json.loads((ROOT / "Shared/master-recipes.json").read_text()):
             self.assertIn("recipe_subtitle_" + recipe["id"], catalogs["en"])
 
     def test_windows_catalogs(self):
-        catalogs = {language: json.loads((ROOT / "RawLabWindows/Resources/Localization" / (language + ".json")).read_text())
-                    for language in LANGUAGES}
+        catalogs = {language: windows_catalog(language) for language in LANGUAGES}
         self.assert_parity(catalogs, lambda s: sorted(re.findall(r"\{\d+(?:[^{}]*)\}", s)))
-        for source in (ROOT / "RawLabWindows").glob("*.cs"):
-            for raw in re.findall(r'Loc\.(?:Text|Format)\("((?:[^"\\]|\\.)*)"', source.read_text()):
-                key = json.loads('"' + raw + '"')
-                self.assertIn(key, catalogs["en"], (source, key))
-        namespace = {"x": "http://schemas.microsoft.com/winfx/2006/xaml/presentation"}
-        for source in (ROOT / "RawLabWindows").glob("*.xaml"):
+        windows = ROOT / "RawLabWindows"
+        keys = {json.loads('"' + raw + '"') for source in windows.glob("*.cs")
+                for raw in re.findall(r'Loc\.(?:Text|Format)\("((?:[^"\\]|\\.)*)"', source.read_text())}
+        for source in windows.glob("*.xaml"):
             ET.parse(source)
-            for key in re.findall(r"\{DynamicResource '([^']+)'\}", source.read_text()):
-                self.assertIn(key, catalogs["en"], (source, key))
+            keys.update(re.findall(r"\{DynamicResource '([^']+)'\}", source.read_text()))
+        self.assertEqual(sorted(keys - catalogs["en"].keys()), [])
 
 
 if __name__ == "__main__":

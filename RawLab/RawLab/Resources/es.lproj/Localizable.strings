@@ -369,3 +369,20 @@
 "3:2" = "3:2";
 "4:3" = "4:3";
 "16:9" = "16:9";
+
+"允许使用统计" = "Permitir análisis de uso";
+"阿里云隐私政策" = "Política de privacidad de Aliyun";
+"当前构建未配置使用统计，未采集或上报。" = "El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.";
+"已允许使用统计；可随时关闭。" = "El análisis de uso está permitido; puede desactivarlo en cualquier momento.";
+"使用统计已关闭。" = "El análisis de uso está desactivado.";
+"无法读取统计设置，已保持关闭。" = "No se pudo leer el ajuste de análisis; el análisis permanece desactivado.";
+"统计服务未能启动，照片编辑不受影响。" = "No se pudo iniciar el servicio de análisis. La edición de fotos no se ve afectada.";
+"统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso. Compruebe el permiso de almacenamiento antes de reiniciar.";
+"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "El SDK de validación local se ha detenido. Reinicie la aplicación antes de volver a activar el análisis.";
+"拖动边角裁切，拖动画面内移动选区。" = "Arrastre una esquina para recortar; arrastre dentro de la selección para moverla.";
+"调整裁切边角" = "Ajustar esquina de recorte";
+"隐私设置" = "Configuración de privacidad";
+"数据与提供方" = "Datos y proveedor";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión.";
+"不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "No se recopilan fotos, vistas previas, nombres de archivo, rutas, EXIF ni contenido de IA. Al desactivarse, se detiene la nueva recopilación; las solicitudes ya enviadas no pueden retirarse.";
+"裁切选区" = "Selección de recorte";

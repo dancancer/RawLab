@@ -252,22 +252,22 @@ private struct UsagePrivacyView: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("允许使用统计", isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
+                    Toggle(L10n.text("允许使用统计"), isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
                         .disabled(!usage.isAvailable && !usage.isEnabled)
                         .accessibilityIdentifier("usage.consent")
-                    Text(usage.status).foregroundStyle(.secondary)
+                    Text(L10n.text(usage.statusKey)).foregroundStyle(.secondary)
                 }
-                Section("数据与提供方") {
-                    Text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。")
-                    Text("不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。")
-                    Link("阿里云隐私政策", destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
+                Section(L10n.text("数据与提供方")) {
+                    Text(L10n.text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。"))
+                    Text(L10n.text("不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"))
+                    Link(L10n.text("阿里云隐私政策"), destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
                 }
             }
-            .navigationTitle("隐私设置")
+            .navigationTitle(L10n.text("隐私设置"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }.accessibilityIdentifier("usage.done")
+                    Button(L10n.text("完成")) { dismiss() }.accessibilityIdentifier("usage.done")
                 }
             }
         }.preferredColorScheme(.dark).tint(.yellow)

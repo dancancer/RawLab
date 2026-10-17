@@ -486,5 +486,16 @@
   "验证失败": "Error de validación",
     "正在检查 RAW…": "Comprobando fotos…",
   "停止": "Detener",
-  "当前项完成后停止，已完成的输出会保留。": "Detener después de completar el elemento actual; se conservarán las salidas completadas."
+  "当前项完成后停止，已完成的输出会保留。": "Detener después de completar el elemento actual; se conservarán las salidas completadas.",
+  "允许使用统计": "Permitir análisis de uso",
+  "阿里云隐私政策": "Política de privacidad de Aliyun",
+  "当前构建未配置使用统计，未采集或上报。": "El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.",
+  "已允许使用统计；可随时关闭。": "El análisis de uso está permitido; puede desactivarlo en cualquier momento.",
+  "使用统计已关闭。": "El análisis de uso está desactivado.",
+  "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": "Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión. No se recopilan fotos, vistas previas, nombres de archivo, rutas, EXIF ni contenido de IA. Al desactivarse, se detiene la nueva recopilación; las solicitudes ya enviadas no pueden retirarse.",
+  "统计服务生命周期失败，未再尝试；请退出应用完成清理": "El ciclo de vida del servicio de análisis falló y no se reintentó. Cierre la aplicación para completar la limpieza.",
+  "统计服务未能启动，照片编辑不受影响": "No se pudo iniciar el servicio de análisis. La edición de fotos no se ve afectada.",
+  "统计服务关闭失败，未再尝试关闭；请退出应用完成清理": "No se pudo detener el servicio de análisis y no se reintentó. Cierre la aplicación para completar la limpieza.",
+  "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限": "No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso. Compruebe el permiso de almacenamiento antes de reiniciar.",
+  "无法读取文件身份。": "No se puede leer la identidad del archivo."
 }

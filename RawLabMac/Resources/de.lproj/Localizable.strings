@@ -40,7 +40,7 @@
 "作者的小红书主页" = "Little Red Book-Homepage des Autors";
 "使用可调降噪" = "Verwenden Sie eine einstellbare Geräuschreduzierung";
 "使用当前调整批量导出…" = "Mit aktuellen Anpassungen stapelweise exportieren…";
-"保存" = "speichern";
+"保存" = "Speichern";
 "保存到" = "Speichern unter";
 "保留旧编辑记录的降噪算法" = "Rauschunterdrückungsalgorithmus, der alte Bearbeitungsdatensätze beibehält";
 "停用" = "Aus";
@@ -156,7 +156,7 @@
 "旧版 FBDD" = "Alte Version FBDD";
 "旧版色度降噪" = "Chroma-Rauschunterdrückung der alten Version";
 "旧版：%@" = "Alte Version: %@";
-"明暗" = "hell und dunkel";
+"明暗" = "Tonwert";
 "显示 %@" = "Zeigt %@";
 "显示成片" = "Darstellung im Film";
 "显示或收起文件树" = "Zeigen Sie den Dateibaum an oder reduzieren Sie ihn";
@@ -209,7 +209,7 @@
 "继续上次批量任务" = "Setzen Sie die letzte Batch-Aufgabe fort";
 "继续未完成的 %@ 张" = "Fahren Sie mit den unvollendeten %@-Blättern fort";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Sehen Sie sich weiterhin die letzte Aufgabe an oder behalten Sie die exportierte Datei und erstellen Sie eine neue Aufgabe.";
-"缩小" = "herauszoomen";
+"缩小" = "Verkleinern";
 "缩放" = "Zoomen";
 "羽化" = "Federn";
 "胶片" = "Film";
@@ -240,7 +240,7 @@
 "载入照片后可用" = "Verfügbar nach dem Laden von Fotos";
 "输入调整" = "Eingangsanpassung";
 "输出" = "Ausgabe";
-"适合窗口" = "passt ins Fenster";
+"适合窗口" = "An Fenster anpassen";
 "选择 %@" = "Wählen Sie %@";
 "选择待导出的 RAW 照片" = "Wählen Sie RAW-Fotos zum Exportieren aus";
 "选择照片…" = "Foto auswählen…";
@@ -257,7 +257,7 @@
 "重试" = "Versuchen Sie es erneut";
 "重试失败的 %@ 张" = "%@ fehlgeschlagene Fotos erneut versuchen";
 "锐化" = "Schärfen";
-"长边" = "lange Seite";
+"长边" = "Lange Kante";
 "长边 %@ px" = "Lange Kante %@ px";
 "阴影" = "Schatten";
 "降噪" = "Entrauschen";
@@ -487,3 +487,16 @@
 "应用" = "Anwenden";
 "裁切尺寸" = "Zuschnittgröße";
 "草稿未应用，无法导出或复制设置。" = "Den Entwurf vor dem Exportieren oder Kopieren der Einstellungen anwenden.";
+
+"允许使用统计" = "Nutzungsanalyse erlauben";
+"阿里云隐私政策" = "Datenschutzerklärung von Aliyun";
+"当前构建未配置使用统计，未采集或上报。" = "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.";
+"已允许使用统计；可随时关闭。" = "Die Nutzungsanalyse ist erlaubt. Sie können sie jederzeit deaktivieren.";
+"使用统计已关闭。" = "Die Nutzungsanalyse ist deaktiviert.";
+"无法读取统计设置，已保持关闭。" = "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.";
+"统计服务未能启动，照片编辑不受影响。" = "Der Analysedienst konnte nicht gestartet werden. Die Fotobearbeitung ist nicht betroffen.";
+"统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt. Prüfen Sie vor dem Neustart die Speicherberechtigung.";
+"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "Das lokale Validierungs-SDK wurde gestoppt. Starten Sie die App neu, bevor Sie die Analyse wieder aktivieren.";
+"拖动边角裁切，拖动画面内移动选区。" = "Ziehen Sie eine Ecke, um zuzuschneiden; ziehen Sie innerhalb der Auswahl, um sie zu verschieben.";
+"调整裁切边角" = "Zuschnittecke anpassen";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen. Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";

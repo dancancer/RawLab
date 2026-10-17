@@ -2,16 +2,24 @@ import XCTest
 
 final class EditorUITests: XCTestCase {
     func testUsagePrivacyDefaultsOff() {
+        // 英文界面下隐私设置整页都是英文：入口、标题、开关与状态说明
         let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
         app.launch()
-        let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 10))
-        privacy.tap()
+        let menu = app.buttons["editor.privacy"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        XCTAssertEqual(menu.label, "Privacy settings")
+        menu.tap()
+        let open = app.buttons["editor.privacy.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5), app.debugDescription)
+        open.tap()
         let toggle = app.switches["usage.consent"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         XCTAssertEqual(toggle.value as? String, "0")
         XCTAssertFalse(toggle.isEnabled)
-        XCTAssertTrue(app.staticTexts["当前构建未配置使用统计，未采集或上报。"].exists)
+        XCTAssertEqual(toggle.label, "Allow usage analytics")
+        XCTAssertTrue(app.navigationBars["Privacy settings"].exists, app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Usage analytics is not configured in this build; nothing is collected or reported."].exists)
         capture("usage-privacy-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["usage.done"].isHittable)

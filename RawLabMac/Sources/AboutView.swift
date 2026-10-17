@@ -40,12 +40,12 @@ struct AboutView: View {
                     .frame(maxHeight: 180)
             }
             Divider()
-            Toggle("允许使用统计", isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
+            Toggle(L10n.text("允许使用统计"), isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
                 .disabled(!usage.isAvailable && !usage.isEnabled)
-            Text(usage.status).font(.callout).foregroundStyle(.secondary)
-            Text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。")
+            Text(L10n.text(usage.statusKey)).font(.callout).foregroundStyle(.secondary)
+            Text(L10n.text("开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Link("阿里云隐私政策", destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
+            Link(L10n.text("阿里云隐私政策"), destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
                 .font(.callout)
         }
         .padding(24).frame(width: 440).fixedSize(horizontal: false, vertical: true)

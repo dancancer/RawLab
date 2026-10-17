@@ -369,3 +369,20 @@
 "3:2" = "3:2";
 "4:3" = "4:3";
 "16:9" = "16:9";
+
+"允许使用统计" = "Allow usage analytics";
+"阿里云隐私政策" = "Aliyun privacy policy";
+"当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
+"已允许使用统计；可随时关闭。" = "Usage analytics is allowed; you can turn it off at any time.";
+"使用统计已关闭。" = "Usage analytics is off.";
+"无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
+"统计服务未能启动，照片编辑不受影响。" = "The analytics service could not start. Photo editing is unaffected.";
+"统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.";
+"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "The local validation SDK has stopped. Restart the app before turning analytics on again.";
+"拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
+"调整裁切边角" = "Adjust crop corner";
+"隐私设置" = "Privacy settings";
+"数据与提供方" = "Data and provider";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
+"不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
+"裁切选区" = "Crop Selection";

@@ -27,7 +27,7 @@
 "上次批量任务尚未完成" = "La dernière tâche batch n'est pas encore terminée";
 "不是支持的 RAW 文件" = "Il ne s'agit pas d'un fichier RAW pris en charge";
 "中性" = "Neutre";
-"中点" = "point médian";
+"中点" = "Point médian";
 "交互预览… %@ × %@ · sRGB" = "Aperçu interactif… %@ × %@ · sRGB";
 "亮度降噪" = "Réduction du bruit de luminance";
 "仅包含此目录中的 RAW，不包含子目录。" = "Seuls les RAW de ce répertoire sont inclus, pas les sous-répertoires.";
@@ -40,7 +40,7 @@
 "作者的小红书主页" = "Page d'accueil du Petit Livre rouge de l'auteur";
 "使用可调降噪" = "Utiliser une réduction de bruit réglable";
 "使用当前调整批量导出…" = "Exporter par lots avec les réglages actuels…";
-"保存" = "enregistrer";
+"保存" = "Enregistrer";
 "保存到" = "Enregistrer dans";
 "保留旧编辑记录的降噪算法" = "Algorithme de réduction du bruit qui conserve les anciens enregistrements d'édition";
 "停用" = "Désactivé";
@@ -56,9 +56,9 @@
 "匹配内嵌预览" = "Adapter à l'aperçu intégré";
 "原图" = "Photo originale";
 "原图与调整后对比" = "Comparaison entre l'image originale et l'image ajustée";
-"原始尺寸" = "taille originale";
+"原始尺寸" = "Taille d’origine";
 "原始文件已被替换，请重新选择照片。" = "Le fichier original a été remplacé, veuillez sélectionner à nouveau la photo.";
-"原尺寸" = "taille originale";
+"原尺寸" = "Taille d’origine";
 "去噪优先" = "Priorité à la réduction du bruit";
 "参数或输出路径无效，不能覆盖原始 RAW。" = "Paramètre ou chemin de sortie non valide, le RAW d'origine ne peut pas être écrasé.";
 "发现新版本 %@" = "Nouvelle version trouvée %@";
@@ -71,7 +71,7 @@
 "处理结果为空" = "Le résultat du traitement est vide";
 "外观名称不能为空或包含控制字符。" = "Le nom de l'apparence ne peut pas être vide ni contenir des caractères de contrôle.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Le fichier skin est corrompu ou incompatible ; un fichier CUBE ou RLOOK compatible est requis.";
-"大小" = "taille";
+"大小" = "Taille";
 "实际像素 · 100%" = "Pixels réels · 100 %";
 "对比" = "Comparaison";
 "对比度" = "Contraste";
@@ -117,7 +117,7 @@
 "打开 RAW 照片" = "Ouvrir une photo RAW";
 "打开 RAW…" = "Ouvrir RAW…";
 "打开其他 RAW…" = "Ouvrez un autre RAW…";
-"打开文件夹" = "ouvrir le dossier";
+"打开文件夹" = "Ouvrir le dossier";
 "批量导出" = "Exportation par lots";
 "拍摄参数" = "Paramètres de prise de vue";
 "拍摄时设置" = "Réglage selon la prise";
@@ -130,8 +130,8 @@
 "效果" = "Effet";
 "效果预览" = "Aperçu de l'effet";
 "文件信息" = "Informations du fichier";
-"文件夹" = "dossier";
-"文件树" = "arborescence des fichiers";
+"文件夹" = "Dossiers";
+"文件树" = "Arborescence des fichiers";
 "新建任务" = "Créer une nouvelle tâche";
 "无 RAW 照片" = "Pas de photos RAW";
 "无效或不可用的色度降噪模式" = "Mode de réduction du bruit chroma invalide ou indisponible";
@@ -156,7 +156,7 @@
 "旧版 FBDD" = "Ancienne version FBDD";
 "旧版色度降噪" = "Ancienne version de réduction du bruit chromatique";
 "旧版：%@" = "Ancienne version : %@";
-"明暗" = "clair et sombre";
+"明暗" = "Tons";
 "显示 %@" = "Affichage de %@";
 "显示成片" = "Affichage au cinéma";
 "显示或收起文件树" = "Afficher ou réduire l'arborescence des fichiers";
@@ -209,16 +209,16 @@
 "继续上次批量任务" = "Continuer la dernière tâche batch";
 "继续未完成的 %@ 张" = "Continuer les feuilles %@ inachevées";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continuez à afficher la dernière tâche ou conservez le fichier exporté et créez une nouvelle tâche.";
-"缩小" = "dézoomer";
+"缩小" = "Réduire";
 "缩放" = "Zoomer";
 "羽化" = "Mise en drapeau";
 "胶片" = "Film";
-"胶片模拟" = "simulation de film";
+"胶片模拟" = "Simulation de film";
 "自动检查更新" = "Rechercher automatiquement les mises à jour";
 "自动添加序号" = "Ajouter automatiquement le numéro de série";
 "自定义" = "Personnalisé";
 "色度降噪" = "Réduction du bruit chroma";
-"色彩" = "couleur";
+"色彩" = "Couleur";
 "色彩降噪" = "Réduction du bruit de chrominance";
 "色温" = "Température";
 "色调" = "Teinte";
@@ -238,9 +238,9 @@
 "跟随系统" = "Suivre le système";
 "轻度" = "Doux";
 "载入照片后可用" = "Disponible après le chargement des photos";
-"输入调整" = "réglage de l'entrée";
+"输入调整" = "Réglages d’entrée";
 "输出" = "Sortie";
-"适合窗口" = "s'adapter à la fenêtre";
+"适合窗口" = "Ajuster à la fenêtre";
 "选择 %@" = "Sélectionnez %@";
 "选择待导出的 RAW 照片" = "Sélectionnez les photos RAW à exporter";
 "选择照片…" = "Sélectionnez une photo…";
@@ -249,7 +249,7 @@
 "重名文件" = "Fichier avec un nom en double";
 "重命名…" = "Renommer…";
 "重命名外观" = "Renommer l'apparence";
-"重新读取目录" = "relire le répertoire";
+"重新读取目录" = "Recharger le répertoire";
 "重置%@" = "Réinitialiser %@";
 "重置全部调整" = "Réinitialiser tous les réglages";
 "重置调整" = "Réinitialiser les réglages";
@@ -257,7 +257,7 @@
 "重试" = "Réessayez";
 "重试失败的 %@ 张" = "Réessayer %@ photos en échec";
 "锐化" = "Netteté";
-"长边" = "côté long";
+"长边" = "Bord long";
 "长边 %@ px" = "Bord long %@ px";
 "阴影" = "Ombres";
 "降噪" = "Débruitage";
@@ -487,3 +487,16 @@
 "应用" = "Appliquer";
 "裁切尺寸" = "Dimensions du recadrage";
 "草稿未应用，无法导出或复制设置。" = "Appliquez le brouillon avant d’exporter ou de copier les réglages.";
+
+"允许使用统计" = "Autoriser l’analyse d’utilisation";
+"阿里云隐私政策" = "Politique de confidentialité d’Aliyun";
+"当前构建未配置使用统计，未采集或上报。" = "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.";
+"已允许使用统计；可随时关闭。" = "L’analyse d’utilisation est autorisée. Vous pouvez la désactiver à tout moment.";
+"使用统计已关闭。" = "L’analyse d’utilisation est désactivée.";
+"无法读取统计设置，已保持关闭。" = "Le réglage d’analyse n’a pas pu être lu. L’analyse reste désactivée.";
+"统计服务未能启动，照片编辑不受影响。" = "Le service d’analyse n’a pas pu démarrer. La retouche photo n’est pas affectée.";
+"统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Le réglage d’analyse n’a pas pu être enregistré. La collecte est arrêtée pour ce processus. Vérifiez l’autorisation de stockage avant de redémarrer.";
+"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "Le SDK de validation local est arrêté. Redémarrez l’application avant de réactiver l’analyse.";
+"拖动边角裁切，拖动画面内移动选区。" = "Faites glisser un coin pour recadrer ; faites glisser à l’intérieur de la zone pour la déplacer.";
+"调整裁切边角" = "Ajuster le coin de recadrage";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.";

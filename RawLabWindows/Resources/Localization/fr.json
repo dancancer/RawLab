@@ -486,5 +486,16 @@
   "验证失败": "Échec de la validation",
     "正在检查 RAW…": "Vérification des photos…",
   "停止": "Arrêter",
-  "当前项完成后停止，已完成的输出会保留。": "Arrêter après la fin de l’élément en cours ; les sorties terminées sont conservées."
+  "当前项完成后停止，已完成的输出会保留。": "Arrêter après la fin de l’élément en cours ; les sorties terminées sont conservées.",
+  "允许使用统计": "Autoriser l’analyse d’utilisation",
+  "阿里云隐私政策": "Politique de confidentialité d’Aliyun",
+  "当前构建未配置使用统计，未采集或上报。": "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.",
+  "已允许使用统计；可随时关闭。": "L’analyse d’utilisation est autorisée. Vous pouvez la désactiver à tout moment.",
+  "使用统计已关闭。": "L’analyse d’utilisation est désactivée.",
+  "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.",
+  "统计服务生命周期失败，未再尝试；请退出应用完成清理": "Le cycle de vie du service d’analyse a échoué et n’a pas été relancé. Quittez l’application pour terminer le nettoyage.",
+  "统计服务未能启动，照片编辑不受影响": "Le service d’analyse n’a pas pu démarrer. La retouche photo n’est pas affectée.",
+  "统计服务关闭失败，未再尝试关闭；请退出应用完成清理": "Le service d’analyse n’a pas pu s’arrêter et n’a pas été relancé. Quittez l’application pour terminer le nettoyage.",
+  "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限": "Le réglage d’analyse n’a pas pu être enregistré. La collecte est arrêtée pour ce processus. Vérifiez l’autorisation de stockage avant de redémarrer.",
+  "无法读取文件身份。": "Impossible de lire l’identité du fichier."
 }

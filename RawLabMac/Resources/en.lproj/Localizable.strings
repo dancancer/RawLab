@@ -27,7 +27,7 @@
 "上次批量任务尚未完成" = "The last batch task has not been completed yet";
 "不是支持的 RAW 文件" = "Not a supported RAW file";
 "中性" = "Neutral";
-"中点" = "midpoint";
+"中点" = "Midpoint";
 "交互预览… %@ × %@ · sRGB" = "Interactive preview… %@ × %@ · sRGB";
 "亮度降噪" = "Luma Noise Reduction";
 "仅包含此目录中的 RAW，不包含子目录。" = "Only RAWs from this directory are included, not subdirectories.";
@@ -40,7 +40,7 @@
 "作者的小红书主页" = "Author's Little Red Book homepage";
 "使用可调降噪" = "Use adjustable noise reduction";
 "使用当前调整批量导出…" = "Batch Export with Current Adjustments…";
-"保存" = "save";
+"保存" = "Save";
 "保存到" = "Save to";
 "保留旧编辑记录的降噪算法" = "Noise reduction algorithm that retains old edit records";
 "停用" = "Off";
@@ -56,9 +56,9 @@
 "匹配内嵌预览" = "Match embedded preview";
 "原图" = "Original picture";
 "原图与调整后对比" = "Comparison between original image and adjusted image";
-"原始尺寸" = "original size";
+"原始尺寸" = "Original size";
 "原始文件已被替换，请重新选择照片。" = "The original file has been replaced, please select the photo again.";
-"原尺寸" = "original size";
+"原尺寸" = "Original size";
 "去噪优先" = "Noise Reduction Priority";
 "参数或输出路径无效，不能覆盖原始 RAW。" = "Invalid parameter or output path, original RAW cannot be overwritten.";
 "发现新版本 %@" = "New version found %@";
@@ -71,7 +71,7 @@
 "处理结果为空" = "The processing result is empty";
 "外观名称不能为空或包含控制字符。" = "The appearance name cannot be empty or contain control characters.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "The skin file is corrupt or incompatible; a compatible CUBE or RLOOK file is required.";
-"大小" = "size";
+"大小" = "Size";
 "实际像素 · 100%" = "Actual pixels · 100%";
 "对比" = "Comparison";
 "对比度" = "Contrast";
@@ -117,7 +117,7 @@
 "打开 RAW 照片" = "Open a RAW photo";
 "打开 RAW…" = "Open RAW…";
 "打开其他 RAW…" = "Open other RAW…";
-"打开文件夹" = "open folder";
+"打开文件夹" = "Open folder";
 "批量导出" = "Batch Export";
 "拍摄参数" = "Capture Settings";
 "拍摄时设置" = "As-Shot Setting";
@@ -130,8 +130,8 @@
 "效果" = "Effect";
 "效果预览" = "Effect preview";
 "文件信息" = "File Information";
-"文件夹" = "folder";
-"文件树" = "file tree";
+"文件夹" = "Folders";
+"文件树" = "File tree";
 "新建任务" = "Create new task";
 "无 RAW 照片" = "No RAW photos";
 "无效或不可用的色度降噪模式" = "Invalid or unavailable chroma noise reduction mode";
@@ -156,7 +156,7 @@
 "旧版 FBDD" = "Old version FBDD";
 "旧版色度降噪" = "Old version chroma noise reduction";
 "旧版：%@" = "Old version: %@";
-"明暗" = "light and dark";
+"明暗" = "Tone";
 "显示 %@" = "Showing %@";
 "显示成片" = "Display in film";
 "显示或收起文件树" = "Show or collapse the file tree";
@@ -209,16 +209,16 @@
 "继续上次批量任务" = "Continue the last batch task";
 "继续未完成的 %@ 张" = "Continue unfinished %@ sheets";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continue viewing the last task, or keep the exported file and create a new task.";
-"缩小" = "zoom out";
+"缩小" = "Zoom out";
 "缩放" = "Zoom";
 "羽化" = "Feathering";
 "胶片" = "Film";
-"胶片模拟" = "film simulation";
+"胶片模拟" = "Film simulation";
 "自动检查更新" = "Automatically check for updates";
 "自动添加序号" = "Automatically add serial number";
 "自定义" = "Custom";
 "色度降噪" = "Chroma noise reduction";
-"色彩" = "color";
+"色彩" = "Color";
 "色彩降噪" = "Chroma Noise Reduction";
 "色温" = "Temperature";
 "色调" = "Tint";
@@ -238,9 +238,9 @@
 "跟随系统" = "Follow system";
 "轻度" = "Mild";
 "载入照片后可用" = "Available after loading photos";
-"输入调整" = "input adjustment";
+"输入调整" = "Input adjustments";
 "输出" = "Output";
-"适合窗口" = "fit in window";
+"适合窗口" = "Fit to window";
 "选择 %@" = "Select %@";
 "选择待导出的 RAW 照片" = "Select RAW photos to export";
 "选择照片…" = "Select photo…";
@@ -249,7 +249,7 @@
 "重名文件" = "File with duplicate name";
 "重命名…" = "Rename…";
 "重命名外观" = "Rename appearance";
-"重新读取目录" = "reread directory";
+"重新读取目录" = "Reload directory";
 "重置%@" = "Reset %@";
 "重置全部调整" = "Reset All Adjustments";
 "重置调整" = "Reset Adjustments";
@@ -257,7 +257,7 @@
 "重试" = "Try again";
 "重试失败的 %@ 张" = "Retry %@ Failed Photos";
 "锐化" = "Sharpening";
-"长边" = "long side";
+"长边" = "Long edge";
 "长边 %@ px" = "Long Edge %@ px";
 "阴影" = "Shadows";
 "降噪" = "Denoise";
@@ -487,3 +487,16 @@
 "应用" = "Apply";
 "裁切尺寸" = "Crop Dimensions";
 "草稿未应用，无法导出或复制设置。" = "Apply the draft before exporting or copying settings.";
+
+"允许使用统计" = "Allow usage analytics";
+"阿里云隐私政策" = "Aliyun privacy policy";
+"当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
+"已允许使用统计；可随时关闭。" = "Usage analytics is allowed; you can turn it off at any time.";
+"使用统计已关闭。" = "Usage analytics is off.";
+"无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
+"统计服务未能启动，照片编辑不受影响。" = "The analytics service could not start. Photo editing is unaffected.";
+"统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.";
+"本地验证 SDK 已停止，请重启应用后重新开启统计。" = "The local validation SDK has stopped. Restart the app before turning analytics on again.";
+"拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
+"调整裁切边角" = "Adjust crop corner";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data. Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
