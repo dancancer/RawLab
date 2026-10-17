@@ -130,7 +130,7 @@ struct AdjustmentDock: View {
                         .frame(maxWidth: 720).padding(.horizontal, 16)
                         .disabled(model.result == nil)
                 } else if let parameter = selected, parameter.isPhotoEffect {
-                    PhotoEffectsControls(model: model, tool: parameter, onExpansionChanged: { onPreferredHeight($0 ? 304 : 252) })
+                    PhotoEffectsControls(model: model, tool: parameter, onPreferredHeight: onPreferredHeight)
                         .id("\(parameter.rawValue).\(resetVersion)")
                         .disabled(model.result == nil)
                 } else if let parameter = selected {
@@ -189,7 +189,12 @@ struct AdjustmentDock: View {
             "\(L10n.text("色温")) \(AdjustmentParameter.temperature.spec.text(model.settings.temperature)) K, \(L10n.text("色调")) \(AdjustmentParameter.tint.spec.text(model.settings.tint))" :
             parameter == .denoiseMode ?
             model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
-        return Button { finishCurrentInput(); selected = parameter; hslSelected = false; onPreferredHeight(parameter == .grainAmount ? 288 : 252) } label: {
+        return Button {
+            finishCurrentInput()
+            // 换工具时先回到默认高度；降噪和效果面板出现后再按自身内容要高度，重复点同一工具不改高度
+            if selected != parameter || hslSelected { onPreferredHeight(252) }
+            selected = parameter; hslSelected = false
+        } label: {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
