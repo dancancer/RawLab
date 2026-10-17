@@ -19,6 +19,7 @@ internal static class UiPanelChecks
         LensSeparator(check);
         DuplicateValues(output,language,check);
         WhiteBalance(language,check);
+        Alignment(language,check);
     }
 
     // 几何面板的旋转、交换宽高与重置并排出现：图标不同，形状也不能相近
@@ -84,6 +85,37 @@ internal static class UiPanelChecks
             var labeled=buttons.Count(button=>Equals(button.Content,Loc.Text("重置白平衡")));
             check(bare==2 && labeled==1,$"White balance has one reset icon per row and a labeled group reset: {bare} icons, {labeled} labeled ({language})");
         });
+    }
+    // 对齐与裁切：效果分组重置与行重置同列，HSL 色块完整，导出尺寸对话框按钮等高
+    private static void Alignment(string language,Action<bool,string> check)
+    {
+        var effects=new PhotoEffectsPanel();
+        Host(effects,()=>{
+            effects.Refresh(new PhotoEffectsSettings(),PhotoEffectTool.Grain);effects.UpdateLayout();
+            var group=effects.ResetGroupButton;
+            var row=UiDetailChecks.Descendants(effects).OfType<ParameterRow>().First(item=>item.IsVisible).ResetButton;
+            var groupCenter=group.TranslatePoint(new Point(group.ActualWidth/2,0),effects).X;
+            var rowCenter=row.TranslatePoint(new Point(row.ActualWidth/2,0),effects).X;
+            check(Math.Abs(groupCenter-rowCenter)<.5 && Math.Abs(group.ActualWidth-row.ActualWidth)<.5,
+                $"Effect group reset lines up with the row resets: {groupCenter:0.#}/{group.ActualWidth:0.#} vs {rowCenter:0.#}/{row.ActualWidth:0.#}");
+        });
+        var hsl=new HslPanel();
+        Host(hsl,()=>{
+            var clipped=UiDetailChecks.Descendants(hsl).OfType<Button>().Select(button=>button.Content).OfType<Ellipse>()
+                .Count(swatch=>VisualTreeHelper.GetParent(swatch) is FrameworkElement slot && slot.ActualWidth+.5<swatch.Width);
+            check(clipped==0,$"HSL color swatches are not clipped: {clipped} of 8 ({language})");
+        });
+        var owner=new Window{Width=400,Height=300,ShowInTaskbar=false};owner.Show();
+        var dialog=(Window)Activator.CreateInstance(typeof(LongEdgeDialog),BindingFlags.Instance|BindingFlags.NonPublic,null,new object?[]{null,owner},null)!;
+        dialog.Show();dialog.UpdateLayout();
+        try
+        {
+            var buttons=UiDetailChecks.Descendants(dialog).OfType<Button>().ToList();
+            var tops=buttons.Select(button=>button.TranslatePoint(new Point(),dialog).Y).ToList();
+            check(buttons.Count==2 && Math.Abs(buttons[0].ActualHeight-buttons[1].ActualHeight)<.5 && Math.Abs(tops[0]-tops[1])<.5,
+                $"Export size dialog buttons share one height and top: {string.Join(", ",buttons.Select(b=>b.ActualHeight))} ({language})");
+        }
+        finally { dialog.Close();owner.Close(); }
     }
 
     // ------------------------------------------------------------------
