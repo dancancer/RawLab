@@ -109,7 +109,7 @@ struct BatchExportView: View {
                 BatchThumbnail(url: model.job.source).frame(width: 96, height: 76)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(model.job.source.lastPathComponent).lineLimit(2).truncationMode(.middle)
-                    Text(L10n.format("%@ · %@%%", String(describing: model.job.lookName), String(describing: Int(model.job.settings.strength * 100))))
+                    Text(L10n.format("%@ · %@%%", L10n.text(model.job.lookName), String(describing: Int(model.job.settings.strength * 100))))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -202,7 +202,7 @@ struct BatchExportView: View {
                 Text(model.error ?? L10n.text("无法生成预览")).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Text(L10n.format("%@ · 本次导出效果", String(describing: model.job.lookName))).font(.caption).foregroundStyle(.secondary)
+            Text(L10n.format("%@ · 本次导出效果", L10n.text(model.job.lookName))).font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(minWidth: 640, idealWidth: 800, minHeight: 440, idealHeight: 600)
     }
 

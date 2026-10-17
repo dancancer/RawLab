@@ -23,6 +23,15 @@ class InterfaceCopy(unittest.TestCase):
         raw = re.compile(r"[Rr]ecipe\??\.name\b")
         self.assertEqual(hits(raw, skip={"MasterRecipe.swift"}), [])
 
+    # ------------------------------------------------------------------------
+    #  批量任务的外观名随任务保存：中性存的是翻译键"中性"，显示时再按当前语言翻译
+    # ------------------------------------------------------------------------
+    def test_batch_look_name_is_translated_when_shown(self):
+        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        shown = view.count("model.job.lookName")
+        self.assertGreater(shown, 0)
+        self.assertEqual(view.count("L10n.text(model.job.lookName)"), shown)
+
 
 if __name__ == "__main__":
     unittest.main()
