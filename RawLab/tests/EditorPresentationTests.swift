@@ -20,6 +20,11 @@ struct EditorPresentationTests {
                 }
             }
         }
+        // 拍摄时说明与上方色温数值同一数字格式（德语千位用点）
+        UserDefaults.standard.register(defaults: [L10n.preferenceKey: "de"])
+        let caption = AdjustmentKind.asShotCaption(temperature: 4928, tint: 13)
+        check(caption.contains(AdjustmentKind.temperature.formatted(4928)) && caption.contains("+13"),
+              "as-shot caption \(caption) uses the temperature value format \(AdjustmentKind.temperature.formatted(4928))")
         UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"])
         check(AdjustmentKind.hsl.badge(for: 10) == nil && AdjustmentKind.temperature.badge(for: 5000) == nil,
               "multi-parameter tools keep their glyph instead of a badge")

@@ -300,6 +300,11 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         return min(max(delta / span, -1), 1)
     }
 
+    // 白平衡面板底部的拍摄时说明：数字格式随界面语言，与上方色温、色调数值一致
+    static func asShotCaption(temperature: Double, tint: Double) -> String {
+        L10n.format("拍摄时：%.0f K · 色调 %+.0f", temperature, tint)
+    }
+
     static func resetWhiteBalance(in settings: inout RawSettings,
                                   cameraTemperature: Double?, cameraTint: Double?) {
         settings.temperature = cameraTemperature ?? RawSettings.default.temperature

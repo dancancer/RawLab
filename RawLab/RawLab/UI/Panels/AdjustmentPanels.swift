@@ -139,7 +139,7 @@ extension ContentView {
 
             if viewModel.sourceKind == .raw, let whiteBalance = viewModel.rawWhiteBalance {
                 Text(settings.whiteBalanceMode == .camera
-                     ? String(format: L10n.text("拍摄时：%.0f K · 色调 %+.0f"), whiteBalance.temperature, whiteBalance.tint)
+                     ? AdjustmentKind.asShotCaption(temperature: whiteBalance.temperature, tint: whiteBalance.tint)
                      : L10n.text("自定义白平衡"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
