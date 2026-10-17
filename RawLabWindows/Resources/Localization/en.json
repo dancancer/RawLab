@@ -304,8 +304,6 @@
   "饱和度数值": "Saturation value",
   "明度数值": "Lightness value",
   "HSL 参数无效。": "Invalid HSL parameters.",
-  "Vignette / 暗角": "Vignette",
-  "Grain / 颗粒": "Grain",
   "重置当前效果": "Reset current effect",
   "暗角强度": "Vignette Intensity",
   "暗角强度数值": "Vignette strength value",
@@ -502,5 +500,6 @@
   "无法读取文件身份。": "Unable to read the file identity.",
   "滨田英明": "Hideaki Hamada",
   "保井崇志": "Takashi Yasui",
-  "酒井贵弘": "Takahiro Sakai"
+  "酒井贵弘": "Takahiro Sakai",
+  "、": ", "
 }

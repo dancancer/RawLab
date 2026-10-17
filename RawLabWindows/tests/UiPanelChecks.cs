@@ -16,6 +16,7 @@ internal static class UiPanelChecks
     internal static void Run(string output,string language,Action<bool,string> check)
     {
         GeometryIcons(check);
+        LensSeparator(check);
     }
 
     // 几何面板的旋转、交换宽高与重置并排出现：图标不同，形状也不能相近
@@ -34,6 +35,11 @@ internal static class UiPanelChecks
                 check(similarity<.6,$"Geometry icons {a} and {b} are not look-alikes: {similarity:0.00}");
             }
         });
+    }
+    private static void LensSeparator(Action<bool,string> check)
+    {
+        var message=new LensInfo(1,"","",true,true,1,[]).Message;
+        check(UiDetailChecks.Cjk.IsMatch(Loc.Text("畸变")) || !message.Contains('、'),$"Lens status list uses the interface language separator: {message}");
     }
 
     // ------------------------------------------------------------------

@@ -36,3 +36,18 @@ foreach (var pair in expected)
         .Where(key => !Loc.Strings.ContainsKey(key)).Select(key => "\n  " + argument.Location + ": " + key)).ToList();
     Check(missing.Count == 0, pair.Key + " literal keys inside Loc calls are catalogued" + string.Concat(missing));
 }
+
+// ┌─ 中文、日文界面不在本地文字旁并列英文原词（例如 "Vignette / 暗角"）──────────┐
+// │ 英文译文本身是一个完整的词，又原样出现在中日文译文里，就是双语混排            │
+// └────────────────────────────────────────────────────────────────────────────┘
+Loc.Initialize("en");
+var english = Loc.Strings.ToDictionary(pair => pair.Key, pair => pair.Value);
+foreach (var language in new[] { "zh-Hans", "ja" })
+{
+    Loc.Initialize(language);
+    var mixed = Loc.Strings.Where(pair => pair.Key.Any(c => c >= '㐀' && c <= '鿿') &&
+            english[pair.Key].Any(char.IsLower) && pair.Value != english[pair.Key] &&
+            pair.Value.Contains(english[pair.Key], StringComparison.Ordinal))
+        .Select(pair => "\n  " + pair.Key + " => " + pair.Value).ToList();
+    Check(mixed.Count == 0, language + " values do not repeat the English text beside the translation" + string.Concat(mixed));
+}

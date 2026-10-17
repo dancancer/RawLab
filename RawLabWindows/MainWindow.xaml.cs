@@ -210,7 +210,7 @@ public partial class MainWindow : Window
             var caption=new TextBlock{Text=title,MaxWidth=70,TextWrapping=TextWrapping.Wrap,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
             var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
-            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? Loc.Text("Vignette / 暗角") : Loc.Text("Grain / 颗粒")};
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=title};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
             button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
@@ -356,8 +356,8 @@ public partial class MainWindow : Window
                 controls.Ring.Progress=offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
             }
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
-            var filmName=settings.Recipe?.Name ?? films.FirstOrDefault(f=>f.Path==lut)?.Name ?? Loc.Text("中性");
-            ActiveFilm.Text=filmName;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : filmName;ActiveFilm.ToolTip=filmName;
+            var lookTitle=LookTitle;
+            ActiveFilm.Text=lookTitle;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : lookTitle;ActiveFilm.ToolTip=lookTitle;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             RefreshComparisonLayout();
             RefreshComparisonSelection();
@@ -988,7 +988,7 @@ public partial class MainWindow : Window
                 ExportFormat.RenderedDng => Loc.Text("DNG · 渲染型")+"|*.dng",
                 _ => throw new ArgumentOutOfRangeException(nameof(format))
             },DefaultExt="."+suffix,AddExtension=true,OverwritePrompt=true,
-            FileName=Path.GetFileNameWithoutExtension(file)+"-"+(films.FirstOrDefault(f=>f.Path==lut)?.Name ?? "neutral")};
+            FileName=Path.GetFileNameWithoutExtension(file)+"-"+LookTitle};
         dialog.FileOk += (_, args) => {
             if (!format.AcceptsPath(dialog.FileName))
             {

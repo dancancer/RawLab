@@ -46,6 +46,8 @@ internal static class UiDetailChecks
                 try
                 {
                     Icons(window,language,check);
+                    ToolTips(window,language,check);
+                    ActiveLook(window,language,check);
                 }
                 finally { window.Close(); }
                 UiPanelChecks.Run(output,language,check);
@@ -63,6 +65,25 @@ internal static class UiDetailChecks
         var repeated=buttons.GroupBy(item=>item.Icon!.Kind).Where(group=>group.Count()>1)
             .Select(group=>"\n  "+group.Key+": "+string.Join(" / ",group.Select(item=>item.Name))).ToList();
         check(buttons.Count>=25 && repeated.Count==0,$"Toolbar and adjustment tools use distinct icons ({language}){string.Concat(repeated)}");
+    }
+    // 中文提示不夹英文；配方名与“中性”按界面语言显示
+    private static void ToolTips(MainWindow window,string language,Action<bool,string> check)
+    {
+        if(language!="zh-Hans")return;
+        var tips=window.Tools.Children.OfType<Button>().Where(button=>button.ToolTip is string tip &&
+            Regex.IsMatch(tip,"[A-Za-z]") && !Regex.IsMatch(Caption(button),"[A-Za-z]")).Select(button=>"\n  "+button.ToolTip).ToList();
+        check(tips.Count==0,"Chinese tool tooltips carry no English words"+string.Concat(tips));
+    }
+    private static void ActiveLook(MainWindow window,string language,Action<bool,string> check)
+    {
+        var recipe=MasterRecipe.All.First(item=>Cjk.IsMatch(item.Name));
+        var settings=(Adjustments)typeof(MainWindow).GetField("settings",PrivateInstance)!.GetValue(window)!;
+        var lut=typeof(MainWindow).GetField("lut",PrivateInstance)!;
+        settings.ApplyMasterRecipe(recipe);lut.SetValue(window,recipe.LutPath);Refresh(window);
+        check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text(recipe.Name),
+            $"Active look and comparison label show the recipe name in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
+        settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
+        check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
     }
 
     private static AboutWindow About(MainWindow window,string output)

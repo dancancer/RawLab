@@ -304,8 +304,6 @@
   "饱和度数值": "Valeur de saturation",
   "明度数值": "Valeur de luminosité",
   "HSL 参数无效。": "Paramètres HSL invalides.",
-  "Vignette / 暗角": "Vignettage",
-  "Grain / 颗粒": "Grain",
   "重置当前效果": "Réinitialiser l’effet actuel",
   "暗角强度": "Intensité du vignettage",
   "暗角强度数值": "Valeur de l’intensité du vignettage",
@@ -502,5 +500,6 @@
   "无法读取文件身份。": "Impossible de lire l’identité du fichier.",
   "滨田英明": "Hideaki Hamada",
   "保井崇志": "Takashi Yasui",
-  "酒井贵弘": "Takahiro Sakai"
+  "酒井贵弘": "Takahiro Sakai",
+  "、": ", "
 }
