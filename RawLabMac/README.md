@@ -21,7 +21,7 @@ does not copy capture EXIF, old previews or sensor-only tags; its virtual camera
 profile describes rendered pixels. JPEG/PNG capture metadata remains unchanged.
 Uncompressed DNG uses approximately 12 bytes per pixel.
 
-v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ![RawLab Mac：中性与 Velvia 效果对比 / Neutral and Velvia comparison](../docs/images/rawlab-mac-velvia.png)
 

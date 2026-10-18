@@ -92,7 +92,7 @@ SDK 仍可能上报系统、启动、会话等预置数据，不能把它描述�
 父脚本负责异常退出后的缓存清理；强制杀死父脚本或断电仍可能遗留临时目录。没有常驻进程或自动重复测试。
 
 SDK 下载包没有许可证文本。本小样不提交或随应用分发厂商二进制，不据此推断正式再分发许可。
-四端业务层和发布门槛见 [接入验证记录](../../docs/verification-rum-analytics-2026-10-16.md)。
+四端业务层和发布门槛见 [接入验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-rum-analytics-2026-10-16.md)。
 
 ## 验收
 

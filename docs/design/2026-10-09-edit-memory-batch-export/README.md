@@ -1,6 +1,6 @@
 # RawLab: 调整记忆与批量导出 UI 方案
 
-日期：2026-10-09。状态：功能范围与 UI 稿已确认，迁移到 `development` 后的四端验证见[验收记录](../../archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。本目录保留设计稿，不将设计图作为运行截图。
+日期：2026-10-09。状态：功能范围与 UI 稿已确认，迁移到 `development` 后的四端验证见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。本目录保留设计稿，不将设计图作为运行截图。
 
 [打开设计板](index.html)。六张图由内置 image_gen 基于现有界面生成；照片、文件名、拍摄信息、参数和任务结果均为示意数据，不是运行截图。原始提示词与修改记录见 [prompts.json](prompts.json)。图中文字、图标和具体比例不能替代下述交互规则；落地使用原生可访问控件，不将图片作为应用界面。
 

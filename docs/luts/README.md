@@ -8,8 +8,8 @@ original-author license grant. Color adaptation is not license clearance.
 
 ## Inventory and Identity
 
-The shared source is [Shared/BundledLooks](../../Shared/BundledLooks/).
-[catalog.json](../../Shared/BundledLooks/catalog.json) owns names, filenames,
+The shared source is [Shared/BundledLooks](../../Shared/BundledLooks).
+[catalog.json](../../Shared/BundledLookscatalog.json) owns names, filenames,
 artwork mappings, SHA-256 hashes and color contracts. There are 29 additions:
 28 adapted local source files plus the previously authored Ektar v2. Existing
 Fuji effects and master recipes are unchanged.
@@ -158,7 +158,7 @@ Mac packages CUBEs under `LUTs`, catalog/artwork in app resources; iOS packages
 the `BundledLooks` folder reference and separately reuses the old Ektar artwork.
 Android packages `films`, `artwork` and `bundled-looks.json`; Windows uses the
 same catalog and sources through its project resource items. Each packages the
-permanent [NOTICE.md](../../Shared/BundledLooks/NOTICE.md).
+permanent [NOTICE.md](../../Shared/BundledLooksNOTICE.md).
 
 Only the new picker entries receive wider two-line name layouts. Existing
 horizontal picker behavior, legacy widths and custom-look artwork behavior
@@ -288,7 +288,7 @@ for every contributed preset. [G'MIC credits](https://gmic.eu/color_presets/),
 [Pat David's article](https://patdavid.net/2013/08/film-emulation-presets-in-gmic-gimp/)
 and the PFE page are evidence leads, not a completed per-file license review.
 
-[REDISTRIBUTION_BLOCKED.md](../../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md)
+[REDISTRIBUTION_BLOCKED.md](../../Shared/BundledLooksREDISTRIBUTION_BLOCKED.md)
 is retained as an unresolved release-risk record, not a build switch. At the
 owner's request the four compile/default-packaging hard blocks were removed:
 Release compilation is not itself an external release. The default Mac and

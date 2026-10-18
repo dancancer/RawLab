@@ -42,7 +42,7 @@ manifest, not this earlier committed build report.
 
 ## Reused Acceptance
 
-[Sony verification](verification-android-sony-dng-memory-2026-10-14.md) and
+[Sony verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-sony-dng-memory-2026-10-14.md) and
 [dual review](../reviews/self-android-sony-dng-memory-20261014-0025.md) bind
 the exact nine-code-file manifest
 `60f5442e5ccd47525d567a0125fd0e8731b1ef2607c562fce79c5229e4027ecf`.

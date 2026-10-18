@@ -184,7 +184,7 @@ and [recipe HSL calibration](docs/archive/verification/master-recipes-hsl-202610
 
 See [v0.5.1 release notes](docs/releases/v0.5.1.md),
 [release verification](docs/verification-v0.5.1.md) and
-[the cross-platform implementation evidence](docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
+[the cross-platform implementation evidence](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
 
 ## [0.5.0] - 2026-10-10
 

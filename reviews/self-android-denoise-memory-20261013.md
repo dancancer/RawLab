@@ -40,7 +40,7 @@ Fresh 2.5GB cold and warm, each including strength-recompute, passed the 1.8GB
 sampled-native-heap budget. Shared CTest 24/24, Mac integration, eight Android
 cases across appropriate Panasonic/Sony fixtures, Windows native exports and
 interactions, and rebuilt iOS slices/app/native JPEG checks passed. Full details
-and raw-log paths are in `docs/verification-android-denoise-memory-2026-10-13.md`.
+and raw-log paths are in `https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-denoise-memory-2026-10-13.md`.
 The invalid warm run was explicitly caused by an external APK reinstall, not OOM.
 Wavelet-disabled source compilation passed; no whole disabled-feature app build.
 

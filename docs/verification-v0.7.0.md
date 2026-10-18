@@ -40,9 +40,9 @@ parents `2c46edc5f0d8a26933f853afbb068e5def06e2bf` and
 
 | Feature | Accepted evidence |
 | --- | --- |
-| JPEG XL DNG | [Decoder verification](verification-dng-jpeg-xl-2026-10-12.md), PR #23, and the later SDK Stage3 integration evidence |
-| Rendered DNG | [Export verification](verification-rendered-dng-export.md), PR #24's accepted new-development review and actual file/export checks |
-| Lensfun | [Platform verification](verification-lens-correction-platforms-2026-10-13.md), [Lens/DNG integration](verification-lens-dng-integration-2026-10-13.md), and original independent reviewers bound to the final #26 source |
+| JPEG XL DNG | [Decoder verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-dng-jpeg-xl-2026-10-12.md), PR #23, and the later SDK Stage3 integration evidence |
+| Rendered DNG | [Export verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-rendered-dng-export.md), PR #24's accepted new-development review and actual file/export checks |
+| Lensfun | [Platform verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-lens-correction-platforms-2026-10-13.md), [Lens/DNG integration](verification-lens-dng-integration-2026-10-13.md), and original independent reviewers bound to the final #26 source |
 | Viewport/cache/memory | [Development verification](verification-viewport-development-2026-10-13.md), [Lens/DNG/NR combination](verification-viewport-lens-dng-integration-2026-10-13.md), and two original reviewers bound to `15e0d044` and the final 60-path manifest `be656f12197be66d1f7eb41b29023511859d724938cffd860b92a4ab7d0b1faf` |
 | Six languages | [Localization verification](verification-localization-2026-10-13.md), [maintenance guide](localization.md), and both original reviewers bound to clean `de3b7937` |
 
@@ -77,7 +77,7 @@ evidence and are not repeated or relabeled as a new integrated memory test.
   the 2.5GB CPU AVD and approximately 12GB physical CPU/Force GLES device.
   Complete before/after files match; sampled CPU heap 2.085→1.692GB. Existing
   budgets/tolerances and GPU ≥6GB acceptance remain unchanged. See
-  [Sony verification](verification-android-sony-dng-memory-2026-10-14.md).
+  [Sony verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-sony-dng-memory-2026-10-14.md).
 - iOS earlier Files Cancel accessibility queries failed. The final two UI
   tests passed with the visible Save action and an actual copied 128x128
   float32 DNG. Native Files cancellation remains unverified.

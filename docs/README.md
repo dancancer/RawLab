@@ -37,12 +37,12 @@ retain their original candidate scope.
 
 - [Release notes](releases/v0.8.0.md) and [corresponding-source instructions](releases/v0.8.0-source.md)
 - [Release blockers, scope decisions and remaining acceptance](releases/v0.8.0-preparation.md)
-- [macOS Agent and ordinary-image verification](verification-agent-v08.md)
+- [macOS Agent and ordinary-image verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-agent-v08.md)
 - [Windows Agent and integrated-source verification](../RawLabWindows/VERIFICATION-agent-v08.md)
-- [All-platform ordinary-image input and current acceptance](verification-raster-input-all-platforms-2026-10-16.md)
+- [All-platform ordinary-image input and current acceptance](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-raster-input-all-platforms-2026-10-16.md)
 - [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
 - [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
-- [RUM local SDK verification (2026-10-16, before release builds carried the SDK)](verification-rum-analytics-2026-10-16.md)
+- [RUM local SDK verification (2026-10-16, before release builds carried the SDK)](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-rum-analytics-2026-10-16.md)
 
 ## v0.7.0 Release Records
 
@@ -51,7 +51,7 @@ retain their original candidate scope.
 - [Final five-feature composition report](verification-final-composition-2026-10-13.md)
 - [Versioned local candidate package verification](verification-v0.7.0-candidate.md)
 - [Version and release preparation checklist](releases/v0.7.0-preparation.md)
-- [JPEG XL DNG verification](verification-dng-jpeg-xl-2026-10-12.md)
+- [JPEG XL DNG verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-dng-jpeg-xl-2026-10-12.md)
 
 The five v0.7 features were integrated before that release. Its final composition
 report distinguishes new execution from evidence reused through identical source.

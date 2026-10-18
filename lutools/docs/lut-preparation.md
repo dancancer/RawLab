@@ -69,7 +69,7 @@ runtime agreement from source-renderer and controlled cross-camera evidence.
 ## Explicit Contracts
 
 Use the LUT author's documentation, not the filename, to choose a contract.
-Examples are in [examples/lut-contracts](../examples/lut-contracts/):
+Examples are in [examples/lut-contracts](../examples/lut-contracts):
 
 | Example | Required source meaning | Rendering location |
 | --- | --- | --- |

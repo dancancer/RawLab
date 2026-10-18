@@ -2,7 +2,7 @@
 
 状态：2026-10-07 用户已批准执行。首先落实 P0/P1/P2 的首个里程碑；各阶段按下列证据门禁推进，不自动提交或发布。
 
-执行进展：批量诊断、只读 native 校验、Mac/Android 托管外观库、固定样本工具及首批运行回归已落实。来源软件参考和受控同场景 RAW 尚缺，显示域 LUT 烘焙未通过原误差门禁；完整质量里程碑仍未完成。实际证据与未完成项见 [验证记录](../../archive/verification/verification-cross-camera-presets-2026-10-07.md)。
+执行进展：批量诊断、只读 native 校验、Mac/Android 托管外观库、固定样本工具及首批运行回归已落实。来源软件参考和受控同场景 RAW 尚缺，显示域 LUT 烘焙未通过原误差门禁；完整质量里程碑仍未完成。实际证据与未完成项见 [验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-camera-presets-2026-10-07.md)。
 
 基线：2026-10-07，源码 `81f98c350b8f76434dcdbaa21331485a1f382651`。
 

@@ -46,7 +46,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 - JPEG and 16-bit PNG export on Windows, macOS and Android; JPEG export on iOS.
   Rendered DNG file export is available in single and batch workflows on all four
   clients. It bakes the current adjustments, not reversible sensor RAW controls.
-  See [verification and platform limits](docs/verification-rendered-dng-export.md).
+  See the [rendered DNG contract and limits](lutools/docs/color-contract.md#rendered-dng).
   Readable capture metadata is retained, while output size and orientation are
   updated.
 - Metal, Direct3D 11 and OpenGL ES processing where supported, with automatic CPU

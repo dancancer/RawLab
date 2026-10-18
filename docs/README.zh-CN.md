@@ -13,7 +13,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 ## 主要功能
 
 - RAW 显影，支持曝光、相机空间白平衡、明暗、色彩和锐化调整。
-- 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 另支持 HEIF。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与验收边界见[普通图像输入记录](verification-raster-input-all-platforms-2026-10-16.md)。
+- 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 另支持 HEIF。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与处理边界见[普通图像输入契约](../lutools/docs/color-contract.md#display-referred-raster-input)。
 - 四端新照片默认使用“匹配内嵌预览”曝光基准，提供一次性自动曝光和八色 HSL 调整；保留旧照片已保存的曝光基准。
 - 内置胶片外观，强度范围为 0-200%，支持兼容 CUBE/RLOOK 导入及原图与调整效果对比。
 - 四端统一提供 14 个大师配方与风格图标。应用配方覆盖六项调色及全部 24 项 HSL，0-200% 强度整体缩放当前配方参数、HSL 和 LUT；编辑记录与冻结批量任务保留手动修改，并按目标 RAW 解析拍摄白平衡。

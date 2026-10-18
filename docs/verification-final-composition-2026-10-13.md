@@ -140,7 +140,7 @@ and [the preceding viewport/Lens/DNG increment](verification-viewport-lens-dng-i
 
 The earlier Android 2.5 GiB controlled before/current investigation and native
 6000x4000 JPEG/PNG regression remain recorded in
-[the memory investigation](verification-android-denoise-memory-2026-10-13.md)
+[the memory investigation](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-denoise-memory-2026-10-13.md)
 and [the development migration](verification-viewport-development-2026-10-13.md).
 Their unchanged 1,800,000,000-byte test budget is not a guarantee for arbitrary
 RAWs or new Sony DNG SDK working sets. They were not rerun in this final pass.

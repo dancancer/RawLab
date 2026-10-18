@@ -65,4 +65,4 @@ macOS、iOS、Android 和 Windows 统一提供 14 个大师配方，使用同一
 - GPU 自动模式保留 CPU 回退，不保证所有外观都使用 GPU；RAW 解码和文件编码仍在 CPU。这些是本地验证结果，不是新发布提交的 CI 结果。
 - 原始 RAW、参考照片和模型权重未修改或打包，客户端不增加模型运行时。
 
-详细记录：[跨端验收](../verification/cross-platform-master-recipes-20261011.md)、[HSL 配方校准](../verification/master-recipes-hsl-20261011.md)、[LUT 参考优化](../verification/master-recipes-optimization-20261011.md)、[iPad/HSL/自动曝光](../verification-ipad-hsl-auto-exposure-2026-10-11.md)。
+详细记录：[跨端验收](../archive/verification/cross-platform-master-recipes-20261011.md)、[HSL 配方校准](../archive/verification/master-recipes-hsl-20261011.md)、[LUT 参考优化](../archive/verification/master-recipes-optimization-20261011.md)、[iPad/HSL/自动曝光](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-ipad-hsl-auto-exposure-2026-10-11.md)。

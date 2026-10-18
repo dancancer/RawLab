@@ -13,7 +13,7 @@ Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
 Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
 
-v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ## 下载 v0.8.1 Windows 包
 
@@ -150,7 +150,7 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 较多显存，显存不足时自动模式仍能导出。诊断环境变量 `RAWLAB_DISABLE_D3D11=1`
 用于验证自动回退及强制失败；正常运行不要设置。
 
-跨平台接入的构建与运行范围见 [本轮验证记录](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+跨平台接入的构建与运行范围见 [本轮验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路径已运行。
 
 ## 验证
@@ -296,7 +296,7 @@ python lutools/tests/make_denoise_fixture.py build/windows-fixtures/denoise.dng
 dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --interactions $PWD.Path 'C:/samples/photo.ARW'
 ```
 
-历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。
 
