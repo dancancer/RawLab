@@ -91,6 +91,9 @@ but retain dependency checks and all existing build/test commands. Missing
 cached Lensfun libraries fail configuration rather than silently dropping it.
 The Mac jobs also exercise a small real Xcode cold/restore build: an unchanged
 dependency object must retain its timestamp while changed product code is rebuilt.
+Android retains AGP's configure fingerprint and command metadata so a fresh job
+does not delete restored dependency directories before CMake runs. Its real AGP
+cold/restore regression also verifies that changed JNI code is rebuilt.
 
 `build/ci/native-cache.json` records the key and its inputs; `native-cache-size.json`
 records the selected file count and bytes. Compare cold and warm hosted runs on

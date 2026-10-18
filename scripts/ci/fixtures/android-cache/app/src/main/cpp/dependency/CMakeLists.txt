@@ -1,0 +1,2 @@
+add_library(cache_dependency STATIC dependency.cpp)
+set_target_properties(cache_dependency PROPERTIES POSITION_INDEPENDENT_CODE ON)

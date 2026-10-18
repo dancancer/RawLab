@@ -268,6 +268,7 @@ jobs:
           bash scripts/check-native.sh
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
           cd ..
+          RAWLAB_TEST_ANDROID_CACHE=1 python scripts/ci/test_native_cache_android.py
           python scripts/ci/native_cache.py inventory --platform android --arch arm64-x86_64
       - name: Save successful native dependencies
         if: success() && steps.native-cache.outputs.cache-hit != 'true'

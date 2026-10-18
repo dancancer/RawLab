@@ -65,7 +65,8 @@ def cache_paths(platform, arch):
         base = "RawLabAndroid/app/.cxx/Debug/*"
         return [f"{base}/{abi}/{path}" for abi in ("arm64-v8a", "x86_64")
                 for path in ("_deps", "dng-sdk", "core/wavelib", "lens-dependencies/install",
-                             ".ninja_deps", ".ninja_log", *OPENCV_HEADERS)]
+                             ".ninja_deps", ".ninja_log", "configure_fingerprint.bin",
+                             "metadata_generation_command.txt", *OPENCV_HEADERS)]
     if platform == "ios":
         base = "lutools/build-ios-libraw/0.22.2"
         paths = [f"{base}/sources"]
