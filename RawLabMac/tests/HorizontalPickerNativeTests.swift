@@ -102,12 +102,22 @@ struct HorizontalPickerNativeTests {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.makeKeyAndOrderFront(nil)
-        drainMainRunLoop(for: 0.4)
+        let selectedCenter = 850.0
+        let layoutDeadline = ProcessInfo.processInfo.systemUptime + 5
+        while ProcessInfo.processInfo.systemUptime < layoutDeadline {
+            if let pickerScroll = scrollView(in: host), let pickerDocument = pickerScroll.documentView {
+                let viewportCenter = pickerScroll.contentView.bounds.origin.x + pickerScroll.contentView.bounds.width / 2
+                if pickerScroll.contentView.bounds.width == 536 &&
+                   pickerDocument.bounds.width == 1200 && abs(viewportCenter - selectedCenter) < 1 { break }
+            }
+            drainMainRunLoop(for: 0.01)
+        }
         guard let pickerScroll = scrollView(in: host), let pickerDocument = pickerScroll.documentView else {
             check(false, "Picker integration harness creates a native scroll view")
             return
         }
-        let selectedCenter = 850.0
+        check(pickerScroll.contentView.bounds.width == 536,
+              "Picker reserves both 32-point arrow lanes before checking selection centering")
         let viewportCenter = pickerScroll.contentView.bounds.origin.x + pickerScroll.contentView.bounds.width / 2
         check(pickerDocument.bounds.width == 1200 && abs(viewportCenter - selectedCenter) < 1,
               "ScrollViewReader centers the selected ID after arrow lanes appear")
