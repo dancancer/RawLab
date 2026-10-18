@@ -40,10 +40,11 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 
 - [文档索引](README.md)
 - [下载最新版本](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.8.0 发布说明（构建 12）](releases/v0.8.0.md)
+- [v0.8.1 发布说明（构建 13）](releases/v0.8.1.md)
 - [安装与分发说明](installation.md)
 - [将 RawLab 安装到自己的 iPhone](ios-installation.zh-CN.md)
 - [更新日志](../CHANGELOG.md)
+- [产品路线图](roadmap.md)
 - [Windows 客户端](../RawLabWindows/README.md)
 - [macOS 客户端](../RawLabMac/README.md)
 - [Android 客户端](../RawLabAndroid/README.md)

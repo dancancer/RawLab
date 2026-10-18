@@ -295,9 +295,9 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(choices.waitForExistence(timeout: 5))
         let recipes = [
             ("neutral", "No Recipe"),
-            ("hamada_daylight_v2", "滨田英明"),
-            ("takashi_yasui_zen", "保井崇志"),
-            ("takahiro_sakai_blue", "酒井贵弘"),
+            ("hamada_daylight_v2", "Hideaki Hamada"),
+            ("takashi_yasui_zen", "Takashi Yasui"),
+            ("takahiro_sakai_blue", "Takahiro Sakai"),
             ("withluke_epic", "withluke"),
             ("daniel_casson_autumn", "Daniel Casson"),
             ("billy_dinh_cinema", "Billy Dinh"),
@@ -324,7 +324,7 @@ final class EditorV4UITests: XCTestCase {
         try revealHorizontally(selected, in: choices, app: app)
         tapVisible(selected, in: app)
         XCTAssertTrue(selected.isSelected)
-        XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "滨田英明")
+        XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "Hideaki Hamada")
         XCTAssertTrue(app.buttons["masterRecipe.strength.value"].waitForExistence(timeout: 5))
         capture("v4-master-recipe-selected", in: app)
     }

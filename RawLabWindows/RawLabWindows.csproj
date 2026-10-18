@@ -9,14 +9,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.8.0</Version>
-    <FileVersion>0.8.0.12</FileVersion>
-    <InformationalVersion>0.8.0+build.12</InformationalVersion>
+    <Version>0.8.1</Version>
+    <FileVersion>0.8.1.13</FileVersion>
+    <InformationalVersion>0.8.1+build.13</InformationalVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(RawLabRumLocal)' == 'true' and '$(Configuration)' != 'Release'">
-    <DefineConstants>$(DefineConstants);RAWLAB_RUM_LOCAL</DefineConstants>
-  </PropertyGroup>
+  <!-- 阿里云 RUM PC SDK（使用统计）：Release 默认带，规则与开关见 RumSdk.targets -->
+  <Import Project="RumSdk.targets" />
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
     <Compile Remove="tests/**/*.cs" />
@@ -33,23 +32,4 @@
     <Content Include="../RawLabMac/Resources/MasterRecipes/*.cube" Link="MasterRecipes/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/MasterRecipeIcons/*.png" Link="MasterRecipeIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <ItemGroup Condition="'$(RawLabRumLocal)' == 'true' and '$(Configuration)' != 'Release'">
-    <Content Include="$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll"
-             Link="alibabacloud_rum.dll" CopyToOutputDirectory="Always" />
-  </ItemGroup>
-  <Target Name="ValidateRawLabRumLocalBuild" BeforeTargets="PrepareForBuild"
-          Condition="'$(RawLabRumLocal)' == 'true'">
-    <Error Condition="'$(Configuration)' == 'Release'"
-           Text="RawLabRumLocal=true is restricted to non-Release builds." />
-    <Error Condition="'$(RawLabRumSdkRoot)' == ''"
-           Text="RawLabRumLocal=true requires RawLabRumSdkRoot pointing to the extracted Windows 0.4.4 SDK." />
-    <Error Condition="'$(RawLabRumSdkRoot)' != '' and !Exists('$(RawLabRumSdkRoot)/include/alibabacloud_rum.h')"
-           Text="RawLabRumSdkRoot must contain the official alibabacloud_rum.h header." />
-    <Error Condition="'$(Configuration)' != 'Release' and !Exists('$(RawLabRumSdkRoot)/bin/x86_64/Release/alibabacloud_rum.dll')"
-           Text="The Windows 0.4.4 Release SDK DLL is missing under RawLabRumSdkRoot." />
-  </Target>
-  <Target Name="RemoveRawLabRumLocalBinary" BeforeTargets="PrepareForBuild"
-          Condition="'$(RawLabRumLocal)' != 'true'">
-    <Delete Files="$(TargetDir)alibabacloud_rum.dll" />
-  </Target>
 </Project>

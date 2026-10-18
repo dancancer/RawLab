@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -60,24 +61,32 @@ public partial class BatchExportWindow : Window
         SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], raster ? Loc.Text("不适用") : state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), raster ? Loc.Text("显示图像") : new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
         AllSettings.Text = string.Join("\n", ParameterSpec.All.Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
         AllSettings.Text += $"\nHSL  {(state.Hsl.IsIdentity ? Loc.Text("未调整") : Loc.Text("已调整"))}";
-        AllSettings.Text += Loc.Format("\n降噪  {0}\n亮度降噪  {1:0.#}\n色彩降噪  {2:0.#}\n粗颗粒降噪  {3:0.#}", state.Denoise.Enabled ? Loc.Text("开启") : Loc.Text("关闭"), state.Denoise.Luma, state.Denoise.Chroma, state.Denoise.Coarse);
+        // 降噪与镜头逐行沿用编辑器里的名称；关着的开关写"停用"
         AllSettings.Text += "\n" + string.Join("\n", new[] {
-            $"{Loc.Text("镜头匹配")}  {(state.Lens.Manual ? Loc.Text("手动") : Loc.Text("自动"))}",
-            $"{Loc.Text("畸变矫正")}  {(state.Lens.Distortion ? Loc.Text("开启") : Loc.Text("关闭"))}",
-            $"{Loc.Text("横向色差")}  {(state.Lens.Tca ? Loc.Text("开启") : Loc.Text("关闭"))}",
-            $"{Loc.Text("自动裁边")}  {(state.Lens.AutoCrop ? Loc.Text("开启") : Loc.Text("关闭"))}"
+            Row("降噪", OnOff(state.Denoise.Enabled)),
+            Row("亮度降噪", Number(state.Denoise.Luma)),
+            Row("色彩降噪", Number(state.Denoise.Chroma)),
+            Row("粗色斑抑制", Number(state.Denoise.Coarse)),
+            Row("镜头匹配", Loc.Text(state.Lens.Manual ? "手动" : "自动")),
+            Row("畸变矫正", OnOff(state.Lens.Distortion)),
+            Row("横向色差", OnOff(state.Lens.Tca)),
+            Row("自动裁边", OnOff(state.Lens.AutoCrop))
         });
         var geometry = state.Geometry;
         AllSettings.Text += "\n" + Loc.Format("几何：左边 {0:0.##}% · 顶边 {1:0.##}% · 宽度 {2:0.##}% · 高度 {3:0.##}% · 旋转 {4}° · 拉直 {5:0.##}°",
             geometry.CropX * 100, geometry.CropY * 100, geometry.CropWidth * 100, geometry.CropHeight * 100,
             geometry.QuarterTurns * 90, geometry.StraightenDegrees);
         AllSettings.Text += "\n"+Loc.Format("透视：水平 {0:0.###} · 垂直 {1:0.###}",geometry.PerspectiveHorizontal,geometry.PerspectiveVertical);
-        AllSettings.Text += $"\n{Loc.Text("水平翻转")}  {(geometry.FlipHorizontal ? Loc.Text("开启") : Loc.Text("关闭"))} · {Loc.Text("垂直翻转")}  {(geometry.FlipVertical ? Loc.Text("开启") : Loc.Text("关闭"))}";
+        AllSettings.Text += $"\n{Loc.Text("水平翻转")}  {OnOff(geometry.FlipHorizontal)} · {Loc.Text("垂直翻转")}  {OnOff(geometry.FlipVertical)}";
         var effects = state.Effects;
-        var chroma = state.DisplayChromaDenoise switch { 1 => Loc.Text("细节优先"), 2 => Loc.Text("去噪优先"), _ => Loc.Text("关闭") };
+        var chroma = state.DisplayChromaDenoise switch { 1 => Loc.Text("细节优先"), 2 => Loc.Text("去噪优先"), _ => Loc.Text("停用") };
         AllSettings.Text += Loc.Format("\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}", chroma, effects.VignetteAmount, effects.VignetteMidpoint, effects.VignetteRoundness, effects.VignetteFeather, effects.VignetteHighlights, effects.GrainAmount, effects.GrainSize, effects.GrainRoughness);
         Refresh();
     }
+
+    private static string Row(string title, string value) => $"{Loc.Text(title)}  {value}";
+    private static string OnOff(bool on) => Loc.Text(on ? "开启" : "停用");
+    private static string Number(double value) => value.ToString("0.#", CultureInfo.GetCultureInfo(Loc.Language));
 
     private void Refresh()
     {
@@ -219,7 +228,6 @@ public partial class BatchExportWindow : Window
                 editingCustomSize=index == 4;
             }
             CustomLongEdge.Visibility=editingCustomSize ? Visibility.Visible : Visibility.Collapsed;
-            SizeHint.Text=editingCustomSize && ExportSize.Parse(CustomLongEdge.Text) == null ? Loc.Text("自定义长边") : ExportSize.Label(job.LongEdge);
         }
         finally { refreshingSize=false; }
     }

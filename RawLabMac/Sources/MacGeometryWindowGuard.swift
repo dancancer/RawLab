@@ -78,6 +78,8 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
 }
 
 final class RawLabMacDelegate: NSObject, NSApplicationDelegate {
+    // 退出时最多等统计 SDK 收尾这么久（秒）
+    static let usageShutdownLimit: TimeInterval = 3
     weak var model: EditorModel?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -107,16 +109,16 @@ final class RawLabMacDelegate: NSObject, NSApplicationDelegate {
             sender.reply(toApplicationShouldTerminate: false)
             return .terminateLater
         }
-#if RAWLAB_RUM_LOCAL
+#if RAWLAB_RUM
         var replied = false
         let reply: () -> Void = { [weak sender] in
             guard !replied else { return }
             replied = true
             sender?.reply(toApplicationShouldTerminate: true)
         }
-        LocalRUM.shutdown { DispatchQueue.main.async(execute: reply) }
-        // 网络失联不允许统计服务无限阻塞退出；超时视为异常终止。
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: reply)
+        UsageRUM.shutdown { DispatchQueue.main.async(execute: reply) }
+        // 网络失联不允许统计服务阻塞退出；超时视为异常终止，未发出的统计丢弃。
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.usageShutdownLimit, execute: reply)
         return .terminateLater
 #else
         return .terminateNow

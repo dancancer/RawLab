@@ -73,7 +73,7 @@ final class BatchExportModel: ObservableObject {
                     job.items[index].selected = true
                 } else { job.items.append(item) }
                 added.append(item)
-            } catch { failures.append("\(url.lastPathComponent)：\(error.localizedDescription)") }
+            } catch { failures.append(L10n.format("%@：%@", url.lastPathComponent, error.localizedDescription)) }
         }
         saveDraft()
         if !failures.isEmpty { error = failures.joined(separator: "\n") }

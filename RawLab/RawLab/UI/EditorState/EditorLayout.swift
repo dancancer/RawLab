@@ -23,7 +23,9 @@ extension ContentView {
             if viewModel.hasImage && adjustmentsExpanded {
                 Divider()
                 VStack(spacing: 0) {
+                    // 每个工具一个新的滚动区：换工具后从顶部显示，不沿用上一个面板的滚动位置
                     ScrollView(.vertical) { adjustmentPanel }
+                        .id(currentEditorTool)
                         .accessibilityIdentifier("editor.panel")
                     if geometrySelected || lensSelected {
                         Divider()

@@ -67,7 +67,7 @@ struct AdjustmentDock: View {
                             }.frame(width: 72, height: 70)
                                 .foregroundStyle(active ? Color.yellow : Color.primary)
                         }.buttonStyle(.plain).id("masterRecipe").help(L10n.text("选择大师配方")).accessibilityLabel(L10n.text("大师配方"))
-                            .accessibilityValue(model.settings.masterRecipe?.name ?? L10n.text("无配方"))
+                            .accessibilityValue(model.settings.masterRecipe?.title ?? L10n.text("无配方"))
                             .accessibilityAddTraits(selected == nil && !hslSelected && !lensSelected && !geometrySelected && dockCategory == .masterRecipe ? .isSelected : [])
                         ForEach([AdjustmentParameter.strength, .exposure, .highlights, .shadows, .contrast, .toneCurve, .saturation]) { tool($0) }
                         Button { finishCurrentInput(); hslSelected = true; onPreferredHeight(288) } label: {
@@ -112,7 +112,9 @@ struct AdjustmentDock: View {
     }
 
     private func toolCaption(_ title: String) -> some View {
-        Text(title).font(.system(size: 11)).lineLimit(2)
+        let caption = AdjustmentPanelLayout.ToolCaption.self
+        return Text(title).font(.system(size: caption.size))
+            .lineLimit(caption.lineLimit(for: title)).minimumScaleFactor(caption.minimumScale(for: title))
             .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             .frame(height: 27, alignment: .top)
     }
@@ -130,7 +132,7 @@ struct AdjustmentDock: View {
                         .frame(maxWidth: 720).padding(.horizontal, 16)
                         .disabled(model.result == nil)
                 } else if let parameter = selected, parameter.isPhotoEffect {
-                    PhotoEffectsControls(model: model, tool: parameter, onExpansionChanged: { onPreferredHeight($0 ? 304 : 252) })
+                    PhotoEffectsControls(model: model, tool: parameter, onPreferredHeight: onPreferredHeight)
                         .id("\(parameter.rawValue).\(resetVersion)")
                         .disabled(model.result == nil)
                 } else if let parameter = selected {
@@ -144,7 +146,7 @@ struct AdjustmentDock: View {
                                 }
                             )) {
                                 ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
-                            }.frame(width: 240).controlSize(.small).padding(.bottom, 4)
+                            }.fixedSize().controlSize(.small).padding(.bottom, 4)
                                 .id(localizationLocale.identifier)
                             parameterRow(.temperature)
                             parameterRow(.tint)
@@ -155,7 +157,7 @@ struct AdjustmentDock: View {
                     .disabled(parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil)
                     .disabled(parameter.isWhiteBalance && model.settings.asShotWhiteBalance == nil)
                 } else if dockCategory == .masterRecipe {
-                    MasterRecipeDock(model: model).frame(height: 124)
+                    MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
                 } else {
                     FilmDock(model: model).frame(height: 124)
                 }
@@ -188,8 +190,13 @@ struct AdjustmentDock: View {
         let valueText = parameter.isWhiteBalance ?
             "\(L10n.text("色温")) \(AdjustmentParameter.temperature.spec.text(model.settings.temperature)) K, \(L10n.text("色调")) \(AdjustmentParameter.tint.spec.text(model.settings.tint))" :
             parameter == .denoiseMode ?
-            model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
-        return Button { finishCurrentInput(); selected = parameter; hslSelected = false; onPreferredHeight(parameter == .grainAmount ? 288 : 252) } label: {
+            model.settings.denoiseSummary : spec.display(value)
+        return Button {
+            finishCurrentInput()
+            // 换工具时先回到默认高度；降噪和效果面板出现后再按自身内容要高度，重复点同一工具不改高度
+            if selected != parameter || hslSelected { onPreferredHeight(252) }
+            selected = parameter; hslSelected = false
+        } label: {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
@@ -213,7 +220,7 @@ struct AdjustmentDock: View {
         .accessibilityLabel(title).accessibilityValue(valueText)
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("tool.\(parameter.rawValue)")
-        .help(parameter == .denoiseMode ? noiseReductionHelp : "\(title)：\(valueText)")
+        .help(parameter == .denoiseMode ? noiseReductionHelp : L10n.format("%@：%@", title, valueText))
         .contextMenu {
             Button(L10n.format("重置%@", String(describing: title))) {
                 if parameter.isWhiteBalance { model.settings.resetWhiteBalance() }

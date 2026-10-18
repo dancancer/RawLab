@@ -65,13 +65,13 @@
               <RadioButton x:Name="Dng" Content="{DynamicResource 'DNG · 渲染型'}" AutomationProperties.Name="{DynamicResource 'DNG · 渲染型'}" GroupName="Format" Checked="FormatChanged" Foreground="{DynamicResource Foreground}"/>
             </WrapPanel>
             <StackPanel Margin="0,0,0,18">
-              <DockPanel><TextBlock Text="{DynamicResource '尺寸'}"/><TextBlock x:Name="SizeHint" Text="{DynamicResource '原尺寸'}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right"/></DockPanel>
+              <TextBlock Text="{DynamicResource '尺寸'}"/>
               <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <ComboBox x:Name="SizeSelection" Width="150" SelectionChanged="ExportSizeChanged" AutomationProperties.Name="{DynamicResource '导出尺寸'}">
                   <ComboBoxItem Content="{DynamicResource '原尺寸'}" Tag="original"/><ComboBoxItem Content="{DynamicResource '长边 2048 px'}" Tag="2048"/><ComboBoxItem Content="{DynamicResource '长边 3000 px'}" Tag="3000"/><ComboBoxItem Content="{DynamicResource '长边 4096 px'}" Tag="4096"/><ComboBoxItem Content="{DynamicResource '自定义'}" Tag="custom"/>
                 </ComboBox>
                 <TextBox x:Name="CustomLongEdge" Width="82" Margin="8,0,0,0" Visibility="Collapsed" TextChanged="CustomSizeTextChanged" LostKeyboardFocus="CustomSizeCommitted" KeyDown="CustomSizeKeyDown" AutomationProperties.Name="{DynamicResource '自定义长边'}"/>
-                <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0" Visibility="{Binding Visibility, ElementName=CustomLongEdge}"/>
               </StackPanel>
               <TextBlock x:Name="SizeError" Foreground="{DynamicResource ErrorForeground}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
             </StackPanel>

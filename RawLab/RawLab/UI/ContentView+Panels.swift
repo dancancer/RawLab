@@ -9,6 +9,7 @@ extension ContentView {
                 Button { showingPrivacy = true } label: {
                     Label(L10n.text("隐私设置"), systemImage: "gearshape")
                 }
+                .accessibilityIdentifier("editor.privacy.open")
                 Button { showingFileImporter = true } label: {
                     Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
                 }
@@ -17,7 +18,8 @@ extension ContentView {
             } label: {
                 Image(systemName: "gearshape")
             }
-            .accessibilityLabel(L10n.text("隐私设置")).help(L10n.text("隐私设置"))
+            // 菜单里不止隐私设置（还有"从文件导入"），读屏名称按通用的"更多"
+            .accessibilityLabel(L10n.text("更多")).help(L10n.text("更多"))
             .accessibilityIdentifier("editor.privacy")
             photoImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
                 .opacity(rulerFocusOpacity)
@@ -67,10 +69,14 @@ extension ContentView {
                     showingExportSize = true
                 }
                 .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
-                Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
-                    .accessibilityIdentifier("editor.batchExport")
-                if batchModel != nil { Button(L10n.text("查看批量任务")) { showingBatchExport = true } }
+                // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
+                if batchModel == nil {
+                    Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
+                        .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                        .accessibilityIdentifier("editor.batchExport")
+                } else {
+                    Button(L10n.text("查看批量任务")) { showingBatchExport = true }
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }
@@ -204,10 +210,15 @@ extension ContentView {
                         Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetSelectedAdjustment() }
                     }
                 } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .frame(width: 44, height: 44)
+                    // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
+                    HStack(spacing: 1) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                    }
+                    .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.text("重置调整"))
+                .accessibilityIdentifier("editor.reset")
                 .disabled(!viewModel.hasImage || editingLocked || settings == .default || geometrySelected || lensSelected)
             }
             .frame(height: max(44, panelHeaderHeight))
@@ -268,7 +279,7 @@ extension ContentView {
                     Button { selectEditorTool(.recipe) } label: {
                         AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "square.stack.3d.up", selected: choosingMasterRecipe,
                                             progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: editorToolHeight)
-                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.name ?? L10n.text("无配方"))
+                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.title ?? L10n.text("无配方"))
                         .accessibilityAddTraits(choosingMasterRecipe ? .isSelected : [])
                         .opacity(choosingMasterRecipe ? 1 : rulerFocusOpacity)
                         .id("masterRecipe")

@@ -96,11 +96,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.8.0 APK / Download Android v0.8.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Android-0.8.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.0/SHA256SUMS.txt)
+[下载 Android v0.8.1 APK / Download Android v0.8.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Android-0.8.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.8.0`、`versionCode=12`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/releases/v0.8.0-preparation.md)。
+发布 APK 为 `versionName=0.8.1`、`versionCode=13`，沿用正式发布签名，支持同签名旧正式版覆盖升级。0.8.1 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），不再申请电话状态、网络状态和应用列表权限，并修正配方插图、配方名语言和若干界面细节，见[发布说明](../docs/releases/v0.8.1.md)。0.8 系列：新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/releases/v0.8.0-preparation.md)。
 
-The release APK uses version0.8.0/code12 and the existing release identity. JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/releases/v0.8.0-preparation.md) and package provenance for actual candidate/device coverage.
+The release APK uses version 0.8.1/code 13 and the existing release identity. 0.8.1 turns usage statistics on by default (release builds include the Alibaba Cloud RUM SDK; turn it off in About) and drops phone-state, network-state and app-list permissions; see the [release notes](../docs/releases/v0.8.1.md). JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/releases/v0.8.0-preparation.md) and package provenance for actual candidate/device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -109,7 +109,19 @@ The release APK uses a dedicated signing key. Keep and securely back up the keys
 and password file outside Git; future updates must use the same key. The build script
 never creates or uploads credentials.
 
+正式包默认携带阿里云 RUM Android SDK 2.3.2（`env=PROD`，使用统计默认开启，用户可在“关于”里关闭）。
+SDK 不进 Git：先用 `bash scripts/fetch-rum-sdk.sh` 从供应商 Maven 仓库下载到主工作区的
+`.cache/shared/aliyun-rum/android/2.3.2/`（worktree 也指向主工作区，位置见 `../scripts/rum/shared-cache.sh`），
+版本与 SHA-256 固定在 `scripts/rum-sdk.env`，不符即失败。缺少 SDK 时 Release 构建直接报错；
+只有离线打包才显式设置 `RAWLAB_RUM_RELEASE=false`（Gradle 为 `-PrawlabRumRelease=false`）。
+Debug 默认不带 SDK；`-PrawlabRumLocal=true` 是本地验证构建（`.rumlocal` 包名、`env=LOCAL`、独立同意存储、默认不开启）。
+
+Release builds carry the pinned Aliyun RUM Android SDK (`env=PROD`; analytics on by default, user can turn it
+off in About). Fetch it once with `bash scripts/fetch-rum-sdk.sh`; Release fails when it is missing or its
+SHA-256 differs. Use `RAWLAB_RUM_RELEASE=false` only for an explicit offline package. Debug builds carry no SDK.
+
 ```sh
+bash scripts/fetch-rum-sdk.sh
 export RAWLAB_RELEASE_KEYSTORE="/absolute/private/path/rawlab-android-release.p12"
 export RAWLAB_RELEASE_PASSWORD_FILE="/absolute/private/path/store-password.txt"
 export JAVA_HOME="/path/to/jdk-17-or-21"

@@ -15,11 +15,11 @@ Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.8.0 Windows 包
+## 下载 v0.8.1 Windows 包
 
-[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Windows-0.8.0-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.0/SHA256SUMS.txt)
+[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Windows-0.8.1-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.0/build12，self-contained .NET8；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
 
 ## 构建
 
@@ -40,6 +40,13 @@ libtiff 4.7.1 源码。
 默认包需要 .NET 8 Desktop Runtime，`-SelfContained` 包含运行时。
 支持 `-DotNet <dotnet.exe>` / `-CMake <cmake.exe>` 指定工具。
 脚本也会使用仓库 `build/tools/dotnet` 下的本地 SDK（若存在）。
+
+Release 包默认带阿里云 RUM PC SDK 0.4.4（`alibabacloud_rum.dll`），使用统计默认开启、以
+`env=PROD` 上报。SDK 取主工作区 `.cache/shared/aliyun-rum/windows/0.4.4/sdk.zip`，缺失时从供应商
+带版本号的地址下载；压缩包和 DLL 的 SHA-256 都固定，不符即停止。`-RumSdkZip <zip>` 指定自备的
+压缩包，`-NoRumSdk` 出不带 SDK 的离线包。打包后可用
+`experiments/rum-local/windows/verify-licenses.ps1 -Package build/RawLab-Windows` 核对 SDK 与许可文件。
+Debug 构建不带 SDK。
 未签名，不自动安装、不修改系统文件关联。第三方许可证与说明随程序复制。
 
 ### 从 Mac 远程编译
@@ -211,6 +218,10 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 `localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
 状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
 不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
+`ui-details`（`RawLabWindows.Tests.dll --ui-details <output>`）不需要 RAW 或 native DLL，按六语检查发布前的界面细节：
+工具栏与工具条图标不重复、几何操作图标形状不相近，中日文不夹英文原词、外观名称按语言显示，
+语言下拉框与文件树显示名称而非类型名，相邻位置不重复同一名称或数值，重置按钮不多余且对齐，
+色块与文字不被截断，工具说明不在词中间断行，选中状态、下拉菜单位置、启动目录提示与打开失败状态正确。
 
 普通图像和单张预览的功能回归可通过同一入口选择：
 

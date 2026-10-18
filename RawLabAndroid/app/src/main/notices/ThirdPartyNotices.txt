@@ -12,6 +12,14 @@ https://github.com/PCRE2Project/pcre2 and https://github.com/frida/proxy-libintl
 https://www.gnu.org/software/libiconv/
 
 
+Release builds include the Alibaba Cloud RUM Android SDK 2.3.2
+(com.aliyun.rum:alibabacloud-android-rum-sdk:2.3.2 from https://maven.aliyun.com/,
+SHA-256 681592df6727230a4ff7aef951636afb7d566fbcf486b15b25294b29154c5b1f; its Maven
+POM declares the MIT License). It is combined with RawLab under
+RawLab-Aliyun-RUM-Exception.txt and used only for the usage analytics described in
+About, with a bundled configuration that enables custom events only. Debug builds do
+not include it. Project: https://github.com/aliyun/alibabacloud-rum-android-buildpack
+
 OpenCV 4.12.0 (core/imgproc): https://github.com/opencv/opencv/tree/4.12.0
 Apache 2.0; see OpenCV-LICENSE.txt.
 wavelib: https://github.com/rafat/wavelib, BSD 3-Clause; see wavelib-LICENSE.txt.

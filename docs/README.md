@@ -1,9 +1,9 @@
 # Documentation
 
-The current source targets [v0.8.0, build 12](releases/v0.8.0.md). Use the
+The current source targets [v0.8.1, build 13](releases/v0.8.1.md). Use the
 [GitHub release record](https://github.com/dancancer/RawLab/releases) for actual
-published packages and checksums. Candidate gates are tracked in
-[v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
+published packages and checksums. v0.8.1 is a follow-up release; candidate
+gates for the 0.8 line are tracked in [v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
 retain their original candidate scope.
 
 ## Using RawLab
@@ -26,6 +26,7 @@ retain their original candidate scope.
 
 - [Gitflow, integration and release procedure](../agent.md) and [repository instructions](../AGENTS.md)
 - [Desktop design](../DESIGN.md) and [product scope](../PRODUCT.md)
+- [Product roadmap (Chinese)](roadmap.md), with dated planning status and links to current delivery records
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
 - [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
 - [Licensing and attribution](licensing.md)
@@ -40,7 +41,7 @@ retain their original candidate scope.
 - [All-platform ordinary-image input and current acceptance](verification-raster-input-all-platforms-2026-10-16.md)
 - [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
 - [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
-- [Optional local RUM and default SDK-free verification](verification-rum-analytics-2026-10-16.md)
+- [RUM local SDK verification (2026-10-16, before release builds carried the SDK)](verification-rum-analytics-2026-10-16.md)
 
 ## v0.7.0 Release Records
 
@@ -60,6 +61,7 @@ records that publication, not the current v0.8 candidate state.
 ## Published Releases and History
 
 - [Changelog](../CHANGELOG.md)
+- [v0.8.1 notes](releases/v0.8.1.md) and [corresponding source](releases/v0.8.1-source.md)
 - [v0.8.0 notes](releases/v0.8.0.md) and [corresponding source](releases/v0.8.0-source.md)
 - [v0.7.0 release](releases/v0.7.0.md) and [corresponding source](releases/v0.7.0-source.md)
 - [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)

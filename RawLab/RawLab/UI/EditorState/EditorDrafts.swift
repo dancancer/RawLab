@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-enum EditorToolSelection: Equatable {
+enum EditorToolSelection: Hashable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
 }
@@ -66,7 +66,7 @@ extension ContentView {
         activateEditorTool(selection)
     }
 
-    private var currentEditorTool: EditorToolSelection {
+    var currentEditorTool: EditorToolSelection {
         if geometrySelected { return .geometry }
         if lensSelected { return .lens }
         if choosingMasterRecipe { return .recipe }
@@ -132,14 +132,8 @@ extension ContentView {
     }
 
     func selectedScalarBadge(_ adjustment: AdjustmentKind) -> String? {
-        let scalar: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows,
-                                          .contrast, .toneCurve, .saturation, .sharpening]
-        guard selectedAdjustment == adjustment, scalar.contains(adjustment),
-              !geometrySelected, !lensSelected else { return nil }
-        let value = adjustment.value(from: settings)
-        if adjustment == .exposure { return value == 0 ? "0.00" : String(format: "%+.2f", value) }
-        if adjustment == .strength { return String(format: "%.0f", value * 100) }
-        return String(format: "%+.0f", value)
+        guard selectedAdjustment == adjustment, !geometrySelected, !lensSelected else { return nil }
+        return adjustment.badge(for: adjustment.value(from: settings))
     }
 
     // MARK: - Interruptible focus return

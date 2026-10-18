@@ -3,10 +3,9 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="720">
  <StackPanel Margin="4">
-  <DockPanel>
-   <Button x:Name="ResetGroupButton" DockPanel.Dock="Right" Click="ResetGroupClicked" ToolTip="{DynamicResource '重置当前效果'}" AutomationProperties.Name="{DynamicResource '重置当前效果'}" Padding="6,2"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
-   <TextBlock x:Name="Title" VerticalAlignment="Center" FontWeight="SemiBold"/>
-  </DockPanel>
+  <!-- 工具条上已经选中“暗角”或“颗粒”，这里只留分组重置，不再重复工具名；
+       尺寸与参数行的重置按钮相同，右缘对齐后两者落在同一列 -->
+  <Button x:Name="ResetGroupButton" HorizontalAlignment="Right" Click="ResetGroupClicked" ToolTip="{DynamicResource '重置当前效果'}" AutomationProperties.Name="{DynamicResource '重置当前效果'}" Width="28" Height="28" MinHeight="28" Padding="3" Margin="0"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
   <StackPanel x:Name="VignetteParameters"/>
   <Expander x:Name="VignetteDetails" Header="{DynamicResource '精细调整'}"><StackPanel x:Name="VignetteFineParameters"/></Expander>
   <StackPanel x:Name="GrainParameters"/>

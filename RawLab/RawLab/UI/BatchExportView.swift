@@ -92,7 +92,7 @@ struct BatchExportView: View {
                 BatchPhotoThumbnail(url: model.job.source.sourceURL).frame(width: 92, height: 72)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(model.job.source.displayName).font(.body.weight(.medium)).lineLimit(2)
-                    Text(L10n.format("%@ · %@%%", model.job.source.settings.hasLook ? model.job.source.lookName ?? L10n.text("中性") : L10n.text("中性"), String(Int(model.job.source.settings.lutStrength * 100))))
+                    Text(L10n.format("%@ · %@%%", model.job.source.settings.hasLook ? L10n.text(model.job.source.lookName ?? "中性") : L10n.text("中性"), String(Int(model.job.source.settings.lutStrength * 100))))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -101,37 +101,12 @@ struct BatchExportView: View {
     }
 
     private var settingsSection: some View {
-        VStack(spacing: 0) {
-            settingRow(L10n.text("曝光补偿"), value: String(format: "%+.2f EV", model.job.source.settings.exposure))
-            settingRow(L10n.text("曝光基准"), value: model.job.source.settings.exposureMode.title)
-            settingRow("HSL", value: model.job.source.settings.hsl.isIdentity ? L10n.text("未调整") : L10n.text("已调整"))
-            settingRow(L10n.text("白平衡"), value: model.job.source.settings.whiteBalanceMode == .camera ? L10n.text("拍摄时设置") : L10n.text("自定义"))
+        let settings = model.job.source.settings
+        return VStack(spacing: 0) {
+            ForEach(BatchSettingsSummary.headline(settings), id: \.title) { settingRow($0.title, value: $0.value) }
             DisclosureGroup(L10n.text("全部调整")) {
                 VStack(spacing: 0) {
-                    ForEach(AdjustmentKind.allCases) { adjustment in
-                        settingRow(adjustment.title, value: adjustment == .temperature || adjustment == .tint
-                            ? model.job.source.settings.whiteBalanceMode == .camera ? L10n.text("按每张照片") : adjustment.valueLabel(for: adjustment.value(from: model.job.source.settings))
-                            : adjustment.valueLabel(for: adjustment.value(from: model.job.source.settings)))
-                    }
-                    let denoise = model.job.source.settings.denoise
-                    settingRow(L10n.text("小波降噪"), value: denoise.enabled ? L10n.text("开启") : L10n.text("关闭"))
-                    settingRow(L10n.text("亮度降噪"), value: String(format: "%.0f", denoise.luma))
-                    settingRow(L10n.text("色彩降噪"), value: String(format: "%.0f", denoise.chroma))
-                    settingRow(L10n.text("粗颗粒降噪"), value: String(format: "%.0f", denoise.coarse))
-                    let effects = model.job.source.settings.photoEffects
-                    settingRow(L10n.text("暗角强度"), value: String(format: "%+.0f", effects.vignetteAmount))
-                    settingRow(L10n.text("暗角中点"), value: String(format: "%.0f", effects.vignetteMidpoint))
-                    settingRow(L10n.text("暗角圆度"), value: String(format: "%+.0f", effects.vignetteRoundness))
-                    settingRow(L10n.text("暗角羽化"), value: String(format: "%.0f", effects.vignetteFeather))
-                    settingRow(L10n.text("暗角高光保护"), value: String(format: "%.0f", effects.vignetteHighlights))
-                    settingRow(L10n.text("颗粒强度"), value: String(format: "%.0f", effects.grainAmount))
-                    settingRow(L10n.text("颗粒大小"), value: String(format: "%.0f", effects.grainSize))
-                    settingRow(L10n.text("颗粒粗糙度"), value: String(format: "%.0f", effects.grainRoughness))
-                    let lens = model.job.source.settings.lensSettings
-                    settingRow(L10n.text("镜头匹配"), value: lens.mode == .automatic ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))" : L10n.text("手动"))
-                    settingRow(L10n.text("畸变矫正"), value: lens.distortion ? L10n.text("开启") : L10n.text("关闭"))
-                    settingRow(L10n.text("横向色差"), value: lens.tca ? L10n.text("开启") : L10n.text("关闭"))
-                    settingRow(L10n.text("自动裁边"), value: lens.autoCrop ? L10n.text("开启") : L10n.text("关闭"))
+                    ForEach(BatchSettingsSummary.details(settings), id: \.title) { settingRow($0.title, value: $0.value) }
                 }
             }.padding(.vertical, 16).accessibilityIdentifier("batch.settings")
         }.padding(.horizontal, 20)
@@ -156,7 +131,7 @@ struct BatchExportView: View {
                 }
             }.padding(.horizontal, 20).padding(.top, 12)
             if model.job.targets.isEmpty {
-                Text(L10n.text("尚未选择照片")).foregroundStyle(.secondary).padding(.horizontal, 20)
+                EmptyView()
             } else if model.job.status == .draft {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 12) {
@@ -203,7 +178,9 @@ struct BatchExportView: View {
                     }
                 }.padding(.horizontal, 20)
             }
-            Text(L10n.format("已选 %@ 张照片", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
+            // 空任务只说"尚未选择照片"，有照片时给出张数
+            Text(model.job.targets.isEmpty ? L10n.text("尚未选择照片")
+                 : L10n.format("已选 %@ 张照片", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
                 .padding(.horizontal, 20).padding(.bottom, 16)
         }
     }

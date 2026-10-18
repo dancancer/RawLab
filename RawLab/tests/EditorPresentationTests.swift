@@ -7,8 +7,49 @@ struct EditorPresentationTests {
         print("PASS: \(message)")
     }
 
+    // ------------------------------------------------------------------------
+    //  选中工具的数值徽标与参数行同一格式：德语用逗号作小数点，零不带正负号
+    // ------------------------------------------------------------------------
+    static func checkBadgeMatchesParameterRow() {
+        for language in ["de", "en"] {
+            UserDefaults.standard.register(defaults: [L10n.preferenceKey: language])
+            for kind in AdjustmentKind.badgeKinds {
+                for value in [kind.value(from: .default), kind.range.lowerBound, kind.range.upperBound, kind.step * 7] {
+                    check(kind.badge(for: value) == kind.formatted(value),
+                          "\(language) \(kind.rawValue) badge \(kind.badge(for: value) ?? "nil") matches the parameter row \(kind.formatted(value))")
+                }
+            }
+        }
+        // 零不带正负号：高光的默认值算出来是 -0.0，参数行"默认"和数值都不能显示"-0"
+        let signedDefaults = AdjustmentKind.allCases.filter { $0.formatted($0.value(from: .default)).hasPrefix("-") }
+        check(signedDefaults.isEmpty, "every default value is shown without a sign: \(signedDefaults)")
+        check(AdjustmentKind.highlights.formatted(-0.0) == "0", "negative zero is shown as 0")
+        // 拍摄时说明与上方色温数值同一数字格式（德语千位用点）
+        UserDefaults.standard.register(defaults: [L10n.preferenceKey: "de"])
+        let caption = AdjustmentKind.asShotCaption(temperature: 4928, tint: 13)
+        check(caption.contains(AdjustmentKind.temperature.formatted(4928)) && caption.contains("+13"),
+              "as-shot caption \(caption) uses the temperature value format \(AdjustmentKind.temperature.formatted(4928))")
+        // 拍摄时说明只在面板数值不是拍摄时数值时出现，也不重复分段控件已选中的"自定义"
+        var asShot = RawSettings.default
+        asShot.whiteBalanceMode = .camera
+        check(AdjustmentKind.asShotNote(for: asShot, cameraTemperature: 4928, cameraTint: 13) == nil,
+              "camera white balance does not repeat the as-shot values the controls already show")
+        var custom = asShot
+        custom.whiteBalanceMode = .custom
+        check(AdjustmentKind.asShotNote(for: custom, cameraTemperature: 4928, cameraTint: 13) == caption,
+              "custom white balance keeps the as-shot values as a reference")
+        var recipe = asShot
+        recipe.masterRecipeID = MasterRecipe.allRecipes[0].id
+        check(AdjustmentKind.asShotNote(for: recipe, cameraTemperature: 4928, cameraTint: 13) == caption,
+              "a recipe tint offset keeps the as-shot tint as a reference")
+        UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"])
+        check(AdjustmentKind.hsl.badge(for: 10) == nil && AdjustmentKind.temperature.badge(for: 5000) == nil,
+              "multi-parameter tools keep their glyph instead of a badge")
+    }
+
     static func main() throws {
         var settings = RawSettings.default
+        checkBadgeMatchesParameterRow()
         check(AdjustmentKind.contrast.range == -100...100 && AdjustmentKind.sharpening.range == 0...200,
               "iOS contrast and sharpening expose the full Mac ranges")
         AdjustmentKind.highlights.setValue(25, in: &settings)

@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 
+// 界面显示用的名称：汉字写的人名按当前语言显示（翻译目录以原名为键）
+extension MasterRecipe {
+    var title: String { L10n.text(name) }
+}
+
 extension ContentView {
     func filmPanel(imageSize: CGFloat) -> some View {
         let sections = FilmGroup.sections(viewModel.availableLUTs, group: { FilmPresentation(fileName: $0.id).group })
@@ -39,18 +44,14 @@ extension ContentView {
         let recipes = MasterRecipe.allRecipes
         let tileWidth = max(120, filmSize + 40)
         return VStack(alignment: .leading, spacing: 12) {
-            if let recipe = settings.masterRecipe {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(recipe.name)
-                        .font(.subheadline.weight(.medium))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(L10n.text("配方会调整多个参数。"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 16)
-                .opacity(rulerFocusOpacity)
+            // 当前配方名已在面板标题行显示，这里只补一句说明
+            if settings.masterRecipe != nil {
+                Text(L10n.text("配方会调整多个参数。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .opacity(rulerFocusOpacity)
             }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -85,16 +86,17 @@ extension ContentView {
             applySettingsChange(updated)
         } label: {
             VStack(spacing: 6) {
-                if let url = recipe?.artworkURL(), let image = UIImage(contentsOfFile: url.path) {
-                    Image(uiImage: image).resizable().scaledToFit()
-                        .frame(width: filmSize, height: filmSize)
-                        .accessibilityHidden(true)
+                // 图片区固定一格：有插图显示插图，没有插图（含"无配方"）才用图标代替
+                Group {
+                    if let url = recipe?.artworkURL(), let image = UIImage(contentsOfFile: url.path) {
+                        Image(uiImage: image).resizable().scaledToFit()
+                    } else {
+                        Image(systemName: "square.stack.3d.up").font(.title2)
+                    }
                 }
-                Image(systemName: "square.stack.3d.up")
-                    .font(.title2)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityHidden(true)
-                Text(recipe?.name ?? L10n.text("无配方"))
+                .frame(width: filmSize, height: filmSize)
+                .accessibilityHidden(true)
+                Text(recipe?.title ?? L10n.text("无配方"))
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -109,7 +111,7 @@ extension ContentView {
             .padding(.vertical, 6)
             .foregroundStyle(settings.masterRecipeID == recipe?.id ? Color.yellow : Color.primary)
         }.disabled(!viewModel.hasImage || editingLocked)
-            .accessibilityLabel(recipe?.name ?? L10n.text("无配方")).accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
+            .accessibilityLabel(recipe?.title ?? L10n.text("无配方")).accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
             .accessibilityAddTraits(settings.masterRecipeID == recipe?.id ? .isSelected : [])
     }
 

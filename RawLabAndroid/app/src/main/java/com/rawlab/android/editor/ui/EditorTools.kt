@@ -1,0 +1,137 @@
+package com.rawlab.android.editor.ui
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.unit.dp
+import kotlin.math.abs
+import com.rawlab.android.R
+import com.rawlab.android.editor.EditorState
+import com.rawlab.android.editor.controls.AdjustmentScale
+import com.rawlab.android.editor.controls.formatAdjustment
+import com.rawlab.android.format.PhotoInputKind
+import com.rawlab.android.settings.DenoiseSettings
+import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.LensSettings
+
+internal val editorToolOrder = listOf(0, 15) + (1..8).toList() + (10..14).toList() + listOf(17, 16)
+
+internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
+    R.string.shadows, R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.white_balance,
+    R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
+    R.string.master_recipes, R.string.info_lens, R.string.geometry)
+
+internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune,
+    Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
+    Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
+    Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
+    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate)
+
+internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
+    val temperature = shotTemperature ?: edits.temperature
+    val tint = if (edits.recipeID != null) 0f else shotTint ?: edits.tint
+    return abs(edits.temperature - temperature) > .0001f || abs(edits.tint - tint) > .0001f
+}
+
+@Composable
+internal fun EditorToolStrip(state: EditorState, selected: Int, select: (Int) -> Unit) {
+    val list = rememberLazyListState()
+    LaunchedEffect(selected) {
+        val index = editorToolOrder.indexOf(selected)
+        if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
+            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem((index - 2).coerceAtLeast(0))
+    }
+    LazyRow(Modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(editorToolOrder, key = { it }) { index -> EditorTool(state, index, selected == index) { select(index) } }
+    }
+}
+
+@Composable
+internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onClick: () -> Unit) {
+    val edits = state.visibleEdits
+    val rawOnly = state.photo?.inputKind == PhotoInputKind.RAW
+    val scalar = when (index) {
+        1 -> Triple(edits.strength * 100f, 100f, 0f..200f)
+        2 -> Triple(edits.exposure, 0f, -4f..4f)
+        3 -> Triple(edits.highlights * 100f, 0f, -100f..100f)
+        4 -> Triple(edits.shadows * 100f, 0f, -100f..100f)
+        5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)
+        6 -> Triple(edits.toneCurve * 100f, 0f, -100f..100f)
+        7 -> Triple(edits.saturation * 100f, 0f, -100f..100f)
+        // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
+        9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)
+        10 -> Triple(edits.sharpening * 100f, 0f, 0f..200f)
+        else -> null
+    }
+    val changed = when (index) {
+        8 -> whiteBalanceChanged(edits, state.preview?.temperature, state.preview?.tint)
+        else -> scalar?.let { abs(it.first - it.second) > .0001f } ?: when (index) {
+            0 -> edits.film != "neutral"
+            15 -> edits.recipeID != null
+            11 -> edits.denoise != DenoiseSettings()
+            12 -> !edits.effects.isEffectDefault(true)
+            13 -> !edits.effects.isEffectDefault(false)
+            14 -> !edits.hsl.isIdentity
+            16 -> edits.lens != LensSettings()
+            17 -> !edits.geometry.isIdentity
+            else -> false
+        }
+    }
+    val primary = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val color = if (selected) primary else muted
+    val number = scalar?.let { formatAdjustment(it.first, if (index == 2) .05f else 1f) }
+    val title = stringResource(editorToolTitles[index])
+    val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
+    val valueDescription = if (index == 8) listOf(
+        "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
+    ).joinToString(" · ") else number
+    Column(Modifier.width(80.dp).heightIn(min = 88.dp).selectable(selected,
+        enabled = state.controlsEnabled && (index != 8 || rawOnly) && (index != 16 || rawOnly),
+        role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
+        contentDescription = title
+        stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
+    }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(48.dp).testTag("editor-tool-ring-$index"), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val inset = 1.dp.toPx()
+                drawCircle(if (selected) primary else muted.copy(alpha = .6f), style = Stroke(1.dp.toPx()))
+                scalar?.let {
+                    val sweep = AdjustmentScale(it.third, 1f, it.second).sweep(it.first)
+                    if (sweep != 0f) drawArc(primary, -90f, sweep, false, Offset(inset, inset),
+                        Size(size.width - inset * 2, size.height - inset * 2), style = Stroke(2.5.dp.toPx()))
+                }
+            }
+            if (selected && number != null && number.length <= 5 && LocalDensity.current.fontScale <= 1.3f) {
+                Text(number, style = MaterialTheme.typography.labelSmall, color = primary)
+            } else Icon(editorToolIcons[index], null, Modifier.size(24.dp), tint = color)
+        }
+        Text(title, style = MaterialTheme.typography.labelSmall, color = color)
+        // 与 Mac、iOS 相同：“已调整”是工具名下方单独的小圆点；没调整时透明但仍占位，切换时工具条不跳动
+        Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index")
+            .background(if (changed) primary else Color.Transparent, CircleShape))
+    }
+}

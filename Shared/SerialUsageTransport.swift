@@ -8,7 +8,7 @@ protocol UsageSDKBackend: AnyObject {
 
 final class SerialUsageTransport: UsageAnalyticsTransport, UsageTransportFailureReporting, UsageTransportAvailability {
     var isAvailable: Bool { lock.lock(); defer { lock.unlock() }; return !retired }
-    var unavailableReason: String? { isAvailable ? nil : "本地验证 SDK 已停止，请重启应用后重新开启统计。" }
+    var unavailableReason: String? { isAvailable ? nil : "统计已停止，请重启应用后再开启。" }
     var onFailure: (() -> Void)?
     private let backend: UsageSDKBackend
     private let queue = DispatchQueue(label: "RawLab.usage.sdk", qos: .utility)

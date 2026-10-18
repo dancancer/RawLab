@@ -22,7 +22,7 @@ public sealed record LensInfo(int State, string DetectedLens, string SelectedLen
     public string Message => State switch {
         0 => Loc.Text("镜头校正已关闭"),
         1 => AppliedDistortion || AppliedTca
-            ? Loc.Format("已校正{0}", string.Join("、", new[] {
+            ? Loc.Format("已校正{0}", string.Join(Loc.Text("、"), new[] {
                 AppliedDistortion ? Loc.Text("畸变") : null,
                 AppliedTca ? Loc.Text("横向色差") : null
             }.Where(x => x != null)))

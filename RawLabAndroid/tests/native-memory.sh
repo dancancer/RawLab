@@ -20,7 +20,7 @@ until "$ADB" -s "$DEVICE" shell dumpsys user | rg -q 'State: RUNNING_UNLOCKED'; 
 "$ADB" -s "$DEVICE" logcat -c
 "$ADB" -s "$DEVICE" shell cat /proc/meminfo > "$OUT/meminfo.txt"
 "$ADB" -s "$DEVICE" shell am instrument -w -r \
-    -e class com.rawlab.android.NativeMemoryTest#nativeDenoiseExportsFitLimitedMemory \
+    -e class com.rawlab.android.engine.memory.NativeMemoryTest#nativeDenoiseExportsFitLimitedMemory \
     -e memoryLabel "$LABEL" -e memoryWarmDenoise "$WARM" -e memoryRecomputeDenoise "$RECOMPUTE" \
     "${EXTRA[@]}" \
     com.rawlab.android.test/androidx.test.runner.AndroidJUnitRunner | tee "$OUT/instrumentation.log"

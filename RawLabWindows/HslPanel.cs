@@ -25,7 +25,8 @@ public sealed class HslPanel : StackPanel
         for(var i=0;i<8;++i)
         {
             var index=i;
-            var button=new Button{Width=40,Height=40,Margin=new Thickness(2),Content=new Ellipse{Width=20,Height=20,Fill=new SolidColorBrush(colors[i])}};
+            // 默认按钮内边距 12 会把 20 的色块裁成半圆：色块按钮不留内边距
+            var button=new Button{Width=40,Height=40,Margin=new Thickness(2),Padding=new Thickness(0),Content=new Ellipse{Width=20,Height=20,Fill=new SolidColorBrush(colors[i])}};
             button.Click+=(_,_)=>{channel=index;foreach(var row in rows)row.RestoreText();Refresh(settings);};
             swatches[i]=button;selector.Children.Add(button);
         }

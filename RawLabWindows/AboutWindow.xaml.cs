@@ -31,6 +31,7 @@ public partial class AboutWindow : Window
         LanguageBox.ItemsSource = Loc.Choices.Select(c => c.Code == "system" ? c with { NativeName = Loc.Text("跟随系统") } : c).ToList();
         LanguageBox.SelectedValue = Loc.Preference;
         languageReady = true;
+        RefreshUsage();
     }
     private void LanguageChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
@@ -61,7 +62,8 @@ public partial class AboutWindow : Window
         refreshingUsage = true;
         UsageConsent.IsEnabled = analytics.CanEnable || analytics.ConsentGiven;
         UsageConsent.IsChecked = analytics.ConsentGiven;
-        UsageStatus.Text = string.IsNullOrEmpty(analytics.StorageWarning) ? analytics.Status : analytics.StorageWarning;
+        // 统计模型只给翻译键，这里按当前语言显示
+        UsageStatus.Text = Loc.Text(string.IsNullOrEmpty(analytics.StorageWarning) ? analytics.Status : analytics.StorageWarning);
         refreshingUsage = false;
     }
     private void UsageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => Dispatcher.BeginInvoke(RefreshUsage);

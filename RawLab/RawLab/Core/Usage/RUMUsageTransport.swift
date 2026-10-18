@@ -1,5 +1,6 @@
 import Foundation
 
+// 本地验证构建（环境变量配置、独立包名）只能是 Debug；正式构建用 RAWLAB_RUM
 #if RAWLAB_RUM_LOCAL && !DEBUG
 #error("RUM local validation cannot be built for Release")
 #endif
@@ -14,7 +15,7 @@ enum RawLabRUMThreading {
     }
 }
 
-enum RawLabRUMLocalViewContext {
+enum RawLabRUMViewContext {
     static let name = "RawLab Usage"
     static let method = "manual"
     static let type: String? = nil
@@ -24,13 +25,16 @@ enum RawLabRUMLocalViewContext {
     }
 }
 
+// 移动 SDK 停止后同进程不能再启动：关闭后重新开启需要重启应用
+// 设备标识由调用方提供（正式为本机随机安装标识，探针为验证标记），不读取任何硬件编号
 enum RawLabIOSUsageTransport {
     static let allowsRestart = false
 
-    static func make(configuration: RUMLocalConfiguration?) -> UsageAnalyticsTransport {
-#if RAWLAB_RUM_LOCAL
+    static func make(configuration: RUMConfiguration?,
+                     deviceID: @escaping () throws -> String) -> UsageAnalyticsTransport {
+#if RAWLAB_RUM
         guard let configuration else { return UnavailableUsageTransport() }
-        return SerialUsageTransport(backend: AliyunRUMUsageBackend(configuration: configuration),
+        return SerialUsageTransport(backend: AliyunRUMUsageBackend(configuration: configuration, deviceID: deviceID),
                                     allowsRestart: allowsRestart)
 #else
         return UnavailableUsageTransport()
@@ -38,36 +42,43 @@ enum RawLabIOSUsageTransport {
     }
 }
 
-#if RAWLAB_RUM_LOCAL
+#if RAWLAB_RUM
 import AlibabaCloudRUM
 import AlibabaCloudRUMSDK
 
 private final class AliyunRUMUsageBackend: UsageSDKBackend {
-    private let configuration: RUMLocalConfiguration
-    private let localViewID = RawLabRUMLocalViewContext.makeID()
+    private let configuration: RUMConfiguration
+    private let deviceID: () throws -> String
+    private let localViewID = RawLabRUMViewContext.makeID()
 
-    init(configuration: RUMLocalConfiguration) {
-        self.configuration = configuration
+    init(configuration: RUMConfiguration, deviceID: @escaping () throws -> String) {
+        self.configuration = configuration; self.deviceID = deviceID
+    }
+
+    private static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 
     func start() throws {
-        let disabledModules = try RUMLocalConfiguration.disabledModules.map { rawModule in
+        let disabledModules = try RUMConfiguration.disabledModules.map { rawModule in
             guard let module = AlibabaCloudModule(rawValue: rawModule) else {
-                throw RUMLocalConfigurationError.invalid("unsupported AlibabaCloudRUM module \(rawModule)")
+                throw RUMConfigurationError.invalid("unsupported AlibabaCloudRUM module \(rawModule)")
             }
             return module
         }
+        let device = try deviceID()
+        let environment: Env = configuration.environment == .production ? .PROD : .LOCAL
         var localModuleMask: UInt = 0
         let configureAndStart = {
             disabledModules.forEach(AlibabaCloudRUM.disableModule)
             AlibabaCloudRUM.enableModule(.customEvent)
             localModuleMask = AlibabaCloudRUMSDK.moduleStates().rawValue
             AlibabaCloudRUM.setSelfMonitorEnabled(false)
-            AlibabaCloudRUM.setEnvironment(.LOCAL)
-            AlibabaCloudRUM.setAppVersion("0.0.0-local")
+            AlibabaCloudRUM.setEnvironment(environment)
+            AlibabaCloudRUM.setAppVersion(Self.appVersion)
             AlibabaCloudRUM.setEndpoint(self.configuration.endpoint.absoluteString)
             AlibabaCloudRUM.setWorkspace(self.configuration.workspace)
-            AlibabaCloudRUM.setDeviceID(self.configuration.deviceID.uuidString)
+            AlibabaCloudRUM.setDeviceID(device)
             if self.configuration.validationRun != nil {
                 AlibabaCloudRUMSDK.setDebuggable(true)
             }
@@ -78,7 +89,7 @@ private final class AliyunRUMUsageBackend: UsageSDKBackend {
             fflush(stdout)
         }
         guard localModuleMask == (1 << 9) else {
-            throw RUMLocalConfigurationError.invalid("AlibabaCloudRUM local module policy did not resolve to customEvent only")
+            throw RUMConfigurationError.invalid("AlibabaCloudRUM local module policy did not resolve to customEvent only")
         }
         RawLabRUMThreading.onMain {
             AlibabaCloudRUM.start(self.configuration.serviceID)
@@ -101,19 +112,19 @@ private final class AliyunRUMUsageBackend: UsageSDKBackend {
             fflush(stdout)
         }
         guard coreIsStarted else {
-            throw RUMLocalConfigurationError.invalid("AlibabaCloudRUM SDK isStarted=false")
+            throw RUMConfigurationError.invalid("AlibabaCloudRUM SDK isStarted=false")
         }
         guard hasActiveSession else {
-            throw RUMLocalConfigurationError.invalid("AlibabaCloudRUM SDK isStarted=true but active session is missing")
+            throw RUMConfigurationError.invalid("AlibabaCloudRUM SDK isStarted=true but active session is missing")
         }
         RawLabRUMThreading.onMain {
             AlibabaCloudRUMSDK.reportView(self.localViewID,
                                           loadTime: 0,
                                           enter: true,
-                                          name: RawLabRUMLocalViewContext.name,
-                                          method: RawLabRUMLocalViewContext.method,
+                                          name: RawLabRUMViewContext.name,
+                                          method: RawLabRUMViewContext.method,
                                           map: [:],
-                                          type: RawLabRUMLocalViewContext.type)
+                                          type: RawLabRUMViewContext.type)
         }
     }
 
@@ -136,15 +147,15 @@ private final class AliyunRUMUsageBackend: UsageSDKBackend {
             AlibabaCloudRUMSDK.reportView(self.localViewID,
                                           loadTime: 0,
                                           enter: false,
-                                          name: RawLabRUMLocalViewContext.name,
-                                          method: RawLabRUMLocalViewContext.method,
+                                          name: RawLabRUMViewContext.name,
+                                          method: RawLabRUMViewContext.method,
                                           map: [:],
-                                          type: RawLabRUMLocalViewContext.type)
+                                          type: RawLabRUMViewContext.type)
             stopSucceeded = AlibabaCloudRUMSDK.stop()
             coreIsStarted = AlibabaCloudRUMSDK.isStarted()
         }
         guard stopSucceeded, !coreIsStarted else {
-            throw RUMLocalConfigurationError.invalid("AlibabaCloudRUM SDK stop failed")
+            throw RUMConfigurationError.invalid("AlibabaCloudRUM SDK stop failed")
         }
     }
 }

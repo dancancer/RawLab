@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param([switch]$Test, [switch]$SelfContained, [string]$DotNet, [string]$CMake, [string]$Python,
-    [string]$RawPath, [string]$RawDirectory = 'Z:\Photo\2019\2019-02-02')
+    [string]$RawPath, [string]$RawDirectory = 'Z:\Photo\2019\2019-02-02',
+    [string]$RumSdkZip, [switch]$NoRumSdk)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $native = Join-Path $repo 'build/windows-native'
@@ -23,6 +24,47 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed with exit code $LASTEXITCODE" }
 }
+# ---------------------------------------------------------------------------
+# Aliyun RUM PC SDK 0.4.4 (usage analytics). Release packages carry it by
+# default and report env=PROD. -NoRumSdk builds an offline package without
+# analytics; -RumSdkZip uses a local copy of the vendor archive. Otherwise the
+# archive comes from the main worktree's .cache/shared, downloaded once from
+# the vendor URL. The archive and DLL SHA-256 are pinned; a mismatch fails.
+# ---------------------------------------------------------------------------
+$rumSdkUrl = 'https://rum-sdk.oss-cn-hangzhou.aliyuncs.com/native/AlibabaCloud_RUM_Windows_0.4.4.zip'
+$rumSdkSha256 = 'bfa05c0718a57eb7e94c9494499bd3c84305a3cc39b76d6a9096667553928994'
+function Get-SharedCache {
+    # Native stderr must not stop the build when this is not a git checkout.
+    $ErrorActionPreference = 'Continue'
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        $common = & $git.Source -C $repo rev-parse --path-format=absolute --git-common-dir 2>$null
+        if ($LASTEXITCODE -eq 0 -and $common) { return Join-Path (Split-Path $common -Parent) '.cache/shared' }
+    }
+    Join-Path $repo '.cache/shared'
+}
+function Get-RumSdkZip {
+    if ($RumSdkZip) {
+        if (!(Test-Path -LiteralPath $RumSdkZip -PathType Leaf)) { throw "RUM SDK archive not found: $RumSdkZip" }
+        $archive = (Resolve-Path -LiteralPath $RumSdkZip).Path
+    } else {
+        $archive = Join-Path (Get-SharedCache) 'aliyun-rum/windows/0.4.4/sdk.zip'
+        if (!(Test-Path -LiteralPath $archive)) {
+            New-Item -ItemType Directory -Force (Split-Path $archive) | Out-Null
+            $partial = "$archive.download"
+            try { Invoke-WebRequest $rumSdkUrl -OutFile $partial -UseBasicParsing }
+            catch { throw "Cannot download the RUM SDK from $rumSdkUrl. Pass -RumSdkZip <AlibabaCloud_RUM_Windows_0.4.4.zip>, or -NoRumSdk for an offline package without analytics." }
+            if ((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $rumSdkSha256) {
+                Remove-Item -LiteralPath $partial
+                throw "Downloaded RUM SDK archive has an unexpected SHA-256: $rumSdkUrl"
+            }
+            Move-Item -LiteralPath $partial -Destination $archive
+        }
+    }
+    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $rumSdkSha256) { throw "Unexpected RUM SDK archive SHA-256: $archive" }
+    $archive
+}
+$rumProperty = if ($NoRumSdk) { '-p:RawLabRumSdk=false' } else { "-p:RawLabRumSdkZip=$(Get-RumSdkZip)" }
 $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $environment = & cmd.exe /d /s /c "`"$vs/VC/Auxiliary/Build/vcvars64.bat`" >nul && set"
@@ -48,8 +90,9 @@ Invoke-Checked $CMake @('-S',"$PSScriptRoot/native",'-B',$native,'-A','x64','-DB
 Invoke-Checked $CMake @('--build',$native,'--config','Release','--parallel')
 $iconPath=Join-Path $native 'RawLab.ico'
 & "$PSScriptRoot/build-icon.ps1" -Source "$repo/RawLabMac/Resources/AppIcon.png" -Output $iconPath
-$publish = @('publish',"$PSScriptRoot/RawLabWindows.csproj",'-c','Release','-r','win-x64','-o',$output,'--self-contained',([bool]$SelfContained).ToString().ToLowerInvariant(),"-p:ApplicationIcon=$iconPath")
+$publish = @('publish',"$PSScriptRoot/RawLabWindows.csproj",'-c','Release','-r','win-x64','-o',$output,'--self-contained',([bool]$SelfContained).ToString().ToLowerInvariant(),"-p:ApplicationIcon=$iconPath",$rumProperty)
 Invoke-Checked $DotNet $publish
+if ((Test-Path -LiteralPath "$output/alibabacloud_rum.dll") -eq [bool]$NoRumSdk) { throw 'The package RUM SDK presence does not match -NoRumSdk.' }
 & "$PSScriptRoot/build-exiftool.ps1" -Output $output
 Copy-Item "$native/core/Release/sony2fuji.dll", "$native/cli/Release/sony2fuji.exe", "$native/Release/raw.dll" $output -Force
 $schemas = Join-Path $output 'AgentSchemas'

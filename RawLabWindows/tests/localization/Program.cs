@@ -11,6 +11,16 @@ Check(Loc.Resolve("system", "zh-Hans-CN") == "zh-Hans", "Simplified Chinese");
 Check(Loc.Resolve("system", "zh-Hant-TW") == "en", "Unsupported Chinese script");
 Check(Loc.Resolve("system", "pt-BR") == "en", "Unsupported language fallback");
 Check(Loc.Resolve("ja", "fr-FR") == "ja", "Explicit language selection");
+foreach (var (argument, composed) in new[] {
+    ("\"暗角强度\"", false), ("titles[i + 1]", false), ("recipe?.Subtitle ?? \"中性直出\"", false),
+    ("selected ? \"暗角\" : \"颗粒\"", false), ("(spec.IsVignette ? \"暗角\" : \"颗粒\")+titles[(int)spec.Id]", true),
+    ("\"重置\"+name", true), ("(\"重置\" + name)", true), ("$\"重置{name}\"", true), ("string.Concat(a, b)", true) })
+    Check(StaticKeyChecks.IsComposed(argument) == composed, "Composed-key scanner classifies " + argument);
+var keyArguments = StaticKeyChecks.Arguments(StaticKeyChecks.SourceDirectory()).ToList();
+var composedKeys = keyArguments.Where(argument => StaticKeyChecks.IsComposed(argument.Text))
+    .Select(argument => "\n  " + argument.Location + ": " + argument.Text).ToList();
+Check(keyArguments.Count > 150 && composedKeys.Count == 0,
+    $"{keyArguments.Count} Loc calls use static keys" + string.Concat(composedKeys));
 var expected = new Dictionary<string, string> { ["en"] = "Language", ["zh-Hans"] = "语言",
     ["de"] = "Sprache", ["fr"] = "Langue", ["ja"] = "言語", ["es"] = "Idioma" };
 foreach (var pair in expected)
@@ -22,4 +32,22 @@ foreach (var pair in expected)
           Loc.Strings.ContainsKey("宽度 (%)") && Loc.Strings.ContainsKey("重置几何"), pair.Key + " geometry labels");
     Check(Loc.Format("导出 {0} 张", 2).Contains('2'), pair.Key + " formatted arguments");
     Check(Loc.Text("unknown.key") == "unknown.key", pair.Key + " unknown key fallback");
+    var missing = keyArguments.SelectMany(argument => StaticKeyChecks.Literals(argument.Text)
+        .Where(key => !Loc.Strings.ContainsKey(key)).Select(key => "\n  " + argument.Location + ": " + key)).ToList();
+    Check(missing.Count == 0, pair.Key + " literal keys inside Loc calls are catalogued" + string.Concat(missing));
+}
+
+// ┌─ 中文、日文界面不在本地文字旁并列英文原词（例如 "Vignette / 暗角"）──────────┐
+// │ 英文译文本身是一个完整的词，又原样出现在中日文译文里，就是双语混排            │
+// └────────────────────────────────────────────────────────────────────────────┘
+Loc.Initialize("en");
+var english = Loc.Strings.ToDictionary(pair => pair.Key, pair => pair.Value);
+foreach (var language in new[] { "zh-Hans", "ja" })
+{
+    Loc.Initialize(language);
+    var mixed = Loc.Strings.Where(pair => pair.Key.Any(c => c >= '㐀' && c <= '鿿') &&
+            english[pair.Key].Any(char.IsLower) && pair.Value != english[pair.Key] &&
+            pair.Value.Contains(english[pair.Key], StringComparison.Ordinal))
+        .Select(pair => "\n  " + pair.Key + " => " + pair.Value).ToList();
+    Check(mixed.Count == 0, language + " values do not repeat the English text beside the translation" + string.Concat(mixed));
 }

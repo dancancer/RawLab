@@ -23,11 +23,12 @@ struct LookImportModelTests {
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
         let directory = root.appendingPathComponent("library")
+        let edits = root.appendingPathComponent("edits"), jobs = root.appendingPathComponent("batch")
         let source = root.appendingPathComponent("My look.cube")
         let text = "#Gamma:F-Log2 to Model Test\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\n" +
             Array(repeating: "0.2 0.4 0.6\n", count: 8).joined()
         try text.write(to: source, atomically: true, encoding: .utf8)
-        let model = EditorModel(lookDirectory: directory)
+        let model = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         model.importLook(source)
         settle(model)
         guard let imported = model.selectedFilm, let id = imported.managedID else {
@@ -37,7 +38,7 @@ struct LookImportModelTests {
         check(model.error == nil && imported.name == "My look", "successful import selects a managed look")
         check(imported.id == id && imported.url != source, "rendering receives the managed file, not the external source")
         try manager.removeItem(at: source)
-        let restored = EditorModel(lookDirectory: directory)
+        let restored = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         check(restored.films.contains { $0.id == id }, "new editor restores imported looks")
         restored.selectedFilmID = id
         let bad = root.appendingPathComponent("bad.cube")
@@ -52,7 +53,7 @@ struct LookImportModelTests {
         settle(restored)
         check(restored.selectedFilmID == id && restored.missingFilm && !restored.films.contains { $0.id == id }, "removing the active look preserves identity instead of silently selecting neutral")
         check(!manager.fileExists(atPath: imported.url.path), "removing the active look removes its managed bytes")
-        let afterDelete = EditorModel(lookDirectory: directory)
+        let afterDelete = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         check(!afterDelete.films.contains { $0.id == id }, "removed look does not return on restart")
 
         let first = root.appendingPathComponent("First batch look.cube")
@@ -83,7 +84,7 @@ struct LookImportModelTests {
         settle(afterDelete)
         check(afterDelete.lookImportReport == nil && afterDelete.films.filter { $0.managedID != nil }.count == 4,
               "successful batch clears old errors without overwriting same-name imports")
-        let reloadedBatch = EditorModel(lookDirectory: directory)
+        let reloadedBatch = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         check(reloadedBatch.films.filter { $0.managedID != nil }.count == 4, "all batch imports survive restart")
     }
 }

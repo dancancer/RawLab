@@ -38,10 +38,10 @@ for method in "$@"; do
     stop_app
     case "$method" in
         com.rawlab.android.*'#'*) selector="$method" ;;
-        *'#'*) selector="com.rawlab.android.$method" ;;
-        *) selector="com.rawlab.android.BatchGpuModeInstrumentedTest#$method" ;;
+        *'#'*) selector="com.rawlab.android.batch.workflow.$method" ;;
+        *) selector="com.rawlab.android.batch.workflow.BatchGpuModeInstrumentedTest#$method" ;;
     esac
-    if [[ ! "$selector" =~ ^com\.rawlab\.android\.[a-zA-Z_][a-zA-Z0-9_]*#[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    if [[ ! "$selector" =~ ^com\.rawlab\.android(\.[a-z][a-z0-9_]*)*\.[A-Z][a-zA-Z0-9_]*#[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
         echo 'Invalid batch test selector' >&2
         exit 1
     fi
@@ -50,12 +50,12 @@ for method in "$@"; do
     look_stage_probe=false
     partial_probe=none
     case "$selector" in
-        com.rawlab.android.BatchWorkflowInstrumentedTest#remembersEditsAndExportsFrozenBatchWithoutChangingTargetRecords)
+        com.rawlab.android.batch.workflow.BatchWorkflowInstrumentedTest#remembersEditsAndExportsFrozenBatchWithoutChangingTargetRecords)
             preview_probe="${BATCH_PREVIEW_ABORT_PROBE:-false}"
             natural_probe="${BATCH_PREVIEW_NATURAL_TIMEOUT_PROBE:-false}" ;;
-        com.rawlab.android.BatchGpuModeInstrumentedTest#enabledNewAndResumedBatchesFallBackForCpuOnlyRlookWhileForceExportFails)
+        com.rawlab.android.batch.workflow.BatchGpuModeInstrumentedTest#enabledNewAndResumedBatchesFallBackForCpuOnlyRlookWhileForceExportFails)
             look_stage_probe="${BATCH_LOOK_STAGE_ABORT_PROBE:-false}" ;;
-        com.rawlab.android.BatchWorkflowInstrumentedTest#removesKnownPartialOutputBeforeResumingAndCanDiscardTheTask)
+        com.rawlab.android.batch.workflow.BatchWorkflowInstrumentedTest#removesKnownPartialOutputBeforeResumingAndCanDiscardTheTask)
             partial_probe="${BATCH_PARTIAL_ABORT_PROBE:-none}" ;;
     esac
     if [ "$preview_probe" = true ] && [ "$natural_probe" = true ]; then echo 'Choose one preview probe' >&2; exit 1; fi
@@ -73,7 +73,7 @@ for method in "$@"; do
     stop_app
     preview_recovery=false
     if [ "$preview_probe" = true ] || [ "$natural_probe" = true ]; then preview_recovery=true; fi
-    adb_task shell am instrument -w -e class com.rawlab.android.BatchTestCleanupInstrumentedTest#recoversOnlyAfterPreviousOwnerProcessExited \
+    adb_task shell am instrument -w -e class com.rawlab.android.batch.workflow.BatchTestCleanupInstrumentedTest#recoversOnlyAfterPreviousOwnerProcessExited \
         -e batchPreviewRecoveryProbe "$preview_recovery" \
         -e batchLookStageRecoveryProbe "$look_stage_probe" \
         -e batchPartialRecoveryProbe "$partial_probe" \

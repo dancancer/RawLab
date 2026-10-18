@@ -2,7 +2,7 @@ import Foundation
 
 private enum TestFailure: Error { case storage, start }
 private final class Consent: UsageConsentStore {
-    var value = false
+    var value = true
     var fails = false
     func load() throws -> Bool { value }
     func save(_ enabled: Bool) throws {
@@ -32,11 +32,8 @@ private final class Transport: UsageAnalyticsTransport {
         let consent = Consent(), transport = Transport()
         let usage = UsageAnalytics(store: consent, transport: transport)
         usage.beginSession()
-        usage.record(.photoImported)
-        check(!usage.isEnabled && transport.starts == 0 && transport.events.isEmpty, "default off never initializes or queues")
-        usage.setEnabled(true)
         usage.beginSession()
-        check(consent.value && transport.starts == 1 && transport.events == [.appStarted], "enable starts and counts one launch")
+        check(usage.isEnabled && transport.starts == 1 && transport.events == [.appStarted], "never-chosen consent starts once and counts one launch")
         usage.record(.photoImported)
         usage.setEnabled(false)
         usage.record(.exportCompleted)
@@ -50,19 +47,22 @@ private final class Transport: UsageAnalyticsTransport {
         check(!usage.isEnabled, "failed consent write cannot start tracking")
 
         let unavailable = Transport(); unavailable.isAvailable = false
-        let disabled = UsageAnalytics(store: Consent(), transport: unavailable)
+        let declined = Consent(); declined.value = false
+        let disabled = UsageAnalytics(store: declined, transport: unavailable)
         disabled.beginSession(); disabled.setEnabled(true)
         check(!disabled.isEnabled && unavailable.starts == 0, "missing SDK cannot be enabled")
-        let oldConsent = Consent(); oldConsent.value = true
+        let oldConsent = Consent()
         let oldDisabled = UsageAnalytics(store: oldConsent, transport: unavailable)
         oldDisabled.beginSession()
         check(oldDisabled.isEnabled && unavailable.starts == 0, "unavailable build shows saved permission but never starts")
         oldDisabled.setEnabled(false)
         check(!oldConsent.value && !oldDisabled.isEnabled, "saved permission remains visible and withdrawable without SDK")
         let failing = Transport(); failing.fails = true
-        let failed = UsageAnalytics(store: Consent(), transport: failing)
-        failed.beginSession(); failed.setEnabled(true); failed.record(.photoImported)
+        let kept = Consent()
+        let failed = UsageAnalytics(store: kept, transport: failing)
+        failed.beginSession(); failed.record(.photoImported)
         check(failing.events.isEmpty && failed.issue != nil, "failed startup does not report success or record")
+        check(kept.value, "a startup failure never rewrites the user's consent")
 
         let batch = UsageEvent.batchExportCompleted(succeeded: -10, failed: 200_000, outcome: .partial)
         check(batch.group == "usage", "event group is fixed across clients")
@@ -74,14 +74,36 @@ private final class Transport: UsageAnalyticsTransport {
         let path = directory.appendingPathComponent("consent.json")
         let disk = FileUsageConsentStore(url: path)
         let missing = try disk.load()
-        check(!missing, "missing consent defaults off")
+        check(missing, "missing consent defaults on")
+        try disk.save(false)
+        let declinedOnDisk = try FileUsageConsentStore(url: path).load()
+        check(!declinedOnDisk, "explicit opt-out persists")
         try disk.save(true)
         let restored = try FileUsageConsentStore(url: path).load()
         check(restored, "explicit consent persists")
+        try installIdentity(directory)
         try Data("invalid".utf8).write(to: path)
         let corrupt = UsageAnalytics(store: disk, transport: Transport())
         corrupt.beginSession()
         check(!corrupt.isEnabled, "corrupt consent fails closed")
-        print("PASS: consent, withdrawal, failures, fixed payloads and persistence")
+        print("PASS: consent, withdrawal, failures, fixed payloads, persistence and install identity")
+    }
+
+    // 安装标识：随机 UUID，跨进程保持；关闭统计即删除，重新开启换新的
+    static func installIdentity(_ directory: URL) throws {
+        let path = directory.appendingPathComponent("identity-consent.json")
+        let idFile = FileUsageConsentStore(url: path).installIDURL
+        let first = try FileUsageConsentStore(url: path).installID()
+        check(UUID(uuidString: first) != nil, "install id is a random UUID")
+        let again = try FileUsageConsentStore(url: path).installID()
+        check(again == first, "install id persists across launches")
+        try FileUsageConsentStore(url: path).save(false)
+        check(!FileManager.default.fileExists(atPath: idFile.path), "opting out deletes the install id")
+        try FileUsageConsentStore(url: path).save(true)
+        let second = try FileUsageConsentStore(url: path).installID()
+        check(second != first, "re-enabling issues a new install id")
+        try Data("not-a-uuid".utf8).write(to: idFile)
+        let repaired = try FileUsageConsentStore(url: path).installID()
+        check(UUID(uuidString: repaired) != nil, "a damaged install id is replaced")
     }
 }

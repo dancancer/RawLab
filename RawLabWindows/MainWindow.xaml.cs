@@ -81,7 +81,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            BuildTools(); BuildFilms(); BuildMasterRecipes(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -98,7 +98,6 @@ public partial class MainWindow : Window
         Closed += (_, _) => updateCancellation.Cancel();
         Files.ItemsSource=library.Roots;
         Files.PreviewKeyDown+=FilesContextKeyDown;
-        library.Roots.CollectionChanged+=(_,_)=>LibraryHint.Visibility=library.Roots.Count>0 ? Visibility.Visible : Visibility.Collapsed;
         AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Collapsed;DockRow.MinHeight=0;DockRow.Height=new(0);SplitterRow.Height=new(0);
         thumbnailRefresh.Tick+=(_,_)=>{thumbnailRefresh.Stop();RefreshVisibleThumbnails();};
         Files.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,_)=>QueueThumbnailRefresh()));
@@ -127,7 +126,7 @@ public partial class MainWindow : Window
                 FilmGrouping.ForBuiltIn(Path.GetFileName(path))));
         }
         lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
-        BuildTools(); BuildFilms(); BuildMasterRecipes();
+        BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Denoise=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
@@ -157,7 +156,7 @@ public partial class MainWindow : Window
             interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
         };
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有限数值。"),true);
-        ready=true; RefreshControls();
+        ready=true; RefreshControls(); RefreshRenderLabels();
         InitializeEditWorkflow();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
@@ -202,7 +201,7 @@ public partial class MainWindow : Window
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
         foreach(var (tool,title,icon) in new[] {
-            (PhotoEffectTool.Vignette,Loc.Text("暗角"),"Clipping"), (PhotoEffectTool.Grain,Loc.Text("颗粒"),"Film")
+            (PhotoEffectTool.Vignette,Loc.Text("暗角"),"Vignette"), (PhotoEffectTool.Grain,Loc.Text("颗粒"),"Grain")
         })
         {
             var ring=new AdjustmentRing{Width=40,Height=40};
@@ -210,13 +209,13 @@ public partial class MainWindow : Window
             var caption=new TextBlock{Text=title,MaxWidth=70,TextWrapping=TextWrapping.Wrap,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
             var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
-            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=tool==PhotoEffectTool.Vignette ? Loc.Text("Vignette / 暗角") : Loc.Text("Grain / 颗粒")};
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=title};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
             button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
-        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);
+        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);FitToolCaptions();
     }
     private void FilmCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
     private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
@@ -286,7 +285,7 @@ public partial class MainWindow : Window
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
-            MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
+            MasterRecipeCategory.Tag=choosingRecipes ? "selected" : null;MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
             foreach(var pair in recipeButtons)pair.Value.Tag=pair.Key==(settings.MasterRecipeID ?? "") ? "selected" : null;
             ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
@@ -356,8 +355,8 @@ public partial class MainWindow : Window
                 controls.Ring.Progress=offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
             }
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
-            var filmName=settings.Recipe?.Name ?? films.FirstOrDefault(f=>f.Path==lut)?.Name ?? Loc.Text("中性");
-            ActiveFilm.Text=filmName;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : filmName;ActiveFilm.ToolTip=filmName;
+            var lookTitle=LookTitle;
+            ActiveFilm.Text=lookTitle;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : lookTitle;ActiveFilm.ToolTip=lookTitle;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             RefreshComparisonLayout();
             RefreshComparisonSelection();
@@ -380,7 +379,7 @@ public partial class MainWindow : Window
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
         MenuExport.IsEnabled=ExportJpeg.IsEnabled;MenuBatch.IsEnabled=BatchExportMenu.IsEnabled;
         ApplyDraftButton.IsEnabled=CanApplyTransform;
-        HistogramSurface.Visibility=file!=null ? Visibility.Visible : Visibility.Collapsed;
+        HistogramSurface.Visibility=result!=null ? Visibility.Visible : Visibility.Collapsed;
         CompareButton.IsEnabled=ClippingButton.IsEnabled=InfoButton.IsEnabled=AdjustToggleButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
@@ -394,7 +393,8 @@ public partial class MainWindow : Window
     private void SetStatus(Func<string> text,bool error=false) { SetStatus(text(),error); localizedStatus=text; }
     private void RefreshRenderLabels()
     {
-        if (result == null) { if (file != null && !renderFailed) BackendLabel.Text=Loc.Text("相机预览 · 正在显影"); return; }
+        // 没有显影结果：正在打开时说明在显影；空闲或失败时只留平台与色彩空间，不沿用过时的进度
+        if (result == null) { BackendLabel.Text=file != null && !renderFailed ? Loc.Text("相机预览 · 正在显影") : "Windows · sRGB"; return; }
         BackendLabel.Text=$"{(result.Backend==3 ? "Direct3D 11 · GPU" : renderedGpuMode==0 || (file!=null && LibraryEntry.IsRaster(file)) ? "CPU" : Loc.Text("CPU · GPU 已回退"))} · sRGB";
         ClipStats.Text=Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计", result.Shadows, result.Highlights);
         var raster=file!=null && LibraryEntry.IsRaster(file);
@@ -509,7 +509,7 @@ public partial class MainWindow : Window
         previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
-        if(!LookAvailable){exactReady=false;result=null;renderFailed=true;SetStatus(() => Loc.Text("上次使用的外观不可用，请重新导入或选择外观。"),true);UpdateBusy();return;}
+        if(!LookAvailable){exactReady=false;result=null;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新导入或选择外观。"),true);UpdateBusy();return;}
         renderFailed=false;
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
@@ -536,7 +536,7 @@ public partial class MainWindow : Window
         // A current-file proxy may publish while dragging; stale exact work never publishes.
         if(work.File==file && work.Lut==lut && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
-            if(failure!=null) { if(current){result=null;exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();Report(failure);} }
+            if(failure!=null) { if(current){result=null;exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();Report(failure);} }
             else if(rendered!=null && neutral!=null)
             {
                 result=rendered;if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
@@ -938,7 +938,8 @@ public partial class MainWindow : Window
     }
     private void HistogramClicked(object sender,RoutedEventArgs e)=>HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
-    private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.IsOpen=true;} }
+    // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置
+    private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.Placement=PlacementMode.Bottom;menu.IsOpen=true;} }
     private void FitClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Fit();}
     private void ActualClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Actual();}
     private void ZoomInClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Magnify(1.25);}
@@ -988,7 +989,7 @@ public partial class MainWindow : Window
                 ExportFormat.RenderedDng => Loc.Text("DNG · 渲染型")+"|*.dng",
                 _ => throw new ArgumentOutOfRangeException(nameof(format))
             },DefaultExt="."+suffix,AddExtension=true,OverwritePrompt=true,
-            FileName=Path.GetFileNameWithoutExtension(file)+"-"+(films.FirstOrDefault(f=>f.Path==lut)?.Name ?? "neutral")};
+            FileName=Path.GetFileNameWithoutExtension(file)+"-"+LookTitle};
         dialog.FileOk += (_, args) => {
             if (!format.AcceptsPath(dialog.FileName))
             {
@@ -1054,7 +1055,8 @@ public partial class MainWindow : Window
         if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting) return;
         analyticsDisposed = true;
         IsEnabled = false;
-        await usageAnalytics.DisposeAsync();
+        // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出
+        await usageAnalytics.CloseAsync(UsageAnalytics.ShutdownLimit);
         closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();
     }
 }
