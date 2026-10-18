@@ -3,12 +3,8 @@ package com.rawlab.android.i18n
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -62,7 +58,9 @@ class CopyAlignmentTest {
 
     private fun capture(name: String) {
         compose.waitForIdle()
-        val image = compose.onAllNodes(isRoot(), useUnmergedTree = true).onLast().captureToImage().asAndroidBitmap()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.waitForIdle(1_000, 5_000)
+        val image = automation.takeScreenshot()
         val directory = File(compose.activity.getExternalFilesDir(null), "copy-alignment").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
