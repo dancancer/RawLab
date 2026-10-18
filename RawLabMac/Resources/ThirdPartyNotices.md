@@ -22,6 +22,12 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 | proxy-libintl | 33934de09af6a6627eb44e310a8079df009abdbb | https://github.com/frida/proxy-libintl/tree/33934de09af6a6627eb44e310a8079df009abdbb | Lensfun/proxy-libintl-COPYING |
 | PCRE2 | 10.44 | https://github.com/PCRE2Project/pcre2/tree/pcre2-10.44 | Lensfun/PCRE2-LICENCE |
 | zlib | 1.3.1 | https://zlib.net/fossils/zlib-1.3.1.tar.gz | Lensfun/zlib-LICENSE |
+| Alibaba Cloud RUM PC SDK (`libalibabacloud_rum.dylib`) | 0.4.4 | https://help.aliyun.com/zh/cms/cloudmonitor-2-0/access-pc-platform-application, archive `AlibabaCloud_RUM_macOS_0.4.4.zip` SHA-256 `b837d135b16eb1ec087cfba8796be2425765cb39e16b161d663364135e59085e` | Vendor binary shipped without license text; redistribution terms pending vendor confirmation. RawLab links it under RawLab-Aliyun-RUM-Exception.txt |
+| libcurl (bundled inside the RUM PC SDK) | 7.68.0-DEV | https://curl.se/ | libcurl-COPYING.txt |
+
+The Alibaba Cloud RUM SDK and its libcurl are unmodified vendor binaries; packaging changes
+only their Mach-O install names and ad-hoc signatures. They are present only in builds with
+usage analytics (the default release build); `RAWLAB_RUM=0` builds omit both.
 
 Lensfun is built unmodified from a checksum-pinned source archive using
 `RawLabMac/build-lens-dependency.sh`, without Python tools, lenstool or libpng.

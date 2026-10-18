@@ -210,6 +210,39 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         }
     }
 
+    // ------------------------------------------------------------------------
+    //  看得见的数值：参数行、工具徽标与批量摘要共用一份格式，小数点随界面语言；
+    //  零不带正负号。读屏数值仍由下面的 valueLabel 提供
+    // ------------------------------------------------------------------------
+    var unit: String {
+        switch self {
+        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening: return "%"
+        case .exposure: return "EV"
+        case .temperature: return "K"
+        default: return ""
+        }
+    }
+
+    func formatted(_ value: Double) -> String {
+        let scaled = self == .strength ? value * 100 : value
+        let number = scaled == 0 ? 0 : scaled   // -0.0（如高光默认值）按 0 显示
+        let signed = number != 0 && self != .strength && self != .temperature
+        let format = (signed ? "%+" : "%") + (self == .exposure ? ".2f" : ".0f")
+        return String(format: format, locale: L10n.locale, number)
+    }
+
+    func displayValue(_ value: Double) -> String {
+        "\(formatted(value)) \(unit)".trimmingCharacters(in: .whitespaces)
+    }
+
+    // 选中工具圆圈里的数值徽标：只给单一数值的工具
+    static let badgeKinds: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows,
+                                                  .contrast, .toneCurve, .saturation, .sharpening]
+
+    func badge(for value: Double) -> String? {
+        Self.badgeKinds.contains(self) ? formatted(value) : nil
+    }
+
     func valueLabel(for value: Double) -> String {
         switch self {
         case .strength:
@@ -266,6 +299,17 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         let span = delta >= 0 ? range.upperBound - baseline : baseline - range.lowerBound
         guard span > 0 else { return 0 }
         return min(max(delta / span, -1), 1)
+    }
+
+    // 白平衡面板底部的拍摄时说明：数字格式随界面语言，与上方色温、色调数值一致
+    static func asShotCaption(temperature: Double, tint: Double) -> String {
+        L10n.format("拍摄时：%.0f K · 色调 %+.0f", temperature, tint)
+    }
+
+    // 白平衡面板底部的拍摄时参照：色温、色调已经显示拍摄时数值时（拍摄时模式且无配方偏移）不再重复
+    static func asShotNote(for settings: RawSettings, cameraTemperature: Double, cameraTint: Double) -> String? {
+        let showsAsShot = settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil
+        return showsAsShot ? nil : asShotCaption(temperature: cameraTemperature, tint: cameraTint)
     }
 
     static func resetWhiteBalance(in settings: inout RawSettings,

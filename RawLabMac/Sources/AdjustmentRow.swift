@@ -62,6 +62,9 @@ struct ParameterRow: View {
             .buttonStyle(.borderless)
             .accessibilityIdentifier(controlIdentifier("reset"))
             .help(L10n.format("重置%@", title)).accessibilityLabel(L10n.format("重置%@", title))
+            } else {
+                // 不显示重置时留出同样宽的位置，数值框与其他面板的对齐
+                Color.clear.frame(width: 28, height: 28).accessibilityHidden(true)
             }
         }
         .frame(minHeight: 32)

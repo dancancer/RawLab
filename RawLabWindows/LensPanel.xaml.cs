@@ -37,9 +37,9 @@ public partial class LensPanel : UserControl
         ProfileButton.IsEnabled = value.Manual && info?.Candidates.Count > 0;
         StatusText.Text = info?.Message ?? Loc.Text("镜头信息尚未就绪");
         StatusText.ToolTip = info?.DetectedLens;
-        CropText.Text = info?.CropScale > 1.0001
-            ? Loc.Format("裁边 {0}%", ((1 - 1 / info.CropScale) * 100).ToString("F1", CultureInfo.GetCultureInfo(Loc.Language)))
-            : "";
+        // 按显示精度判断：四舍五入后是 0.0% 的裁边不值得报告
+        var crop = info == null ? 0 : (1 - 1 / info.CropScale) * 100;
+        CropText.Text = crop >= .05 ? Loc.Format("裁边 {0}%", crop.ToString("F1", CultureInfo.GetCultureInfo(Loc.Language))) : "";
         FilterProfiles();
         syncing = false;
     }

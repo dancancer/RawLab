@@ -8,8 +8,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
-    <Compile Include="RumLocalConfigurationTests.cs" />
+    <Compile Include="RumConfigurationTests.cs" />
+    <Compile Include="UsageLifecycleTests.cs" />
     <Compile Include="../../UsageAnalytics.cs" Link="UsageAnalytics.cs" />
-    <Compile Include="../../RumLocalConfiguration.cs" Link="RumLocalConfiguration.cs" />
+    <Compile Include="../../RumConfiguration.cs" Link="RumConfiguration.cs" />
   </ItemGroup>
 </Project>

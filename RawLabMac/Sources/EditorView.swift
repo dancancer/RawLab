@@ -136,12 +136,12 @@ struct EditorView: View {
     private var bottomControls: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.name)) } ?? model.selectedFilm?.name ?? L10n.text("中性")).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle).frame(maxWidth: 160, alignment: .leading)
+                Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性")).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
                 Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().frame(maxWidth: 210)
+                }.labelsHidden().fixedSize()
                     .id(localizationLocale.identifier)
                     .disabled(RenderEngine.isRasterInput(model.file))
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
@@ -196,7 +196,7 @@ struct EditorView: View {
         if let result = model.result {
             HStack(spacing: 1) {
                 if compare, model.canComparePreview, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
-                imagePane(result, title: model.selectedMasterRecipe?.name ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
+                imagePane(result, title: model.selectedMasterRecipe?.title ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
             }
         } else {
             VStack(spacing: 16) {
@@ -256,15 +256,13 @@ struct EditorView: View {
                 .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
         }
         ToolbarItemGroup {
-            Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1") }
-                .tint(compare ? .yellow : nil)
+            Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(compare) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || !model.canComparePreview)
             Button {
                 if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
                 infoMode = infoMode.next
-            } label: { Image(systemName: "info.circle") }
-                .tint(infoMode == .hidden ? nil : .yellow)
+            } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
                 .help(L10n.text("照片信息")).accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
                 .keyboardShortcut("i", modifiers: []).disabled(model.file == nil)
             Menu {
@@ -281,18 +279,16 @@ struct EditorView: View {
             Button {
                 if adjustmentPanel.collapsed { adjustmentPanel.collapsed = false }
                 else { collapsePanel() }
-            } label: { Image(systemName: "slider.horizontal.3") }
-                .tint(adjustmentPanel.collapsed ? nil : .yellow)
+            } label: { Image(systemName: "slider.horizontal.3").activeTint(!adjustmentPanel.collapsed) }
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
             Menu {
-                Button("JPEG…") { model.export(png: false) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
-                Button(L10n.text("PNG · 16-bit…")) { model.export(png: true) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
-                Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
-                    .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
+                ForEach(ExportFormat.allCases) { format in
+                    Button(format.title + "…") { model.export(format: format) }
+                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                }
                 Divider()
                 Button(L10n.text("使用当前调整批量导出…")) {
                     if model.prepareBatch() { openWindow(id: "batch-export") }
@@ -367,6 +363,15 @@ struct EditorView: View {
                 if model.fullResolution != previous.fullResolution { model.fullResolution = previous.fullResolution }
             } else { fit() }
         }
+    }
+}
+
+// ----------------------------------------------------------------------------
+//  工具栏开关的开启状态：macOS 26 的工具栏不理会 .tint，开启时直接把图标染成黄色
+// ----------------------------------------------------------------------------
+private extension View {
+    @ViewBuilder func activeTint(_ active: Bool) -> some View {
+        if active { foregroundStyle(Color.yellow) } else { self }
     }
 }
 

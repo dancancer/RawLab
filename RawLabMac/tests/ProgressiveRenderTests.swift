@@ -14,7 +14,12 @@ struct ProgressiveRenderTests {
         }
         let raw = URL(fileURLWithPath: CommandLine.arguments[1])
         let lut = URL(fileURLWithPath: CommandLine.arguments[2])
-        let model = EditorModel()
+        // 外观、编辑记录和批量任务都放进临时目录，不碰用户日常的 RawLab 资料
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-progressive-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("looks"),
+                                editDirectory: root.appendingPathComponent("edits"),
+                                batchDirectory: root.appendingPathComponent("batch"))
         model.films = [Film(name: "PROVIA", url: lut)]
         model.selectedFilmID = lut.path
         model.updatePreviewLongEdge(1600)

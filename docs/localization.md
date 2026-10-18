@@ -25,6 +25,14 @@ rather than treating every neutral LUT as an unmodified image.
 
 ## Resources
 
+The four clients' native localization catalogs are generated from the single
+source in [`Shared/strings`](../Shared/strings/README.md). Edit that source, not
+the generated tables, then run `python3 scripts/localization/generate.py`.
+`python3 scripts/localization/generate.py --check` compares all output bytes and
+rejects unowned catalogs; the Contracts and CI policy job runs this check on Linux.
+Platform-specific terms live in the platform sources with an explicit reason.
+iOS `InfoPlist.strings` remains outside this generator's scope.
+
 Apple clients share `Shared/Localization.swift` and use their own six
 `Resources/<language>.lproj/Localizable.strings` tables. iOS additionally has
 localized `InfoPlist.strings` photo-permission descriptions. Chinese source

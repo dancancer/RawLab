@@ -52,6 +52,11 @@ bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
 
+`build.sh` 默认带阿里云 RUM PC SDK 0.4.4（含其自带的 libcurl 7.68.0），使用统计默认开启、以
+`env=PROD` 上报；SDK 由 `scripts/rum/prepare-macos.sh` 从供应商带版本号的地址下载到主工作区
+`.cache/shared/aliyun-rum/`，SHA-256 不符即停止。`RAWLAB_RUM=0` 出不带 SDK 的包，
+`tests/bundle.sh` 会核对带与不带和构建方式一致。
+
 当前 LUT 接入含 28 个再分发授权尚未确认的第三方资源。仓库 owner 已允许公开源码和
 `development` 集成，但不构成原作者许可或正式发布授权；编译不受此记录阻断。
 清单、改造约定和未解决风险见 [LUT 接入记录](../docs/luts/README.md)。

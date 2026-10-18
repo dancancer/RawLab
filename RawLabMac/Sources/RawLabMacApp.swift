@@ -9,6 +9,7 @@ struct RawLabMacApp: App {
     @StateObject private var updates = UpdateChecker()
     @Environment(\.openWindow) private var openWindow
     init() {
+        SystemMenuLanguage.apply(UserDefaults.standard.string(forKey: L10n.preferenceKey))
         let args = CommandLine.arguments
         if args.count == 4 && args[1] == "--smoke" {
             do {
@@ -50,8 +51,8 @@ struct RawLabMacApp: App {
                 exit(0)
             } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
         }
-        #if RAWLAB_RUM_LOCAL
-        LocalRUM.configure()
+        #if RAWLAB_RUM
+        UsageRUM.configure()
         #endif
         NSApplication.shared.setActivationPolicy(.regular)
     }
@@ -74,6 +75,7 @@ struct RawLabMacApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     UsageAnalytics.shared.endSession()
                 }
+                .onChange(of: languagePreference) { _, preference in SystemMenuLanguage.apply(preference) }
                 .environment(\.locale, selectedLocale)
         }
             .defaultSize(width: 1320, height: 850)
@@ -109,11 +111,33 @@ struct RawLabMacApp: App {
         Window(L10n.text("关于 RawLab"), id: "about") { AboutView(updates: updates).environment(\.locale, selectedLocale) }
             .windowResizability(.contentSize)
         Window(L10n.text("批量导出"), id: "batch-export") {
-            if let batch = model.batch { BatchExportView(model: batch).environment(\.locale, selectedLocale) }
+            if let batch = model.batch { BatchExportView(model: batch).environment(\.locale, selectedLocale) } else {
+                BatchExportEmptyView().environment(\.locale, selectedLocale)
+            }
         }.defaultSize(width: 1040, height: 720)
     }
 
     private var selectedLocale: Locale {
         Locale(identifier: AppLanguage.resolve(preference: languagePreference, preferredLanguages: Locale.preferredLanguages).rawValue)
+    }
+}
+
+// ----------------------------------------------------------------------------
+//  系统自带的菜单项（编辑、窗口、服务、退出、关闭等）按本应用的 AppleLanguages 选语言，
+//  只改 RawLab.language 时菜单栏会中英混排。界面语言选定后同步写入，跟随系统时只撤掉
+//  自己写过的值，不动用户在"系统设置"里为本应用选的语言。启动时最先执行；运行中切换
+//  语言，系统菜单在下次启动时跟上
+// ----------------------------------------------------------------------------
+enum SystemMenuLanguage {
+    static let managedKey = "RawLab.appleLanguagesManaged"
+
+    static func apply(_ preference: String?, defaults: UserDefaults = .standard) {
+        if let language = AppLanguage(rawValue: preference ?? ""), language != .system {
+            defaults.set([language.rawValue], forKey: "AppleLanguages")
+            defaults.set(true, forKey: managedKey)
+        } else if defaults.bool(forKey: managedKey) {
+            defaults.removeObject(forKey: "AppleLanguages")
+            defaults.removeObject(forKey: managedKey)
+        }
     }
 }

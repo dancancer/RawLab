@@ -39,7 +39,7 @@ struct NativeStatusError : std::runtime_error {
 
 void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
     if (env->ExceptionCheck()) return;
-    auto type = env->FindClass("com/rawlab/android/NativeProcessingException");
+    auto type = env->FindClass("com/rawlab/android/engine/NativeProcessingException");
     if (!type) {
         env->ExceptionClear();
         throwJava(env, "java/io/IOException", error.what());
@@ -138,7 +138,7 @@ jobjectArray strings(JNIEnv* env, const std::vector<std::string>& values) {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeSetLensDatabase(JNIEnv* env, jobject, jlong id, jstring path) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensDatabase(JNIEnv* env, jobject, jlong id, jstring path) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         UtfChars directory(env, path);
@@ -147,7 +147,7 @@ Java_com_rawlab_android_NativeProcessor_nativeSetLensDatabase(JNIEnv* env, jobje
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, jobject, jlong id,
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, jobject, jlong id,
     jboolean distortion, jboolean tca, jboolean crop, jbyteArray profile) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
@@ -162,7 +162,7 @@ Java_com_rawlab_android_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, job
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
     jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
     jboolean horizontal, jboolean vertical, jfloat straighten,
     jfloat perspectiveHorizontal, jfloat perspectiveVertical) {
@@ -179,7 +179,7 @@ Java_com_rawlab_android_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, 
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeGeometrySize(JNIEnv* env, jobject, jlong id) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeGeometrySize(JNIEnv* env, jobject, jlong id) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         uint32_t width = 0, height = 0;
@@ -196,7 +196,7 @@ Java_com_rawlab_android_NativeProcessor_nativeGeometrySize(JNIEnv* env, jobject,
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeLensProfiles(JNIEnv* env, jobject, jlong id, jstring input) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeLensProfiles(JNIEnv* env, jobject, jlong id, jstring input) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         auto* session = sessionFor(id);
@@ -218,7 +218,7 @@ Java_com_rawlab_android_NativeProcessor_nativeLensProfiles(JNIEnv* env, jobject,
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeLensReport(JNIEnv* env, jobject, jlong id) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeLensReport(JNIEnv* env, jobject, jlong id) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         sony2fuji_lens_report report{};
@@ -230,7 +230,7 @@ Java_com_rawlab_android_NativeProcessor_nativeLensReport(JNIEnv* env, jobject, j
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_rawlab_android_NativeLookBridge_validate(JNIEnv* env, jclass, jstring path) {
+Java_com_rawlab_android_engine_NativeLookBridge_validate(JNIEnv* env, jclass, jstring path) {
     try {
         UtfChars value(env, path);
         sony2fuji_look_format format = SONY2FUJI_LOOK_UNKNOWN;
@@ -261,7 +261,7 @@ Java_com_rawlab_android_NativeLookBridge_validate(JNIEnv* env, jclass, jstring p
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeCreate(JNIEnv* env, jobject, jint mode) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(JNIEnv* env, jobject, jint mode) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         if (mode < SONY2FUJI_GPU_OFF || mode > SONY2FUJI_GPU_FORCE) throw std::invalid_argument("Invalid GPU mode");
@@ -283,13 +283,13 @@ Java_com_rawlab_android_NativeProcessor_nativeCreate(JNIEnv* env, jobject, jint 
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeDestroy(JNIEnv*, jobject, jlong id) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(JNIEnv*, jobject, jlong id) {
     std::lock_guard<std::mutex> lock(sessionsMutex);
     sessions.erase(id);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeSetGpuMode(JNIEnv* env, jobject, jlong id, jint mode) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetGpuMode(JNIEnv* env, jobject, jlong id, jint mode) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
@@ -300,7 +300,7 @@ Java_com_rawlab_android_NativeProcessor_nativeSetGpuMode(JNIEnv* env, jobject, j
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
+Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
     jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
     jstring lut, jstring output, jfloat strength, jfloat exposure,
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
@@ -397,7 +397,7 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
             sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);
             kelvin = std::round(kelvin); wbTint = std::round(wbTint);
         }
-        auto type = env->FindClass("com/rawlab/android/NativeFrame");
+        auto type = env->FindClass("com/rawlab/android/engine/NativeFrame");
         if (!type) return nullptr;
         auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI)V");
         if (!constructor) return nullptr;
@@ -418,7 +418,7 @@ Java_com_rawlab_android_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlon
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
-Java_com_rawlab_android_NativeProcessor_nativeAutoExposure(JNIEnv* env, jobject, jlong id,
+Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, jobject, jlong id,
     jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
     jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength) {
     try {

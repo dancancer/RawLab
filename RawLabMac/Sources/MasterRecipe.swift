@@ -1,5 +1,10 @@
 import Foundation
 
+// 界面显示用的名称：汉字写的人名按当前语言显示（翻译目录以原名为键）
+extension MasterRecipe {
+    var title: String { L10n.text(name) }
+}
+
 struct MasterRecipe: Identifiable, Hashable, Codable {
     let id: String
     let name: String

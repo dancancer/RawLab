@@ -25,9 +25,9 @@
 		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
 		AB2100000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000006; };
 		AB3900000000000000000001 /* UsageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000002 /* UsageAnalytics.swift */; };
-		AB3900000000000000000003 /* RUMLocalConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000004 /* RUMLocalConfiguration.swift */; };
+		AB3900000000000000000003 /* RUMConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000004 /* RUMConfiguration.swift */; };
 		AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000006 /* RUMUsageTransport.swift */; };
-		AB3900000000000000000007 /* RUMLocalValidationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000008 /* RUMLocalValidationProbe.swift */; };
+		AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000008 /* RUMValidationProbe.swift */; };
 		AB3900000000000000000009 /* SerialUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB390000000000000000000A /* SerialUsageTransport.swift */; };
 		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
 		AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000012 /* ZoomablePhoto.swift */; };
@@ -77,6 +77,7 @@
 		D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */; };
 		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
 		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
+		A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */; };
 		D00100000000000000000004 /* UI/BatchExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000014 /* UI/BatchExportView.swift */; };
 		D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000015 /* Core/Models/ExportSize.swift */; };
 		D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */; };
@@ -93,6 +94,7 @@
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
 		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
 		D00900000000000000000001 /* CropLockUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00900000000000000000011 /* CropLockUITests.swift */; };
+		A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -124,9 +126,9 @@
 		AB2100000000000000000014 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		AB2100000000000000000015 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB3900000000000000000002 /* UsageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageAnalytics.swift; path = "../Shared/UsageAnalytics.swift"; sourceTree = SOURCE_ROOT; };
-		AB3900000000000000000004 /* RUMLocalConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMLocalConfiguration.swift; sourceTree = "<group>"; };
+		AB3900000000000000000004 /* RUMConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMConfiguration.swift; sourceTree = "<group>"; };
 		AB3900000000000000000006 /* RUMUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMUsageTransport.swift; sourceTree = "<group>"; };
-		AB3900000000000000000008 /* RUMLocalValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMLocalValidationProbe.swift; sourceTree = "<group>"; };
+		AB3900000000000000000008 /* RUMValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMValidationProbe.swift; sourceTree = "<group>"; };
 		AB390000000000000000000A /* SerialUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SerialUsageTransport.swift; path = "../Shared/SerialUsageTransport.swift"; sourceTree = SOURCE_ROOT; };
 		AB1800000000000000000011 /* PhotoZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoZoomGeometry.swift; sourceTree = "<group>"; };
 		AB1800000000000000000012 /* ZoomablePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomablePhoto.swift; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
 		D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportCore.swift; sourceTree = "<group>"; };
 		D00100000000000000000013 /* Core/Batch/BatchExport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExport.swift; sourceTree = "<group>"; };
+		A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchSettingsSummary.swift; sourceTree = "<group>"; };
 		D00100000000000000000014 /* UI/BatchExportView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportView.swift; sourceTree = "<group>"; };
 		D00100000000000000000015 /* Core/Models/ExportSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSize.swift; sourceTree = "<group>"; };
 		D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ContentView+PhotoInfo.swift"; sourceTree = "<group>"; };
@@ -196,6 +199,7 @@
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
 		BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/EditorV4UITests.swift"; sourceTree = SOURCE_ROOT; };
 		D00900000000000000000011 /* CropLockUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/CropLockUITests.swift"; sourceTree = SOURCE_ROOT; };
+		A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/ReleaseDetailUITests.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -241,9 +245,9 @@
 		AB390000000000000000000B /* Usage */ = {
 			isa = PBXGroup;
 			children = (
-				AB3900000000000000000004 /* RUMLocalConfiguration.swift */,
+				AB3900000000000000000004 /* RUMConfiguration.swift */,
 				AB3900000000000000000006 /* RUMUsageTransport.swift */,
-				AB3900000000000000000008 /* RUMLocalValidationProbe.swift */,
+				AB3900000000000000000008 /* RUMValidationProbe.swift */,
 				AB390000000000000000000A /* SerialUsageTransport.swift */,
 			);
 			path = Usage;
@@ -262,6 +266,7 @@
 			children = (
 				D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */,
 				D00100000000000000000013 /* Core/Batch/BatchExport.swift */,
+				A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */,
 			);
 			path = Batch;
 			sourceTree = "<group>";
@@ -434,6 +439,7 @@
 				AB1300000000000000000002 /* EditorUITests.swift */,
 				BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */,
 				D00900000000000000000011 /* CropLockUITests.swift */,
+				A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */,
                 D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */,
 				2F6D48C6086EC660301E288B /* Products */,
 				0DAA7689F37A5648D3C8F238 /* Frameworks */,
@@ -459,6 +465,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 86048109104C15A6E77F6FC2 /* Build configuration list for PBXNativeTarget "RawLab" */;
 			buildPhases = (
+				AB4000000000000000000001 /* Embed RUM SDK */,
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
@@ -550,11 +557,30 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AB4000000000000000000001 /* Embed RUM SDK */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Embed RUM SDK";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/../scripts/rum/embed-ios.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		AB1300000000000000000006 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (AB1300000000000000000001, 39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */, D00900000000000000000001 /* CropLockUITests.swift in Sources */, D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */, );
+			files = (AB1300000000000000000001, 39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */, D00900000000000000000001 /* CropLockUITests.swift in Sources */, A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */, D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */, );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E20DD483661FD62C27502C63 /* Sources */ = {
@@ -581,9 +607,9 @@
 				AB1700000000000000000003 /* PhotoInformation.swift in Sources */,
 				AB2100000000000000000001 /* Localization.swift in Sources */,
 				AB3900000000000000000001 /* UsageAnalytics.swift in Sources */,
-				AB3900000000000000000003 /* RUMLocalConfiguration.swift in Sources */,
+				AB3900000000000000000003 /* RUMConfiguration.swift in Sources */,
 				AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */,
-				AB3900000000000000000007 /* RUMLocalValidationProbe.swift in Sources */,
+				AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */,
 				AB3900000000000000000009 /* SerialUsageTransport.swift in Sources */,
 				AB1200000000000000000001 /* EditorComponents.swift in Sources */,
 				AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */,
@@ -604,6 +630,7 @@
 				D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */,
 				D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */,
 				D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */,
+				A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */,
 				D00100000000000000000004 /* UI/BatchExportView.swift in Sources */,
 				D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */,
 				D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */,
@@ -710,6 +737,23 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(RAWLAB_RUM_SDK_DIR)/AlibabaCloudRUM.xcframework/$(RAWLAB_RUM_SLICE)",
+					"$(RAWLAB_RUM_SDK_DIR)/AlibabaCloudRUMSDK.xcframework/$(RAWLAB_RUM_SLICE)",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					AlibabaCloudRUM,
+					"-framework",
+					AlibabaCloudRUMSDK,
+				);
+				RAWLAB_RUM_SDK_DIR = "$(PROJECT_DIR)/Vendor/AlibabaCloudRUM";
+				RAWLAB_RUM_SLICE = "ios-arm64";
+				"RAWLAB_RUM_SLICE[sdk=iphonesimulator*]" = "ios-arm64_x86_64-simulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = RAWLAB_RUM;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;

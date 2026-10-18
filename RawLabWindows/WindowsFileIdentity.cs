@@ -45,7 +45,7 @@ internal static class WindowsFileIdentity
     private static WindowsFileId Read(FileStream stream)
     {
         if (!GetFileInformationByHandle(stream.SafeFileHandle, out var information))
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "无法读取文件身份。");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), Loc.Text("无法读取文件身份。"));
         return new(information.VolumeSerialNumber, information.FileIndexHigh, information.FileIndexLow);
     }
 }

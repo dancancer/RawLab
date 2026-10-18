@@ -326,6 +326,21 @@ struct ParameterValueTests {
         shiftHorizontalChecks()
         discreteLineWheelChecks()
         valueFieldLayoutChecks()
+        rowAlignmentChecks()
+        check(AdjustmentParameter.exposure.spec.display(0.4) == "+0.40 EV" && AdjustmentParameter.contrast.spec.display(-15) == "-15%" &&
+              AdjustmentParameter.temperature.spec.display(5105) == "5105 K" && AdjustmentParameter.strength.spec.display(1) == "100%",
+              "Displayed values match the editor field: sign for signed ranges, a space before EV and K, none before %")
         print("PASS: parameter value precision and native field regressions")
+    }
+
+    // ------------------------------------------------------------------------
+    //  隐藏重置按钮时保留它的位置：收起的暗角只显示强度一行，数值框不能比其他面板的偏右
+    // ------------------------------------------------------------------------
+    static func rowAlignmentChecks() {
+        func width(_ showsReset: Bool) -> CGFloat {
+            NSHostingView(rootView: ParameterRow(title: "Amount", value: .constant(0), range: -100...100, defaultValue: 0,
+                                                 identifier: "value.alignment", showsReset: showsReset)).fittingSize.width
+        }
+        check(width(false) == width(true), "A row without its reset button keeps the reset column")
     }
 }

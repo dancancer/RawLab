@@ -6,10 +6,15 @@ source "$ROOT/RawLabMac/build-env.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
 DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
+# ----------------------------------------------------------------------------
+#  使用统计 SDK：正式构建默认带上，上报正式环境；RAWLAB_RUM=0 显式出不带 SDK 的包
+#  RAWLAB_RUM_LOCAL=1 是本地验证构建：环境变量配置、独立包名，产物只许放在 .cache/tmp/
+# ----------------------------------------------------------------------------
 RUM_FLAGS=(-swift-version 5)
+RUM_LIB=""
 if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
     if [ "${RAWLAB_RELEASE:-0}" = 1 ] || [ "${CONFIGURATION:-}" = Release ]; then
-        echo "RUM SDK is restricted to private local validation builds." >&2; exit 2
+        echo "RUM local validation builds cannot be release builds." >&2; exit 2
     fi
     APP="$(swift -e 'import Foundation; print(URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL.resolvingSymlinksInPath().path)' "$APP")"
     LOCAL_ROOT="$(cd "$ROOT" && pwd -P)/.cache/tmp"
@@ -17,10 +22,13 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
         "$LOCAL_ROOT/"*) ;;
         *) echo "RUM local app output must stay under .cache/tmp/." >&2; exit 2 ;;
     esac
-    RUM_BUILD="$BUILD/rum-local"
-    bash "$ROOT/experiments/rum-pilot/prepare-macos.sh" "$RUM_BUILD"
+    RUM_FLAGS+=(-D RAWLAB_RUM_LOCAL)
+fi
+if [ "${RAWLAB_RUM:-1}" = 1 ] || [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
+    RUM_BUILD="$BUILD/rum-sdk"
+    bash "$ROOT/scripts/rum/prepare-macos.sh" "$RUM_BUILD"
     RUM_LIB="$RUM_BUILD/AlibabaCloud_RUM_macOS_0.4.4/lib/$ARCH/Release"
-    RUM_FLAGS+=(-D RAWLAB_RUM_LOCAL -I "$RUM_BUILD/module" -L "$RUM_LIB" -lalibabacloud_rum)
+    RUM_FLAGS+=(-D RAWLAB_RUM -I "$RUM_BUILD/module" -L "$RUM_LIB" -lalibabacloud_rum)
 fi
 CHROMA_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 LENS_PREFIX="$RAWLAB_LENS_PREFIX"
@@ -109,10 +117,11 @@ embed_dependency() {
                 source="$RAW_LIB/${dependency#@rpath/}"
                 if [ ! -f "$source" ]; then source="$OPENCV_PREFIX/lib/${dependency#@rpath/}"; fi
                 if [ ! -f "$source" ]; then source="$LENS_PREFIX/lib/${dependency#@rpath/}"; fi
-                if [ ! -f "$source" ] && [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then source="$RUM_LIB/${dependency#@rpath/}"; fi
+                if [ ! -f "$source" ] && [ -n "$RUM_LIB" ]; then source="$RUM_LIB/${dependency#@rpath/}"; fi
                 ;;
             @loader_path/*)
-                if [ "${RAWLAB_RUM_LOCAL:-0}" != 1 ]; then echo "Unexpected loader-relative dependency" >&2; exit 1; fi
+                # 只有 RUM SDK 用相对路径引用它自带的 libcurl；嵌入后改写成 @rpath
+                if [ -z "$RUM_LIB" ]; then echo "Unexpected loader-relative dependency" >&2; exit 1; fi
                 source="$RUM_LIB/${dependency#@loader_path/}"
                 ;;
             /*) source="$dependency" ;;
@@ -141,5 +150,6 @@ embed_dependency() {
 }
 embed_dependency "$APP/Contents/MacOS/RawLabMac"
 codesign --force --deep --sign - "$APP"
-RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/tests/bundle.sh" "$APP"
+RAWLAB_RUM_EXPECTED="$([ -n "$RUM_LIB" ] && echo 1 || echo 0)" RAWLAB_ARCH="$ARCH" \
+    MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/tests/bundle.sh" "$APP"
 echo "$APP"

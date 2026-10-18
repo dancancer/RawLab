@@ -76,7 +76,7 @@ extension ContentView {
     var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
     var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || editingLocked }
     var selectedFilmName: String {
-        settings.masterRecipe?.name ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
+        settings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
     }
 
     var currentPreviewImage: UIImage? {

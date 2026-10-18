@@ -21,7 +21,8 @@ internal sealed class LongEdgeDialog : Window
         errorText=new TextBlock { Margin=new Thickness(0,8,0,0), TextWrapping=TextWrapping.Wrap };
         errorText.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");
         var accept=new Button { Content=Loc.Text("确定"), IsDefault=true, MinWidth=72 };
-        var cancel=new Button { Content=Loc.Text("取消"), IsCancel=true, MinWidth=72, Margin=new Thickness(8,0,0,0) };
+        // 两个按钮都用默认外边距：只改左边距会让取消按钮比确定高出一截
+        var cancel=new Button { Content=Loc.Text("取消"), IsCancel=true, MinWidth=72 };
         accept.Click+=(_,_)=>Accept(); valueBox.KeyDown+=(_,args)=>{if(args.Key==Key.Enter){Accept();args.Handled=true;}};
         var buttons=new StackPanel { Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Right };
         buttons.Children.Add(accept); buttons.Children.Add(cancel);

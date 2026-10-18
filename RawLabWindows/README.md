@@ -40,6 +40,13 @@ libtiff 4.7.1 源码。
 默认包需要 .NET 8 Desktop Runtime，`-SelfContained` 包含运行时。
 支持 `-DotNet <dotnet.exe>` / `-CMake <cmake.exe>` 指定工具。
 脚本也会使用仓库 `build/tools/dotnet` 下的本地 SDK（若存在）。
+
+Release 包默认带阿里云 RUM PC SDK 0.4.4（`alibabacloud_rum.dll`），使用统计默认开启、以
+`env=PROD` 上报。SDK 取主工作区 `.cache/shared/aliyun-rum/windows/0.4.4/sdk.zip`，缺失时从供应商
+带版本号的地址下载；压缩包和 DLL 的 SHA-256 都固定，不符即停止。`-RumSdkZip <zip>` 指定自备的
+压缩包，`-NoRumSdk` 出不带 SDK 的离线包。打包后可用
+`experiments/rum-local/windows/verify-licenses.ps1 -Package build/RawLab-Windows` 核对 SDK 与许可文件。
+Debug 构建不带 SDK。
 未签名，不自动安装、不修改系统文件关联。第三方许可证与说明随程序复制。
 
 ### 从 Mac 远程编译
@@ -211,6 +218,10 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 `localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
 状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
 不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
+`ui-details`（`RawLabWindows.Tests.dll --ui-details <output>`）不需要 RAW 或 native DLL，按六语检查发布前的界面细节：
+工具栏与工具条图标不重复、几何操作图标形状不相近，中日文不夹英文原词、外观名称按语言显示，
+语言下拉框与文件树显示名称而非类型名，相邻位置不重复同一名称或数值，重置按钮不多余且对齐，
+色块与文字不被截断，工具说明不在词中间断行，选中状态、下拉菜单位置、启动目录提示与打开失败状态正确。
 
 普通图像和单张预览的功能回归可通过同一入口选择：
 

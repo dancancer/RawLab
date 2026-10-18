@@ -9,5 +9,4 @@ public static class ExportSize
 
     public static bool IsValid(int value) => value is >= MinimumLongEdge and <= MaximumLongEdge;
     public static int? Parse(string? value) => int.TryParse(value, out var edge) && IsValid(edge) ? edge : null;
-    public static string Label(int? longEdge) => longEdge is null ? Loc.Text("原尺寸") : Loc.Format("长边 {0} px", longEdge);
 }

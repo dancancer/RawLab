@@ -109,7 +109,19 @@ The release APK uses a dedicated signing key. Keep and securely back up the keys
 and password file outside Git; future updates must use the same key. The build script
 never creates or uploads credentials.
 
+正式包默认携带阿里云 RUM Android SDK 2.3.2（`env=PROD`，使用统计默认开启，用户可在“关于”里关闭）。
+SDK 不进 Git：先用 `bash scripts/fetch-rum-sdk.sh` 从供应商 Maven 仓库下载到主工作区的
+`.cache/shared/aliyun-rum/android/2.3.2/`（worktree 也指向主工作区，位置见 `../scripts/rum/shared-cache.sh`），
+版本与 SHA-256 固定在 `scripts/rum-sdk.env`，不符即失败。缺少 SDK 时 Release 构建直接报错；
+只有离线打包才显式设置 `RAWLAB_RUM_RELEASE=false`（Gradle 为 `-PrawlabRumRelease=false`）。
+Debug 默认不带 SDK；`-PrawlabRumLocal=true` 是本地验证构建（`.rumlocal` 包名、`env=LOCAL`、独立同意存储、默认不开启）。
+
+Release builds carry the pinned Aliyun RUM Android SDK (`env=PROD`; analytics on by default, user can turn it
+off in About). Fetch it once with `bash scripts/fetch-rum-sdk.sh`; Release fails when it is missing or its
+SHA-256 differs. Use `RAWLAB_RUM_RELEASE=false` only for an explicit offline package. Debug builds carry no SDK.
+
 ```sh
+bash scripts/fetch-rum-sdk.sh
 export RAWLAB_RELEASE_KEYSTORE="/absolute/private/path/rawlab-android-release.p12"
 export RAWLAB_RELEASE_PASSWORD_FILE="/absolute/private/path/store-password.txt"
 export JAVA_HOME="/path/to/jdk-17-or-21"

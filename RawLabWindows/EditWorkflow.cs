@@ -119,7 +119,7 @@ public partial class MainWindow
         {
             if (batchWindow != null) { batchWindow.Close();if(batchWindow?.IsVisible==true)return;batchWindow=null; }
             if (previous != null) batchJournal.Discard(previous);
-            var job = BatchJob.Create(file, settings.Capture(), lut, settings.Recipe?.Name ?? films.FirstOrDefault(f => f.Path == lut)?.Name ?? "中性");
+            var job = BatchJob.Create(file, settings.Capture(), lut, LookTitle);
             batchJournal.FreezeLook(job); batchJournal.Save(job); previousBatch = job;
             ShowBatch(job);
         }

@@ -38,7 +38,7 @@ EXTRA=(-e dngMemoryProfile "${RAWLAB_MEMORY_PROFILE:-all}")
 if [ -n "${RAWLAB_MEMORY_BUDGET:-}" ]; then EXTRA+=(-e dngMemoryBudgetBytes "$RAWLAB_MEMORY_BUDGET"); fi
 if [ -n "${RAWLAB_MEMORY_RSS_BUDGET:-}" ]; then EXTRA+=(-e dngMemoryRssBudgetBytes "$RAWLAB_MEMORY_RSS_BUDGET"); fi
 "$ADB" -s "$DEVICE" shell am instrument -w -r \
-    -e class com.rawlab.android.NativeDngMemoryTest#originalSizeExportsAfterViewportMatchIndependentFinal \
+    -e class com.rawlab.android.engine.memory.NativeDngMemoryTest#originalSizeExportsAfterViewportMatchIndependentFinal \
     -e dngMemoryLabel "$LABEL" -e dngMemoryGpu "$GPU" -e dngMemoryFormats "$FORMATS" \
     -e dngMemoryExportEdge "$EDGE" -e dngMemoryReference "$REFERENCE" "${EXTRA[@]}" \
     "$PACKAGE.test/androidx.test.runner.AndroidJUnitRunner" | tee "$OUT/instrumentation.log"

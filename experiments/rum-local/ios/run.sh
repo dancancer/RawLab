@@ -73,7 +73,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-bash "$ROOT/experiments/rum-pilot/prepare-ios.sh" "$SDK_OUT"
+bash "$ROOT/scripts/rum/prepare-ios.sh" "$SDK_OUT"
 DERIVED_DATA="$OUT/DerivedData"
 SIM_SLICE="$SDK_OUT/AlibabaCloudRUM.xcframework/ios-arm64_x86_64-simulator"
 CORE_SLICE="$SDK_OUT/AlibabaCloudRUMSDK.xcframework/ios-arm64_x86_64-simulator"
@@ -87,16 +87,16 @@ xcodebuild \
     -sdk iphonesimulator \
     PRODUCT_BUNDLE_IDENTIFIER=com.example.RawLab.rumlocal \
     PRODUCT_NAME=RawLabRumLocal \
-    SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) DEBUG RAWLAB_RUM_LOCAL' \
-    OTHER_SWIFT_FLAGS='$(inherited) -D RAWLAB_RUM_LOCAL' \
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) DEBUG RAWLAB_RUM RAWLAB_RUM_LOCAL' \
+    RAWLAB_RUM_SDK_DIR="$SDK_OUT" RAWLAB_RUM_SLICE=ios-arm64_x86_64-simulator \
     FRAMEWORK_SEARCH_PATHS='$(inherited) '"$SIM_SLICE $CORE_SLICE" \
     OTHER_LDFLAGS='$(inherited) -ObjC -framework AlibabaCloudRUM -framework AlibabaCloudRUMSDK' \
     CODE_SIGNING_ALLOWED=NO
 
 APP="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/RawLabRumLocal.app"
 [[ -d "$APP" ]] || { echo "local iOS app was not built: $APP" >&2; exit 1; }
-mkdir -p "$APP/Frameworks"
-cp -R "$CORE_SLICE/AlibabaCloudRUMSDK.framework" "$APP/Frameworks/"
+# 核心动态库由工程的 Embed RUM SDK 阶段嵌入；这里只做未签名构建的临时签名
+[[ -d "$APP/Frameworks/AlibabaCloudRUMSDK.framework" ]] || { echo "RUM core framework was not embedded" >&2; exit 1; }
 codesign --force --sign - --timestamp=none "$APP/Frameworks/AlibabaCloudRUMSDK.framework"
 codesign --force --sign - --timestamp=none "$APP"
 printf 'PASS: RawLabRumLocal Debug simulator app built with -D RAWLAB_RUM_LOCAL and iOS SDK 2.4.2\n'

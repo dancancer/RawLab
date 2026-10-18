@@ -174,7 +174,7 @@ internal static class Program
                       AutomationProperties.GetName((CheckBox)lensPanel.FindName("AutoCrop")!) == Loc.Text("自动裁边"),
                     $"Lens correction automation names {language}");
                 Check(((TextBlock)lensPanel.FindName("StatusText")!).Text ==
-                      Loc.Format("已校正{0}", $"{Loc.Text("畸变")}、{Loc.Text("横向色差")}"),
+                      Loc.Format("已校正{0}", $"{Loc.Text("畸变")}{Loc.Text("、")}{Loc.Text("横向色差")}"),
                     $"Lens status is localized without translating assembled text {language}");
                 var expectedCrop = language switch
                 {

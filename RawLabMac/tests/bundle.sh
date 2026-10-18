@@ -46,7 +46,11 @@ for binary in "$APP/Contents/MacOS/RawLabMac" "$APP"/Contents/Frameworks/*.dylib
         }
     fi
     if [ -n "${MACOSX_DEPLOYMENT_TARGET:-}" ]; then
-        minimum=$(xcrun vtool -show-build "$binary" | awk '$1 == "minos" { print $2 }')
+        # 新式 LC_BUILD_VERSION 写 minos；RUM SDK 的 x86_64 库只有旧式 LC_VERSION_MIN_MACOSX
+        minimum=$(xcrun vtool -show-build "$binary" | awk '
+            $1 == "cmd" { cmd = $2 }
+            cmd == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
+            cmd == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }')
         awk -v actual="$minimum" -v target="$MACOSX_DEPLOYMENT_TARGET" 'BEGIN {
             if (actual == "") exit 1;
             split(actual, a, "."); split(target, t, ".");
@@ -80,4 +84,15 @@ for binary in "$APP/Contents/MacOS/RawLabMac" "$APP"/Contents/Frameworks/*.dylib
     codesign --verify --strict "$binary"
 done
 codesign --verify --deep --strict "$APP"
+# 使用统计 SDK：带与不带必须和构建方式一致，不能悄悄缺失或混入
+if [ -n "${RAWLAB_RUM_EXPECTED:-}" ]; then
+    linked=0
+    otool -L "$APP/Contents/MacOS/RawLabMac" | grep -q '@rpath/libalibabacloud_rum.dylib' && linked=1
+    for lib in libalibabacloud_rum.dylib libcurl.dylib; do
+        present=0; [ -f "$APP/Contents/Frameworks/$lib" ] && present=1
+        test "$present" = "$RAWLAB_RUM_EXPECTED" || { echo "FAIL: $lib presence $present, expected $RAWLAB_RUM_EXPECTED"; exit 1; }
+    done
+    test "$linked" = "$RAWLAB_RUM_EXPECTED" || { echo "FAIL: RUM SDK link state $linked, expected $RAWLAB_RUM_EXPECTED"; exit 1; }
+    test -f "$APP/Contents/Resources/Licenses/libcurl-COPYING.txt"
+fi
 echo 'PASS: all non-system dynamic dependencies are bundled and signed'

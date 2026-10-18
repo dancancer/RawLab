@@ -5,7 +5,11 @@ using System.Text.Json;
 
 namespace RawLab.Windows;
 
-public sealed record LanguageOption(string Code, string NativeName);
+// 下拉框的选中框按 ToString 显示：给出语言名，而不是记录的类型与字段
+public sealed record LanguageOption(string Code, string NativeName)
+{
+    public override string ToString() => NativeName;
+}
 
 public static class Loc
 {

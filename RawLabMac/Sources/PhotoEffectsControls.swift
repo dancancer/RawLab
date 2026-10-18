@@ -5,7 +5,7 @@ struct PhotoEffectsControls: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
     let tool: AdjustmentParameter
-    var onExpansionChanged: (Bool) -> Void = { _ in }
+    var onPreferredHeight: (CGFloat) -> Void = { _ in }
     @State private var advanced = false
 
     private var isVignette: Bool { tool == .vignetteAmount }
@@ -56,8 +56,8 @@ struct PhotoEffectsControls: View {
                     .accessibilityIdentifier("effects.disabledReason.\(tool.rawValue)")
             }
         }.frame(maxWidth: 720).padding(.horizontal, 16)
-            .onAppear { onExpansionChanged(isVignette && advanced) }
-            .onChange(of: advanced) { _, expanded in onExpansionChanged(isVignette && expanded) }
+            .onAppear { onPreferredHeight(AdjustmentPanelLayout.effectsHeight(rows: parameters.count)) }
+            .onChange(of: advanced) { _, _ in onPreferredHeight(AdjustmentPanelLayout.effectsHeight(rows: parameters.count)) }
     }
 
     private var disabledReason: String? {

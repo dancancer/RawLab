@@ -1,17 +1,29 @@
 import XCTest
 
 final class EditorUITests: XCTestCase {
-    func testUsagePrivacyDefaultsOff() {
+    func testUsagePrivacyDefaultsOn() {
+        // 英文界面下隐私设置整页都是英文：入口、标题、开关与状态说明
+        // 从未选择过时统计默认开启；调试构建不带 SDK，状态行说明未配置
         let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
         app.launch()
-        let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 10))
-        privacy.tap()
+        let menu = app.buttons["editor.privacy"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        XCTAssertEqual(menu.label, "More")
+        menu.tap()
+        let open = app.buttons["editor.privacy.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5), app.debugDescription)
+        open.tap()
         let toggle = app.switches["usage.consent"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "0")
-        XCTAssertFalse(toggle.isEnabled)
-        XCTAssertTrue(app.staticTexts["当前构建未配置使用统计，未采集或上报。"].exists)
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertTrue(toggle.isEnabled, "a saved or default consent stays withdrawable")
+        XCTAssertEqual(toggle.label, "Allow usage analytics")
+        XCTAssertTrue(app.navigationBars["Privacy settings"].exists, app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Usage analytics is not configured in this build; nothing is collected or reported."].exists)
+        // 按文字查询最长 128 个字符，长句用前缀匹配
+        let installID = NSPredicate(format: "label BEGINSWITH %@", "To count active devices, the app stores a randomly generated installation ID")
+        XCTAssertTrue(app.staticTexts.matching(installID).firstMatch.exists, app.debugDescription)
         capture("usage-privacy-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["usage.done"].isHittable)
@@ -228,11 +240,11 @@ final class EditorUITests: XCTestCase {
         let names = ["简体中文", "English", "Deutsch", "Français", "日本語", "Español"]
         let copies: [[String]] = [
             ["语言", "标准显影", "匹配内嵌预览", "传感器基准", "拍摄时", "自定义", "细节优先", "去噪优先", "原始分辨率", "自定义…", "长边 %@ px", "取消", "保存当前照片", "返回", "查看批量任务", "调整来源", "已选 %@ 张照片", "导出尺寸", "已保存 %@ 张到照片图库", "完成", "跟随系统"],
-            ["Language", "Standard Development", "Match Embedded Preview", "Sensor Reference", "As Shot", "Custom", "Detail Priority", "Noise Reduction Priority", "Original Resolution", "Custom…", "Long Edge %@ px", "Cancel", "Save Current Photo", "Back", "View Batch Task", "Adjustment Source", "%@ Photos Selected", "Export Size", "%@ Saved to Photos", "Done", "Follow system"],
-            ["Sprache", "Standardentwicklung", "Eingebettete Vorschau abgleichen", "Sensorreferenz", "Wie aufgenommen", "Benutzerdefiniert", "Detailpriorität", "Rauschunterdrückung priorisieren", "Originalauflösung", "Benutzerdefiniert…", "Lange Kante %@ px", "Abbrechen", "Aktuelles Foto sichern", "Zurück", "Stapelauftrag anzeigen", "Anpassungsquelle", "%@ Fotos ausgewählt", "Exportgröße", "%@ in Fotos gespeichert", "Fertig", "Systemsprache verwenden"],
-            ["Langue", "Développement standard", "Faire correspondre l’aperçu intégré", "Référence du capteur", "Selon la prise", "Personnalisé", "Priorité aux détails", "Priorité à la réduction du bruit", "Résolution originale", "Personnalisé…", "Bord long %@ px", "Annuler", "Enregistrer la photo actuelle", "Retour", "Afficher la tâche par lots", "Source des réglages", "%@ photos sélectionnées", "Taille d’exportation", "%@ enregistrées dans Photos", "Terminé", "Suivre le système"],
+            ["Language", "Standard Development", "Match Embedded Preview", "Sensor Reference", "As Shot", "Custom", "Detail Priority", "Noise Reduction Priority", "Original Resolution", "Custom…", "Long Edge %@ px", "Cancel", "Save Current Photo", "Back", "View Batch Task", "Adjustment Source", "Photos Selected: %@", "Export Size", "Saved to Photos: %@", "Done", "Follow system"],
+            ["Sprache", "Standardentwicklung", "Eingebettete Vorschau abgleichen", "Sensorreferenz", "Wie aufgenommen", "Benutzerdefiniert", "Detailpriorität", "Rauschunterdrückung priorisieren", "Originalauflösung", "Benutzerdefiniert…", "Lange Kante %@ px", "Abbrechen", "Aktuelles Foto sichern", "Zurück", "Stapelauftrag anzeigen", "Anpassungsquelle", "Ausgewählte Fotos: %@", "Exportgröße", "In Fotos gespeichert: %@", "Fertig", "Systemsprache verwenden"],
+            ["Langue", "Développement standard", "Faire correspondre l’aperçu intégré", "Référence du capteur", "Selon la prise", "Personnalisé", "Priorité aux détails", "Priorité à la réduction du bruit", "Résolution originale", "Personnalisé…", "Bord long %@ px", "Annuler", "Enregistrer la photo actuelle", "Retour", "Afficher la tâche par lots", "Source des réglages", "Photos sélectionnées : %@", "Taille d’exportation", "Enregistrées dans Photos : %@", "Terminé", "Suivre le système"],
             ["言語", "標準現像", "埋め込みプレビューに一致", "センサー基準", "撮影時", "カスタム", "ディテール優先", "ノイズ低減優先", "元の解像度", "カスタム…", "長辺 %@ px", "キャンセル", "現在の写真を保存", "戻る", "一括タスクを表示", "調整元", "%@枚の写真を選択", "書き出しサイズ", "写真に%@枚保存しました", "完了", "システムに従う"],
-            ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Resolución original", "Personalizado…", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes", "Origen de los ajustes", "%@ fotos seleccionadas", "Tamaño de exportación", "Se guardaron %@ en Fotos", "Listo", "Seguir el sistema"]
+            ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Resolución original", "Personalizado…", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes", "Origen de los ajustes", "Fotos seleccionadas: %@", "Tamaño de exportación", "Guardadas en Fotos: %@", "Listo", "Seguir el sistema"]
         ]
         func tapTool(_ id: String) {
             let button = app.buttons["tool." + id]
@@ -437,9 +449,14 @@ final class EditorUITests: XCTestCase {
         app.launch()
         importPhoto(in: app)
         let toolbar = app.scrollViews.containing(.button, identifier: "tool.masterRecipe").allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
-        for _ in 0..<3 where !app.buttons["tool.masterRecipe"].isHittable { toolbar.swipeRight() }
+        // 工具栏默认滚到选中的"曝光"，配方按钮在左侧屏外；屏外元素查询可点击性会直接报错，改看位置
+        for _ in 0..<3 where app.buttons["tool.masterRecipe"].frame.minX < toolbar.frame.minX { toolbar.swipeRight() }
         app.buttons["tool.masterRecipe"].tap()
         XCTAssertTrue(app.buttons["recipe.hamada_daylight_v2"].waitForExistence(timeout: 10))
+        // 有插图的配方卡只显示插图，替代图标只给没有插图的"无配方"卡：两种卡的图片区等高，整卡高度相近
+        let neutralTile = app.buttons["recipe.neutral"].frame, artworkTile = app.buttons["recipe.hamada_daylight_v2"].frame
+        XCTAssertLessThan(abs(artworkTile.height - neutralTile.height), 30,
+                          "artwork tile \(artworkTile.height) vs neutral \(neutralTile.height): no second icon under the artwork")
         XCTAssertFalse(app.buttons["向左滚动大师配方"].exists)
         XCTAssertFalse(app.buttons["向右滚动大师配方"].exists)
         let recipes = app.scrollViews["masterRecipe.choices"]
@@ -460,6 +477,9 @@ final class EditorUITests: XCTestCase {
         let recipeFrame = app.buttons["recipe.hamada_daylight_v2"].frame
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: recipeFrame.midX, dy: recipeFrame.midY)).tap()
         XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "滨田英明")
+        // 面板标题行已显示当前配方名，面板内只留说明，不再重复一遍名字（配方卡自身的名字不算）
+        let recipeName = NSPredicate(format: "label == %@", "滨田英明")
+        XCTAssertEqual(app.staticTexts.matching(recipeName).count - recipes.staticTexts.matching(recipeName).count, 1)
         capture("master-recipes-portrait")
         for _ in 0..<8 {
             let frame = app.buttons["tool.hsl"].frame
@@ -474,7 +494,9 @@ final class EditorUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: hslFrame.midX, dy: hslFrame.midY)).tap()
         XCTAssertTrue(app.buttons["hsl.channel.4"].waitForExistence(timeout: 10))
         app.buttons["hsl.channel.4"].tap()
-        XCTAssertTrue(app.staticTexts["+4"].exists && app.staticTexts["-1"].exists, app.debugDescription)
+        // 数值显示在可点按输入的数值按钮上，不再是独立文字
+        XCTAssertEqual(app.buttons["hsl.saturation.value"].value as? String, "+4")
+        XCTAssertEqual(app.buttons["hsl.lightness.value"].value as? String, "-1")
         capture("master-recipe-hsl-portrait")
     }
 

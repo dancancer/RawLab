@@ -8,10 +8,9 @@ public sealed class WhiteBalancePanel : StackPanel
 {
     private readonly ParameterRow temperature = new();
     private readonly ParameterRow tint = new();
-    private readonly Button reset = new() {
-        Width = 28, Height = 28, MinHeight = 28, Padding = new Thickness(3),
-        Content = new EditorIcon { Kind = "Reset", Width = 16, Height = 16 }
-    };
+    // 分组重置写成文字按钮，与普通参数的“重置分组”、HSL 的“重置 HSL”一致；
+    // 无字的图标会和两行各自的重置图标叠成一列，看起来像多出来的第三个
+    private readonly Button reset = new();
     private bool syncing;
 
     public event Action<Parameter, double, bool>? Changed;
@@ -25,8 +24,6 @@ public sealed class WhiteBalancePanel : StackPanel
         Children.Add(tint);
 
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
-        AutomationProperties.SetName(reset, Loc.Text("重置白平衡"));
-        reset.ToolTip = Loc.Text("重置白平衡");
         reset.Click += (_, _) => { if (!syncing && IsEnabled) ResetRequested?.Invoke(); };
         actions.Children.Add(reset);
         Children.Add(actions);
@@ -45,7 +42,7 @@ public sealed class WhiteBalancePanel : StackPanel
         tint.Refresh(Loc.Text(tintSpec.Title), NumericRange.For(tintSpec),
             settings[Parameter.Tint], settings.Default(Parameter.Tint), tintSpec.Unit, enabled);
         AutomationProperties.SetName(reset, Loc.Text("重置白平衡"));
-        reset.ToolTip = Loc.Text("重置白平衡");
+        reset.Content = Loc.Text("重置白平衡");
         reset.IsEnabled = enabled;
         syncing = false;
     }

@@ -15,6 +15,28 @@ struct BatchExportTests {
         print("PASS: \(message)")
     }
 
+    // ------------------------------------------------------------------------
+    //  调整摘要：每个参数只列一次，名称沿用编辑器，数值格式随界面语言（德语用逗号）
+    // ------------------------------------------------------------------------
+    static func checkSettingsSummary() {
+        UserDefaults.standard.register(defaults: [L10n.preferenceKey: "de"])
+        defer { UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"]) }
+        var settings = RawSettings.default
+        settings.exposure = 0.5
+        settings.whiteBalanceMode = .custom
+        let rows = BatchSettingsSummary.headline(settings) + BatchSettingsSummary.details(settings)
+        let titles = rows.map(\.title)
+        func value(_ key: String) -> String? { rows.first { $0.title == L10n.text(key) }?.value }
+        check(Set(titles).count == titles.count, "batch summary lists each setting once: \(titles)")
+        check(!rows.contains { $0.title == $0.value }, "batch summary values do not repeat their names")
+        check(value("曝光") == "+0,50 EV", "batch exposure uses the editor name and interface number format")
+        check(value("降噪") != nil && value("粗色斑抑制") != nil,
+              "batch denoise rows use the editor's toggle and parameter names")
+        // 目录里"关闭"是关闭按钮（Close / Schließen），关着的开关要用"停用"（Off / Aus），与 Mac 一致
+        check(value("降噪") == L10n.text("停用") && value("畸变矫正") == L10n.text("停用"),
+              "switched-off settings read Off rather than the Close button's label")
+    }
+
     static func main() throws {
         guard let profile = ProcessInfo.processInfo.environment["RAWLAB_TEST_PROFILE"] else {
             throw NSError(domain: "BatchTestIsolation", code: 1,
@@ -24,6 +46,7 @@ struct BatchExportTests {
               "batch file publication stays inside the test's private profile")
         check(ExportSize.isValid(nil), "native export size is valid")
         check(ExportSize.presets == [2048, 3000, 4096], "standard export sizes are available")
+        checkSettingsSummary()
         check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),
               "custom export size enforces the 1-65535 range")
         let root = FileManager.default.temporaryDirectory

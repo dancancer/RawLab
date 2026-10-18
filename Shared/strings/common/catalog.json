@@ -1,0 +1,2770 @@
+{
+  "16:9": {
+    "de": "16:9",
+    "en": "16:9",
+    "es": "16:9",
+    "fr": "16:9",
+    "ja": "16:9",
+    "zh-Hans": "16:9"
+  },
+  "1:1": {
+    "de": "1:1",
+    "en": "1:1",
+    "es": "1:1",
+    "fr": "1:1",
+    "ja": "1:1",
+    "zh-Hans": "1:1"
+  },
+  "3:2": {
+    "de": "3:2",
+    "en": "3:2",
+    "es": "3:2",
+    "fr": "3:2",
+    "ja": "3:2",
+    "zh-Hans": "3:2"
+  },
+  "4:3": {
+    "de": "4:3",
+    "en": "4:3",
+    "es": "4:3",
+    "fr": "4:3",
+    "ja": "4:3",
+    "zh-Hans": "4:3"
+  },
+  "DNG · 渲染型": {
+    "de": "DNG · Entwickelt",
+    "en": "DNG · Rendered",
+    "es": "DNG · Revelado",
+    "fr": "DNG · Développé",
+    "ja": "DNG · 現像済み",
+    "zh-Hans": "DNG · 渲染型"
+  },
+  "DNG 只能保存到文件": {
+    "de": "DNG kann nur in Dateien gespeichert werden",
+    "en": "DNG Can Only Be Saved to Files",
+    "es": "El DNG solo se puede guardar en Archivos",
+    "fr": "Le DNG ne peut être enregistré que dans Fichiers",
+    "ja": "DNGはファイルにのみ保存できます",
+    "zh-Hans": "DNG 只能保存到文件"
+  },
+  "DNG 已执行内嵌 Stage3 处理，未叠加校正": {
+    "de": "Eingebettete DNG-Stage-3-Verarbeitung bereits angewendet; zusätzliche Korrektur übersprungen",
+    "en": "Embedded DNG Stage 3 Already Applied; Additional Correction Skipped",
+    "es": "El procesamiento DNG Stage 3 integrado ya se aplicó; se omitió la corrección adicional",
+    "fr": "Traitement DNG Stage 3 intégré déjà appliqué ; correction supplémentaire ignorée",
+    "ja": "DNGの埋め込みStage 3処理が適用済みのため追加補正は未適用です",
+    "zh-Hans": "DNG 已执行内嵌 Stage3 处理，未叠加校正"
+  },
+  "DNG 已生成，但任务记录未更新，请先核对保存结果。": {
+    "de": "DNG erstellt, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst die gespeicherte Datei.",
+    "en": "DNG Created, but the Task Record Was Not Updated. Verify the Saved File First.",
+    "es": "Se creó el DNG, pero no se actualizó el registro de la tarea. Verifique primero el archivo guardado.",
+    "fr": "DNG créé, mais le suivi de la tâche n’a pas été mis à jour. Vérifiez d’abord le fichier enregistré.",
+    "ja": "DNGは生成されましたが、タスク記録が更新されていません。保存結果を先に確認してください。",
+    "zh-Hans": "DNG 已生成，但任务记录未更新，请先核对保存结果。"
+  },
+  "GitHub 仓库": {
+    "de": "GitHub-Repository",
+    "en": "GitHub repository",
+    "es": "Repositorio de GitHub",
+    "fr": "Dépôt GitHub",
+    "ja": "GitHub リポジトリ",
+    "zh-Hans": "GitHub 仓库"
+  },
+  "HSL": {
+    "de": "HSL",
+    "en": "HSL",
+    "es": "HSL",
+    "fr": "HSL",
+    "ja": "HSL",
+    "zh-Hans": "HSL"
+  },
+  "RAW 照片": {
+    "de": "RAW-Foto",
+    "en": "RAW Photo",
+    "es": "Foto RAW",
+    "fr": "Photo RAW",
+    "ja": "RAW写真",
+    "zh-Hans": "RAW 照片"
+  },
+  "RawLab {0} 已发布": {
+    "de": "RawLab {0} ist erschienen",
+    "en": "RawLab {0} released",
+    "es": "RawLab {0} ya está disponible",
+    "fr": "RawLab {0} est disponible",
+    "ja": "RawLab {0} が公開されました",
+    "zh-Hans": "RawLab {0} 已发布"
+  },
+  "RawLab 文件": {
+    "de": "RawLab-Dateien",
+    "en": "RawLab Files",
+    "es": "Archivos RawLab",
+    "fr": "Fichiers RawLab",
+    "ja": "RawLabファイル",
+    "zh-Hans": "RawLab 文件"
+  },
+  "S 曲线": {
+    "de": "S-Kurve",
+    "en": "S Curve",
+    "es": "Curva S",
+    "fr": "Courbe en S",
+    "ja": "S字カーブ",
+    "zh-Hans": "S 曲线"
+  },
+  "{0} · {1}%": {
+    "de": "{0} · {1}%",
+    "en": "{0} · {1}%",
+    "es": "{0} · {1}%",
+    "fr": "{0} · {1}%",
+    "ja": "{0} · {1}%",
+    "zh-Hans": "{0} · {1}%"
+  },
+  "{0}数值": {
+    "de": "{0} Wert",
+    "en": "{0} Value",
+    "es": "Valor de {0}",
+    "fr": "Valeur de {0}",
+    "ja": "{0}の数値",
+    "zh-Hans": "{0}数值"
+  },
+  "上次批量任务尚未完成": {
+    "de": "Der letzte Stapel-Export ist noch nicht abgeschlossen",
+    "en": "The last batch task has not been completed yet",
+    "es": "La última exportación por lotes aún no ha terminado",
+    "fr": "La dernière exportation par lots n’est pas terminée",
+    "ja": "前回の一括書き出しはまだ完了していません",
+    "zh-Hans": "上次批量任务尚未完成"
+  },
+  "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。": {
+    "de": "Dieses RAW oder diese Look-Datei wird nicht unterstützt. Wählen Sie eine als eingabe- und BT.709-Ausgabe-kompatibel deklarierte Fuji-CUBE- oder eine gültige .rlook-Datei.",
+    "en": "This RAW or look file is unsupported. Select a Fuji CUBE declared compatible with input and BT.709 output, or a valid .rlook file.",
+    "es": "Este RAW o archivo de look no es compatible. Selecciona un CUBE de Fuji declarado compatible con la entrada y la salida BT.709, o un archivo .rlook válido.",
+    "fr": "Ce RAW ou ce fichier de look n’est pas pris en charge. Sélectionnez un CUBE Fuji déclaré compatible avec l’entrée et la sortie BT.709, ou un fichier .rlook valide.",
+    "ja": "このRAWまたはルックファイルはサポートされていません。入力とBT.709出力に対応すると明記されたFuji CUBE、または有効な.rlookファイルを選択してください。",
+    "zh-Hans": "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"
+  },
+  "中性": {
+    "de": "Neutral",
+    "en": "Neutral",
+    "es": "Neutro",
+    "fr": "Neutre",
+    "ja": "ニュートラル",
+    "zh-Hans": "中性"
+  },
+  "中性显影": {
+    "de": "Neutrale Entwicklung",
+    "en": "Neutral Development",
+    "es": "Revelado neutro",
+    "fr": "Développement neutre",
+    "ja": "ニュートラル現像",
+    "zh-Hans": "中性显影"
+  },
+  "中性直出": {
+    "de": "Neutrale Kameraausgabe",
+    "en": "Neutral Straight Out of Camera",
+    "es": "Salida directa neutra",
+    "fr": "Sortie directe neutre",
+    "ja": "ニュートラルな撮って出し",
+    "zh-Hans": "中性直出"
+  },
+  "中点": {
+    "de": "Mittelpunkt",
+    "en": "Midpoint",
+    "es": "Punto medio",
+    "fr": "Point médian",
+    "ja": "中間点",
+    "zh-Hans": "中点"
+  },
+  "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。": {
+    "de": "Um aktive Geräte zu zählen, speichert die App eine zufällig erzeugte Installations-ID auf diesem Gerät. Sie enthält keine personenbezogenen Daten und wird gelöscht, wenn Sie die Analyse deaktivieren.",
+    "en": "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.",
+    "es": "Para contar los dispositivos activos, la aplicación guarda en este dispositivo un identificador de instalación generado al azar. No contiene información personal y se elimina al desactivar el análisis.",
+    "fr": "Pour compter les appareils actifs, l’application enregistre sur cet appareil un identifiant d’installation généré aléatoirement. Il ne contient aucune information personnelle et est supprimé lorsque vous désactivez l’analyse.",
+    "ja": "アクティブな端末数を数えるため、アプリはランダムに生成したインストール ID をこの端末に保存します。個人情報は含まれず、分析を無効にすると削除されます。",
+    "zh-Hans": "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。"
+  },
+  "乡村秋日 · 古典油画": {
+    "de": "Ländlicher Herbst · klassisches Ölgemälde",
+    "en": "Countryside autumn · classical oil painting",
+    "es": "Otoño rural · óleo clásico",
+    "fr": "Automne rural · peinture à l'huile classique",
+    "ja": "田園の秋 · 古典油画",
+    "zh-Hans": "乡村秋日 · 古典油画"
+  },
+  "亮度降噪": {
+    "de": "Luminanz-Rauschreduzierung",
+    "en": "Luma Noise Reduction",
+    "es": "Reducción de ruido de luminancia",
+    "fr": "Réduction du bruit de luminance",
+    "ja": "輝度ノイズ低減",
+    "zh-Hans": "亮度降噪"
+  },
+  "仅用于本次导出，保留各照片原有调整": {
+    "de": "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten",
+    "en": "For This Export Only; Each Photo’s Existing Adjustments Are Preserved",
+    "es": "Solo para esta exportación; se conservan los ajustes existentes de cada foto",
+    "fr": "Pour cette exportation uniquement ; les réglages existants de chaque photo sont conservés",
+    "ja": "今回の書き出しにのみ使用し、各写真の既存の調整を保持します",
+    "zh-Hans": "仅用于本次导出，保留各照片原有调整"
+  },
+  "从文件导入": {
+    "de": "Aus Dateien importieren",
+    "en": "Import from Files",
+    "es": "Importar desde Archivos",
+    "fr": "Importer depuis Fichiers",
+    "ja": "ファイルから読み込む",
+    "zh-Hans": "从文件导入"
+  },
+  "任务外观不可用。": {
+    "de": "Look des Auftrags nicht verfügbar.",
+    "en": "Task Look Unavailable.",
+    "es": "El aspecto de la tarea no está disponible.",
+    "fr": "Look de la tâche indisponible.",
+    "ja": "タスクのルックを利用できません。",
+    "zh-Hans": "任务外观不可用。"
+  },
+  "传感器基准": {
+    "de": "Sensorreferenz",
+    "en": "Sensor reference",
+    "es": "Referencia del sensor",
+    "fr": "Référence du capteur",
+    "ja": "センサー基準",
+    "zh-Hans": "传感器基准"
+  },
+  "作者的小红书主页": {
+    "de": "Autor auf Xiaohongshu (RED)",
+    "en": "Author on Xiaohongshu (RED)",
+    "es": "El autor en Xiaohongshu (RED)",
+    "fr": "L’auteur sur Xiaohongshu (RED)",
+    "ja": "作者の小紅書（RED）",
+    "zh-Hans": "作者的小红书主页"
+  },
+  "使用当前调整批量导出…": {
+    "de": "Mit aktuellen Anpassungen stapelweise exportieren…",
+    "en": "Batch Export with Current Adjustments…",
+    "es": "Exportar por lotes con los ajustes actuales…",
+    "fr": "Exporter par lots avec les réglages actuels…",
+    "ja": "現在の調整で一括書き出し…",
+    "zh-Hans": "使用当前调整批量导出…"
+  },
+  "使用统计已关闭。": {
+    "de": "Die Nutzungsanalyse ist deaktiviert.",
+    "en": "Usage analytics is off.",
+    "es": "El análisis de uso está desactivado.",
+    "fr": "L’analyse d’utilisation est désactivée.",
+    "ja": "利用状況の分析は無効です。",
+    "zh-Hans": "使用统计已关闭。"
+  },
+  "保井崇志": {
+    "de": "Takashi Yasui",
+    "en": "Takashi Yasui",
+    "es": "Takashi Yasui",
+    "fr": "Takashi Yasui",
+    "ja": "保井崇志",
+    "zh-Hans": "保井崇志"
+  },
+  "保存到": {
+    "de": "Speichern unter",
+    "en": "Save to",
+    "es": "Guardar en",
+    "fr": "Enregistrer dans",
+    "ja": "保存先",
+    "zh-Hans": "保存到"
+  },
+  "停用": {
+    "de": "Aus",
+    "en": "Off",
+    "es": "Desactivado",
+    "fr": "Désactivé",
+    "ja": "オフ",
+    "zh-Hans": "停用"
+  },
+  "允许使用统计": {
+    "de": "Nutzungsanalyse erlauben",
+    "en": "Allow usage analytics",
+    "es": "Permitir análisis de uso",
+    "fr": "Autoriser l’analyse d’utilisation",
+    "ja": "利用状況の分析を許可",
+    "zh-Hans": "允许使用统计"
+  },
+  "元数据匹配": {
+    "de": "Metadatenübereinstimmung",
+    "en": "Metadata Match",
+    "es": "Coincidencia de metadatos",
+    "fr": "Correspondance des métadonnées",
+    "ja": "メタデータ一致",
+    "zh-Hans": "元数据匹配"
+  },
+  "光圈": {
+    "de": "Blende",
+    "en": "Aperture",
+    "es": "Apertura",
+    "fr": "Ouverture",
+    "ja": "絞り",
+    "zh-Hans": "光圈"
+  },
+  "全不选": {
+    "de": "Auswahl aufheben",
+    "en": "Select none",
+    "es": "Deseleccionar todo",
+    "fr": "Tout désélectionner",
+    "ja": "選択解除",
+    "zh-Hans": "全不选"
+  },
+  "全选": {
+    "de": "Alles auswählen",
+    "en": "Select all",
+    "es": "Seleccionar todo",
+    "fr": "Tout sélectionner",
+    "ja": "すべて選択",
+    "zh-Hans": "全选"
+  },
+  "全部调整": {
+    "de": "Alle Anpassungen",
+    "en": "All Adjustments",
+    "es": "Todos los ajustes",
+    "fr": "Tous les réglages",
+    "ja": "全調整",
+    "zh-Hans": "全部调整"
+  },
+  "关于 RawLab": {
+    "de": "Über RawLab",
+    "en": "About RawLab",
+    "es": "Acerca de RawLab",
+    "fr": "À propos de RawLab",
+    "ja": "RawLabについて",
+    "zh-Hans": "关于 RawLab"
+  },
+  "关闭": {
+    "de": "Schließen",
+    "en": "Close",
+    "es": "Cerrar",
+    "fr": "Fermer",
+    "ja": "閉じる",
+    "zh-Hans": "关闭"
+  },
+  "几何": {
+    "de": "Geometrie",
+    "en": "Geometry",
+    "es": "Geometría",
+    "fr": "Géométrie",
+    "ja": "ジオメトリ",
+    "zh-Hans": "几何"
+  },
+  "前往下载 {0}": {
+    "de": "{0} herunterladen",
+    "en": "Download {0}",
+    "es": "Descargar {0}",
+    "fr": "Télécharger {0}",
+    "ja": "{0} をダウンロード",
+    "zh-Hans": "前往下载 {0}"
+  },
+  "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感": {
+    "de": "Kalifornisches Sonnenlicht mit japanischem Filmlook, diffuses urbanes Gold und klarer warmer Schimmer",
+    "en": "California sunlight blended with Japanese film, diffused urban gold and clear warm glow",
+    "es": "Luz solar de California fusionada con película japonesa, dorado urbano difuso y brillo cálido transparente",
+    "fr": "Soleil californien mêlé à un film japonais, or urbain diffus et lueur chaude transparente",
+    "ja": "カリフォルニアの陽光と日系フィルムの融合、都市に広がる金光、透明で温かな微光感",
+    "zh-Hans": "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感"
+  },
+  "匹配内嵌预览": {
+    "de": "An eingebettete Vorschau anpassen",
+    "en": "Match embedded preview",
+    "es": "Coincidir con la vista previa incrustada",
+    "fr": "Adapter à l'aperçu intégré",
+    "ja": "埋め込みプレビューに合わせる",
+    "zh-Hans": "匹配内嵌预览"
+  },
+  "匹配照片": {
+    "de": "Passt zum Foto",
+    "en": "Matches Photo",
+    "es": "Coincide con la foto",
+    "fr": "Correspond à la photo",
+    "ja": "写真に一致",
+    "zh-Hans": "匹配照片"
+  },
+  "原图": {
+    "de": "Originalbild",
+    "en": "Original",
+    "es": "Imagen original",
+    "fr": "Photo originale",
+    "ja": "元画像",
+    "zh-Hans": "原图"
+  },
+  "原始尺寸": {
+    "de": "Originalgröße",
+    "en": "Original size",
+    "es": "Tamaño original",
+    "fr": "Taille d’origine",
+    "ja": "元のサイズ",
+    "zh-Hans": "原始尺寸"
+  },
+  "原始比例": {
+    "de": "Originalverhältnis",
+    "en": "Original Ratio",
+    "es": "Proporción original",
+    "fr": "Format d’origine",
+    "ja": "元の縦横比",
+    "zh-Hans": "原始比例"
+  },
+  "原尺寸": {
+    "de": "Originalgröße",
+    "en": "Original size",
+    "es": "Tamaño original",
+    "fr": "Taille d’origine",
+    "ja": "元のサイズ",
+    "zh-Hans": "原尺寸"
+  },
+  "去噪优先": {
+    "de": "Rauschreduzierung priorisieren",
+    "en": "Noise Reduction Priority",
+    "es": "Prioridad a la reducción de ruido",
+    "fr": "Priorité à la réduction du bruit",
+    "ja": "ノイズ低減優先",
+    "zh-Hans": "去噪优先"
+  },
+  "参数或输出路径无效，不能覆盖原始 RAW。": {
+    "de": "Ungültige Parameter oder ungültiger Ausgabepfad; die ursprüngliche RAW-Datei kann nicht überschrieben werden.",
+    "en": "Invalid parameters or output path; the original RAW cannot be overwritten.",
+    "es": "Parámetros o ruta de salida no válidos; el RAW original no se puede sobrescribir.",
+    "fr": "Paramètres ou chemin de sortie non valides ; le RAW d’origine ne peut pas être écrasé.",
+    "ja": "パラメータまたは出力パスが無効です。元の RAW を上書きできません。",
+    "zh-Hans": "参数或输出路径无效，不能覆盖原始 RAW。"
+  },
+  "发现新版本 {0}": {
+    "de": "Neue Version verfügbar: {0}",
+    "en": "New Version Available: {0}",
+    "es": "Nueva versión disponible: {0}",
+    "fr": "Nouvelle version disponible : {0}",
+    "ja": "新しいバージョンがあります: {0}",
+    "zh-Hans": "发现新版本 {0}"
+  },
+  "取消": {
+    "de": "Abbrechen",
+    "en": "Cancel",
+    "es": "Cancelar",
+    "fr": "Annuler",
+    "ja": "キャンセル",
+    "zh-Hans": "取消"
+  },
+  "取消导出": {
+    "de": "Export abbrechen",
+    "en": "Cancel Export",
+    "es": "Cancelar exportación",
+    "fr": "Annuler l’exportation",
+    "ja": "書き出しをキャンセル",
+    "zh-Hans": "取消导出"
+  },
+  "史诗自然 · 雾气冷青": {
+    "de": "Epische Natur · kühles Nebelcyan",
+    "en": "Epic nature · misty cool cyan",
+    "es": "Naturaleza épica · cian frío de niebla",
+    "fr": "Nature épique · cyan froid brumeux",
+    "ja": "壮大な自然 · 霧のクールシアン",
+    "zh-Hans": "史诗自然 · 雾气冷青"
+  },
+  "向右旋转": {
+    "de": "Nach rechts drehen",
+    "en": "Rotate right",
+    "es": "Girar a la derecha",
+    "fr": "Pivoter à droite",
+    "ja": "右に回転",
+    "zh-Hans": "向右旋转"
+  },
+  "向左旋转": {
+    "de": "Nach links drehen",
+    "en": "Rotate left",
+    "es": "Girar a la izquierda",
+    "fr": "Pivoter à gauche",
+    "ja": "左に回転",
+    "zh-Hans": "向左旋转"
+  },
+  "圆度": {
+    "de": "Rundheit",
+    "en": "Roundness",
+    "es": "Redondez",
+    "fr": "Rondeur",
+    "ja": "真円度",
+    "zh-Hans": "圆度"
+  },
+  "垂直翻转": {
+    "de": "Vertikal spiegeln",
+    "en": "Flip vertical",
+    "es": "Voltear verticalmente",
+    "fr": "Retourner verticalement",
+    "ja": "上下反転",
+    "zh-Hans": "垂直翻转"
+  },
+  "垂直透视": {
+    "de": "Vertikale Perspektive",
+    "en": "Vertical perspective",
+    "es": "Perspectiva vertical",
+    "fr": "Perspective verticale",
+    "ja": "垂直パース",
+    "zh-Hans": "垂直透视"
+  },
+  "大小": {
+    "de": "Größe",
+    "en": "Size",
+    "es": "Tamaño",
+    "fr": "Taille",
+    "ja": "サイズ",
+    "zh-Hans": "大小"
+  },
+  "大师配方": {
+    "de": "Master-Rezept",
+    "en": "Master Recipe",
+    "es": "Receta maestra",
+    "fr": "Recette maître",
+    "ja": "マスターレシピ",
+    "zh-Hans": "大师配方"
+  },
+  "对比": {
+    "de": "Vergleich",
+    "en": "Comparison",
+    "es": "Comparación",
+    "fr": "Comparaison",
+    "ja": "比較",
+    "zh-Hans": "对比"
+  },
+  "对比度": {
+    "de": "Kontrast",
+    "en": "Contrast",
+    "es": "Contraste",
+    "fr": "Contraste",
+    "ja": "コントラスト",
+    "zh-Hans": "对比度"
+  },
+  "导入外观": {
+    "de": "Look importieren",
+    "en": "Import Look",
+    "es": "Importar look",
+    "fr": "Importer un look",
+    "ja": "ルックを読み込む",
+    "zh-Hans": "导入外观"
+  },
+  "导入结果": {
+    "de": "Importergebnis",
+    "en": "Import results",
+    "es": "Resultado de la importación",
+    "fr": "Résultat de l’importation",
+    "ja": "読み込み結果",
+    "zh-Hans": "导入结果"
+  },
+  "导出": {
+    "de": "Exportieren",
+    "en": "Export",
+    "es": "Exportar",
+    "fr": "Exporter",
+    "ja": "書き出し",
+    "zh-Hans": "导出"
+  },
+  "导出 0 张": {
+    "de": "0 Fotos exportieren",
+    "en": "Export 0 Photos",
+    "es": "Exportar 0 fotos",
+    "fr": "Exporter 0 photo",
+    "ja": "0枚を書き出し",
+    "zh-Hans": "导出 0 张"
+  },
+  "导出 {0} 张": {
+    "de": "Fotos exportieren ({0})",
+    "en": "Export Photos ({0})",
+    "es": "Exportar fotos ({0})",
+    "fr": "Exporter les photos ({0})",
+    "ja": "{0} 枚を書き出す",
+    "zh-Hans": "导出 {0} 张"
+  },
+  "导出到文件…": {
+    "de": "In Dateien exportieren…",
+    "en": "Export to Files…",
+    "es": "Exportar a Archivos…",
+    "fr": "Exporter vers Fichiers…",
+    "ja": "ファイルに書き出す…",
+    "zh-Hans": "导出到文件…"
+  },
+  "导出失败": {
+    "de": "Export fehlgeschlagen",
+    "en": "Export Failed",
+    "es": "Error de exportación",
+    "fr": "Échec de l’exportation",
+    "ja": "書き出し失敗",
+    "zh-Hans": "导出失败"
+  },
+  "导出完成": {
+    "de": "Export abgeschlossen",
+    "en": "Export Complete",
+    "es": "Exportación completada",
+    "fr": "Exportation terminée",
+    "ja": "書き出し完了",
+    "zh-Hans": "导出完成"
+  },
+  "导出尺寸": {
+    "de": "Exportgröße",
+    "en": "Export Size",
+    "es": "Tamaño de exportación",
+    "fr": "Taille d’exportation",
+    "ja": "書き出しサイズ",
+    "zh-Hans": "导出尺寸"
+  },
+  "导出已中断": {
+    "de": "Export unterbrochen",
+    "en": "Export Interrupted",
+    "es": "Exportación interrumpida",
+    "fr": "Exportation interrompue",
+    "ja": "書き出しが中断されました",
+    "zh-Hans": "导出已中断"
+  },
+  "导出已取消": {
+    "de": "Export abgebrochen",
+    "en": "Export Canceled",
+    "es": "Exportación cancelada",
+    "fr": "Exportation annulée",
+    "ja": "書き出しをキャンセルしました",
+    "zh-Hans": "导出已取消"
+  },
+  "导出已完成的 DNG 到文件…": {
+    "de": "Fertige DNGs in Dateien exportieren…",
+    "en": "Export Completed DNGs to Files…",
+    "es": "Exportar DNG completados a Archivos…",
+    "fr": "Exporter les DNG terminés vers Fichiers…",
+    "ja": "完成したDNGをファイルに書き出す…",
+    "zh-Hans": "导出已完成的 DNG 到文件…"
+  },
+  "导出渲染型 DNG": {
+    "de": "Entwickeltes DNG exportieren",
+    "en": "Export Rendered DNG",
+    "es": "Exportar DNG revelado",
+    "fr": "Exporter un DNG développé",
+    "ja": "現像済みDNGを書き出す",
+    "zh-Hans": "导出渲染型 DNG"
+  },
+  "导出渲染型 DNG…": {
+    "de": "Entwickeltes DNG exportieren…",
+    "en": "Export Rendered DNG…",
+    "es": "Exportar DNG revelado…",
+    "fr": "Exporter un DNG développé…",
+    "ja": "現像済みDNGを書き出す…",
+    "zh-Hans": "导出渲染型 DNG…"
+  },
+  "导出照片": {
+    "de": "Foto exportieren",
+    "en": "Export Photo",
+    "es": "Exportar foto",
+    "fr": "Exporter la photo",
+    "ja": "写真を書き出す",
+    "zh-Hans": "导出照片"
+  },
+  "导出长边必须在 1 到 65535 像素之间。": {
+    "de": "Die lange Exportkante muss zwischen 1 und 65.535 Pixeln liegen.",
+    "en": "The Export Long Edge Must Be Between 1 and 65,535 Pixels.",
+    "es": "El lado largo de exportación debe estar entre 1 y 65.535 píxeles.",
+    "fr": "Le bord long de l’exportation doit être compris entre 1 et 65 535 pixels.",
+    "ja": "書き出しの長辺は1～65,535ピクセルで指定してください。",
+    "zh-Hans": "导出长边必须在 1 到 65535 像素之间。"
+  },
+  "尚未检查更新": {
+    "de": "Noch nicht nach Updates gesucht",
+    "en": "Not checked for updates yet",
+    "es": "Aún no se han buscado actualizaciones",
+    "fr": "Mises à jour pas encore vérifiées",
+    "ja": "アップデートは未確認です",
+    "zh-Hans": "尚未检查更新"
+  },
+  "尚未选择 RAW": {
+    "de": "Keine RAW-Fotos ausgewählt",
+    "en": "No RAW Photos Selected",
+    "es": "No se han seleccionado fotos RAW",
+    "fr": "Aucune photo RAW sélectionnée",
+    "ja": "RAWが未選択です",
+    "zh-Hans": "尚未选择 RAW"
+  },
+  "尚未选择照片": {
+    "de": "Keine Fotos ausgewählt",
+    "en": "No Photos Selected",
+    "es": "No hay fotos seleccionadas",
+    "fr": "Aucune photo sélectionnée",
+    "ja": "写真が選択されていません",
+    "zh-Hans": "尚未选择照片"
+  },
+  "展开暗角参数": {
+    "de": "Vignetteneinstellungen ausklappen",
+    "en": "Show Vignette Settings",
+    "es": "Mostrar ajustes de viñeta",
+    "fr": "Afficher les réglages du vignettage",
+    "ja": "周辺減光の設定を展開",
+    "zh-Hans": "展开暗角参数"
+  },
+  "展开调整栏": {
+    "de": "Anpassungsbereich ausklappen",
+    "en": "Expand Adjustments",
+    "es": "Expandir ajustes",
+    "fr": "Développer les réglages",
+    "ja": "調整パネルを開く",
+    "zh-Hans": "展开调整栏"
+  },
+  "已保存": {
+    "de": "Gespeichert",
+    "en": "Saved",
+    "es": "Guardado",
+    "fr": "Enregistré",
+    "ja": "保存済み",
+    "zh-Hans": "已保存"
+  },
+  "已允许使用统计；可随时关闭。": {
+    "de": "Die Nutzungsanalyse ist erlaubt. Sie können sie jederzeit deaktivieren.",
+    "en": "Usage analytics is allowed; you can turn it off at any time.",
+    "es": "El análisis de uso está permitido; puede desactivarlo en cualquier momento.",
+    "fr": "L’analyse d’utilisation est autorisée. Vous pouvez la désactiver à tout moment.",
+    "ja": "利用状況の分析は許可されています。いつでも無効にできます。",
+    "zh-Hans": "已允许使用统计；可随时关闭。"
+  },
+  "已匹配镜头": {
+    "de": "Objektiv zugeordnet",
+    "en": "Lens Matched",
+    "es": "Lente identificada",
+    "fr": "Objectif identifié",
+    "ja": "レンズを照合しました",
+    "zh-Hans": "已匹配镜头"
+  },
+  "已导出": {
+    "de": "Exportiert",
+    "en": "Exported",
+    "es": "Exportado",
+    "fr": "Exporté",
+    "ja": "書き出し済み",
+    "zh-Hans": "已导出"
+  },
+  "已导出 {0} 个渲染型 DNG": {
+    "de": "Entwickelte DNG-Dateien exportiert: {0}",
+    "en": "Rendered DNG Files Exported: {0}",
+    "es": "Archivos DNG revelados exportados: {0}",
+    "fr": "Fichiers DNG développés exportés : {0}",
+    "ja": "現像済みDNGを{0}個書き出しました",
+    "zh-Hans": "已导出 {0} 个渲染型 DNG"
+  },
+  "已导出渲染型 DNG。": {
+    "de": "Entwickeltes DNG exportiert.",
+    "en": "Rendered DNG Exported.",
+    "es": "DNG revelado exportado.",
+    "fr": "DNG développé exporté.",
+    "ja": "現像済みDNGを書き出しました。",
+    "zh-Hans": "已导出渲染型 DNG。"
+  },
+  "已展开": {
+    "de": "Aufgeklappt",
+    "en": "Expanded",
+    "es": "Expandido",
+    "fr": "Développé",
+    "ja": "展開済み",
+    "zh-Hans": "已展开"
+  },
+  "已恢复上次调整": {
+    "de": "Vorherige Anpassungen wiederhergestellt",
+    "en": "Previous Adjustments Restored",
+    "es": "Ajustes anteriores restaurados",
+    "fr": "Réglages précédents restaurés",
+    "ja": "前回の調整を復元しました",
+    "zh-Hans": "已恢复上次调整"
+  },
+  "已收起": {
+    "de": "Eingeklappt",
+    "en": "Collapsed",
+    "es": "Contraído",
+    "fr": "Réduit",
+    "ja": "折りたたみ済み",
+    "zh-Hans": "已收起"
+  },
+  "已校正{0}": {
+    "de": "Korrigiert: {0}",
+    "en": "Corrected: {0}",
+    "es": "Corregido: {0}",
+    "fr": "Correction appliquée : {0}",
+    "ja": "補正済み：{0}",
+    "zh-Hans": "已校正{0}"
+  },
+  "已生成 {0} 个渲染型 DNG": {
+    "de": "Entwickelte DNG-Dateien erstellt: {0}",
+    "en": "Rendered DNG Files Created: {0}",
+    "es": "Archivos DNG revelados creados: {0}",
+    "fr": "Fichiers DNG développés créés : {0}",
+    "ja": "現像済みDNGを{0}個生成しました",
+    "zh-Hans": "已生成 {0} 个渲染型 DNG"
+  },
+  "已生成 {0} 个渲染型 DNG，未另存到所选位置": {
+    "de": "Entwickelte DNG-Dateien erstellt: {0} (nicht am gewählten Ort gespeichert)",
+    "en": "Rendered DNG Files Created: {0} (Not Saved to the Selected Location)",
+    "es": "Archivos DNG revelados creados: {0} (no se guardaron en la ubicación elegida)",
+    "fr": "Fichiers DNG développés créés : {0} (non enregistrés à l’emplacement choisi)",
+    "ja": "現像済みDNGを{0}個生成しましたが選択した場所には保存していません",
+    "zh-Hans": "已生成 {0} 个渲染型 DNG，未另存到所选位置"
+  },
+  "已生成渲染型 DNG，未另存到所选位置。": {
+    "de": "Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.",
+    "en": "Rendered DNG Created, but Not Saved to the Selected Location.",
+    "es": "Se creó el DNG revelado, pero no se guardó en la ubicación elegida.",
+    "fr": "DNG développé créé, mais non enregistré à l’emplacement choisi.",
+    "ja": "現像済みDNGを生成しましたが選択した場所には保存していません。",
+    "zh-Hans": "已生成渲染型 DNG，未另存到所选位置。"
+  },
+  "已调整": {
+    "de": "Bearbeitet",
+    "en": "Adjusted",
+    "es": "Ajustado",
+    "fr": "Ajusté",
+    "ja": "調整済み",
+    "zh-Hans": "已调整"
+  },
+  "已选 {0} 张": {
+    "de": "{0} ausgewählt",
+    "en": "{0} selected",
+    "es": "Seleccionadas: {0}",
+    "fr": "Sélection : {0}",
+    "ja": "{0} 枚を選択",
+    "zh-Hans": "已选 {0} 张"
+  },
+  "应用": {
+    "de": "Anwenden",
+    "en": "Apply",
+    "es": "Aplicar",
+    "fr": "Appliquer",
+    "ja": "適用",
+    "zh-Hans": "应用"
+  },
+  "应用并离开": {
+    "de": "Anwenden und verlassen",
+    "en": "Apply and Leave",
+    "es": "Aplicar y salir",
+    "fr": "Appliquer et quitter",
+    "ja": "適用して終了",
+    "zh-Hans": "应用并离开"
+  },
+  "应用当前设置": {
+    "de": "Aktuelle Einstellungen anwenden",
+    "en": "Apply current settings",
+    "es": "Aplicar la configuración actual",
+    "fr": "Appliquer les paramètres actuels",
+    "ja": "現在の設定を適用する",
+    "zh-Hans": "应用当前设置"
+  },
+  "开启": {
+    "de": "Ein",
+    "en": "On",
+    "es": "Activado",
+    "fr": "Activé",
+    "ja": "オン",
+    "zh-Hans": "开启"
+  },
+  "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": {
+    "de": "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen. Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.",
+    "en": "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data. Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.",
+    "es": "Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión. No se recopilan fotos, vistas previas, nombres de archivo, rutas, EXIF ni contenido de IA. Al desactivarse, se detiene la nueva recopilación; las solicitudes ya enviadas no pueden retirarse.",
+    "fr": "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.",
+    "ja": "有効にすると、Aliyun が機能の利用回数を処理し、中国本土にデータを保存します。SDK は端末識別子、端末とシステムの情報、ネットワーク/IP、地域、セッションデータを収集する場合があります。写真、プレビュー、ファイル名、パス、EXIF、AI コンテンツは収集しません。無効にすると新たな収集は停止しますが、送信済みのリクエストは取り消せません。",
+    "zh-Hans": "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"
+  },
+  "强度": {
+    "de": "Intensität",
+    "en": "Intensity",
+    "es": "Intensidad",
+    "fr": "Intensité",
+    "ja": "強度",
+    "zh-Hans": "强度"
+  },
+  "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光": {
+    "de": "Starker Hell-Dunkel-Kontrast, tiefe kühl-cyane Schatten, kontrollierte Schwarztöne und warme Akzentlichter",
+    "en": "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light",
+    "es": "Contraste fuerte, sombras profundas cian frío, negros contenidos y toques de luz cálida",
+    "fr": "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude",
+    "ja": "強い明暗コントラスト、深いクールシアンのシャドウ、抑えた黒階調と暖色のアクセント光",
+    "zh-Hans": "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光"
+  },
+  "当前构建未配置使用统计，未采集或上报。": {
+    "de": "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.",
+    "en": "Usage analytics is not configured in this build; nothing is collected or reported.",
+    "es": "El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.",
+    "fr": "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.",
+    "ja": "このビルドでは利用状況の分析が設定されていないため、収集や送信は行われません。",
+    "zh-Hans": "当前构建未配置使用统计，未采集或上报。"
+  },
+  "快门": {
+    "de": "Verschluss",
+    "en": "Shutter",
+    "es": "Obturador",
+    "fr": "Obturateur",
+    "ja": "シャッター",
+    "zh-Hans": "快门"
+  },
+  "成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张": {
+    "de": "Erfolgreich {0} · Fehlgeschlagen {1} · Nicht verarbeitet {2}",
+    "en": "Succeeded {0} · Failed {1} · Unprocessed {2}",
+    "es": "Correctas {0} · Fallidas {1} · No procesadas {2}",
+    "fr": "Réussite {0} · Échec {1} · Non traitées {2}",
+    "ja": "成功 {0}枚 · 失敗 {1}枚 · 未処理 {2}枚",
+    "zh-Hans": "成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张"
+  },
+  "手动": {
+    "de": "Manuell",
+    "en": "Manual",
+    "es": "Manual",
+    "fr": "Manuel",
+    "ja": "手動",
+    "zh-Hans": "手动"
+  },
+  "打开 RAW": {
+    "de": "RAW öffnen",
+    "en": "Open RAW",
+    "es": "Abrir RAW",
+    "fr": "Ouvrir RAW",
+    "ja": "RAWを開く",
+    "zh-Hans": "打开 RAW"
+  },
+  "打开 RAW 照片": {
+    "de": "RAW-Foto öffnen",
+    "en": "Open a RAW photo",
+    "es": "Abrir una foto RAW",
+    "fr": "Ouvrir une photo RAW",
+    "ja": "RAW写真を開く",
+    "zh-Hans": "打开 RAW 照片"
+  },
+  "打开文件夹": {
+    "de": "Ordner öffnen",
+    "en": "Open folder",
+    "es": "Abrir carpeta",
+    "fr": "Ouvrir le dossier",
+    "ja": "フォルダを開く",
+    "zh-Hans": "打开文件夹"
+  },
+  "打开照片": {
+    "de": "Foto öffnen",
+    "en": "Open Photo",
+    "es": "Abrir foto",
+    "fr": "Ouvrir une photo",
+    "ja": "写真を開く",
+    "zh-Hans": "打开照片"
+  },
+  "批量导出": {
+    "de": "Stapel-Export",
+    "en": "Batch Export",
+    "es": "Exportación por lotes",
+    "fr": "Exportation par lots",
+    "ja": "一括書き出し",
+    "zh-Hans": "批量导出"
+  },
+  "拉直": {
+    "de": "Begradigen",
+    "en": "Straighten",
+    "es": "Enderezar",
+    "fr": "Redresser",
+    "ja": "傾き補正",
+    "zh-Hans": "拉直"
+  },
+  "拍摄参数": {
+    "de": "Aufnahmeparameter",
+    "en": "Capture Settings",
+    "es": "Parámetros de captura",
+    "fr": "Paramètres de prise de vue",
+    "ja": "撮影パラメータ",
+    "zh-Hans": "拍摄参数"
+  },
+  "拍摄时设置": {
+    "de": "Einstellung wie aufgenommen",
+    "en": "As-Shot Setting",
+    "es": "Ajuste según la toma",
+    "fr": "Réglage selon la prise",
+    "ja": "撮影時の設定",
+    "zh-Hans": "拍摄时设置"
+  },
+  "拖动边角裁切，拖动画面内移动选区。": {
+    "de": "Ziehen Sie eine Ecke, um zuzuschneiden; ziehen Sie innerhalb der Auswahl, um sie zu verschieben.",
+    "en": "Drag a corner to crop; drag inside the selection to move it.",
+    "es": "Arrastre una esquina para recortar; arrastre dentro de la selección para moverla.",
+    "fr": "Faites glisser un coin pour recadrer ; faites glisser à l’intérieur de la zone pour la déplacer.",
+    "ja": "角をドラッグして切り抜き、範囲の内側をドラッグして移動します。",
+    "zh-Hans": "拖动边角裁切，拖动画面内移动选区。"
+  },
+  "按每张照片": {
+    "de": "Pro Foto",
+    "en": "Per Photo",
+    "es": "Por foto",
+    "fr": "Par photo",
+    "ja": "写真ごと",
+    "zh-Hans": "按每张照片"
+  },
+  "搜索镜头": {
+    "de": "Objektive suchen",
+    "en": "Search Lenses",
+    "es": "Buscar lentes",
+    "fr": "Rechercher un objectif",
+    "ja": "レンズを検索",
+    "zh-Hans": "搜索镜头"
+  },
+  "收起": {
+    "de": "Einklappen",
+    "en": "Collapse",
+    "es": "Contraer",
+    "fr": "Réduire",
+    "ja": "折りたたむ",
+    "zh-Hans": "收起"
+  },
+  "收起暗角参数": {
+    "de": "Vignetteneinstellungen einklappen",
+    "en": "Hide Vignette Settings",
+    "es": "Ocultar ajustes de viñeta",
+    "fr": "Masquer les réglages du vignettage",
+    "ja": "周辺減光の設定を折りたたむ",
+    "zh-Hans": "收起暗角参数"
+  },
+  "收起调整栏": {
+    "de": "Anpassungsbereich einklappen",
+    "en": "Collapse Adjustments",
+    "es": "Contraer ajustes",
+    "fr": "Réduire les réglages",
+    "ja": "調整パネルを閉じる",
+    "zh-Hans": "收起调整栏"
+  },
+  "放大": {
+    "de": "Vergrößern",
+    "en": "Zoom in",
+    "es": "Acercar",
+    "fr": "Zoom avant",
+    "ja": "ズームイン",
+    "zh-Hans": "放大"
+  },
+  "放弃任务": {
+    "de": "Auftrag verwerfen",
+    "en": "Discard Task",
+    "es": "Descartar tarea",
+    "fr": "Abandonner la tâche",
+    "ja": "タスクを破棄",
+    "zh-Hans": "放弃任务"
+  },
+  "效果": {
+    "de": "Effekte",
+    "en": "Effects",
+    "es": "Efecto",
+    "fr": "Effet",
+    "ja": "効果",
+    "zh-Hans": "效果"
+  },
+  "文件信息": {
+    "de": "Dateiinformationen",
+    "en": "File Information",
+    "es": "Información del archivo",
+    "fr": "Informations du fichier",
+    "ja": "ファイル情報",
+    "zh-Hans": "文件信息"
+  },
+  "文件树": {
+    "de": "Dateibaum",
+    "en": "File tree",
+    "es": "Árbol de archivos",
+    "fr": "Arborescence des fichiers",
+    "ja": "ファイルツリー",
+    "zh-Hans": "文件树"
+  },
+  "无效或不可用的镜头校正设置": {
+    "de": "Ungültige oder nicht verfügbare Objektivkorrektureinstellungen",
+    "en": "Invalid or Unavailable Lens Correction Settings",
+    "es": "Ajustes de corrección de lente no válidos o no disponibles",
+    "fr": "Réglages de correction optique invalides ou indisponibles",
+    "ja": "レンズ補正の設定が無効または利用できません",
+    "zh-Hans": "无效或不可用的镜头校正设置"
+  },
+  "无效的视口预览模式": {
+    "de": "Ungültiger Modus für die Ausschnittvorschau",
+    "en": "Invalid Viewport Preview Mode",
+    "es": "Modo de vista previa del área visible no válido",
+    "fr": "Mode d’aperçu de la zone visible non valide",
+    "ja": "表示領域プレビューモードが無効です",
+    "zh-Hans": "无效的视口预览模式"
+  },
+  "无法保存语言设置。": {
+    "de": "Die Spracheinstellung konnte nicht gespeichert werden.",
+    "en": "Unable to save the language preference.",
+    "es": "No se pudo guardar el idioma.",
+    "fr": "Impossible d'enregistrer la langue.",
+    "ja": "言語設定を保存できません。",
+    "zh-Hans": "无法保存语言设置。"
+  },
+  "无法写入成片，请检查输出位置和剩余空间。": {
+    "de": "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.",
+    "en": "Unable to write the exported photo. Check the output location and free space.",
+    "es": "No se puede escribir la foto exportada. Verifique la ubicación de salida y el espacio disponible.",
+    "fr": "Impossible d’écrire la photo exportée. Vérifiez l’emplacement de sortie et l’espace disponible.",
+    "ja": "仕上がり画像を書き込めません。出力先と空き容量を確認してください。",
+    "zh-Hans": "无法写入成片，请检查输出位置和剩余空间。"
+  },
+  "无法自动调整曝光：{0}": {
+    "de": "Belichtung konnte nicht automatisch angepasst werden: {0}",
+    "en": "Unable to auto-adjust exposure: {0}",
+    "es": "No se puede ajustar la exposición automáticamente: {0}",
+    "fr": "Impossible d’ajuster automatiquement l’exposition : {0}",
+    "ja": "露出を自動調整できません: {0}",
+    "zh-Hans": "无法自动调整曝光：{0}"
+  },
+  "无法读取统计设置，已保持关闭。": {
+    "de": "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.",
+    "en": "The analytics setting could not be read, so analytics stays off.",
+    "es": "No se pudo leer el ajuste de análisis; el análisis permanece desactivado.",
+    "fr": "Le réglage d’analyse n’a pas pu être lu. L’analyse reste désactivée.",
+    "ja": "分析の設定を読み込めなかったため、無効のままにしています。",
+    "zh-Hans": "无法读取统计设置，已保持关闭。"
+  },
+  "无法读取镜头校正状态": {
+    "de": "Status der Objektivkorrektur konnte nicht gelesen werden",
+    "en": "Could Not Read Lens Correction Status",
+    "es": "No se pudo leer el estado de la corrección del objetivo",
+    "fr": "Impossible de lire l’état de la correction de l’objectif",
+    "ja": "レンズ補正状態を読み取れません",
+    "zh-Hans": "无法读取镜头校正状态"
+  },
+  "无法读取镜头配置列表": {
+    "de": "Objektivprofile konnten nicht gelesen werden",
+    "en": "Could Not Read Lens Profiles",
+    "es": "No se pudieron leer los perfiles de lente",
+    "fr": "Impossible de lire les profils d’objectifs",
+    "ja": "レンズプロファイルを読み込めません",
+    "zh-Hans": "无法读取镜头配置列表"
+  },
+  "无配方": {
+    "de": "Kein Rezept",
+    "en": "No Recipe",
+    "es": "Sin receta",
+    "fr": "Aucune recette",
+    "ja": "レシピなし",
+    "zh-Hans": "无配方"
+  },
+  "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光": {
+    "de": "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter",
+    "en": "Japanese luminous skin, airy transparent blue-cyan, open shadows and soft highlights",
+    "es": "Piel luminosa japonesa, azul cian transparente y aireado, sombras abiertas y altas luces suaves",
+    "fr": "Peau lumineuse japonaise, bleu cyan transparent et aérien, ombres ouvertes et hautes lumières douces",
+    "ja": "日系の透明感ある水光肌、空気感のある青シアン、広がりのあるシャドウと柔らかなハイライト",
+    "zh-Hans": "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光"
+  },
+  "日系青空 · 高调日光": {
+    "de": "Japanischer blauer Himmel · High-Key-Tageslicht",
+    "en": "Japanese blue sky · high-key daylight",
+    "es": "Cielo azul japonés · luz diurna en clave alta",
+    "fr": "Ciel bleu japonais · lumière du jour high-key",
+    "ja": "日系の青空 · ハイキーな日光",
+    "zh-Hans": "日系青空 · 高调日光"
+  },
+  "明度": {
+    "de": "Helligkeit",
+    "en": "Lightness",
+    "es": "Luminosidad",
+    "fr": "Luminosité",
+    "ja": "明度",
+    "zh-Hans": "明度"
+  },
+  "明暗": {
+    "de": "Tonwert",
+    "en": "Tone",
+    "es": "Tono",
+    "fr": "Tons",
+    "ja": "トーン",
+    "zh-Hans": "明暗"
+  },
+  "显示成片": {
+    "de": "Exportiertes Foto anzeigen",
+    "en": "Show Exported Photo",
+    "es": "Mostrar la foto exportada",
+    "fr": "Afficher la photo exportée",
+    "ja": "書き出した画像を表示",
+    "zh-Hans": "显示成片"
+  },
+  "暖调日系 · 漫射金光": {
+    "de": "Warmer Japan-Look · diffuses goldenes Licht",
+    "en": "Warm Japanese · diffused golden light",
+    "es": "Estilo japonés cálido · luz dorada difusa",
+    "fr": "Style japonais chaud · lumière dorée diffuse",
+    "ja": "暖色の日系 · 拡散する金色の光",
+    "zh-Hans": "暖调日系 · 漫射金光"
+  },
+  "暖金光影 · 质感人像": {
+    "de": "Warmgoldenes Licht · charaktervolles Porträt",
+    "en": "Warm golden light · textured portrait",
+    "es": "Luz dorada cálida · retrato con textura",
+    "fr": "Lumière dorée chaude · portrait texturé",
+    "ja": "暖かな金色の光 · 質感ポートレート",
+    "zh-Hans": "暖金光影 · 质感人像"
+  },
+  "暗角": {
+    "de": "Vignettierung",
+    "en": "Vignette",
+    "es": "Viñeta",
+    "fr": "Vignettage",
+    "ja": "周辺減光",
+    "zh-Hans": "暗角"
+  },
+  "暗角中点": {
+    "de": "Vignettenmittelpunkt",
+    "en": "Vignette Midpoint",
+    "es": "Punto medio de viñeta",
+    "fr": "Point médian du vignettage",
+    "ja": "周辺減光の中点",
+    "zh-Hans": "暗角中点"
+  },
+  "暗角圆度": {
+    "de": "Vignettenrundheit",
+    "en": "Vignette Roundness",
+    "es": "Redondez de viñeta",
+    "fr": "Rondeur du vignettage",
+    "ja": "周辺減光の円形度",
+    "zh-Hans": "暗角圆度"
+  },
+  "暗角强度": {
+    "de": "Vignettenstärke",
+    "en": "Vignette Intensity",
+    "es": "Intensidad de viñeta",
+    "fr": "Intensité du vignettage",
+    "ja": "周辺減光の強さ",
+    "zh-Hans": "暗角强度"
+  },
+  "暗角羽化": {
+    "de": "Vignettenweichheit",
+    "en": "Vignette Feather",
+    "es": "Desvanecimiento de viñeta",
+    "fr": "Contour progressif du vignettage",
+    "ja": "周辺減光のぼかし",
+    "zh-Hans": "暗角羽化"
+  },
+  "暗角高光保护": {
+    "de": "Vignetten-Lichter schützen",
+    "en": "Vignette Highlight Protection",
+    "es": "Protección de altas luces de viñeta",
+    "fr": "Protection des hautes lumières du vignettage",
+    "ja": "周辺減光のハイライト保護",
+    "zh-Hans": "暗角高光保护"
+  },
+  "暮色黄昏 · 相邻色过渡": {
+    "de": "Abenddämmerung · Übergang benachbarter Farben",
+    "en": "Twilight dusk · adjacent-color transition",
+    "es": "Crepúsculo · transición de colores adyacentes",
+    "fr": "Crépuscule · transition de couleurs voisines",
+    "ja": "夕暮れ · 類似色のグラデーション",
+    "zh-Hans": "暮色黄昏 · 相邻色过渡"
+  },
+  "曝光": {
+    "de": "Belichtung",
+    "en": "Exposure",
+    "es": "Exposición",
+    "fr": "Exposition",
+    "ja": "露出",
+    "zh-Hans": "曝光"
+  },
+  "曝光基准": {
+    "de": "Belichtungsreferenz",
+    "en": "Exposure reference",
+    "es": "Referencia de exposición",
+    "fr": "Référence d'exposition",
+    "ja": "露出基準",
+    "zh-Hans": "曝光基准"
+  },
+  "更多": {
+    "de": "Mehr",
+    "en": "More",
+    "es": "Más",
+    "fr": "Plus",
+    "ja": "その他",
+    "zh-Hans": "更多"
+  },
+  "有多个匹配镜头，请手动选择": {
+    "de": "Mehrere passende Objektive; bitte manuell auswählen",
+    "en": "Multiple Lens Matches; Choose Manually",
+    "es": "Varias lentes coinciden; elige una manualmente",
+    "fr": "Plusieurs objectifs correspondent ; choisissez manuellement",
+    "ja": "複数のレンズが一致しました。手動で選択してください",
+    "zh-Hans": "有多个匹配镜头，请手动选择"
+  },
+  "未匹配镜头": {
+    "de": "Kein passendes Objektiv",
+    "en": "No Lens Match",
+    "es": "No hay lente coincidente",
+    "fr": "Aucun objectif correspondant",
+    "ja": "一致するレンズなし",
+    "zh-Hans": "未匹配镜头"
+  },
+  "未匹配镜头，请手动选择": {
+    "de": "Kein passendes Objektiv; bitte manuell auswählen",
+    "en": "No Lens Match; Choose Manually",
+    "es": "No hay lente coincidente; elige una manualmente",
+    "fr": "Aucun objectif correspondant ; choisissez manuellement",
+    "ja": "一致するレンズがありません。手動で選択してください",
+    "zh-Hans": "未匹配镜头，请手动选择"
+  },
+  "未应用的调整": {
+    "de": "Nicht angewendete Anpassungen",
+    "en": "Unapplied Adjustments",
+    "es": "Ajustes sin aplicar",
+    "fr": "Réglages non appliqués",
+    "ja": "未適用の調整",
+    "zh-Hans": "未应用的调整"
+  },
+  "未找到机身或传感器尺寸信息": {
+    "de": "Kamera- oder Sensorgrößeninformationen fehlen",
+    "en": "Camera or Sensor Size Information Missing",
+    "es": "Falta información de cámara o tamaño del sensor",
+    "fr": "Informations du boîtier ou du capteur manquantes",
+    "ja": "カメラまたはセンサーサイズの情報がありません",
+    "zh-Hans": "未找到机身或传感器尺寸信息"
+  },
+  "未找到镜头": {
+    "de": "Keine Objektive gefunden",
+    "en": "No Lenses Found",
+    "es": "No se encontraron lentes",
+    "fr": "Aucun objectif trouvé",
+    "ja": "レンズが見つかりません",
+    "zh-Hans": "未找到镜头"
+  },
+  "未读取到拍摄参数": {
+    "de": "Aufnahmeparameter nicht verfügbar",
+    "en": "Capture Settings Unavailable",
+    "es": "No se pudieron leer los parámetros de captura",
+    "fr": "Paramètres de prise de vue indisponibles",
+    "ja": "撮影パラメータを読み取れません",
+    "zh-Hans": "未读取到拍摄参数"
+  },
+  "未调整": {
+    "de": "Unbearbeitet",
+    "en": "Unadjusted",
+    "es": "Sin ajustar",
+    "fr": "Non ajusté",
+    "ja": "未調整",
+    "zh-Hans": "未调整"
+  },
+  "未选择": {
+    "de": "Nicht ausgewählt",
+    "en": "Not selected",
+    "es": "No seleccionado",
+    "fr": "Non sélectionné",
+    "ja": "未選択",
+    "zh-Hans": "未选择"
+  },
+  "极简禅意 · 日系街拍": {
+    "de": "Minimalistisches Zen · japanische Streetfotografie",
+    "en": "Minimalist Zen · Japanese street photography",
+    "es": "Zen minimalista · fotografía callejera japonesa",
+    "fr": "Zen minimaliste · photo de rue japonaise",
+    "ja": "ミニマルな禅 · 日本のストリートスナップ",
+    "zh-Hans": "极简禅意 · 日系街拍"
+  },
+  "查看任务": {
+    "de": "Aufgabe anzeigen",
+    "en": "View Task",
+    "es": "Ver tarea",
+    "fr": "Afficher la tâche",
+    "ja": "タスクの表示",
+    "zh-Hans": "查看任务"
+  },
+  "查看应用后的效果": {
+    "de": "Ergebnis mit den angewendeten Einstellungen anzeigen",
+    "en": "Preview the Result with These Adjustments",
+    "es": "Ver el resultado con los ajustes aplicados",
+    "fr": "Voir le résultat avec les réglages appliqués",
+    "ja": "適用後の効果を確認",
+    "zh-Hans": "查看应用后的效果"
+  },
+  "查看批量任务…": {
+    "de": "Stapel-Export anzeigen…",
+    "en": "View Batch Task…",
+    "es": "Ver tarea por lotes…",
+    "fr": "Afficher la tâche par lots…",
+    "ja": "一括書き出しを表示…",
+    "zh-Hans": "查看批量任务…"
+  },
+  "查看更新": {
+    "de": "Aktualisierungen anzeigen",
+    "en": "View updates",
+    "es": "Ver actualizaciones",
+    "fr": "Afficher les mises à jour",
+    "ja": "更新情報を表示",
+    "zh-Hans": "查看更新"
+  },
+  "标准显影": {
+    "de": "Standardentwicklung",
+    "en": "Standard development",
+    "es": "Revelado estándar",
+    "fr": "Développement standard",
+    "ja": "標準現像",
+    "zh-Hans": "标准显影"
+  },
+  "核对 DNG 文件": {
+    "de": "DNG-Dateien prüfen",
+    "en": "Verify DNG Files",
+    "es": "Verificar archivos DNG",
+    "fr": "Vérifier les fichiers DNG",
+    "ja": "DNGファイルを確認",
+    "zh-Hans": "核对 DNG 文件"
+  },
+  "核对 DNG 文件保存结果": {
+    "de": "Gespeicherte DNG-Dateien prüfen",
+    "en": "Verify Saved DNG Files",
+    "es": "Verificar archivos DNG guardados",
+    "fr": "Vérifier les fichiers DNG enregistrés",
+    "ja": "DNGファイルの保存結果を確認",
+    "zh-Hans": "核对 DNG 文件保存结果"
+  },
+  "格式": {
+    "de": "Format",
+    "en": "Format",
+    "es": "Formato",
+    "fr": "Format",
+    "ja": "形式",
+    "zh-Hans": "格式"
+  },
+  "检查 {0} 的效果": {
+    "de": "Ergebnis von {0} prüfen",
+    "en": "Inspect {0} Result",
+    "es": "Inspeccionar resultado de {0}",
+    "fr": "Inspecter le résultat de {0}",
+    "ja": "{0}の効果を確認",
+    "zh-Hans": "检查 {0} 的效果"
+  },
+  "检查失败，请稍后重试或访问 GitHub 仓库": {
+    "de": "Prüfung fehlgeschlagen. Versuchen Sie es später erneut oder besuchen Sie das GitHub-Repository.",
+    "en": "Check failed. Try again later or visit the GitHub repository.",
+    "es": "La comprobación falló. Inténtalo más tarde o visita el repositorio de GitHub.",
+    "fr": "La vérification a échoué. Réessayez plus tard ou consultez le dépôt GitHub.",
+    "ja": "チェックに失敗しました。後でもう一度試すか、GitHub リポジトリにアクセスしてください",
+    "zh-Hans": "检查失败，请稍后重试或访问 GitHub 仓库"
+  },
+  "检查更新": {
+    "de": "Nach Updates suchen",
+    "en": "Check for updates",
+    "es": "Buscar actualizaciones",
+    "fr": "Vérifier les mises à jour",
+    "ja": "アップデートを確認",
+    "zh-Hans": "检查更新"
+  },
+  "横向色差": {
+    "de": "Laterale chromatische Aberration",
+    "en": "Lateral Chromatic Aberration",
+    "es": "Aberración cromática lateral",
+    "fr": "Aberration chromatique latérale",
+    "ja": "倍率色収差",
+    "zh-Hans": "横向色差"
+  },
+  "横向色差未应用": {
+    "de": "Laterale chromatische Aberration nicht korrigiert",
+    "en": "Lateral Chromatic Aberration Not Applied",
+    "es": "Aberración cromática lateral no corregida",
+    "fr": "Aberration chromatique latérale non corrigée",
+    "ja": "倍率色収差補正は未適用",
+    "zh-Hans": "横向色差未应用"
+  },
+  "橙": {
+    "de": "Orange",
+    "en": "Orange",
+    "es": "Naranja",
+    "fr": "Orange",
+    "ja": "オレンジ",
+    "zh-Hans": "橙"
+  },
+  "正在保存": {
+    "de": "Wird gespeichert",
+    "en": "Saving",
+    "es": "Guardando",
+    "fr": "Enregistrement",
+    "ja": "保存中",
+    "zh-Hans": "正在保存"
+  },
+  "正在停止…": {
+    "de": "Wird angehalten…",
+    "en": "Stopping…",
+    "es": "Deteniendo…",
+    "fr": "Arrêt…",
+    "ja": "停止中…",
+    "zh-Hans": "正在停止…"
+  },
+  "正在处理": {
+    "de": "Wird verarbeitet",
+    "en": "Processing",
+    "es": "Procesando",
+    "fr": "Traitement",
+    "ja": "処理中",
+    "zh-Hans": "正在处理"
+  },
+  "正在导出": {
+    "de": "Wird exportiert",
+    "en": "Exporting",
+    "es": "Exportando",
+    "fr": "Exportation",
+    "ja": "書き出し中",
+    "zh-Hans": "正在导出"
+  },
+  "正在显影": {
+    "de": "Wird entwickelt",
+    "en": "Developing",
+    "es": "Revelando",
+    "fr": "Développement",
+    "ja": "現像中",
+    "zh-Hans": "正在显影"
+  },
+  "正在显影…": {
+    "de": "Wird entwickelt…",
+    "en": "Developing…",
+    "es": "Revelando…",
+    "fr": "Développement…",
+    "ja": "現像中…",
+    "zh-Hans": "正在显影…"
+  },
+  "正在检查更新…": {
+    "de": "Suche nach Updates…",
+    "en": "Checking for updates…",
+    "es": "Buscando actualizaciones...",
+    "fr": "Vérification des mises à jour…",
+    "ja": "アップデートを確認中…",
+    "zh-Hans": "正在检查更新…"
+  },
+  "正在读取镜头信息…": {
+    "de": "Objektivinformationen werden gelesen…",
+    "en": "Reading Lens Information…",
+    "es": "Leyendo información de lente…",
+    "fr": "Lecture des informations de l’objectif…",
+    "ja": "レンズ情報を読み込み中…",
+    "zh-Hans": "正在读取镜头信息…"
+  },
+  "此 RAW 无法解析拍摄白平衡，不能应用配方色调。": {
+    "de": "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.",
+    "en": "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.",
+    "es": "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.",
+    "fr": "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.",
+    "ja": "このRAWの撮影時ホワイトバランスを解析できないため、レシピの色合いを適用できません。",
+    "zh-Hans": "此 RAW 无法解析拍摄白平衡，不能应用配方色调。"
+  },
+  "此输入不支持镜头校正": {
+    "de": "Objektivkorrektur für diese Eingabe nicht unterstützt",
+    "en": "Lens Correction Unsupported for This Input",
+    "es": "Esta entrada no admite corrección de lente",
+    "fr": "Correction optique non prise en charge pour cette image",
+    "ja": "この入力ではレンズ補正に対応していません",
+    "zh-Hans": "此输入不支持镜头校正"
+  },
+  "此镜头没有所选校正的标定数据": {
+    "de": "Keine Kalibrierungsdaten für die gewählten Korrekturen",
+    "en": "No Calibration Data for the Selected Corrections",
+    "es": "No hay datos de calibración para las correcciones elegidas",
+    "fr": "Aucune donnée d’étalonnage pour les corrections choisies",
+    "ja": "選択した補正のキャリブレーションデータがありません",
+    "zh-Hans": "此镜头没有所选校正的标定数据"
+  },
+  "水平翻转": {
+    "de": "Horizontal spiegeln",
+    "en": "Flip horizontal",
+    "es": "Voltear horizontalmente",
+    "fr": "Retourner horizontalement",
+    "ja": "左右反転",
+    "zh-Hans": "水平翻转"
+  },
+  "水平透视": {
+    "de": "Horizontale Perspektive",
+    "en": "Horizontal perspective",
+    "es": "Perspectiva horizontal",
+    "fr": "Perspective horizontale",
+    "ja": "水平パース",
+    "zh-Hans": "水平透视"
+  },
+  "油润复古 · 城市胶片": {
+    "de": "Sattes Vintage · urbaner Filmlook",
+    "en": "Rich vintage · urban film",
+    "es": "Vintage cálido · película urbana",
+    "fr": "Vintage riche · film urbain",
+    "ja": "オイリーなレトロ · 都市フィルム",
+    "zh-Hans": "油润复古 · 城市胶片"
+  },
+  "洋红": {
+    "de": "Magenta",
+    "en": "Magenta",
+    "es": "Magenta",
+    "fr": "Magenta",
+    "ja": "マゼンタ",
+    "zh-Hans": "洋红"
+  },
+  "添加 RAW": {
+    "de": "RAW hinzufügen",
+    "en": "Add RAW",
+    "es": "Añadir RAW",
+    "fr": "Ajouter du RAW",
+    "ja": "RAWを追加",
+    "zh-Hans": "添加 RAW"
+  },
+  "添加照片目录": {
+    "de": "Fotoordner hinzufügen",
+    "en": "Add Photo Folder",
+    "es": "Añadir carpeta de fotos",
+    "fr": "Ajouter un dossier de photos",
+    "ja": "写真フォルダを追加",
+    "zh-Hans": "添加照片目录"
+  },
+  "添加目录": {
+    "de": "Ordner hinzufügen",
+    "en": "Add Folder",
+    "es": "Añadir carpeta",
+    "fr": "Ajouter un dossier",
+    "ja": "フォルダを追加",
+    "zh-Hans": "添加目录"
+  },
+  "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感": {
+    "de": "Warmer, satter Vintage-Stadtfilmlook, ruhige saubere Schatten, warme goldene Lichter und ein Gefühl des Umherschweifens",
+    "en": "Warm rich vintage urban film, clean stable shadows, warm golden highlights and a wandering story feel",
+    "es": "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante",
+    "fr": "Film urbain vintage chaud et riche, ombres stables et propres, hautes lumières dorées et récit de déambulation",
+    "ja": "暖かく艶のあるレトロ都市フィルム、濁りのない落ち着いた暗部、暖金のハイライトと旅する物語感",
+    "zh-Hans": "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感"
+  },
+  "渲染型 DNG 未生成。": {
+    "de": "Das entwickelte DNG wurde nicht erstellt.",
+    "en": "Rendered DNG Was Not Created.",
+    "es": "No se creó el DNG revelado.",
+    "fr": "Le DNG développé n’a pas été créé.",
+    "ja": "現像済みDNGが生成されませんでした。",
+    "zh-Hans": "渲染型 DNG 未生成。"
+  },
+  "滨田英明": {
+    "de": "Hideaki Hamada",
+    "en": "Hideaki Hamada",
+    "es": "Hideaki Hamada",
+    "fr": "Hideaki Hamada",
+    "ja": "濱田英明",
+    "zh-Hans": "滨田英明"
+  },
+  "焦距": {
+    "de": "Brennweite",
+    "en": "Focal length",
+    "es": "Distancia focal",
+    "fr": "Focale",
+    "ja": "焦点距離",
+    "zh-Hans": "焦距"
+  },
+  "照片": {
+    "de": "Foto",
+    "en": "Photo",
+    "es": "Foto",
+    "fr": "Photo",
+    "ja": "写真",
+    "zh-Hans": "照片"
+  },
+  "照片信息": {
+    "de": "Fotoinformationen",
+    "en": "Photo Information",
+    "es": "Información de la foto",
+    "fr": "Informations de la photo",
+    "ja": "写真情報",
+    "zh-Hans": "照片信息"
+  },
+  "照片图库": {
+    "de": "Fotos",
+    "en": "Photos",
+    "es": "Fotos",
+    "fr": "Photos",
+    "ja": "写真",
+    "zh-Hans": "照片图库"
+  },
+  "照片缺少有效焦距，未应用校正": {
+    "de": "Keine gültige Brennweite; Korrektur nicht angewendet",
+    "en": "No Valid Focal Length; Correction Not Applied",
+    "es": "No hay distancia focal válida; corrección no aplicada",
+    "fr": "Distance focale invalide ; correction non appliquée",
+    "ja": "有効な焦点距離がないため補正は未適用です",
+    "zh-Hans": "照片缺少有效焦距，未应用校正"
+  },
+  "版本": {
+    "de": "Version",
+    "en": "Version",
+    "es": "Versión",
+    "fr": "Version",
+    "ja": "バージョン",
+    "zh-Hans": "版本"
+  },
+  "版本 {0}": {
+    "de": "Version {0}",
+    "en": "Version {0}",
+    "es": "Versión {0}",
+    "fr": "Version {0}",
+    "ja": "バージョン {0}",
+    "zh-Hans": "版本 {0}"
+  },
+  "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光": {
+    "de": "Filmische Breitbild-Ästhetik, hart geschnittenes Licht und Schatten, tiefe Dunkelheit und goldenes Scheinwerferlicht",
+    "en": "Cinematic widescreen narrative, hard-cut light and shadow, deep blacks and spotlight gold",
+    "es": "Estética cinematográfica panorámica, luz y sombra de alto contraste, negros profundos y dorado de foco",
+    "fr": "Texture cinématographique grand écran, lumière et ombres très contrastées, noirs profonds et lumière dorée de projecteur",
+    "ja": "映画的なワイド画面の物語性、強い光と影の切断、深い暗部とスポットライトの金色",
+    "zh-Hans": "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光"
+  },
+  "电影夜景胶片色调，红色灯光与深邃冷青绿暗部": {
+    "de": "Filmische Nachtfarben, rote Lichter und tiefe kühl-cyane-grüne Schatten",
+    "en": "Cinematic night-film tones, red lights and deep cool cyan-green shadows",
+    "es": "Tonos de película nocturna cinematográfica, luces rojas y sombras profundas cian-verdes frías",
+    "fr": "Tons de film de nuit cinématographique, lumières rouges et ombres cyan-vert froid profond",
+    "ja": "映画的な夜景フィルムトーン、赤い光と深いクールシアン・グリーンの暗部",
+    "zh-Hans": "电影夜景胶片色调，红色灯光与深邃冷青绿暗部"
+  },
+  "畸变": {
+    "de": "Verzeichnung",
+    "en": "Distortion",
+    "es": "Distorsión",
+    "fr": "Distorsion",
+    "ja": "歪曲収差",
+    "zh-Hans": "畸变"
+  },
+  "畸变矫正": {
+    "de": "Verzeichnungskorrektur",
+    "en": "Distortion Correction",
+    "es": "Corrección de distorsión",
+    "fr": "Correction de la distorsion",
+    "ja": "歪曲収差補正",
+    "zh-Hans": "畸变矫正"
+  },
+  "白平衡": {
+    "de": "Weißabgleich",
+    "en": "White Balance",
+    "es": "Balance de blancos",
+    "fr": "Balance des blancs",
+    "ja": "ホワイトバランス",
+    "zh-Hans": "白平衡"
+  },
+  "直方图": {
+    "de": "Histogramm",
+    "en": "Histogram",
+    "es": "Histograma",
+    "fr": "Histogramme",
+    "ja": "ヒストグラム",
+    "zh-Hans": "直方图"
+  },
+  "相机": {
+    "de": "Kamera",
+    "en": "Camera",
+    "es": "Cámara",
+    "fr": "Appareil photo",
+    "ja": "カメラ",
+    "zh-Hans": "相机"
+  },
+  "确定": {
+    "de": "OK",
+    "en": "OK",
+    "es": "Aceptar",
+    "fr": "OK",
+    "ja": "OK",
+    "zh-Hans": "确定"
+  },
+  "移除": {
+    "de": "Entfernen",
+    "en": "Remove",
+    "es": "Quitar",
+    "fr": "Supprimer",
+    "ja": "削除",
+    "zh-Hans": "移除"
+  },
+  "移除 {0}": {
+    "de": "{0} entfernen",
+    "en": "Remove {0}",
+    "es": "Eliminar {0}",
+    "fr": "Supprimer {0}",
+    "ja": "{0}を削除",
+    "zh-Hans": "移除 {0}"
+  },
+  "空气清透 · 少女淡蓝": {
+    "de": "Luftige Klarheit · zartes Blau",
+    "en": "Airy clarity · soft blue",
+    "es": "Claridad aérea · azul suave",
+    "fr": "Transparence aérienne · bleu tendre",
+    "ja": "透明感のある空気 · 少女の淡いブルー",
+    "zh-Hans": "空气清透 · 少女淡蓝"
+  },
+  "童话油画 · 梦幻微光": {
+    "de": "Märchenhaftes Ölgemälde · verträumtes Leuchten",
+    "en": "Fairy-tale oil painting · dreamy glow",
+    "es": "Óleo de cuento de hadas · brillo de ensueño",
+    "fr": "Peinture à l'huile féerique · lueur onirique",
+    "ja": "おとぎ話の油彩 · 夢幻の微光",
+    "zh-Hans": "童话油画 · 梦幻微光"
+  },
+  "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光": {
+    "de": "Ölgemälde wie ein Märchenbilderbuch, tiefe ruhige Schatten, umhüllendes Warmgold und diffuses Leuchten",
+    "en": "Fairy-tale picture-book oil painting, deep quiet shadows, enveloping warm-gold light and diffuse glow",
+    "es": "Óleo de cuento ilustrado, sombras profundas y serenas, luz dorada envolvente y brillo difuso",
+    "fr": "Peinture à l'huile de livre de contes, ombres profondes et calmes, lumière dorée enveloppante et lueur diffuse",
+    "ja": "童話の絵本のような油彩感、深く静かな暗部、包み込む暖金の柔光と拡散する微光",
+    "zh-Hans": "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光"
+  },
+  "等待导出": {
+    "de": "Warten auf Export",
+    "en": "Waiting to Export",
+    "es": "En espera de exportación",
+    "fr": "En attente d’exportation",
+    "ja": "書き出し待ち",
+    "zh-Hans": "等待导出"
+  },
+  "粗糙度": {
+    "de": "Rauheit",
+    "en": "Roughness",
+    "es": "Rugosidad",
+    "fr": "Rugosité",
+    "ja": "粗さ",
+    "zh-Hans": "粗糙度"
+  },
+  "粗色斑抑制": {
+    "de": "Grobe Artefaktunterdrückung",
+    "en": "Coarse Artifact Suppression",
+    "es": "Supresión de artefactos gruesos",
+    "fr": "Suppression des artefacts grossiers",
+    "ja": "粗い斑点の抑制",
+    "zh-Hans": "粗色斑抑制"
+  },
+  "粗颗粒降噪": {
+    "de": "Grobkorngeräuschreduzierung",
+    "en": "Coarse grain noise reduction",
+    "es": "Reducción del ruido de grano grueso",
+    "fr": "Réduction du bruit des gros grains",
+    "ja": "粗粒ノイズ低減",
+    "zh-Hans": "粗颗粒降噪"
+  },
+  "精细": {
+    "de": "Fein",
+    "en": "Fine",
+    "es": "Ajuste fino",
+    "fr": "Réglage fin",
+    "ja": "微調整",
+    "zh-Hans": "精细"
+  },
+  "精细调整": {
+    "de": "Feinabstimmung",
+    "en": "Fine Adjustments",
+    "es": "Ajustes finos",
+    "fr": "Réglages fins",
+    "ja": "微調整",
+    "zh-Hans": "精细调整"
+  },
+  "紫": {
+    "de": "Violett",
+    "en": "Purple",
+    "es": "Morado",
+    "fr": "Violet",
+    "ja": "紫",
+    "zh-Hans": "紫"
+  },
+  "红": {
+    "de": "Rot",
+    "en": "Red",
+    "es": "Rojo",
+    "fr": "Rouge",
+    "ja": "赤",
+    "zh-Hans": "红"
+  },
+  "纽约电影 · 戏剧光影": {
+    "de": "New Yorker Filmlook · dramatisches Licht",
+    "en": "New York cinema · dramatic light",
+    "es": "Cine neoyorquino · luz dramática",
+    "fr": "Cinéma new-yorkais · lumière dramatique",
+    "ja": "ニューヨーク映画 · ドラマチックな光影",
+    "zh-Hans": "纽约电影 · 戏剧光影"
+  },
+  "细节": {
+    "de": "Detail",
+    "en": "Detail",
+    "es": "Detalle",
+    "fr": "Détail",
+    "ja": "詳細",
+    "zh-Hans": "细节"
+  },
+  "细节优先": {
+    "de": "Detailpriorität",
+    "en": "Detail Priority",
+    "es": "Prioridad al detalle",
+    "fr": "Priorité aux détails",
+    "ja": "ディテール優先",
+    "zh-Hans": "细节优先"
+  },
+  "统计已停止，请重启应用后再开启。": {
+    "de": "Die Analyse wurde gestoppt. Starten Sie die App neu, bevor Sie sie wieder aktivieren.",
+    "en": "Analytics has stopped. Restart the app before enabling it again.",
+    "es": "El análisis se ha detenido. Reinicie la aplicación antes de volver a activarlo.",
+    "fr": "L’analyse est arrêtée. Redémarrez l’application avant de la réactiver.",
+    "ja": "分析は停止しています。再度有効にするにはアプリを再起動してください。",
+    "zh-Hans": "统计已停止，请重启应用后再开启。"
+  },
+  "统计服务未能启动，照片编辑不受影响。": {
+    "de": "Der Analysedienst konnte nicht gestartet werden. Die Fotobearbeitung ist nicht betroffen.",
+    "en": "The analytics service could not start. Photo editing is unaffected.",
+    "es": "No se pudo iniciar el servicio de análisis. La edición de fotos no se ve afectada.",
+    "fr": "Le service d’analyse n’a pas pu démarrer. La retouche photo n’est pas affectée.",
+    "ja": "分析サービスを開始できませんでした。写真編集への影響はありません。",
+    "zh-Hans": "统计服务未能启动，照片编辑不受影响。"
+  },
+  "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。": {
+    "de": "Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt. Prüfen Sie vor dem Neustart die Speicherberechtigung.",
+    "en": "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.",
+    "es": "No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso. Compruebe el permiso de almacenamiento antes de reiniciar.",
+    "fr": "Le réglage d’analyse n’a pas pu être enregistré. La collecte est arrêtée pour ce processus. Vérifiez l’autorisation de stockage avant de redémarrer.",
+    "ja": "分析の設定を保存できませんでした。このプロセスでの収集は停止しています。再起動する前にストレージの権限を確認してください。",
+    "zh-Hans": "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。"
+  },
+  "继续上次批量任务": {
+    "de": "Letzten Stapel-Export fortsetzen",
+    "en": "Continue the last batch task",
+    "es": "Continuar con la última tarea por lotes",
+    "fr": "Reprendre la dernière exportation par lots",
+    "ja": "前回の一括書き出しを続行",
+    "zh-Hans": "继续上次批量任务"
+  },
+  "继续未完成的 {0} 张": {
+    "de": "Ausstehende Fotos fortsetzen ({0})",
+    "en": "Continue Unfinished Photos ({0})",
+    "es": "Continuar con las fotos pendientes ({0})",
+    "fr": "Reprendre les photos restantes ({0})",
+    "ja": "未完成の {0} 枚を続行",
+    "zh-Hans": "继续未完成的 {0} 张"
+  },
+  "继续未完成项": {
+    "de": "Nicht abgeschlossene Elemente fortsetzen",
+    "en": "Continue Unfinished Items",
+    "es": "Continuar elementos sin terminar",
+    "fr": "Continuer les éléments inachevés",
+    "ja": "未完了の項目を続行",
+    "zh-Hans": "继续未完成项"
+  },
+  "继续编辑": {
+    "de": "Weiter bearbeiten",
+    "en": "Keep Editing",
+    "es": "Seguir editando",
+    "fr": "Continuer à modifier",
+    "ja": "編集を続ける",
+    "zh-Hans": "继续编辑"
+  },
+  "绿": {
+    "de": "Grün",
+    "en": "Green",
+    "es": "Verde",
+    "fr": "Vert",
+    "ja": "緑",
+    "zh-Hans": "绿"
+  },
+  "缩小": {
+    "de": "Verkleinern",
+    "en": "Zoom out",
+    "es": "Alejar",
+    "fr": "Zoom arrière",
+    "ja": "ズームアウト",
+    "zh-Hans": "缩小"
+  },
+  "缩放": {
+    "de": "Zoomen",
+    "en": "Zoom",
+    "es": "Ampliar",
+    "fr": "Zoomer",
+    "ja": "ズーム",
+    "zh-Hans": "缩放"
+  },
+  "羽化": {
+    "de": "Weiche Kante",
+    "en": "Feather",
+    "es": "Desvanecimiento",
+    "fr": "Contour progressif",
+    "ja": "フェザリング",
+    "zh-Hans": "羽化"
+  },
+  "胶片": {
+    "de": "Film",
+    "en": "Film",
+    "es": "Película",
+    "fr": "Film",
+    "ja": "フィルム",
+    "zh-Hans": "胶片"
+  },
+  "自动": {
+    "de": "Automatisch",
+    "en": "Auto",
+    "es": "Automático",
+    "fr": "Auto",
+    "ja": "自動",
+    "zh-Hans": "自动"
+  },
+  "自动匹配": {
+    "de": "Automatische Zuordnung",
+    "en": "Automatic Matching",
+    "es": "Coincidencia automática",
+    "fr": "Correspondance automatique",
+    "ja": "自動マッチング",
+    "zh-Hans": "自动匹配"
+  },
+  "自动检查更新": {
+    "de": "Automatisch nach Updates suchen",
+    "en": "Automatically check for updates",
+    "es": "Buscar actualizaciones automáticamente",
+    "fr": "Rechercher automatiquement les mises à jour",
+    "ja": "アップデートを自動で確認",
+    "zh-Hans": "自动检查更新"
+  },
+  "自动添加序号": {
+    "de": "Fortlaufende Nummer anhängen",
+    "en": "Add sequence numbers automatically",
+    "es": "Añadir números de secuencia automáticamente",
+    "fr": "Ajouter automatiquement des numéros de séquence",
+    "ja": "連番を自動で付ける",
+    "zh-Hans": "自动添加序号"
+  },
+  "自动裁边": {
+    "de": "Automatisch beschneiden",
+    "en": "Auto Crop",
+    "es": "Recorte automático",
+    "fr": "Recadrage automatique",
+    "ja": "自動クロップ",
+    "zh-Hans": "自动裁边"
+  },
+  "自动调整曝光": {
+    "de": "Belichtung automatisch anpassen",
+    "en": "Auto-adjust exposure",
+    "es": "Ajustar exposición automáticamente",
+    "fr": "Ajuster automatiquement l’exposition",
+    "ja": "露出を自動調整",
+    "zh-Hans": "自动调整曝光"
+  },
+  "自定义": {
+    "de": "Benutzerdefiniert",
+    "en": "Custom",
+    "es": "Personalizado",
+    "fr": "Personnalisé",
+    "ja": "カスタム",
+    "zh-Hans": "自定义"
+  },
+  "自定义…": {
+    "de": "Benutzerdefiniert…",
+    "en": "Custom…",
+    "es": "Personalizado…",
+    "fr": "Personnalisé…",
+    "ja": "カスタム…",
+    "zh-Hans": "自定义…"
+  },
+  "自由": {
+    "de": "Frei",
+    "en": "Free",
+    "es": "Libre",
+    "fr": "Libre",
+    "ja": "自由",
+    "zh-Hans": "自由"
+  },
+  "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞": {
+    "de": "Dichte urbane Textur, markante S-Kurve, kräftiger Orange-Cyan- und Violett-Gold-Kontrast",
+    "en": "Dense urban texture, bold S-curve, saturated orange-cyan and purple-gold clash",
+    "es": "Textura urbana densa, curva S marcada, choque de naranjas-cian y púrpuras-dorados intensos",
+    "fr": "Texture urbaine dense, courbe en S marquée, affrontement orange-cyan et violet-or saturés",
+    "ja": "緻密な都市の質感、硬質なSカーブ、濃いオレンジシアンと紫金の寒暖対比",
+    "zh-Hans": "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞"
+  },
+  "色彩": {
+    "de": "Farbe",
+    "en": "Color",
+    "es": "Color",
+    "fr": "Couleur",
+    "ja": "色",
+    "zh-Hans": "色彩"
+  },
+  "色彩降噪": {
+    "de": "Chrominanz-Rauschreduzierung",
+    "en": "Chroma Noise Reduction",
+    "es": "Reducción de ruido de crominancia",
+    "fr": "Réduction du bruit de chrominance",
+    "ja": "色ノイズ低減",
+    "zh-Hans": "色彩降噪"
+  },
+  "色温": {
+    "de": "Temperatur",
+    "en": "Temperature",
+    "es": "Temperatura",
+    "fr": "Température",
+    "ja": "色温度",
+    "zh-Hans": "色温"
+  },
+  "色相": {
+    "de": "Farbton",
+    "en": "Hue",
+    "es": "Tono",
+    "fr": "Teinte",
+    "ja": "色相",
+    "zh-Hans": "色相"
+  },
+  "色调": {
+    "de": "Tönung",
+    "en": "Tint",
+    "es": "Matiz",
+    "fr": "Teinte",
+    "ja": "色かぶり",
+    "zh-Hans": "色调"
+  },
+  "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织": {
+    "de": "Weite Schneelandschaften und Waldnebel, harte digitale Grüntöne entfernt; Tundra-Kühlgrün trifft auf weiches Warmgold",
+    "en": "Vast snowy mountains and forest mist, removing harsh digital greens; tundra cool greens blend with soft warm gold",
+    "es": "Montañas nevadas y niebla forestal, eliminando verdes digitales agresivos; verdes fríos de tundra y dorados cálidos suaves",
+    "fr": "Montagnes enneigées et brume forestière, verts numériques agressifs supprimés ; verts froids de toundra et or chaud doux",
+    "ja": "広大な雪山と森の霧、刺さるデジタルな緑を抑え、ツンドラの冷たい緑と柔らかな暖金を融合",
+    "zh-Hans": "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织"
+  },
+  "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织": {
+    "de": "Ölgemälde-Look eines britischen Herbstes auf dem Land, satte Erdtöne, goldenes Gras und tiefes Waldgrün",
+    "en": "British countryside autumn oil-painting look, rich earth tones, golden dry grass and deep forest green",
+    "es": "Estilo de óleo otoñal de la campiña británica, tonos tierra densos, hierba dorada y verde bosque profundo",
+    "fr": "Look de peinture à l'huile d'un automne rural britannique, tons terreux riches, herbes dorées et vert profond",
+    "ja": "英国の田園の秋を描く油彩、重厚なアースカラー、枯れ草の金色と深い森の緑",
+    "zh-Hans": "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织"
+  },
+  "蓝": {
+    "de": "Blau",
+    "en": "Blue",
+    "es": "Azul",
+    "fr": "Bleu",
+    "ja": "青",
+    "zh-Hans": "蓝"
+  },
+  "裁切": {
+    "de": "Zuschneiden",
+    "en": "Crop",
+    "es": "Recorte",
+    "fr": "Recadrage",
+    "ja": "切り抜き",
+    "zh-Hans": "裁切"
+  },
+  "裁切与旋转": {
+    "de": "Zuschneiden und Drehen",
+    "en": "Crop and Rotate",
+    "es": "Recortar y girar",
+    "fr": "Recadrer et pivoter",
+    "ja": "切り抜きと回転",
+    "zh-Hans": "裁切与旋转"
+  },
+  "裁切宽度": {
+    "de": "Zuschnittbreite",
+    "en": "Crop width",
+    "es": "Ancho del recorte",
+    "fr": "Largeur du recadrage",
+    "ja": "切り抜き幅",
+    "zh-Hans": "裁切宽度"
+  },
+  "裁切选区": {
+    "de": "Zuschnittauswahl",
+    "en": "Crop Selection",
+    "es": "Selección de recorte",
+    "fr": "Zone de recadrage",
+    "ja": "切り抜き範囲",
+    "zh-Hans": "裁切选区"
+  },
+  "裁切高度": {
+    "de": "Zuschnitthöhe",
+    "en": "Crop height",
+    "es": "Alto del recorte",
+    "fr": "Hauteur du recadrage",
+    "ja": "切り抜き高さ",
+    "zh-Hans": "裁切高度"
+  },
+  "裁边 {0}%": {
+    "de": "Beschnitt {0}%",
+    "en": "Crop {0}%",
+    "es": "Recorte {0}%",
+    "fr": "Recadrage {0}%",
+    "ja": "クロップ {0}%",
+    "zh-Hans": "裁边 {0}%"
+  },
+  "设置": {
+    "de": "Einstellungen",
+    "en": "Settings",
+    "es": "Ajustes",
+    "fr": "Réglages",
+    "ja": "設定",
+    "zh-Hans": "设置"
+  },
+  "语言": {
+    "de": "Sprache",
+    "en": "Language",
+    "es": "Idioma",
+    "fr": "Langue",
+    "ja": "言語",
+    "zh-Hans": "语言"
+  },
+  "请等待预览完成后导出。": {
+    "de": "Warten Sie vor dem Export, bis die Vorschau fertig ist.",
+    "en": "Wait for the Preview to Finish Before Exporting.",
+    "es": "Espera a que termine la vista previa antes de exportar.",
+    "fr": "Attendez la fin de l’aperçu avant d’exporter.",
+    "ja": "プレビューの完了後に書き出してください。",
+    "zh-Hans": "请等待预览完成后导出。"
+  },
+  "请输入 1–65535 之间的像素数": {
+    "de": "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein",
+    "en": "Enter a pixel count from 1 to 65,535",
+    "es": "Introduce un número de píxeles entre 1 y 65.535",
+    "fr": "Entrez un nombre de pixels compris entre 1 et 65 535",
+    "ja": "1～65,535ピクセルの範囲で入力してください",
+    "zh-Hans": "请输入 1–65535 之间的像素数"
+  },
+  "请输入范围内的有效数字": {
+    "de": "Bitte geben Sie eine gültige Zahl innerhalb des Bereichs ein",
+    "en": "Please enter a valid number within the range",
+    "es": "Por favor ingresa un número válido dentro del rango",
+    "fr": "Veuillez saisir un numéro valide dans la plage",
+    "ja": "範囲内の有効な数値を入力してください",
+    "zh-Hans": "请输入范围内的有效数字"
+  },
+  "调整后": {
+    "de": "Nachher",
+    "en": "After",
+    "es": "Después",
+    "fr": "Après",
+    "ja": "補正後",
+    "zh-Hans": "调整后"
+  },
+  "调整已保存": {
+    "de": "Anpassungen gespeichert",
+    "en": "Adjustments Saved",
+    "es": "Ajustes guardados",
+    "fr": "Réglages enregistrés",
+    "ja": "調整を保存しました",
+    "zh-Hans": "调整已保存"
+  },
+  "调整未保存 · 重试": {
+    "de": "Anpassungen nicht gespeichert · Erneut versuchen",
+    "en": "Adjustments not saved · Try again",
+    "es": "Ajustes no guardados · Inténtalo de nuevo",
+    "fr": "Ajustements non enregistrés · Réessayez",
+    "ja": "調整は未保存 · 再試行",
+    "zh-Hans": "调整未保存 · 重试"
+  },
+  "调整未保存，点击重试": {
+    "de": "Anpassungen nicht gespeichert; zum Wiederholen tippen",
+    "en": "Adjustments Not Saved; Tap to Retry",
+    "es": "Ajustes no guardados; toca para reintentar",
+    "fr": "Réglages non enregistrés ; touchez pour réessayer",
+    "ja": "調整を保存できませんでした。タップして再試行",
+    "zh-Hans": "调整未保存，点击重试"
+  },
+  "调整来源": {
+    "de": "Anpassungsquelle",
+    "en": "Adjustment Source",
+    "es": "Origen de los ajustes",
+    "fr": "Source des réglages",
+    "ja": "調整元",
+    "zh-Hans": "调整来源"
+  },
+  "调整栏": {
+    "de": "Anpassungsbereich",
+    "en": "Adjustment Panel",
+    "es": "Panel de ajustes",
+    "fr": "Panneau de réglages",
+    "ja": "調整パネル",
+    "zh-Hans": "调整栏"
+  },
+  "调整裁切边角": {
+    "de": "Zuschnittecke anpassen",
+    "en": "Adjust crop corner",
+    "es": "Ajustar esquina de recorte",
+    "fr": "Ajuster le coin de recadrage",
+    "ja": "切り抜きの角を調整",
+    "zh-Hans": "调整裁切边角"
+  },
+  "调整触觉反馈": {
+    "de": "Haptisches Feedback bei Anpassungen",
+    "en": "Adjustment Haptics",
+    "es": "Respuesta háptica al ajustar",
+    "fr": "Retour haptique lors des réglages",
+    "ja": "調整時の触覚フィードバック",
+    "zh-Hans": "调整触觉反馈"
+  },
+  "赛博朋克 · 极致反差": {
+    "de": "Cyberpunk · extremer Kontrast",
+    "en": "Cyberpunk · extreme contrast",
+    "es": "Cyberpunk · contraste extremo",
+    "fr": "Cyberpunk · contraste extrême",
+    "ja": "サイバーパンク · 極端なコントラスト",
+    "zh-Hans": "赛博朋克 · 极致反差"
+  },
+  "跟随系统": {
+    "de": "Systemsprache verwenden",
+    "en": "Follow system",
+    "es": "Seguir el sistema",
+    "fr": "Suivre le système",
+    "ja": "システムに従う",
+    "zh-Hans": "跟随系统"
+  },
+  "输出": {
+    "de": "Ausgabe",
+    "en": "Output",
+    "es": "Salida",
+    "fr": "Sortie",
+    "ja": "出力",
+    "zh-Hans": "输出"
+  },
+  "返回": {
+    "de": "Zurück",
+    "en": "Back",
+    "es": "Volver",
+    "fr": "Retour",
+    "ja": "戻る",
+    "zh-Hans": "返回"
+  },
+  "适合窗口": {
+    "de": "An Fenster anpassen",
+    "en": "Fit to window",
+    "es": "Ajustar a la ventana",
+    "fr": "Ajuster à la fenêtre",
+    "ja": "ウィンドウに合わせる",
+    "zh-Hans": "适合窗口"
+  },
+  "适应画面": {
+    "de": "An Bildschirm anpassen",
+    "en": "Fit to Screen",
+    "es": "Ajustar a la pantalla",
+    "fr": "Adapter à l’écran",
+    "ja": "画面に合わせる",
+    "zh-Hans": "适应画面"
+  },
+  "选择大师配方": {
+    "de": "Master-Rezept auswählen",
+    "en": "Choose master recipe",
+    "es": "Elegir receta maestra",
+    "fr": "Choisir une recette maître",
+    "ja": "マスターレシピを選択",
+    "zh-Hans": "选择大师配方"
+  },
+  "选择待导出的 RAW 照片": {
+    "de": "RAW-Fotos zum Exportieren auswählen",
+    "en": "Select RAW photos to export",
+    "es": "Seleccionar fotos RAW para exportar",
+    "fr": "Sélectionner les photos RAW à exporter",
+    "ja": "書き出す RAW 写真を選択",
+    "zh-Hans": "选择待导出的 RAW 照片"
+  },
+  "选择待导出的照片": {
+    "de": "Fotos zum Exportieren auswählen",
+    "en": "Select Photos to Export",
+    "es": "Seleccionar fotos para exportar",
+    "fr": "Sélectionner les photos à exporter",
+    "ja": "書き出す写真を選択",
+    "zh-Hans": "选择待导出的照片"
+  },
+  "选择照片…": {
+    "de": "Foto auswählen…",
+    "en": "Select Photos…",
+    "es": "Seleccionar foto…",
+    "fr": "Sélectionner des photos…",
+    "ja": "写真を選択…",
+    "zh-Hans": "选择照片…"
+  },
+  "选择胶片模拟": {
+    "de": "Filmsimulation auswählen",
+    "en": "Select Film Simulation",
+    "es": "Seleccionar simulación de película",
+    "fr": "Choisir une simulation de film",
+    "ja": "フィルムシミュレーションを選択",
+    "zh-Hans": "选择胶片模拟"
+  },
+  "选择输出文件夹": {
+    "de": "Ausgabeordner auswählen",
+    "en": "Select output folder",
+    "es": "Seleccionar carpeta de salida",
+    "fr": "Choisir le dossier de sortie",
+    "ja": "出力フォルダーの選択",
+    "zh-Hans": "选择输出文件夹"
+  },
+  "选择镜头": {
+    "de": "Objektiv auswählen",
+    "en": "Choose Lens",
+    "es": "Elegir lente",
+    "fr": "Choisir un objectif",
+    "ja": "レンズを選択",
+    "zh-Hans": "选择镜头"
+  },
+  "选择镜头…": {
+    "de": "Objektiv auswählen…",
+    "en": "Choose Lens…",
+    "es": "Elegir lente…",
+    "fr": "Choisir un objectif…",
+    "ja": "レンズを選択…",
+    "zh-Hans": "选择镜头…"
+  },
+  "选择镜头配置文件": {
+    "de": "Objektivprofil auswählen",
+    "en": "Choose Lens Profile",
+    "es": "Elegir perfil de lente",
+    "fr": "Choisir un profil d’objectif",
+    "ja": "レンズプロファイルを選択",
+    "zh-Hans": "选择镜头配置文件"
+  },
+  "透视": {
+    "de": "Perspektive",
+    "en": "Perspective",
+    "es": "Perspectiva",
+    "fr": "Perspective",
+    "ja": "パース補正",
+    "zh-Hans": "透视"
+  },
+  "酒井贵弘": {
+    "de": "Takahiro Sakai",
+    "en": "Takahiro Sakai",
+    "es": "Takahiro Sakai",
+    "fr": "Takahiro Sakai",
+    "ja": "酒井貴弘",
+    "zh-Hans": "酒井贵弘"
+  },
+  "重名文件": {
+    "de": "Doppelte Dateinamen",
+    "en": "Duplicate Filenames",
+    "es": "Nombres de archivo duplicados",
+    "fr": "Noms de fichiers en double",
+    "ja": "同名ファイル",
+    "zh-Hans": "重名文件"
+  },
+  "重命名外观": {
+    "de": "Look umbenennen",
+    "en": "Rename Look",
+    "es": "Cambiar nombre del look",
+    "fr": "Renommer le look",
+    "ja": "ルック名を変更",
+    "zh-Hans": "重命名外观"
+  },
+  "重置 HSL": {
+    "de": "HSL zurücksetzen",
+    "en": "Reset HSL",
+    "es": "Restablecer HSL",
+    "fr": "Réinitialiser HSL",
+    "ja": "HSLをリセット",
+    "zh-Hans": "重置 HSL"
+  },
+  "重置{0}": {
+    "de": "{0} zurücksetzen",
+    "en": "Reset {0}",
+    "es": "Restablecer {0}",
+    "fr": "Réinitialiser {0}",
+    "ja": "{0}をリセット",
+    "zh-Hans": "重置{0}"
+  },
+  "重置全部调整": {
+    "de": "Alle Anpassungen zurücksetzen",
+    "en": "Reset All Adjustments",
+    "es": "Restablecer todos los ajustes",
+    "fr": "Réinitialiser tous les réglages",
+    "ja": "すべての調整をリセット",
+    "zh-Hans": "重置全部调整"
+  },
+  "重置几何": {
+    "de": "Geometrie zurücksetzen",
+    "en": "Reset geometry",
+    "es": "Restablecer geometría",
+    "fr": "Réinitialiser la géométrie",
+    "ja": "ジオメトリをリセット",
+    "zh-Hans": "重置几何"
+  },
+  "重置当前颜色": {
+    "de": "Aktuelle Farbe zurücksetzen",
+    "en": "Reset Current Color",
+    "es": "Restablecer color actual",
+    "fr": "Réinitialiser la couleur actuelle",
+    "ja": "現在の色をリセット",
+    "zh-Hans": "重置当前颜色"
+  },
+  "重置调整": {
+    "de": "Anpassungen zurücksetzen",
+    "en": "Reset Adjustments",
+    "es": "Restablecer ajustes",
+    "fr": "Réinitialiser les réglages",
+    "ja": "調整をリセット",
+    "zh-Hans": "重置调整"
+  },
+  "重置镜头校正": {
+    "de": "Objektivkorrektur zurücksetzen",
+    "en": "Reset Lens Correction",
+    "es": "Restablecer corrección de lente",
+    "fr": "Réinitialiser la correction optique",
+    "ja": "レンズ補正をリセット",
+    "zh-Hans": "重置镜头校正"
+  },
+  "重置降噪": {
+    "de": "Rauschreduzierung zurücksetzen",
+    "en": "Reset Noise Reduction",
+    "es": "Restablecer la reducción de ruido",
+    "fr": "Réinitialiser la réduction du bruit",
+    "ja": "ノイズ低減をリセット",
+    "zh-Hans": "重置降噪"
+  },
+  "重试": {
+    "de": "Erneut versuchen",
+    "en": "Try again",
+    "es": "Reintentar",
+    "fr": "Réessayer",
+    "ja": "再試行",
+    "zh-Hans": "重试"
+  },
+  "重试失败的 {0} 张": {
+    "de": "Fehlgeschlagene Fotos erneut versuchen ({0})",
+    "en": "Retry Failed Photos ({0})",
+    "es": "Reintentar las fotos fallidas ({0})",
+    "fr": "Réessayer les photos en échec ({0})",
+    "ja": "失敗した{0}枚を再試行",
+    "zh-Hans": "重试失败的 {0} 张"
+  },
+  "钨丝电影 · 红灯冷青": {
+    "de": "Tungsten-Kino · rotes Licht und kühles Cyan",
+    "en": "Tungsten cinema · red lights and cool cyan",
+    "es": "Cine de tungsteno · luces rojas y cian frío",
+    "fr": "Cinéma tungstène · lumières rouges et cyan froid",
+    "ja": "タングステン映画 · 赤い光とクールシアン",
+    "zh-Hans": "钨丝电影 · 红灯冷青"
+  },
+  "锐化": {
+    "de": "Schärfen",
+    "en": "Sharpening",
+    "es": "Enfoque",
+    "fr": "Netteté",
+    "ja": "シャープネス",
+    "zh-Hans": "锐化"
+  },
+  "镜头": {
+    "de": "Objektiv",
+    "en": "Lens",
+    "es": "Objetivo",
+    "fr": "Objectif",
+    "ja": "レンズ",
+    "zh-Hans": "镜头"
+  },
+  "镜头信息尚未就绪": {
+    "de": "Objektivinformationen noch nicht verfügbar",
+    "en": "Lens Information Not Ready",
+    "es": "Información de lente no disponible",
+    "fr": "Informations de l’objectif indisponibles",
+    "ja": "レンズ情報を取得できていません",
+    "zh-Hans": "镜头信息尚未就绪"
+  },
+  "镜头匹配": {
+    "de": "Objektivzuordnung",
+    "en": "Lens Matching",
+    "es": "Coincidencia de lente",
+    "fr": "Correspondance de l’objectif",
+    "ja": "レンズの照合",
+    "zh-Hans": "镜头匹配"
+  },
+  "镜头数据库不可用": {
+    "de": "Objektivdatenbank nicht verfügbar",
+    "en": "Lens Database Unavailable",
+    "es": "Base de datos de lentes no disponible",
+    "fr": "Base de données des objectifs indisponible",
+    "ja": "レンズデータベースを利用できません",
+    "zh-Hans": "镜头数据库不可用"
+  },
+  "镜头数据库未打包到应用中": {
+    "de": "Objektivdatenbank fehlt im App-Paket",
+    "en": "Lens Database Missing from the App Bundle",
+    "es": "La aplicación no incluye la base de datos de lentes",
+    "fr": "Base de données des objectifs absente de l’application",
+    "ja": "アプリにレンズデータベースが含まれていません",
+    "zh-Hans": "镜头数据库未打包到应用中"
+  },
+  "镜头校正": {
+    "de": "Objektivkorrektur",
+    "en": "Lens Correction",
+    "es": "Corrección de objetivo",
+    "fr": "Correction de l’objectif",
+    "ja": "レンズ補正",
+    "zh-Hans": "镜头校正"
+  },
+  "镜头校正已关闭": {
+    "de": "Objektivkorrektur deaktiviert",
+    "en": "Lens Correction Off",
+    "es": "Corrección de lente desactivada",
+    "fr": "Correction optique désactivée",
+    "ja": "レンズ補正はオフ",
+    "zh-Hans": "镜头校正已关闭"
+  },
+  "镜头畸变和横向色差校正": {
+    "de": "Korrektur von Objektivverzeichnung und lateraler chromatischer Aberration",
+    "en": "Lens Distortion and Lateral Chromatic Aberration Correction",
+    "es": "Corrección de distorsión y aberración cromática lateral",
+    "fr": "Correction de la distorsion et des aberrations chromatiques latérales",
+    "ja": "レンズ歪曲と倍率色収差の補正",
+    "zh-Hans": "镜头畸变和横向色差校正"
+  },
+  "镜头配置": {
+    "de": "Objektivprofile",
+    "en": "Lens Profiles",
+    "es": "Perfiles de lente",
+    "fr": "Profils d’objectifs",
+    "ja": "レンズプロファイル",
+    "zh-Hans": "镜头配置"
+  },
+  "长边 {0} px": {
+    "de": "Lange Seite {0} px",
+    "en": "Long Edge {0} px",
+    "es": "Borde largo {0} px",
+    "fr": "Bord long {0} px",
+    "ja": "長辺 {0} px",
+    "zh-Hans": "长边 {0} px"
+  },
+  "阴影": {
+    "de": "Schatten",
+    "en": "Shadows",
+    "es": "Sombras",
+    "fr": "Ombres",
+    "ja": "シャドウ",
+    "zh-Hans": "阴影"
+  },
+  "阿里云隐私政策": {
+    "de": "Datenschutzerklärung von Aliyun",
+    "en": "Aliyun privacy policy",
+    "es": "Política de privacidad de Aliyun",
+    "fr": "Politique de confidentialité d’Aliyun",
+    "ja": "Aliyun のプライバシーポリシー",
+    "zh-Hans": "阿里云隐私政策"
+  },
+  "降噪": {
+    "de": "Rauschreduzierung",
+    "en": "Noise Reduction",
+    "es": "Reducción de ruido",
+    "fr": "Réduction du bruit",
+    "ja": "ノイズ低減",
+    "zh-Hans": "降噪"
+  },
+  "隐藏照片信息": {
+    "de": "Fotoinformationen ausblenden",
+    "en": "Hide Photo Information",
+    "es": "Ocultar información de la foto",
+    "fr": "Masquer les informations de la photo",
+    "ja": "写真情報を非表示",
+    "zh-Hans": "隐藏照片信息"
+  },
+  "霓虹都市 · 冷青粉紫": {
+    "de": "Neonstadt · kühles Cyan und Pinkviolett",
+    "en": "Neon city · cool cyan and pink-purple",
+    "es": "Ciudad de neón · cian frío y rosa púrpura",
+    "fr": "Ville néon · cyan froid et rose-violet",
+    "ja": "ネオン都市 · クールシアンとピンクパープル",
+    "zh-Hans": "霓虹都市 · 冷青粉紫"
+  },
+  "青": {
+    "de": "Cyan",
+    "en": "Cyan",
+    "es": "Cian",
+    "fr": "Cyan",
+    "ja": "シアン",
+    "zh-Hans": "青"
+  },
+  "项目与作者": {
+    "de": "Projekt und Autor",
+    "en": "Project and Author",
+    "es": "Proyecto y autor",
+    "fr": "Projet et auteur",
+    "ja": "プロジェクトと作者",
+    "zh-Hans": "项目与作者"
+  },
+  "预览": {
+    "de": "Vorschau",
+    "en": "Preview",
+    "es": "Vista previa",
+    "fr": "Aperçu",
+    "ja": "プレビュー",
+    "zh-Hans": "预览"
+  },
+  "预设": {
+    "de": "Voreinstellung",
+    "en": "Preset",
+    "es": "Preajuste",
+    "fr": "Préréglage",
+    "ja": "プリセット",
+    "zh-Hans": "预设"
+  },
+  "颗粒": {
+    "de": "Körnung",
+    "en": "Grain",
+    "es": "Grano",
+    "fr": "Grain",
+    "ja": "粒子",
+    "zh-Hans": "颗粒"
+  },
+  "颗粒大小": {
+    "de": "Korngröße",
+    "en": "Grain Size",
+    "es": "Tamaño del grano",
+    "fr": "Taille du grain",
+    "ja": "粒子サイズ",
+    "zh-Hans": "颗粒大小"
+  },
+  "颗粒强度": {
+    "de": "Kornstärke",
+    "en": "Grain Intensity",
+    "es": "Intensidad del grano",
+    "fr": "Intensité du grain",
+    "ja": "粒子の強度",
+    "zh-Hans": "颗粒强度"
+  },
+  "颗粒粗糙度": {
+    "de": "Kornrauheit",
+    "en": "Grain Roughness",
+    "es": "Rugosidad del grano",
+    "fr": "Rugosité du grain",
+    "ja": "粒子の粗さ",
+    "zh-Hans": "颗粒粗糙度"
+  },
+  "饱和度": {
+    "de": "Sättigung",
+    "en": "Saturation",
+    "es": "Saturación",
+    "fr": "Saturation",
+    "ja": "彩度",
+    "zh-Hans": "饱和度"
+  },
+  "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影": {
+    "de": "Neon-Nachtbild von Seoul, kühles Cyan gegen pink-violette Lichter und Reflexionen nasser Straßen",
+    "en": "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections",
+    "es": "Noche urbana de neón en Seúl, base cian fría contra altas luces rosa-púrpura y reflejos de calles mojadas",
+    "fr": "Nuit urbaine néon à Séoul, base cyan froide opposée aux hautes lumières rose-violet et aux reflets de rue mouillée",
+    "ja": "ソウルの都市ネオン夜景、クールシアンのベースとピンクパープルのハイライト、雨の路面反射",
+    "zh-Hans": "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影"
+  },
+  "高光": {
+    "de": "Lichter",
+    "en": "Highlights",
+    "es": "Altas luces",
+    "fr": "Hautes lumières",
+    "ja": "ハイライト",
+    "zh-Hans": "高光"
+  },
+  "高光保护": {
+    "de": "Highlight-Schutz",
+    "en": "Highlight protection",
+    "es": "Protección de altas luces",
+    "fr": "Protection des hautes lumières",
+    "ja": "ハイライト保護",
+    "zh-Hans": "高光保护"
+  },
+  "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色": {
+    "de": "Helles, klares Tageslicht mit japanischem Himmelcyan, weichen matten Schatten und cremigen Pfirsichtönen",
+    "en": "High-key clear daylight, Japanese sky cyan, soft matte shadows and creamy peach skin tones",
+    "es": "Luz diurna luminosa y transparente, cielo cian japonés, sombras mate suaves y piel melocotón cremosa",
+    "fr": "Lumière du jour claire et high-key, ciel cyan japonais, ombres mates douces et carnations pêche crémeuses",
+    "ja": "ハイキーで透明感のある日光、日系の空色シアン、柔らかなマットシャドウとクリーミーなピーチ肌",
+    "zh-Hans": "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色"
+  },
+  "黄": {
+    "de": "Gelb",
+    "en": "Yellow",
+    "es": "Amarillo",
+    "fr": "Jaune",
+    "ja": "黄色",
+    "zh-Hans": "黄"
+  },
+  "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应": {
+    "de": "Sanftes Dämmerlicht, warmgoldene Lichter und weiche blau-cyane Schatten, kontrastarme Ölgemälde-Porträts mit benachbarten Farbtönen",
+    "en": "Soft twilight glow, warm-gold highlights and gentle blue-cyan shadows, low-contrast oil-painted portraits with adjacent-color harmony",
+    "es": "Brillo suave del crepúsculo, altas luces doradas y sombras azul cian suaves, retratos al óleo de bajo contraste con armonía de colores adyacentes",
+    "fr": "Douce lueur du crépuscule, hautes lumières or chaud et ombres bleu cyan douces, portraits peints à l'huile à faible contraste et couleurs voisines",
+    "ja": "黄昏の柔らかな微光、暖金のハイライトと柔らかな青シアンの暗部、低コントラストの油彩ポートレートと類似色の調和",
+    "zh-Hans": "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应"
+  },
+  "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓": {
+    "de": "Hochwertiger Look zur goldenen Stunde, leuchtende Motive bei hohem Kontrast, tiefe Schatten und goldenes Haar-Kantenlicht",
+    "en": "Golden-hour feature-film look, luminous subjects in high contrast, deep shadows and golden hair rim light",
+    "es": "Look cinematográfico de hora dorada, sujetos luminosos con alto contraste, sombras profundas y contorno dorado en el cabello",
+    "fr": "Look de film haut de gamme à l'heure dorée, sujet lumineux en fort contraste, ombres profondes et contour doré des cheveux",
+    "ja": "ゴールデンアワーの映画的な質感、高コントラストでも柔らかく透明な人物、深い影と金色の髪の輪郭光",
+    "zh-Hans": "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓"
+  }
+}

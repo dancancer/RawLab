@@ -3,11 +3,11 @@ import Foundation
 @main
 struct RUMThreadingTests {
     static func main() {
-        let firstViewID = RawLabRUMLocalViewContext.makeID()
-        let secondViewID = RawLabRUMLocalViewContext.makeID()
-        guard RawLabRUMLocalViewContext.name == "RawLab Usage",
-              RawLabRUMLocalViewContext.method == "manual",
-              RawLabRUMLocalViewContext.type == nil,
+        let firstViewID = RawLabRUMViewContext.makeID()
+        let secondViewID = RawLabRUMViewContext.makeID()
+        guard RawLabRUMViewContext.name == "RawLab Usage",
+              RawLabRUMViewContext.method == "manual",
+              RawLabRUMViewContext.type == nil,
               firstViewID.hasPrefix("rawlab-usage-"),
               firstViewID != secondViewID else {
             fatalError("local RUM must use a synthetic logical view context")

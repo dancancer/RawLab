@@ -71,8 +71,11 @@ struct PresentationTests {
         check(panel.height(available: 800) == 252, "Adjustment panel starts at its default height")
         panel.selectHeight(288)
         check(panel.height(available: 800) == 288, "Grouped tools request their readable editor height")
-        panel.selectHeight(304)
-        check(panel.height(available: 620) == 304, "Advanced vignette fits within the minimum window bound")
+        check(AdjustmentPanelLayout.effectsHeight(rows: 1) == 252, "A single effect row keeps the default height")
+        check(AdjustmentPanelLayout.effectsHeight(rows: 3) > 252, "Grain rows and their hint get more than the default height")
+        panel.selectHeight(AdjustmentPanelLayout.effectsHeight(rows: 5))
+        check(panel.height(available: 700) == AdjustmentPanelLayout.effectsHeight(rows: 5),
+              "Advanced vignette and its hint fit in a default-size window")
         panel.resize(to: 340, available: 800)
         check(panel.height(available: 800) == 340, "Adjustment panel accepts a dragged height")
         panel.collapsed = true

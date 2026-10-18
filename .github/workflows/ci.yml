@@ -46,6 +46,8 @@ jobs:
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
           python scripts/ci/test_workflow.py
+          python scripts/localization/generate.py --check
+          python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
           python lutools/tests/test_cli_test_encoding.py
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
@@ -115,7 +117,7 @@ jobs:
           bash Shared/tests/usage-transport.sh
           bash RawLabMac/tests/usage-model.sh
           bash RawLabMac/tests/usage-termination.sh
-          bash RawLabMac/tests/rum-local.sh
+          bash RawLabMac/tests/rum-configuration.sh
           bash RawLabMac/tests/localization.sh
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()

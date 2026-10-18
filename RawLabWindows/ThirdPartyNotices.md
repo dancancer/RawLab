@@ -71,7 +71,18 @@
   packages include Microsoft's runtime license and third-party notices.
 - Microsoft Visual C++ runtime: app-local redistributable DLLs supplied by the
   installed Visual Studio Build Tools, under Microsoft's distribution terms.
+- Alibaba Cloud RUM PC SDK 0.4.4 for Windows (`alibabacloud_rum.dll`, x64 Release),
+  used only for opt-out usage analytics. Unmodified vendor binary from
+  https://rum-sdk.oss-cn-hangzhou.aliyuncs.com/native/AlibabaCloud_RUM_Windows_0.4.4.zip
+  (the vendor guide https://help.aliyun.com/zh/cms/cloudmonitor-2-0/access-pc-platform-application
+  links the same bytes as `AlibabaCloud_RUM_Windows.zip`). The archive and DLL SHA-256
+  are pinned in `RawLabWindows.csproj`. The archive ships no license text; the SDK's
+  license and redistribution terms are pending written confirmation from the vendor.
+  RawLab's own code is combined with it under `Licenses/RawLab-Aliyun-RUM-Exception.txt`,
+  which grants no rights in the SDK itself. Only custom usage events are enabled;
+  automatic crash, network and CEF collection are turned off. Offline packages built
+  with `build.ps1 -NoRumSdk` omit the DLL.
 
 No binaries are checked into source control. The build downloads version-pinned
 LibRaw, zlib, libtiff, DNG SDK/JPEG XL, OpenCV and wavelib source archives and verifies their hashes before compilation.
-The ExifTool runtime archive is also version-pinned and hash-verified.
+The ExifTool runtime archive and the RUM SDK archive are also version-pinned and hash-verified.

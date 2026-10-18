@@ -109,31 +109,32 @@ struct BatchExportView: View {
                 BatchThumbnail(url: model.job.source).frame(width: 96, height: 76)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(model.job.source.lastPathComponent).lineLimit(2).truncationMode(.middle)
-                    Text(L10n.format("%@ · %@%%", String(describing: model.job.lookName), String(describing: Int(model.job.settings.strength * 100))))
+                    Text(L10n.format("%@ · %@%%", L10n.text(model.job.lookName), String(describing: Int(model.job.settings.strength * 100))))
                         .foregroundStyle(.secondary)
                 }
             }
-            valueRow(L10n.text("曝光"), String(format: "%+.2f EV", model.job.settings.exposure))
+            valueRow(L10n.text("曝光"), AdjustmentParameter.exposure.spec.display(model.job.settings.exposure))
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)
             valueRow(L10n.text("曝光基准"), model.job.settings.exposureMode.title)
             DisclosureGroup(L10n.text("全部调整")) {
                 VStack(spacing: 10) {
-                    ForEach(AdjustmentParameter.allCases) { parameter in
+                    // 曝光已在上方摘要中，这里不再重复
+                    ForEach(AdjustmentParameter.allCases.filter { $0 != .exposure }) { parameter in
                         let spec = parameter.spec(for: model.job.settings)
                         valueRow(spec.title, parameter.isWhiteBalance && model.job.settings.whiteBalanceMode == .asShot
-                                 ? L10n.text("按每张照片") : spec.text(model.job.settings[keyPath: spec.keyPath]) + spec.unit)
+                                 ? L10n.text("按每张照片") : spec.display(model.job.settings[keyPath: spec.keyPath]))
                     }
                     if let denoise = model.job.settings.waveletNoiseReduction {
-                        valueRow(L10n.text("小波降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("关闭"))
+                        valueRow(L10n.text("降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))
                         valueRow(L10n.text("亮度降噪"), String(format: "%.0f", denoise.luma))
                         valueRow(L10n.text("色彩降噪"), String(format: "%.0f", denoise.chroma))
-                        valueRow(L10n.text("粗颗粒降噪"), String(format: "%.0f", denoise.coarse))
+                        valueRow(L10n.text("粗色斑抑制"), String(format: "%.0f", denoise.coarse))
                     }
                     let lens = model.job.settings.lensSettings
                     valueRow(L10n.text("镜头匹配"), lens.mode == .automatic ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))" : L10n.text("手动"))
-                    valueRow(L10n.text("畸变矫正"), lens.distortion ? L10n.text("开启") : L10n.text("关闭"))
-                    valueRow(L10n.text("横向色差"), lens.tca ? L10n.text("开启") : L10n.text("关闭"))
-                    valueRow(L10n.text("自动裁边"), lens.autoCrop ? L10n.text("开启") : L10n.text("关闭"))
+                    valueRow(L10n.text("畸变矫正"), lens.distortion ? L10n.text("开启") : L10n.text("停用"))
+                    valueRow(L10n.text("横向色差"), lens.tca ? L10n.text("开启") : L10n.text("停用"))
+                    valueRow(L10n.text("自动裁边"), lens.autoCrop ? L10n.text("开启") : L10n.text("停用"))
                 }.padding(.top, 12)
             }
             Divider().padding(.vertical, 4)
@@ -202,7 +203,7 @@ struct BatchExportView: View {
                 Text(model.error ?? L10n.text("无法生成预览")).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Text(L10n.format("%@ · 本次导出效果", String(describing: model.job.lookName))).font(.caption).foregroundStyle(.secondary)
+            Text(L10n.format("%@ · 本次导出效果", L10n.text(model.job.lookName))).font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(minWidth: 640, idealWidth: 800, minHeight: 440, idealHeight: 600)
     }
 
@@ -221,6 +222,25 @@ struct BatchExportView: View {
         case .succeeded: return "checkmark.circle"
         case .failed: return "exclamationmark.circle"
         }
+    }
+}
+
+// ----------------------------------------------------------------------------
+//  还没有批量任务时（例如从"窗口"菜单打开）说明从哪里开始，而不是一片空白
+// ----------------------------------------------------------------------------
+struct BatchExportEmptyView: View {
+    @Environment(\.locale) private var localizationLocale
+
+    var body: some View {
+        let _ = localizationLocale
+        VStack(spacing: 12) {
+            Image(systemName: "square.stack.3d.up").font(.system(size: 32)).foregroundStyle(.secondary)
+            Text(L10n.text("没有批量任务")).font(.headline)
+            Text(L10n.format("在编辑器中打开照片，然后选择“%@”。", L10n.text("使用当前调整批量导出…")))
+                .foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }.padding(40).frame(minWidth: 900, minHeight: 620)
+            .preferredColorScheme(.dark)
+            .navigationTitle(L10n.text("批量导出"))
     }
 }
 

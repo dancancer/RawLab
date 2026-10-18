@@ -76,8 +76,8 @@ extension ContentView {
             AdjustmentControl(title: adjustment.title, value: adjustmentBinding(adjustment),
                               range: adjustment.range, step: adjustment.step,
                               defaultValue: adjustment.value(from: .default),
-                              unit: scalarUnit(adjustment),
-                              formatter: { scalarValue($0, for: adjustment) },
+                              unit: adjustment.unit,
+                              formatter: adjustment.formatted,
                               reciprocal: adjustment == .temperature,
                               identifier: "adjustment", onEditingChanged: setSliderEditing)
                 .id(adjustment.rawValue)
@@ -137,23 +137,23 @@ extension ContentView {
                 .disabled(isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
                           (viewModel.sourceKind == .raw && settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil))
 
-            if viewModel.sourceKind == .raw, let whiteBalance = viewModel.rawWhiteBalance {
-                Text(settings.whiteBalanceMode == .camera
-                     ? String(format: L10n.text("拍摄时：%.0f K · 色调 %+.0f"), whiteBalance.temperature, whiteBalance.tint)
-                     : L10n.text("自定义白平衡"))
+            if let note = whiteBalanceNote {
+                Text(note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(rulerFocusOpacity)
-            } else if viewModel.sourceKind == .raw {
-                Text(L10n.text("缺少有效相机校准，保留拍摄时白平衡"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+    }
+
+    // 底部说明：RAW 缺少相机校准时提示；有校准时给出拍摄时数值作参照
+    private var whiteBalanceNote: String? {
+        guard viewModel.sourceKind == .raw else { return nil }
+        guard let camera = viewModel.rawWhiteBalance else { return L10n.text("缺少有效相机校准，保留拍摄时白平衡") }
+        return AdjustmentKind.asShotNote(for: settings, cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
     private var whiteBalanceTemperatureBinding: Binding<Double> {
@@ -188,21 +188,5 @@ extension ContentView {
             if viewModel.sourceKind == .raw, updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
             applySettingsChange(updated)
         })
-    }
-
-    private func scalarUnit(_ adjustment: AdjustmentKind) -> String {
-        switch adjustment {
-        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening: return "%"
-        case .exposure: return "EV"
-        case .temperature: return "K"
-        default: return ""
-        }
-    }
-
-    private func scalarValue(_ value: Double, for adjustment: AdjustmentKind) -> String {
-        let number = adjustment == .strength ? value * 100 : value
-        let format = adjustment == .exposure ? (number == 0 ? "%.2f" : "%+.2f")
-            : adjustment == .temperature || adjustment == .strength || number == 0 ? "%.0f" : "%+.0f"
-        return String(format: format, locale: L10n.locale, number)
     }
 }

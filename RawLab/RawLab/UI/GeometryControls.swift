@@ -55,7 +55,7 @@ struct IOSGeometryControls: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
+        HStack {
             Text(L10n.text("裁切与旋转"))
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
@@ -72,19 +72,14 @@ struct IOSGeometryControls: View {
         }
     }
 
-    @ViewBuilder
+    // 两个按钮等高：一侧文字折行时另一侧跟着拉高；大字号时上下排列
     private var rotationControls: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 8) {
-                rotationButton(clockwise: false)
-                rotationButton(clockwise: true)
-            }
-        } else {
-            HStack(alignment: .top, spacing: 8) {
-                rotationButton(clockwise: false)
-                rotationButton(clockwise: true)
-            }
+        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            rotationButton(clockwise: false)
+            rotationButton(clockwise: true)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func rotationButton(clockwise: Bool) -> some View {
@@ -98,7 +93,7 @@ struct IOSGeometryControls: View {
             } icon: {
                 Image(systemName: clockwise ? "rotate.right" : "rotate.left")
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: .infinity)
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier(clockwise ? "geometry.rotateRight" : "geometry.rotateLeft")
@@ -115,11 +110,13 @@ struct IOSGeometryControls: View {
     private func cropControl(_ title: String, key: WritableKeyPath<GeometrySettings, Double>,
                              identifier: String) -> some View {
         let isDimension = key == \.cropWidth || key == \.cropHeight
+        let range = cropRange(key)
         return AdjustmentControl(title: L10n.text(title), value: cropBinding(key),
-                                 range: cropRange(key), step: 0.1,
+                                 range: range, step: 0.1,
                                  defaultValue: isDimension ? 100 : 0, unit: "%",
                                  formatter: decimalValue, identifier: identifier,
                                  onEditingChanged: onEditingChanged)
+            .disabled(range.lowerBound == range.upperBound)   // 未裁切时偏移只有 0 一个值，无可调
     }
 
     private func cropRange(_ key: WritableKeyPath<GeometrySettings, Double>) -> ClosedRange<Double> {
