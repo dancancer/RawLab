@@ -68,6 +68,27 @@ Read-only review found two input-validation gaps, both reproduced with failing t
 Both regression tests now pass. A follow-up review found no remaining must-fix or
 should-fix issues in those fixes.
 
+## CI Coverage Follow-up
+
+PR review identified that the standalone compiler, library and model scripts were
+only run locally. Both macOS architecture jobs now install the existing
+`lutools/requirements-lutprep.txt` and, after building the native core, execute
+`dcp-compiler.sh`, `look-library.sh` and `look-import-model.sh` in the same shell
+that discovers `DEVELOPER_DIR` and `SDKROOT`.
+
+The compiler invocation explicitly receives the setup-python interpreter through
+`RAWLAB_LUTPREP_PYTHON`, so synthetic Python parity cannot be silently omitted.
+No private DCP/RAW variables are configured. The private Canon test remains an
+expected skip; the five synthetic differential tests execute normally.
+
+The workflow contract test failed before this wiring was added and passed after
+the fix. Local verification without any private-fixture environment variables:
+23 compiler assertions, five synthetic Python differential tests (one private
+test skipped), 54 library assertions and 31 model assertions passed. Actionlint
+passed. The CI policy suite ran 21 tests: 20 passed and the Android-toolchain-only
+test was skipped locally. Hosted results must still be checked against the new
+PR head; queued jobs are not successful execution evidence.
+
 ## Limits
 
 - No claim of Lightroom/Adobe pixel parity, original camera-JPEG matching or controlled
