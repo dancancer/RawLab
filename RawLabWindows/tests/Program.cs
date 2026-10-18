@@ -36,6 +36,7 @@ static class Program
     {
         try
         {
+            if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length==3 && args[0]=="--comparison-default") { ComparisonDefaultChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} comparison default checks");return 0; }
@@ -76,6 +77,7 @@ static class Program
             var repo=Path.GetFullPath(args[0]); var output=Path.Combine(repo,"build","windows-verification");Directory.CreateDirectory(output);
             var settings=new Adjustments();
             FeatureRegressionChecks.Run(Check);
+            WhiteBalanceChecks.Run(Check);
             settings.Set(Parameter.Strength,250);
             Check(settings[Parameter.Strength]==200 && settings.Request("test.arw","test.cube",2000,null).LutStrength==2,
                 "Film strength clamps at 200% and reaches the native renderer");
