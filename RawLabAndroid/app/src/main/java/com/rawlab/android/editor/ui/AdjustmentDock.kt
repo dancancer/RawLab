@@ -93,7 +93,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                     maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
             }
             if (state.draft != null) Text(stringResource(R.string.adjustment_draft), Modifier.weight(.8f), style = MaterialTheme.typography.labelSmall)
-            ToolIcon(Icons.Outlined.RestartAlt, R.string.reset, state.controlsEnabled && state.draft == null) { reset = true }
+            // 全部重置用另一个图标，免得和下方参数行的“重置此项”看成同一个按钮
+            ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.controlsEnabled && state.draft == null) { reset = true }
             ToolIcon(Icons.Outlined.GridView, R.string.all_tools) { allTools = true }
             ToolIcon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
                 if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments, onClick = toggleExpanded)

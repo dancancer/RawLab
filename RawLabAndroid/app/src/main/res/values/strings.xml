@@ -244,6 +244,7 @@
     <string name="grain_roughness">Roughness</string>
     <string name="reset_vignette">Reset vignette</string>
     <string name="reset_grain">Reset grain</string>
+    <string name="reset_denoise">Reset denoise</string>
     <string name="expand_vignette">Expand vignette parameters</string>
     <string name="collapse_vignette">Collapse vignette parameters</string>
     <string name="exposure_basis">Exposure basis</string>

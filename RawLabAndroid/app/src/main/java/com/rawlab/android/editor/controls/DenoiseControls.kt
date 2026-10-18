@@ -39,7 +39,7 @@ internal fun DenoiseControls(value: DenoiseSettings, enabled: Boolean,
                     }
                 }
             }
-            ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_value, enabled) { onChange(DenoiseSettings(), false) }
+            ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_denoise, enabled) { onChange(DenoiseSettings(), false) }
         }
         val active = enabled && value.enabled
         NumericControl(R.string.denoise_luma, value.luma, 0f..100f, "", active,

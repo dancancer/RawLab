@@ -57,4 +57,13 @@ class DenoiseControlsTest {
         val gap = with(compose.density) { (switch.left - title.right).toDp() }
         assertTrue("gap=$gap", gap >= 8.dp)
     }
+
+    // 整组重置要说清楚是“重置降噪”，不能和三条参数各自的“重置此项”同名
+    @Test fun groupResetIsNamedAfterTheGroup() {
+        compose.setChineseContent {
+            MaterialTheme { Box(Modifier.width(360.dp)) { DenoiseControls(DenoiseSettings(), true) { _, _ -> } } }
+        }
+        compose.onNodeWithContentDescription("重置降噪").assertExists()
+        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(3)
+    }
 }

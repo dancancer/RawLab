@@ -9,6 +9,7 @@ import com.rawlab.android.editor.ui.editorToolOrder
 import com.rawlab.android.editor.ui.editorToolTitles
 import com.rawlab.android.editor.ui.whiteBalanceChanged
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.editor.ui.editorToolIcons
 
 class EditorToolGroupingTest {
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {
@@ -35,5 +36,11 @@ class EditorToolGroupingTest {
         val recipeReset = edited.copy(recipeID = "recipe").resetWhiteBalance(5200f, -3f)
         assertEquals("recipe", recipeReset.recipeID)
         assertEquals(0f, recipeReset.tint)
+    }
+
+    // 工具条上每个可见工具都有自己的图标（“强度”和“HSL”曾共用同一个滑杆图标）
+    @Test fun everyVisibleToolHasItsOwnIcon() {
+        val icons = editorToolOrder.map { editorToolIcons[it] }
+        assertEquals(editorToolOrder.filterIndexed { i, _ -> icons.indexOf(icons[i]) != i }.toString(), icons.size, icons.toSet().size)
     }
 }

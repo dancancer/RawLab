@@ -244,6 +244,7 @@
     <string name="grain_roughness">Rauheit</string>
     <string name="reset_vignette">Vignettierung zurücksetzen</string>
     <string name="reset_grain">Körnung zurücksetzen</string>
+    <string name="reset_denoise">Rauschreduzierung zurücksetzen</string>
     <string name="expand_vignette">Vignettierungsparameter einblenden</string>
     <string name="collapse_vignette">Vignettierungsparameter ausblenden</string>
     <string name="exposure_basis">Belichtungsreferenz</string>

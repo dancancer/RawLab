@@ -244,6 +244,7 @@
     <string name="grain_roughness">粗さ</string>
     <string name="reset_vignette">周辺減光をリセット</string>
     <string name="reset_grain">粒子をリセット</string>
+    <string name="reset_denoise">ノイズ除去をリセット</string>
     <string name="expand_vignette">周辺減光のパラメータを表示</string>
     <string name="collapse_vignette">周辺減光のパラメータを非表示</string>
     <string name="exposure_basis">露出基準</string>

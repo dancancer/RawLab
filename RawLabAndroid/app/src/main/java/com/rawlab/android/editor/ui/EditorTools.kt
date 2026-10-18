@@ -43,7 +43,7 @@ internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.Ph
     Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
     Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
     Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
-    Icons.Outlined.Tune, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate)
+    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature

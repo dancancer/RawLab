@@ -33,6 +33,10 @@ import com.rawlab.android.editor.ui.EditorToolStrip
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.testing.LanguageTestRule
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.graphics.asAndroidBitmap
+import org.junit.Assert.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class EditorToolsTest {
@@ -102,5 +106,34 @@ class EditorToolsTest {
             compose.onAllNodesWithText(label, useUnmergedTree = true).fetchSemanticsNodes().last().boundsInRoot.left
         }
         assertEquals(lefts.toString(), 1, lefts.values.distinct().size)
+    }
+
+    // 标题行的“重置调整”（全部重置）和参数行的“重置此项”紧挨着，两个按钮不能长得一模一样
+    @Test fun headerResetLooksDifferentFromTheParameterReset() {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        compose.setContent {
+            RawLabTheme {
+                EditorScreen(
+                    state = EditorState(
+                        photo = ImportedPhoto(Uri.parse("content://rawlab.test/reset"), "fixture", File("fixture")),
+                        edits = EditSettings(exposure = .5f),
+                        preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
+                        exact = true,
+                    ),
+                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onReset = {}, onRetry = {},
+                    onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
+                )
+            }
+        }
+        compose.onNodeWithTag("editor-tool-2").performClick()
+        val header = compose.onNodeWithContentDescription("重置调整").captureToImage().asAndroidBitmap()
+        val parameter = compose.onNodeWithContentDescription("重置此项").captureToImage().asAndroidBitmap()
+        // 只比较字形：按亮度二值化后逐点比，颜色或启用态的深浅不算区别
+        assertEquals(header.width, parameter.width)
+        assertEquals(header.height, parameter.height)
+        fun lit(b: Bitmap, x: Int, y: Int) = b.getPixel(x, y).let { (it shr 16 and 0xFF) + (it shr 8 and 0xFF) + (it and 0xFF) > 300 }
+        val total = header.width * header.height
+        val differing = (0 until total).count { lit(header, it % header.width, it / header.width) != lit(parameter, it % header.width, it / header.width) }
+        assertTrue("header reset and parameter reset render the same glyph ($differing of $total pixels differ)", differing * 50 > total)
     }
 }
