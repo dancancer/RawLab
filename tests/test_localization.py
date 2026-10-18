@@ -99,7 +99,7 @@ class LocalizationTests(unittest.TestCase):
                 if language in ("en", "de", "fr", "es"):
                     self.assertEqual([catalog[n] for n in names if CJK.search(catalog[n])], [], (client, language))
         # 界面只经由翻译显示配方名：用翻译后的 title，或直接包在翻译调用里
-        raw = re.compile(r"(?<!L10n\.text\()(?<!Loc\.Text\()\b(?:recipe|masterRecipe)\??\.(?:name|Name)\b")
+        raw = re.compile(r"(?<!L10n\.text\()(?<!Loc\.Text\()\b\w*[Rr]ecipe\??\.(?:name|Name)\b")
         # 对配方做 map 时闭包里的 $0 也是配方
         mapped = re.compile(r"[Rr]ecipe\w*\??\.map\b.*\$0\.name\b")
         sources = [*(ROOT / "RawLabMac/Sources").glob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
