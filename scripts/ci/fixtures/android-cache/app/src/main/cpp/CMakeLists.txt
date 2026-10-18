@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.22)
+project(NativeCacheBoundary LANGUAGES CXX)
+
+set(prefix "${CMAKE_BINARY_DIR}/lens-dependencies/install")
+if("$ENV{RAWLAB_CI_CACHE_HIT}" STREQUAL "true" AND NOT EXISTS "${prefix}/libraries.json")
+    message(FATAL_ERROR "Restored dependency was removed before CMake configuration")
+endif()
+file(MAKE_DIRECTORY "${prefix}")
+configure_file(libraries.json.in "${prefix}/libraries.json" COPYONLY)
+add_subdirectory(dependency "${CMAKE_BINARY_DIR}/_deps/cache-dependency-build")
+add_library(rawlab-jni SHARED product.cpp)
+target_link_libraries(rawlab-jni PRIVATE cache_dependency)

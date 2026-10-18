@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [development, 'release/**', main]
   push:
-    branches: [development, 'release/**', main]
+    branches: [development, main]
 
 permissions:
   contents: read
@@ -45,7 +45,7 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
-          python scripts/ci/test_workflow.py
+          python -m unittest discover -s scripts/ci -p 'test_*.py' -v
           python scripts/localization/generate.py --check
           python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
           python lutools/tests/test_cli_test_encoding.py
@@ -82,8 +82,23 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Identify native dependency cache
+        id: native-key
+        shell: bash
+        run: |
+          brew install pkg-config autoconf automake libtool
+          python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
+      - name: Restore exact native dependencies for PRs
+        id: native-cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - name: Build default app and exercise CPU-safe regression suites
         shell: bash
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ steps.native-cache.outputs.cache-hit }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/macos.log) 2>&1
@@ -98,9 +113,9 @@ jobs:
           python RawLabMac/tests/test_photo_copy.py
           python RawLabMac/tests/test_build_environment.py
           python lutools/tests/test_lens_dependencies.py
+          python scripts/ci/test_native_cache_xcode.py
           bash RawLabMac/tests/horizontal-picker.sh
           bash RawLabMac/tests/horizontal-picker-native.sh
-          brew install pkg-config autoconf automake libtool
           bash RawLabMac/build.sh
           ctest --test-dir lutools/build-macos --output-on-failure --no-tests=error \
             -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
@@ -119,12 +134,20 @@ jobs:
           bash RawLabMac/tests/usage-termination.sh
           bash RawLabMac/tests/rum-configuration.sh
           bash RawLabMac/tests/localization.sh
+          python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: macos-${{ matrix.arch }}-results
           path: |
             build/ci/*.log
+            build/ci/*.json
             build/ci/*.xml
           retention-days: 7
 
@@ -142,8 +165,23 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
+      - name: Identify native dependency cache
+        id: native-key
+        shell: pwsh
+        run: |
+          python scripts/ci/native_cache.py key --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify native dependency cache' }
+      - name: Restore exact native dependencies for PRs
+        id: native-cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - name: Build default self-contained app and exercise CPU-safe suites
         shell: pwsh
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ steps.native-cache.outputs.cache-hit }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force build/ci | Out-Null
@@ -164,6 +202,7 @@ jobs:
             Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
             $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
             & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,looks'
+            Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }
           finally {
             if (Test-Path build/windows-v08-results) {
@@ -171,6 +210,12 @@ jobs:
             }
             Stop-Transcript
           }
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -193,24 +238,51 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install toolchain and identify native dependency cache
+        id: native-key
+        shell: bash
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          python scripts/ci/native_cache.py key --platform android --arch arm64-x86_64
+      - name: Restore exact native dependencies for PRs
+        id: native-cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - name: Build both ABIs, JVM tests, lint and instrumentation test APK
         shell: bash
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ steps.native-cache.outputs.cache-hit }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/android.log) 2>&1
           git rev-parse HEAD
           java -version
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
           cd RawLabAndroid
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
           bash scripts/check-native.sh
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
+          cd ..
+          RAWLAB_TEST_ANDROID_CACHE=1 python scripts/ci/test_native_cache_android.py
+          python scripts/ci/native_cache.py inventory --platform android --arch arm64-x86_64
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: android-results
           path: |
             build/ci/*.log
+            build/ci/*.json
             build/ci/*.xml
           retention-days: 7
 
@@ -222,8 +294,24 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Identify native dependency cache
+        id: native-key
+        shell: bash
+        run: python scripts/ci/native_cache.py key --platform ios --arch arm64-x86_64
+      - name: Restore exact native dependencies for PRs
+        id: native-cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - name: Build all framework slices and compile simulator app and tests
         shell: bash
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ steps.native-cache.outputs.cache-hit }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/ios.log) 2>&1
@@ -238,9 +326,18 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
+          python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: ios-results
-          path: build/ci/*.log
+          path: |
+            build/ci/*.log
+            build/ci/*.json
           retention-days: 7

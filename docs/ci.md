@@ -1,7 +1,8 @@
 # Hosted Verification
 
 The [workflow](../.github/workflows/ci.yml) verifies pull requests targeting
-`development`, `release/**` or `main`, and pushes to those branches. It does not
+`development`, `release/**` or `main`, and pushes to `development` or `main`.
+Release branches are verified through PRs rather than duplicate push runs. It does not
 run on tags, publish packages, create releases, deploy, notarize or use signing
 credentials. A workflow run is not release authorization.
 
@@ -57,7 +58,78 @@ protection settings or grant permission to bypass them.
 Actions are pinned to full commit SHAs. Workflow permission is `contents: read`,
 checkout credentials are not persisted, and no `pull_request_target` is used.
 The workflow has bounded jobs and cancels obsolete runs for the same PR/ref.
-It currently performs cold native builds, with no shared compiled-output cache.
+
+## Native Dependency Caches
+
+PR checks restore third-party native dependencies using an exact cache key.
+Push checks on **both `development` and `main` never restore native caches**:
+they still build all dependencies from source, then save successful results for
+later PRs. PR misses also build from source and save only after the full job
+succeeds. A cache miss or cache-service outage is not permission to skip a build.
+
+This deliberately uses separate restore/save actions. GitHub makes base/default
+branch caches available to PRs, while a cache created under a PR merge ref cannot
+seed unrelated PRs. See the [GitHub cache scope reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
+
+[`native_cache.py`](../scripts/ci/native_cache.py) owns the input/path allowlists.
+Keys include pinned dependency versions/checksums, patches and build scripts,
+workflow configuration, compiler and SDK identity, runner image, target
+architectures/minimum OS, and the absolute workspace/toolchain paths. This last
+constraint matters for pkg-config prefixes, Lensfun's `libraries.json` and
+CMake/Xcode/MSBuild state. There are no prefix/fallback restore keys.
+
+| Platform | Cached | Always rebuilt |
+| --- | --- | --- |
+| macOS | Architecture-specific dependency and Lensfun install prefixes | C++ core, CLI/tests, Swift app, resources and bundle validation |
+| Windows | FetchContent dependencies, DNG SDK, wavelib, OpenCV libraries and Lensfun install | LibRaw wrapper, RawLab native libraries/CLI/tests and self-contained app |
+| Android | Per-ABI third-party subtrees and Ninja dependency metadata | LibRaw wrapper, core/JNI, JVM tests, lint, app and test APK |
+| iOS | Per-slice third-party subtrees, dependency-only Xcode objects/build metadata and pinned sources | RawLab core objects, framework linking/packaging, framework verification and unsigned app/test compilation |
+
+No final product binary, test result or entire application build tree is cached.
+Exact hits bypass redundant Mac dependency builders and Lensfun configuration,
+but retain dependency checks and all existing build/test commands. Missing
+cached Lensfun libraries fail configuration rather than silently dropping it.
+The Mac jobs also exercise a small real Xcode cold/restore build: an unchanged
+dependency object must retain its timestamp while changed product code is rebuilt.
+Android retains AGP's configure fingerprint and command metadata so a fresh job
+does not delete restored dependency directories before CMake runs. Its real AGP
+cold/restore regression also verifies that changed JNI code is rebuilt.
+
+`build/ci/native-cache.json` records the key and its inputs; `native-cache-size.json`
+records the selected file count and bytes. Compare cold and warm hosted runs on
+the same source, separating queue time from job time. A successful restore alone
+does not demonstrate a speedup. Parallelism remains at the existing settings;
+increasing it requires separate hosted timing and memory evidence.
+
+### Hosted Measurement: 2026-10-18
+
+The [cold run](https://github.com/dancancer/RawLab/actions/runs/39114495492/attempts/1)
+and [warm rerun](https://github.com/dancancer/RawLab/actions/runs/39114495492/attempts/2)
+used source `7bf19e6d665ea952e40af5495db7e47876f893e8` and test merge
+`18ca28d242885fb2a32c3d17323b7f78a1f576b1`. All six checks passed in both
+attempts; all five native jobs restored exact keys in the warm attempt.
+
+| Platform | Cold job | Warm job | Reduction |
+| --- | ---: | ---: | ---: |
+| macOS Intel | 37m22s | 21m13s | 43% |
+| macOS Apple silicon | 16m30s | 11m15s | 32% |
+| Windows | 15m59s | 9m26s | 41% |
+| Android | 21m02s | 20m26s | 3% |
+| iOS | 45m37s | 15m14s | 67% |
+
+These are single-run job durations including setup, restore and tests, not a
+stable performance guarantee. The longest job fell from 45m37s to 21m13s.
+Android's improvement was not material in this sample. Build parallelism stayed
+unchanged. iOS C/C++ compile entries fell from 2,188 to 229, while all 72 entries
+under `lutools/src/` remained in both attempts.
+
+Queueing is separate: the longest queue was 65m51s cold and 22m22s warm. Full
+workflow wall time was 1h45m44s and 43m36s respectively; that difference must not
+be attributed solely to caching. The five compressed dependency caches totaled
+2.61 GiB. Subsequent integration checks against newer `development` commits are
+reported in the PR, not mixed into this same-source comparison.
+
+## Results
 
 Only `build/ci/*.log`, `*.json` and `*.xml` are uploaded, retained for seven days.
 Do not widen this allowlist to photos, RAW inputs, screenshots, user profiles,
@@ -69,7 +141,7 @@ Local workflow-policy regression tests:
 ```sh
 python3 -m venv /tmp/rawlab-ci-venv
 /tmp/rawlab-ci-venv/bin/pip install -r scripts/ci/requirements.txt
-/tmp/rawlab-ci-venv/bin/python scripts/ci/test_workflow.py
+/tmp/rawlab-ci-venv/bin/python -m unittest discover -s scripts/ci -p 'test_*.py' -v
 ```
 
 These guards supplement, not replace, workflow syntax linting and actual hosted
