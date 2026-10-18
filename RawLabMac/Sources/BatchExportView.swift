@@ -113,7 +113,7 @@ struct BatchExportView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            valueRow(L10n.text("曝光"), String(format: "%+.2f EV", model.job.settings.exposure))
+            valueRow(L10n.text("曝光"), AdjustmentParameter.exposure.spec.display(model.job.settings.exposure))
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)
             valueRow(L10n.text("曝光基准"), model.job.settings.exposureMode.title)
             DisclosureGroup(L10n.text("全部调整")) {
@@ -121,7 +121,7 @@ struct BatchExportView: View {
                     ForEach(AdjustmentParameter.allCases) { parameter in
                         let spec = parameter.spec(for: model.job.settings)
                         valueRow(spec.title, parameter.isWhiteBalance && model.job.settings.whiteBalanceMode == .asShot
-                                 ? L10n.text("按每张照片") : spec.text(model.job.settings[keyPath: spec.keyPath]) + spec.unit)
+                                 ? L10n.text("按每张照片") : spec.display(model.job.settings[keyPath: spec.keyPath]))
                     }
                     if let denoise = model.job.settings.waveletNoiseReduction {
                         valueRow(L10n.text("小波降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))

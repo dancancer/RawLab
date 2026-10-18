@@ -190,7 +190,7 @@ struct AdjustmentDock: View {
         let valueText = parameter.isWhiteBalance ?
             "\(L10n.text("色温")) \(AdjustmentParameter.temperature.spec.text(model.settings.temperature)) K, \(L10n.text("色调")) \(AdjustmentParameter.tint.spec.text(model.settings.tint))" :
             parameter == .denoiseMode ?
-            model.settings.denoiseSummary : "\(spec.text(value)) \(spec.unit)"
+            model.settings.denoiseSummary : spec.display(value)
         return Button {
             finishCurrentInput()
             // 换工具时先回到默认高度；降噪和效果面板出现后再按自身内容要高度，重复点同一工具不改高度

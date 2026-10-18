@@ -628,6 +628,12 @@ struct AdjustmentSpec {
         return String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), places, displayed == 0 ? 0 : displayed)
     }
 
+    // 给用户看的数值：与编辑框一致，可正可负的参数带正号；"EV""K"前空一格，"%"紧跟数字
+    func display(_ value: Double) -> String {
+        let number = (range.lowerBound < 0 && value * multiplier > 0 ? "+" : "") + text(value)
+        return unit.isEmpty || unit == "%" ? number + unit : number + " " + unit
+    }
+
     func parse(_ text: String) -> Double? {
         guard let number = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)), number.isFinite else { return nil }
         return min(range.upperBound, max(range.lowerBound, number / multiplier))

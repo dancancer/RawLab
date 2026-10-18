@@ -192,6 +192,16 @@ class InterfaceCopy(unittest.TestCase):
         for label in ('"JPEG…"', '"PNG · 16-bit…"', '"导出渲染型 DNG…"'):
             self.assertNotIn(label, menu)
 
+    # ------------------------------------------------------------------------
+    #  同一个数值在各处写法一致：批量导出的"全部调整"曾把 +0.40 EV 写成 "0.40EV"，
+    #  与上方摘要、编辑框都不一样
+    # ------------------------------------------------------------------------
+    def test_adjustment_values_share_one_format(self):
+        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        self.assertNotIn("spec.text(model.job.settings[keyPath: spec.keyPath]) + spec.unit", view)
+        self.assertNotIn('String(format: "%+.2f EV"', view)
+        self.assertIn("spec.display(model.job.settings[keyPath: spec.keyPath])", view)
+
 
 if __name__ == "__main__":
     unittest.main()
