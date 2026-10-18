@@ -513,6 +513,7 @@ AnalogBalance with reciprocal-temperature dual-illuminant interpolation.
 
 `sony2fuji_session_get_raw_white_balance` reports the last decoded file's estimated
 as-shot Kelvin/tint. It is not an EXIF Kelvin reader or Adobe profile emulation.
+Clients convert continuous camera Kelvin/tint to integers using half-away-from-zero rounding, with macOS as the behavioral baseline.
 Missing, singular, four-channel, or out-of-range calibrations return UNSUPPORTED;
 camera white balance still works. The Mac client disables absolute controls in that
 case. As-shot reset uses the original camera gains, not a rounded Kelvin round trip.

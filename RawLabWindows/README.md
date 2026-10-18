@@ -178,6 +178,18 @@ dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --
 不写用户语言偏好。测试账户须没有待恢复的批量任务，否则测试会停止以保留原任务。
 `build.ps1 -Test` 也包含此回归。
 
+相机白平衡中点舍入的纯托管回归不需要 RAW、native DLL 或窗口：
+
+```powershell
+dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --white-balance
+```
+
+该入口在用户目录检查和 WPF 初始化前运行，只在系统临时目录创建并清理自己的编辑和批量记录。
+它覆盖生产相机取整、配方强度、冻结导出请求及旧记录兼容；默认完整套件也会运行这些检查。
+旧 Windows 记录中的相机取整值和显式白平衡不做迁移；重新渲染时，相机元数据按新规则刷新，
+显式白平衡仍保留原值，相机模式仍使用原始增益，配方色调则使用重新解析的目标 RAW 相机 tint，
+配方的显式色温仍保留原值。
+
 当前 Windows 回归还覆盖内嵌预览尺寸与方向、精确缓存上限及失效、预览不能启用导出、原尺寸几何和不重绘图像的平移。
 几何处理复用共享核心，依次执行旋转、翻转、居中内接拉直、归一化裁切，最后调整输出尺寸。
 裁切百分比以旋转和拉直后的画布为基准；超出边界的数值收回画布内。中性对比图使用同一套几何参数，原 RAW 保持不变。
@@ -195,7 +207,7 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 工作，不依赖机器速度或物理文件选择器，也不向产品代码增加测试控制入口。
 边界裁框旋转的模型回归在 editing 中，水平/垂直翻转的真实控件回归在 transform-ui 中。
 
-主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
+除上述纯托管 `--white-balance` 外，主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
 存在即拒绝运行；默认套件完成 native 检查后、WPF 初始化前再检查一次。使用没有产品任务并发运行的独立测试账号，
 不要为运行测试删除或移动已有 journal。默认窗口的 EditStore 仍使用每次运行独立的目录。
 `run-v08.ps1` 的 `default-isolation` 回归也可直接运行

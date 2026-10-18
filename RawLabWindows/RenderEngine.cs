@@ -134,10 +134,12 @@ internal sealed partial class RenderEngine : IDisposable
             var count = (double)buffer.Width * buffer.Height;
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
             return new(Bitmap(buffer),mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? (Math.Round(temperature),Math.Round(tint)) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
+    internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
+        (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
     private void SetLens(LensSettings value)
     {
         var config = new Native.LensConfig { Version=1,StructSize=(uint)Marshal.SizeOf<Native.LensConfig>(),
