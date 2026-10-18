@@ -20,7 +20,7 @@ final class BatchExportModel: ObservableObject {
 
     private let journalStore: BatchJournalStore?
     private let jpegWriter: JPEGWriter?
-    private let queue = DispatchQueue(label: "com.rawlab.batch", qos: .userInitiated)
+    let queue = DispatchQueue(label: "com.rawlab.batch", qos: .userInitiated)
     private let cancellation = NSLock()
     private var didCancel = false
     private var backgroundInterruption = false
@@ -397,128 +397,10 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    private func render(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?) throws -> Data {
-        return try autoreleasepool {
-            let processor = Sony2FujiProcessor()
-            let result: Sony2FujiProcessor.ProcessResult
-            if target.sourceKind == .raw {
-                let raw = try processor.processRaw(url: target.sourceURL, settings: settings,
-                                                    previewLongEdge: nil, lutURL: look,
-                                                    exportLongEdge: longEdge)
-                result = raw
-            } else {
-                let raster = try processor.loadRasterBuffer(url: target.sourceURL)
-                let buffer = try processor.processBuffer(buffer: raster.buffer, settings: settings,
-                                                         previewLongEdge: nil, lutURL: look,
-                                                         exportLongEdge: longEdge)
-                result = Sony2FujiProcessor.ProcessResult(buffer: buffer, orientation: .up,
-                                                          rawWhiteBalance: nil)
-            }
-            return try processor.makeJPEGData(from: result.buffer, sourceURL: target.sourceURL,
-                                              orientation: result.orientation, quality: 0.92)
-        }
-    }
-
-    private func renderDNG(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?, jobID: UUID) throws -> URL {
-        return try autoreleasepool {
-            let processor = Sony2FujiProcessor()
-            let output = BatchFileOutputStore.temporaryURL(for: jobID, outputName: target.outputName)
-            _ = try BatchFileOutputStore.directory(for: jobID)
-            do {
-                if target.sourceKind == .raw {
-                    try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,
-                                            outputURL: output, exportLongEdge: longEdge)
-                } else {
-                    let raster = try processor.loadRasterBuffer(url: target.sourceURL)
-                    try processor.exportDNG(buffer: raster.buffer, settings: settings, lutURL: look,
-                                            outputURL: output, exportLongEdge: longEdge)
-                }
-                return output
-            } catch let error as Sony2FujiProcessor.ProcessorError {
-                try? FileManager.default.removeItem(at: output)
-                if case .outputIO = error {
-                    throw BatchExportError.global(error.localizedDescription)
-                }
-                throw error
-            } catch {
-                try? FileManager.default.removeItem(at: output)
-                throw error
-            }
-        }
-    }
-
-    private func perform<T>(_ operation: @escaping () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { continuation.resume(with: Result { try operation() }) }
-        }
-    }
-
-    private func prepareTarget(_ source: PhotoImportSource, identity: PhotoIdentity, jobID: UUID,
-                               journalStore: BatchJournalStore) async throws -> BatchTarget {
-        try await perform {
-            let owned = try BatchInputStore.copy(source.url, identity: identity, jobID: jobID,
-                                                 root: journalStore.directory)
-            let processor = Sony2FujiProcessor()
-            if source.isRaw {
-                _ = try processor.processRaw(url: owned, settings: .default,
-                                             previewLongEdge: 160, lutURL: nil)
-            } else {
-                let raster = try processor.loadRasterBuffer(url: owned)
-                _ = try processor.processBuffer(buffer: raster.buffer, settings: .default,
-                                                previewLongEdge: 160, lutURL: nil)
-            }
-            return BatchTarget(identity: identity, sourceURL: owned,
-                               displayName: source.displayName,
-                               sourceKind: source.isRaw ? .raw : .raster)
-        }
-    }
 
     private func saveJournal() {
         guard let journalStore else { return }
         do { try journalStore.save(job) }
         catch { validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
-    }
-}
-
-private enum PhotoLibraryBatchWriter {
-    static func authorize() throws {
-        var status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-        if status == .notDetermined {
-            let semaphore = DispatchSemaphore(value: 0)
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status = $0; semaphore.signal() }
-            semaphore.wait()
-        }
-        guard status == .authorized || status == .limited else {
-            throw BatchExportError.global(L10n.text("无法保存照片，请在系统设置中允许 RawLab 添加照片。"))
-        }
-    }
-
-    static func assetExists(_ identifier: String) -> Bool? {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited else { return nil }
-        if PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).count > 0 { return true }
-        return status == .authorized ? false : nil
-    }
-
-    static func write(data: Data, outputName: String, target: BatchTarget,
-                      checkpoint: @escaping (String) throws -> Void) throws {
-        let semaphore = DispatchSemaphore(value: 0)
-        var writeError: Error?
-        var checkpointError: Error?
-        var didSucceed = false
-        PHPhotoLibrary.shared().performChanges({
-            let request = PHAssetCreationRequest.forAsset()
-            let options = PHAssetResourceCreationOptions()
-            options.originalFilename = outputName
-            request.addResource(with: .photo, data: data, options: options)
-            if let identifier = request.placeholderForCreatedAsset?.localIdentifier {
-                do { try checkpoint(identifier) } catch { checkpointError = error }
-            }
-        }) { success, error in
-            didSucceed = success; writeError = error; semaphore.signal()
-        }
-        semaphore.wait()
-        if !didSucceed { throw BatchExportError.global(writeError?.localizedDescription ?? L10n.format("保存 %@ 失败。", String(describing: target.displayName))) }
-        if checkpointError != nil { throw BatchExportError.uncertain(L10n.text("照片已写入，但任务记录未更新，请先核对保存结果。")) }
     }
 }
