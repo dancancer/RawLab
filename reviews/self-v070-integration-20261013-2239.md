@@ -12,7 +12,7 @@ None. No actionable defect was found in the bounded final evidence report.
 
 - Mode: self; repository `dancancer/RawLab`, branch `feature/v070-integration`.
 - Base/HEAD: `3f252a1006d349c2a3655129a9cf665385dccaca`; no new executable source delta.
-- Reviewed WIP: complete `docs/verification-final-composition-2026-10-13.md`, final SHA-256 `05148c5d5ba244fece3023c29c51a65d532821d5f301781262a61844919a2d10`.
+- Reviewed WIP: complete `docs/archive/integration/v0.7/final-composition.md`, final SHA-256 `05148c5d5ba244fece3023c29c51a65d532821d5f301781262a61844919a2d10`.
 - Dimensions: cache/window/native-export proof, source/artifact identity, package closure, scope and platform limitations.
 - Intensity: Dual, two original independent reviewers; no downgrade.
 - Automated review/CI: not queried for this local evidence-document delta. Local results are not exact-head CI.

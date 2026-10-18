@@ -73,7 +73,7 @@ GPU 低于 6GB 的设备不在用户要求范围内；本轮实际 GPU 验证设
 - Android arm64 app/test 构建通过，68 单测通过；最终 lint 0 errors/17 warnings。
 
 完整参数、文件 SHA、进程死亡证据、旧 wrapper 错误的区分和重现命令见
-`docs/verification-android-sony-dng-memory-2026-10-14.md`。
+`https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-sony-dng-memory-2026-10-14.md`。
 
 ## Recommendation
 

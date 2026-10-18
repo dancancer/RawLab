@@ -99,7 +99,7 @@ target WB, not a source-camera WB value to copy or discard.
 Mobile Agent interfaces remain out
 of scope. Desktop evidence and remaining ICC/physical-device limits are recorded
 in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
-`../../docs/verification-raster-input-all-platforms-2026-10-16.md`.
+the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 
 ## Rendering Order
 

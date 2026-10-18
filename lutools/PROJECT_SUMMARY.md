@@ -249,7 +249,7 @@ lutools/
 ## 许可证
 
 项目原创代码采用 [GPLv3 only](../LICENSE)（`GPL-3.0-only`）。
-历史许可与第三方归属见[许可说明](../docs/licensing.md)。
+历史许可与第三方归属见[许可说明](../docs/reference/licensing.md)。
 
 注意: libraw 使用 LGPL/CDDL 双许可
 
