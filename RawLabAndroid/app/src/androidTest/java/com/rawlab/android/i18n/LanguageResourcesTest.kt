@@ -21,22 +21,27 @@ import com.rawlab.android.looks.localizedName
 class LanguageResourcesTest {
     @Test fun allSixLanguagesSelectNativeResources() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val expected = mapOf("en" to "Language", "zh-Hans" to "语言", "de" to "Sprache",
-            "fr" to "Langue", "ja" to "言語", "es" to "Idioma")
-        val hue = mapOf("en" to "Hue", "zh-Hans" to "色相", "de" to "Farbton",
-            "fr" to "Teinte", "ja" to "色相", "es" to "Matiz")
-        val recipes = mapOf("en" to "Master recipes", "zh-Hans" to "大师配方", "de" to "Master-Rezepte",
-            "fr" to "Recettes maîtres", "ja" to "マスターレシピ", "es" to "Recetas maestras")
-        val automatic = mapOf("en" to "Automatic", "zh-Hans" to "自动", "de" to "Automatisch",
-            "fr" to "Automatique", "ja" to "自動", "es" to "Automático")
+        val expected = mapOf("en" to "Language", "zh-Hans" to "语言",
+            "de" to "Sprache", "fr" to "Langue",
+            "ja" to "言語", "es" to "Idioma")
+        val hue = mapOf("en" to "Hue", "zh-Hans" to "色相",
+            "de" to "Farbton", "fr" to "Teinte",
+            "ja" to "色相", "es" to "Tono")
+        val recipes = mapOf("en" to "Master Recipe", "zh-Hans" to "大师配方",
+            "de" to "Master-Rezept", "fr" to "Recette maître",
+            "ja" to "マスターレシピ", "es" to "Receta maestra")
+        val automatic = mapOf("en" to "Auto", "zh-Hans" to "自动",
+            "de" to "Automatisch", "fr" to "Auto",
+            "ja" to "自動", "es" to "Automático")
         val perspectiveHorizontal = mapOf("en" to "Horizontal perspective", "zh-Hans" to "水平透视",
             "de" to "Horizontale Perspektive", "fr" to "Perspective horizontale",
-            "ja" to "水平方向の遠近補正", "es" to "Perspectiva horizontal")
+            "ja" to "水平パース", "es" to "Perspectiva horizontal")
         val perspectiveVertical = mapOf("en" to "Vertical perspective", "zh-Hans" to "垂直透视",
             "de" to "Vertikale Perspektive", "fr" to "Perspective verticale",
-            "ja" to "垂直方向の遠近補正", "es" to "Perspectiva vertical")
-        val usage = mapOf("en" to "Allow usage analytics", "zh-Hans" to "允许使用统计", "de" to "Nutzungsanalyse erlauben",
-            "fr" to "Autoriser l’analyse d’utilisation", "ja" to "利用状況の分析を許可", "es" to "Permitir análisis de uso")
+            "ja" to "垂直パース", "es" to "Perspectiva vertical")
+        val usage = mapOf("en" to "Allow usage analytics", "zh-Hans" to "允许使用统计",
+            "de" to "Nutzungsanalyse erlauben", "fr" to "Autoriser l’analyse d’utilisation",
+            "ja" to "利用状況の分析を許可", "es" to "Permitir análisis de uso")
         expected.forEach { (language, value) ->
             val config = Configuration(context.resources.configuration)
             config.setLocale(Locale.forLanguageTag(language))
@@ -61,8 +66,9 @@ class LanguageResourcesTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val previous = AppStrings.preference(context)
         val languages = listOf("en", "zh-Hans", "de", "fr", "ja", "es")
-        val automatic = mapOf("en" to "Automatic", "zh-Hans" to "自动", "de" to "Automatisch",
-            "fr" to "Automatique", "ja" to "自動", "es" to "Automático")
+        val automatic = mapOf("en" to "Auto", "zh-Hans" to "自动",
+            "de" to "Automatisch", "fr" to "Auto",
+            "ja" to "自動", "es" to "Automático")
         val settings = EditSettings(
             film = "velvia", strength = 1.35f, exposure = -.75f, highlights = .25f, shadows = -.2f,
             contrast = .4f, toneCurve = -.15f, saturation = .3f, customWb = true, temperature = 4200f,
