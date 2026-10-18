@@ -11,6 +11,18 @@ Check(Loc.Resolve("system", "zh-Hans-CN") == "zh-Hans", "Simplified Chinese");
 Check(Loc.Resolve("system", "zh-Hant-TW") == "en", "Unsupported Chinese script");
 Check(Loc.Resolve("system", "pt-BR") == "en", "Unsupported language fallback");
 Check(Loc.Resolve("ja", "fr-FR") == "ja", "Explicit language selection");
+var nestedSources = Path.Combine(Path.GetTempPath(), "rawlab-localization-sources-" + Guid.NewGuid().ToString("N"));
+try
+{
+    foreach (var directory in new[] { "", "MainWindow", "tests", "bin", "obj" })
+    {
+        var path = Path.Combine(nestedSources, directory);
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "Probe.cs"), "Loc.Text(\"Language\")");
+    }
+    Check(StaticKeyChecks.Arguments(nestedSources).Count() == 2, "Source scanning includes nested production files but excludes tests and build outputs");
+}
+finally { if (Directory.Exists(nestedSources)) Directory.Delete(nestedSources, true); }
 foreach (var (argument, composed) in new[] {
     ("\"暗角强度\"", false), ("titles[i + 1]", false), ("recipe?.Subtitle ?? \"中性直出\"", false),
     ("selected ? \"暗角\" : \"颗粒\"", false), ("(spec.IsVignette ? \"暗角\" : \"颗粒\")+titles[(int)spec.Id]", true),
