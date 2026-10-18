@@ -84,5 +84,6 @@ enum BatchSettingsSummary {
 
     private static func integer(_ value: Double) -> String { String(format: "%.0f", locale: L10n.locale, value) }
 
-    private static func onOff(_ on: Bool) -> String { L10n.text(on ? "开启" : "关闭") }
+    // 目录里"关闭"是关闭按钮（Close），关着的开关用"停用"（Off）
+    private static func onOff(_ on: Bool) -> String { L10n.text(on ? "开启" : "停用") }
 }

@@ -30,8 +30,11 @@ struct BatchExportTests {
         check(Set(titles).count == titles.count, "batch summary lists each setting once: \(titles)")
         check(!rows.contains { $0.title == $0.value }, "batch summary values do not repeat their names")
         check(value("曝光") == "+0,50 EV", "batch exposure uses the editor name and interface number format")
-        check(value("降噪") == L10n.text("关闭") && value("粗色斑抑制") != nil,
+        check(value("降噪") != nil && value("粗色斑抑制") != nil,
               "batch denoise rows use the editor's toggle and parameter names")
+        // 目录里"关闭"是关闭按钮（Close / Schließen），关着的开关要用"停用"（Off / Aus），与 Mac 一致
+        check(value("降噪") == L10n.text("停用") && value("畸变矫正") == L10n.text("停用"),
+              "switched-off settings read Off rather than the Close button's label")
     }
 
     static func main() throws {
