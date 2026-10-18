@@ -35,8 +35,8 @@ class LanguageResourcesTest {
         val perspectiveVertical = mapOf("en" to "Vertical perspective", "zh-Hans" to "垂直透视",
             "de" to "Vertikale Perspektive", "fr" to "Perspective verticale",
             "ja" to "垂直方向の遠近補正", "es" to "Perspectiva vertical")
-        val usage = mapOf("en" to "Usage analytics", "zh-Hans" to "使用统计", "de" to "Nutzungsanalyse",
-            "fr" to "Analyse d'utilisation", "ja" to "利用状況の分析", "es" to "Análisis de uso")
+        val usage = mapOf("en" to "Allow usage analytics", "zh-Hans" to "允许使用统计", "de" to "Nutzungsanalyse erlauben",
+            "fr" to "Autoriser l’analyse d’utilisation", "ja" to "利用状況の分析を許可", "es" to "Permitir análisis de uso")
         expected.forEach { (language, value) ->
             val config = Configuration(context.resources.configuration)
             config.setLocale(Locale.forLanguageTag(language))
