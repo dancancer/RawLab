@@ -12,7 +12,7 @@ cp -R "$ROOT"/RawLabMac/Resources/*.lproj "$APP/Contents/Resources/"
 swiftc -swift-version 5 -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments.swift" "$ROOT/RawLabMac/Sources/MasterRecipe.swift" \
-    "$ROOT/RawLabMac/Sources/EditPersistence.swift" "$ROOT/RawLabMac/tests/LensLocalizationTests.swift" \
+    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
+    "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/tests/LensLocalizationTests.swift" \
     -o "$APP/Contents/MacOS/LensLocalization"
 "$APP/Contents/MacOS/LensLocalization"

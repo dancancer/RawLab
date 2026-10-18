@@ -216,7 +216,7 @@ class LocalizationTests(unittest.TestCase):
         raw = re.compile(r"(?<!L10n\.text\()(?<!Loc\.Text\()\b\w*[Rr]ecipe\??\.(?:name|Name)\b")
         # 对配方做 map 时闭包里的 $0 也是配方
         mapped = re.compile(r"[Rr]ecipe\w*\??\.map\b.*\$0\.name\b")
-        sources = [*(ROOT / "RawLabMac/Sources").glob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
+        sources = [*(ROOT / "RawLabMac/Sources").rglob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
                    *(ROOT / "RawLabWindows").glob("*.cs")]
         hits = [f"{p.relative_to(ROOT)}:{n}" for p in sources for n, line in enumerate(p.read_text().splitlines(), 1)
                 if raw.search(line) or mapped.search(line)]
@@ -336,7 +336,7 @@ class CountPhrasingTests(unittest.TestCase):
 class BatchSummaryTermTests(unittest.TestCase):
     # 批量摘要沿用编辑器里的叫法；开关关着写"停用"，"关闭"是关窗口按钮的词，英文会显示成 Close
     def test_batch_summaries_use_editor_terms(self):
-        for path in ("RawLabMac/Sources/BatchExportView.swift", "RawLabWindows/BatchExportWindow.xaml.cs"):
+        for path in ("RawLabMac/Sources/Export/BatchExportView.swift", "RawLabWindows/BatchExportWindow.xaml.cs"):
             text = (ROOT / path).read_text()
             self.assertEqual([term for term in ("小波降噪", "粗颗粒降噪") if term in text], [], path)
             self.assertEqual(re.findall(r'(?:Loc\.Text|L10n\.text)\("开启"\) : (?:Loc\.Text|L10n\.text)\("关闭"\)|_ => Loc\.Text\("关闭"\)', text), [], path)
