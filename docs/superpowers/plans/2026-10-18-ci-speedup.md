@@ -78,6 +78,14 @@ queue time separately. Cold and warm runs must refer to the same source.
 
 - [x] Request independent review, resolve actionable findings and run local gates.
 - [x] Commit owned files, push the feature branch and create one PR to development.
-- [ ] Run cold and warm hosted CI; investigate failures or ineffective caches.
-- [ ] Record observed improvements, remaining limits and untested scenarios.
+- [x] Run cold and warm hosted CI; investigate failures or ineffective caches.
+- [x] Record observed improvements, remaining limits and untested scenarios.
 - [ ] Remove task-owned temporary files; retain the worktree and PR for review.
+
+The same-source benchmark and its limits are recorded in
+[CI documentation](../../ci.md#hosted-measurement-2026-10-18). The Android restore
+failure found in the first experiment was fixed by retaining AGP configuration
+metadata and adding a real cold/restore regression. All six cold and warm checks
+passed at `7bf19e6`; later `development` source-organization changes are integrated
+separately, with final-head CI tracked by PR #72 rather than mixed into the timing
+comparison.

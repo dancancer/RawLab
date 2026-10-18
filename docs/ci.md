@@ -101,6 +101,34 @@ the same source, separating queue time from job time. A successful restore alone
 does not demonstrate a speedup. Parallelism remains at the existing settings;
 increasing it requires separate hosted timing and memory evidence.
 
+### Hosted Measurement: 2026-10-18
+
+The [cold run](https://github.com/dancancer/RawLab/actions/runs/39114495492/attempts/1)
+and [warm rerun](https://github.com/dancancer/RawLab/actions/runs/39114495492/attempts/2)
+used source `7bf19e6d665ea952e40af5495db7e47876f893e8` and test merge
+`18ca28d242885fb2a32c3d17323b7f78a1f576b1`. All six checks passed in both
+attempts; all five native jobs restored exact keys in the warm attempt.
+
+| Platform | Cold job | Warm job | Reduction |
+| --- | ---: | ---: | ---: |
+| macOS Intel | 37m22s | 21m13s | 43% |
+| macOS Apple silicon | 16m30s | 11m15s | 32% |
+| Windows | 15m59s | 9m26s | 41% |
+| Android | 21m02s | 20m26s | 3% |
+| iOS | 45m37s | 15m14s | 67% |
+
+These are single-run job durations including setup, restore and tests, not a
+stable performance guarantee. The longest job fell from 45m37s to 21m13s.
+Android's improvement was not material in this sample. Build parallelism stayed
+unchanged. iOS C/C++ compile entries fell from 2,188 to 229, while all 72 entries
+under `lutools/src/` remained in both attempts.
+
+Queueing is separate: the longest queue was 65m51s cold and 22m22s warm. Full
+workflow wall time was 1h45m44s and 43m36s respectively; that difference must not
+be attributed solely to caching. The five compressed dependency caches totaled
+2.61 GiB. Subsequent integration checks against newer `development` commits are
+reported in the PR, not mixed into this same-source comparison.
+
 ## Results
 
 Only `build/ci/*.log`, `*.json` and `*.xml` are uploaded, retained for seven days.
