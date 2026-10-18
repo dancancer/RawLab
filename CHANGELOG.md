@@ -3,6 +3,45 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.8.1] - 2026-10-18
+
+### Changed
+
+- Usage statistics are on by default on all four clients. Release builds
+  include the Alibaba Cloud RUM SDK and report feature-use counts to the
+  production environment, stored in mainland China. A random installation ID
+  counts active devices and is deleted when statistics are turned off. No
+  photos, previews, file names, paths, EXIF or AI content are recorded; the
+  vendor SDK may collect device, system, network/IP, region and session data.
+- Android no longer requests phone-state, network-state or installed-app
+  visibility permissions.
+- Every client's catalogs are generated from one shared copy source with
+  macOS as the reference; iOS, Windows and Android follow Mac's wording.
+
+### Fixed
+
+- Statistics and privacy text is translated into all six interface languages.
+- Master recipe names written in Chinese characters follow the interface
+  language on every client.
+- iOS recipe tiles show the artwork without a second icon, the recipe panel no
+  longer repeats the recipe name, and the settings menu has a VoiceOver name.
+- Android shows recipe artwork and no longer falls back to Chinese text when a
+  screen is created before the app finishes starting.
+- Windows photo-effect controls use complete translation entries.
+- Counts no longer read as plural for a single photo; batch summaries use the
+  editor's setting names and show disabled switches as Off.
+- Interface details on macOS, iOS and Windows: toggle states, truncated or
+  mid-word-broken labels, duplicated values and reset buttons, menu placement,
+  distinct icons, and system menus in the chosen language.
+- Translation fixes in German, French, Spanish and Japanese, and one name
+  ("Look") for imported looks.
+- Android interface details: changed-value marker position, menu alignment,
+  distinct icons and reset buttons.
+
+Version `0.8.1`, build `13`. See [release notes](docs/releases/v0.8.1.md) and
+[source rebuild instructions](docs/releases/v0.8.1-source.md). The shared
+processing core is unchanged from 0.8.0.
+
 ## [0.8.0] - 2026-10-17
 
 ### Added
