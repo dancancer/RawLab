@@ -7,6 +7,7 @@ import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import java.io.File
+import java.io.DataInputStream
 import java.nio.file.Files
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,6 +16,7 @@ class BatchJournalScalingTest {
     @Test fun freshRunWritesLinearBytesWithoutDroppingCheckpoints() {
         val small = writtenBytes(100)
         val large = writtenBytes(300)
+        println("Journal bytes: 100 rows=$small, 300 rows=$large")
         assertTrue("100 rows=$small bytes, 300 rows=$large bytes", large < small * 4)
     }
 
@@ -28,13 +30,16 @@ class BatchJournalScalingTest {
             var checkpoints = 0
             var bytes = 0L
             var previousLog = 0L
+            var previousGeneration: String? = null
             BatchRunner.run(job, { _, _ -> Unit }, { _, _, _ -> }, journal = BatchJournal(root),
                 publish = { _, _, target, checkpoint -> checkpoint("content://output/${target.id}") },
                 didUpdate = {
                     val log = File(root, "${job.id}.rows")
                     val length = log.length()
-                    bytes += if (!log.exists() || checkpoints == 0) File(root, "${job.id}.properties").length() + length
+                    val generation = if (log.isFile) DataInputStream(log.inputStream()).use { input -> input.readInt(); input.readUTF() } else null
+                    bytes += if (generation == null || generation != previousGeneration) File(root, "${job.id}.properties").length() + length
                         else length - previousLog
+                    previousGeneration = generation
                     previousLog = length
                     checkpoints++
                 })

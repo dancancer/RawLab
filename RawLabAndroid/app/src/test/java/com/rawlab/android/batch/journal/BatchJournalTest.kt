@@ -6,6 +6,7 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import java.io.File
+import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -129,6 +130,34 @@ class BatchJournalTest {
         assertTrue(root.listFiles()!!.isEmpty())
     }
 
+    @Test fun readableRecoveryRemainsDiscoverableWhenCompactionCannotResetLog() {
+        val journal = BatchJournal(root)
+        val original = job()
+        journal.save(original)
+        log().delete()
+        log().mkdir()
+        File(log(), "block").writeText("Prevent log replacement")
+        assertEquals(original, journal.load(original.id))
+        assertEquals(listOf(original.id), journal.pending())
+    }
+
+    @Test fun failedCompactionInvalidatesWriterBeforeTheNextRowCheckpoint() {
+        val journal = BatchJournal(root)
+        val original = job()
+        journal.save(original)
+        val staleLog = log().readBytes()
+        log().delete()
+        log().mkdir()
+        File(log(), "block").writeText("Prevent log replacement")
+        val newer = original.withRows(original.rows.map { it.copy(status = BatchRowStatus.CANCELLED) })
+        assertThrows(IOException::class.java) { journal.save(newer) }
+        log().deleteRecursively()
+        log().writeBytes(staleLog)
+        val latest = newer.withRows(newer.rows.mapIndexed { i, row -> if (i == 0) row.copy(status = BatchRowStatus.SUCCESS) else row })
+        journal.recordRow(latest, 0)
+        assertEquals(latest, BatchJournal(root).load(original.id))
+    }
+
     @Test fun runnerPersistsUriBeforePublishingAndKeepsCancelAndGlobalFailureSnapshots() {
         val original = job()
         val journal = BatchJournal(root)
@@ -145,9 +174,12 @@ class BatchJournalTest {
             })
         assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED), cancelled.rows.map { it.status })
         assertEquals(cancelled, BatchJournal(root).load(original.id))
-        val failed = BatchRunner.run(original, { _, _ -> throw com.rawlab.android.photo.BatchGlobalFailure("disk full") },
-            { _: Unit, _, _ -> }, journal = journal)
+        val failed = BatchRunner.run(original, { target, _ ->
+            if (target.id == "target-1") throw com.rawlab.android.photo.BatchGlobalFailure("disk full")
+            Unit
+        }, { _, _, _ -> }, journal = journal)
         assertEquals("disk full", failed.globalError)
+        assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.FAILED), failed.rows.map { it.status })
         assertEquals(failed, BatchJournal(root).load(original.id))
     }
 }

@@ -85,7 +85,9 @@ class BatchJournal(private val directory: File) {
                 else -> row.status
             })
         })
-        save(recovered)
+        /* 压缩失败不能隐藏仍可读取的任务；续跑的首次 checkpoint 仍必须成功才允许处理。 */
+        try { save(recovered) }
+        catch (_: IOException) { generations.remove(id) }
         return recovered
     }
 
