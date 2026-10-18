@@ -16,7 +16,10 @@ import com.rawlab.android.settings.EditSettings
 import java.io.File
 import java.io.IOException
 
-/* 批量输出的临时渲染与发布；创建 URI 后先回调落盘，再开始写入输出。 */
+// ============================================================================
+//  批量输出：临时渲染、发布与失败清理
+// ============================================================================
+
 internal class BatchOutputPublisher(
     private val context: Context,
     private val storage: PhotoStorage,

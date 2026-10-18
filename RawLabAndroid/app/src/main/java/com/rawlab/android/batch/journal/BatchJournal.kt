@@ -16,7 +16,10 @@ import java.util.Properties
 import java.util.UUID
 import java.util.zip.CRC32
 
-/* 快照保存任务全貌；同代行日志逐条同步落盘，恢复只接受完整且校验通过的前缀。 */
+// ============================================================================
+//  批量任务日志：快照、增量记录与恢复
+// ============================================================================
+
 class BatchJournal(private val directory: File) {
     private companion object { const val LOG_MAGIC = 0x52424a33 }
     private val generations = mutableMapOf<String, String>()
@@ -33,7 +36,7 @@ class BatchJournal(private val directory: File) {
         generations.remove(job.id)
         val generation = UUID.randomUUID().toString()
         replace(journalFile(job.id)) { JournalCodec.snapshot(job, generation).store(it, null) }
-        /* 先换快照再换日志；中途退出留下的旧日志代号不匹配，不能覆盖新快照。 */
+        // 先换快照再换日志，旧代日志不能覆盖新快照。
         replace(logFile(job.id)) { stream ->
             DataOutputStream(stream).apply { writeInt(LOG_MAGIC); writeUTF(generation); flush() }
         }
@@ -66,7 +69,7 @@ class BatchJournal(private val directory: File) {
                 stream.fd.sync()
             }
         } catch (error: IOException) {
-            /* 追加失败后不能越过残尾继续追加；下一次提交必须先重建快照。 */
+            // 追加失败后先重建快照，不能越过残尾继续追加。
             generations.remove(job.id)
             throw error
         }
@@ -78,17 +81,13 @@ class BatchJournal(private val directory: File) {
         val properties = Properties().also { journalFile(id).inputStream().use(it::load) }
         val snapshot = JournalCodec.readSnapshot(id, properties)
         val replayed = replay(snapshot, properties.getProperty("journal.generation"))
-        val recovered = replayed.withRows(replayed.rows.map { row ->
+        return replayed.withRows(replayed.rows.map { row ->
             row.copy(status = when (row.status) {
                 BatchRowStatus.PROCESSING -> BatchRowStatus.PENDING
                 BatchRowStatus.PUBLISHING -> BatchRowStatus.NEEDS_CONFIRMATION
                 else -> row.status
             })
         })
-        /* 压缩失败不能隐藏仍可读取的任务；续跑的首次 checkpoint 仍必须成功才允许处理。 */
-        try { save(recovered) }
-        catch (_: IOException) { generations.remove(id) }
-        return recovered
     }
 
     private fun replay(job: BatchJob, generation: String?): BatchJob {
