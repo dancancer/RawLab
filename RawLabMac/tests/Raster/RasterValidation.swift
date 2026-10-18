@@ -205,4 +205,3 @@ func expectProtectedAliases(_ context: RasterContext, input: URL, settings: Adju
     try expectCLIFailure(context.cli, recipe: recipeURL, "\(label)")
     try check(try Data(contentsOf: input) == original, "\(label): source is unchanged after CLI alias rejection")
 }
-

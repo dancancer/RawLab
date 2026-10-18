@@ -30,7 +30,6 @@ func image(_ url: URL) throws -> CGImage {
     }
     return result
 }
-
 func properties(_ url: URL) throws -> [CFString: Any] {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
           let values = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {

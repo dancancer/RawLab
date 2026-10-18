@@ -439,4 +439,3 @@ private func nativeText<T>(_ value: T) -> String {
     var copy = value
     return withUnsafeBytes(of: &copy) { bytes in String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self) }
 }
-
