@@ -9,7 +9,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.SystemBarStyle
 import androidx.compose.foundation.background
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,6 +28,22 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.rawlab.android.about.AboutDialog
+import com.rawlab.android.about.UpdateViewModel
+import com.rawlab.android.album.AlbumScreen
+import com.rawlab.android.analytics.UsageAnalytics
+import com.rawlab.android.analytics.UsageEvent
+import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
+import com.rawlab.android.batch.ui.BatchExportScreen
+import com.rawlab.android.editor.EditorViewModel
+import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.ExportSize
+import com.rawlab.android.format.ExportSizeChoice
+import com.rawlab.android.i18n.AppStrings
+import com.rawlab.android.ui.EditorSheetSystemBars
+import com.rawlab.android.ui.ExportFormatControls
+import com.rawlab.android.ui.ExportSizeControls
 
 class MainActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
