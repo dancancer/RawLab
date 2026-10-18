@@ -51,7 +51,7 @@ class AboutScreenTest {
             compose.onNodeWithText("为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。")
                 .performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("当前构建未配置使用统计，未采集或上报。").performScrollTo().assertIsDisplayed()
-            val usage = compose.onNodeWithContentDescription("使用统计").performScrollTo()
+            val usage = compose.onNodeWithContentDescription("允许使用统计").performScrollTo()
             usage.assertIsOn().assertIsEnabled().performClick()
             usage.assertIsOff().assertIsNotEnabled()
             compose.runOnIdle { check(!preferences.getBoolean("enabled", true)) }

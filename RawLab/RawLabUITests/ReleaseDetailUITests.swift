@@ -125,7 +125,7 @@ final class ReleaseDetailUITests: XCTestCase {
         try importFirstVisiblePhoto(in: app)
         try openBatch(in: app)
         XCTAssertTrue(app.staticTexts["No Photos Selected"].exists, app.debugDescription)
-        XCTAssertFalse(app.staticTexts["Photos Selected: 0"].exists, "the empty batch repeats its selection count")
+        XCTAssertFalse(app.staticTexts["0 selected"].exists, "the empty batch repeats its selection count")
         discardBatch(in: app)
     }
 
