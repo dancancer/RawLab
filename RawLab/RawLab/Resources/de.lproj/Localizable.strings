@@ -88,7 +88,7 @@
 "拍摄参数" = "Aufnahmeparameter";
 "拍摄时" = "Wie aufgenommen";
 "拍摄时设置" = "Einstellung wie aufgenommen";
-"拍摄时：%.0f K · 色调 %+.0f" = "Wie aufgenommen: %.0f K · Farbton %+.0f";
+"拍摄时：%.0f K · 色调 %+.0f" = "Wie aufgenommen: %.0f K · Tönung %+.0f";
 "按每张照片" = "Pro Foto";
 "授权核对相册中的保存结果" = "Zugriff auf Fotos erlauben, um gespeicherte Ergebnisse zu prüfen";
 "收起调整栏" = "Anpassungsbereich einklappen";
@@ -119,15 +119,15 @@
 "核对保存结果" = "Speichervorgang prüfen";
 "格式" = "Format";
 "检查 %@ 的效果" = "Ergebnis von %@ prüfen";
-"正在保存" = "Speichern";
+"正在保存" = "Wird gespeichert";
 "正在停止…" = "Wird angehalten…";
 "正在准备 RAW…" = "RAW wird vorbereitet…";
 "正在准备照片…" = "Fotos werden vorbereitet…";
 "正在加载胶片" = "Filme werden geladen";
-"正在处理" = "Verarbeiten";
-"正在导入" = "Importieren";
-"正在导出" = "Exportieren";
-"正在显影" = "Entwicklung";
+"正在处理" = "Wird verarbeitet";
+"正在导入" = "Wird importiert";
+"正在导出" = "Wird exportiert";
+"正在显影" = "Wird entwickelt";
 "正在生成效果预览…" = "Vorschau wird erstellt…";
 "添加" = "Hinzufügen";
 "照片" = "Foto";
@@ -151,7 +151,7 @@
 "自定义白平衡" = "Benutzerdefinierter Weißabgleich";
 "色彩降噪" = "Chrominanz-Rauschunterdrückung";
 "色温" = "Temperatur";
-"色调" = "Farbton";
+"色调" = "Tönung";
 "语言" = "Sprache";
 "请先导入一张 RAW 照片。" = "Importieren Sie zuerst ein RAW-Foto.";
 "请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
@@ -349,7 +349,7 @@
 "高级参数" = "Erweiterte Parameter";
 "高光保护仅在暗角强度为负时可用。" = "„Lichter schützen“ ist nur bei negativer Vignettenstärke verfügbar.";
 "配方会调整多个参数。" = "Ein Rezept passt mehrere Parameter an.";
-"色调偏移" = "Farbtonversatz";
+"色调偏移" = "Tönungsversatz";
 "重置所有调整并返回中性" = "Alle Anpassungen zurücksetzen und zum neutralen Zustand zurückkehren";
 "未应用的调整" = "Nicht angewendete Anpassungen";
 "移动裁切" = "Zuschnitt verschieben";
