@@ -331,6 +331,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     add_executable(photo_geometry_tests tests/photo_geometry_tests.cpp src/core/photo_geometry.cpp)
     add_test(NAME photo_geometry COMMAND photo_geometry_tests)
+    add_executable(photo_geometry_exactness_tests tests/photo_geometry_exactness_tests.cpp
+        tests/photo_geometry_oracle.cpp src/core/photo_geometry.cpp)
+    add_test(NAME photo_geometry_exactness COMMAND photo_geometry_exactness_tests)
+    add_executable(geometry_benchmark EXCLUDE_FROM_ALL
+        tests/geometry_benchmark.cpp src/core/photo_geometry.cpp)
     add_executable(perspective_tests tests/perspective_tests.cpp src/core/photo_geometry.cpp)
     add_test(NAME perspective COMMAND perspective_tests)
     add_executable(perspective_api_tests tests/perspective_api_tests.cpp)
