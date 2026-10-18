@@ -95,6 +95,74 @@
 		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
 		D00900000000000000000001 /* CropLockUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00900000000000000000011 /* CropLockUITests.swift */; };
 		A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */; };
+		5D16F3E6AA9AE3153F10EA01 = {
+			isa = PBXBuildFile;
+			fileRef = 6408B0D9CC3B88C973EB26A9;
+		};
+		8B29EC7278F7B9FF41EB8BF0 = {
+			isa = PBXBuildFile;
+			fileRef = 38F6D63A9E8C8B655383DC1A;
+		};
+		8281CB7C705607A246377749 = {
+			isa = PBXBuildFile;
+			fileRef = 02C6D1C4DAC4E804B2A93EBF;
+		};
+		EAB9B7988845FE05C9C227C3 = {
+			isa = PBXBuildFile;
+			fileRef = 1D71FD88C2035DEAC81AC8D3;
+		};
+		22C5A9E739A2E127D0BA221C = {
+			isa = PBXBuildFile;
+			fileRef = 9D3527EB23A8B1C5D02BC890;
+		};
+		794E01A20D65C985C5B77449 = {
+			isa = PBXBuildFile;
+			fileRef = 239F602BE6955B7CAF23FFF9;
+		};
+		BE2C8A1B49C3F8091E3DC5CB = {
+			isa = PBXBuildFile;
+			fileRef = 69A9A4EA951B4CA321073C55;
+		};
+		0E6B7E1E203B3E3190BDC7E0 = {
+			isa = PBXBuildFile;
+			fileRef = CE718EBE66711A945E3F2F52;
+		};
+		8FC75E90CDC70C4708EB37A2 = {
+			isa = PBXBuildFile;
+			fileRef = 33FD6D1FFB7FCA01FF8E9FA8;
+		};
+		5E0132EABC243650B81956BA = {
+			isa = PBXBuildFile;
+			fileRef = 4F82DBD62C72A8DCF70884F1;
+		};
+		CE05C93906EE52BFDBEDD0AD = {
+			isa = PBXBuildFile;
+			fileRef = 60E62AF53FA54F2397437053;
+		};
+		881EC6B68800480C33FA6A33 = {
+			isa = PBXBuildFile;
+			fileRef = D653887C2ACBF01DE4AD60E6;
+		};
+		56190FF87AB7690F650D76EB = {
+			isa = PBXBuildFile;
+			fileRef = 111E539CB5BD4F8DA9C774E4;
+		};
+		4B2CA505E383F8656138A49F = {
+			isa = PBXBuildFile;
+			fileRef = 477C25ABC8A28D46040EB0ED;
+		};
+		25D258CC273B1BA6C8C96D64 = {
+			isa = PBXBuildFile;
+			fileRef = E6783FA2C1DCB791AAE3D175;
+		};
+		59F7471A20043B7473775365 = {
+			isa = PBXBuildFile;
+			fileRef = E72BF8F2A61849225F7BDC85;
+		};
+		D49D2474508D587986BF07B8 = {
+			isa = PBXBuildFile;
+			fileRef = 90808E94AB71C094544966D4;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -103,9 +171,19 @@
         D01100000000000000000013 /* BundledLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/BundledLook.swift"; sourceTree = SOURCE_ROOT; };
         D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/PickerAcquisitionCancelUITests.swift; sourceTree = SOURCE_ROOT; };
         D00300000000000000000011 /* GeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometrySettings.swift; path = "../Shared/GeometrySettings.swift"; sourceTree = SOURCE_ROOT; };
-        D00300000000000000000012 /* GeometryControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryControls.swift; sourceTree = "<group>"; };
+		D00300000000000000000012 = {
+			path = "RawLab/UI/Controls/GeometryControls.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		D00200000000000000000011 /* Sony2FujiProcessor+Lens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sony2FujiProcessor+Lens.swift"; sourceTree = "<group>"; };
-		D00200000000000000000012 /* LensControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LensControls.swift; sourceTree = "<group>"; };
+		D00200000000000000000012 = {
+			path = "RawLab/UI/Controls/LensControls.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
         AB2000000000000000000011 /* master-recipes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../Shared/master-recipes.json"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000012 /* MasterRecipes */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipes"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000013 /* MasterRecipeIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipeIcons"; sourceTree = SOURCE_ROOT; };
@@ -130,8 +208,18 @@
 		AB3900000000000000000006 /* RUMUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMUsageTransport.swift; sourceTree = "<group>"; };
 		AB3900000000000000000008 /* RUMValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMValidationProbe.swift; sourceTree = "<group>"; };
 		AB390000000000000000000A /* SerialUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SerialUsageTransport.swift; path = "../Shared/SerialUsageTransport.swift"; sourceTree = SOURCE_ROOT; };
-		AB1800000000000000000011 /* PhotoZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoZoomGeometry.swift; sourceTree = "<group>"; };
-		AB1800000000000000000012 /* ZoomablePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomablePhoto.swift; sourceTree = "<group>"; };
+		AB1800000000000000000011 = {
+			path = "RawLab/UI/Preview/PhotoZoomGeometry.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		AB1800000000000000000012 = {
+			path = "RawLab/UI/Preview/ZoomablePhoto.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		AB1700000000000000000002 /* ExportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExportMetadata.swift; path = "../Shared/ExportMetadata.swift"; sourceTree = SOURCE_ROOT; };
 		AB1700000000000000000004 /* PhotoInformation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhotoInformation.swift; path = "../Shared/PhotoInformation.swift"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ACROS_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
@@ -152,21 +240,55 @@
 		AB1500000000000000000011 /* provia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "provia.png"; path = "../RawLabMac/Resources/FilmIcons/provia.png"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000012 /* reala-ace.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "reala-ace.png"; path = "../RawLabMac/Resources/FilmIcons/reala-ace.png"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000013 /* velvia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "velvia.png"; path = "../RawLabMac/Resources/FilmIcons/velvia.png"; sourceTree = SOURCE_ROOT; };
-		AB1300000000000000000002 /* EditorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/EditorUITests.swift; sourceTree = SOURCE_ROOT; };
+		AB1300000000000000000002 = {
+			path = "RawLabUITests/EditorUITests/Support/EditorUITests.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		AB1300000000000000000003 /* RawLabUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = RawLabUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB1200000000000000000011 /* EditorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorComponents.swift; sourceTree = "<group>"; };
+		AB1200000000000000000011 = {
+			path = "RawLab/UI/Controls/EditorComponents.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		AB1200000000000000000012 /* FilmPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPresentation.swift; sourceTree = "<group>"; };
 		AB1200000000000000000013 /* eterna.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = eterna.png; path = "../RawLabMac/Resources/FilmIcons/eterna.png"; sourceTree = SOURCE_ROOT; };
 		AB1200000000000000000014 /* eterna-bb.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "eterna-bb.png"; path = "../RawLabMac/Resources/FilmIcons/eterna-bb.png"; sourceTree = SOURCE_ROOT; };
 		5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawEditorViewModel.swift; sourceTree = "<group>"; };
-		6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ContentView+Helpers.swift"; sourceTree = "<group>"; };
+		6CE93B9AEFEC48F9B6535407 = {
+			path = "RawLab/UI/Editor/ContentView+Helpers.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AdjustmentKind.swift; sourceTree = "<group>"; };
-		7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ContentView+Panels.swift"; sourceTree = "<group>"; };
-		7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		7ADA789EA8FD48A0A2CFE618 = {
+			path = "RawLab/UI/Editor/ContentView+Panels.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		7ADA8D603BB120B2616B82E8 = {
+			path = "RawLab/UI/Editor/ContentView.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		893AFB855B8D4C46BF182760 /* Core/ViewModel/RawEditorViewModel+Rendering.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RawEditorViewModel+Rendering.swift"; sourceTree = "<group>"; };
 		99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoImportTypes.swift; sourceTree = "<group>"; };
 		A7B52131DB065AE51B1A552B /* App/RawLabApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawLabApp.swift; sourceTree = "<group>"; };
-		AE4383A5710944379318C704 /* Core/ViewModel/RawEditorViewModel+IO.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RawEditorViewModel+IO.swift"; sourceTree = "<group>"; };
+		AE4383A5710944379318C704 = {
+			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+IO.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		BCB01F09DF53FD6D170136CB /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		CA5CD9BDDDA592CD1F77CFCB /* Resources/Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D71C4D9C452E6C484F74EDAB /* Resources/Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -180,13 +302,49 @@
 		C9A1B2C3D4E5F60718293A4C /* Support/RawMetadataBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = RawMetadataBridge.h; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; path = RawMetadataBridge.mm; sourceTree = "<group>"; };
 		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
-		D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportCore.swift; sourceTree = "<group>"; };
-		D00100000000000000000013 /* Core/Batch/BatchExport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExport.swift; sourceTree = "<group>"; };
-		A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchSettingsSummary.swift; sourceTree = "<group>"; };
-		D00100000000000000000014 /* UI/BatchExportView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatchExportView.swift; sourceTree = "<group>"; };
+		D00100000000000000000012 = {
+			path = "RawLab/Core/Batch/Model/BatchExportModels.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		D00100000000000000000013 = {
+			path = "RawLab/Core/Batch/Execution/BatchExport.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		A0D17B5E0000000000000002 = {
+			path = "RawLab/Core/Batch/Model/BatchSettingsSummary.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		D00100000000000000000014 = {
+			path = "RawLab/UI/Export/BatchExportView.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		D00100000000000000000015 /* Core/Models/ExportSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSize.swift; sourceTree = "<group>"; };
-		D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ContentView+PhotoInfo.swift"; sourceTree = "<group>"; };
-		D00100000000000000000017 /* UI/ExportSizePicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSizePicker.swift; sourceTree = "<group>"; };
+		D00100000000000000000016 = {
+			path = "RawLab/UI/Editor/ContentView+PhotoInfo.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		D00100000000000000000017 = {
+			path = "RawLab/UI/Export/ExportSizePicker.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		EA770F5886885926B9D64E9C /* AdjustmentScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Adjustments/AdjustmentScale.swift"; sourceTree = SOURCE_ROOT; };
 		536A50CF0FFD53F88EDE1B5B /* AdjustmentControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Adjustments/AdjustmentControl.swift"; sourceTree = SOURCE_ROOT; };
 		0BD8A983271153D1B8DC7FBD /* AdjustmentRuler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Adjustments/AdjustmentRuler.swift"; sourceTree = SOURCE_ROOT; };
@@ -197,9 +355,116 @@
 		C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorLayout.swift"; sourceTree = SOURCE_ROOT; };
 		2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorDrafts.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
-		BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/EditorV4UITests.swift"; sourceTree = SOURCE_ROOT; };
+		BC236099D6C65BBF9F3BBE58 = {
+			path = "RawLabUITests/EditorV4UITests/EditorV4UITests.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
 		D00900000000000000000011 /* CropLockUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/CropLockUITests.swift"; sourceTree = SOURCE_ROOT; };
 		A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/ReleaseDetailUITests.swift"; sourceTree = SOURCE_ROOT; };
+		6408B0D9CC3B88C973EB26A9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+PersistenceAndExport.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		38F6D63A9E8C8B655383DC1A = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+IOHelpers.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		02C6D1C4DAC4E804B2A93EBF = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/Batch/Storage/BatchExportStorage.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		1D71FD88C2035DEAC81AC8D3 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/Batch/Execution/BatchExportRunner.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		9D3527EB23A8B1C5D02BC890 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/Batch/Execution/BatchExportModel+Rendering.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		239F602BE6955B7CAF23FFF9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/Batch/Storage/PhotoLibraryBatchWriter.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		69A9A4EA951B4CA321073C55 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		CE718EBE66711A945E3F2F52 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLab/UI/Export/ContentView+FileExport.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		33FD6D1FFB7FCA01FF8E9FA8 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorV4UITests/NativeControls.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		4F82DBD62C72A8DCF70884F1 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorV4UITests/ImportAndAccessibility.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		60E62AF53FA54F2397437053 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorV4UITests/EditorV4Support.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		D653887C2ACBF01DE4AD60E6 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorUITests/Controls/PublicationAndPrivacy.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		111E539CB5BD4F8DA9C774E4 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorUITests/Support/EditorSupport.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		477C25ABC8A28D46040EB0ED = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorUITests/Controls/LanguageAndLooks.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		E6783FA2C1DCB791AAE3D175 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorUITests/Workflows/BatchWorkflow.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		E72BF8F2A61849225F7BDC85 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorUITests/Controls/PanelControls.swift";
+			sourceTree = SOURCE_ROOT;
+		};
+		90808E94AB71C094544966D4 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "RawLabUITests/EditorUITests/Workflows/PhotoWorkflow.swift";
+			sourceTree = SOURCE_ROOT;
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -261,31 +526,32 @@
 			path = Persistence;
 			sourceTree = "<group>";
 		};
-		D00100000000000000000022 /* Batch */ = {
+		D00100000000000000000022 = {
+			path = Batch;
 			isa = PBXGroup;
 			children = (
-				D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */,
-				D00100000000000000000013 /* Core/Batch/BatchExport.swift */,
-				A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */,
+				E2EC8543F458F8B7AC1FA561,
+				D5B491DB91C6308BADC2E23D,
+				F577F80F1611DBA28DBA48AE,
 			);
-			path = Batch;
 			sourceTree = "<group>";
 		};
-		8F3A1B2C3D4E5F6789012347 /* RawProcessing */ = {
+		8F3A1B2C3D4E5F6789012347 = {
+			path = RawProcessing;
 			isa = PBXGroup;
 			children = (
-				AB1700000000000000000002 /* ExportMetadata.swift */,
-                D00300000000000000000011 /* GeometrySettings.swift */,
-                AB1900000000000000000011 /* HSLSettings.swift */,
-                AB1900000000000000000012 /* HSLMixer.swift */,
-                AB1900000000000000000013 /* HSLNative.swift */,
-				AB1700000000000000000004 /* PhotoInformation.swift */,
-				AB3900000000000000000002 /* UsageAnalytics.swift */,
-				8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */,
-				8F3A1B2C3D4E5F6789012350 /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift */,
-				D00200000000000000000011 /* Sony2FujiProcessor+Lens.swift */,
+				AB1700000000000000000002,
+				D00300000000000000000011,
+				AB1900000000000000000011,
+				AB1900000000000000000012,
+				AB1900000000000000000013,
+				AB1700000000000000000004,
+				AB3900000000000000000002,
+				8F3A1B2C3D4E5F6789012346,
+				8F3A1B2C3D4E5F6789012350,
+				D00200000000000000000011,
+				69A9A4EA951B4CA321073C55,
 			);
-			path = RawProcessing;
 			sourceTree = "<group>";
 		};
 		0DA7DEB0B4133F1EEE502181 /* iOS */ = {
@@ -305,43 +571,36 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		1CBDC5191AF9405F9B637414 /* UI */ = {
+		1CBDC5191AF9405F9B637414 = {
+			path = UI;
 			isa = PBXGroup;
 			children = (
-				EA770F5886885926B9D64E9C /* AdjustmentScale.swift */,
-				536A50CF0FFD53F88EDE1B5B /* AdjustmentControl.swift */,
-				0BD8A983271153D1B8DC7FBD /* AdjustmentRuler.swift */,
-				2711A1C2712A54DEAB559BBC /* NativeValueWheel.swift */,
-				F6EB4A58E1F35560B145D655 /* AdjustmentPanels.swift */,
-				BC0C49C5B9A35219B440639F /* LookPanels.swift */,
-				9B66B134CB4D50238C320F70 /* PhotoEffectPanels.swift */,
-				C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */,
-				2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */,
-				442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */,
-				AB1200000000000000000011 /* EditorComponents.swift */,
-				D00200000000000000000012 /* LensControls.swift */,
-                D00300000000000000000012 /* GeometryControls.swift */,
-				AB1800000000000000000011 /* PhotoZoomGeometry.swift */,
-				AB1800000000000000000012 /* ZoomablePhoto.swift */,
-				7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */,
-				7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */,
-				6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */,
-				D00100000000000000000014 /* UI/BatchExportView.swift */,
-				D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */,
-				D00100000000000000000017 /* UI/ExportSizePicker.swift */,
+				EA770F5886885926B9D64E9C,
+				536A50CF0FFD53F88EDE1B5B,
+				0BD8A983271153D1B8DC7FBD,
+				2711A1C2712A54DEAB559BBC,
+				F6EB4A58E1F35560B145D655,
+				BC0C49C5B9A35219B440639F,
+				9B66B134CB4D50238C320F70,
+				C33A1CD0D88E5254A47F3CA5,
+				2F40F7AA6DE556A4A238F267,
+				442ED03D4FD75EBCA83B9DFE,
+				BFDCFB6A137F996DD48D076B,
+				0E2D0EEF39E86136EF2B8850,
+				4929D5873644FF7ABA4DE756,
+				367EB92E730F44518B9F6E03,
 			);
-			path = UI;
 			sourceTree = "<group>";
 		};
-		234ED6798A8A4780851F1B79 /* ViewModel */ = {
+		234ED6798A8A4780851F1B79 = {
+			path = ViewModel;
 			isa = PBXGroup;
 			children = (
-				5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */,
-				893AFB855B8D4C46BF182760 /* Core/ViewModel/RawEditorViewModel+Rendering.swift */,
-				FEE59480F18546D2BD9AEB9E /* Core/ViewModel/RawEditorViewModel+LUT.swift */,
-				AE4383A5710944379318C704 /* Core/ViewModel/RawEditorViewModel+IO.swift */,
+				5BBA826F203D41BCC1DF31C0,
+				893AFB855B8D4C46BF182760,
+				FEE59480F18546D2BD9AEB9E,
+				B758D0C14F064CEE5F00429C,
 			);
-			path = ViewModel;
 			sourceTree = "<group>";
 		};
 		2F109479FD08681A1F30E85C /* RawLab */ = {
@@ -435,16 +694,143 @@
 		};
 		E067DA409E66CF448AAA9059 = {
 			isa = PBXGroup;
+			sourceTree = "<group>";
 			children = (
-				AB1300000000000000000002 /* EditorUITests.swift */,
-				BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */,
-				D00900000000000000000011 /* CropLockUITests.swift */,
-				A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */,
-                D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */,
-				2F6D48C6086EC660301E288B /* Products */,
-				0DAA7689F37A5648D3C8F238 /* Frameworks */,
-				2F109479FD08681A1F30E85C /* RawLab */,
+				D00900000000000000000011,
+				A0D17B5E0000000000000004,
+				D01000000000000000000011,
+				2F6D48C6086EC660301E288B,
+				0DAA7689F37A5648D3C8F238,
+				2F109479FD08681A1F30E85C,
+				EEC9B8836A6EF167E6349DB4,
+				BFCE5D6FC318755022B5AEA1,
 			);
+		};
+		BFDCFB6A137F996DD48D076B = {
+			isa = PBXGroup;
+			children = (
+				7ADA8D603BB120B2616B82E8,
+				6CE93B9AEFEC48F9B6535407,
+				D00100000000000000000016,
+				7ADA789EA8FD48A0A2CFE618,
+			);
+			name = Editor;
+			sourceTree = "<group>";
+		};
+		0E2D0EEF39E86136EF2B8850 = {
+			isa = PBXGroup;
+			children = (
+				D00100000000000000000014,
+				D00100000000000000000017,
+				CE718EBE66711A945E3F2F52,
+			);
+			name = Export;
+			sourceTree = "<group>";
+		};
+		4929D5873644FF7ABA4DE756 = {
+			isa = PBXGroup;
+			children = (
+				D00200000000000000000012,
+				AB1200000000000000000011,
+				D00300000000000000000012,
+			);
+			name = Controls;
+			sourceTree = "<group>";
+		};
+		367EB92E730F44518B9F6E03 = {
+			isa = PBXGroup;
+			children = (
+				AB1800000000000000000012,
+				AB1800000000000000000011,
+			);
+			name = Preview;
+			sourceTree = "<group>";
+		};
+		E2EC8543F458F8B7AC1FA561 = {
+			isa = PBXGroup;
+			children = (
+				A0D17B5E0000000000000002,
+				D00100000000000000000012,
+			);
+			name = Model;
+			sourceTree = "<group>";
+		};
+		D5B491DB91C6308BADC2E23D = {
+			isa = PBXGroup;
+			children = (
+				02C6D1C4DAC4E804B2A93EBF,
+				239F602BE6955B7CAF23FFF9,
+			);
+			name = Storage;
+			sourceTree = "<group>";
+		};
+		F577F80F1611DBA28DBA48AE = {
+			isa = PBXGroup;
+			children = (
+				D00100000000000000000013,
+				1D71FD88C2035DEAC81AC8D3,
+				9D3527EB23A8B1C5D02BC890,
+			);
+			name = Execution;
+			sourceTree = "<group>";
+		};
+		B758D0C14F064CEE5F00429C = {
+			isa = PBXGroup;
+			children = (
+				AE4383A5710944379318C704,
+				6408B0D9CC3B88C973EB26A9,
+				38F6D63A9E8C8B655383DC1A,
+			);
+			name = IO;
+			sourceTree = "<group>";
+		};
+		4F6AD0C446BB498AFEC65B20 = {
+			isa = PBXGroup;
+			children = (
+				D653887C2ACBF01DE4AD60E6,
+				477C25ABC8A28D46040EB0ED,
+				E72BF8F2A61849225F7BDC85,
+			);
+			name = Controls;
+			sourceTree = "<group>";
+		};
+		3655CD4328507D5021477DC2 = {
+			isa = PBXGroup;
+			children = (
+				AB1300000000000000000002,
+				111E539CB5BD4F8DA9C774E4,
+			);
+			name = Support;
+			sourceTree = "<group>";
+		};
+		5D90405F73D0A8E896FE3448 = {
+			isa = PBXGroup;
+			children = (
+				E6783FA2C1DCB791AAE3D175,
+				90808E94AB71C094544966D4,
+			);
+			name = Workflows;
+			sourceTree = "<group>";
+		};
+		EEC9B8836A6EF167E6349DB4 = {
+			isa = PBXGroup;
+			children = (
+				4F6AD0C446BB498AFEC65B20,
+				3655CD4328507D5021477DC2,
+				5D90405F73D0A8E896FE3448,
+			);
+			name = EditorUITests;
+			sourceTree = "<group>";
+		};
+		BFCE5D6FC318755022B5AEA1 = {
+			isa = PBXGroup;
+			children = (
+				BC236099D6C65BBF9F3BBE58,
+				33FD6D1FFB7FCA01FF8E9FA8,
+				4F82DBD62C72A8DCF70884F1,
+				60E62AF53FA54F2397437053,
+			);
+			name = EditorV4UITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -580,65 +966,88 @@
 		AB1300000000000000000006 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (AB1300000000000000000001, 39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */, D00900000000000000000001 /* CropLockUITests.swift in Sources */, A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */, D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */, );
+			files = (
+				AB1300000000000000000001,
+				39E615609C9D5AC1B16063C7,
+				D00900000000000000000001,
+				A0D17B5E0000000000000003,
+				D01000000000000000000001,
+				8FC75E90CDC70C4708EB37A2,
+				5E0132EABC243650B81956BA,
+				CE05C93906EE52BFDBEDD0AD,
+				881EC6B68800480C33FA6A33,
+				56190FF87AB7690F650D76EB,
+				4B2CA505E383F8656138A49F,
+				25D258CC273B1BA6C8C96D64,
+				59F7471A20043B7473775365,
+				D49D2474508D587986BF07B8,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		E20DD483661FD62C27502C63 /* Sources */ = {
+		E20DD483661FD62C27502C63 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-                D01100000000000000000003,
-				B1A96AA5B2105EE294EE532E /* AdjustmentScale.swift in Sources */,
-				0993BD6D24DC56B2A37EE51B /* AdjustmentControl.swift in Sources */,
-				905511E55B785785A2181EC4 /* AdjustmentRuler.swift in Sources */,
-				7CBDB69CD2E45712A82D58E9 /* NativeValueWheel.swift in Sources */,
-				F0F35CB910A955F5B883934F /* AdjustmentPanels.swift in Sources */,
-				EA054B21750151F8A61960F0 /* LookPanels.swift in Sources */,
-				4A5D819653CC5BEC83C83458 /* PhotoEffectPanels.swift in Sources */,
-				B3D998046DAF5568B14233EF /* EditorLayout.swift in Sources */,
-				6BD98E141C695971B42798C6 /* EditorDrafts.swift in Sources */,
-				C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */,
-				AB1700000000000000000001 /* ExportMetadata.swift in Sources */,
-                D00300000000000000000001 /* GeometrySettings.swift in Sources */,
-                D00300000000000000000002 /* GeometryControls.swift in Sources */,
-                AB1900000000000000000001 /* HSLSettings.swift in Sources */,
-                AB1900000000000000000002 /* HSLMixer.swift in Sources */,
-                AB1900000000000000000003 /* HSLNative.swift in Sources */,
-				AB1700000000000000000003 /* PhotoInformation.swift in Sources */,
-				AB2100000000000000000001 /* Localization.swift in Sources */,
-				AB3900000000000000000001 /* UsageAnalytics.swift in Sources */,
-				AB3900000000000000000003 /* RUMConfiguration.swift in Sources */,
-				AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */,
-				AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */,
-				AB3900000000000000000009 /* SerialUsageTransport.swift in Sources */,
-				AB1200000000000000000001 /* EditorComponents.swift in Sources */,
-				AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */,
-				AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */,
-				AB1200000000000000000002 /* FilmPresentation.swift in Sources */,
-				474AC2ED2640F238B875DFBA /* App/RawLabApp.swift in Sources */,
-				54CCF4B9CD4492224FC36730 /* UI/ContentView.swift in Sources */,
-				0B1A0382CA7A4764A8AD3A12 /* UI/ContentView+Panels.swift in Sources */,
-				568E6B659A004F7792056543 /* UI/ContentView+Helpers.swift in Sources */,
-				C9A1B2C3D4E5F60718293A4B /* Support/RawMetadataBridge.mm in Sources */,
-				366A9A71BB194587A8AECB5A /* Core/Models/AdjustmentKind.swift in Sources */,
-				EDCB99B43F3C4149B2F7622B /* Core/Models/RawSettings.swift in Sources */,
-				2C5BFAB858B74B81AFAC16D0 /* Core/Models/PhotoImportTypes.swift in Sources */,
-				D883E2F5F205AC0EFBF9C319 /* Core/ViewModel/RawEditorViewModel.swift in Sources */,
-				7A32C02543E94D8D8AD059DA /* Core/ViewModel/RawEditorViewModel+Rendering.swift in Sources */,
-				F985B27612A241E0BF2D3B6E /* Core/ViewModel/RawEditorViewModel+LUT.swift in Sources */,
-				2A9B3E15E0704167ABE93960 /* Core/ViewModel/RawEditorViewModel+IO.swift in Sources */,
-				D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */,
-				D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */,
-				D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */,
-				A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */,
-				D00100000000000000000004 /* UI/BatchExportView.swift in Sources */,
-				D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */,
-				D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */,
-				D00100000000000000000007 /* UI/ExportSizePicker.swift in Sources */,
-				8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */,
-				8F3A1B2C3D4E5F678901234F /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift in Sources */,
-				D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */,
-				D00200000000000000000002 /* LensControls.swift in Sources */,
+				D01100000000000000000003,
+				B1A96AA5B2105EE294EE532E,
+				0993BD6D24DC56B2A37EE51B,
+				905511E55B785785A2181EC4,
+				7CBDB69CD2E45712A82D58E9,
+				F0F35CB910A955F5B883934F,
+				EA054B21750151F8A61960F0,
+				4A5D819653CC5BEC83C83458,
+				B3D998046DAF5568B14233EF,
+				6BD98E141C695971B42798C6,
+				C3A803626CF750D1B9AFFCDA,
+				AB1700000000000000000001,
+				D00300000000000000000001,
+				D00300000000000000000002,
+				AB1900000000000000000001,
+				AB1900000000000000000002,
+				AB1900000000000000000003,
+				AB1700000000000000000003,
+				AB2100000000000000000001,
+				AB3900000000000000000001,
+				AB3900000000000000000003,
+				AB3900000000000000000005,
+				AB3900000000000000000007,
+				AB3900000000000000000009,
+				AB1200000000000000000001,
+				AB1800000000000000000001,
+				AB1800000000000000000002,
+				AB1200000000000000000002,
+				474AC2ED2640F238B875DFBA,
+				54CCF4B9CD4492224FC36730,
+				0B1A0382CA7A4764A8AD3A12,
+				568E6B659A004F7792056543,
+				C9A1B2C3D4E5F60718293A4B,
+				366A9A71BB194587A8AECB5A,
+				EDCB99B43F3C4149B2F7622B,
+				2C5BFAB858B74B81AFAC16D0,
+				D883E2F5F205AC0EFBF9C319,
+				7A32C02543E94D8D8AD059DA,
+				F985B27612A241E0BF2D3B6E,
+				2A9B3E15E0704167ABE93960,
+				D00100000000000000000001,
+				D00100000000000000000002,
+				D00100000000000000000003,
+				A0D17B5E0000000000000001,
+				D00100000000000000000004,
+				D00100000000000000000005,
+				D00100000000000000000006,
+				D00100000000000000000007,
+				8F3A1B2C3D4E5F6789012345,
+				8F3A1B2C3D4E5F678901234F,
+				D00200000000000000000001,
+				D00200000000000000000002,
+				5D16F3E6AA9AE3153F10EA01,
+				8B29EC7278F7B9FF41EB8BF0,
+				8281CB7C705607A246377749,
+				EAB9B7988845FE05C9C227C3,
+				22C5A9E739A2E127D0BA221C,
+				794E01A20D65C985C5B77449,
+				BE2C8A1B49C3F8091E3DC5CB,
+				0E6B7E1E203B3E3190BDC7E0,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

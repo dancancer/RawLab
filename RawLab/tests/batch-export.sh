@@ -9,9 +9,11 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/BatchExportCore.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchExportModels.swift" \
+  "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
+  "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/BatchSettingsSummary.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchSettingsSummary.swift" \
     "$ROOT/RawLab/tests/BatchExportTests.swift" \
     -o "$OUT/batch-export"
 mkdir -p "$OUT/profile"

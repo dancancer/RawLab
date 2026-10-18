@@ -65,6 +65,7 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -O -sdk "$
     "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ExportMetadata.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift" \
+  "$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift" \
     "$PROCESSOR_ROOT/Sony2FujiProcessor+Lens.swift" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/preview-performance"

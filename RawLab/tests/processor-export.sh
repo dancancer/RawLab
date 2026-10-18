@@ -22,9 +22,10 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
+  "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \
-    "$ROOT/RawLab/RawLab/UI/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/ZoomablePhoto.swift" \
-    "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/ProcessorExportTests.swift" "$OUT/bridge.o" \
+    "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/Preview/ZoomablePhoto.swift" \
+    "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/ProcessorExport/ProcessorExportTests.swift" "$ROOT/RawLab/tests/ProcessorExport/ProcessorExportFixtures.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/processor-export"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
