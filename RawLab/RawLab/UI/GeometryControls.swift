@@ -110,11 +110,13 @@ struct IOSGeometryControls: View {
     private func cropControl(_ title: String, key: WritableKeyPath<GeometrySettings, Double>,
                              identifier: String) -> some View {
         let isDimension = key == \.cropWidth || key == \.cropHeight
+        let range = cropRange(key)
         return AdjustmentControl(title: L10n.text(title), value: cropBinding(key),
-                                 range: cropRange(key), step: 0.1,
+                                 range: range, step: 0.1,
                                  defaultValue: isDimension ? 100 : 0, unit: "%",
                                  formatter: decimalValue, identifier: identifier,
                                  onEditingChanged: onEditingChanged)
+            .disabled(range.lowerBound == range.upperBound)   // 未裁切时偏移只有 0 一个值，无可调
     }
 
     private func cropRange(_ key: WritableKeyPath<GeometrySettings, Double>) -> ClosedRange<Double> {

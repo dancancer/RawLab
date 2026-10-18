@@ -70,6 +70,18 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertEqual(left.frame.minY, right.frame.minY, accuracy: 1)
     }
 
+    // 未裁切时"裁切左侧/顶部"没有可调范围（0–0）：控件停用，也不同时宣称"已到下限""已到上限"
+    func testEmptyCropOffsetRangeIsInactive() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        try selectTool("geometry", in: app)
+        let reference = app.staticTexts.matching(identifier: "geometry.cropY.reference")
+        XCTAssertTrue(reference.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        let lines = reference.allElementsBoundByIndex.map(\.label)
+        XCTAssertFalse(lines.contains("Minimum Reached") && lines.contains("Maximum Reached"), "\(lines)")
+        XCTAssertFalse(app.buttons["geometry.cropY.value"].isEnabled, "a 0–0 range has nothing to choose")
+    }
+
     // 空批量任务只说"尚未选择照片"，不再重复一行"已选 0 张照片"
     func testEmptyBatchStatesTheSelectionOnce() throws {
         let app = launch()

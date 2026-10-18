@@ -140,12 +140,18 @@ struct AdjustmentControl: View {
         VStack(alignment: .trailing, spacing: 2) {
             if let validDefault { Text("\(L10n.text("默认")) \(formatter(validDefault)) \(unit)") }
             Text("\(L10n.text("范围")) \(formatter(range.lowerBound)) – \(formatter(range.upperBound)) \(unit)")
-            if value == range.lowerBound { Text(L10n.text("已到下限")) }
-            if value == range.upperBound { Text(L10n.text("已到上限")) }
+            if let limitNote { Text(limitNote) }
         }
         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("\(identifier).reference")
+    }
+
+    // 到达范围一端时的提示；范围只有一个值时（如未裁切时的裁切偏移）两端都不提
+    private var limitNote: String? {
+        guard range.lowerBound < range.upperBound else { return nil }
+        if value == range.lowerBound { return L10n.text("已到下限") }
+        return value == range.upperBound ? L10n.text("已到上限") : nil
     }
 
     private func commit(_ newValue: Double) {
