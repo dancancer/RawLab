@@ -88,12 +88,15 @@ struct ExportSizeSheet: View {
     var body: some View {
         let _ = localizationLocale
         NavigationStack {
+            // 标题放在表单顶部而不是导航栏：夹在"取消""导出"之间时，德语、法语等会被截成"…"
             Form {
                 Section {
                     ExportSizePicker(longEdge: $longEdge) { sizeIsValid = $0 }
+                } header: {
+                    Text(L10n.text(title)).font(.headline).foregroundStyle(.primary)
+                        .textCase(nil).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .navigationTitle(L10n.text(title))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -106,7 +109,7 @@ struct ExportSizeSheet: View {
                 }
             }
         }
-        .presentationDetents([.height(250)])
+        .presentationDetents([.height(290)])
         .preferredColorScheme(.dark)
         .tint(.yellow)
     }

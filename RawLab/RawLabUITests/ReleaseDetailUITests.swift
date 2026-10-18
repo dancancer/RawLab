@@ -98,6 +98,27 @@ final class ReleaseDetailUITests: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
+    // 导出面板标题完整显示：德语"Aktuelles Foto sichern"夹在两侧按钮之间时曾被截成"Aktuelles F..."
+    func testExportSheetTitleIsNotTruncated() throws {
+        let app = launch("de")
+        try importFirstVisiblePhoto(in: app)
+        app.buttons["editor.export"].tap()
+        app.buttons["Aktuelles Foto sichern"].tap()
+        XCTAssertTrue(app.buttons["editor.export.confirm"].waitForExistence(timeout: 10), app.debugDescription)
+        let titles = app.staticTexts.matching(NSPredicate(format: "label == %@", "Aktuelles Foto sichern"))
+            .allElementsBoundByIndex.filter { $0.frame.width > 0 }
+        XCTAssertFalse(titles.isEmpty, app.debugDescription)
+        let font = UIFont.preferredFont(forTextStyle: .headline)
+        let full = ("Aktuelles Foto sichern" as NSString).size(withAttributes: [.font: font]).width
+        // 折行后每行宽度乘以行数，至少要放得下整句
+        let room = titles.map { $0.frame.width * max(1, ($0.frame.height / font.lineHeight).rounded(.down)) }.max() ?? 0
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "export-sheet-title-de"
+        shot.lifetime = .keepAlways
+        add(shot)
+        XCTAssertGreaterThanOrEqual(room, full * 0.95, "titles \(titles.map(\.frame)) need \(full) pt")
+    }
+
     // 空批量任务只说"尚未选择照片"，不再重复一行"已选 0 张照片"
     func testEmptyBatchStatesTheSelectionOnce() throws {
         let app = launch()
@@ -124,9 +145,9 @@ final class ReleaseDetailUITests: XCTestCase {
     // ------------------------------------------------------------------------
     //  工具函数
     // ------------------------------------------------------------------------
-    private func launch() -> XCUIApplication {
+    private func launch(_ language: String = "en") -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        app.launchArguments = ["-AppleLanguages", "(\(language))", "-RawLab.language", language]
         app.launch()
         XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 30))
         return app
