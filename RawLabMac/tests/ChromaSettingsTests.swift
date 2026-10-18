@@ -9,7 +9,7 @@ struct ChromaSettingsTests {
     static func main() throws {
         var settings = Adjustments()
         check(settings.denoiseMode == 0, "New denoising defaults off")
-        check(ChromaNoiseReductionMode.allCases.map(\.title) == ["关闭", "细节优先", "去噪优先"], "Mode labels")
+        check(ChromaNoiseReductionMode.allCases.map(\.title) == ["停用", "细节优先", "去噪优先"], "Mode labels")
         settings.rawNoiseReduction = 2
         let encoded = try JSONEncoder().encode(settings)
         var legacy = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
