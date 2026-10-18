@@ -12,6 +12,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -95,40 +97,48 @@ class BatchExportModel(
                 val ready = withContext(Dispatchers.IO) {
                     if (initial != null) reconcile(initial) else freeze(initialJob)
                 }
-                mutable.value = mutable.value.copy(job = ready, stopping = false,
-                    phase = if (initial == null) BatchPhase.SELECTING else BatchPhase.CANCELLED)
+                mutable.update { it.copy(job = ready, stopping = false,
+                    phase = if (initial == null) BatchPhase.SELECTING else BatchPhase.CANCELLED) }
             } catch (error: Exception) {
-                mutable.value = mutable.value.copy(phase = BatchPhase.FAILED, error = error.message)
+                mutable.update { it.copy(phase = BatchPhase.FAILED, error = error.message, stopping = false) }
             }
         }
     }
 
     fun addUris(uris: List<Uri>) {
-        if (uris.isEmpty() || mutable.value.phase != BatchPhase.SELECTING) return
+        if (uris.isEmpty()) return
+        val previous = mutable.getAndUpdate {
+            if (it.phase == BatchPhase.SELECTING) it.copy(phase = BatchPhase.PREPARING) else it
+        }
+        if (previous.phase != BatchPhase.SELECTING) return
         cancelRequested.reset()
-        mutable.value = mutable.value.copy(phase = BatchPhase.PREPARING)
         scope.launch {
             val failures = mutableListOf<String>()
             val additions = withContext(Dispatchers.IO) { uris.mapNotNull { uri ->
                 if (cancelRequested.get()) null else try { copyTarget(uri) } catch (error: Exception) { failures += "${displayName(uri)}: ${error.message}"; null }
             } }
-            val existing = mutable.value.job.rows.mapTo(mutableSetOf()) { it.id }
-            val accepted = additions.filter { existing.add(it.identity.value) }
-            val all = mutable.value.job.rows.map { it.target } + accepted
-            mutable.value = mutable.value.copy(job = BatchJob(mutable.value.job.source, all,
-                id = mutable.value.job.id, outputFormat = mutable.value.job.outputFormat,
-                outputLongEdge = mutable.value.job.outputLongEdge, destination = mutable.value.job.destination),
-                phase = BatchPhase.SELECTING, stopping = false,
-                error = failures.takeIf { it.isNotEmpty() }?.joinToString("\n"))
+            val error = failures.takeIf { it.isNotEmpty() }?.joinToString("\n")
+            mutable.update { current ->
+                val existing = current.job.rows.mapTo(mutableSetOf()) { it.id }
+                val accepted = additions.filter { existing.add(it.identity.value) }
+                val all = current.job.rows.map { it.target } + accepted
+                current.copy(job = BatchJob(current.job.source, all,
+                    id = current.job.id, outputFormat = current.job.outputFormat,
+                    outputLongEdge = current.job.outputLongEdge, destination = current.job.destination),
+                    phase = BatchPhase.SELECTING, stopping = false, error = error)
+            }
         }
     }
 
     fun remove(id: String) {
-        if (mutable.value.phase != BatchPhase.SELECTING) return
-        val targets = mutable.value.job.rows.filterNot { it.id == id }.map { it.target }
-        mutable.value = mutable.value.copy(job = BatchJob(mutable.value.job.source, targets,
-            id = mutable.value.job.id, outputFormat = mutable.value.job.outputFormat,
-            outputLongEdge = mutable.value.job.outputLongEdge, destination = mutable.value.job.destination))
+        mutable.update { current ->
+            if (current.phase != BatchPhase.SELECTING) current else {
+                val targets = current.job.rows.filterNot { it.id == id }.map { it.target }
+                current.copy(job = BatchJob(current.job.source, targets,
+                    id = current.job.id, outputFormat = current.job.outputFormat,
+                    outputLongEdge = current.job.outputLongEdge, destination = current.job.destination))
+            }
+        }
     }
 
     fun start(format: ExportFormat, destination: Uri?, longEdge: Int? = null) {
@@ -136,9 +146,28 @@ class BatchExportModel(
     }
 
     private fun startInternal(format: ExportFormat, destination: Uri?, longEdge: Int?, retry: Boolean) {
-        val current = mutable.value
-        if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
-        if (retry && current.unfinishedCount == 0) return
+        val validationError = when {
+            !ExportSize.isValid(longEdge) -> AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and)
+            destination == null && !format.allowsGallery -> AppStrings.text(R.string.dng_file_only)
+            else -> null
+        }
+        var current: BatchExportState
+        var configured: BatchJob
+        /* CAS 成功后才启动副作用；冲突时重新校验最新状态，不复用活动快照。 */
+        while (true) {
+            current = mutable.value
+            if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
+            if (retry && current.unfinishedCount == 0) return
+            if (validationError != null) {
+                if (mutable.compareAndSet(current, current.copy(error = validationError))) return
+                continue
+            }
+            configured = current.job.copy(outputFormat = format, destination = destination?.toString(),
+                outputLongEdge = longEdge,
+                rows = current.job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) })
+            if (mutable.compareAndSet(current, current.copy(job = configured, phase = BatchPhase.PREPARING,
+                    outputFormat = format, destination = destination, error = null, stopping = false))) break
+        }
         val successBefore = current.successCount
         val attempted = mutableSetOf<String>()
         var terminalReported = false
@@ -149,18 +178,6 @@ class BatchExportModel(
             val failed = job.rows.count { it.id in attempted && it.status == BatchRowStatus.FAILED }
             withContext(Dispatchers.Main) { onTerminal(succeeded, failed, outcome) }
         }
-        if (!ExportSize.isValid(longEdge)) {
-            mutable.value = current.copy(error = AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and))
-            return
-        }
-        if (destination == null && !format.allowsGallery) {
-            mutable.value = current.copy(error = AppStrings.text(R.string.dng_file_only))
-            return
-        }
-        val configured = current.job.copy(outputFormat = format, destination = destination?.toString(),
-            outputLongEdge = longEdge,
-            rows = current.job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) })
-        mutable.value = current.copy(job = configured, phase = BatchPhase.PREPARING, outputFormat = format, destination = destination, error = null, stopping = false)
         cancelRequested.reset()
         running = scope.launch(Dispatchers.IO) {
             try {
@@ -172,6 +189,7 @@ class BatchExportModel(
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)
+                journal.save(materialized)
                 val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val result = try {
                     val render: (BatchTarget, EditSettings) -> File = { target, settings ->
@@ -201,11 +219,11 @@ class BatchExportModel(
                             throw BatchGlobalFailure(AppStrings.format(R.string.message_output_storage_failed, error.message.orEmpty()), error)
                         }
                     }
-                    mutable.value = mutable.value.copy(phase = BatchPhase.RUNNING)
+                    mutable.update { it.copy(phase = BatchPhase.RUNNING) }
                     BatchRunner.run(materialized, render, { _, _, _ -> }, cancelRequested::get, journal,
                         didUpdate = {
                             attempted.addAll(it.rows.filter { row -> row.status == BatchRowStatus.PROCESSING }.map { row -> row.id })
-                            mutable.value = mutable.value.copy(job = it)
+                            mutable.update { current -> current.copy(job = it) }
                         }, dispose = { it.delete() }, publish = publish)
                 } finally { processor.close() }
                 mutable.value = BatchExportState(result,
@@ -217,21 +235,23 @@ class BatchExportModel(
                     }, outputFormat = format, destination = destination, error = result.globalError)
                 reportTerminal(result, cancelRequested.outcome(result))
             } catch (error: Throwable) {
-                mutable.value = mutable.value.copy(phase = BatchPhase.FAILED,
-                    error = error.message ?: error.javaClass.simpleName)
+                mutable.update { it.copy(phase = BatchPhase.FAILED, stopping = false,
+                    error = error.message ?: error.javaClass.simpleName) }
                 reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
     }
 
     fun retryFailed() {
-        if (mutable.value.phase == BatchPhase.RUNNING || mutable.value.unfinishedCount == 0) return
-        startInternal(mutable.value.outputFormat, mutable.value.destination, mutable.value.job.outputLongEdge, retry = true)
+        val current = mutable.value
+        startInternal(current.outputFormat, current.destination, current.job.outputLongEdge, retry = true)
     }
 
     fun cancel(forBackground: Boolean = false) {
         cancelRequested.request(interrupted = forBackground)
-        if (mutable.value.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) mutable.value = mutable.value.copy(stopping = true)
+        mutable.update {
+            if (it.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) it.copy(stopping = true) else it
+        }
     }
 
     private fun copyTarget(uri: Uri): BatchTarget {
@@ -331,24 +351,30 @@ class BatchExportModel(
     }
 
     fun confirmOutput(id: String, saved: Boolean) {
-        val updated = mutable.value.job.withRows(mutable.value.job.rows.map {
-            if (it.id == id && it.status == BatchRowStatus.NEEDS_CONFIRMATION) it.copy(status = if (saved) BatchRowStatus.SUCCESS else BatchRowStatus.PENDING, outputUri = null) else it
-        })
-        try { BatchJournal(journalRoot).save(updated); mutable.value = mutable.value.copy(job = updated) }
-        catch (error: Exception) { mutable.value = mutable.value.copy(error = error.message) }
+        while (true) {
+            val current = mutable.value
+            val updated = current.job.withRows(current.job.rows.map {
+                if (it.id == id && it.status == BatchRowStatus.NEEDS_CONFIRMATION) it.copy(status = if (saved) BatchRowStatus.SUCCESS else BatchRowStatus.PENDING, outputUri = null) else it
+            })
+            try { BatchJournal(journalRoot).save(updated) }
+            catch (error: Exception) { mutable.update { it.copy(error = error.message) }; return }
+            if (mutable.compareAndSet(current, current.copy(job = updated))) return
+        }
     }
 
-    fun setDestination(destination: Uri?) { mutable.value = mutable.value.copy(destination = destination) }
+    fun setDestination(destination: Uri?) { mutable.update { it.copy(destination = destination) } }
 
     fun discardDraftOrCompleted(): Deferred<Unit>? {
-        if (mutable.value.phase == BatchPhase.SELECTING || mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
+        val job = mutable.value.job
+        /* 失败 phase 不代表已持久化；恢复扫描读取的 journal 文件才决定副本归属。 */
+        if (!File(journalRoot, "${job.id}.properties").isFile || job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
         return discardCompletion
     }
 
     fun discard(): Boolean {
         if (mutable.value.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING)) return false
         return try { discardAfterWork(); true }
-        catch (error: Exception) { mutable.value = mutable.value.copy(error = error.message); false }
+        catch (error: Exception) { mutable.update { it.copy(error = error.message) }; false }
     }
 
     private fun discardAfterWork() {
