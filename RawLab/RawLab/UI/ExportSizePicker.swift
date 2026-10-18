@@ -28,7 +28,9 @@ struct ExportSizePicker: View {
             .id(localizationLocale.identifier)
 
             if customSelected {
+                // 占位文字在填入数字后就不显示了，读屏名称要单独给
                 TextField(L10n.text("长边（1–65535 px）"), text: $customText)
+                    .accessibilityLabel(L10n.text("长边（1–65535 px）"))
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: customText) { _, value in

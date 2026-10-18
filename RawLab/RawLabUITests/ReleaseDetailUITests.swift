@@ -82,6 +82,22 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertFalse(app.buttons["geometry.cropY.value"].isEnabled, "a 0–0 range has nothing to choose")
     }
 
+    // 自定义尺寸输入框有读屏名称：填了数字后 VoiceOver 不能只读出"70000"
+    func testCustomExportSizeFieldHasAName() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        app.buttons["editor.export"].tap()
+        app.buttons["Save Current Photo"].tap()
+        let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Export Size'")).firstMatch
+        XCTAssertTrue(size.waitForExistence(timeout: 10), app.debugDescription)
+        size.tap()
+        app.buttons["Custom…"].tap()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(field.label, "Long Edge (1–65535 px)")
+        app.buttons["Cancel"].tap()
+    }
+
     // 空批量任务只说"尚未选择照片"，不再重复一行"已选 0 张照片"
     func testEmptyBatchStatesTheSelectionOnce() throws {
         let app = launch()
