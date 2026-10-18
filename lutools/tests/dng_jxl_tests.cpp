@@ -26,8 +26,12 @@ bool rejectSDKOutOfMemory(const std::string& path) {
     bool valid = false;
     {
         SimulateMemoryFull failure;
+        std::cerr << "[EXPECTED RAW FAILURE] dng_jxl.sdkOOM.load: injected SDK allocation failure for "
+                  << path << "; require OutOfMemory, not runner memory exhaustion.\n";
         valid = raw.loadFile(path) == ErrorCode::OutOfMemory;
     }
+    std::cerr << "[RAW SUCCESS REQUIRED] dng_jxl.sdkOOM.recovery: allocation injection is disabled; "
+              << path << " must load successfully.\n";
     if (raw.loadFile(path) != ErrorCode::Success) return false;
     RAWProcessOptions options;
     options.useCameraWhiteBalance = false;
@@ -36,6 +40,8 @@ bool rejectSDKOutOfMemory(const std::string& path) {
     ImageData image;
     {
         SimulateMemoryFull failure;
+        std::cerr << "[EXPECTED RAW FAILURE] dng_jxl.sdkOOM.reload: injected SDK allocation failure; "
+                  << "white-balance reload must return OutOfMemory.\n";
         valid = raw.process(options, image) == ErrorCode::OutOfMemory && valid;
     }
     sony2fuji_session* session = nullptr;
@@ -52,6 +58,8 @@ bool rejectSDKOutOfMemory(const std::string& path) {
     sony2fuji_buffer output{};
     {
         SimulateMemoryFull failure;
+        std::cerr << "[EXPECTED RAW FAILURE] dng_jxl.sdkOOM.cABI: injected SDK allocation failure; "
+                  << "require OUT_OF_MEMORY and an empty output buffer.\n";
         valid = sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_OUT_OF_MEMORY &&
             !output.data && valid;
     }
@@ -289,6 +297,8 @@ bool rejectCorruptJXL(const std::string& source) {
         std::ofstream output(path, std::ios::binary);
         output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     }
+    std::cerr << "[EXPECTED RAW FAILURE] dng_jxl.corruptJXL: deliberately corrupted JXL bytes in "
+              << path.u8string() << "; core and C ABI must report processing errors, not success or I/O errors.\n";
     const bool valid = rejectDecodeError(path.u8string());
     std::filesystem::remove(path);
     std::cout << (valid ? "PASS" : "FAIL") << " Corrupt JXL is a decoding error, not a path error\n";
@@ -358,8 +368,12 @@ int main(int argc, char** argv) {
     if (!rejectSDKOutOfMemory(jxl)) return 1;
 #endif
     if (!rejectCorruptJXL(jxl)) return 1;
+    std::cerr << "[EXPECTED RAW FAILURE] dng_jxl.unsupportedOpcode: required unknown Stage1 opcode in "
+              << directory << "/linear-jxl-required-unknown.dng; require processing errors, not success or I/O errors.\n";
     if (!rejectDecodeError(directory + "/linear-jxl-required-unknown.dng")) return 1;
     std::cout << "PASS Unsupported required Stage1 opcode is rejected\n";
+    std::cerr << "[RAW SUCCESS REQUIRED] dng_jxl.validFixtures: expected-failure checks are complete; "
+              << "the unmodified RAW fixtures must now load and render successfully.\n";
     RAWProcessor compressed, reference;
     if (compressed.loadFile(jxl) != ErrorCode::Success || reference.loadFile(plain) != ErrorCode::Success) return 1;
     RAWProcessOptions options;

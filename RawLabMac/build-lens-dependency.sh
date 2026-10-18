@@ -21,12 +21,14 @@ GLIB_BUILD="$RAWLAB_DEPS_BASE/$ARCH/glib"
 LOG="${RAWLAB_LENS_LOG:-/tmp/rawlab-lens-dependency-$MACOSX_DEPLOYMENT_TARGET-$ARCH.log}"
 exec > >(tee "$LOG") 2>&1
 
-"$PYTHON" "$ROOT/lutools/cmake/build-lens-dependencies.py" \
-    --build "$BUILD" --glib-build "$GLIB_BUILD" \
-    --prefix "$RAWLAB_LENS_PREFIX" --glib-prefix "$RAWLAB_DEPENDENCY_PREFIX" \
-    --platform macos --arch "$ARCH" --cc "$CC" --cxx "$CXX" --ar "$AR" \
-    --cmake "$CMAKE" --sysroot "$SDKROOT" --minimum "$MACOSX_DEPLOYMENT_TARGET" \
-    --source-cache "$RAWLAB_SOURCE_CACHE" --jobs "$JOBS"
+if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
+    "$PYTHON" "$ROOT/lutools/cmake/build-lens-dependencies.py" \
+        --build "$BUILD" --glib-build "$GLIB_BUILD" \
+        --prefix "$RAWLAB_LENS_PREFIX" --glib-prefix "$RAWLAB_DEPENDENCY_PREFIX" \
+        --platform macos --arch "$ARCH" --cc "$CC" --cxx "$CXX" --ar "$AR" \
+        --cmake "$CMAKE" --sysroot "$SDKROOT" --minimum "$MACOSX_DEPLOYMENT_TARGET" \
+        --source-cache "$RAWLAB_SOURCE_CACHE" --jobs "$JOBS"
+fi
 
 PKG_CONFIG_PATH="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig" \
     PKG_CONFIG_LIBDIR="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig" \
@@ -66,4 +68,4 @@ while IFS= read -r binary; do check_binary "$binary"; done < <(
         -maxdepth 1 -type f -name '*.dylib' -print | sort
 )
 test -f "$RAWLAB_LENS_PREFIX/libraries.json"
-echo "Built target Lensfun/GLib dependencies for $ARCH (macOS $MACOSX_DEPLOYMENT_TARGET)"
+echo "Verified target Lensfun/GLib dependencies for $ARCH (macOS $MACOSX_DEPLOYMENT_TARGET)"

@@ -20,7 +20,7 @@ class WorkflowContractTests(unittest.TestCase):
         events = self.workflow["on"]
         self.assertEqual(set(events), {"pull_request", "push"})
         self.assertEqual(events["pull_request"]["branches"], ["development", "release/**", "main"])
-        self.assertEqual(events["push"]["branches"], ["development", "release/**", "main"])
+        self.assertEqual(events["push"]["branches"], ["development", "main"])
         self.assertNotIn("tags", events["push"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
         self.assertNotIn("secrets.", self.text)
@@ -51,7 +51,7 @@ class WorkflowContractTests(unittest.TestCase):
             for step in job["steps"]:
                 if "uses" not in step:
                     continue
-                self.assertRegex(step["uses"], r"^actions/[a-z-]+@[0-9a-f]{40}$")
+                self.assertRegex(step["uses"], r"^actions/(?:[a-z-]+|cache/(?:restore|save))@[0-9a-f]{40}$")
                 if step["uses"].startswith("actions/checkout@"):
                     self.assertEqual(step["with"]["persist-credentials"], "false")
                 if step["uses"].startswith("actions/upload-artifact@"):
@@ -99,6 +99,29 @@ class WorkflowContractTests(unittest.TestCase):
     def test_mixed_batch_source_isolation_runs_on_macos(self):
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
         self.assertIn("RawLabMac/tests/batch-export.sh", mac)
+
+    def test_only_prs_restore_exact_native_caches_and_cold_pushes_seed_them(self):
+        for name in ("macos", "windows", "android", "ios"):
+            with self.subTest(job=name):
+                steps = self.workflow["jobs"][name]["steps"]
+                restores = [step for step in steps if step.get("uses", "").startswith("actions/cache/restore@")]
+                saves = [step for step in steps if step.get("uses", "").startswith("actions/cache/save@")]
+                self.assertEqual(len(restores), 1)
+                self.assertEqual(len(saves), 1)
+                restore, save = restores[0], saves[0]
+                self.assertEqual(restore["if"], "github.event_name == 'pull_request'")
+                self.assertNotIn("restore-keys", restore["with"])
+                self.assertEqual(restore["with"]["key"], "${{ steps.native-key.outputs.key }}")
+                self.assertEqual(save["with"], restore["with"])
+                self.assertEqual(save["if"], "success() && steps.native-cache.outputs.cache-hit != 'true'")
+                self.assertLess(steps.index(restore), steps.index(save))
+                builds = [step for step in steps if "run" in step and
+                          any(command in step["run"] for command in
+                              ("bash RawLabMac/build.sh", "./RawLabWindows/build.ps1", "./gradlew", "bash lutools/platform/ios/build-framework.sh"))]
+                self.assertEqual(len(builds), 1)
+                self.assertNotIn("if", builds[0], "Cache hits must still build and test the product")
+                self.assertLess(steps.index(restore), steps.index(builds[0]))
+                self.assertLess(steps.index(builds[0]), steps.index(save))
 
 
 if __name__ == "__main__":
