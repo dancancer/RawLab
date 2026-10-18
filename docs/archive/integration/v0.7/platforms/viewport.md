@@ -91,6 +91,6 @@ Heap sampling is not an instantaneous peak measurement. These runs establish mem
 
 The feature's normal merge with `development` at `d810fe6` and its bounded
 Lens/NR/viewport/FINAL, client binding and package-runtime checks are recorded
-separately in [the composition report](verification-viewport-lens-dng-integration-2026-10-13.md).
+separately in [the composition report](../viewport-lens-dng.md).
 The historical measurements above are not relabeled as that composed-source
 matrix; the old cold/warm/Scene experiments were not repeated.

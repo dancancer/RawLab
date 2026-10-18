@@ -129,8 +129,8 @@ Fixtures remain unchanged:
 The final #25 report's Development section describes fresh clients built after
 merging `2c46edc5`; its final complete tree is identical to this tested source.
 The currently readable logs were checked, not replaced by a new broad run.
-See [the localization integration record](verification-localization-2026-10-13.md)
-and [the preceding viewport/Lens/DNG increment](verification-viewport-lens-dng-integration-2026-10-13.md).
+See [the localization integration record](platforms/localization.md)
+and [the preceding viewport/Lens/DNG increment](viewport-lens-dng.md).
 
 | Platform | Adopted proof and preserved limitation |
 | --- | --- |
@@ -141,7 +141,7 @@ and [the preceding viewport/Lens/DNG increment](verification-viewport-lens-dng-i
 The earlier Android 2.5 GiB controlled before/current investigation and native
 6000x4000 JPEG/PNG regression remain recorded in
 [the memory investigation](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-denoise-memory-2026-10-13.md)
-and [the development migration](verification-viewport-development-2026-10-13.md).
+and [the development migration](platforms/viewport.md).
 Their unchanged 1,800,000,000-byte test budget is not a guarantee for arbitrary
 RAWs or new Sony DNG SDK working sets. They were not rerun in this final pass.
 Inherited #25 observations about RAW-to-raster disabled Lens selection and iOS

@@ -148,5 +148,5 @@ These guards supplement, not replace, workflow syntax linting and actual hosted
 execution. Platform jobs stop on command/test failures; they are not allowed to
 silently skip a required suite or mark a failing native process successful.
 
-The [0.8 release checklist](releases/v0.8.0-preparation.md) owns release blockers;
+The [0.8 release checklist](archive/releases/v0.8/preparation.md) owns release blockers;
 historical local/device reports retain their original source and device scope.

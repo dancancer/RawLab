@@ -59,7 +59,7 @@ xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Debug 
   ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build-for-testing
 ```
 
-最终定向UI合计8/8、0失败、0跳过，实际xcresult汇总见 `ui-final-summary.json`；模型401条断言另加视口三组，详见 [模型验证报告](ios-v08-model-integration-2026-10-16.md)。首次编译/链接失败和隐私中断没有计作通过。RAW系统用例只执行到批量就绪，未冒充该用例完成实际批量文件发布。
+最终定向UI合计8/8、0失败、0跳过，实际xcresult汇总见 `ui-final-summary.json`；模型401条断言另加视口三组，详见 [模型验证报告](ios-models.md)。首次编译/链接失败和隐私中断没有计作通过。RAW系统用例只执行到批量就绪，未冒充该用例完成实际批量文件发布。
 
 本轮三个新建模拟器分别承担 iPhone UI（`5E68FBD4-B519-4B74-8AE5-FF8F9E9C5DA5`）、13寸 iPad 几何（`1A11DBF8-83FC-4F1E-95EF-AE9E35BCC7D6`）和模型/RAW（`47310A81-02AA-45A1-807A-431181E4D338`）。没有重置其他设备、操作桌面鼠标或修改真实用户 profile。
 

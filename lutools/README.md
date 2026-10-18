@@ -111,9 +111,9 @@ RAW 格式支持取决于 LibRaw。Panasonic S5 II RW2 的 encoding 8 需要 Lib
 
 RAW format support depends on LibRaw. Panasonic S5 II RW2 encoding 8 requires the LibRaw 0.22 series; 0.21.x identifies the camera but decodes it as noise. Run real-RAW regressions, including decoder error checks, with `RAWLAB_TEST_RAW=/path/to/sample.rw2 bash lutools/test.sh`; photos are not bundled. Validation with Sony ARW, Panasonic S5 II RW2 and optional local DJI DNG fixtures does not establish color calibration for every brand, model or illuminant.
 
-源码依赖构建还会应用 `cmake/patch-libraw.cmake` 中的相机校准、元数据、裁切和 X-Trans 并发修复。系统库不自动获得这些补丁；外部/iOS LibRaw 构建也需应用同一脚本并重新编译。逐样片验证和仍不支持的 HE* 压缩见[兼容性报告](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。
+源码依赖构建还会应用 `cmake/patch-libraw.cmake` 中的相机校准、元数据、裁切和 X-Trans 并发修复。系统库不自动获得这些补丁；外部/iOS LibRaw 构建也需应用同一脚本并重新编译。逐样片验证和仍不支持的 HE* 压缩见[兼容性报告](../docs/archive/compatibility/raw-2026-10-09.md)。
 
-Source dependency builds also apply `cmake/patch-libraw.cmake` for calibration, metadata, crop and X-Trans concurrency fixes. System libraries do not receive these patches automatically; external/iOS LibRaw builds must apply the same script before rebuilding. See the [compatibility report](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md) for sample-level validation and unsupported HE* compression.
+Source dependency builds also apply `cmake/patch-libraw.cmake` for calibration, metadata, crop and X-Trans concurrency fixes. System libraries do not receive these patches automatically; external/iOS LibRaw builds must apply the same script before rebuilding. See the [compatibility report](../docs/archive/compatibility/raw-2026-10-09.md) for sample-level validation and unsupported HE* compression.
 
 照片 API 接受 F-Gamut / F-Log、F-Gamut / F-Log2，以及 F-Gamut C / F-Log2C 输入，要求声明 BT.709 输出色域。普通外观名称不设白名单，按应用 sRGB 显示约定解释；明确的 F-Log/F-Log2/F-Log2C 输出会先解码，再经过中性显示转换。校验依据声明，不分析表格的实际传递函数。内置胶片列表仍排除技术转换和 WDR，但可以自定义导入。
 

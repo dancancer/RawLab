@@ -208,7 +208,7 @@ Logs: `ios/dng-busy-resize-{red,green}.log` and
 `ios/dng-busy-app-build.log`. Both original reviewers rechecked only that
 three-path fix and closed the Should, with no new Must/Should. Their conclusion
 is bound to the final 60-path manifest above; see
-[the incremental review](../reviews/self-viewport-lens-dng-increment-20261013.md).
+[the incremental review](../../../../reviews/self-viewport-lens-dng-increment-20261013.md).
 
 No hosted CI success or platform runtime not actually run is claimed here.
 This work does not modify the final integration candidate worktree, localization,

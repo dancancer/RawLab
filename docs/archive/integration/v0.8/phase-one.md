@@ -17,7 +17,7 @@
 development；本阶段已获授权，在定向审查与相关测试通过后按依赖顺序合入。
 此轮不直接合入 main、打标签或发布。
 
-当前协议与使用方法见 [Edit JSON v1](../lutools/docs/edit-json.md)。
+当前协议与使用方法见 [Edit JSON v1](../../../../lutools/docs/edit-json.md)。
 第一步验收：曝光显式选择、旧 CLI 行为保留、默认值与 C 请求映射、无效配方在
 处理前拒绝、序列化往返、真实 RAW 的旧 CLI/JSON 输出一致、相对路径稳定。
 后续验收：同参数在 UI、Agent 和批量导出中一致，预览与 FINAL 几何一致。

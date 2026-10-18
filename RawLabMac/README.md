@@ -33,11 +33,11 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。紫绿去边暂未实现。
 
 
-v0.8.1 构建13 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），四端文案改由同一份来源生成并以 Mac 为基准，并修正工具栏开关状态、系统菜单语言、文字截断等界面细节，见 [v0.8.1 发布说明](../docs/releases/v0.8.1.md)。v0.8.0 构建12补齐桌面 Agent 编辑参数、几何编辑和四端普通图像输入，默认单图预览，并统一白平衡和暗角控件。保留既有 RAW、胶片外观、大师配方、HSL、降噪、镜头校正和渲染型 DNG 工作流。详见[发布说明](../docs/releases/v0.8.0.md)和[验收范围](../docs/releases/v0.8.0-preparation.md)。
+v0.8.1 构建13 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），四端文案改由同一份来源生成并以 Mac 为基准，并修正工具栏开关状态、系统菜单语言、文字截断等界面细节，见 [v0.8.1 发布说明](../docs/releases/v0.8.1.md)。v0.8.0 构建12补齐桌面 Agent 编辑参数、几何编辑和四端普通图像输入，默认单图预览，并统一白平衡和暗角控件。保留既有 RAW、胶片外观、大师配方、HSL、降噪、镜头校正和渲染型 DNG 工作流。详见[发布说明](../docs/releases/v0.8.0.md)和[验收范围](../docs/archive/releases/v0.8/preparation.md)。
 
 预编译版本：[GitHub Release v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
 
-Prebuilt apps: [v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) for Apple Silicon and Intel, targeting macOS14 and ad-hoc signed without notarization. See [release acceptance](../docs/releases/v0.8.0-preparation.md) for actual coverage and minimum-OS limits.
+Prebuilt apps: [v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) for Apple Silicon and Intel, targeting macOS14 and ad-hoc signed without notarization. See [release acceptance](../docs/archive/releases/v0.8/preparation.md) for actual coverage and minimum-OS limits.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 
@@ -83,9 +83,9 @@ The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the
 
 Rebuild third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, DNG deflate and LCMS are retained. LibRaw 0.22 no longer enables the legacy RedCine/JasPer path; prior JPEG2000 coverage is not promised.
 
-新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。
+新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/archive/compatibility/raw-2026-10-09.md)。
 
-Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
+Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/compatibility/raw-2026-10-09.md) for per-sample results and HE* limitations.
 
 ```bash
 # Run independently on each target-architecture host.

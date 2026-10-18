@@ -77,7 +77,7 @@ processing core is unchanged from 0.8.0.
 
 Version `0.8.0`, build `12`. See [release notes](docs/releases/v0.8.0.md),
 [source rebuild instructions](docs/releases/v0.8.0-source.md) and
-[release acceptance](docs/releases/v0.8.0-preparation.md). AI denoise/upscaling,
+[release acceptance](docs/archive/releases/v0.8/preparation.md). AI denoise/upscaling,
 HDR export, video generation and mobile Agent/MCP are not part of this release.
 
 ## [0.7.0] - 2026-10-14
@@ -113,7 +113,7 @@ HDR export, video generation and mobile Agent/MCP are not part of this release.
 Version `0.7.0`, build `11`. Available release packages include signed Android,
 ad-hoc signed macOS15 arm64 and Windows x64; iOS distribution signing is absent.
 See [release notes](docs/releases/v0.7.0.md),
-[release verification](docs/verification-v0.7.0-release.md) and
+[release verification](docs/archive/releases/v0.7/0.7.0-release.md) and
 [corresponding-source instructions](docs/releases/v0.7.0-source.md).
 
 ## [0.6.0] - 2026-10-12
@@ -157,10 +157,10 @@ Version `0.6.0`, build `10`, with all clients rebuilt from the release source.
 
 See the [v0.6.0 release notes](docs/releases/v0.6.0.md),
 [source rebuild instructions](docs/releases/v0.6.0-source.md),
-[release verification](docs/verification-v0.6.0.md),
+[release verification](docs/archive/releases/v0.6/0.6.0.md),
 [Chinese update notes](docs/releases/master-recipes-update.md),
-[cross-platform verification](docs/archive/verification/cross-platform-master-recipes-20261011.md)
-and [recipe HSL calibration](docs/archive/verification/master-recipes-hsl-20261011.md).
+[cross-platform verification](docs/archive/recipes/cross-platform-master-recipes-20261011.md)
+and [recipe HSL calibration](docs/archive/recipes/master-recipes-hsl-20261011.md).
 
 ## [0.5.1] - 2026-10-10
 
@@ -183,7 +183,7 @@ and [recipe HSL calibration](docs/archive/verification/master-recipes-hsl-202610
 - Preserve the previous EGL context and correctly order GLES filter teardown.
 
 See [v0.5.1 release notes](docs/releases/v0.5.1.md),
-[release verification](docs/verification-v0.5.1.md) and
+[release verification](docs/archive/releases/v0.5/0.5.1.md) and
 [the cross-platform implementation evidence](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
 
 ## [0.5.0] - 2026-10-10
@@ -212,7 +212,7 @@ See [v0.5.1 release notes](docs/releases/v0.5.1.md),
   source rather than reuse previous installers or native libraries.
 
 See [v0.5.0 release notes](docs/releases/v0.5.0.md) and
-[release verification](docs/verification-v0.5.0.md).
+[release verification](docs/archive/releases/v0.5/0.5.0.md).
 
 ## v0.4.1 更新 / What's New
 
@@ -223,9 +223,9 @@ See [v0.5.0 release notes](docs/releases/v0.5.0.md) and
 - Windows 新增 Mac 发起的远程编译入口；iOS 新增可复现的三架构 XCFramework 构建。移动设备峰值内存及 Windows 真显卡验证的边界见发布说明。
   Adds remote Windows builds from Mac and reproducible three-architecture iOS frameworks. See release notes for mobile memory and Windows hardware-GPU validation limits.
 
-详见 [v0.4.1 发布说明](docs/releases/v0.4.1.md)和[逐机型兼容性记录](docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。
+详见 [v0.4.1 发布说明](docs/releases/v0.4.1.md)和[逐机型兼容性记录](docs/archive/compatibility/raw-2026-10-09.md)。
 
-See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibility report](docs/archive/verification/verification-raw-compatibility-2026-10-09.md).
+See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibility report](docs/archive/compatibility/raw-2026-10-09.md).
 
 ## v0.4.0 更新 / Previous Features
 

@@ -61,8 +61,8 @@ macOS、iOS、Android 和 Windows 统一提供 14 个大师配方，使用同一
 
 - 三端补齐后的 14 配方、0/50/100/200% 强度、显式手动设置对照与 CPU/GPU 或自动回退对照已通过；macOS 也完成两种真实 RAW 的对应验收。
 - iOS、Android 拖动列表测试，以及 Windows 胶片和配方溢出按钮回归通过。Android 原生回归的 9 个方法均有通过结果，但整组曾被系统清理中断，后续逐项补齐，不计为一次完整的 9/9 运行通过。
-- 0.6.0 的正式包与验证结果以[发布验收记录](../verification-v0.6.0.md)为准。iOS 仍采用未签名分发，需要自行重新签名；尚未验收物理 iPhone/iPad 的安装、内存与温度表现。
+- 0.6.0 的正式包与验证结果以[发布验收记录](../archive/releases/v0.6/0.6.0.md)为准。iOS 仍采用未签名分发，需要自行重新签名；尚未验收物理 iPhone/iPad 的安装、内存与温度表现。
 - GPU 自动模式保留 CPU 回退，不保证所有外观都使用 GPU；RAW 解码和文件编码仍在 CPU。这些是本地验证结果，不是新发布提交的 CI 结果。
 - 原始 RAW、参考照片和模型权重未修改或打包，客户端不增加模型运行时。
 
-详细记录：[跨端验收](../archive/verification/cross-platform-master-recipes-20261011.md)、[HSL 配方校准](../archive/verification/master-recipes-hsl-20261011.md)、[LUT 参考优化](../archive/verification/master-recipes-optimization-20261011.md)、[iPad/HSL/自动曝光](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-ipad-hsl-auto-exposure-2026-10-11.md)。
+详细记录：[跨端验收](../archive/recipes/cross-platform-master-recipes-20261011.md)、[HSL 配方校准](../archive/recipes/master-recipes-hsl-20261011.md)、[LUT 参考优化](../archive/recipes/master-recipes-optimization-20261011.md)、[iPad/HSL/自动曝光](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-ipad-hsl-auto-exposure-2026-10-11.md)。

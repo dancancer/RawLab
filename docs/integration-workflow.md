@@ -80,5 +80,5 @@
   `WarpRectilinear` → 无 Stage3 JXL/plain 路径完成四端 RED/GREEN。
   这两例分别说明共享构建入口应统一维护，以及合并后必须验证实际状态与功能组合。
 
-本轮进展和最终联合门禁见 [v0.7.0 验收索引](verification-v0.7.0.md)；单个 PR 的证据
+本轮进展和最终联合门禁见 [v0.7.0 验收索引](archive/integration/v0.7/acceptance-index.md)；单个 PR 的证据
 在对应 PR 描述中保留各自 source 和平台范围。

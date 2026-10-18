@@ -163,9 +163,9 @@ Use `SONY2FUJI_INTENT_PREVIEW` and `preview_long_edge` for previews. Select BUFF
 
 The [public header](../../include/sony2fuji/ffi/sony2fuji_c.h) is the current interface reference. Cross-check historical examples in the [C API notes](../../docs/ios-api.md) against the header and this page. The [color contract](../../docs/color-contract.md) defines LUT input and white-balance behavior.
 
-2026-10-09 已完成三个架构的 XCFramework、模拟器 Debug 应用和未签名设备 Release 应用构建；iOS 模拟器上 9 款相机通过 RAW/白平衡回归，其中 3 款通过 Metal 回归，并通过真实 Sony RAW 的应用导出测试。Nikon HE* 样片按预期返回不支持错误。详见[相机兼容性验证记录](../../../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。设备构建通过不等于真机运行或内存验证。
+2026-10-09 已完成三个架构的 XCFramework、模拟器 Debug 应用和未签名设备 Release 应用构建；iOS 模拟器上 9 款相机通过 RAW/白平衡回归，其中 3 款通过 Metal 回归，并通过真实 Sony RAW 的应用导出测试。Nikon HE* 样片按预期返回不支持错误。详见[相机兼容性验证记录](../../../docs/archive/compatibility/raw-2026-10-09.md)。设备构建通过不等于真机运行或内存验证。
 
-On 2026-10-09, all three XCFramework architectures, the simulator Debug app and the unsigned device Release app built successfully. On the iOS simulator, nine cameras passed RAW/white-balance regressions, three passed Metal regressions, and the app export test passed with a real Sony RAW. A Nikon HE* fixture returned the expected unsupported error. See the [compatibility report](../../../docs/archive/verification/verification-raw-compatibility-2026-10-09.md). Device build success does not establish physical-device runtime or memory coverage.
+On 2026-10-09, all three XCFramework architectures, the simulator Debug app and the unsigned device Release app built successfully. On the iOS simulator, nine cameras passed RAW/white-balance regressions, three passed Metal regressions, and the app export test passed with a real Sony RAW. A Nikon HE* fixture returned the expected unsupported error. See the [compatibility report](../../../docs/archive/compatibility/raw-2026-10-09.md). Device build success does not establish physical-device runtime or memory coverage.
 
 ```bash
 # Use the UUID of a booted simulator and external RAW fixtures.

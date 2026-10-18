@@ -19,7 +19,7 @@ v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固�
 
 [Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Windows-0.8.1-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/archive/releases/v0.8/preparation.md)及随包 BUILD-PROVENANCE。
 
 ## 构建
 
@@ -72,7 +72,7 @@ python3 RawLabWindows/build-remote.py \
 ./RawLabWindows/scripts/provision-build-tools.ps1 -InstallerDirectory 'D:\'
 ```
 
-平台实测范围见 [RAW 兼容性验证记录](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
+平台实测范围见 [RAW 兼容性验证记录](../docs/archive/compatibility/raw-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
 
 ## 功能与 Mac 对齐
 
