@@ -31,6 +31,7 @@ retain their original candidate scope.
 - [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
 - [Licensing and attribution](licensing.md)
 - [Hosted verification and its coverage boundaries](ci.md)
+- [Architecture review, Android reproduction and performance record (2026-10-18, Chinese; baseline e493bb2)](architecture-and-performance-review-2026-10-18.md)
 
 ## v0.8.0 Preparation
 
