@@ -24,7 +24,7 @@
 "RawLab %@ 已发布" = "RawLab %@ veröffentlicht";
 "S 曲线" = "S-Kurve";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
-"上次批量任务尚未完成" = "Die letzte Batch-Aufgabe wurde noch nicht abgeschlossen";
+"上次批量任务尚未完成" = "Der letzte Stapel-Export ist noch nicht abgeschlossen";
 "不是支持的 RAW 文件" = "Keine unterstützte RAW-Datei";
 "中性" = "Neutral";
 "中点" = "Mittelpunkt";
@@ -147,7 +147,7 @@
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法计算直方图" = "Histogramm kann nicht berechnet werden";
-"无法读取上次批量任务：%@" = "Letzte Batch-Aufgabe konnte nicht gelesen werden: %@";
+"无法读取上次批量任务：%@" = "Der letzte Stapel-Export konnte nicht gelesen werden: %@";
 "无法读取基础曝光" = "Die Basisbelichtung kann nicht gelesen werden";
 "无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
@@ -171,7 +171,7 @@
 "未选择" = "Nicht ausgewählt";
 "查看任务" = "Aufgaben anzeigen";
 "查看应用后的效果" = "Ergebnis mit den angewendeten Einstellungen anzeigen";
-"查看批量任务…" = "Batch-Aufgaben anzeigen…";
+"查看批量任务…" = "Stapel-Export anzeigen…";
 "查看更新" = "Aktualisierungen anzeigen";
 "标准显影" = "Standardentwicklung";
 "格式" = "Format";

@@ -24,7 +24,7 @@
 "RawLab %@ 已发布" = "RawLab %@ publié";
 "S 曲线" = "Courbe en S";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.";
-"上次批量任务尚未完成" = "La dernière tâche batch n'est pas encore terminée";
+"上次批量任务尚未完成" = "La dernière exportation par lots n’est pas terminée";
 "不是支持的 RAW 文件" = "Il ne s'agit pas d'un fichier RAW pris en charge";
 "中性" = "Neutre";
 "中点" = "Point médian";
@@ -147,7 +147,7 @@
 "无法显示处理结果" = "Impossible d'afficher les résultats du traitement";
 "无法生成预览" = "Impossible de générer un aperçu";
 "无法计算直方图" = "Impossible de calculer l'histogramme";
-"无法读取上次批量任务：%@" = "Impossible de lire la dernière tâche batch : %@";
+"无法读取上次批量任务：%@" = "Impossible de lire la dernière exportation par lots : %@";
 "无法读取基础曝光" = "Impossible de lire l'exposition de base";
 "无法读取外观文件。" = "Impossible de lire le fichier de look.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "La bibliothèque de looks enregistrée est illisible ; les enregistrements d’origine n’ont pas été écrasés.";
@@ -206,7 +206,7 @@
 "粗颗粒降噪" = "Réduction du bruit des gros grains";
 "细节" = "Détails";
 "细节优先" = "Priorité aux détails";
-"继续上次批量任务" = "Continuer la dernière tâche batch";
+"继续上次批量任务" = "Reprendre la dernière exportation par lots";
 "继续未完成的 %@ 张" = "Reprendre les %@ photos restantes";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continuez à afficher la dernière tâche ou conservez le fichier exporté et créez une nouvelle tâche.";
 "缩小" = "Zoom arrière";

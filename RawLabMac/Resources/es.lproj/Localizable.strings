@@ -24,7 +24,7 @@
 "RawLab %@ 已发布" = "RawLab %@ publicado";
 "S 曲线" = "Curva S";
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
-"上次批量任务尚未完成" = "La última tarea del lote aún no se ha completado";
+"上次批量任务尚未完成" = "La última exportación por lotes aún no ha terminado";
 "不是支持的 RAW 文件" = "No es un archivo RAW compatible";
 "中性" = "Neutro";
 "中点" = "Punto medio";

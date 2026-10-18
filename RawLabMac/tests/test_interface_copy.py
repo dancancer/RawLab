@@ -57,6 +57,9 @@ GLOSSARY = {
               "fr": ("Xiaohongshu", "Petit Livre"), "es": ("Xiaohongshu", "Pequeño Libro"),
               "ja": ("小紅書", "Little Red Book")},
     "羽化": {"de": (None, "^Federn$"), "fr": (None, "drapeau")},
+    # 菜单里的"批量导出"与"查看批量任务"是同一件事，叫法一致
+    "批量": {"de": ("Stapel", "Batch"), "fr": ("par lots", "batch"), "es": ("por lotes", None),
+             "ja": ("一括", "バッチ")},
     "高光保护": {"fr": (None, "surbrillance"), "es": (None, "destacada")},
     # "=" 开头只匹配整个键：白平衡的色调（Tint）不能与 HSL 的色相（Farbton）同名
     "=色调": {"de": ("^Tönung$", None)},
