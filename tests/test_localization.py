@@ -1,7 +1,9 @@
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -64,13 +66,117 @@ def android_catalogs():
             for language, directory in directories.items()}
 
 
-class LocalizationTests(unittest.TestCase):
+class GeneratorSourceTests(unittest.TestCase):
     def test_generated_catalogs_have_no_unowned_entries(self):
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/localization/generate.py"), "--check"],
             capture_output=True, text=True, cwd=ROOT,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_check_rejects_drift_missing_files_and_unowned_resources_without_writing(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-localization-") as name:
+            root = Path(name)
+            shutil.copytree(ROOT / "Shared/strings", root / "Shared/strings")
+            self.assertEqual(self.run_generator(root).returncode, 0)
+            self.assertEqual(self.run_generator(root, "--check").returncode, 0)
+            path = root / "RawLabWindows/Resources/Localization/en.json"
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")
+            self.assertNotEqual(self.run_generator(root, "--check").returncode, 0)
+            self.assertEqual(path.read_bytes(), original + b"\n")
+            path.unlink()
+            self.assertNotEqual(self.run_generator(root, "--check").returncode, 0)
+            path.write_bytes(original)
+            rogue = root / "RawLabAndroid/app/src/main/res/values/extra.xml"
+            rogue.write_text('<resources><string name="rogue">Unowned</string></resources>')
+            self.assertIn("Unowned catalog", self.run_generator(root, "--check").stderr)
+
+    def test_one_source_change_updates_all_four_clients(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-localization-") as name:
+            root = Path(name)
+            shutil.copytree(ROOT / "Shared/strings", root / "Shared/strings")
+            path = root / "Shared/strings/common/catalog.json"
+            source = json.loads(path.read_text())
+            source["语言"]["en"] = "Changed language label"
+            source["从文件导入"]["en"] = "Changed file source"
+            source["照片"]["en"] = "Changed photo source"
+            path.write_text(json.dumps(source, ensure_ascii=False))
+            self.assertEqual(self.run_generator(root).returncode, 0)
+            for native in ("RawLabMac/Resources/en.lproj/Localizable.strings",
+                           "RawLab/RawLab/Resources/en.lproj/Localizable.strings",
+                           "RawLabWindows/Resources/Localization/en.json",
+                           "RawLabAndroid/app/src/main/res/values/strings.xml"):
+                self.assertIn("Changed language label", (root / native).read_text(), native)
+            ios = root / "RawLab/RawLab/Resources/en.lproj/Localizable.strings"
+            self.assertIn('"从文件导入" = "Changed file source";', ios.read_text())
+            android = root / "RawLabAndroid/app/src/main/res/values/strings.xml"
+            self.assertIn('name="open_file">"Import from files"</string>', android.read_text())
+            windows = root / "RawLabWindows/Resources/Localization/en.json"
+            self.assertEqual(json.loads(windows.read_text())["照片"], "Photos")
+
+    def run_generator(self, root, *arguments):
+        return subprocess.run([sys.executable, str(ROOT / "scripts/localization/generate.py"),
+                               "--root", str(root), *arguments], capture_output=True, text=True)
+
+
+class GeneratorFormatTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(ROOT / "scripts/localization"))
+        global formats
+        import formats
+
+    def test_native_placeholders_keep_types_precision_and_literal_percent(self):
+        for style, native, neutral, slots in (
+            ("apple", "%@ · %@%%", "{0} · {1}%", ["%@", "%@"]),
+            ("android", "%1$+.1f · %2$d%%", "{0} · {1}%", ["%1$+.1f", "%2$d"]),
+            ("windows", "{0:0.#} / {1:P1}", "{0} / {1}", ["{0:0.#}", "{1:P1}"]),
+        ):
+            self.assertEqual(formats.normalize(native, style), (neutral, slots))
+            self.assertEqual(formats.render(neutral, slots, style), native)
+
+    def test_reordered_placeholders_keep_argument_positions(self):
+        self.assertEqual(formats.render("{1} / {0}%", ["%@", "%@"], "apple"), "%2$@ / %1$@%%")
+        self.assertEqual(formats.render("{1} / {0}", ["%1$d", "%2$s"], "android"), "%2$s / %1$d")
+
+    def test_dotnet_literal_braces_do_not_become_arguments(self):
+        native = "{{0}} {0,8:0.#}"
+        neutral, slots = formats.normalize(native, "windows")
+        self.assertEqual((neutral, slots), ("{{0}} {0}", ["{0,8:0.#}"]))
+        self.assertEqual(formats.render(neutral, slots, "windows"), native)
+
+    def test_conflicting_formats_for_one_argument_are_not_silently_lost(self):
+        for native, style in (("%1$d %1$s", "android"), ("{0:0.#} {0:P1}", "windows")):
+            with self.assertRaises(ValueError):
+                formats.normalize(native, style)
+
+    def test_apple_escaping_round_trips(self):
+        value = '引号 " 和反斜杠 \\、换行\n下一行\t结束'
+        text = formats.apple_quote(value) + " = " + formats.apple_quote(value) + ";\n"
+        self.assertEqual(formats.read_apple(text), {value: value})
+        with self.assertRaises(ValueError):
+            formats.read_apple(text + text)
+        with self.assertRaises(ValueError):
+            formats.read_apple(text + "invalid")
+
+    def test_android_escaping_handles_resource_prefix_and_whitespace(self):
+        for value, expected in (
+            ('@a & <b> \' " \\ \n', r'"\@a &amp; &lt;b&gt; \' \" \\ \n"'),
+            ("?help", r'"\?help"'),
+        ):
+            escaped = formats.android_quote(value)
+            self.assertEqual(escaped, expected)
+            element = ET.fromstring("<string>" + escaped + "</string>")
+            self.assertEqual(formats.android_unquote(element.text), value)
+
+    def test_missing_or_extra_arguments_are_rejected(self):
+        for text in ("{1}", "no placeholder", "{0} {2}"):
+            with self.assertRaises(ValueError):
+                formats.render(text, ["%1$d"], "android")
+
+
+class LocalizationTests(unittest.TestCase):
 
     def test_macos_photography_terms(self):
         catalog = apple_catalog(ROOT / "RawLabMac/Resources/en.lproj/Localizable.strings")

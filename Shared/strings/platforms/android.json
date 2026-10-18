@@ -1,0 +1,3308 @@
+{
+  "entries": {
+    "about_rawlab": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "关于 RawLab",
+      "types": []
+    },
+    "adjustment_apply": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用",
+      "types": []
+    },
+    "adjustment_continue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "继续编辑",
+      "types": []
+    },
+    "adjustment_discard": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "放弃",
+      "types": []
+    },
+    "adjustment_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未应用草稿",
+      "types": []
+    },
+    "adjustment_fine": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "精细",
+      "types": []
+    },
+    "adjustment_haptics": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整触觉反馈",
+      "types": []
+    },
+    "adjustment_leave": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "离开前应用更改？",
+      "types": []
+    },
+    "adjustment_normal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "普通",
+      "types": []
+    },
+    "adjustment_toggle_sign": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "切换正负号",
+      "types": []
+    },
+    "album_columns": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "每行 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "album_empty": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "没有可访问的照片",
+      "types": []
+    },
+    "album_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法读取相册，请检查照片权限。",
+      "types": []
+    },
+    "album_original_ratio": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原始比例",
+      "types": []
+    },
+    "album_square": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "方形缩略图",
+      "types": []
+    },
+    "album_view_options": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "视图选项",
+      "types": []
+    },
+    "all_albums": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "全部相册",
+      "types": []
+    },
+    "all_tools": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全部工具",
+      "types": []
+    },
+    "app_name": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "RawLab",
+      "types": []
+    },
+    "app_version": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "版本 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "as_shot": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄时设置",
+      "types": []
+    },
+    "author_xiaohongshu": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "作者的小红书主页",
+      "types": []
+    },
+    "auto_exposure": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自动",
+      "types": []
+    },
+    "auto_update_check": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自动检查更新",
+      "types": []
+    },
+    "back": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "返回",
+      "types": []
+    },
+    "batch_confirmation_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "{0} 项输出待核对",
+      "types": [
+        "d"
+      ]
+    },
+    "batch_export": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "批量导出",
+      "types": []
+    },
+    "browser_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法打开链接，请安装或启用浏览器。",
+      "types": []
+    },
+    "cancel": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取消",
+      "types": []
+    },
+    "check_updates": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "检查更新",
+      "types": []
+    },
+    "collapse_adjustments": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "收起调整",
+      "types": []
+    },
+    "collapse_vignette": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "收起暗角参数",
+      "types": []
+    },
+    "compare": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "对比",
+      "types": []
+    },
+    "comparison_wipe": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原图与调整后分界",
+      "types": []
+    },
+    "confirm": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "确定",
+      "types": []
+    },
+    "contrast": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "对比度",
+      "types": []
+    },
+    "delete_look": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "删除外观",
+      "types": []
+    },
+    "denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "降噪",
+      "types": []
+    },
+    "denoise_chroma": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色彩降噪",
+      "types": []
+    },
+    "denoise_clean": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "去噪优先",
+      "types": []
+    },
+    "denoise_coarse": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "粗色斑抑制",
+      "types": []
+    },
+    "denoise_custom": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自定义",
+      "types": []
+    },
+    "denoise_detail": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "细节优先",
+      "types": []
+    },
+    "denoise_luma": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "亮度降噪",
+      "types": []
+    },
+    "disabled": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "停用",
+      "types": []
+    },
+    "display_chroma_denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "显示色彩降噪",
+      "types": []
+    },
+    "dng": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "DNG · 渲染型",
+      "types": []
+    },
+    "dng_description": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存最终外观，不是传感器 RAW；不保留可编辑历史或拍摄 EXIF，仅保存到文件。",
+      "types": []
+    },
+    "dng_file_only": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "DNG 只能保存到文件",
+      "types": []
+    },
+    "edit_restored": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已恢复上次调整",
+      "types": []
+    },
+    "edit_saved": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "调整已保存",
+      "types": []
+    },
+    "edit_storage_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法打开本机调整记录，请检查存储权限。",
+      "types": []
+    },
+    "edit_unsaved": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "调整未保存，点击重试",
+      "types": []
+    },
+    "editor_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "设置",
+      "types": []
+    },
+    "empty_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择相册中的 RAW，或从系统文件中导入。",
+      "types": []
+    },
+    "expand_adjustments": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "展开调整",
+      "types": []
+    },
+    "expand_vignette": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "展开暗角参数",
+      "types": []
+    },
+    "export": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导出",
+      "types": []
+    },
+    "export_done": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "照片已保存",
+      "types": []
+    },
+    "exporting": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在导出全分辨率照片",
+      "types": []
+    },
+    "exposure": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "曝光",
+      "types": []
+    },
+    "exposure_basis": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "曝光基准",
+      "types": []
+    },
+    "exposure_preview": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "匹配内嵌预览",
+      "types": []
+    },
+    "exposure_scene": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "标准显影",
+      "types": []
+    },
+    "exposure_sensor": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "传感器基准",
+      "types": []
+    },
+    "film": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "胶片",
+      "types": []
+    },
+    "follow_system": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "跟随系统",
+      "types": []
+    },
+    "geometry": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "几何",
+      "types": []
+    },
+    "geometry_crop_height": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "高度",
+      "types": []
+    },
+    "geometry_crop_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "裁切百分比基于旋转、翻转、透视校正和拉直后的画面。",
+      "types": []
+    },
+    "geometry_crop_width": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "宽度",
+      "types": []
+    },
+    "geometry_crop_x": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "左边",
+      "types": []
+    },
+    "geometry_crop_y": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "顶部",
+      "types": []
+    },
+    "geometry_drag_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "裁切矩形",
+      "types": []
+    },
+    "geometry_flip_horizontal": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "水平翻转",
+      "types": []
+    },
+    "geometry_flip_vertical": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "垂直翻转",
+      "types": []
+    },
+    "geometry_full": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置裁切",
+      "types": []
+    },
+    "geometry_move_down": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "向下移动裁切",
+      "types": []
+    },
+    "geometry_move_left": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "向左移动裁切",
+      "types": []
+    },
+    "geometry_move_right": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "向右移动裁切",
+      "types": []
+    },
+    "geometry_move_up": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "向上移动裁切",
+      "types": []
+    },
+    "geometry_perspective_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "透视校正在旋转和翻转之后、拉直和裁切之前应用，画面自动裁边以避免黑边。",
+      "types": []
+    },
+    "geometry_perspective_horizontal": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "水平透视",
+      "types": []
+    },
+    "geometry_perspective_vertical": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "垂直透视",
+      "types": []
+    },
+    "geometry_ratio_free": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自由",
+      "types": []
+    },
+    "geometry_ratio_original": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原始",
+      "types": []
+    },
+    "geometry_reset": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置几何",
+      "types": []
+    },
+    "geometry_rotate_left": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "向左旋转",
+      "types": []
+    },
+    "geometry_rotate_right": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "向右旋转",
+      "types": []
+    },
+    "geometry_straighten": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拉直",
+      "types": []
+    },
+    "geometry_summary": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$.1f",
+        "%2$.1f",
+        "%3$.1f",
+        "%4$.1f",
+        "%5$d",
+        "%6$+.1f"
+      ],
+      "source": "裁切 {0},{1} · {2} × {3}% · 旋转 {4}° · 拉直 {5}°",
+      "types": [
+        "f",
+        "f",
+        "f",
+        "f",
+        "d",
+        "f"
+      ]
+    },
+    "geometry_swap_ratio": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "切换裁切横竖方向",
+      "types": []
+    },
+    "github_repository": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "GitHub 仓库",
+      "types": []
+    },
+    "gpu_auto": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "硬件加速（自动回退）",
+      "types": []
+    },
+    "grain": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "颗粒",
+      "types": []
+    },
+    "grain_amount": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "强度",
+      "types": []
+    },
+    "grain_roughness": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "粗糙度",
+      "types": []
+    },
+    "grain_size": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "大小",
+      "types": []
+    },
+    "grain_summary": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$.0f",
+        "%2$.0f",
+        "%3$.0f"
+      ],
+      "source": "强度 {0} · 大小 {1} · 粗糙度 {2}",
+      "types": [
+        "f",
+        "f",
+        "f"
+      ]
+    },
+    "grant_access": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选择照片权限",
+      "types": []
+    },
+    "highlights": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "高光",
+      "types": []
+    },
+    "hsl": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "HSL",
+      "types": []
+    },
+    "hsl_adjusted": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已调整",
+      "types": []
+    },
+    "hsl_aqua": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "青",
+      "types": []
+    },
+    "hsl_blue": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "蓝",
+      "types": []
+    },
+    "hsl_green": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "绿",
+      "types": []
+    },
+    "hsl_hue": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色相",
+      "types": []
+    },
+    "hsl_lightness": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "明度",
+      "types": []
+    },
+    "hsl_magenta": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "洋红",
+      "types": []
+    },
+    "hsl_orange": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "橙",
+      "types": []
+    },
+    "hsl_purple": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "紫",
+      "types": []
+    },
+    "hsl_red": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "红",
+      "types": []
+    },
+    "hsl_reset": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置 HSL",
+      "types": []
+    },
+    "hsl_reset_channel": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置当前颜色",
+      "types": []
+    },
+    "hsl_unadjusted": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未调整",
+      "types": []
+    },
+    "hsl_yellow": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "黄",
+      "types": []
+    },
+    "import_look": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入外观",
+      "types": []
+    },
+    "importing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在读取照片",
+      "types": []
+    },
+    "info_aperture": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "光圈",
+      "types": []
+    },
+    "info_camera": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机",
+      "types": []
+    },
+    "info_capture": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄参数",
+      "types": []
+    },
+    "info_capture_missing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未读取到拍摄参数",
+      "types": []
+    },
+    "info_capture_time": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄时间",
+      "types": []
+    },
+    "info_file": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "文件信息",
+      "types": []
+    },
+    "info_filename": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "文件",
+      "types": []
+    },
+    "info_focal_length": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "焦距",
+      "types": []
+    },
+    "info_hidden": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "显示照片信息",
+      "types": []
+    },
+    "info_iso": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "ISO",
+      "types": []
+    },
+    "info_lens": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "镜头",
+      "types": []
+    },
+    "info_orientation": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "方向修正",
+      "types": []
+    },
+    "info_original_dimensions": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原始尺寸",
+      "types": []
+    },
+    "info_shutter": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "快门",
+      "types": []
+    },
+    "info_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "不可用",
+      "types": []
+    },
+    "invalid_value": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请输入范围内的有效数字",
+      "types": []
+    },
+    "jpeg": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "JPEG",
+      "types": []
+    },
+    "jpeg_description": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "sRGB · 质量 95 · 保留拍摄元数据",
+      "types": []
+    },
+    "language": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "语言",
+      "types": []
+    },
+    "language_save_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法保存语言设置。",
+      "types": []
+    },
+    "lens_ambiguous": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "有多个匹配镜头，请手动选择",
+      "types": []
+    },
+    "lens_auto_crop": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自动裁边",
+      "types": []
+    },
+    "lens_automatic": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自动",
+      "types": []
+    },
+    "lens_camera_info_missing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未找到机身或传感器尺寸信息",
+      "types": []
+    },
+    "lens_choose": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选择镜头",
+      "types": []
+    },
+    "lens_choose_profile": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选择镜头配置文件",
+      "types": []
+    },
+    "lens_corrected": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "已校正{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "lens_crop_percent": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$.1f"
+      ],
+      "source": "裁边 {0}%",
+      "types": [
+        "f"
+      ]
+    },
+    "lens_database_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "镜头数据库不可用",
+      "types": []
+    },
+    "lens_distortion": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "畸变矫正",
+      "types": []
+    },
+    "lens_distortion_short": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "畸变",
+      "types": []
+    },
+    "lens_embedded_geometry": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "DNG 已执行内嵌 Stage3 处理，未叠加校正",
+      "types": []
+    },
+    "lens_focal_length_missing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "照片缺少有效焦距，未应用校正",
+      "types": []
+    },
+    "lens_info_not_ready": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "镜头信息尚未就绪",
+      "types": []
+    },
+    "lens_input_unsupported": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此输入不支持镜头校正",
+      "types": []
+    },
+    "lens_manual": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "手动",
+      "types": []
+    },
+    "lens_manual_required": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未匹配镜头，请手动选择",
+      "types": []
+    },
+    "lens_matched": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已匹配镜头",
+      "types": []
+    },
+    "lens_matching": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "镜头匹配",
+      "types": []
+    },
+    "lens_metadata_match": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "元数据匹配",
+      "types": []
+    },
+    "lens_no_calibration": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此镜头没有所选校正的标定数据",
+      "types": []
+    },
+    "lens_none_found": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未找到镜头",
+      "types": []
+    },
+    "lens_off": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "镜头校正已关闭",
+      "types": []
+    },
+    "lens_reset": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置镜头校正",
+      "types": []
+    },
+    "lens_search": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "搜索镜头",
+      "types": []
+    },
+    "lens_tca": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "横向色差",
+      "types": []
+    },
+    "lens_unmatched": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未匹配镜头",
+      "types": []
+    },
+    "licenses": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "开源许可",
+      "types": []
+    },
+    "look_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "外观操作失败，请选择有效的 .cube 或 .rlook 文件。",
+      "types": []
+    },
+    "look_import_result": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入结果",
+      "types": []
+    },
+    "look_import_summary": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$d"
+      ],
+      "source": "已导入 {0} 个外观，{1} 个文件导入失败",
+      "types": [
+        "d",
+        "d"
+      ]
+    },
+    "look_imported": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "外观已导入",
+      "types": []
+    },
+    "look_importing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在导入外观",
+      "types": []
+    },
+    "look_name": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "外观名称",
+      "types": []
+    },
+    "look_remove_body": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅移除托管副本，原文件保留。",
+      "types": []
+    },
+    "look_storage_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "外观库读取失败，请稍后重试或删除损坏的外观记录。",
+      "types": []
+    },
+    "look_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此外观文件不可用，请删除后重新导入。",
+      "types": []
+    },
+    "master_recipes": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "大师配方",
+      "types": []
+    },
+    "memory_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "内存不足，无法处理这张照片。",
+      "types": []
+    },
+    "message_adjustment_source": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "调整来源",
+      "types": []
+    },
+    "message_all_adjustments": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "全部调整",
+      "types": []
+    },
+    "message_as_shot_for_each_photo": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "各照片拍摄时设置",
+      "types": []
+    },
+    "message_awaiting_confirmation": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "待核对",
+      "types": []
+    },
+    "message_cancel": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取消",
+      "types": []
+    },
+    "message_cancelled": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已取消",
+      "types": []
+    },
+    "message_choose_directory": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选择目录",
+      "types": []
+    },
+    "message_choose_output_directory_again": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重新选择输出目录",
+      "types": []
+    },
+    "message_chroma_denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色彩降噪",
+      "types": []
+    },
+    "message_close": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "关闭",
+      "types": []
+    },
+    "message_coarse_grain_denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "粗颗粒降噪",
+      "types": []
+    },
+    "message_collapse": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "收起",
+      "types": []
+    },
+    "message_completed": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "已完成 {0} / {1}",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "message_confirm_photos": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "确认 {0} 张",
+      "types": [
+        "s"
+      ]
+    },
+    "message_continue_unfinished_items": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "继续未完成项",
+      "types": []
+    },
+    "message_contrast": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "对比度",
+      "types": []
+    },
+    "message_could_not_confirm_whether_the_photo_was": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法确认照片保存结果，请核对照片图库",
+      "types": []
+    },
+    "message_custom": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自定义",
+      "types": []
+    },
+    "message_denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "降噪",
+      "types": []
+    },
+    "message_discard_batch_task": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "放弃批量任务？",
+      "types": []
+    },
+    "message_discard_task": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "放弃任务",
+      "types": []
+    },
+    "message_enter_a_pixel_count_between_1_and": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请输入 1–65535 之间的像素数",
+      "types": []
+    },
+    "message_expand": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "展开",
+      "types": []
+    },
+    "message_export_complete": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导出完成",
+      "types": []
+    },
+    "message_export_photos": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "导出 {0} 张",
+      "types": [
+        "s"
+      ]
+    },
+    "message_export_result": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导出结果",
+      "types": []
+    },
+    "message_exporting": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在导出",
+      "types": []
+    },
+    "message_exposure": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "曝光",
+      "types": []
+    },
+    "message_exposure_ev": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$+.2f"
+      ],
+      "source": "曝光 {0} EV",
+      "types": [
+        "f"
+      ]
+    },
+    "message_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "失败",
+      "types": []
+    },
+    "message_film": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "胶片",
+      "types": []
+    },
+    "message_flipped_horizontally": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "水平翻转",
+      "types": []
+    },
+    "message_flipped_horizontally_rotated": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "水平翻转，旋转 {0}°",
+      "types": [
+        "s"
+      ]
+    },
+    "message_for_this_export_only_each_photo_s": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "仅用于本次导出，保留各照片原有调整",
+      "types": []
+    },
+    "message_highlights": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "高光",
+      "types": []
+    },
+    "message_luma_denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "亮度降噪",
+      "types": []
+    },
+    "message_no_correction_needed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无需修正",
+      "types": []
+    },
+    "message_not_a_supported_raw_file": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "不是受支持的 RAW、JPEG 或 PNG 文件",
+      "types": []
+    },
+    "message_not_saved_export_again": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未保存，重新导出",
+      "types": []
+    },
+    "message_on": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "开启",
+      "types": []
+    },
+    "message_output": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "输出",
+      "types": []
+    },
+    "message_output_found": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已找到输出",
+      "types": []
+    },
+    "message_output_storage_failed": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "输出存储失败：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "message_photo_gallery": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "照片图库",
+      "types": []
+    },
+    "message_preparing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在准备",
+      "types": []
+    },
+    "message_processing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在处理",
+      "types": []
+    },
+    "message_remove": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "移除",
+      "types": []
+    },
+    "message_retry_failed_items": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重试失败项",
+      "types": []
+    },
+    "message_rotated": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "旋转 {0}°",
+      "types": [
+        "s"
+      ]
+    },
+    "message_s_curve": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "S 曲线",
+      "types": []
+    },
+    "message_saturation": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "饱和度",
+      "types": []
+    },
+    "message_saved": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已保存",
+      "types": []
+    },
+    "message_saved_photos_will_be_kept": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已保存的照片会保留。",
+      "types": []
+    },
+    "message_saving": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在保存",
+      "types": []
+    },
+    "message_saving_to_the_photo_gallery_requires_android": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相册保存需要 Android 10 或更高版本",
+      "types": []
+    },
+    "message_select_multiple_files": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "文件多选",
+      "types": []
+    },
+    "message_select_multiple_from_album": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相册多选",
+      "types": []
+    },
+    "message_select_raw_photos_to_apply_the_current": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请选择要套用当前调整的照片",
+      "types": []
+    },
+    "message_shadows": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "阴影",
+      "types": []
+    },
+    "message_sharpening": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "锐化",
+      "types": []
+    },
+    "message_some_exports_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "部分导出失败",
+      "types": []
+    },
+    "message_stopping": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在停止",
+      "types": []
+    },
+    "message_succeeded_failed_not_processed": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s",
+        "%3$s"
+      ],
+      "source": "成功 {0} 张，失败 {1} 张，未处理 {2} 张",
+      "types": [
+        "s",
+        "s",
+        "s"
+      ]
+    },
+    "message_target_photos_selected": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "目标照片（已选 {0} 张）",
+      "types": [
+        "s"
+      ]
+    },
+    "message_temperature": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色温",
+      "types": []
+    },
+    "message_the_previous_save_result_is_uncertain_check": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "上次保存结果不确定，请先核对图库或输出目录。",
+      "types": []
+    },
+    "message_the_task_source_or_look_file_is": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "任务来源或外观文件不可用，请重新创建批量任务。",
+      "types": []
+    },
+    "message_tint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色调",
+      "types": []
+    },
+    "message_unable_to_read_batch_task": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "无法读取批量任务：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "message_unable_to_read_file": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法读取文件",
+      "types": []
+    },
+    "message_unable_to_read_output_directory": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法读取输出目录",
+      "types": []
+    },
+    "message_unable_to_write_to_output_directory": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "无法写入输出目录：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "message_unfinished_batch_export": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "有未完成的批量导出",
+      "types": []
+    },
+    "message_view": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看",
+      "types": []
+    },
+    "message_view_task": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看任务",
+      "types": []
+    },
+    "message_waiting_to_export": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "等待导出",
+      "types": []
+    },
+    "message_white_balance": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "白平衡",
+      "types": []
+    },
+    "message_writing_was_incomplete_and_cleanup_failed_check": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "写入未完成且无法清理，请核对输出目录",
+      "types": []
+    },
+    "more": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "更多",
+      "types": []
+    },
+    "neutral": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原图",
+      "types": []
+    },
+    "neutral_direct_output": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "中性直出",
+      "types": []
+    },
+    "neutral_look": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "中性",
+      "types": []
+    },
+    "no_recipe": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无配方",
+      "types": []
+    },
+    "open_album": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相册",
+      "types": []
+    },
+    "open_file": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "从文件导入",
+      "types": []
+    },
+    "output_custom_size": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自定义",
+      "types": []
+    },
+    "output_destination": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存位置",
+      "types": []
+    },
+    "output_long_edge": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "长边上限（px）",
+      "types": []
+    },
+    "output_original_size": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原尺寸",
+      "types": []
+    },
+    "output_size": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "输出尺寸",
+      "types": []
+    },
+    "output_size_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请输入 1–65535 之间的像素数",
+      "types": []
+    },
+    "output_size_range": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "1–65535 像素",
+      "types": []
+    },
+    "partial_access": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "仅显示已授权的照片",
+      "types": []
+    },
+    "permission_body": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选择可供 RawLab 浏览的照片。也可以从文件导入 JPEG、PNG 或 RAW。",
+      "types": []
+    },
+    "permission_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "允许访问照片",
+      "types": []
+    },
+    "png": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "PNG · 16 位",
+      "types": []
+    },
+    "png_description": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "sRGB · 16 位无损图像 · 保留拍摄元数据",
+      "types": []
+    },
+    "process_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "处理失败，请重试或选择其他照片。",
+      "types": []
+    },
+    "project_author": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "项目与作者",
+      "types": []
+    },
+    "recipe_name_hamada_daylight_v2": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "滨田英明",
+      "types": []
+    },
+    "recipe_name_takahiro_sakai_blue": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "酒井贵弘",
+      "types": []
+    },
+    "recipe_name_takashi_yasui_zen": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保井崇志",
+      "types": []
+    },
+    "recipe_subtitle_billy_dinh_cinema": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "纽约电影 · 戏剧光影",
+      "types": []
+    },
+    "recipe_subtitle_cinestill_800t": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "钨丝电影 · 红灯冷青",
+      "types": []
+    },
+    "recipe_subtitle_daniel_casson_autumn": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "乡村秋日 · 古典油画",
+      "types": []
+    },
+    "recipe_subtitle_hamada_daylight_v2": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "日系青空 · 高调日光",
+      "types": []
+    },
+    "recipe_subtitle_ivan_ivanchenko_twilight": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暮色黄昏 · 相邻色过渡",
+      "types": []
+    },
+    "recipe_subtitle_iwona_fairy_tale": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "童话油画 · 梦幻微光",
+      "types": []
+    },
+    "recipe_subtitle_jungraphy_neon": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "霓虹都市 · 冷青粉紫",
+      "types": []
+    },
+    "recipe_subtitle_luizclas_portrait": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暖金光影 · 质感人像",
+      "types": []
+    },
+    "recipe_subtitle_rkrkrk_cyberpunk": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "赛博朋克 · 极致反差",
+      "types": []
+    },
+    "recipe_subtitle_samalive_vintage": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "油润复古 · 城市胶片",
+      "types": []
+    },
+    "recipe_subtitle_takahiro_sakai_blue": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "空气清透 · 少女淡蓝",
+      "types": []
+    },
+    "recipe_subtitle_takashi_yasui_zen": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "极简禅意 · 日系街拍",
+      "types": []
+    },
+    "recipe_subtitle_wilson_lee_golden": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暖调日系 · 漫射金光",
+      "types": []
+    },
+    "recipe_subtitle_withluke_epic": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "史诗自然 · 雾气冷青",
+      "types": []
+    },
+    "refresh": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "刷新",
+      "types": []
+    },
+    "rename_look": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重命名外观",
+      "types": []
+    },
+    "rendering": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在显影",
+      "types": []
+    },
+    "reset": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置调整",
+      "types": []
+    },
+    "reset_all_body": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保留当前普通胶片，清除配方并恢复其余默认值。照片、外观库和批量任务保留。",
+      "types": []
+    },
+    "reset_all_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置所有调整？",
+      "types": []
+    },
+    "reset_denoise": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置降噪",
+      "types": []
+    },
+    "reset_grain": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置颗粒",
+      "types": []
+    },
+    "reset_value": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置此项",
+      "types": []
+    },
+    "reset_vignette": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重置暗角",
+      "types": []
+    },
+    "result": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "调整后",
+      "types": []
+    },
+    "retry": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重试",
+      "types": []
+    },
+    "saturation": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "饱和度",
+      "types": []
+    },
+    "save_album": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保存到相册",
+      "types": []
+    },
+    "save_file": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保存到文件",
+      "types": []
+    },
+    "select_more": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重新选择照片",
+      "types": []
+    },
+    "select_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择照片",
+      "types": []
+    },
+    "settings": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "系统设置",
+      "types": []
+    },
+    "shadows": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "阴影",
+      "types": []
+    },
+    "sharpening": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "锐化",
+      "types": []
+    },
+    "strength": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "强度",
+      "types": []
+    },
+    "temperature": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色温",
+      "types": []
+    },
+    "tint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色调",
+      "types": []
+    },
+    "tone_curve": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "S 曲线",
+      "types": []
+    },
+    "update_available": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "发现新版本 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "update_checking": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在检查更新…",
+      "types": []
+    },
+    "update_current": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未发现适用于 Android 的新版本",
+      "types": []
+    },
+    "update_download": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "前往下载 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "update_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "检查失败，请稍后重试或访问 GitHub 仓库",
+      "types": []
+    },
+    "update_unchecked": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "尚未检查更新",
+      "types": []
+    },
+    "usage_analytics": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "使用统计",
+      "types": []
+    },
+    "usage_cleanup_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统计本地清理未完成；请重启应用后重试。",
+      "types": []
+    },
+    "usage_disabled": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "使用统计已关闭。",
+      "types": []
+    },
+    "usage_enabled": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已允许使用统计；可随时关闭。",
+      "types": []
+    },
+    "usage_install_id": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。",
+      "types": []
+    },
+    "usage_privacy": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。",
+      "types": []
+    },
+    "usage_privacy_policy": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "阿里云隐私政策",
+      "types": []
+    },
+    "usage_record_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统计事件未能发送，照片编辑不受影响。",
+      "types": []
+    },
+    "usage_restart_required": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统计已停止；重新开启前请重启应用。",
+      "types": []
+    },
+    "usage_start_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统计服务未能启动，照片编辑不受影响。",
+      "types": []
+    },
+    "usage_stop_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统计服务停止失败；请重启应用后重试。",
+      "types": []
+    },
+    "usage_storage_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统计设置未能保存，当前进程已停止统计。",
+      "types": []
+    },
+    "usage_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前构建未配置使用统计，未采集或上报。",
+      "types": []
+    },
+    "view_update": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看更新",
+      "types": []
+    },
+    "vignette": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暗角",
+      "types": []
+    },
+    "vignette_amount": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "强度",
+      "types": []
+    },
+    "vignette_feather": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "羽化",
+      "types": []
+    },
+    "vignette_highlights": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "高光保护",
+      "types": []
+    },
+    "vignette_highlights_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高光保护仅在负暗角量时可用。",
+      "types": []
+    },
+    "vignette_midpoint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "中点",
+      "types": []
+    },
+    "vignette_roundness": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "圆度",
+      "types": []
+    },
+    "vignette_summary": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$+.0f",
+        "%2$.0f",
+        "%3$+.0f",
+        "%4$.0f",
+        "%5$.0f"
+      ],
+      "source": "强度 {0} · 中点 {1} · 圆度 {2} · 羽化 {3} · 高光保护 {4}",
+      "types": [
+        "f",
+        "f",
+        "f",
+        "f",
+        "f"
+      ]
+    },
+    "wb_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此输入没有可用的相机白平衡校准",
+      "types": []
+    },
+    "white_balance": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "白平衡",
+      "types": []
+    },
+    "zoom_fit": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "适应画面",
+      "types": []
+    }
+  },
+  "overrides": {
+    "从文件导入": {
+      "reason": "Android 使用系统文档选择器，不是 Apple 的 Files/Fichiers/Archivos 应用；保留通用文件说法。",
+      "values": {
+        "de": "Aus Dateien importieren",
+        "en": "Import from files",
+        "es": "Importar desde archivos",
+        "fr": "Importer depuis des fichiers",
+        "ja": "ファイルから読み込む",
+        "zh-Hans": "从文件导入"
+      }
+    },
+    "照片图库": {
+      "reason": "Android 保存到 MediaStore 图库，不是 iOS Photos 应用；保留该端的 Photo gallery 说法。",
+      "values": {
+        "de": "Fotogalerie",
+        "en": "Photo gallery",
+        "es": "Galería de fotos",
+        "fr": "Galerie photo",
+        "ja": "フォトギャラリー",
+        "zh-Hans": "照片图库"
+      }
+    }
+  },
+  "unique": {
+    "1–65535 像素": {
+      "de": "1–65535 Pixel",
+      "en": "1–65535 pixels",
+      "es": "1–65535 píxeles",
+      "fr": "1–65535 pixels",
+      "ja": "1～65535 ピクセル",
+      "zh-Hans": "1–65535 像素"
+    },
+    "ISO": {
+      "de": "ISO",
+      "en": "ISO",
+      "es": "ISO",
+      "fr": "ISO",
+      "ja": "ISO",
+      "zh-Hans": "ISO"
+    },
+    "JPEG": {
+      "de": "JPEG",
+      "en": "JPEG",
+      "es": "JPEG",
+      "fr": "JPEG",
+      "ja": "JPEG",
+      "zh-Hans": "JPEG"
+    },
+    "PNG · 16 位": {
+      "de": "PNG · 16 Bit",
+      "en": "PNG · 16-bit",
+      "es": "PNG · 16 bits",
+      "fr": "PNG · 16 bits",
+      "ja": "PNG・16 ビット",
+      "zh-Hans": "PNG · 16 位"
+    },
+    "RawLab": {
+      "de": "RawLab",
+      "en": "RawLab",
+      "es": "RawLab",
+      "fr": "RawLab",
+      "ja": "RawLab",
+      "zh-Hans": "RawLab"
+    },
+    "sRGB · 16 位无损图像 · 保留拍摄元数据": {
+      "de": "sRGB · verlustfreie 16-Bit-Bilder · Aufnahmemetadaten",
+      "en": "sRGB · 16-bit lossless · capture metadata",
+      "es": "sRGB · 16 bits sin pérdida · metadatos de captura",
+      "fr": "sRGB · 16 bits sans perte · métadonnées de prise de vue",
+      "ja": "sRGB · 16 ビット可逆画像 · 撮影メタデータ",
+      "zh-Hans": "sRGB · 16 位无损图像 · 保留拍摄元数据"
+    },
+    "sRGB · 质量 95 · 保留拍摄元数据": {
+      "de": "sRGB · Qualität 95 · Aufnahmemetadaten",
+      "en": "sRGB · quality 95 · capture metadata",
+      "es": "sRGB · calidad 95 · metadatos de captura",
+      "fr": "sRGB · qualité 95 · métadonnées de prise de vue",
+      "ja": "sRGB · 品質 95 · 撮影メタデータ",
+      "zh-Hans": "sRGB · 质量 95 · 保留拍摄元数据"
+    },
+    "{0} 项输出待核对": {
+      "de": "{0} Ausgaben müssen überprüft werden",
+      "en": "{0} outputs need verification",
+      "es": "{0} resultados pendientes de verificación",
+      "fr": "{0} sorties à vérifier",
+      "ja": "{0} 件の出力は確認が必要です",
+      "zh-Hans": "{0} 项输出待核对"
+    },
+    "上次保存结果不确定，请先核对图库或输出目录。": {
+      "de": "Das Ergebnis des letzten Speichervorgangs ist ungewiss. Prüfen Sie zuerst die Galerie oder das Ausgabeverzeichnis.",
+      "en": "The previous save result is uncertain. Check the gallery or output directory first.",
+      "es": "El resultado del guardado anterior es incierto. Comprueba primero la galería o la carpeta de salida.",
+      "fr": "Le résultat du dernier enregistrement est incertain. Vérifiez d'abord la galerie ou le dossier de sortie.",
+      "ja": "前回の保存結果を確認できません。先にギャラリーまたは出力フォルダを確認してください。",
+      "zh-Hans": "上次保存结果不确定，请先核对图库或输出目录。"
+    },
+    "不可用": {
+      "de": "Nicht verfügbar",
+      "en": "Unavailable",
+      "es": "No disponible",
+      "fr": "Indisponible",
+      "ja": "利用不可",
+      "zh-Hans": "不可用"
+    },
+    "不是受支持的 RAW、JPEG 或 PNG 文件": {
+      "de": "Keine unterstützte RAW-, JPEG- oder PNG-Datei",
+      "en": "Not a supported RAW, JPEG, or PNG file",
+      "es": "No es un archivo RAW, JPEG o PNG compatible",
+      "fr": "Ce fichier RAW, JPEG ou PNG n'est pas pris en charge",
+      "ja": "サポートされている RAW、JPEG、PNG ファイルではありません",
+      "zh-Hans": "不是受支持的 RAW、JPEG 或 PNG 文件"
+    },
+    "仅显示已授权的照片": {
+      "de": "Nur autorisierte Fotos anzeigen",
+      "en": "Show only authorized photos",
+      "es": "Mostrar solo las fotos autorizadas",
+      "fr": "Afficher uniquement les photos autorisées",
+      "ja": "許可された写真のみ表示",
+      "zh-Hans": "仅显示已授权的照片"
+    },
+    "仅移除托管副本，原文件保留。": {
+      "de": "Nur die verwaltete Kopie wird entfernt. Die Originaldatei bleibt erhalten.",
+      "en": "Only the managed copy is removed. The original file is kept.",
+      "es": "Solo se elimina la copia administrada. El archivo original se conserva.",
+      "fr": "Seule la copie gérée est supprimée. Le fichier original est conservé.",
+      "ja": "管理コピーのみを削除します。元のファイルは保持します。",
+      "zh-Hans": "仅移除托管副本，原文件保留。"
+    },
+    "任务来源或外观文件不可用，请重新创建批量任务。": {
+      "de": "Aufgabenquelle oder Look-Datei ist nicht verfügbar. Erstellen Sie den Stapelauftrag neu.",
+      "en": "The task source or look file is unavailable. Create the batch task again.",
+      "es": "El origen de la tarea o el archivo de look no está disponible. Crea de nuevo la tarea por lotes.",
+      "fr": "La source de la tâche ou le fichier de look est indisponible. Recréez la tâche par lots.",
+      "ja": "タスクの元画像またはルックファイルを利用できません。一括タスクを作成し直してください。",
+      "zh-Hans": "任务来源或外观文件不可用，请重新创建批量任务。"
+    },
+    "使用统计": {
+      "de": "Nutzungsanalyse",
+      "en": "Usage analytics",
+      "es": "Análisis de uso",
+      "fr": "Analyse d'utilisation",
+      "ja": "利用状況の分析",
+      "zh-Hans": "使用统计"
+    },
+    "保存位置": {
+      "de": "Speicherort",
+      "en": "Save location",
+      "es": "Ubicación de guardado",
+      "fr": "Emplacement",
+      "ja": "保存先",
+      "zh-Hans": "保存位置"
+    },
+    "保存到文件": {
+      "de": "In Datei speichern",
+      "en": "Save to file",
+      "es": "Guardar en un archivo",
+      "fr": "Enregistrer dans un fichier",
+      "ja": "ファイルに保存",
+      "zh-Hans": "保存到文件"
+    },
+    "保存到相册": {
+      "de": "In Album speichern",
+      "en": "Save to album",
+      "es": "Guardar en el álbum",
+      "fr": "Enregistrer dans l'album",
+      "ja": "アルバムに保存",
+      "zh-Hans": "保存到相册"
+    },
+    "保存最终外观，不是传感器 RAW；不保留可编辑历史或拍摄 EXIF，仅保存到文件。": {
+      "de": "Fest eingerechneter Look, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien.",
+      "en": "Baked-in look, not sensor RAW. No editable history or capture EXIF. Files only.",
+      "es": "Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos.",
+      "fr": "Look final intégré, pas un RAW du capteur. Sans historique modifiable ni EXIF de prise de vue. Fichiers uniquement.",
+      "ja": "最終的なルックを焼き込んで保存します。センサー RAW ではありません。編集履歴と撮影 EXIF は含まず、ファイルのみに保存します。",
+      "zh-Hans": "保存最终外观，不是传感器 RAW；不保留可编辑历史或拍摄 EXIF，仅保存到文件。"
+    },
+    "保留当前普通胶片，清除配方并恢复其余默认值。照片、外观库和批量任务保留。": {
+      "de": "Der aktuelle Film bleibt erhalten. Das Rezept und alle anderen Anpassungen werden zurückgesetzt. Fotos, Looks und Stapelaufträge bleiben erhalten.",
+      "en": "Keeps the current film. Clears the recipe and resets all other adjustments. Photos, looks and batch tasks are kept.",
+      "es": "Se conserva la película actual. Se elimina la receta y se restablecen los demás ajustes. Las fotos, estilos y tareas por lotes se conservan.",
+      "fr": "Le film actuel est conservé. La recette et les autres réglages sont réinitialisés. Les photos, looks et tâches par lot sont conservés.",
+      "ja": "現在のフィルムは保持します。レシピを解除し、他の調整を初期化します。写真、ルック、バッチタスクは保持します。",
+      "zh-Hans": "保留当前普通胶片，清除配方并恢复其余默认值。照片、外观库和批量任务保留。"
+    },
+    "允许访问照片": {
+      "de": "Zugriff auf Fotos erlauben",
+      "en": "Allow photo access",
+      "es": "Permitir acceso a las fotos",
+      "fr": "Autoriser l'accès aux photos",
+      "ja": "写真へのアクセスを許可",
+      "zh-Hans": "允许访问照片"
+    },
+    "全部工具": {
+      "de": "Alle Werkzeuge",
+      "en": "All tools",
+      "es": "Todas las herramientas",
+      "fr": "Tous les outils",
+      "ja": "すべてのツール",
+      "zh-Hans": "全部工具"
+    },
+    "全部相册": {
+      "de": "Alle Alben",
+      "en": "All albums",
+      "es": "Todos los álbumes",
+      "fr": "Tous les albums",
+      "ja": "すべてのアルバム",
+      "zh-Hans": "全部相册"
+    },
+    "内存不足，无法处理这张照片。": {
+      "de": "Nicht genügend Speicher zum Verarbeiten dieses Fotos",
+      "en": "Not enough memory to process this photo",
+      "es": "No hay memoria suficiente para procesar esta foto",
+      "fr": "Mémoire insuffisante pour traiter cette photo",
+      "ja": "この写真を処理するためのメモリが不足しています",
+      "zh-Hans": "内存不足，无法处理这张照片。"
+    },
+    "写入未完成且无法清理，请核对输出目录": {
+      "de": "Der Schreibvorgang wurde nicht abgeschlossen und die Bereinigung ist fehlgeschlagen. Prüfen Sie das Ausgabeverzeichnis.",
+      "en": "Writing was incomplete and cleanup failed. Check the output directory.",
+      "es": "La escritura no se completó y no se pudo limpiar. Comprueba la carpeta de salida.",
+      "fr": "L'écriture est incomplète et le nettoyage a échoué. Vérifiez le dossier de sortie.",
+      "ja": "書き込みが完了せず、クリーンアップにも失敗しました。出力フォルダを確認してください。",
+      "zh-Hans": "写入未完成且无法清理，请核对输出目录"
+    },
+    "切换正负号": {
+      "de": "Vorzeichen wechseln",
+      "en": "Toggle sign",
+      "es": "Cambiar signo",
+      "fr": "Changer de signe",
+      "ja": "符号を切り替え",
+      "zh-Hans": "切换正负号"
+    },
+    "切换裁切横竖方向": {
+      "de": "Zuschnittausrichtung wechseln",
+      "en": "Swap crop orientation",
+      "es": "Cambiar orientación del recorte",
+      "fr": "Inverser le format du recadrage",
+      "ja": "切り抜きの縦横を切り替え",
+      "zh-Hans": "切换裁切横竖方向"
+    },
+    "删除外观": {
+      "de": "Look löschen",
+      "en": "Delete look",
+      "es": "Eliminar look",
+      "fr": "Supprimer le look",
+      "ja": "ルックを削除",
+      "zh-Hans": "删除外观"
+    },
+    "刷新": {
+      "de": "Aktualisieren",
+      "en": "Refresh",
+      "es": "Actualizar",
+      "fr": "Actualiser",
+      "ja": "更新",
+      "zh-Hans": "刷新"
+    },
+    "原图与调整后分界": {
+      "de": "Trennlinie zwischen Original und Anpassung",
+      "en": "Original/adjusted divider",
+      "es": "Divisor entre original y ajustada",
+      "fr": "Séparation original/réglé",
+      "ja": "元画像と調整後の境界",
+      "zh-Hans": "原图与调整后分界"
+    },
+    "原始": {
+      "de": "Original",
+      "en": "Original",
+      "es": "Original",
+      "fr": "Original",
+      "ja": "元の比率",
+      "zh-Hans": "原始"
+    },
+    "各照片拍摄时设置": {
+      "de": "Wie für jedes Foto aufgenommen",
+      "en": "As shot for each photo",
+      "es": "Según la toma de cada foto",
+      "fr": "Réglage de prise de vue de chaque photo",
+      "ja": "各写真の撮影時設定",
+      "zh-Hans": "各照片拍摄时设置"
+    },
+    "向上移动裁切": {
+      "de": "Zuschnitt nach oben",
+      "en": "Move crop up",
+      "es": "Mover hacia arriba",
+      "fr": "Déplacer vers le haut",
+      "ja": "上へ移動",
+      "zh-Hans": "向上移动裁切"
+    },
+    "向下移动裁切": {
+      "de": "Zuschnitt nach unten",
+      "en": "Move crop down",
+      "es": "Mover hacia abajo",
+      "fr": "Déplacer vers le bas",
+      "ja": "下へ移動",
+      "zh-Hans": "向下移动裁切"
+    },
+    "向右移动裁切": {
+      "de": "Zuschnitt nach rechts",
+      "en": "Move crop right",
+      "es": "Mover a la derecha",
+      "fr": "Déplacer à droite",
+      "ja": "右へ移動",
+      "zh-Hans": "向右移动裁切"
+    },
+    "向左移动裁切": {
+      "de": "Zuschnitt nach links",
+      "en": "Move crop left",
+      "es": "Mover a la izquierda",
+      "fr": "Déplacer à gauche",
+      "ja": "左へ移動",
+      "zh-Hans": "向左移动裁切"
+    },
+    "处理失败，请重试或选择其他照片。": {
+      "de": "Verarbeitung fehlgeschlagen. Versuchen Sie es erneut oder wählen Sie ein anderes Foto.",
+      "en": "Processing failed. Try again or choose another photo.",
+      "es": "Error de procesamiento. Inténtalo de nuevo o elige otra foto.",
+      "fr": "Échec du traitement. Réessayez ou choisissez une autre photo.",
+      "ja": "処理に失敗しました。もう一度試すか、別の写真を選択してください。",
+      "zh-Hans": "处理失败，请重试或选择其他照片。"
+    },
+    "外观名称": {
+      "de": "Look-Name",
+      "en": "Look name",
+      "es": "Nombre del look",
+      "fr": "Nom du look",
+      "ja": "ルック名",
+      "zh-Hans": "外观名称"
+    },
+    "外观已导入": {
+      "de": "Look importiert",
+      "en": "Look imported",
+      "es": "Look importado",
+      "fr": "Look importé",
+      "ja": "ルックを読み込みました",
+      "zh-Hans": "外观已导入"
+    },
+    "外观库读取失败，请稍后重试或删除损坏的外观记录。": {
+      "de": "Die Look-Bibliothek konnte nicht gelesen werden. Versuchen Sie es später erneut oder löschen Sie beschädigte Look-Einträge.",
+      "en": "The look library could not be read. Try again later or delete corrupted look records.",
+      "es": "No se pudo leer la biblioteca de looks. Inténtalo de nuevo más tarde o elimina los registros de looks dañados.",
+      "fr": "Impossible de lire la bibliothèque de looks. Réessayez plus tard ou supprimez les entrées de looks corrompues.",
+      "ja": "ルックライブラリを読み込めません。後でもう一度試すか、壊れたルック記録を削除してください。",
+      "zh-Hans": "外观库读取失败，请稍后重试或删除损坏的外观记录。"
+    },
+    "外观操作失败，请选择有效的 .cube 或 .rlook 文件。": {
+      "de": "Look-Vorgang fehlgeschlagen. Wählen Sie eine gültige .cube- oder .rlook-Datei aus.",
+      "en": "Look operation failed. Select a valid .cube or .rlook file.",
+      "es": "Error en la operación del look. Selecciona un archivo .cube o .rlook válido.",
+      "fr": "Échec de l'opération sur le look. Sélectionnez un fichier .cube ou .rlook valide.",
+      "ja": "ルックの操作に失敗しました。有効な .cube または .rlook ファイルを選択してください。",
+      "zh-Hans": "外观操作失败，请选择有效的 .cube 或 .rlook 文件。"
+    },
+    "失败": {
+      "de": "Fehlgeschlagen",
+      "en": "Failed",
+      "es": "Fallido",
+      "fr": "Échec",
+      "ja": "失敗",
+      "zh-Hans": "失败"
+    },
+    "宽度": {
+      "de": "Breite",
+      "en": "Width",
+      "es": "Anchura",
+      "fr": "Largeur",
+      "ja": "幅",
+      "zh-Hans": "宽度"
+    },
+    "导出结果": {
+      "de": "Exportergebnis",
+      "en": "Export result",
+      "es": "Resultado de la exportación",
+      "fr": "Résultat de l'exportation",
+      "ja": "書き出し結果",
+      "zh-Hans": "导出结果"
+    },
+    "展开": {
+      "de": "Ausklappen",
+      "en": "Expand",
+      "es": "Expandir",
+      "fr": "Développer",
+      "ja": "展開",
+      "zh-Hans": "展开"
+    },
+    "展开调整": {
+      "de": "Anpassungen einblenden",
+      "en": "Expand adjustments",
+      "es": "Expandir ajustes",
+      "fr": "Développer les réglages",
+      "ja": "調整を展開",
+      "zh-Hans": "展开调整"
+    },
+    "左边": {
+      "de": "Links",
+      "en": "Left",
+      "es": "Izquierda",
+      "fr": "Gauche",
+      "ja": "左",
+      "zh-Hans": "左边"
+    },
+    "已保存的照片会保留。": {
+      "de": "Gespeicherte Fotos bleiben erhalten.",
+      "en": "Saved photos will be kept.",
+      "es": "Las fotos guardadas se conservarán.",
+      "fr": "Les photos enregistrées seront conservées.",
+      "ja": "保存済みの写真は保持されます。",
+      "zh-Hans": "已保存的照片会保留。"
+    },
+    "已取消": {
+      "de": "Abgebrochen",
+      "en": "Cancelled",
+      "es": "Cancelado",
+      "fr": "Annulé",
+      "ja": "キャンセル済み",
+      "zh-Hans": "已取消"
+    },
+    "已完成 {0} / {1}": {
+      "de": "{0} / {1} abgeschlossen",
+      "en": "Completed {0} / {1}",
+      "es": "Completadas {0} / {1}",
+      "fr": "{0} / {1} terminés",
+      "ja": "{0} / {1} 完了",
+      "zh-Hans": "已完成 {0} / {1}"
+    },
+    "已导入 {0} 个外观，{1} 个文件导入失败": {
+      "de": "Importierte Looks: {0}; nicht importierte Dateien: {1}",
+      "en": "Looks imported: {0}; files not imported: {1}",
+      "es": "Looks importados: {0}; archivos no importados: {1}",
+      "fr": "Looks importés : {0} ; fichiers non importés : {1}",
+      "ja": "{0} 件のルックを読み込み、{1} 件のファイルの読み込みに失敗しました",
+      "zh-Hans": "已导入 {0} 个外观，{1} 个文件导入失败"
+    },
+    "已找到输出": {
+      "de": "Ausgabe gefunden",
+      "en": "Output found",
+      "es": "Salida encontrada",
+      "fr": "Sortie trouvée",
+      "ja": "出力を確認済み",
+      "zh-Hans": "已找到输出"
+    },
+    "开源许可": {
+      "de": "Open-Source-Lizenzen",
+      "en": "Open-source licenses",
+      "es": "Licencias de código abierto",
+      "fr": "Licences open source",
+      "ja": "オープンソースライセンス",
+      "zh-Hans": "开源许可"
+    },
+    "强度 {0} · 中点 {1} · 圆度 {2} · 羽化 {3} · 高光保护 {4}": {
+      "de": "Stärke {0} · Mittelpunkt {1} · Rundheit {2} · Weichzeichnung {3} · Lichterschutz {4}",
+      "en": "Amount {0} · Midpoint {1} · Roundness {2} · Feather {3} · Highlight protection {4}",
+      "es": "Intensidad {0} · Punto medio {1} · Redondez {2} · Suavizado {3} · Protección de altas luces {4}",
+      "fr": "Intensité {0} · Point médian {1} · Rondeur {2} · Contour progressif {3} · Protection des hautes lumières {4}",
+      "ja": "強度 {0} · 中間点 {1} · 丸み {2} · ぼかし {3} · ハイライト保護 {4}",
+      "zh-Hans": "强度 {0} · 中点 {1} · 圆度 {2} · 羽化 {3} · 高光保护 {4}"
+    },
+    "强度 {0} · 大小 {1} · 粗糙度 {2}": {
+      "de": "Stärke {0} · Größe {1} · Rauheit {2}",
+      "en": "Amount {0} · Size {1} · Roughness {2}",
+      "es": "Intensidad {0} · Tamaño {1} · Rugosidad {2}",
+      "fr": "Intensité {0} · Taille {1} · Rugosité {2}",
+      "ja": "強度 {0} · サイズ {1} · 粗さ {2}",
+      "zh-Hans": "强度 {0} · 大小 {1} · 粗糙度 {2}"
+    },
+    "待核对": {
+      "de": "Prüfung ausstehend",
+      "en": "Awaiting confirmation",
+      "es": "Pendiente de comprobación",
+      "fr": "Vérification requise",
+      "ja": "確認待ち",
+      "zh-Hans": "待核对"
+    },
+    "成功 {0} 张，失败 {1} 张，未处理 {2} 张": {
+      "de": "{0} erfolgreich, {1} fehlgeschlagen, {2} nicht verarbeitet",
+      "en": "{0} succeeded, {1} failed, {2} not processed",
+      "es": "{0} correctas, {1} fallidas, {2} sin procesar",
+      "fr": "{0} réussies, {1} échouées, {2} non traitées",
+      "ja": "成功 {0} 枚、失敗 {1} 枚、未処理 {2} 枚",
+      "zh-Hans": "成功 {0} 张，失败 {1} 张，未处理 {2} 张"
+    },
+    "拍摄时间": {
+      "de": "Aufnahmezeit",
+      "en": "Capture time",
+      "es": "Hora de captura",
+      "fr": "Heure de prise de vue",
+      "ja": "撮影時刻",
+      "zh-Hans": "拍摄时间"
+    },
+    "收起调整": {
+      "de": "Anpassungen ausblenden",
+      "en": "Collapse adjustments",
+      "es": "Contraer ajustes",
+      "fr": "Réduire les réglages",
+      "ja": "調整を折りたたむ",
+      "zh-Hans": "收起调整"
+    },
+    "放弃": {
+      "de": "Verwerfen",
+      "en": "Discard",
+      "es": "Descartar",
+      "fr": "Abandonner",
+      "ja": "破棄",
+      "zh-Hans": "放弃"
+    },
+    "放弃批量任务？": {
+      "de": "Stapelauftrag verwerfen?",
+      "en": "Discard batch task?",
+      "es": "¿Descartar la tarea por lotes?",
+      "fr": "Abandonner la tâche par lots ?",
+      "ja": "一括タスクを破棄しますか？",
+      "zh-Hans": "放弃批量任务？"
+    },
+    "文件": {
+      "de": "Datei",
+      "en": "File",
+      "es": "Archivo",
+      "fr": "Fichier",
+      "ja": "ファイル",
+      "zh-Hans": "文件"
+    },
+    "文件多选": {
+      "de": "Mehrere Dateien auswählen",
+      "en": "Select multiple files",
+      "es": "Seleccionar varios archivos",
+      "fr": "Sélectionner plusieurs fichiers",
+      "ja": "複数ファイルを選択",
+      "zh-Hans": "文件多选"
+    },
+    "方向修正": {
+      "de": "Ausrichtungskorrektur",
+      "en": "Orientation correction",
+      "es": "Corrección de orientación",
+      "fr": "Correction d'orientation",
+      "ja": "向きの補正",
+      "zh-Hans": "方向修正"
+    },
+    "方形缩略图": {
+      "de": "Quadratische Vorschaubilder",
+      "en": "Square thumbnails",
+      "es": "Miniaturas cuadradas",
+      "fr": "Miniatures carrées",
+      "ja": "正方形のサムネイル",
+      "zh-Hans": "方形缩略图"
+    },
+    "旋转 {0}°": {
+      "de": "Um {0}° gedreht",
+      "en": "Rotated {0}°",
+      "es": "Rotada {0}°",
+      "fr": "Rotation de {0}°",
+      "ja": "{0}°回転",
+      "zh-Hans": "旋转 {0}°"
+    },
+    "无法写入输出目录：{0}": {
+      "de": "Ausgabeverzeichnis konnte nicht beschrieben werden: {0}",
+      "en": "Unable to write to output directory: {0}",
+      "es": "No se puede escribir en la carpeta de salida: {0}",
+      "fr": "Impossible d'écrire dans le dossier de sortie : {0}",
+      "ja": "出力フォルダに書き込めません: {0}",
+      "zh-Hans": "无法写入输出目录：{0}"
+    },
+    "无法打开本机调整记录，请检查存储权限。": {
+      "de": "Lokale Anpassungsdaten konnten nicht geöffnet werden. Prüfen Sie die Speicherberechtigung.",
+      "en": "Cannot open local adjustment records. Check storage permission.",
+      "es": "No se pueden abrir los ajustes locales. Comprueba el permiso de almacenamiento.",
+      "fr": "Impossible d'ouvrir les réglages locaux. Vérifiez l'autorisation de stockage.",
+      "ja": "本体の調整記録を開けません。ストレージ権限を確認してください。",
+      "zh-Hans": "无法打开本机调整记录，请检查存储权限。"
+    },
+    "无法打开链接，请安装或启用浏览器。": {
+      "de": "Link kann nicht geöffnet werden. Installieren oder aktivieren Sie einen Browser.",
+      "en": "Unable to open the link. Install or enable a browser.",
+      "es": "No se puede abrir el enlace. Instala o habilita un navegador.",
+      "fr": "Impossible d'ouvrir le lien. Installez ou activez un navigateur.",
+      "ja": "リンクを開けません。ブラウザをインストールするか有効にしてください。",
+      "zh-Hans": "无法打开链接，请安装或启用浏览器。"
+    },
+    "无法确认照片保存结果，请核对照片图库": {
+      "de": "Der Speichervorgang des Fotos konnte nicht bestätigt werden. Prüfen Sie die Fotogalerie.",
+      "en": "Could not confirm whether the photo was saved. Check the photo gallery.",
+      "es": "No se pudo confirmar si la foto se guardó. Comprueba la galería de fotos.",
+      "fr": "Impossible de confirmer l'enregistrement de la photo. Vérifiez la galerie photo.",
+      "ja": "写真の保存結果を確認できません。フォトギャラリーを確認してください。",
+      "zh-Hans": "无法确认照片保存结果，请核对照片图库"
+    },
+    "无法读取批量任务：{0}": {
+      "de": "Stapelauftrag konnte nicht gelesen werden: {0}",
+      "en": "Unable to read batch task: {0}",
+      "es": "No se puede leer la tarea por lotes: {0}",
+      "fr": "Impossible de lire la tâche par lots : {0}",
+      "ja": "一括タスクを読み込めません: {0}",
+      "zh-Hans": "无法读取批量任务：{0}"
+    },
+    "无法读取文件": {
+      "de": "Datei konnte nicht gelesen werden",
+      "en": "Unable to read file",
+      "es": "No se puede leer el archivo",
+      "fr": "Impossible de lire le fichier",
+      "ja": "ファイルを読み込めません",
+      "zh-Hans": "无法读取文件"
+    },
+    "无法读取相册，请检查照片权限。": {
+      "de": "Album konnte nicht gelesen werden. Prüfen Sie die Fotoberechtigung.",
+      "en": "Unable to read album. Check photo permission.",
+      "es": "No se puede leer el álbum. Comprueba el permiso de fotos.",
+      "fr": "Impossible de lire l'album. Vérifiez l'autorisation d'accès aux photos.",
+      "ja": "アルバムを読み込めません。写真の権限を確認してください。",
+      "zh-Hans": "无法读取相册，请检查照片权限。"
+    },
+    "无法读取输出目录": {
+      "de": "Ausgabeverzeichnis konnte nicht gelesen werden",
+      "en": "Unable to read output directory",
+      "es": "No se puede leer la carpeta de salida",
+      "fr": "Impossible de lire le dossier de sortie",
+      "ja": "出力フォルダを読み込めません",
+      "zh-Hans": "无法读取输出目录"
+    },
+    "无需修正": {
+      "de": "Keine Korrektur erforderlich",
+      "en": "No correction needed",
+      "es": "No requiere corrección",
+      "fr": "Aucune correction nécessaire",
+      "ja": "補正不要",
+      "zh-Hans": "无需修正"
+    },
+    "显示照片信息": {
+      "de": "Fotoinformationen anzeigen",
+      "en": "Show photo info",
+      "es": "Mostrar información de la foto",
+      "fr": "Afficher les informations de la photo",
+      "ja": "写真情報を表示",
+      "zh-Hans": "显示照片信息"
+    },
+    "显示色彩降噪": {
+      "de": "Anzeige-Farb-Rauschreduzierung",
+      "en": "Display chroma denoise",
+      "es": "Reducción de ruido de crominancia de pantalla",
+      "fr": "Réduction du bruit chromatique de l'affichage",
+      "ja": "表示色ノイズ除去",
+      "zh-Hans": "显示色彩降噪"
+    },
+    "普通": {
+      "de": "Normal",
+      "en": "Normal",
+      "es": "Normal",
+      "fr": "Normal",
+      "ja": "通常",
+      "zh-Hans": "普通"
+    },
+    "曝光 {0} EV": {
+      "de": "Belichtung {0} EV",
+      "en": "Exposure {0} EV",
+      "es": "Exposición {0} EV",
+      "fr": "Exposition {0} EV",
+      "ja": "露出 {0} EV",
+      "zh-Hans": "曝光 {0} EV"
+    },
+    "有未完成的批量导出": {
+      "de": "Nicht abgeschlossener Stapel-Export",
+      "en": "Unfinished batch export",
+      "es": "Hay una exportación por lotes sin terminar",
+      "fr": "Exportation par lots inachevée",
+      "ja": "未完了の一括書き出し",
+      "zh-Hans": "有未完成的批量导出"
+    },
+    "未保存，重新导出": {
+      "de": "Nicht gespeichert; erneut exportieren",
+      "en": "Not saved; export again",
+      "es": "No guardado; exportar de nuevo",
+      "fr": "Non enregistré ; exporter à nouveau",
+      "ja": "未保存、もう一度書き出す",
+      "zh-Hans": "未保存，重新导出"
+    },
+    "未发现适用于 Android 的新版本": {
+      "de": "Keine neue Version für Android gefunden",
+      "en": "No new version for Android found",
+      "es": "No se encontró una versión nueva para Android",
+      "fr": "Aucune nouvelle version pour Android trouvée",
+      "ja": "Android 向けの新しいバージョンはありません",
+      "zh-Hans": "未发现适用于 Android 的新版本"
+    },
+    "未应用草稿": {
+      "de": "Nicht angewendeter Entwurf",
+      "en": "Unapplied draft",
+      "es": "Borrador sin aplicar",
+      "fr": "Brouillon non appliqué",
+      "ja": "未適用の下書き",
+      "zh-Hans": "未应用草稿"
+    },
+    "查看": {
+      "de": "Anzeigen",
+      "en": "View",
+      "es": "Ver",
+      "fr": "Afficher",
+      "ja": "表示",
+      "zh-Hans": "查看"
+    },
+    "正在停止": {
+      "de": "Wird angehalten",
+      "en": "Stopping",
+      "es": "Deteniendo",
+      "fr": "Arrêt en cours",
+      "ja": "停止中",
+      "zh-Hans": "正在停止"
+    },
+    "正在准备": {
+      "de": "Wird vorbereitet",
+      "en": "Preparing",
+      "es": "Preparando",
+      "fr": "Préparation",
+      "ja": "準備中",
+      "zh-Hans": "正在准备"
+    },
+    "正在导入外观": {
+      "de": "Look wird importiert…",
+      "en": "Importing look…",
+      "es": "Importando look…",
+      "fr": "Importation du look…",
+      "ja": "ルックを読み込み中…",
+      "zh-Hans": "正在导入外观"
+    },
+    "正在导出全分辨率照片": {
+      "de": "Foto in voller Auflösung wird exportiert",
+      "en": "Exporting full-resolution photo",
+      "es": "Exportando foto a resolución completa",
+      "fr": "Exportation de la photo en pleine résolution",
+      "ja": "フル解像度の写真を書き出し中",
+      "zh-Hans": "正在导出全分辨率照片"
+    },
+    "正在读取照片": {
+      "de": "Foto wird gelesen",
+      "en": "Reading photo",
+      "es": "Leyendo foto",
+      "fr": "Lecture de la photo",
+      "ja": "写真を読み込み中",
+      "zh-Hans": "正在读取照片"
+    },
+    "此外观文件不可用，请删除后重新导入。": {
+      "de": "Diese Look-Datei ist nicht verfügbar. Löschen Sie sie und importieren Sie sie erneut.",
+      "en": "This look file is unavailable. Delete it and import it again.",
+      "es": "Este archivo de look no está disponible. Elimínalo e impórtalo de nuevo.",
+      "fr": "Ce fichier de look est indisponible. Supprimez-le, puis importez-le à nouveau.",
+      "ja": "このルックファイルは利用できません。削除してもう一度読み込んでください。",
+      "zh-Hans": "此外观文件不可用，请删除后重新导入。"
+    },
+    "此输入没有可用的相机白平衡校准": {
+      "de": "Für diese Eingabe ist keine Kamera-Weißabgleichkalibrierung verfügbar",
+      "en": "This input has no camera white-balance calibration",
+      "es": "Esta entrada no tiene calibración de balance de blancos de cámara",
+      "fr": "Aucune calibration de balance des blancs de l'appareil n'est disponible pour cette entrée",
+      "ja": "この入力にはカメラのホワイトバランス補正がありません",
+      "zh-Hans": "此输入没有可用的相机白平衡校准"
+    },
+    "每行 {0} 张": {
+      "de": "{0} pro Zeile",
+      "en": "{0} per row",
+      "es": "{0} por fila",
+      "fr": "{0} par ligne",
+      "ja": "1 行 {0} 枚",
+      "zh-Hans": "每行 {0} 张"
+    },
+    "水平翻转，旋转 {0}°": {
+      "de": "Horizontal gespiegelt, um {0}° gedreht",
+      "en": "Flipped horizontally, rotated {0}°",
+      "es": "Volteo horizontal, rotada {0}°",
+      "fr": "Retournement horizontal, rotation de {0}°",
+      "ja": "左右反転、{0}°回転",
+      "zh-Hans": "水平翻转，旋转 {0}°"
+    },
+    "没有可访问的照片": {
+      "de": "Keine zugänglichen Fotos",
+      "en": "No accessible photos",
+      "es": "No hay fotos accesibles",
+      "fr": "Aucune photo accessible",
+      "ja": "アクセスできる写真がありません",
+      "zh-Hans": "没有可访问的照片"
+    },
+    "照片已保存": {
+      "de": "Foto gespeichert",
+      "en": "Photo saved",
+      "es": "Foto guardada",
+      "fr": "Photo enregistrée",
+      "ja": "写真を保存しました",
+      "zh-Hans": "照片已保存"
+    },
+    "目标照片（已选 {0} 张）": {
+      "de": "Zielfotos ({0} ausgewählt)",
+      "en": "Target photos ({0} selected)",
+      "es": "Fotos de destino ({0} seleccionadas)",
+      "fr": "Photos cibles ({0} sélectionnées)",
+      "ja": "対象写真（{0} 枚選択）",
+      "zh-Hans": "目标照片（已选 {0} 张）"
+    },
+    "相册": {
+      "de": "Album",
+      "en": "Album",
+      "es": "Álbum",
+      "fr": "Album",
+      "ja": "アルバム",
+      "zh-Hans": "相册"
+    },
+    "相册保存需要 Android 10 或更高版本": {
+      "de": "Zum Speichern in der Fotogalerie ist Android 10 oder höher erforderlich",
+      "en": "Saving to the photo gallery requires Android 10 or later",
+      "es": "Guardar en la galería de fotos requiere Android 10 o posterior",
+      "fr": "L'enregistrement dans la galerie photo nécessite Android 10 ou version ultérieure",
+      "ja": "フォトギャラリーへの保存には Android 10 以降が必要です",
+      "zh-Hans": "相册保存需要 Android 10 或更高版本"
+    },
+    "相册多选": {
+      "de": "Mehrere aus Album auswählen",
+      "en": "Select multiple from album",
+      "es": "Seleccionar varias del álbum",
+      "fr": "Sélectionner plusieurs photos dans l'album",
+      "ja": "アルバムから複数選択",
+      "zh-Hans": "相册多选"
+    },
+    "硬件加速（自动回退）": {
+      "de": "Hardwarebeschleunigung (CPU-Fallback)",
+      "en": "Hardware acceleration (CPU fallback)",
+      "es": "Aceleración por hardware (alternativa de CPU)",
+      "fr": "Accélération matérielle (repli CPU)",
+      "ja": "ハードウェアアクセラレーション（CPU フォールバック）",
+      "zh-Hans": "硬件加速（自动回退）"
+    },
+    "确认 {0} 张": {
+      "de": "{0} Fotos bestätigen",
+      "en": "Confirm {0} photos",
+      "es": "Confirmar {0} fotos",
+      "fr": "Confirmer {0} photos",
+      "ja": "{0} 枚を確定",
+      "zh-Hans": "确认 {0} 张"
+    },
+    "离开前应用更改？": {
+      "de": "Änderungen vor dem Verlassen anwenden?",
+      "en": "Apply changes before leaving?",
+      "es": "¿Aplicar cambios antes de salir?",
+      "fr": "Appliquer les modifications avant de quitter ?",
+      "ja": "終了前に変更を適用しますか？",
+      "zh-Hans": "离开前应用更改？"
+    },
+    "系统设置": {
+      "de": "Systemeinstellungen",
+      "en": "System settings",
+      "es": "Ajustes del sistema",
+      "fr": "Paramètres système",
+      "ja": "システム設定",
+      "zh-Hans": "系统设置"
+    },
+    "统计事件未能发送，照片编辑不受影响。": {
+      "de": "Das Analyseereignis konnte nicht gesendet werden. Die Fotobearbeitung ist nicht betroffen.",
+      "en": "The analytics event could not be sent. Photo editing is unaffected.",
+      "es": "No se pudo enviar el evento de análisis. La edición de fotos no se ve afectada.",
+      "fr": "L'événement d'analyse n'a pas pu être envoyé. La retouche photo n'est pas affectée.",
+      "ja": "分析イベントを送信できませんでした。写真編集への影響はありません。",
+      "zh-Hans": "统计事件未能发送，照片编辑不受影响。"
+    },
+    "统计已停止；重新开启前请重启应用。": {
+      "de": "Die Analyse wurde gestoppt. Starten Sie die App neu, bevor Sie sie wieder aktivieren.",
+      "en": "Analytics has stopped. Restart the app before enabling it again.",
+      "es": "El análisis se ha detenido. Reinicie la aplicación antes de volver a activarlo.",
+      "fr": "L'analyse est arrêtée. Redémarrez l'application avant de la réactiver.",
+      "ja": "分析は停止しています。再度有効にするにはアプリを再起動してください。",
+      "zh-Hans": "统计已停止；重新开启前请重启应用。"
+    },
+    "统计服务停止失败；请重启应用后重试。": {
+      "de": "Der Analysedienst konnte nicht gestoppt werden. Starten Sie die App vor einem erneuten Versuch neu.",
+      "en": "The analytics service could not stop. Restart the app before trying again.",
+      "es": "No se pudo detener el servicio de análisis. Reinicie la aplicación antes de volver a intentarlo.",
+      "fr": "Le service d'analyse n'a pas pu s'arrêter. Redémarrez l'application avant de réessayer.",
+      "ja": "分析サービスを停止できませんでした。アプリを再起動してからもう一度お試しください。",
+      "zh-Hans": "统计服务停止失败；请重启应用后重试。"
+    },
+    "统计本地清理未完成；请重启应用后重试。": {
+      "de": "Die Bereinigung lokaler Analysedaten wurde nicht abgeschlossen. Starten Sie die App vor einem erneuten Versuch neu.",
+      "en": "Local analytics cleanup did not finish. Restart the app before trying again.",
+      "es": "No se completó la limpieza local de los datos de análisis. Reinicie la aplicación antes de volver a intentarlo.",
+      "fr": "Le nettoyage des données d'analyse locales n'est pas terminé. Redémarrez l'application avant de réessayer.",
+      "ja": "ローカル分析データの削除が完了しませんでした。アプリを再起動してからもう一度お試しください。",
+      "zh-Hans": "统计本地清理未完成；请重启应用后重试。"
+    },
+    "统计设置未能保存，当前进程已停止统计。": {
+      "de": "Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt.",
+      "en": "The analytics setting could not be saved; collection is stopped for this process.",
+      "es": "No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso.",
+      "fr": "Le réglage d'analyse n'a pas pu être enregistré. La collecte est arrêtée pour ce processus.",
+      "ja": "分析の設定を保存できませんでした。このプロセスでの収集は停止しています。",
+      "zh-Hans": "统计设置未能保存，当前进程已停止统计。"
+    },
+    "裁切 {0},{1} · {2} × {3}% · 旋转 {4}° · 拉直 {5}°": {
+      "de": "Zuschnitt {0},{1} · {2} × {3}% · Drehung {4}° · Begradigung {5}°",
+      "en": "Crop {0},{1} · {2} × {3}% · Rotate {4}° · Straighten {5}°",
+      "es": "Recorte {0},{1} · {2} × {3}% · Giro {4}° · Enderezado {5}°",
+      "fr": "Recadrage {0},{1} · {2} × {3}% · Rotation {4}° · Redressement {5}°",
+      "ja": "切り抜き {0},{1} · {2} × {3}% · 回転 {4}° · 傾き {5}°",
+      "zh-Hans": "裁切 {0},{1} · {2} × {3}% · 旋转 {4}° · 拉直 {5}°"
+    },
+    "裁切百分比基于旋转、翻转、透视校正和拉直后的画面。": {
+      "de": "Die Zuschnittwerte beziehen sich auf das gedrehte, gespiegelte, perspektivisch korrigierte und begradigte Bild.",
+      "en": "Crop percentages apply after rotation, flips, perspective and straightening.",
+      "es": "El recorte se aplica después del giro, los volteos, la perspectiva y el enderezado.",
+      "fr": "Les pourcentages de recadrage suivent la rotation, les retournements, la perspective et le redressement.",
+      "ja": "切り抜きの割合は、回転・反転・遠近補正・傾き補正後の画像に適用されます。",
+      "zh-Hans": "裁切百分比基于旋转、翻转、透视校正和拉直后的画面。"
+    },
+    "裁切矩形": {
+      "de": "Zuschnittrechteck",
+      "en": "Crop rectangle",
+      "es": "Rectángulo de recorte",
+      "fr": "Rectangle de recadrage",
+      "ja": "切り抜き矩形",
+      "zh-Hans": "裁切矩形"
+    },
+    "视图选项": {
+      "de": "Anzeigeoptionen",
+      "en": "View options",
+      "es": "Opciones de vista",
+      "fr": "Options d'affichage",
+      "ja": "表示オプション",
+      "zh-Hans": "视图选项"
+    },
+    "请选择要套用当前调整的照片": {
+      "de": "Wählen Sie Fotos aus, auf die die aktuellen Anpassungen angewendet werden sollen",
+      "en": "Select photos to apply the current adjustments to",
+      "es": "Selecciona las fotos a las que aplicar los ajustes actuales",
+      "fr": "Sélectionnez les photos auxquelles appliquer les réglages actuels",
+      "ja": "現在の調整を適用する写真を選択してください",
+      "zh-Hans": "请选择要套用当前调整的照片"
+    },
+    "输出存储失败：{0}": {
+      "de": "Fehler beim Speichern der Ausgabe: {0}",
+      "en": "Output storage failed: {0}",
+      "es": "Error al guardar la salida: {0}",
+      "fr": "Échec du stockage de la sortie : {0}",
+      "ja": "出力の保存に失敗しました: {0}",
+      "zh-Hans": "输出存储失败：{0}"
+    },
+    "输出尺寸": {
+      "de": "Ausgabegröße",
+      "en": "Output size",
+      "es": "Tamaño de salida",
+      "fr": "Taille de sortie",
+      "ja": "出力サイズ",
+      "zh-Hans": "输出尺寸"
+    },
+    "选择可供 RawLab 浏览的照片。也可以从文件导入 JPEG、PNG 或 RAW。": {
+      "de": "Wählen Sie Fotos aus, die RawLab durchsuchen darf. JPEG-, PNG- oder RAW-Dateien können auch aus Dateien importiert werden.",
+      "en": "Select photos for RawLab to browse. You can also import JPEG, PNG, or RAW files.",
+      "es": "Selecciona las fotos que RawLab puede explorar. También puedes importar JPEG, PNG o RAW desde archivos.",
+      "fr": "Sélectionnez les photos que RawLab peut parcourir. Vous pouvez aussi importer un JPEG, un PNG ou un RAW depuis des fichiers.",
+      "ja": "RawLab が参照できる写真を選択してください。ファイルから JPEG、PNG、RAW を読み込むこともできます。",
+      "zh-Hans": "选择可供 RawLab 浏览的照片。也可以从文件导入 JPEG、PNG 或 RAW。"
+    },
+    "选择照片": {
+      "de": "Foto auswählen",
+      "en": "Choose photo",
+      "es": "Elegir foto",
+      "fr": "Choisir une photo",
+      "ja": "写真を選択",
+      "zh-Hans": "选择照片"
+    },
+    "选择照片权限": {
+      "de": "Fotozugriff auswählen",
+      "en": "Choose photo access",
+      "es": "Elegir acceso a fotos",
+      "fr": "Choisir l'accès aux photos",
+      "ja": "写真へのアクセスを選択",
+      "zh-Hans": "选择照片权限"
+    },
+    "选择目录": {
+      "de": "Verzeichnis auswählen",
+      "en": "Choose directory",
+      "es": "Elegir carpeta",
+      "fr": "Choisir un dossier",
+      "ja": "フォルダを選択",
+      "zh-Hans": "选择目录"
+    },
+    "选择相册中的 RAW，或从系统文件中导入。": {
+      "de": "RAW aus einem Album auswählen oder aus Systemdateien importieren.",
+      "en": "Choose a RAW from an album or import from system files.",
+      "es": "Elige un RAW de un álbum o impórtalo desde los archivos del sistema.",
+      "fr": "Choisissez un RAW dans un album ou importez-le depuis les fichiers système.",
+      "ja": "アルバムの RAW を選択するか、システムファイルから読み込みます。",
+      "zh-Hans": "选择相册中的 RAW，或从系统文件中导入。"
+    },
+    "透视校正在旋转和翻转之后、拉直和裁切之前应用，画面自动裁边以避免黑边。": {
+      "de": "Die Perspektivkorrektur folgt auf Drehung und Spiegelung, vor Begradigung und Zuschnitt. Das Bild wird beschnitten, um schwarze Ränder zu vermeiden.",
+      "en": "Perspective follows rotation and flips, before straightening and cropping. The canvas is trimmed to avoid black edges.",
+      "es": "La perspectiva se aplica después del giro y los volteos, antes del enderezado y el recorte. El lienzo se reduce para evitar bordes negros.",
+      "fr": "La perspective suit la rotation et les retournements, avant le redressement et le recadrage. Le cadre est réduit pour éviter les bords noirs.",
+      "ja": "遠近補正は回転・反転の後、傾き補正・切り抜きの前に適用されます。黒い縁を避けるため画像を自動で切り詰めます。",
+      "zh-Hans": "透视校正在旋转和翻转之后、拉直和裁切之前应用，画面自动裁边以避免黑边。"
+    },
+    "部分导出失败": {
+      "de": "Einige Exporte sind fehlgeschlagen",
+      "en": "Some exports failed",
+      "es": "Algunas exportaciones fallaron",
+      "fr": "Échec de certaines exportations",
+      "ja": "一部の書き出しに失敗",
+      "zh-Hans": "部分导出失败"
+    },
+    "重新选择照片": {
+      "de": "Fotos erneut auswählen",
+      "en": "Select photos again",
+      "es": "Seleccionar fotos de nuevo",
+      "fr": "Sélectionner à nouveau les photos",
+      "ja": "写真を再選択",
+      "zh-Hans": "重新选择照片"
+    },
+    "重新选择输出目录": {
+      "de": "Ausgabeverzeichnis erneut auswählen",
+      "en": "Choose output directory again",
+      "es": "Elegir de nuevo la carpeta de salida",
+      "fr": "Choisir à nouveau le dossier de sortie",
+      "ja": "出力フォルダを再選択",
+      "zh-Hans": "重新选择输出目录"
+    },
+    "重置所有调整？": {
+      "de": "Alle Anpassungen zurücksetzen?",
+      "en": "Reset all adjustments?",
+      "es": "¿Restablecer todos los ajustes?",
+      "fr": "Réinitialiser tous les réglages ?",
+      "ja": "すべての調整をリセットしますか？",
+      "zh-Hans": "重置所有调整？"
+    },
+    "重置暗角": {
+      "de": "Vignettierung zurücksetzen",
+      "en": "Reset vignette",
+      "es": "Restablecer viñeta",
+      "fr": "Réinitialiser la vignette",
+      "ja": "周辺減光をリセット",
+      "zh-Hans": "重置暗角"
+    },
+    "重置此项": {
+      "de": "Diesen Wert zurücksetzen",
+      "en": "Reset this item",
+      "es": "Restablecer este valor",
+      "fr": "Réinitialiser cet élément",
+      "ja": "この項目をリセット",
+      "zh-Hans": "重置此项"
+    },
+    "重置裁切": {
+      "de": "Zuschnitt zurücksetzen",
+      "en": "Reset crop",
+      "es": "Restablecer recorte",
+      "fr": "Réinitialiser le recadrage",
+      "ja": "切り抜きをリセット",
+      "zh-Hans": "重置裁切"
+    },
+    "重置颗粒": {
+      "de": "Körnung zurücksetzen",
+      "en": "Reset grain",
+      "es": "Restablecer grano",
+      "fr": "Réinitialiser le grain",
+      "ja": "粒子をリセット",
+      "zh-Hans": "重置颗粒"
+    },
+    "重试失败项": {
+      "de": "Fehlgeschlagene Elemente erneut versuchen",
+      "en": "Retry failed items",
+      "es": "Reintentar los elementos fallidos",
+      "fr": "Réessayer les éléments échoués",
+      "ja": "失敗した項目を再試行",
+      "zh-Hans": "重试失败项"
+    },
+    "长边上限（px）": {
+      "de": "Begrenzung der langen Kante (px)",
+      "en": "Long-edge limit (px)",
+      "es": "Límite del lado largo (px)",
+      "fr": "Limite du grand côté (px)",
+      "ja": "長辺の上限（px）",
+      "zh-Hans": "长边上限（px）"
+    },
+    "顶部": {
+      "de": "Oben",
+      "en": "Top",
+      "es": "Arriba",
+      "fr": "Haut",
+      "ja": "上",
+      "zh-Hans": "顶部"
+    },
+    "高光保护仅在负暗角量时可用。": {
+      "de": "Lichterschutz ist bei negativen Vignettenwerten verfügbar.",
+      "en": "Highlight protection is available for negative vignette amounts.",
+      "es": "La protección de luces solo está disponible con viñeta negativa.",
+      "fr": "La protection des hautes lumières exige un vignettage négatif.",
+      "ja": "ハイライト保護は周辺光量が負の場合に利用できます。",
+      "zh-Hans": "高光保护仅在负暗角量时可用。"
+    },
+    "高度": {
+      "de": "Höhe",
+      "en": "Height",
+      "es": "Altura",
+      "fr": "Hauteur",
+      "ja": "高さ",
+      "zh-Hans": "高度"
+    }
+  }
+}
