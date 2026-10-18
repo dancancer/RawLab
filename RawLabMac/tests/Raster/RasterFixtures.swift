@@ -155,4 +155,3 @@ func makeFixtures(in root: URL) throws -> [RasterFixture] {
     }
     return result
 }
-
