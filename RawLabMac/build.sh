@@ -69,10 +69,12 @@ if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX
     SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 fi
 RAW_LIB="$(pkg-config --variable=libdir libraw)"
+APP_SOURCES=()
+while IFS= read -r -d '' source; do APP_SOURCES+=("$source"); done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -O -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
     "${RUM_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT"/RawLabMac/Sources/*.swift "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"

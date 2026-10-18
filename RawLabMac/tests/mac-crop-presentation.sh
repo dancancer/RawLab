@@ -10,6 +10,6 @@ fi
 swiftc -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \
     "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/Localization.swift" \
-    "$ROOT/RawLabMac/Sources/MacCropInteraction.swift" "$ROOT/RawLabMac/Sources/MacCropOverlay.swift" \
+    "$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift" "$ROOT/RawLabMac/Sources/Geometry/MacCropOverlay.swift" \
     "$ROOT/RawLabMac/tests/MacCropPresentationTests.swift" -framework AppKit -framework SwiftUI -o "$OUT/tests"
 "$OUT/tests" "${1:-$ROOT/build/mac-crop-evidence}"

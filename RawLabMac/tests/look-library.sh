@@ -8,8 +8,8 @@ BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d /tmp/rawlab-look-library.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SOURCES=("$ROOT/RawLabMac/tests/LookLibraryTests.swift")
-if [ -f "$ROOT/RawLabMac/Sources/LookLibrary.swift" ]; then
-    SOURCES+=("$ROOT/RawLabMac/Sources/LookLibrary.swift")
+if [ -f "$ROOT/RawLabMac/Sources/Library/LookLibrary.swift" ]; then
+    SOURCES+=("$ROOT/RawLabMac/Sources/Library/LookLibrary.swift")
 fi
 swiftc "$ROOT/Shared/Localization.swift" -parse-as-library -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \

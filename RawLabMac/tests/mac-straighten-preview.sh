@@ -12,10 +12,10 @@ test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash R
 mkdir -p "$OUT"
 
 SOURCES=()
-for source in "$ROOT"/RawLabMac/Sources/*.swift; do
+while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
-done
+done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 
 swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \

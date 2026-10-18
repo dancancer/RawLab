@@ -29,7 +29,7 @@ class NativeIsolation(unittest.TestCase):
     # ------------------------------------------------------------------------
     def test_editor_models_use_private_directories(self):
         # 自带 EditorModel 替身的测试不碰真实目录，跳过
-        sources = [path for path in sorted(ROOT.glob("tests/*.swift")) if "class EditorModel" not in path.read_text()]
+        sources = [path for path in sorted((ROOT / "tests").rglob("*.swift")) if "class EditorModel" not in path.read_text()]
         leaks = [f"{path.name}:{line}"
                  for path in sources
                  for line, call in calls(path.read_text(), "EditorModel")

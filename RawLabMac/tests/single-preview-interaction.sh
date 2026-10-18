@@ -8,10 +8,10 @@ OUT="${1:-$(mktemp -d /tmp/rawlab-single-preview-interaction.XXXXXX)}"
 APP="$OUT/ComparisonInteraction.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$OUT/module-cache" "$OUT/fixtures"
 SOURCES=()
-for source in "$ROOT"/RawLabMac/Sources/*.swift; do
+while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
-done
+done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 RPATHS=()
 for dependency in libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
