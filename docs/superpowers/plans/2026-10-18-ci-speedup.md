@@ -76,8 +76,8 @@ step. Local and cold builds retain their existing behavior.
 **Interfaces:** Record the source SHA, event, cache hits, job execution time and
 queue time separately. Cold and warm runs must refer to the same source.
 
-- [ ] Request independent review, resolve actionable findings and run local gates.
-- [ ] Commit owned files, push the feature branch and create one PR to development.
+- [x] Request independent review, resolve actionable findings and run local gates.
+- [x] Commit owned files, push the feature branch and create one PR to development.
 - [ ] Run cold and warm hosted CI; investigate failures or ineffective caches.
 - [ ] Record observed improvements, remaining limits and untested scenarios.
 - [ ] Remove task-owned temporary files; retain the worktree and PR for review.

@@ -60,19 +60,19 @@ def cache_paths(platform, arch):
         return [f"build/macos-deps/14.0/{arch}/install", f"build/lensfun/14.0/{arch}/install"]
     if platform == "windows":
         return [f"build/windows-native/{path}" for path in (
-            "_deps", "dng-sdk", "core/wavelib", "lens-dependencies/install", "lib", *OPENCV_HEADERS)]
+            "_deps", "dng-sdk", "core/wavelib", "lens-dependencies/install", *OPENCV_HEADERS)]
     if platform == "android":
         base = "RawLabAndroid/app/.cxx/Debug/*"
         return [f"{base}/{abi}/{path}" for abi in ("arm64-v8a", "x86_64")
                 for path in ("_deps", "dng-sdk", "core/wavelib", "lens-dependencies/install",
-                             "lib", ".ninja_deps", ".ninja_log", *OPENCV_HEADERS)]
+                             ".ninja_deps", ".ninja_log", *OPENCV_HEADERS)]
     if platform == "ios":
         base = "lutools/build-ios-libraw/0.22.2"
         paths = [f"{base}/sources"]
         for config in ("iphoneos-arm64", "iphonesimulator-arm64", "iphonesimulator-x86_64"):
             core = f"{base}/core-{config}"
             paths += [f"{core}/{path}" for path in (
-                "_deps", "raw-dependencies", "wavelib", "lens-dependencies/install", "lib", "build/XCBuildData",
+                "_deps", "raw-dependencies", "wavelib", "lens-dependencies/install", "build/XCBuildData",
                 *OPENCV_HEADERS)]
             # Xcode puts object files in a shared directory, not each dependency's build tree.
             paths += [f"{core}/build/{target}.build" for target in (

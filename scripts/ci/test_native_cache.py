@@ -70,6 +70,7 @@ class NativeCacheTests(unittest.TestCase):
                  "build/windows-native/dng-sdk/Release/rawlab_dng_sdk.lib",
                  "build/windows-native/lens-dependencies/install/lib/lensfun.lib"],
                 ["build/windows-native/core/Release/sony2fuji.dll", "build/windows-native/cli/Release/sony2fuji.exe",
+                 "build/windows-native/lib/sony2fuji_core.lib",
                  "build/windows-native/core/CMakeFiles/sony2fuji_core.dir/a.obj"]),
             "ios": (
                 ["lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/rawlab_dng_sdk.build/a.o",
@@ -77,6 +78,7 @@ class NativeCacheTests(unittest.TestCase):
                  "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/raw-dependencies/libraw/Release-iphoneos/libraw.a",
                  "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/XCBuildData/build.db"],
                 ["lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/sony2fuji.build/a.o",
+                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/lib/libsony2fuji_core.a",
                  "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/sony2fuji_core.build/a.o",
                  "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/output/sony2fuji.framework/sony2fuji",
                  "lutools/build-ios/sony2fuji.xcframework/sony2fuji"]),
@@ -86,6 +88,7 @@ class NativeCacheTests(unittest.TestCase):
                  "RawLabAndroid/app/.cxx/Debug/hash/x86_64/dng-sdk/librawlab_dng_sdk.a",
                  "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/.ninja_deps"],
                 ["RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/core/CMakeFiles/sony2fuji_core.dir/a.o",
+                 "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/lib/libsony2fuji_core.a",
                  "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/CMakeFiles/rawlab-jni.dir/a.o",
                  "RawLabAndroid/app/build/intermediates/cxx/Debug/hash/obj/arm64-v8a/librawlab-jni.so"]),
         }
