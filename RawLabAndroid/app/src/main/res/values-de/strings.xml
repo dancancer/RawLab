@@ -181,7 +181,7 @@
     <string name="message_export_complete">"Export abgeschlossen"</string>
     <string name="message_export_photos">"Fotos exportieren (%1$s)"</string>
     <string name="message_export_result">"Exportergebnis"</string>
-    <string name="message_exporting">"Exportieren"</string>
+    <string name="message_exporting">"Wird exportiert"</string>
     <string name="message_exposure">"Belichtung"</string>
     <string name="message_exposure_ev">"Belichtung %1$+.2f EV"</string>
     <string name="message_failed">"Fehlgeschlagen"</string>

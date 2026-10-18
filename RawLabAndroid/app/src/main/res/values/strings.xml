@@ -273,7 +273,7 @@
     <string name="rename_look">"Rename Look"</string>
     <string name="rendering">"Developing"</string>
     <string name="reset">"Reset Adjustments"</string>
-    <string name="reset_denoise">"Reset noise reduction"</string>
+    <string name="reset_denoise">"Reset Noise Reduction"</string>
     <string name="reset_grain">"Reset grain"</string>
     <string name="reset_value">"Reset this item"</string>
     <string name="reset_vignette">"Reset vignette"</string>

@@ -1488,7 +1488,7 @@
     "zh-Hans": "正在处理"
   },
   "正在导出": {
-    "de": "Exportieren",
+    "de": "Wird exportiert",
     "en": "Exporting",
     "es": "Exportando",
     "fr": "Exportation",
@@ -2082,7 +2082,7 @@
   "色相": {
     "de": "Farbton",
     "en": "Hue",
-    "es": "Matiz",
+    "es": "Tono",
     "fr": "Teinte",
     "ja": "色相",
     "zh-Hans": "色相"
@@ -2481,7 +2481,7 @@
   },
   "重置降噪": {
     "de": "Rauschreduzierung zurücksetzen",
-    "en": "Reset noise reduction",
+    "en": "Reset Noise Reduction",
     "es": "Restablecer la reducción de ruido",
     "fr": "Réinitialiser la réduction du bruit",
     "ja": "ノイズ低減をリセット",

@@ -87,7 +87,7 @@
     <string name="hsl_aqua">"Cian"</string>
     <string name="hsl_blue">"Azul"</string>
     <string name="hsl_green">"Verde"</string>
-    <string name="hsl_hue">"Matiz"</string>
+    <string name="hsl_hue">"Tono"</string>
     <string name="hsl_lightness">"Luminosidad"</string>
     <string name="hsl_magenta">"Magenta"</string>
     <string name="hsl_orange">"Naranja"</string>
