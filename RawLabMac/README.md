@@ -105,18 +105,21 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 胶片强度支持 0–200%，默认及重置均为 100%。
 
   Film strength supports 0-200%, with 100% as the default and reset value.
-- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入兼容 CUBE 或准备好的 RLOOK v1/v2。
+- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入兼容 CUBE、准备好的 RLOOK v1/v2，或受支持的 DCP。
 
-  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; import compatible CUBE or prepared RLOOK v1/v2 files.
+  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; import compatible CUBE, prepared RLOOK v1/v2, or supported DCP files.
 - 支持声明 BT.709 输出色域的 F-Log、F-Log2、F-Log2C 富士 CUBE。F-Log2C 使用独立色域转换；技术 Log 输出会解码后正常显示。这些类型均支持 Metal，Auto 只在后端失败时回退。原厂文件无需重新制备。
 
   Declared Fuji F-Log/F-Log2/F-Log2C CUBEs with BT.709 output can be imported directly. F-Log2C uses its own gamut conversion; technical Log outputs are decoded and display-rendered. All these contracts support Metal, with Auto fallback on backend failure.
-- 外观选择器支持一次多选 CUBE/RLOOK，按顺序导入。单个失败不影响其余文件；批次结束后选中最后成功项，并汇总失败文件。全部失败或取消选择时保留原选择。
+- 外观选择器支持一次多选 CUBE/RLOOK/DCP，按顺序导入。单个失败不影响其余文件；批次结束后选中最后成功项，并汇总失败文件和具体原因。全部失败或取消选择时保留原选择。
 
-  The look picker accepts multiple CUBE/RLOOK files. Imports run sequentially, retain partial success, select the last successful look and report failed filenames. All-failed or cancelled batches preserve the existing selection.
-- v0.4.0 将导入外观复制到 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。删除外部原文件不影响外观，重启后会恢复。外观右键菜单支持重命名和删除；删除仅影响托管副本，内置外观不受影响。导入先走共享 native 校验，失败保留原选择，不接受源 DCP/XMP。制备步骤见 [LUT Preparation](../lutools/docs/lut-preparation.md)。
+  The look picker accepts multiple CUBE/RLOOK/DCP files. Imports run sequentially, retain partial success, select the last successful look and report failed filenames with their reasons. All-failed or cancelled batches preserve the existing selection.
+- 外观库保存于 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。DCP 由 Mac 原生代码在后台转换成 RLOOK，无需 Python/OCIO，也不经过 RGB CUBE 烘焙；所有成品均通过共享 native 校验后安装。原 DCP 不会被修改，删除外部原文件不影响外观，重启后会恢复。右键菜单支持重命名和删除托管副本，内置外观不受影响。XMP 仍不支持。
 
-  v0.4.0 manages imported looks in Application Support with a persistent registry. Imported copies survive source removal and app restart; context menus rename or remove only managed copies. Native validation rejects incompatible files without changing selection. Compile supported source DCPs on the desktop first; XMP execution is not implemented.
+  The library manages looks in Application Support with a persistent registry. Native Mac code compiles supported DCPs to RLOOK in the background without Python, OCIO or RGB-CUBE baking, then validates them through the shared core. Sources remain unchanged; managed copies survive source removal and restart. Context menus rename or remove only managed copies. XMP execution is not implemented.
+- DCP 自动导入要求唯一且有效的显式 D65 ColorMatrix/ForwardMatrix、内嵌 ProfileToneCurve，以及 `DefaultBlackRender=None`（值 1）。缺失曲线、默认/显式自动黑位、三光源 HueSatMap、空间/HDR/RGB 表等会给出具体错误，不静默猜测或省略。这里比旧 CLI 的无 HSM 黑位策略更严格；需要自选曲线/黑位的资源可先用 [LUT Preparation](../lutools/docs/lut-preparation.md) 明确制备，再导入 RLOOK。转换仍只是 D65 外观适配，不承诺 Lightroom 或原厂 JPEG 一致。
+
+  Automatic DCP import requires one valid explicit D65 ColorMatrix/ForwardMatrix pair, an embedded ProfileToneCurve and DefaultBlackRender=None (1). Missing tone, default/explicit Auto black, triple-illuminant HSM and spatial/HDR/RGB stages report specific errors rather than being guessed or skipped. This is stricter than the legacy CLI's no-HSM black policy. Use the preparation CLI for explicit custom tone/black choices, then import the resulting RLOOK. D65 appearance adaptation is not Lightroom or manufacturer-JPEG parity.
 - 左侧文件树支持添加多个本地目录、按需展开子目录和点击 RAW 缩略图选片，可从工具栏收起。目录列表会保留；从侧栏移除目录不会删除原文件。缩略图只读取内嵌预览，不自动触发完整显影。
 
   Add multiple local directories, expand subdirectories on demand and select RAW thumbnails in the collapsible left file tree. The directory list persists; removing an entry never deletes files. Thumbnails use embedded previews rather than full RAW development.

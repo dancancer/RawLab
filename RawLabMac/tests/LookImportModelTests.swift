@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 @main
 struct LookImportModelTests {
@@ -86,5 +87,63 @@ struct LookImportModelTests {
               "successful batch clears old errors without overwriting same-name imports")
         let reloadedBatch = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         check(reloadedBatch.films.filter { $0.managedID != nil }.count == 4, "all batch imports survive restart")
+
+        let dcp = root.appendingPathComponent("Camera look.dcp")
+        let unsupportedDCP = root.appendingPathComponent("No curve.dcp")
+        let ready = root.appendingPathComponent("Ready.rlook")
+        try DCPTestFixtures.make().write(to: dcp)
+        try DCPTestFixtures.make(missing: [50940]).write(to: unsupportedDCP)
+        try DCPCompiler.compile(source: dcp).write(to: ready)
+        reloadedBatch.importLooks([dcp, unsupportedDCP, ready, first])
+        settle(reloadedBatch)
+        check(reloadedBatch.films.filter { $0.managedID != nil }.count == 7, "mixed DCP/RLOOK/CUBE batch retains every supported import")
+        check(reloadedBatch.films.contains { $0.name == "Camera look" && $0.url.pathExtension == "rlook" }, "DCP import feeds a managed RLOOK into rendering")
+        check(reloadedBatch.selectedFilm?.name == "First batch look", "mixed batch selects its last successful import")
+        check(reloadedBatch.lookImportReport?.contains("No curve.dcp") == true &&
+              reloadedBatch.lookImportReport?.contains(DCPCompilerError.missingToneCurve.localizedDescription) == true,
+              "mixed-batch report retains the source filename and specific DCP reason")
+        let dcpSelection = reloadedBatch.selectedFilmID
+        reloadedBatch.importLooks([unsupportedDCP])
+        settle(reloadedBatch)
+        check(reloadedBatch.selectedFilmID == dcpSelection && reloadedBatch.films.filter { $0.managedID != nil }.count == 7,
+              "unsupported DCP preserves the active look and existing library")
+
+        if let rawPath = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"] {
+            let raw = URL(fileURLWithPath: rawPath)
+            var film = reloadedBatch.films.first { $0.name == "Camera look" }!
+            if let profilePath = ProcessInfo.processInfo.environment["RAWLAB_TEST_DCP"] {
+                let profile = URL(fileURLWithPath: profilePath)
+                let original = try Data(contentsOf: profile)
+                reloadedBatch.importLook(profile)
+                settle(reloadedBatch)
+                check(reloadedBatch.lookImportReport == nil && reloadedBatch.selectedFilm?.url.pathExtension == "rlook",
+                      "a privately owned real DCP imports through the actual Mac model")
+                check(try Data(contentsOf: profile) == original, "real source profile remains unchanged")
+                film = reloadedBatch.selectedFilm!
+            }
+            let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+            let automatic = try RenderEngine()
+            let forced = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+            let reference = try cpu.render(raw, settings: Adjustments(), lut: film.url, edge: 400)!
+            for (engine, name) in [(automatic, "Auto"), (forced, "Force Metal")] {
+                let actual = try engine.render(raw, settings: Adjustments(), lut: film.url, edge: 400)!
+                let expected = reference.image.dataProvider!.data! as Data
+                let bytes = actual.image.dataProvider!.data! as Data
+                let difference = zip(expected, bytes).map { abs(Int($0) - Int($1)) }.max() ?? 999
+                check(expected.count == bytes.count && !bytes.isEmpty && difference <= 2,
+                      "imported DCP renders real RAW consistently on CPU/\(name), max DN=\(difference)")
+            }
+            for suffix in ["jpg", "png"] {
+                let output = root.appendingPathComponent("dcp-export.\(suffix)")
+                _ = try automatic.render(raw, settings: Adjustments(), lut: film.url, edge: nil, output: output, exportLongEdge: 400)
+                guard let source = CGImageSourceCreateWithURL(output as CFURL, nil),
+                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+                    check(false, "DCP export must decode as an actual image"); return
+                }
+                check(image.width == reference.image.width && image.height == reference.image.height,
+                      "imported DCP exports correctly sized \(suffix.uppercased())")
+                if suffix == "png" { check(image.bitsPerComponent == 16, "DCP PNG export retains sixteen-bit precision") }
+            }
+        }
     }
 }

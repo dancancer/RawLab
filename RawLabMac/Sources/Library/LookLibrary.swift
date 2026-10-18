@@ -65,15 +65,20 @@ final class LookLibrary {
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         let suffix = source.pathExtension.lowercased()
-        guard ["cube", "rlook"].contains(suffix) else { throw LookLibraryError.invalidLook }
+        guard ["cube", "rlook", "dcp"].contains(suffix) else { throw LookLibraryError.invalidLook }
         guard (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
             throw LookLibraryError.unreadableSource
         }
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         let id = UUID().uuidString
-        let staging = directory.appendingPathComponent(".import-\(id).\(suffix)")
+        let preparedSuffix = suffix == "dcp" ? "rlook" : suffix
+        let staging = directory.appendingPathComponent(".import-\(id).\(preparedSuffix)")
         defer { try? manager.removeItem(at: staging) }
-        try manager.copyItem(at: source, to: staging)
+        if suffix == "dcp" {
+            try DCPCompiler.compile(source: source).write(to: staging, options: .withoutOverwriting)
+        } else {
+            try manager.copyItem(at: source, to: staging)
+        }
         var format = SONY2FUJI_LOOK_UNKNOWN
         var version: UInt32 = 0
         let status = staging.path.withCString { sony2fuji_validate_look($0, &format, &version) }
@@ -81,7 +86,7 @@ final class LookLibrary {
             throw status == SONY2FUJI_STATUS_IO_ERROR ? LookLibraryError.unreadableSource : LookLibraryError.invalidLook
         }
         let look = UserLook(id: id, name: source.deletingPathExtension().lastPathComponent,
-                            fileName: "\(id).\(suffix)", sourceName: source.lastPathComponent,
+                            fileName: "\(id).\(preparedSuffix)", sourceName: source.lastPathComponent,
                             format: format == SONY2FUJI_LOOK_RLOOK ? "rlook" : "cube", formatVersion: version)
         let installed = url(for: look)
         try manager.moveItem(at: staging, to: installed)
