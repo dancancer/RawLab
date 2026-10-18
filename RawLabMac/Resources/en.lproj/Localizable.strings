@@ -28,9 +28,11 @@
 "三分网格" = "Rule of Thirds Grid";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次批量任务尚未完成" = "The last batch task has not been completed yet";
-"不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。" = "This RAW or look file is unsupported. Select a Fuji CUBE declared compatible with input and BT.709 output, or a valid .rlook file.";
+"不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不是支持的 RAW 文件" = "Not a supported RAW file";
 "不是支持的图像文件" = "Unsupported image file";
+"不能覆盖原始文件。" = "The original file cannot be overwritten.";
+"不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
 "中性" = "Neutral";
 "中性显影" = "Neutral Development";
 "中性显影与调整后对比" = "Compare Neutral Development and Edits";
@@ -75,6 +77,7 @@
 "关闭" = "Close";
 "关闭提示" = "Dismiss";
 "关闭镜头选择" = "Close Lens Selection";
+"内存不足，无法解码普通图片。" = "Not enough memory to decode the image.";
 "减少边缘彩色条纹" = "Reduce Color Fringing";
 "几何" = "Geometry";
 "几何与镜头草稿" = "Geometry and Lens Draft";
@@ -90,7 +93,7 @@
 "原始比例" = "Original Ratio";
 "原尺寸" = "Original size";
 "去噪优先" = "Noise Reduction Priority";
-"参数或输出路径无效，不能覆盖原始 RAW。" = "Invalid parameters or output path; the original RAW cannot be overwritten.";
+"参数或输出路径无效。" = "Invalid parameters or output path.";
 "发现新版本 %@" = "New Version Available: %@";
 "取消" = "Cancel";
 "取消几何和镜头编辑" = "Cancel Geometry and Lens Editing";
@@ -134,7 +137,7 @@
 "导出长边像素" = "Export Long Edge (Pixels)";
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "This replaces the target photos’ local adjustments without modifying the original RAW.";
-"将替换目标照片的本机调整记录，不改写原始文件。" = "This replaces local adjustments without modifying original files.";
+"将替换目标照片的本机调整记录，不改写原始文件。" = "The target photos’ local adjustment records will be replaced. Original files will not be modified.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
 "尚未检查更新" = "Not checked for updates yet";
 "尚未选择 RAW" = "No RAW Photos Selected";
@@ -176,7 +179,7 @@
 "应用当前设置" = "Apply current settings";
 "应用当前设置到 %@ 张照片？" = "Apply current settings (photos: %@)?";
 "开启" = "On";
-"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data. Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
 "强度" = "Intensity";
 "强度为 0，其他参数会保留。" = "Intensity is 0. Other settings are retained.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
@@ -233,12 +236,14 @@
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
 "无法自动调整曝光：%@" = "Unable to auto-adjust exposure: %@";
+"无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法计算直方图" = "Unable to calculate histogram";
 "无法读取上次批量任务：%@" = "Unable to read last batch task: %@";
 "无法读取基础曝光" = "Unable to read base exposure";
 "无法读取外观文件。" = "Unable to read the look file.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "The saved look library cannot be read; the original records were not overwritten.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Unable to read or write the file. Check the path and access permissions.";
+"无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
 "无法读取调整记录：%@" = "Unable to read adjustment record: %@";
 "无法读取镜头校正状态" = "Could Not Read Lens Correction Status";

@@ -146,7 +146,7 @@ internal static class Program
                 Check(adjustments.Geometry is { CropX: .1, QuarterTurns: 1, FlipHorizontal: true, StraightenDegrees: 3.5 },
                     $"Geometry survives language changes {language}");
                 Check(AutomationProperties.GetName((CheckBox)geometryPanel.FindName("HorizontalFlip")!) == Loc.Text("水平翻转") &&
-                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("宽度 (%)") &&
+                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("裁切宽度") &&
                       AutomationProperties.GetName((Slider)geometryPanel.FindName("StraightenSlider")!) == Loc.Text("拉直"),
                     $"Geometry controls have localized automation names {language}");
                 Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");

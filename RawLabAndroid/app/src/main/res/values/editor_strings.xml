@@ -13,6 +13,8 @@
     <string name="all_tools">"All tools"</string>
     <string name="batch_confirmation_count">"%1$d outputs need verification"</string>
     <string name="dng_description">"Baked-in look, not sensor RAW. No editable history or capture EXIF. Files only."</string>
+    <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
+    <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_settings">"Settings"</string>
     <string name="empty_hint">"Choose a RAW from an album or import from system files."</string>
     <string name="geometry_drag_hint">"Crop Selection"</string>
@@ -23,11 +25,14 @@
     <string name="geometry_move_up">"Move crop up"</string>
     <string name="info_unavailable">"Unavailable"</string>
     <string name="jpeg_description">"sRGB · quality 95 · capture metadata"</string>
+    <string name="look_invalid_file">"The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required."</string>
     <string name="look_remove_body">"The copy of the look saved by RawLab will be removed; the original file will not be deleted."</string>
     <string name="output_destination">"Save location"</string>
     <string name="png_description">"sRGB · 16-bit lossless · capture metadata"</string>
+    <string name="remove_look_confirmation">"Remove \"%1$s\"?"</string>
     <string name="reset_all_body">"Keeps the current film. Clears the recipe and resets all other adjustments. Photos, looks and batch tasks are kept."</string>
     <string name="reset_all_title">"Reset all adjustments?"</string>
+    <string name="reset_effect">"Reset %1$s"</string>
     <string name="select_photo">"Choose photo"</string>
     <string name="vignette_highlights_unavailable">"Available only when vignette intensity is negative."</string>
 </resources>

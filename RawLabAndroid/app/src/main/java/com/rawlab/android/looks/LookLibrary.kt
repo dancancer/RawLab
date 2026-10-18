@@ -22,6 +22,8 @@ object NativeLookValidator : LookValidator {
     override fun validate(file: File): LookValidation = NativeProcessor.validateLook(file)
 }
 
+class InvalidLookException(message: String, cause: Throwable? = null) : IllegalArgumentException(message, cause)
+
 data class ManagedLook(
     val id: String,
     val name: String,
@@ -73,9 +75,11 @@ class LookLibrary(
             val relativePath = "${id}.${format.extension}"
             val destination = File(root, relativePath)
             val name = originalName.trim().ifEmpty { "Look.${format.extension}" }
-            val validation = validator.validate(staged)
-            require(validation.format == format) { "Look format does not match its extension" }
-            require(validVersion(format, validation.version)) { "Invalid look version" }
+            val validation = try { validator.validate(staged) }
+            catch (error: IllegalArgumentException) { throw InvalidLookException(error.message ?: "Invalid look", error) }
+            catch (error: UnsupportedOperationException) { throw InvalidLookException(error.message ?: "Invalid look", error) }
+            if (validation.format != format) throw InvalidLookException("Look format does not match its extension")
+            if (!validVersion(format, validation.version)) throw InvalidLookException("Invalid look version")
             move(staged, destination)
             val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath)
             writeRegistry(readRegistry() + imported)

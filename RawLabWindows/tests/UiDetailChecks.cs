@@ -52,6 +52,7 @@ internal static class UiDetailChecks
                     IdleStatus(window,check);
                     Selection(window,language,check);
                     MenuPlacement(window,check);
+                    CopyCompletionChecks.Run(window,language,check);
                     ResetMenus(window,language,check);
                     LibraryHint(window,output,language,check);
                     FailedOpen(window,output,language,check);
@@ -150,7 +151,7 @@ internal static class UiDetailChecks
     {
         var edit=(MenuItem)window.MainMenu.Items[1];
         var editLabels=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(Group:(string)item.Tag,Header:(string)item.Header)).ToList();
-        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group))).Select(item=>"\n  "+item.Header).ToList();
+        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group=="输入" ? "输入调整" : item.Group))).Select(item=>"\n  "+item.Header).ToList();
         check(editLabels.Count==6 && unnamed.Count==0,"Edit menu names each group reset as a reset action: "+language+string.Concat(unnamed));
         Click(window.ResetAllButton);
         var reset=window.ResetAllButton.ContextMenu;

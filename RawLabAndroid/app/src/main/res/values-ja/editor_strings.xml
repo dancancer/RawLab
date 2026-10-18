@@ -13,6 +13,8 @@
     <string name="all_tools">"すべてのツール"</string>
     <string name="batch_confirmation_count">"%1$d 件の出力は確認が必要です"</string>
     <string name="dng_description">"最終的なルックを焼き込んで保存します。センサー RAW ではありません。編集履歴と撮影 EXIF は含まず、ファイルのみに保存します。"</string>
+    <string name="edit_read_error">"調整レコードを読み取れません: %1$s"</string>
+    <string name="edit_unsaved_detail">"調整が保存されませんでした: %1$s"</string>
     <string name="editor_settings">"設定"</string>
     <string name="empty_hint">"アルバムの RAW を選択するか、システムファイルから読み込みます。"</string>
     <string name="geometry_drag_hint">"切り抜き範囲"</string>
@@ -23,11 +25,14 @@
     <string name="geometry_move_up">"上へ移動"</string>
     <string name="info_unavailable">"利用不可"</string>
     <string name="jpeg_description">"sRGB · 品質 95 · 撮影メタデータ"</string>
+    <string name="look_invalid_file">"ルックファイルが壊れているか互換性がありません。互換性のある CUBE または RLOOK ファイルが必要です。"</string>
     <string name="look_remove_body">"RawLab が保存したルックのコピーを削除します。元のファイルは削除されません。"</string>
     <string name="output_destination">"保存先"</string>
     <string name="png_description">"sRGB · 16 ビット可逆画像 · 撮影メタデータ"</string>
+    <string name="remove_look_confirmation">"「%1$s」を削除しますか?"</string>
     <string name="reset_all_body">"現在のフィルムは保持します。レシピを解除し、他の調整を初期化します。写真、ルック、バッチタスクは保持します。"</string>
     <string name="reset_all_title">"すべての調整をリセットしますか？"</string>
+    <string name="reset_effect">"%1$sをリセット"</string>
     <string name="select_photo">"写真を選択"</string>
     <string name="vignette_highlights_unavailable">"周辺減光の強度が負の値の場合のみ使用できます。"</string>
 </resources>

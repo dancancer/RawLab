@@ -137,7 +137,7 @@ internal static partial class EditorReviewChecks
                 var watch=Stopwatch.StartNew();
                 timer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(20)};
                 timer.Tick+=(_,_)=>{
-                    var dialog=app.Windows.OfType<Window>().SingleOrDefault(candidate=>candidate.Title==Loc.Text("未应用的调整"));
+                    var dialog=app.Windows.OfType<Window>().SingleOrDefault(candidate=>candidate.Title==Loc.Text("保留这次几何或镜头修改？"));
                     if(dialog==null)return;
                     var buttons=((WrapPanel)((StackPanel)dialog.Content).Children[1]).Children.OfType<Button>().ToArray();
                     var apply=buttons.Single(button=>Equals(button.Content,Loc.Text("应用并离开")));

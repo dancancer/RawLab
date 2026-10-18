@@ -26,7 +26,7 @@
     <string name="comparison_wipe">"元画像と調整後の境界"</string>
     <string name="confirm">"OK"</string>
     <string name="contrast">"コントラスト"</string>
-    <string name="delete_look">"ルックを削除"</string>
+    <string name="delete_look">"ルックを削除…"</string>
     <string name="denoise">"ノイズ低減"</string>
     <string name="denoise_chroma">"色ノイズ低減"</string>
     <string name="denoise_clean">"ノイズ低減優先"</string>
@@ -40,7 +40,6 @@
     <string name="dng_file_only">"DNGはファイルにのみ保存できます"</string>
     <string name="edit_restored">"前回の調整を復元しました"</string>
     <string name="edit_saved">"調整を保存しました"</string>
-    <string name="edit_storage_error">"本体の調整記録を開けません。ストレージ権限を確認してください。"</string>
     <string name="edit_unsaved">"調整は未保存 · 再試行"</string>
     <string name="expand_adjustments">"調整パネルを開く"</string>
     <string name="expand_vignette">"周辺減光の設定を展開"</string>
@@ -145,9 +144,9 @@
     <string name="lens_tca">"倍率色収差"</string>
     <string name="lens_unmatched">"一致するレンズなし"</string>
     <string name="licenses">"オープンソースライセンス"</string>
-    <string name="look_error">"ルックの操作に失敗しました。有効な .cube または .rlook ファイルを選択してください。"</string>
+    <string name="look_error">"操作が失敗しました"</string>
     <string name="look_import_result">"読み込み結果"</string>
-    <string name="look_import_summary">"%1$d 件のルックを読み込み、%2$d 件のファイルの読み込みに失敗しました"</string>
+    <string name="look_import_summary">"%1$d 個のルックを読み込みました。%2$d 個のファイルは読み込めませんでした:\n"</string>
     <string name="look_imported">"ルックを読み込みました"</string>
     <string name="look_importing">"ルックを読み込み中…"</string>
     <string name="look_name">"ルック名"</string>
@@ -169,7 +168,7 @@
     <string name="message_collapse">"折りたたむ"</string>
     <string name="message_completed">"%1$s / %2$s 完了"</string>
     <string name="message_confirm_photos">"%1$s 枚を確定"</string>
-    <string name="message_continue_unfinished_items">"未完了の項目を続行"</string>
+    <string name="message_continue_unfinished_items">"未完成の %1$s 枚を続行"</string>
     <string name="message_contrast">"コントラスト"</string>
     <string name="message_could_not_confirm_whether_the_photo_was">"写真の保存結果を確認できません。フォトギャラリーを確認してください。"</string>
     <string name="message_custom">"カスタム"</string>
@@ -219,9 +218,10 @@
     <string name="message_stopping">"停止中…"</string>
     <string name="message_succeeded_failed_not_processed">"成功 %1$s枚 · 失敗 %2$s枚 · 未処理 %3$s枚"</string>
     <string name="message_target_photos_selected">"対象写真（%1$s 枚選択）"</string>
+    <string name="message_task_source_unavailable">"タスクのソースファイルを利用できません。バッチタスクを作り直してください。"</string>
     <string name="message_temperature">"色温度"</string>
     <string name="message_the_previous_save_result_is_uncertain_check">"前回の保存結果を確認できません。先にギャラリーまたは出力フォルダを確認してください。"</string>
-    <string name="message_the_task_source_or_look_file_is">"タスクの元画像またはルックファイルを利用できません。一括タスクを作成し直してください。"</string>
+    <string name="message_the_task_source_or_look_file_is">"タスクで使うルックファイルを利用できません。タスクを作成し直してください。"</string>
     <string name="message_tint">"色かぶり"</string>
     <string name="message_unable_to_read_batch_task">"前回の一括書き出しを読み込めません: %1$s"</string>
     <string name="message_unable_to_read_file">"ファイルを読み込めません"</string>
@@ -274,9 +274,7 @@
     <string name="rendering">"現像中…"</string>
     <string name="reset">"調整をリセット"</string>
     <string name="reset_denoise">"ノイズ低減をリセット"</string>
-    <string name="reset_grain">"粒子をリセット"</string>
     <string name="reset_value">"この項目をリセット"</string>
-    <string name="reset_vignette">"周辺減光をリセット"</string>
     <string name="result">"補正後"</string>
     <string name="retry">"再試行"</string>
     <string name="saturation">"彩度"</string>

@@ -65,7 +65,7 @@ public partial class GeometryPanel : UserControl
         horizontal.Refresh(Loc.Text("水平透视"),new(-1,1,.001,.01,.001),value.PerspectiveHorizontal,0);
         vertical.Refresh(Loc.Text("垂直透视"),new(-1,1,.001,.01,.001),value.PerspectiveVertical,0);
         var numbers=new[]{value.CropX,value.CropY,value.CropWidth,value.CropHeight};
-        var names=new[]{"左边 (%)","顶边 (%)","宽度 (%)","高度 (%)"};
+        var names=new[]{"裁切左边","裁切上边","裁切宽度","裁切高度"};
         for(var i=0;i<crops.Length;++i)crops[i].Refresh(Loc.Text(names[i]),new(i<2 ? 0 : .01,100,.01,.1,.01),numbers[i]*100,i<2 ? 0 : 100,"%");
         Ruler.Value=value.StraightenDegrees;Ruler.InvalidateVisual();syncing=false;
     }

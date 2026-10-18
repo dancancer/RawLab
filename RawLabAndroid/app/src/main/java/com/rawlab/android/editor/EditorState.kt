@@ -38,6 +38,7 @@ data class EditorState(
     val exact: Boolean = false,
     val error: String? = null,
     val saveState: EditSaveState = EditSaveState.NONE,
+    val saveError: String? = null,
     val message: String? = null,
     val lookImportReport: String? = null,
     val gpuEnabled: Boolean = true,

@@ -13,6 +13,8 @@
     <string name="all_tools">"Todas las herramientas"</string>
     <string name="batch_confirmation_count">"%1$d resultados pendientes de verificación"</string>
     <string name="dng_description">"Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos."</string>
+    <string name="edit_read_error">"No se puede leer el registro de ajuste: %1$s"</string>
+    <string name="edit_unsaved_detail">"Ajustes no guardados: %1$s"</string>
     <string name="editor_settings">"Ajustes"</string>
     <string name="empty_hint">"Elige un RAW de un álbum o impórtalo desde los archivos del sistema."</string>
     <string name="geometry_drag_hint">"Selección de recorte"</string>
@@ -23,11 +25,14 @@
     <string name="geometry_move_up">"Mover hacia arriba"</string>
     <string name="info_unavailable">"No disponible"</string>
     <string name="jpeg_description">"sRGB · calidad 95 · metadatos de captura"</string>
+    <string name="look_invalid_file">"El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible."</string>
     <string name="look_remove_body">"Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará."</string>
     <string name="output_destination">"Ubicación de guardado"</string>
     <string name="png_description">"sRGB · 16 bits sin pérdida · metadatos de captura"</string>
+    <string name="remove_look_confirmation">"¿Eliminar \"%1$s\"?"</string>
     <string name="reset_all_body">"Se conserva la película actual. Se elimina la receta y se restablecen los demás ajustes. Las fotos, estilos y tareas por lotes se conservan."</string>
     <string name="reset_all_title">"¿Restablecer todos los ajustes?"</string>
+    <string name="reset_effect">"Restablecer %1$s"</string>
     <string name="select_photo">"Elegir foto"</string>
     <string name="vignette_highlights_unavailable">"Disponible solo cuando la intensidad de la viñeta es negativa."</string>
 </resources>

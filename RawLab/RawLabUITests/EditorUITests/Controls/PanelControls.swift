@@ -147,15 +147,15 @@ extension EditorUITests {
         capture("export-size-original")
 
         picker.tap()
-        XCTAssertTrue(app.buttons["长边 2,048 px"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["长边 2,048 px"].tap()
-        XCTAssertTrue(picker.label.contains("长边 2,048 px"))
+        XCTAssertTrue(app.buttons["长边 2048 px"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["长边 2048 px"].tap()
+        XCTAssertTrue(picker.label.contains("长边 2048 px"))
         capture("export-size-2048")
 
         picker.tap()
         XCTAssertTrue(app.buttons["指定长边"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["指定长边"].tap()
-        let invalid = app.textFields["长边（1–65535 px）"]
+        let invalid = app.textFields["导出长边像素"]
         XCTAssertTrue(invalid.waitForExistence(timeout: 5), app.debugDescription)
         invalid.tap()
         invalid.typeText("70000")
@@ -169,7 +169,7 @@ extension EditorUITests {
         let validConfirm = app.buttons["editor.export.confirm"]
         validPicker.tap()
         app.buttons["指定长边"].tap()
-        let valid = app.textFields["长边（1–65535 px）"]
+        let valid = app.textFields["导出长边像素"]
         XCTAssertTrue(valid.waitForExistence(timeout: 5), app.debugDescription)
         valid.tap()
         valid.typeText("1024")

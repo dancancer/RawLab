@@ -231,7 +231,7 @@
     "delete_look": {
       "file": "strings.xml",
       "formats": [],
-      "source": "删除外观",
+      "source": "移除外观…",
       "types": []
     },
     "denoise": {
@@ -306,6 +306,16 @@
       "source": "DNG 只能保存到文件",
       "types": []
     },
+    "edit_read_error": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "无法读取调整记录：{0}",
+      "types": [
+        "s"
+      ]
+    },
     "edit_restored": {
       "file": "strings.xml",
       "formats": [],
@@ -318,17 +328,21 @@
       "source": "调整已保存",
       "types": []
     },
-    "edit_storage_error": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "无法打开本机调整记录，请检查存储权限。",
-      "types": []
-    },
     "edit_unsaved": {
       "file": "strings.xml",
       "formats": [],
       "source": "调整未保存 · 重试",
       "types": []
+    },
+    "edit_unsaved_detail": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "调整未保存：{0}",
+      "types": [
+        "s"
+      ]
     },
     "editor_settings": {
       "file": "editor_strings.xml",
@@ -1041,7 +1055,7 @@
     "look_error": {
       "file": "strings.xml",
       "formats": [],
-      "source": "外观操作失败，请选择有效的 .cube 或 .rlook 文件。",
+      "source": "操作失败",
       "types": []
     },
     "look_import_result": {
@@ -1056,7 +1070,7 @@
         "%1$d",
         "%2$d"
       ],
-      "source": "已导入 {0} 个外观，{1} 个文件导入失败",
+      "source": "已导入 {0} 个外观，{1} 个文件导入失败：\n",
       "types": [
         "d",
         "d"
@@ -1072,6 +1086,12 @@
       "file": "strings.xml",
       "formats": [],
       "source": "正在导入外观",
+      "types": []
+    },
+    "look_invalid_file": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。",
       "types": []
     },
     "look_name": {
@@ -1206,9 +1226,13 @@
     },
     "message_continue_unfinished_items": {
       "file": "strings.xml",
-      "formats": [],
-      "source": "继续未完成项",
-      "types": []
+      "formats": [
+        "%1$s"
+      ],
+      "source": "继续未完成的 {0} 张",
+      "types": [
+        "s"
+      ]
     },
     "message_contrast": {
       "file": "strings.xml",
@@ -1536,6 +1560,12 @@
         "s"
       ]
     },
+    "message_task_source_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "任务来源文件不可用，请重新创建批量任务。",
+      "types": []
+    },
     "message_temperature": {
       "file": "strings.xml",
       "formats": [],
@@ -1551,7 +1581,7 @@
     "message_the_task_source_or_look_file_is": {
       "file": "strings.xml",
       "formats": [],
-      "source": "任务来源或外观文件不可用，请重新创建批量任务。",
+      "source": "任务使用的外观文件不可用，请重新创建任务。",
       "types": []
     },
     "message_tint": {
@@ -1862,6 +1892,16 @@
       "source": "刷新",
       "types": []
     },
+    "remove_look_confirmation": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "移除“{0}”？",
+      "types": [
+        "s"
+      ]
+    },
     "rename_look": {
       "file": "strings.xml",
       "formats": [],
@@ -1898,22 +1938,20 @@
       "source": "重置降噪",
       "types": []
     },
-    "reset_grain": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "重置颗粒",
-      "types": []
+    "reset_effect": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}",
+      "types": [
+        "s"
+      ]
     },
     "reset_value": {
       "file": "strings.xml",
       "formats": [],
       "source": "重置此项",
-      "types": []
-    },
-    "reset_vignette": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "重置暗角",
       "types": []
     },
     "result": {
@@ -2320,13 +2358,13 @@
       "ja": "許可された写真のみ表示",
       "zh-Hans": "仅显示已授权的照片"
     },
-    "任务来源或外观文件不可用，请重新创建批量任务。": {
-      "de": "Aufgabenquelle oder Look-Datei ist nicht verfügbar. Erstellen Sie den Stapelauftrag neu.",
-      "en": "The task source or look file is unavailable. Create the batch task again.",
-      "es": "El origen de la tarea o el archivo de look no está disponible. Crea de nuevo la tarea por lotes.",
-      "fr": "La source de la tâche ou le fichier de look est indisponible. Recréez la tâche par lots.",
-      "ja": "タスクの元画像またはルックファイルを利用できません。一括タスクを作成し直してください。",
-      "zh-Hans": "任务来源或外观文件不可用，请重新创建批量任务。"
+    "任务来源文件不可用，请重新创建批量任务。": {
+      "de": "Die Quelldatei der Aufgabe ist nicht verfügbar. Erstellen Sie die Stapelaufgabe erneut.",
+      "en": "The task’s source file is unavailable. Create the batch task again.",
+      "es": "El archivo de origen de la tarea no está disponible. Vuelve a crear la tarea por lotes.",
+      "fr": "Le fichier source de la tâche est indisponible. Créez à nouveau la tâche par lot.",
+      "ja": "タスクのソースファイルを利用できません。バッチタスクを作り直してください。",
+      "zh-Hans": "任务来源文件不可用，请重新创建批量任务。"
     },
     "保存位置": {
       "de": "Speicherort",
@@ -2416,14 +2454,6 @@
       "ja": "符号を切り替え",
       "zh-Hans": "切换正负号"
     },
-    "删除外观": {
-      "de": "Look löschen",
-      "en": "Delete look",
-      "es": "Eliminar look",
-      "fr": "Supprimer le look",
-      "ja": "ルックを削除",
-      "zh-Hans": "删除外观"
-    },
     "刷新": {
       "de": "Aktualisieren",
       "en": "Refresh",
@@ -2504,14 +2534,6 @@
       "ja": "ルックライブラリを読み込めません。後でもう一度試すか、壊れたルック記録を削除してください。",
       "zh-Hans": "外观库读取失败，请稍后重试或删除损坏的外观记录。"
     },
-    "外观操作失败，请选择有效的 .cube 或 .rlook 文件。": {
-      "de": "Look-Vorgang fehlgeschlagen. Wählen Sie eine gültige .cube- oder .rlook-Datei aus.",
-      "en": "Look operation failed. Select a valid .cube or .rlook file.",
-      "es": "Error en la operación del look. Selecciona un archivo .cube o .rlook válido.",
-      "fr": "Échec de l'opération sur le look. Sélectionnez un fichier .cube ou .rlook valide.",
-      "ja": "ルックの操作に失敗しました。有効な .cube または .rlook ファイルを選択してください。",
-      "zh-Hans": "外观操作失败，请选择有效的 .cube 或 .rlook 文件。"
-    },
     "导出结果": {
       "de": "Exportergebnis",
       "en": "Export result",
@@ -2551,14 +2573,6 @@
       "fr": "{0} / {1} terminés",
       "ja": "{0} / {1} 完了",
       "zh-Hans": "已完成 {0} / {1}"
-    },
-    "已导入 {0} 个外观，{1} 个文件导入失败": {
-      "de": "Importierte Looks: {0}; nicht importierte Dateien: {1}",
-      "en": "Looks imported: {0}; files not imported: {1}",
-      "es": "Looks importados: {0}; archivos no importados: {1}",
-      "fr": "Looks importés : {0} ; fichiers non importés : {1}",
-      "ja": "{0} 件のルックを読み込み、{1} 件のファイルの読み込みに失敗しました",
-      "zh-Hans": "已导入 {0} 个外观，{1} 个文件导入失败"
     },
     "已找到输出": {
       "de": "Ausgabe gefunden",
@@ -2663,14 +2677,6 @@
       "fr": "Impossible d'écrire dans le dossier de sortie : {0}",
       "ja": "出力フォルダに書き込めません: {0}",
       "zh-Hans": "无法写入输出目录：{0}"
-    },
-    "无法打开本机调整记录，请检查存储权限。": {
-      "de": "Lokale Anpassungsdaten konnten nicht geöffnet werden. Prüfen Sie die Speicherberechtigung.",
-      "en": "Cannot open local adjustment records. Check storage permission.",
-      "es": "No se pueden abrir los ajustes locales. Comprueba el permiso de almacenamiento.",
-      "fr": "Impossible d'ouvrir les réglages locaux. Vérifiez l'autorisation de stockage.",
-      "ja": "本体の調整記録を開けません。ストレージ権限を確認してください。",
-      "zh-Hans": "无法打开本机调整记录，请检查存储权限。"
     },
     "无法打开链接，请安装或启用浏览器。": {
       "de": "Link kann nicht geöffnet werden. Installieren oder aktivieren Sie einen Browser.",
@@ -3064,14 +3070,6 @@
       "ja": "すべての調整をリセットしますか？",
       "zh-Hans": "重置所有调整？"
     },
-    "重置暗角": {
-      "de": "Vignettierung zurücksetzen",
-      "en": "Reset vignette",
-      "es": "Restablecer viñeta",
-      "fr": "Réinitialiser la vignette",
-      "ja": "周辺減光をリセット",
-      "zh-Hans": "重置暗角"
-    },
     "重置此项": {
       "de": "Diesen Wert zurücksetzen",
       "en": "Reset this item",
@@ -3087,14 +3085,6 @@
       "fr": "Réinitialiser le recadrage",
       "ja": "切り抜きをリセット",
       "zh-Hans": "重置裁切"
-    },
-    "重置颗粒": {
-      "de": "Körnung zurücksetzen",
-      "en": "Reset grain",
-      "es": "Restablecer grano",
-      "fr": "Réinitialiser le grain",
-      "ja": "粒子をリセット",
-      "zh-Hans": "重置颗粒"
     },
     "重试失败项": {
       "de": "Fehlgeschlagene Elemente erneut versuchen",

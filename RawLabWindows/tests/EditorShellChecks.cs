@@ -38,7 +38,7 @@ internal static class EditorShellChecks
                     check(!window.ExportButton.IsEnabled,"Empty editor cannot export");
                     check(window.NeutralCanvas.Visibility==Visibility.Collapsed && window.NeutralColumn.ActualWidth==0,"Empty editor has a single unbroken canvas");
                     check(window.ResultCanvas.ToolTip==null,"Empty canvas has no zoom instructions");
-                    check(Descendants(window.Welcome).OfType<TextBlock>().Any(t=>t.Text==Loc.Text("打开一张 RAW")),"Exact approved empty-state heading");
+                    check(Descendants(window.Welcome).OfType<TextBlock>().Any(t=>t.Text==Loc.Text("打开照片")),"Exact approved empty-state heading");
                     CaptureLayout(window,surface,Path.Combine(output,$"empty-{language}-{size.Width}.png"));
                 }
                 window.Close();window=null;

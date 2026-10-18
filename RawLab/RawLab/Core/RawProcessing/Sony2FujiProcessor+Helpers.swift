@@ -46,11 +46,13 @@ extension Sony2FujiProcessor {
         try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-        guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK,
-              settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid exposure mode or HSL parameters.")) }
+        guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
+        }
+        guard settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数")) }
         var hsl = settings.hsl.nativeConfig
         guard sony2fuji_session_set_hsl(session, &hsl) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("Invalid HSL parameters."))
+            throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数"))
         }
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
@@ -60,7 +62,7 @@ extension Sony2FujiProcessor {
         guard gpuStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.format("Invalid GPU configuration: %@", statusMessage(gpuStatus)))
         }
-        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid photo effects.")) }
+        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("无效的暗角或颗粒参数")) }
         var effects = sony2fuji_photo_effects_config()
         effects.version = UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION)
         effects.struct_size = UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size)
@@ -81,7 +83,7 @@ extension Sony2FujiProcessor {
         guard chromaStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.format("Invalid display chroma denoise mode: %@", statusMessage(chromaStatus)))
         }
-        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid denoise strengths.")) }
+        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("无效或不可用的降噪参数")) }
         var denoise = sony2fuji_wavelet_denoise_config()
         denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
         denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
@@ -105,7 +107,7 @@ extension Sony2FujiProcessor {
     }
 
     func configureGeometry(_ session: OpaquePointer, settings: GeometrySettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid geometry parameters.")) }
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的几何参数")) }
         var config = sony2fuji_geometry_config()
         config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
         config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)

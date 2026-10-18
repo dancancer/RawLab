@@ -194,6 +194,7 @@ struct RasterRenderTests {
         }
         let primaryIdentity = try OriginalFileIdentity(primary.url)
         let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+        try assertMacFailureSemantics(context, raster: primary.url, engine: cpu)
         try assertNeutralNoDoubleGamma(primary.url, primary.label, engine: cpu, root: contextRoot)
         try runRejectedRasterCases(context, engine: cpu)
         let settings = mixedSettings()

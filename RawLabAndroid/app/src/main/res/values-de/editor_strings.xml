@@ -13,6 +13,8 @@
     <string name="all_tools">"Alle Werkzeuge"</string>
     <string name="batch_confirmation_count">"%1$d Ausgaben müssen überprüft werden"</string>
     <string name="dng_description">"Fest eingerechneter Look, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien."</string>
+    <string name="edit_read_error">"Anpassungsdatensatz konnte nicht gelesen werden: %1$s"</string>
+    <string name="edit_unsaved_detail">"Anpassungen nicht gespeichert: %1$s"</string>
     <string name="editor_settings">"Einstellungen"</string>
     <string name="empty_hint">"RAW aus einem Album auswählen oder aus Systemdateien importieren."</string>
     <string name="geometry_drag_hint">"Zuschnittauswahl"</string>
@@ -23,11 +25,14 @@
     <string name="geometry_move_up">"Zuschnitt nach oben"</string>
     <string name="info_unavailable">"Nicht verfügbar"</string>
     <string name="jpeg_description">"sRGB · Qualität 95 · Aufnahmemetadaten"</string>
+    <string name="look_invalid_file">"Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich."</string>
     <string name="look_remove_body">"Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht."</string>
     <string name="output_destination">"Speicherort"</string>
     <string name="png_description">"sRGB · verlustfreie 16-Bit-Bilder · Aufnahmemetadaten"</string>
+    <string name="remove_look_confirmation">"„%1$s“ entfernen?"</string>
     <string name="reset_all_body">"Der aktuelle Film bleibt erhalten. Das Rezept und alle anderen Anpassungen werden zurückgesetzt. Fotos, Looks und Stapelaufträge bleiben erhalten."</string>
     <string name="reset_all_title">"Alle Anpassungen zurücksetzen?"</string>
+    <string name="reset_effect">"%1$s zurücksetzen"</string>
     <string name="select_photo">"Foto auswählen"</string>
     <string name="vignette_highlights_unavailable">"Nur bei negativer Vignettenstärke verfügbar."</string>
 </resources>

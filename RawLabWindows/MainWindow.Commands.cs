@@ -55,7 +55,8 @@ public partial class MainWindow
     private static readonly string[] ResetGroups=["输入","明暗","色彩","细节","效果","胶片"];
     private MenuItem ResetGroupItem(string group)
     {
-        var item=new MenuItem{Header=Loc.Format("重置{0}",Loc.Text(group)),Tag=group};
+        var title=group==ResetGroups[0] ? Loc.Text("输入调整") : Loc.Text(group);
+        var item=new MenuItem{Header=Loc.Format("重置{0}",title),Tag=group};
         item.Click+=ResetNamedGroupClicked;return item;
     }
     private void BuildResetMenu()

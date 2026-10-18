@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T19:06:39Z",
+  "generatedAt": "2026-10-18T12:39:11Z",
   "title": "RawLab iOS / iPadOS design extension",
   "extensions": {
     "motion": [
@@ -170,7 +170,7 @@
         "editorDraft": "Geometry/lens draft preview stays staged. Fixed Apply/Cancel commit/discard and return to Exposure. Dirty navigation asks Apply/Discard/Continue. Lens editing is RAW-only; raster UI evidence does not demonstrate a RAW lens draft.",
         "exportGuard": "isEditorDraftActive covers unchanged and changed geometry/lens drafts. Export actions also guard previewRendering, previewResizePending, editor busy state and look availability.",
         "importGuard": "Single-photo import guards isEditorDraftChanged.",
-        "sourceSupport": "Single JPEG/rendered DNG export supports RAW and raster; batch export remains RAW-only.",
+        "sourceSupport": "Single JPEG/rendered DNG and batch export support compatible RAW and raster photos. Resolve camera-only settings for each target without changing the frozen source snapshot.",
         "hapticEventPolicy": "Shared >=125ms gate; default > endpoint > major tick; one accepted feedback per change, no queue; app feedback suppressed for VoiceOver and omitted for native picker selection.",
         "hapticVerification": "Source policy is recorded. Physical hardware feedback and comfort are unverified.",
         "verificationLimits": [
@@ -189,10 +189,10 @@
         "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
         "RawLab/RawLab/UI/Panels/LookPanels.swift",
         "RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift",
-        "RawLab/RawLab/UI/ContentView.swift",
-        "RawLab/RawLab/UI/ContentView+Panels.swift",
-        "RawLab/RawLab/UI/ContentView+Helpers.swift",
-        "RawLab/RawLab/UI/EditorComponents.swift",
+        "RawLab/RawLab/UI/Editor/ContentView.swift",
+        "RawLab/RawLab/UI/Editor/ContentView+Panels.swift",
+        "RawLab/RawLab/UI/Editor/ContentView+Helpers.swift",
+        "RawLab/RawLab/UI/Controls/EditorComponents.swift",
         "RawLab/RawLab/Core/Models/FilmPresentation.swift"
       ]
     }
@@ -204,7 +204,7 @@
       "refersTo": "ios-adjustment-circle-base",
       "description": "Scaled circle, supplementary fitting scalar badge, signed arc and two-line caption; accessibility uses a glyph/body-title row.",
       "nativeSource": {
-        "path": "RawLab/RawLab/UI/EditorComponents.swift",
+        "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
         "symbol": "AdjustmentToolLabel"
       }
     },
@@ -241,7 +241,7 @@
       "refersTo": "ios-film-selection",
       "description": "Bundled square artwork, complete two-line name, yellow selected fill and outline.",
       "nativeSource": {
-        "path": "RawLab/RawLab/UI/EditorComponents.swift",
+        "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
         "symbol": "FilmLabel"
       }
     },
@@ -261,7 +261,7 @@
       "refersTo": "ios-histogram-header",
       "description": "Collapsible edge overlay with a 44pt header and current-preview luminance distribution.",
       "nativeSource": {
-        "path": "RawLab/RawLab/UI/EditorComponents.swift",
+        "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
         "symbol": "FloatingHistogram"
       }
     },
@@ -277,7 +277,7 @@
   ],
   "narrative": {
     "northStar": "RawLab photo-first editor",
-    "overview": "The native iOS and iPadOS editor uses the same restrained gray-and-yellow identity for an Operate surface: import a photo, inspect a real preview, adjust it and export. The photograph leads; system navigation, sheets, menus, SF Symbols and semantic text styles carry the interface.\n\nThis extension is scoped to `RawLab/RawLab/UI/ContentView.swift`, its Adjustments, EditorState and Panels, and `EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.",
+    "overview": "The native iOS and iPadOS editor uses the same restrained gray-and-yellow identity for an Operate surface: import a photo, inspect a real preview, adjust it and export. The photograph leads; system navigation, sheets, menus, SF Symbols and semantic text styles carry the interface.\n\nThis extension is scoped to `RawLab/RawLab/UI/Editor/ContentView.swift`, its Adjustments, EditorState and Panels, and `RawLab/RawLab/UI/Controls/EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.",
     "keyCharacteristics": [
       "A dark photo workspace with yellow functional selection.",
       "Continuous control surfaces, a scrollable tool strip and complete numeric readouts.",

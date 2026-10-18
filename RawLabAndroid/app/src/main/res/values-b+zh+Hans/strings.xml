@@ -26,7 +26,7 @@
     <string name="comparison_wipe">"原图与调整后分界"</string>
     <string name="confirm">"确定"</string>
     <string name="contrast">"对比度"</string>
-    <string name="delete_look">"删除外观"</string>
+    <string name="delete_look">"移除外观…"</string>
     <string name="denoise">"降噪"</string>
     <string name="denoise_chroma">"色彩降噪"</string>
     <string name="denoise_clean">"去噪优先"</string>
@@ -40,7 +40,6 @@
     <string name="dng_file_only">"DNG 只能保存到文件"</string>
     <string name="edit_restored">"已恢复上次调整"</string>
     <string name="edit_saved">"调整已保存"</string>
-    <string name="edit_storage_error">"无法打开本机调整记录，请检查存储权限。"</string>
     <string name="edit_unsaved">"调整未保存 · 重试"</string>
     <string name="expand_adjustments">"展开调整栏"</string>
     <string name="expand_vignette">"展开暗角参数"</string>
@@ -145,9 +144,9 @@
     <string name="lens_tca">"横向色差"</string>
     <string name="lens_unmatched">"未匹配镜头"</string>
     <string name="licenses">"开源许可"</string>
-    <string name="look_error">"外观操作失败，请选择有效的 .cube 或 .rlook 文件。"</string>
+    <string name="look_error">"操作失败"</string>
     <string name="look_import_result">"导入结果"</string>
-    <string name="look_import_summary">"已导入 %1$d 个外观，%2$d 个文件导入失败"</string>
+    <string name="look_import_summary">"已导入 %1$d 个外观，%2$d 个文件导入失败：\n"</string>
     <string name="look_imported">"外观已导入"</string>
     <string name="look_importing">"正在导入外观"</string>
     <string name="look_name">"外观名称"</string>
@@ -169,7 +168,7 @@
     <string name="message_collapse">"收起"</string>
     <string name="message_completed">"已完成 %1$s / %2$s"</string>
     <string name="message_confirm_photos">"确认 %1$s 张"</string>
-    <string name="message_continue_unfinished_items">"继续未完成项"</string>
+    <string name="message_continue_unfinished_items">"继续未完成的 %1$s 张"</string>
     <string name="message_contrast">"对比度"</string>
     <string name="message_could_not_confirm_whether_the_photo_was">"无法确认照片保存结果，请核对照片图库"</string>
     <string name="message_custom">"自定义"</string>
@@ -219,9 +218,10 @@
     <string name="message_stopping">"正在停止…"</string>
     <string name="message_succeeded_failed_not_processed">"成功 %1$s 张 · 失败 %2$s 张 · 未处理 %3$s 张"</string>
     <string name="message_target_photos_selected">"目标照片（已选 %1$s 张）"</string>
+    <string name="message_task_source_unavailable">"任务来源文件不可用，请重新创建批量任务。"</string>
     <string name="message_temperature">"色温"</string>
     <string name="message_the_previous_save_result_is_uncertain_check">"上次保存结果不确定，请先核对图库或输出目录。"</string>
-    <string name="message_the_task_source_or_look_file_is">"任务来源或外观文件不可用，请重新创建批量任务。"</string>
+    <string name="message_the_task_source_or_look_file_is">"任务使用的外观文件不可用，请重新创建任务。"</string>
     <string name="message_tint">"色调"</string>
     <string name="message_unable_to_read_batch_task">"无法读取上次批量任务：%1$s"</string>
     <string name="message_unable_to_read_file">"无法读取文件"</string>
@@ -274,9 +274,7 @@
     <string name="rendering">"正在显影…"</string>
     <string name="reset">"重置调整"</string>
     <string name="reset_denoise">"重置降噪"</string>
-    <string name="reset_grain">"重置颗粒"</string>
     <string name="reset_value">"重置此项"</string>
-    <string name="reset_vignette">"重置暗角"</string>
     <string name="result">"调整后"</string>
     <string name="retry">"重试"</string>
     <string name="saturation">"饱和度"</string>

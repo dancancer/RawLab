@@ -6,6 +6,7 @@ import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.ManagedLook
+import com.rawlab.android.looks.InvalidLookException
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
@@ -54,9 +55,11 @@ internal sealed interface LookWork {
     data class Rename(val id: String, val name: String) : LookWork
     data class Delete(val id: String) : LookWork
 }
+internal data class LookImportFailure(val message: String, val invalid: Boolean)
+
 internal sealed interface LookResult {
     data class Loaded(val looks: List<LookChoice>) : LookResult
-    data class Imported(val imported: List<ManagedLook>, val failures: List<String>, val looks: List<LookChoice>) : LookResult
+    data class Imported(val imported: List<ManagedLook>, val failures: List<LookImportFailure>, val looks: List<LookChoice>) : LookResult
     data class Renamed(val look: ManagedLook, val looks: List<LookChoice>) : LookResult
     data class Deleted(val id: String, val looks: List<LookChoice>) : LookResult
     data class Failed(val error: Throwable, val reload: Boolean) : LookResult
@@ -68,10 +71,13 @@ internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = sy
         LookWork.Load -> LookResult.Loaded(storage.looks())
         is LookWork.Import -> {
             val imported = mutableListOf<ManagedLook>()
-            val failures = mutableListOf<String>()
+            val failures = mutableListOf<LookImportFailure>()
             for (uri in work.uris) {
                 try { imported += storage.importLook(uri) }
-                catch (error: Exception) { failures += error.message ?: error.javaClass.simpleName }
+                catch (error: Exception) {
+                    failures += LookImportFailure(error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
+                        generateSequence<Throwable>(error) { it.cause }.any { it is InvalidLookException })
+                }
             }
             LookResult.Imported(imported, failures, storage.looks())
         }

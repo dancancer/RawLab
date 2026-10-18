@@ -124,7 +124,7 @@ public partial class BatchExportWindow : Window
     private void SaveDraft()
     {
         try { journal.Save(job); job.Error = null; }
-        catch (Exception error) { job.Error = Loc.Text("任务未保存：") + error.Message; }
+        catch (Exception error) { job.Error = Loc.Format("任务未保存：{0}", error.Message); }
         Refresh();
     }
     private void Select(Guid id, bool selected)
@@ -329,19 +329,19 @@ public partial class BatchExportWindow : Window
         var title = new TextBlock { Text = Loc.Text("正在生成本次导出效果…"), Margin = new Thickness(16) };
         var image = new Image { Stretch = Stretch.Uniform, Margin = new Thickness(16) };
         var panel = new DockPanel(); DockPanel.SetDock(title, Dock.Top); panel.Children.Add(title); panel.Children.Add(image);
-        var preview = new Window { Title = row.Name + Loc.Text(" · 本次导出效果"), Owner = this, Width = 820, Height = 620, Content = panel };
+        var preview = new Window { Title = Loc.Format("{0} · 本次导出效果", row.Name), Owner = this, Width = 820, Height = 620, Content = panel };
         preview.Show();
         var snapshot = job.Copy();
         try
         {
             var frame = await Task.Run(() => {
                 if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
-                if (snapshot.Look != null && !File.Exists(snapshot.Look)) throw new InvalidOperationException(Loc.Text("任务外观不可用。"));
+                if (snapshot.Look != null && !File.Exists(snapshot.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
                 using var engine = new RenderEngine();
                 var settings=RenderEngine.PrepareBatchSettings(snapshot.Source,row.Input,snapshot.Settings.Restore());
                 return engine.Render(row.Input, settings, snapshot.Look, 1600, statistics: false, clipping: false);
             });
-            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = snapshot.LookName + Loc.Text(" · 本次导出效果"); }
+            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", snapshot.LookName); }
         }
         catch (Exception error) { if (preview.IsVisible) title.Text = error.Message; }
     }

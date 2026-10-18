@@ -28,9 +28,11 @@
 "三分网格" = "Drittelraster";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
 "上次批量任务尚未完成" = "Der letzte Stapel-Export ist noch nicht abgeschlossen";
-"不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。" = "Dieses RAW oder diese Look-Datei wird nicht unterstützt. Wählen Sie eine als eingabe- und BT.709-Ausgabe-kompatibel deklarierte Fuji-CUBE- oder eine gültige .rlook-Datei.";
+"不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不是支持的 RAW 文件" = "Keine unterstützte RAW-Datei";
 "不是支持的图像文件" = "Nicht unterstützte Bilddatei";
+"不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
+"不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";
 "中性" = "Neutral";
 "中性显影" = "Neutrale Entwicklung";
 "中性显影与调整后对比" = "Neutrale Entwicklung mit Bearbeitung vergleichen";
@@ -75,6 +77,7 @@
 "关闭" = "Schließen";
 "关闭提示" = "Hinweis schließen";
 "关闭镜头选择" = "Objektivauswahl schließen";
+"内存不足，无法解码普通图片。" = "Nicht genügend Speicher zum Dekodieren des Bildes.";
 "减少边缘彩色条纹" = "Farbsäume verringern";
 "几何" = "Geometrie";
 "几何与镜头草稿" = "Geometrie- und Objektiventwurf";
@@ -90,7 +93,7 @@
 "原始比例" = "Originalverhältnis";
 "原尺寸" = "Originalgröße";
 "去噪优先" = "Rauschreduzierung priorisieren";
-"参数或输出路径无效，不能覆盖原始 RAW。" = "Ungültige Parameter oder ungültiger Ausgabepfad; die ursprüngliche RAW-Datei kann nicht überschrieben werden.";
+"参数或输出路径无效。" = "Ungültige Parameter oder ungültiger Ausgabepfad.";
 "发现新版本 %@" = "Neue Version verfügbar: %@";
 "取消" = "Abbrechen";
 "取消几何和镜头编辑" = "Geometrie- und Objektivbearbeitung abbrechen";
@@ -134,7 +137,7 @@
 "导出长边像素" = "Lange Seite beim Export (Pixel)";
 "导出长边必须为 1-65535 像素。" = "Die lange Seite muss 1-65535 Pixel betragen.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Ersetzt die lokalen Anpassungen der Zielfotos, ohne die ursprüngliche RAW-Datei zu ändern.";
-"将替换目标照片的本机调整记录，不改写原始文件。" = "Lokale Anpassungen werden ersetzt. Originaldateien bleiben unverändert.";
+"将替换目标照片的本机调整记录，不改写原始文件。" = "Die lokalen Anpassungsdatensätze der Zielfotos werden ersetzt. Originaldateien werden nicht geändert.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
 "尚未检查更新" = "Noch nicht nach Updates gesucht";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
@@ -176,7 +179,7 @@
 "应用当前设置" = "Aktuelle Einstellungen anwenden";
 "应用当前设置到 %@ 张照片？" = "Aktuelle Einstellungen anwenden (Fotos: %@)?";
 "开启" = "Ein";
-"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen. Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.";
 "强度" = "Intensität";
 "强度为 0，其他参数会保留。" = "Die Stärke ist 0. Andere Einstellungen bleiben erhalten.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Starker Hell-Dunkel-Kontrast, tiefe kühl-cyane Schatten, kontrollierte Schwarztöne und warme Akzentlichter";
@@ -233,12 +236,14 @@
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
+"无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法计算直方图" = "Histogramm kann nicht berechnet werden";
 "无法读取上次批量任务：%@" = "Der letzte Stapel-Export konnte nicht gelesen werden: %@";
 "无法读取基础曝光" = "Die Basisbelichtung kann nicht gelesen werden";
 "无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.";
+"无法读取照片，请检查文件和访问权限。" = "Das Foto kann nicht gelesen werden. Prüfen Sie die Datei und Zugriffsrechte.";
 "无法读取统计设置，已保持关闭。" = "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.";
 "无法读取调整记录：%@" = "Anpassungsdatensatz konnte nicht gelesen werden: %@";
 "无法读取镜头校正状态" = "Status der Objektivkorrektur konnte nicht gelesen werden";

@@ -47,7 +47,9 @@ class SaveFeedbackLayoutTest {
 
     @Test fun saveFeedbackKeepsLayoutInChinese() = verifySaveFeedback(listOf("zh-Hans"))
 
-    private fun verifySaveFeedback(languages: List<String>) {
+    @Test fun saveFailureDetailsKeepLayoutAndRetryInChineseAndEnglish() = verifySaveFeedback(listOf("zh-Hans", "en"), true)
+
+    private fun verifySaveFeedback(languages: List<String>, failureDetails: Boolean = false) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val bitmap = Bitmap.createBitmap(600, 900, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.DKGRAY) }
         var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.parse("content://rawlab.test/save-layout"),
@@ -57,7 +59,7 @@ class SaveFeedbackLayoutTest {
         var fontScale by mutableFloatStateOf(1f)
         var retries = 0
         val visualFailures = mutableListOf<String>()
-        val savedTexts = mapOf("en" to "Adjustments saved", "zh-Hans" to "调整已保存", "de" to "Anpassungen gespeichert",
+        val savedTexts = mapOf("en" to "Adjustments Saved", "zh-Hans" to "调整已保存", "de" to "Anpassungen gespeichert",
             "fr" to "Réglages enregistrés", "ja" to "調整を保存しました", "es" to "Ajustes guardados")
         compose.setContent {
             val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
@@ -103,7 +105,9 @@ class SaveFeedbackLayoutTest {
                             assertEquals(340f, dockBounds.width, 1f)
                         } else assertTrue("The bottom-dock branch must be reached", canvasBounds.bottom <= dockBounds.top)
                         for (save in listOf(EditSaveState.SAVED, EditSaveState.RESTORED, EditSaveState.FAILED, EditSaveState.NONE)) {
-                            compose.runOnIdle { editor = editor.copy(saveState = save) }
+                            val detail = if (failureDetails && save == EditSaveState.FAILED)
+                                localized.getString(R.string.edit_unsaved_detail, "edits.properties: permission denied") else null
+                            compose.runOnIdle { editor = editor.copy(saveState = save, saveError = detail) }
                             before.forEach { (tag, bounds) ->
                                 assertBounds("$size/$locale/$scale/$expanded/$save/$tag", bounds,
                                     compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot)
@@ -111,7 +115,7 @@ class SaveFeedbackLayoutTest {
                             if (save == EditSaveState.NONE) compose.onNodeWithTag("edit-save-notice").assertDoesNotExist()
                             else {
                                 compose.onNodeWithTag("edit-save-notice").assertIsDisplayed()
-                                val text = localized.getString(when (save) {
+                                val text = detail ?: localized.getString(when (save) {
                                     EditSaveState.SAVED -> R.string.edit_saved
                                     EditSaveState.RESTORED -> R.string.edit_restored
                                     else -> R.string.edit_unsaved
@@ -145,7 +149,7 @@ class SaveFeedbackLayoutTest {
                                     compose.runOnIdle { assertEquals(previous + 1, retries) }
                                 }
                                 if (expanded && save in listOf(EditSaveState.SAVED, EditSaveState.FAILED) &&
-                                    ((size.first == 360 && locale == "en" && scale == 1f) || (size.first == 960 && locale == "de"))) {
+                                    ((size.first == 360 && locale in listOf("zh-Hans", "en")) || (size.first == 960 && locale == "en"))) {
                                     capture("${size.first}-$locale-$save.png")
                                 }
                             }

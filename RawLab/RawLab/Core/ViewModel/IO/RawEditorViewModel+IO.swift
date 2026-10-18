@@ -193,7 +193,7 @@ extension RawEditorViewModel {
                         if self.hasImage && adjustedImage != nil { onImported?() }
                         if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                         if adjustedImage == nil {
-                            self.statusMessage = L10n.text("Preview render failed.")
+                            self.statusMessage = L10n.text("无法生成预览")
                         }
                     }
                 } else {
@@ -245,7 +245,7 @@ extension RawEditorViewModel {
                         if self.hasImage && adjustedImage != nil { onImported?() }
                         if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                         if adjustedImage == nil {
-                            self.statusMessage = L10n.text("Preview render failed.")
+                            self.statusMessage = L10n.text("无法生成预览")
                         }
                     }
                 }

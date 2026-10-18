@@ -2,14 +2,23 @@ import XCTest
 
 extension EditorUITests {
     func testUsagePrivacyDefaultsOn() {
+        verifyUsagePrivacy(language: "en")
+    }
+
+    func testUsagePrivacyDefaultsOnInChinese() {
+        verifyUsagePrivacy(language: "zh-Hans")
+    }
+
+    private func verifyUsagePrivacy(language: String) {
         // 英文界面下隐私设置整页都是英文：入口、标题、开关与状态说明
         // 从未选择过时统计默认开启；调试构建不带 SDK，状态行说明未配置
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        let english = language == "en"
+        app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", english ? "en_US" : "zh_CN", "-RawLab.language", language]
         app.launch()
         let menu = app.buttons["editor.privacy"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
-        XCTAssertEqual(menu.label, "More")
+        XCTAssertEqual(menu.label, english ? "More" : "更多")
         menu.tap()
         let open = app.buttons["editor.privacy.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 5), app.debugDescription)
@@ -18,16 +27,16 @@ extension EditorUITests {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertTrue(toggle.isEnabled, "a saved or default consent stays withdrawable")
-        XCTAssertEqual(toggle.label, "Allow usage analytics")
-        XCTAssertTrue(app.navigationBars["Privacy settings"].exists, app.debugDescription)
-        XCTAssertTrue(app.staticTexts["Usage analytics is not configured in this build; nothing is collected or reported."].exists)
+        XCTAssertEqual(toggle.label, english ? "Allow usage analytics" : "允许使用统计")
+        XCTAssertTrue(app.navigationBars[english ? "Privacy settings" : "隐私设置"].exists, app.debugDescription)
+        XCTAssertTrue(app.staticTexts[english ? "Usage analytics is not configured in this build; nothing is collected or reported." : "当前构建未配置使用统计，未采集或上报。"].exists)
         // 按文字查询最长 128 个字符，长句用前缀匹配
-        let installID = NSPredicate(format: "label BEGINSWITH %@", "To count active devices, the app stores a randomly generated installation ID")
+        let installID = NSPredicate(format: "label BEGINSWITH %@", english ? "To count active devices, the app stores a randomly generated installation ID" : "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识")
         XCTAssertTrue(app.staticTexts.matching(installID).firstMatch.exists, app.debugDescription)
-        capture("usage-privacy-portrait")
+        capture("usage-privacy-\(language)-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["usage.done"].isHittable)
-        capture("usage-privacy-landscape")
+        capture("usage-privacy-\(language)-landscape")
         app.buttons["usage.done"].tap()
         XCTAssertTrue(app.buttons["editor.import"].exists)
     }
@@ -107,7 +116,7 @@ extension EditorUITests {
         app.segmentedControls["batch.format"].buttons["DNG · Rendered"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Export Size'")).firstMatch.tap()
         app.buttons["Specify long edge"].tap()
-        let longEdge = app.textFields["Long Edge (1–65535 px)"]
+        let longEdge = app.textFields["Export Long Edge (Pixels)"]
         XCTAssertTrue(longEdge.waitForExistence(timeout: 5), app.debugDescription)
         longEdge.tap()
         longEdge.typeText("128")

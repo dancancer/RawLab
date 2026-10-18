@@ -27,11 +27,16 @@ internal static class RasterChecks
         var png=Path.Combine(inputs,"pattern.png");var jpeg=Path.Combine(inputs,"ordinary.jpg");var tiff=Path.Combine(inputs,"classic.tiff");
         Save(png,new PngBitmapEncoder());Save(jpeg,new JpegBitmapEncoder{QualityLevel=96});
         Save(tiff,new TiffBitmapEncoder{Compression=TiffCompressOption.None});
+        var metadataProtected=false;
+        try { ExportMetadata.Preserve(png,png); }
+        catch(InvalidOperationException error) when(error.Message==Loc.Text("不能覆盖原始文件。")) { metadataProtected=true; }
+        check(metadataProtected,"Raster metadata writer reports the dedicated original-file protection message");
         var identities=new[]{raw,png,jpeg,tiff}.ToDictionary(path=>path,Hash);
         using var engine=new RenderEngine(0);
         using(var forced=new RenderEngine(2))
         {
-            var unsupported=false;try{forced.Render(png,new(),null,32,statistics:false,clipping:false);}catch(InvalidOperationException){unsupported=true;}
+            var unsupported=false;try{forced.Render(png,new(),null,32,statistics:false,clipping:false);}
+            catch(InvalidOperationException error) when(error.Message==Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。")){unsupported=true;}
             check(unsupported,"Direct Force GPU remains explicitly unsupported for raster; it never pretends CPU succeeded");
         }
         var identity=engine.Render(png,new(),null,0,statistics:false,clipping:false)!;

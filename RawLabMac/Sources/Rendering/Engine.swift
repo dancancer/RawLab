@@ -56,17 +56,6 @@ struct RenderedImage {
     var nativeHeight: Int? = nil
 }
 
-enum RenderError: LocalizedError {
-    case failed(String)
-    case outputIO
-    var errorDescription: String? {
-        switch self {
-        case .failed(let text): return text
-        case .outputIO: return L10n.text("无法写入成片，请检查输出位置和剩余空间。")
-        }
-    }
-}
-
 struct RawWhiteBalanceCacheKey: Equatable {
     let file: URL
     let modified: Date?
@@ -88,7 +77,7 @@ final class RenderEngine {
         init(_ url: URL) throws {
             let status = url.path.withCString { sony2fuji_load_display_image($0, &buffer) }
             guard status == SONY2FUJI_STATUS_OK else {
-                throw RenderError.failed(L10n.text("普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"))
+                throw RenderError.displayImage(status)
             }
         }
         deinit { sony2fuji_release_buffer(&buffer) }
@@ -301,19 +290,7 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {
-            let message = String(cString: sony2fuji_status_message(status))
-            if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw RenderError.outputIO }
-            if status == SONY2FUJI_STATUS_IO_ERROR {
-                if let output, ExportFormat.forOutput(output) != .renderedDNG { throw RenderError.outputIO }
-                throw RenderError.failed(L10n.text("无法读取或写入文件，请检查路径和访问权限。"))
-            }
-            if status == SONY2FUJI_STATUS_UNSUPPORTED {
-                throw RenderError.failed(L10n.text("不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"))
-            }
-            if status == SONY2FUJI_STATUS_INVALID_ARGUMENT {
-                throw RenderError.failed(L10n.text("参数或输出路径无效，不能覆盖原始 RAW。"))
-            }
-            throw RenderError.failed(L10n.format("处理失败：%@", String(describing: message)))
+            throw RenderError.processing(status, input: url, look: lut, output: output)
         }
         if let output {
             if ExportFormat.forOutput(output) != .renderedDNG {

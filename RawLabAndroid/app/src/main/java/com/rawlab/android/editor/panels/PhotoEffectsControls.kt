@@ -39,7 +39,7 @@ internal fun PhotoEffectsControls(
         it.isVignette == vignette && (!vignette || advanced || it == amount)
     }
     val groupTitle = if (vignette) R.string.vignette else R.string.grain
-    val resetLabel = if (vignette) R.string.reset_vignette else R.string.reset_grain
+    val resetLabel = stringResource(R.string.reset_effect, stringResource(groupTitle))
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
