@@ -136,4 +136,23 @@ class EditorToolsTest {
         val differing = (0 until total).count { lit(header, it % header.width, it / header.width) != lit(parameter, it % header.width, it / header.width) }
         assertTrue("header reset and parameter reset render the same glyph ($differing of $total pixels differ)", differing * 50 > total)
     }
+
+    // 与 Mac、iOS 一致：“已调整”标记是工具名下方单独的小圆点，在圆圈外面；没调整时透明但仍占位，切换时工具条不跳动
+    @Test fun changedMarkerSitsBelowTheTitleOutsideTheRing() {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val state = EditorState(
+            photo = ImportedPhoto(Uri.parse("content://rawlab.test/marker"), "fixture", File("fixture")),
+            edits = EditSettings(exposure = .5f),
+            preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
+        )
+        compose.setContent { RawLabTheme { Surface { EditorToolStrip(state, selected = 0) {} } } }
+        fun bounds(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val ring = bounds("editor-tool-ring-2")
+        val marker = bounds("editor-tool-marker-2")
+        val title = compose.onAllNodesWithText("曝光", useUnmergedTree = true).fetchSemanticsNodes().single().boundsInRoot
+        assertTrue("marker $marker must be below the title $title", marker.top >= title.bottom)
+        assertTrue("marker $marker must be outside the ring $ring", marker.top >= ring.bottom)
+        assertEquals("unchanged tools keep the marker slot", bounds("editor-tool-2").height, bounds("editor-tool-3").height)
+        assertEquals(bounds("editor-tool-marker-2").height, bounds("editor-tool-marker-3").height)
+    }
 }

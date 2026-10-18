@@ -1,6 +1,8 @@
 package com.rawlab.android.editor.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -15,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -110,9 +113,9 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
-    }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+    }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(48.dp).testTag("editor-tool-ring-$index"), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 val inset = 1.dp.toPx()
                 drawCircle(if (selected) primary else muted.copy(alpha = .6f), style = Stroke(1.dp.toPx()))
@@ -121,12 +124,14 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
                     if (sweep != 0f) drawArc(primary, -90f, sweep, false, Offset(inset, inset),
                         Size(size.width - inset * 2, size.height - inset * 2), style = Stroke(2.5.dp.toPx()))
                 }
-                if (changed) drawCircle(primary, 2.dp.toPx(), Offset(size.width / 2, 3.dp.toPx()))
             }
             if (selected && number != null && number.length <= 5 && LocalDensity.current.fontScale <= 1.3f) {
                 Text(number, style = MaterialTheme.typography.labelSmall, color = primary)
             } else Icon(editorToolIcons[index], null, Modifier.size(24.dp), tint = color)
         }
         Text(title, style = MaterialTheme.typography.labelSmall, color = color)
+        // 与 Mac、iOS 相同：“已调整”是工具名下方单独的小圆点；没调整时透明但仍占位，切换时工具条不跳动
+        Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index")
+            .background(if (changed) primary else Color.Transparent, CircleShape))
     }
 }
