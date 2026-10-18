@@ -267,7 +267,7 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
             startFailed = true;
             startFailureStatus = error.Message.Contains("no retry", StringComparison.OrdinalIgnoreCase)
                 ? "统计服务生命周期失败，未再尝试；请退出应用完成清理"
-                : "统计服务未能启动，照片编辑不受影响";
+                : "统计服务未能启动，照片编辑不受影响。";
             status = startFailureStatus;
         }
     }
@@ -307,7 +307,7 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
     {
         if (!UsageFiles.WriteAtomically(settingsPath, JsonSerializer.Serialize(new ConsentState(enabled))))
         {
-            storageWarning = "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限";
+            storageWarning = "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。";
             return false;
         }
         storageWarning = "";
@@ -317,7 +317,7 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
     private void RefreshStatus()
     {
         status = stopFailed ? "统计服务关闭失败，未再尝试关闭；请退出应用完成清理" :
-            startFailed ? startFailureStatus ?? "统计服务未能启动，照片编辑不受影响" :
+            startFailed ? startFailureStatus ?? "统计服务未能启动，照片编辑不受影响。" :
             !transport.IsAvailable ? "当前构建未配置使用统计，未采集或上报。" :
             consentGiven ? "已允许使用统计；可随时关闭。" : "使用统计已关闭。";
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));

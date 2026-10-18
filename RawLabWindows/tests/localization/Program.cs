@@ -11,6 +11,18 @@ Check(Loc.Resolve("system", "zh-Hans-CN") == "zh-Hans", "Simplified Chinese");
 Check(Loc.Resolve("system", "zh-Hant-TW") == "en", "Unsupported Chinese script");
 Check(Loc.Resolve("system", "pt-BR") == "en", "Unsupported language fallback");
 Check(Loc.Resolve("ja", "fr-FR") == "ja", "Explicit language selection");
+var nestedSources = Path.Combine(Path.GetTempPath(), "rawlab-localization-sources-" + Guid.NewGuid().ToString("N"));
+try
+{
+    foreach (var directory in new[] { "", "MainWindow", "tests", "bin", "obj" })
+    {
+        var path = Path.Combine(nestedSources, directory);
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "Probe.cs"), "Loc.Text(\"Language\")");
+    }
+    Check(StaticKeyChecks.Arguments(nestedSources).Count() == 2, "Source scanning includes nested production files but excludes tests and build outputs");
+}
+finally { if (Directory.Exists(nestedSources)) Directory.Delete(nestedSources, true); }
 foreach (var (argument, composed) in new[] {
     ("\"暗角强度\"", false), ("titles[i + 1]", false), ("recipe?.Subtitle ?? \"中性直出\"", false),
     ("selected ? \"暗角\" : \"颗粒\"", false), ("(spec.IsVignette ? \"暗角\" : \"颗粒\")+titles[(int)spec.Id]", true),
@@ -28,8 +40,8 @@ foreach (var pair in expected)
     Loc.Initialize(pair.Key);
     Check(Loc.Text("语言") == pair.Value, pair.Key + " embedded catalog");
     Check(Loc.Strings.Count > 250, pair.Key + " full catalog");
-    Check(Loc.Strings.ContainsKey("裁切与旋转") && Loc.Strings.ContainsKey("拉直角度") &&
-          Loc.Strings.ContainsKey("宽度 (%)") && Loc.Strings.ContainsKey("重置几何"), pair.Key + " geometry labels");
+    Check(Loc.Strings.ContainsKey("裁切、旋转、翻转和拉直") && Loc.Strings.ContainsKey("拉直角度") &&
+          Loc.Strings.ContainsKey("宽度 (%)") && Loc.Strings.ContainsKey("重置几何编辑"), pair.Key + " geometry labels");
     Check(Loc.Format("导出 {0} 张", 2).Contains('2'), pair.Key + " formatted arguments");
     Check(Loc.Text("unknown.key") == "unknown.key", pair.Key + " unknown key fallback");
     var missing = keyArguments.SelectMany(argument => StaticKeyChecks.Literals(argument.Text)

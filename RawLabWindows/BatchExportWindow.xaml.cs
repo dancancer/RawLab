@@ -90,7 +90,7 @@ public partial class BatchExportWindow : Window
 
     private void Refresh()
     {
-        Heading.Text = preflighting ? Loc.Text("正在检查 RAW…") : Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("正在导出") :
+        Heading.Text = preflighting ? Loc.Text("正在检查照片…") : Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("正在导出") :
             job.Interrupted ? Loc.Text("导出已中断") : job.Cancelled ? Loc.Text("导出已取消") : job.Started ? Loc.Text("导出完成") : Loc.Text("批量导出");
         Summary.Text = job.Started ? Loc.Format("成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张", job.SucceededCount, job.FailedCount, job.RemainingCount) : Loc.Format("已选 {0} 张", job.SelectedCount);
         ErrorText.Text = job.Error ?? ""; ErrorText.Visibility = string.IsNullOrEmpty(job.Error) ? Visibility.Collapsed : Visibility.Visible;
@@ -113,7 +113,7 @@ public partial class BatchExportWindow : Window
         }
         CloseAction.Content = job.Started ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
         RevealFolder.Visibility = job.SucceededCount > 0 ? Visibility.Visible : Visibility.Collapsed;
-        PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("停止") :
+        PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("取消导出") :
             !job.Started ? Loc.Format("导出 {0} 张", job.SelectedCount) : job.RemainingCount > 0 ? Loc.Format("继续未完成的 {0} 张", job.SelectedCount - job.SucceededCount) : Loc.Format("重试失败的 {0} 张", job.FailedCount);
         PrimaryAction.Visibility = !Running && job.Started && job.SucceededCount == job.SelectedCount ? Visibility.Collapsed : Visibility.Visible;
         Footnote.Text=Running ? Loc.Text("当前项完成后停止，已完成的输出会保留。") : Loc.Text("仅用于本次导出，保留各照片原有调整");
@@ -335,7 +335,7 @@ public partial class BatchExportWindow : Window
         try
         {
             var frame = await Task.Run(() => {
-                if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换。"));
+                if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
                 if (snapshot.Look != null && !File.Exists(snapshot.Look)) throw new InvalidOperationException(Loc.Text("任务外观不可用。"));
                 using var engine = new RenderEngine();
                 var settings=RenderEngine.PrepareBatchSettings(snapshot.Source,row.Input,snapshot.Settings.Restore());

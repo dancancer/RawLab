@@ -1,0 +1,344 @@
+import PhotosUI
+import SwiftUI
+
+extension ContentView {
+    @ToolbarContentBuilder
+    var editorToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            Menu {
+                Button { showingPrivacy = true } label: {
+                    Label(L10n.text("隐私设置"), systemImage: "gearshape")
+                }
+                .accessibilityIdentifier("editor.privacy.open")
+                Button { showingFileImporter = true } label: {
+                    Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
+                }
+                .disabled(editorBusy || isEditorDraftChanged)
+                .accessibilityIdentifier("editor.import.file")
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            // 菜单里不止隐私设置（还有"从文件导入"），读屏名称按通用的"更多"
+            .accessibilityLabel(L10n.text("更多")).help(L10n.text("更多"))
+            .accessibilityIdentifier("editor.privacy")
+            photoImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
+                .opacity(rulerFocusOpacity)
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Menu {
+                Picker(L10n.text("语言"), selection: $languagePreference) {
+                    ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
+                }
+                .id(localizationLocale.identifier)
+                Toggle(L10n.text("调整触觉反馈"), isOn: $adjustmentHapticsEnabled)
+            } label: { Image(systemName: "globe") }
+                .accessibilityLabel(L10n.text("语言"))
+                .accessibilityIdentifier("settings.language")
+                .opacity(rulerFocusOpacity)
+            Button { showingBefore.toggle() } label: {
+                Image(systemName: "circle.lefthalf.filled")
+                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
+            }
+            .accessibilityLabel(L10n.text("对比"))
+            .accessibilityValue(showingBefore ? L10n.text("中性显影") : L10n.text("调整后"))
+            .help(L10n.text("中性显影与调整后对比"))
+            .disabled(!viewModel.hasImage)
+            .accessibilityIdentifier("editor.compare")
+            .opacity(rulerFocusOpacity)
+
+            Button { adjustmentsExpanded.toggle() } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : adjustmentsExpanded ? .yellow : .primary)
+            }
+            .accessibilityLabel(!viewModel.hasImage ? L10n.text("调整") : adjustmentsExpanded ? L10n.text("收起调整栏") : L10n.text("展开调整栏"))
+            .help(L10n.text("显示或收起调整栏"))
+            .disabled(!viewModel.hasImage)
+            .accessibilityIdentifier("editor.adjustments")
+            .opacity(rulerFocusOpacity)
+
+            Menu {
+                Button(L10n.text("保存当前照片")) {
+                    singleExportFormat = .jpeg
+                    exportLongEdge = nil
+                    showingExportSize = true
+                }
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                Button(L10n.text("导出渲染型 DNG…")) {
+                    singleExportFormat = .renderedDNG
+                    exportLongEdge = nil
+                    showingExportSize = true
+                }
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
+                if batchModel == nil {
+                    Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
+                        .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                        .accessibilityIdentifier("editor.batchExport")
+                } else {
+                    Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel(L10n.text("导出"))
+            .help(L10n.text("导出"))
+            .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
+            .accessibilityIdentifier("editor.export")
+            .opacity(rulerFocusOpacity)
+        }
+    }
+
+    var previewSection: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color(white: 0.12)
+                if let image = currentPreviewImage {
+                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
+                                  label: showingBefore ? L10n.text("中性显影") : L10n.text("调整后"),
+                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
+                        .id(viewModel.basePreviewImage)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .allowsHitTesting(!geometrySelected)
+                        .overlay {
+                            if geometrySelected && !showingBefore {
+                                EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,
+                                                  aspectRatio: geometryDraftAspectRatio,
+                                                  isEnabled: !editorBusy && viewModel.hasImage,
+                                                  sourceRevision: viewModel.sourceRevision,
+                                                  onEditingChanged: setSliderEditing)
+                                    .id(viewModel.sourceRevision)
+                            }
+                        }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
+                                Text(L10n.text("导入照片"))
+                                    .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 16)
+                                    .frame(minHeight: 44)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .foregroundStyle(.black)
+                            .disabled(editorBusy)
+                            .accessibilityLabel(L10n.text("导入照片"))
+                            .accessibilityIdentifier("editor.import.empty")
+                            fileImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
+                                .buttonStyle(.bordered)
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: geometry.size.height)
+                    }
+                    .opacity(editorBusy ? 0 : 1)
+                    .accessibilityHidden(editorBusy)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if viewModel.hasImage {
+                    FloatingHistogram(values: currentHistogram, expanded: $histogramExpanded)
+                        .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
+                        .padding(12)
+                        .opacity(rulerFocusOpacity)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                photoInfoOverlay(maxWidth: min(
+                    360,
+                    min(
+                        geometry.size.width * 0.38,
+                        max(80, geometry.size.width - min(180, geometry.size.width * 0.48) - 56)
+                    )
+                ))
+                .opacity(rulerFocusOpacity)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if showingBefore && viewModel.hasImage {
+                    Text(L10n.text("中性显影")).font(.caption)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: viewModel.hasImage ? .topLeading : .center) {
+                if editorBusy {
+                    ProgressView(isImporting ? L10n.text("正在导入") : isSaving ? L10n.text("正在保存") : L10n.text("正在处理"))
+                        .font(.caption)
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if viewModel.hasImage && !editorBusy && (viewModel.previewRendering || viewModel.previewResizePending) {
+                    ProgressView(L10n.text("正在生成效果预览…"))
+                        .font(.caption)
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("editor.preview.updating")
+                }
+            }
+            .clipped()
+        }
+    }
+
+    var adjustmentPanel: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(selectedFilmName)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+                Spacer(minLength: 8)
+                editSaveStatus
+                Menu {
+                    Button(L10n.text("重置所有调整并返回中性"), role: .destructive) {
+                        applySettingsChange(.default)
+                    }
+                    if let adjustment = selectedAdjustment {
+                        Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetSelectedAdjustment() }
+                    }
+                } label: {
+                    // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
+                    HStack(spacing: 1) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                    }
+                    .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(L10n.text("重置调整"))
+                .accessibilityIdentifier("editor.reset")
+                .disabled(!viewModel.hasImage || editingLocked || settings == .default || geometrySelected || lensSelected)
+            }
+            .frame(height: max(44, panelHeaderHeight))
+            .padding(.horizontal, 16)
+            .opacity(rulerFocusOpacity)
+
+            valuePanel
+        }
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    var editSaveStatus: some View {
+        switch viewModel.editSaveState {
+        case .idle:
+            EmptyView()
+        case .restored:
+            editSaveLabel(L10n.text("已恢复上次调整"), symbol: "checkmark.circle.fill")
+                .foregroundStyle(.secondary)
+        case .saved:
+            editSaveLabel(L10n.text("调整已保存"), symbol: "checkmark.circle.fill")
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            Button {
+                viewModel.retrySave(settings: settings)
+            } label: {
+                editSaveLabel(L10n.text("调整未保存 · 重试"), symbol: "exclamationmark.triangle.fill")
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .foregroundStyle(.orange)
+            .accessibilityValue(message)
+        }
+    }
+
+    private func editSaveLabel(_ title: String, symbol: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            Label(title, systemImage: symbol).fixedSize()
+            Image(systemName: symbol)
+        }
+        .font(.caption)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+    }
+
+    var toolStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    Button { selectEditorTool(.film) } label: {
+                        AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected,
+                                            progress: 0, width: toolWidth, height: editorToolHeight)
+                    }
+                    .accessibilityValue(selectedFilmName)
+                    .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? .isSelected : [])
+                    .accessibilityIdentifier("tool.film")
+                    .opacity(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
+                    .id("film")
+                    Button { selectEditorTool(.recipe) } label: {
+                        AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "square.stack.3d.up", selected: choosingMasterRecipe,
+                                            progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: editorToolHeight)
+                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.title ?? L10n.text("无配方"))
+                        .accessibilityAddTraits(choosingMasterRecipe ? .isSelected : [])
+                        .opacity(choosingMasterRecipe ? 1 : rulerFocusOpacity)
+                        .id("masterRecipe")
+                    Button { selectEditorTool(.lens) } label: {
+                        AdjustmentToolLabel(title: L10n.text("镜头"), symbol: "viewfinder", selected: lensSelected,
+                                            progress: settings.lensSettings.isEnabled ? 1 : 0,
+                                            width: toolWidth, height: editorToolHeight)
+                    }.disabled(viewModel.sourceKind != .raw)
+                        .accessibilityIdentifier("tool.lens")
+                        .opacity(lensSelected ? 1 : rulerFocusOpacity)
+                        .accessibilityAddTraits(lensSelected ? .isSelected : []).id("lens")
+                    Button { selectEditorTool(.geometry) } label: {
+                        AdjustmentToolLabel(title: L10n.text("几何"), symbol: "crop.rotate", selected: geometrySelected,
+                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: editorToolHeight)
+                    }
+                    .accessibilityIdentifier("tool.geometry")
+                    .opacity(geometrySelected ? 1 : rulerFocusOpacity)
+                    .accessibilityAddTraits(geometrySelected ? .isSelected : []).id("geometry")
+                    ForEach(AdjustmentKind.toolCases) { adjustment in
+                        Button { selectEditorTool(.adjustment(adjustment)) } label: {
+                            AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
+                                                selected: selectedAdjustment == adjustment && !lensSelected && !geometrySelected,
+                                                progress: adjustmentProgress(adjustment),
+                                                width: toolWidth, height: editorToolHeight,
+                                                currentValue: selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? selectedScalarBadge(adjustment) : nil)
+                        }
+                        .disabled(adjustment == .strength && !settings.hasLook)
+                        .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
+                        .accessibilityAddTraits(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? .isSelected : [])
+                        .accessibilityIdentifier("tool.\(adjustment.rawValue)")
+                        .opacity(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
+                        .contextMenu {
+                            Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetTool(adjustment) }
+                            .disabled(!viewModel.hasImage || adjustmentProgress(adjustment) == 0 || editingLocked || lensSelected || geometrySelected)
+                        }
+                        .id(adjustment.rawValue)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .frame(height: editorToolHeight)
+            .onGeometryChange(for: CGFloat.self) { geometry in geometry.size.width } action: { _ in
+                proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
+            }
+            .onChange(of: selectedAdjustment) { _, adjustment in
+                proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : adjustment?.rawValue ?? "film", anchor: .center)
+            }
+            .onChange(of: lensSelected) { _, selected in
+                if selected { proxy.scrollTo("lens", anchor: .center) }
+            }
+            .onChange(of: geometrySelected) { _, selected in
+                if selected { proxy.scrollTo("geometry", anchor: .center) }
+            }
+            .onChange(of: choosingMasterRecipe) { _, selected in
+                if selected { proxy.scrollTo("masterRecipe", anchor: .center) }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(editorBusy)
+    }
+
+}

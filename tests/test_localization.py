@@ -17,6 +17,12 @@ CJK = re.compile(r"[一-鿿]")
 TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
 
 
+def windows_sources():
+    directory = ROOT / "RawLabWindows"
+    return sorted(path for path in directory.rglob("*.cs")
+                  if not {"tests", "bin", "obj"}.intersection(path.relative_to(directory).parts))
+
+
 def apple_catalog(path):
     return json.loads(subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(path)]))
 
@@ -178,6 +184,35 @@ class GeneratorFormatTests(unittest.TestCase):
 
 class LocalizationTests(unittest.TestCase):
 
+    def test_aligned_controls_reuse_macos_copy_in_every_language(self):
+        sys.path.insert(0, str(ROOT / "scripts/localization"))
+        from formats import android_unquote
+        aligned = {
+            "ios": (("指定长边", "自定义…"), ("向左旋转 90°", "逆时针 90°")),
+            "windows": (("重新读取目录", "刷新目录"), ("三分网格", "网格"), ("导出长边像素", "长边像素")),
+            "android": (("geometry_swap_ratio", "交换横纵比例"), ("output_size_error", "导出长边必须为 1-65535 像素。"),
+                        ("message_as_shot_for_each_photo", "按每张照片")),
+        }
+        android = android_catalogs()
+        for language in LANGUAGES:
+            macos = apple_catalog(ROOT / "RawLabMac/Resources" / (language + ".lproj") / "Localizable.strings")
+            catalogs = {
+                "ios": apple_catalog(ROOT / "RawLab/RawLab/Resources" / (language + ".lproj") / "Localizable.strings"),
+                "windows": windows_catalog(language),
+                "android": android[language],
+            }
+            for client, pairs in aligned.items():
+                for key, previous_or_source in pairs:
+                    expected_key = previous_or_source if client == "android" else key
+                    actual = catalogs[client].get(key)
+                    if client == "android" and actual is not None:
+                        actual = android_unquote(actual)
+                    self.assertEqual(actual, macos[expected_key], (client, language, key))
+                    if client != "android":
+                        self.assertNotIn(previous_or_source, catalogs[client], (client, previous_or_source))
+        self.assertEqual(android_unquote(android["zh-Hans"]["look_unavailable"]), "此外观文件不可用，请删除后重新导入。")
+        self.assertIn("降噪预设", windows_catalog("en"))
+
     def test_macos_photography_terms(self):
         catalog = apple_catalog(ROOT / "RawLabMac/Resources/en.lproj/Localizable.strings")
         for key, expected in {
@@ -216,8 +251,8 @@ class LocalizationTests(unittest.TestCase):
         raw = re.compile(r"(?<!L10n\.text\()(?<!Loc\.Text\()\b\w*[Rr]ecipe\??\.(?:name|Name)\b")
         # 对配方做 map 时闭包里的 $0 也是配方
         mapped = re.compile(r"[Rr]ecipe\w*\??\.map\b.*\$0\.name\b")
-        sources = [*(ROOT / "RawLabMac/Sources").glob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
-                   *(ROOT / "RawLabWindows").glob("*.cs")]
+        sources = [*(ROOT / "RawLabMac/Sources").rglob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
+                   *windows_sources()]
         hits = [f"{p.relative_to(ROOT)}:{n}" for p in sources for n, line in enumerate(p.read_text().splitlines(), 1)
                 if raw.search(line) or mapped.search(line)]
         self.assertEqual(hits, [])
@@ -252,7 +287,7 @@ class LocalizationTests(unittest.TestCase):
             files = list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
-        self.assertEqual(untranslated(windows.glob("*.cs"), windows_catalog("en"), "Loc."), [], "RawLabWindows")
+        self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc."), [], "RawLabWindows")
         self.assertEqual([hit for path in windows.glob("*.xaml") for hit in xaml_literals(path)], [], "XAML")
 
     def test_ui_labels_start_with_capital(self):
@@ -302,7 +337,7 @@ class LocalizationTests(unittest.TestCase):
         catalogs = {language: windows_catalog(language) for language in LANGUAGES}
         self.assert_parity(catalogs, lambda s: sorted(re.findall(r"\{\d+(?:[^{}]*)\}", s)))
         windows = ROOT / "RawLabWindows"
-        keys = {json.loads('"' + raw + '"') for source in windows.glob("*.cs")
+        keys = {json.loads('"' + raw + '"') for source in windows_sources()
                 for raw in re.findall(r'Loc\.(?:Text|Format)\("((?:[^"\\]|\\.)*)"', source.read_text())}
         for source in windows.glob("*.xaml"):
             ET.parse(source)
@@ -336,7 +371,7 @@ class CountPhrasingTests(unittest.TestCase):
 class BatchSummaryTermTests(unittest.TestCase):
     # 批量摘要沿用编辑器里的叫法；开关关着写"停用"，"关闭"是关窗口按钮的词，英文会显示成 Close
     def test_batch_summaries_use_editor_terms(self):
-        for path in ("RawLabMac/Sources/BatchExportView.swift", "RawLabWindows/BatchExportWindow.xaml.cs"):
+        for path in ("RawLabMac/Sources/Export/BatchExportView.swift", "RawLabWindows/BatchExportWindow.xaml.cs"):
             text = (ROOT / path).read_text()
             self.assertEqual([term for term in ("小波降噪", "粗颗粒降噪") if term in text], [], path)
             self.assertEqual(re.findall(r'(?:Loc\.Text|L10n\.text)\("开启"\) : (?:Loc\.Text|L10n\.text)\("关闭"\)|_ => Loc\.Text\("关闭"\)', text), [], path)

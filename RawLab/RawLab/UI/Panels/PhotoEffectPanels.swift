@@ -101,7 +101,7 @@ struct IOSPhotoEffectsControls: View {
                         parameterControl(parameter)
                     }
                     if effect == .vignette && settings.vignetteAmount >= 0 {
-                        Text(L10n.text("高光保护仅在暗角强度为负时可用。"))
+                        Text(L10n.text("仅在暗角强度为负值时可用。"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

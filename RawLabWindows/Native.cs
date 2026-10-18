@@ -94,7 +94,7 @@ internal static class Native
     {
         if (status != 0) throw new InvalidOperationException(status switch {
             1 => Loc.Text("参数或输出路径无效，不能覆盖原始 RAW。"), 2 => Loc.Text("不支持此照片或外观文件。"),
-            3 => Loc.Text("无法读取或写入文件，请检查路径与权限。"), 5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"), _ => Loc.Text("照片处理失败。") });
+            3 => Loc.Text("无法读取或写入文件，请检查路径和访问权限。"), 5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"), _ => Loc.Text("照片处理失败。") });
     }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_create(out IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_destroy(IntPtr session);

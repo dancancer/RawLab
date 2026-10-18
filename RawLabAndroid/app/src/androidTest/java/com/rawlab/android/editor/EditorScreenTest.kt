@@ -81,11 +81,11 @@ class EditorScreenTest {
         assertNull(model.state.value.error)
         compose.onNodeWithContentDescription("对比").performClick()
         compose.onNodeWithTag("comparison-wipe").assertExists().performSemanticsAction(SemanticsActions.SetProgress) { it(.3f) }
-        compose.onNodeWithContentDescription("收起调整").performClick()
+        compose.onNodeWithContentDescription("收起调整栏").performClick()
         compose.onNodeWithText("色温").assertDoesNotExist()
         compose.onNodeWithTag("adjustment-slider").assertDoesNotExist()
         capture("editor-collapsed.png")
-        compose.onNodeWithContentDescription("展开调整").performClick()
+        compose.onNodeWithContentDescription("展开调整栏").performClick()
         val adjustments = compose.onAllNodes(hasScrollToIndexAction() and
             SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)).onLast()
         // 色温与色调自 e2edc19 起同在“白平衡”分组：先选中分组，两条轴各自的滑杆都要可见

@@ -9,9 +9,9 @@ swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" \
-    "$ROOT/RawLabMac/Sources/MasterRecipe.swift" "$ROOT/RawLabMac/Sources/Adjustments.swift" \
-    "$ROOT/RawLabMac/Sources/ParameterPrecision.swift" "$ROOT/RawLabMac/Sources/ParameterValueField.swift" \
-    "$ROOT/RawLabMac/Sources/AdjustmentRow.swift" \
+    "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
+    "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
+    "$ROOT/RawLabMac/Sources/Editor/View/AdjustmentRow.swift" \
     "$ROOT/RawLabMac/tests/ParameterValueTests.swift" \
     -framework SwiftUI -framework AppKit -o "$OUT/parameter-value"
 cd "$ROOT"

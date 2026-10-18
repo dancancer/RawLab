@@ -11,10 +11,10 @@ test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2;
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 mkdir -p "$OUT"
 SOURCES=()
-for source in "$ROOT"/RawLabMac/Sources/*.swift; do
+while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
-done
+done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/MacPerspectiveIntegrationTests.swift" \
