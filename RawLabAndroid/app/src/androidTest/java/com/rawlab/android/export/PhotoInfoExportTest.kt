@@ -99,15 +99,17 @@ class PhotoInfoExportTest {
             compose.onNodeWithText("2048 px").assertIsDisplayed().performClick()
             compose.onNodeWithText(context.getString(R.string.output_custom_size)).performClick()
             val input = compose.onNodeWithText(context.getString(R.string.output_long_edge))
+            // v0.8 起尺寸无效时禁用的是“导出”确认按钮，保存位置的选项仍可切换
+            fun confirm() = compose.onNode(hasText(context.getString(R.string.export)) and hasClickAction())
             for (invalid in listOf("100000", "-2048", "0")) {
                 input.performTextReplacement(invalid)
-                compose.onNodeWithText(context.getString(R.string.save_album)).assertIsNotEnabled()
-                compose.onNodeWithText(context.getString(R.string.save_file)).assertIsNotEnabled()
+                confirm().assertIsNotEnabled()
             }
             input.performTextReplacement("512")
-            compose.onNodeWithText(context.getString(R.string.save_album)).assertIsEnabled()
+            compose.onNodeWithText(context.getString(R.string.save_album)).assertIsEnabled().performScrollTo().performClick()
+            confirm().assertIsEnabled()
             capture("export-size-custom.png")
-            compose.onNodeWithText(context.getString(R.string.save_album)).performClick()
+            confirm().performClick()
             compose.waitUntil(180_000) { compose.activity.model.state.value.operation == Operation.NONE }
             assertNull(compose.activity.model.state.value.error)
             val output = (albumUris() - before).single()
