@@ -9,9 +9,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.8.0</Version>
-    <FileVersion>0.8.0.12</FileVersion>
-    <InformationalVersion>0.8.0+build.12</InformationalVersion>
+    <Version>0.8.1</Version>
+    <FileVersion>0.8.1.13</FileVersion>
+    <InformationalVersion>0.8.1+build.13</InformationalVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <!-- 阿里云 RUM PC SDK（使用统计）：Release 默认带，规则与开关见 RumSdk.targets -->

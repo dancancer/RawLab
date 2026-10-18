@@ -1,9 +1,9 @@
 # Documentation
 
-The current source targets [v0.8.0, build 12](releases/v0.8.0.md). Use the
+The current source targets [v0.8.1, build 13](releases/v0.8.1.md). Use the
 [GitHub release record](https://github.com/dancancer/RawLab/releases) for actual
-published packages and checksums. Candidate gates are tracked in
-[v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
+published packages and checksums. v0.8.1 is a follow-up release; candidate
+gates for the 0.8 line are tracked in [v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
 retain their original candidate scope.
 
 ## Using RawLab
@@ -61,6 +61,7 @@ records that publication, not the current v0.8 candidate state.
 ## Published Releases and History
 
 - [Changelog](../CHANGELOG.md)
+- [v0.8.1 notes](releases/v0.8.1.md) and [corresponding source](releases/v0.8.1-source.md)
 - [v0.8.0 notes](releases/v0.8.0.md) and [corresponding source](releases/v0.8.0-source.md)
 - [v0.7.0 release](releases/v0.7.0.md) and [corresponding source](releases/v0.7.0-source.md)
 - [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)

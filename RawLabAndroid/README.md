@@ -96,11 +96,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.8.0 APK / Download Android v0.8.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Android-0.8.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.0/SHA256SUMS.txt)
+[下载 Android v0.8.1 APK / Download Android v0.8.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Android-0.8.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.8.0`、`versionCode=12`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/releases/v0.8.0-preparation.md)。
+发布 APK 为 `versionName=0.8.1`、`versionCode=13`，沿用正式发布签名，支持同签名旧正式版覆盖升级。0.8.1 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），不再申请电话状态、网络状态和应用列表权限，并修正配方插图、配方名语言和若干界面细节，见[发布说明](../docs/releases/v0.8.1.md)。0.8 系列：新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/releases/v0.8.0-preparation.md)。
 
-The release APK uses version0.8.0/code12 and the existing release identity. JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/releases/v0.8.0-preparation.md) and package provenance for actual candidate/device coverage.
+The release APK uses version 0.8.1/code 13 and the existing release identity. 0.8.1 turns usage statistics on by default (release builds include the Alibaba Cloud RUM SDK; turn it off in About) and drops phone-state, network-state and app-list permissions; see the [release notes](../docs/releases/v0.8.1.md). JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/releases/v0.8.0-preparation.md) and package provenance for actual candidate/device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

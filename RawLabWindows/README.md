@@ -15,11 +15,11 @@ Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.8.0 Windows 包
+## 下载 v0.8.1 Windows 包
 
-[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.0/RawLab-Windows-0.8.0-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.0/SHA256SUMS.txt)
+[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Windows-0.8.1-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.0/build12，self-contained .NET8；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
 
 ## 构建
 
