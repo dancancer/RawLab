@@ -1,5 +1,6 @@
 package com.rawlab.android.batch
 
+import com.rawlab.android.batch.journal.BatchJournal
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.IOException

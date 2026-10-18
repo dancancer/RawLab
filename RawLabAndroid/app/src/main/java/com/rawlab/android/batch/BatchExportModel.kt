@@ -21,6 +21,7 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
 import com.rawlab.android.R
 import com.rawlab.android.analytics.UsageBatchOutcome
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
