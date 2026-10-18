@@ -1,7 +1,7 @@
 # Native DCP Look Evaluation
 
 This records the first, CPU-reference phase. The
-[HSM and Metal extension](2026-10-03-dcp-hsm-metal-design.md) adds version 2 and
+[HSM and Metal extension](dcp-hsm-metal.md) adds version 2 and
 supersedes the CPU-only runtime restrictions below; the version 1 file contract
 remains valid.
 

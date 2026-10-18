@@ -7,7 +7,7 @@ Copyright (c) 2026 RawLab contributors.
 Unless an individual file or resource specifies otherwise, original RawLab
 project code in this release is distributed under version 3 of the GNU General
 Public License only (base SPDX identifier: `GPL-3.0-only`), with the additional
-permission described below. The full GPL terms are in [LICENSE](../LICENSE),
+permission described below. The full GPL terms are in [LICENSE](../../LICENSE),
 using the unmodified [GNU GPLv3 text](https://www.gnu.org/licenses/gpl-3.0.txt).
 
 RawLab is free software: you can redistribute it and/or modify it under the
@@ -25,7 +25,7 @@ credentials and personal RAW files are not distributed.
 ## Alibaba Cloud RUM Linking Exception
 
 On 16 October 2026, the owner of the original RawLab project code authorized
-the [RawLab Alibaba Cloud RUM SDK Linking Exception](../LICENSE-ALIYUN-RUM-EXCEPTION)
+the [RawLab Alibaba Cloud RUM SDK Linking Exception](../../LICENSE-ALIYUN-RUM-EXCEPTION)
 as an additional permission under GPLv3 section 7. GPLv3 remains the base
 license; this is not a change to MIT or a general permission to link with
 arbitrary non-GPL libraries.
@@ -55,10 +55,10 @@ are pending. The exception itself still grants no rights in the SDKs.
 This change does not relicense third-party components or bundled resources.
 Keep their license texts and attribution with redistributed copies:
 
-- [macOS dependency notices](../RawLabMac/Resources/ThirdPartyNotices.md)
-- [Windows dependency notices](../RawLabWindows/ThirdPartyNotices.md)
-- [Android dependency notices](../RawLabAndroid/app/src/main/notices/ThirdPartyNotices.txt)
-- [iOS dependency notices](../lutools/platform/ios/ThirdPartyNotices.md)
+- [macOS dependency notices](../../RawLabMac/Resources/ThirdPartyNotices.md)
+- [Windows dependency notices](../../RawLabWindows/ThirdPartyNotices.md)
+- [Android dependency notices](../../RawLabAndroid/app/src/main/notices/ThirdPartyNotices.txt)
+- [iOS dependency notices](../../lutools/platform/ios/ThirdPartyNotices.md)
 
 LibRaw is used under its LGPL option, with its CDDL alternative and copyright
 notice also retained. Its corresponding patched source is supplied with the
@@ -68,19 +68,19 @@ runtime libraries and LUTs retain their respective notices.
 Profile-based lens correction uses unmodified Lensfun 0.3.4 (LGPL-3.0).
 The vendored DB1 snapshot is separately licensed under CC BY-SA 3.0, with its
 provenance, attribution and original license retained in
-[the Lensfun dependency directory](../lutools/third_party/lensfun/README.md).
+[the Lensfun dependency directory](../../lutools/third_party/lensfun/README.md).
 macOS packages also retain the GLib, gettext libintl and PCRE2 runtime notices.
 iOS, Android and Windows statically link target-built Lensfun/GLib/PCRE2 and
 proxy-libintl; Android also links GNU libiconv/libcharset, Windows bundled TRE.
 Their original license texts accompany the clients. Pinned source URLs, hashes,
 the iOS GLib availability-probe adjustment and complete rebuild commands live in
 `lutools/cmake/lens-dependencies.json`, `build-lens-dependencies.py` and
-[the native platform notes](lens-correction-platforms.md). Preserve those sources
+[the native platform notes](platforms/lens-correction.md). Preserve those sources
 and the application's corresponding source when redistributing a binary.
 
 The optional edit JSON CLI adapter uses unmodified nlohmann JSON 3.12.0 (MIT).
 Its source and license are retained in
-[the dependency directory](../lutools/third_party/nlohmann/README.md).
+[the dependency directory](../../lutools/third_party/nlohmann/README.md).
 CLI installations include its MIT license; native clients do not link this adapter.
 
 ## Historical MIT Notice

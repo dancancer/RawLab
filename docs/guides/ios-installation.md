@@ -144,7 +144,7 @@ bash lutools/platform/ios/verify-framework.sh
 
 Xcode handles signing the app and its embedded framework; you do not need to
 add the framework again manually. See the
-[repository's iOS build guide](../lutools/platform/ios/README.md) for build
+[repository's iOS build guide](../../lutools/platform/ios/README.md) for build
 requirements and
 [Apple's physical-device workflow](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)
 for running the app.
@@ -302,4 +302,4 @@ The steps and external tool instructions were checked on 2026-10-13.
 Physical-device installation, peak memory, and thermal validation of the
 released RawLab package remain outstanding. This guide provides installation
 steps; build and simulator checks are not physical-device validation. See the
-[release limitations](releases/v0.5.0.md).
+[release limitations](../releases/v0.5/v0.5.0.md).

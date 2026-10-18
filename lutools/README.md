@@ -167,9 +167,9 @@ Tests requiring optional RAW fixtures are omitted when those files are absent. M
 
 ## 许可证与致谢 / License and Acknowledgments
 
-原创代码采用 [GPLv3 only](../LICENSE)（`GPL-3.0-only`）。第三方代码和素材保留各自许可证，详见[许可与归属说明](../docs/licensing.md)。
+原创代码采用 [GPLv3 only](../LICENSE)（`GPL-3.0-only`）。第三方代码和素材保留各自许可证，详见[许可与归属说明](../docs/reference/licensing.md)。
 
-Original code is distributed under [GPLv3 only](../LICENSE) (`GPL-3.0-only`). Third-party code and assets retain their licenses; see [licensing and attribution](../docs/licensing.md).
+Original code is distributed under [GPLv3 only](../LICENSE) (`GPL-3.0-only`). Third-party code and assets retain their licenses; see [licensing and attribution](../docs/reference/licensing.md).
 
 感谢 LibRaw、stb 和 LUTCalc 提供 RAW 处理、图像编解码及 LUT 参考实现。
 

@@ -1,5 +1,5 @@
 # RawLab Windows
-镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
+镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
 
 
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。

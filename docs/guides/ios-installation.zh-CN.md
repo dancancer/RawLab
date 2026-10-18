@@ -84,7 +84,7 @@ bash lutools/platform/ios/verify-framework.sh
 5. 用 USB 连接 iPhone、完成信任电脑，在 Xcode 顶部选择 **RawLab scheme 和真实 iPhone**，不是模拟器，也不是 `Any iOS Device`。等待设备配对和调试支持准备完成；手机在 **设置 > 隐私与安全性 > 开发者模式**开启、重启并再次确认后，点 Xcode 的运行按钮。
 6. 手机能打开 RawLab 后，安装完成。免费账号到期后，再用同一账号和应用标识运行安装一次。
 
-Xcode 会处理应用和内嵌框架的签名，不需要手工重复添加框架。构建前提见[仓库 iOS 构建指南](../lutools/platform/ios/README.md)，设备运行流程见 [Apple Xcode 真机运行说明](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)。
+Xcode 会处理应用和内嵌框架的签名，不需要手工重复添加框架。构建前提见[仓库 iOS 构建指南](../../lutools/platform/ios/README.md)，设备运行流程见 [Apple Xcode 真机运行说明](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)。
 
 ## 给 AI agent 的执行步骤
 
@@ -208,4 +208,4 @@ xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID"
 | Xcode 不支持手机当前 iOS | 安装支持该系统的 Xcode 和设备支持组件，不降低 RawLab 的最低系统版本 |
 | 想用 TestFlight 安装 | 当前发布包不是 TestFlight 构建，不能导入 TestFlight；需要维护者另行发布并提供邀请链接 |
 
-步骤及外部工具说明核对日期：2026-10-13。RawLab 已发布包的真机安装、峰值内存和温度验证仍未完成；本文提供安装操作流程，不把构建或模拟器检查当作真机验证。见[发布版限制](releases/v0.5.0.md)。
+步骤及外部工具说明核对日期：2026-10-13。RawLab 已发布包的真机安装、峰值内存和温度验证仍未完成；本文提供安装操作流程，不把构建或模拟器检查当作真机验证。见[发布版限制](../releases/v0.5/v0.5.0.md)。

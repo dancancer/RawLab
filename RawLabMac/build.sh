@@ -52,7 +52,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Res
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/RawLab-GPL-3.0.txt"
 cp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
-cp "$ROOT/docs/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
+cp "$ROOT/docs/reference/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
 cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resources/Licenses/"
 cp -R "$ROOT/RawLabMac/Resources/Licenses/." "$APP/Contents/Resources/Licenses/"
 cp "$ROOT/RawLabMac/Resources/ThirdPartyNotices.md" "$APP/Contents/Resources/Licenses/"

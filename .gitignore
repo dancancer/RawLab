@@ -50,8 +50,6 @@ RawLabWindows/**/obj/
 
 # Local promotional material and acceptance evidence.
 /docs/releases/media/
-/docs/superpowers/plans/*-launch-video.md
-/docs/superpowers/specs/*-launch-video-design.md
 /reviews/pr-54-macos-v08-native-acceptance-20261015/
 /.impeccable/review/**/*.png
 /.impeccable/review/**/*.jpg

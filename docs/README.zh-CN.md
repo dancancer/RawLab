@@ -40,11 +40,11 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 
 - [文档索引](README.md)
 - [下载最新版本](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.8.1 发布说明（构建 13）](releases/v0.8.1.md)
-- [安装与分发说明](installation.md)
-- [将 RawLab 安装到自己的 iPhone](ios-installation.zh-CN.md)
+- [v0.8.1 发布说明（构建 13）](releases/v0.8/v0.8.1.md)
+- [安装与分发说明](guides/installation.md)
+- [将 RawLab 安装到自己的 iPhone](guides/ios-installation.zh-CN.md)
 - [更新日志](../CHANGELOG.md)
-- [产品路线图](roadmap.md)
+- [产品路线图](architecture/roadmap.md)
 - [Windows 客户端](../RawLabWindows/README.md)
 - [macOS 客户端](../RawLabMac/README.md)
 - [Android 客户端](../RawLabAndroid/README.md)
@@ -53,6 +53,13 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 - [LUT 准备工具](../lutools/docs/lut-preparation.md)
 - [RAW 与色彩处理约定](../lutools/docs/color-contract.md)
 
+## 开发文档
+
+- [集成协作](process/integration-workflow.md)、[CI 门禁](process/ci.md)和[多语言维护](process/localization.md)
+- [格式契约](reference/formats/)、[镜头校正](reference/platforms/lens-correction.md)、[统计契约](reference/rum-analytics.md)和[LUT 来源审计](luts/README.md)
+- [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md)和[跨相机路线图](architecture/cross-camera-presets-roadmap.md)
+- [跨 PR 的发布、集成与评审历史](archive/README.md)；单个 PR 的过程证据放在 PR 描述，见[文档规则](../agent.md#文档)。
+
 ## 许可
 
-Copyright (c) 2026 RawLab contributors。本版本的项目原创代码采用 [GNU General Public License v3.0 only](../LICENSE)（`GPL-3.0-only`），并按 GPLv3 第 7 节提供范围明确的[阿里云 RUM SDK 链接例外](../LICENSE-ALIYUN-RUM-EXCEPTION)。第三方库、LUT 和其他附带资源保留各自的许可证与版权声明，详见[许可与归属说明](licensing.md)。
+Copyright (c) 2026 RawLab contributors。本版本的项目原创代码采用 [GNU General Public License v3.0 only](../LICENSE)（`GPL-3.0-only`），并按 GPLv3 第 7 节提供范围明确的[阿里云 RUM SDK 链接例外](../LICENSE-ALIYUN-RUM-EXCEPTION)。第三方库、LUT 和其他附带资源保留各自的许可证与版权声明，详见[许可与归属说明](reference/licensing.md)。

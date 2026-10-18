@@ -71,7 +71,7 @@ class SourcePackageTest(unittest.TestCase):
             (root / 'lutools/deleted.cpp').unlink()
             for name in ['lutools/cmake/patch-libraw.cmake',
                          'lutools/third_party/rawspeed-camera-calibration.inc',
-                         'LICENSE', 'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/licensing.md',
+                         'LICENSE', 'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/reference/licensing.md',
                          'lutools/tests/fixtures/linear-jxl.dng',
                          'lutools/tests/fixtures/linear-uncompressed.dng',
                          'lutools/tests/fixtures/linear-jxl-gain.dng',
@@ -97,7 +97,7 @@ class SourcePackageTest(unittest.TestCase):
             self.assertIn('lutools/third_party/rawspeed-camera-calibration.inc', files)
             self.assertIn('LICENSE', files)
             self.assertIn('LICENSE-ALIYUN-RUM-EXCEPTION', files)
-            self.assertIn('docs/licensing.md', files)
+            self.assertIn('docs/reference/licensing.md', files)
             self.assertNotIn('lutools/deleted.cpp', files)
             self.assertNotIn('build/cache.bin', files)
             self.assertNotIn('lutools/examples/private.ARW', files)

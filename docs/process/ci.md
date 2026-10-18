@@ -1,6 +1,6 @@
 # Hosted Verification
 
-The [workflow](../.github/workflows/ci.yml) verifies pull requests targeting
+The [workflow](../../.github/workflows/ci.yml) verifies pull requests targeting
 `development`, `release/**` or `main`, and pushes to `development` or `main`.
 Release branches are verified through PRs rather than duplicate push runs. It does not
 run on tags, publish packages, create releases, deploy, notarize or use signing
@@ -71,7 +71,7 @@ This deliberately uses separate restore/save actions. GitHub makes base/default
 branch caches available to PRs, while a cache created under a PR merge ref cannot
 seed unrelated PRs. See the [GitHub cache scope reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
 
-[`native_cache.py`](../scripts/ci/native_cache.py) owns the input/path allowlists.
+[`native_cache.py`](../../scripts/ci/native_cache.py) owns the input/path allowlists.
 Keys include pinned dependency versions/checksums, patches and build scripts,
 workflow configuration, compiler and SDK identity, runner image, target
 architectures/minimum OS, and the absolute workspace/toolchain paths. This last
@@ -148,5 +148,7 @@ These guards supplement, not replace, workflow syntax linting and actual hosted
 execution. Platform jobs stop on command/test failures; they are not allowed to
 silently skip a required suite or mark a failing native process successful.
 
-The [0.8 release checklist](archive/releases/v0.8/preparation.md) owns release blockers;
-historical local/device reports retain their original source and device scope.
+The [archived 0.8 preparation ledger](../archive/releases/v0.8/preparation.md)
+retains its original candidate scope. Use [release notes](../releases/v0.8/v0.8.1.md)
+and package provenance for delivered artifacts; historical local/device reports
+retain their original source and device scope.

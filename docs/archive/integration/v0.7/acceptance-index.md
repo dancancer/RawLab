@@ -44,7 +44,7 @@ parents `2c46edc5f0d8a26933f853afbb068e5def06e2bf` and
 | Rendered DNG | [Export verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-rendered-dng-export.md), PR #24's accepted new-development review and actual file/export checks |
 | Lensfun | [Platform verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-lens-correction-platforms-2026-10-13.md), [Lens/DNG integration](lens-dng.md), and original independent reviewers bound to the final #26 source |
 | Viewport/cache/memory | [Development verification](platforms/viewport.md), [Lens/DNG/NR combination](viewport-lens-dng.md), and two original reviewers bound to `15e0d044` and the final 60-path manifest `be656f12197be66d1f7eb41b29023511859d724938cffd860b92a4ab7d0b1faf` |
-| Six languages | [Localization verification](platforms/localization.md), [maintenance guide](../../../localization.md), and both original reviewers bound to clean `de3b7937` |
+| Six languages | [Localization verification](platforms/localization.md), [maintenance guide](../../../process/localization.md), and both original reviewers bound to clean `de3b7937` |
 
 Independent review closed the affected feature deltas. Existing observations
 and coverage limits remain below. Source identity permits reuse of unchanged
@@ -110,4 +110,4 @@ packages and source are bound to the absorbed repair in
 Git history record main/tag/development delivery; package validation is local.
 
 See [candidate preparation](../../releases/v0.7/preparation.md) and
-[the integration workflow](../../../integration-workflow.md).
+[the integration workflow](../../../process/integration-workflow.md).

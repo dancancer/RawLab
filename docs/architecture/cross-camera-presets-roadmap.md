@@ -224,9 +224,9 @@ P0 在固定参考下记录灰阶/曝光偏差、选定色块的色差与色相�
 
 ## 依据
 
-- [当前色彩处理约定](../../../lutools/docs/color-contract.md)
-- [LUT 制备与 DCP 支持边界](../../../lutools/docs/lut-preparation.md)
-- [通用 LUT 设计](2026-10-03-universal-lut.md)
-- [原生 DCP 设计](2026-10-03-native-dcp-look-design.md)
-- [HSM 与 Metal 扩展](2026-10-03-dcp-hsm-metal-design.md)
+- [当前色彩处理约定](../../lutools/docs/color-contract.md)
+- [LUT 制备与 DCP 支持边界](../../lutools/docs/lut-preparation.md)
+- [通用 LUT 设计](../reference/formats/universal-lut.md)
+- [原生 DCP 设计](../reference/formats/native-dcp-look.md)
+- [HSM 与 Metal 扩展](../reference/formats/dcp-hsm-metal.md)
 - 本地资源清单：`output/camera-profiles/panasonic-ricoh/manifest.json`，只用于本地覆盖盘点，不作为公开分发内容。

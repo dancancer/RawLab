@@ -4,7 +4,7 @@ This records the earlier `baea491e` local candidate preparation. The final
 release additionally absorbs verified Sony memory fix `627d45e7`, rebuilds
 the affected available packages and reuses Android signing. User approval
 for main/tag/Release/assets was explicit. Final asset and coverage records
-are in [release notes](../../../releases/v0.7.0.md) and
+are in [release notes](../../../releases/v0.7/v0.7.0.md) and
 [release verification](0.7.0-release.md).
 
 ## Source and Acceptance
@@ -26,7 +26,7 @@ See [the integration tracker](../../integration/v0.7/acceptance-index.md) and
 - [x] Mac15 uses explicit deployment target15; all bundled Mach-O minimum versions and hidden-prefix smoke passed on host27.0.1.
 - [x] User RAWs and credentials excluded. Windows retains ExifTool's six public upstream fixtures with pinned identity.
 
-[Candidate notes](../../../releases/v0.7.0.md), [source rebuild instructions](../../../releases/v0.7.0-source.md)
+[Candidate notes](../../../releases/v0.7/v0.7.0.md), [source rebuild instructions](../../../releases/v0.7/v0.7.0-source.md)
 and [candidate verification](0.7.0-candidate.md) record the
 local artifacts and their exact source/configuration. Build outputs remain
 ignored; their presence here is not publication.
@@ -44,5 +44,5 @@ checks closed the earlier LMK investigation; see
 [Sony evidence](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-android-sony-dng-memory-2026-10-14.md).
 Other original runtime/platform limits remain in the release verification.
 
-See [installation](../../../installation.md) for actual available downloads.
+See [installation](../../../guides/installation.md) for actual available downloads.
 No notarization or store distribution is included.

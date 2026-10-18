@@ -43,4 +43,4 @@ Recipe records and the early repository review are retained conservatively as
 iteration context, rather than treating every section as an independently
 proven multi-PR result. Active architecture and cross-camera work remain outside
 this archive, linked from the current index. User-facing release notes and source
-rebuild instructions remain under [releases](../releases/).
+rebuild instructions remain under [releases](../releases).

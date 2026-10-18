@@ -48,7 +48,7 @@ them into the application output `Lensfun` directory. Mac uses bundle resources.
 The offline, unmodified DB1 snapshot is dated 2026-10-12. Lensfun code is
 LGPL-3.0-or-later and the database is CC BY-SA 3.0. GLib, proxy-libintl and libiconv
 license texts accompany each relevant client; PCRE2 and TRE attribution is retained.
-See `docs/licensing.md` and the source manifest for the corresponding sources and
+See `docs/reference/licensing.md` and the source manifest for the corresponding sources and
 rebuild instructions. Generated dependencies, binaries and personal RAW fixtures
 are excluded from commits and distribution source archives.
 

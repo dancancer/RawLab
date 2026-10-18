@@ -9,7 +9,7 @@ populate() {
     mkdir -p "$1"
     cp "$ROOT/LICENSE" "$1/RawLab-GPL-3.0.txt"
     cp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$1/RawLab-Aliyun-RUM-Exception.txt"
-    cp "$ROOT/docs/licensing.md" "$1/RawLab-Licensing.md"
+    cp "$ROOT/docs/reference/licensing.md" "$1/RawLab-Licensing.md"
 }
 
 expect_rejection() {

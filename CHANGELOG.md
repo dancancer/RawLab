@@ -38,8 +38,8 @@ release notes include assets, installation requirements and validation limits.
 - Android interface details: changed-value marker position, menu alignment,
   distinct icons and reset buttons.
 
-Version `0.8.1`, build `13`. See [release notes](docs/releases/v0.8.1.md) and
-[source rebuild instructions](docs/releases/v0.8.1-source.md). The shared
+Version `0.8.1`, build `13`. See [release notes](docs/releases/v0.8/v0.8.1.md) and
+[source rebuild instructions](docs/releases/v0.8/v0.8.1-source.md). The shared
 processing core is unchanged from 0.8.0.
 
 ## [0.8.0] - 2026-10-17
@@ -75,8 +75,8 @@ processing core is unchanged from 0.8.0.
 - Complete native iPhone/iPad Files import/cancellation/busy/draft regression
   coverage and restore renderer-independent Windows batch-model compilation.
 
-Version `0.8.0`, build `12`. See [release notes](docs/releases/v0.8.0.md),
-[source rebuild instructions](docs/releases/v0.8.0-source.md) and
+Version `0.8.0`, build `12`. See [release notes](docs/releases/v0.8/v0.8.0.md),
+[source rebuild instructions](docs/releases/v0.8/v0.8.0-source.md) and
 [release acceptance](docs/archive/releases/v0.8/preparation.md). AI denoise/upscaling,
 HDR export, video generation and mobile Agent/MCP are not part of this release.
 
@@ -112,9 +112,9 @@ HDR export, video generation and mobile Agent/MCP are not part of this release.
 
 Version `0.7.0`, build `11`. Available release packages include signed Android,
 ad-hoc signed macOS15 arm64 and Windows x64; iOS distribution signing is absent.
-See [release notes](docs/releases/v0.7.0.md),
+See [release notes](docs/releases/v0.7/v0.7.0.md),
 [release verification](docs/archive/releases/v0.7/0.7.0-release.md) and
-[corresponding-source instructions](docs/releases/v0.7.0-source.md).
+[corresponding-source instructions](docs/releases/v0.7/v0.7.0-source.md).
 
 ## [0.6.0] - 2026-10-12
 
@@ -155,10 +155,10 @@ See [release notes](docs/releases/v0.7.0.md),
 
 Version `0.6.0`, build `10`, with all clients rebuilt from the release source.
 
-See the [v0.6.0 release notes](docs/releases/v0.6.0.md),
-[source rebuild instructions](docs/releases/v0.6.0-source.md),
+See the [v0.6.0 release notes](docs/releases/v0.6/v0.6.0.md),
+[source rebuild instructions](docs/releases/v0.6/v0.6.0-source.md),
 [release verification](docs/archive/releases/v0.6/0.6.0.md),
-[Chinese update notes](docs/releases/master-recipes-update.md),
+[Chinese update notes](docs/releases/v0.6/master-recipes-update.md),
 [cross-platform verification](docs/archive/recipes/cross-platform-master-recipes-20261011.md)
 and [recipe HSL calibration](docs/archive/recipes/master-recipes-hsl-20261011.md).
 
@@ -182,7 +182,7 @@ and [recipe HSL calibration](docs/archive/recipes/master-recipes-hsl-20261011.md
   fit, with scrolling for the remaining adjustment rows.
 - Preserve the previous EGL context and correctly order GLES filter teardown.
 
-See [v0.5.1 release notes](docs/releases/v0.5.1.md),
+See [v0.5.1 release notes](docs/releases/v0.5/v0.5.1.md),
 [release verification](docs/archive/releases/v0.5/0.5.1.md) and
 [the cross-platform implementation evidence](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md).
 
@@ -211,7 +211,7 @@ See [v0.5.1 release notes](docs/releases/v0.5.1.md),
 - Rebuild Windows, both macOS architectures, Android and iOS from the release
   source rather than reuse previous installers or native libraries.
 
-See [v0.5.0 release notes](docs/releases/v0.5.0.md) and
+See [v0.5.0 release notes](docs/releases/v0.5/v0.5.0.md) and
 [release verification](docs/archive/releases/v0.5/0.5.0.md).
 
 ## v0.4.1 更新 / What's New
@@ -223,9 +223,9 @@ See [v0.5.0 release notes](docs/releases/v0.5.0.md) and
 - Windows 新增 Mac 发起的远程编译入口；iOS 新增可复现的三架构 XCFramework 构建。移动设备峰值内存及 Windows 真显卡验证的边界见发布说明。
   Adds remote Windows builds from Mac and reproducible three-architecture iOS frameworks. See release notes for mobile memory and Windows hardware-GPU validation limits.
 
-详见 [v0.4.1 发布说明](docs/releases/v0.4.1.md)和[逐机型兼容性记录](docs/archive/compatibility/raw-2026-10-09.md)。
+详见 [v0.4.1 发布说明](docs/releases/v0.4/v0.4.1.md)和[逐机型兼容性记录](docs/archive/compatibility/raw-2026-10-09.md)。
 
-See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibility report](docs/archive/compatibility/raw-2026-10-09.md).
+See the [v0.4.1 release notes](docs/releases/v0.4/v0.4.1.md) and [camera compatibility report](docs/archive/compatibility/raw-2026-10-09.md).
 
 ## v0.4.0 更新 / Previous Features
 
@@ -238,9 +238,9 @@ See the [v0.4.1 release notes](docs/releases/v0.4.1.md) and [camera compatibilit
 - 支持声明正确色彩约定的 Fuji F-Log/F-Log2/F-Log2C CUBE，包括技术 Log 输出；共享核心为 Metal、GLES 和 Direct3D 11 提供对应 GPU 路径，Auto 在后端失败时回退 CPU。
   Fuji F-Log/F-Log2/F-Log2C CUBEs with valid color contracts, including technical Log outputs, have shared-core GPU paths for Metal, GLES and Direct3D 11, with Auto fallback on backend failure.
 
-详见 [v0.4.0 发布说明](docs/releases/v0.4.0.md)。可导入外观不等于完整复刻原厂或 Adobe 显影。
+详见 [v0.4.0 发布说明](docs/releases/v0.4/v0.4.0.md)。可导入外观不等于完整复刻原厂或 Adobe 显影。
 
-See the [v0.4.0 release notes](docs/releases/v0.4.0.md). Import support does not certify identical manufacturer or Adobe rendering.
+See the [v0.4.0 release notes](docs/releases/v0.4/v0.4.0.md). Import support does not certify identical manufacturer or Adobe rendering.
 
 ## v0.3.0 更新 / Previous Features
 
@@ -251,7 +251,7 @@ See the [v0.4.0 release notes](docs/releases/v0.4.0.md). Import support does not
 - v0.3.0 的 Mac 自定义外观导入支持 `.cube` 和 `.rlook`；该版本不包含移动端自定义外观导入、完整 Lightroom 渲染或全部 DCP 阶段。
   In v0.3.0, Mac imports `.cube` and `.rlook`; that release does not include mobile custom-look import, full Lightroom rendering or complete DCP-stage coverage.
 
-详见 [v0.3.0 发布说明](docs/releases/v0.3.0.md)和 [LUT 准备工具文档](lutools/docs/lut-preparation.md)。
+详见 [v0.3.0 发布说明](docs/releases/v0.3/v0.3.0.md)和 [LUT 准备工具文档](lutools/docs/lut-preparation.md)。
 
 ## [0.2.1]
 
@@ -260,7 +260,7 @@ See the [v0.4.0 release notes](docs/releases/v0.4.0.md). Import support does not
   backgrounding and Activity recreation.
 - Rebuild macOS and Android as `0.2.1` / build `3`; Windows and iOS remain on v0.2.
 
-See [v0.2.1 release notes](docs/releases/v0.2.1.md).
+See [v0.2.1 release notes](docs/releases/v0.2/v0.2.1.md).
 
 ## v0.2 更新 / Previous Features
 
@@ -279,10 +279,10 @@ Windows uses Direct3D 11, Mac uses Metal, and Android uses GLES, with automatic 
 
 - Initial macOS editor with RAW development, built-in film LUTs, neutral/film
   comparison, Metal processing and full-resolution JPEG/16-bit PNG export.
-- Initial [Android release](docs/releases/android-v0.1.0.md) and
+- Initial [Android release](docs/releases/v0.1/android-v0.1.0.md) and
   [Windows release](https://github.com/dancancer/RawLab/releases/tag/windows-v0.1.0).
 
-See [macOS v0.1 release notes](docs/releases/v0.1.md).
+See [macOS v0.1 release notes](docs/releases/v0.1/v0.1.md).
 
 [0.6.0]: https://github.com/dancancer/RawLab/releases/tag/v0.6.0
 [0.5.0]: https://github.com/dancancer/RawLab/releases/tag/v0.5.0
