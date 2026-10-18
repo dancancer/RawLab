@@ -1,4 +1,12 @@
 {
+  "16-bit PNG": {
+    "de": "16-Bit-PNG",
+    "en": "16-bit PNG",
+    "es": "PNG de 16 bits",
+    "fr": "PNG 16 bits",
+    "ja": "16ビット PNG",
+    "zh-Hans": "16 位 PNG"
+  },
   "16:9": {
     "de": "16:9",
     "en": "16:9",
@@ -127,6 +135,22 @@
     "ja": "{0}の数値",
     "zh-Hans": "{0}数值"
   },
+  "三分网格": {
+    "de": "Drittelraster",
+    "en": "Rule of Thirds Grid",
+    "es": "Cuadrícula de tercios",
+    "fr": "Grille des tiers",
+    "ja": "三分割グリッド",
+    "zh-Hans": "三分网格"
+  },
+  "上次使用的外观不可用，请重新选择或导入外观。": {
+    "de": "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.",
+    "en": "The last used look is unavailable. Choose or import a look again.",
+    "es": "El último look usado no está disponible. Vuelve a elegir o importar un look.",
+    "fr": "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.",
+    "ja": "前回使用したルックは利用できません。ルックを選び直すか読み込んでください。",
+    "zh-Hans": "上次使用的外观不可用，请重新选择或导入外观。"
+  },
   "上次批量任务尚未完成": {
     "de": "Der letzte Stapel-Export ist noch nicht abgeschlossen",
     "en": "The last batch task has not been completed yet",
@@ -158,6 +182,14 @@
     "fr": "Développement neutre",
     "ja": "ニュートラル現像",
     "zh-Hans": "中性显影"
+  },
+  "中性显影与调整后对比": {
+    "de": "Neutrale Entwicklung mit Bearbeitung vergleichen",
+    "en": "Compare Neutral Development and Edits",
+    "es": "Comparar el revelado neutro y los ajustes",
+    "fr": "Comparer le développement neutre et les réglages",
+    "ja": "ニュートラル現像と調整後を比較",
+    "zh-Hans": "中性显影与调整后对比"
   },
   "中性直出": {
     "de": "Neutrale Kameraausgabe",
@@ -191,6 +223,14 @@
     "ja": "田園の秋 · 古典油画",
     "zh-Hans": "乡村秋日 · 古典油画"
   },
+  "交换横纵比例": {
+    "de": "Seitenverhältnis drehen",
+    "en": "Swap Aspect Orientation",
+    "es": "Intercambiar la orientación del formato",
+    "fr": "Inverser l’orientation du format",
+    "ja": "縦横比を入れ替える",
+    "zh-Hans": "交换横纵比例"
+  },
   "亮度降噪": {
     "de": "Luminanz-Rauschreduzierung",
     "en": "Luma Noise Reduction",
@@ -198,6 +238,14 @@
     "fr": "Réduction du bruit de luminance",
     "ja": "輝度ノイズ低減",
     "zh-Hans": "亮度降噪"
+  },
+  "仅在暗角强度为负值时可用。": {
+    "de": "Nur bei negativer Vignettenstärke verfügbar.",
+    "en": "Available only when vignette intensity is negative.",
+    "es": "Disponible solo cuando la intensidad de la viñeta es negativa.",
+    "fr": "Disponible uniquement lorsque l’intensité du vignettage est négative.",
+    "ja": "周辺減光の強度が負の値の場合のみ使用できます。",
+    "zh-Hans": "仅在暗角强度为负值时可用。"
   },
   "仅用于本次导出，保留各照片原有调整": {
     "de": "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten",
@@ -215,13 +263,21 @@
     "ja": "ファイルから読み込む",
     "zh-Hans": "从文件导入"
   },
-  "任务外观不可用。": {
-    "de": "Look des Auftrags nicht verfügbar.",
-    "en": "Task Look Unavailable.",
-    "es": "El aspecto de la tarea no está disponible.",
-    "fr": "Look de la tâche indisponible.",
-    "ja": "タスクのルックを利用できません。",
-    "zh-Hans": "任务外观不可用。"
+  "任务使用的外观文件不可用，请重新创建任务。": {
+    "de": "Die vom Auftrag verwendete Look-Datei ist nicht verfügbar. Bitte erstellen Sie den Auftrag neu.",
+    "en": "The look file used by this task is unavailable. Create the task again.",
+    "es": "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.",
+    "fr": "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.",
+    "ja": "タスクで使うルックファイルを利用できません。タスクを作成し直してください。",
+    "zh-Hans": "任务使用的外观文件不可用，请重新创建任务。"
+  },
+  "任务未保存：{0}": {
+    "de": "Aufgabe nicht gespeichert: {0}",
+    "en": "Task not saved: {0}",
+    "es": "Tarea no guardada: {0}",
+    "fr": "Tâche non enregistrée : {0}",
+    "ja": "タスクが保存されていません: {0}",
+    "zh-Hans": "任务未保存：{0}"
   },
   "传感器基准": {
     "de": "Sensorreferenz",
@@ -399,6 +455,14 @@
     "ja": "元のサイズ",
     "zh-Hans": "原始尺寸"
   },
+  "原始文件已被替换，请重新选择照片。": {
+    "de": "Die Originaldatei wurde ersetzt. Bitte wählen Sie das Foto erneut aus.",
+    "en": "The original file has been replaced. Select the photo again.",
+    "es": "El archivo original ha sido reemplazado. Selecciona la foto de nuevo.",
+    "fr": "Le fichier original a été remplacé. Sélectionnez à nouveau la photo.",
+    "ja": "元のファイルが置き換えられました。写真を再度選択してください。",
+    "zh-Hans": "原始文件已被替换，请重新选择照片。"
+  },
   "原始比例": {
     "de": "Originalverhältnis",
     "en": "Original Ratio",
@@ -463,21 +527,21 @@
     "ja": "壮大な自然 · 霧のクールシアン",
     "zh-Hans": "史诗自然 · 雾气冷青"
   },
-  "向右旋转": {
-    "de": "Nach rechts drehen",
-    "en": "Rotate right",
-    "es": "Girar a la derecha",
-    "fr": "Pivoter à droite",
-    "ja": "右に回転",
-    "zh-Hans": "向右旋转"
+  "向右旋转 90°": {
+    "de": "90° nach rechts drehen",
+    "en": "Rotate right 90°",
+    "es": "Girar 90° a la derecha",
+    "fr": "Pivoter de 90° à droite",
+    "ja": "右に90°回転",
+    "zh-Hans": "向右旋转 90°"
   },
-  "向左旋转": {
-    "de": "Nach links drehen",
-    "en": "Rotate left",
-    "es": "Girar a la izquierda",
-    "fr": "Pivoter à gauche",
-    "ja": "左に回転",
-    "zh-Hans": "向左旋转"
+  "向左旋转 90°": {
+    "de": "90° nach links drehen",
+    "en": "Rotate left 90°",
+    "es": "Girar 90° a la izquierda",
+    "fr": "Pivoter de 90° à gauche",
+    "ja": "左に90°回転",
+    "zh-Hans": "向左旋转 90°"
   },
   "圆度": {
     "de": "Rundheit",
@@ -518,6 +582,14 @@
     "fr": "Recette maître",
     "ja": "マスターレシピ",
     "zh-Hans": "大师配方"
+  },
+  "实际像素 · 100%": {
+    "de": "Tatsächliche Pixel · 100 %",
+    "en": "Actual pixels · 100%",
+    "es": "Píxeles reales · 100%",
+    "fr": "Pixels réels · 100 %",
+    "ja": "実際のピクセル · 100%",
+    "zh-Hans": "实际像素 · 100%"
   },
   "对比": {
     "de": "Vergleich",
@@ -647,21 +719,29 @@
     "ja": "現像済みDNGを書き出す…",
     "zh-Hans": "导出渲染型 DNG…"
   },
-  "导出照片": {
-    "de": "Foto exportieren",
-    "en": "Export Photo",
-    "es": "Exportar foto",
-    "fr": "Exporter la photo",
-    "ja": "写真を書き出す",
-    "zh-Hans": "导出照片"
+  "导出长边像素": {
+    "de": "Lange Seite beim Export (Pixel)",
+    "en": "Export Long Edge (Pixels)",
+    "es": "Borde largo al exportar (píxeles)",
+    "fr": "Bord long à l’export (pixels)",
+    "ja": "書き出しの長辺（ピクセル）",
+    "zh-Hans": "导出长边像素"
   },
-  "导出长边必须在 1 到 65535 像素之间。": {
-    "de": "Die lange Exportkante muss zwischen 1 und 65.535 Pixeln liegen.",
-    "en": "The Export Long Edge Must Be Between 1 and 65,535 Pixels.",
-    "es": "El lado largo de exportación debe estar entre 1 y 65.535 píxeles.",
-    "fr": "Le bord long de l’exportation doit être compris entre 1 et 65 535 pixels.",
-    "ja": "書き出しの長辺は1～65,535ピクセルで指定してください。",
-    "zh-Hans": "导出长边必须在 1 到 65535 像素之间。"
+  "导出长边必须为 1-65535 像素。": {
+    "de": "Die lange Seite muss 1-65535 Pixel betragen.",
+    "en": "The long edge must be 1-65535 pixels.",
+    "es": "El borde largo debe tener entre 1 y 65535 píxeles.",
+    "fr": "Le bord long doit être compris entre 1 et 65535 pixels.",
+    "ja": "書き出しの長辺は 1～65535 ピクセルにしてください。",
+    "zh-Hans": "导出长边必须为 1-65535 像素。"
+  },
+  "将移除 RawLab 保存的外观副本，原始文件不会被删除。": {
+    "de": "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.",
+    "en": "The copy of the look saved by RawLab will be removed; the original file will not be deleted.",
+    "es": "Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará.",
+    "fr": "La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé.",
+    "ja": "RawLab が保存したルックのコピーを削除します。元のファイルは削除されません。",
+    "zh-Hans": "将移除 RawLab 保存的外观副本，原始文件不会被删除。"
   },
   "尚未检查更新": {
     "de": "Noch nicht nach Updates gesucht",
@@ -703,14 +783,6 @@
     "ja": "調整パネルを開く",
     "zh-Hans": "展开调整栏"
   },
-  "已保存": {
-    "de": "Gespeichert",
-    "en": "Saved",
-    "es": "Guardado",
-    "fr": "Enregistré",
-    "ja": "保存済み",
-    "zh-Hans": "已保存"
-  },
   "已允许使用统计；可随时关闭。": {
     "de": "Die Nutzungsanalyse ist erlaubt. Sie können sie jederzeit deaktivieren.",
     "en": "Usage analytics is allowed; you can turn it off at any time.",
@@ -750,6 +822,14 @@
     "fr": "DNG développé exporté.",
     "ja": "現像済みDNGを書き出しました。",
     "zh-Hans": "已导出渲染型 DNG。"
+  },
+  "已将当前设置应用到 {0} 张照片": {
+    "de": "Aktuelle Einstellungen angewendet (Fotos: {0})",
+    "en": "Current settings applied (photos: {0})",
+    "es": "Ajustes actuales aplicados (fotos: {0})",
+    "fr": "Réglages actuels appliqués (photos : {0})",
+    "ja": "現在の設定を {0} 枚の写真に適用しました",
+    "zh-Hans": "已将当前设置应用到 {0} 张照片"
   },
   "已展开": {
     "de": "Aufgeklappt",
@@ -983,6 +1063,14 @@
     "ja": "角をドラッグして切り抜き、範囲の内側をドラッグして移動します。",
     "zh-Hans": "拖动边角裁切，拖动画面内移动选区。"
   },
+  "指定长边": {
+    "de": "Lange Seite festlegen",
+    "en": "Specify long edge",
+    "es": "Especificar borde largo",
+    "fr": "Spécifier le bord long",
+    "ja": "長辺を指定",
+    "zh-Hans": "指定长边"
+  },
   "按每张照片": {
     "de": "Pro Foto",
     "en": "Per Photo",
@@ -1039,6 +1127,14 @@
     "ja": "タスクを破棄",
     "zh-Hans": "放弃任务"
   },
+  "放弃修改": {
+    "de": "Änderungen verwerfen",
+    "en": "Discard Changes",
+    "es": "Descartar cambios",
+    "fr": "Abandonner les modifications",
+    "ja": "変更を破棄",
+    "zh-Hans": "放弃修改"
+  },
   "效果": {
     "de": "Effekte",
     "en": "Effects",
@@ -1071,6 +1167,22 @@
     "ja": "レンズ補正の設定が無効または利用できません",
     "zh-Hans": "无效或不可用的镜头校正设置"
   },
+  "无效的 HSL 参数": {
+    "de": "Ungültige HSL-Parameter",
+    "en": "Invalid HSL parameters",
+    "es": "Parámetros HSL no válidos",
+    "fr": "Paramètres HSL invalides",
+    "ja": "無効なHSLパラメータ",
+    "zh-Hans": "无效的 HSL 参数"
+  },
+  "无效的几何参数": {
+    "de": "Ungültige Geometrieparameter",
+    "en": "Invalid geometry parameters",
+    "es": "Parámetros de geometría no válidos",
+    "fr": "Paramètres géométriques non valides",
+    "ja": "ジオメトリのパラメータが無効です",
+    "zh-Hans": "无效的几何参数"
+  },
   "无效的视口预览模式": {
     "de": "Ungültiger Modus für die Ausschnittvorschau",
     "en": "Invalid Viewport Preview Mode",
@@ -1095,6 +1207,22 @@
     "ja": "仕上がり画像を書き込めません。出力先と空き容量を確認してください。",
     "zh-Hans": "无法写入成片，请检查输出位置和剩余空间。"
   },
+  "无法写入输出目录，请检查访问权限和剩余空间。": {
+    "de": "In den Ausgabeordner kann nicht geschrieben werden. Bitte überprüfen Sie die Zugriffsrechte und den freien Speicherplatz.",
+    "en": "Unable to write to the output folder. Check access permissions and free space.",
+    "es": "No se puede escribir en la carpeta de salida. Comprueba los permisos de acceso y el espacio disponible.",
+    "fr": "Impossible d’écrire dans le dossier de sortie. Vérifiez les autorisations d’accès et l’espace disponible.",
+    "ja": "出力フォルダに書き込めません。アクセス権と空き容量を確認してください。",
+    "zh-Hans": "无法写入输出目录，请检查访问权限和剩余空间。"
+  },
+  "无法显示处理结果": {
+    "de": "Verarbeitungsergebnisse können nicht angezeigt werden",
+    "en": "Unable to display processing results",
+    "es": "No se pueden mostrar los resultados del procesamiento",
+    "fr": "Impossible d'afficher les résultats du traitement",
+    "ja": "処理結果を表示できません",
+    "zh-Hans": "无法显示处理结果"
+  },
   "无法自动调整曝光：{0}": {
     "de": "Belichtung konnte nicht automatisch angepasst werden: {0}",
     "en": "Unable to auto-adjust exposure: {0}",
@@ -1102,6 +1230,22 @@
     "fr": "Impossible d’ajuster automatiquement l’exposition : {0}",
     "ja": "露出を自動調整できません: {0}",
     "zh-Hans": "无法自动调整曝光：{0}"
+  },
+  "无法读取上次批量任务：{0}": {
+    "de": "Der letzte Stapel-Export konnte nicht gelesen werden: {0}",
+    "en": "Unable to read last batch task: {0}",
+    "es": "No se puede leer la última tarea por lotes: {0}",
+    "fr": "Impossible de lire la dernière exportation par lots : {0}",
+    "ja": "前回の一括書き出しを読み込めません: {0}",
+    "zh-Hans": "无法读取上次批量任务：{0}"
+  },
+  "无法读取或写入文件，请检查路径和访问权限。": {
+    "de": "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.",
+    "en": "Unable to read or write the file. Check the path and access permissions.",
+    "es": "No se puede leer ni escribir el archivo. Verifique la ruta y los permisos de acceso.",
+    "fr": "Impossible de lire ou d’écrire le fichier. Vérifiez le chemin et les autorisations d’accès.",
+    "ja": "ファイルの読み取りまたは書き込みができません。パスとアクセス許可を確認してください。",
+    "zh-Hans": "无法读取或写入文件，请检查路径和访问权限。"
   },
   "无法读取统计设置，已保持关闭。": {
     "de": "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.",
@@ -1174,6 +1318,30 @@
     "fr": "Afficher la photo exportée",
     "ja": "書き出した画像を表示",
     "zh-Hans": "显示成片"
+  },
+  "显示或收起文件树": {
+    "de": "Dateibaum ein- oder ausblenden",
+    "en": "Show or hide the file tree",
+    "es": "Mostrar u ocultar el árbol de archivos",
+    "fr": "Afficher ou masquer l’arborescence des fichiers",
+    "ja": "ファイルツリーの表示/非表示",
+    "zh-Hans": "显示或收起文件树"
+  },
+  "显示裁切提示": {
+    "de": "Clipping-Warnungen anzeigen",
+    "en": "Show clipping warnings",
+    "es": "Mostrar alertas de clipping",
+    "fr": "Afficher les alertes d'écrêtage",
+    "ja": "クリッピング警告を表示",
+    "zh-Hans": "显示裁切提示"
+  },
+  "显示输出高光与黑位裁切": {
+    "de": "Clipping der Ausgabe-Lichter und des Schwarzwerts anzeigen",
+    "en": "Show output highlight and black-level clipping",
+    "es": "Mostrar el clipping de las altas luces y del nivel de negros de salida",
+    "fr": "Afficher l'écrêtage des hautes lumières et du niveau de noir de la sortie",
+    "ja": "出力のハイライトと黒レベルのクリッピングを表示",
+    "zh-Hans": "显示输出高光与黑位裁切"
   },
   "暖调日系 · 漫射金光": {
     "de": "Warmer Japan-Look · diffuses goldenes Licht",
@@ -1479,14 +1647,6 @@
     "ja": "停止中…",
     "zh-Hans": "正在停止…"
   },
-  "正在处理": {
-    "de": "Wird verarbeitet",
-    "en": "Processing",
-    "es": "Procesando",
-    "fr": "Traitement",
-    "ja": "処理中",
-    "zh-Hans": "正在处理"
-  },
   "正在导出": {
     "de": "Wird exportiert",
     "en": "Exporting",
@@ -1495,13 +1655,13 @@
     "ja": "書き出し中",
     "zh-Hans": "正在导出"
   },
-  "正在显影": {
-    "de": "Wird entwickelt",
-    "en": "Developing",
-    "es": "Revelando",
-    "fr": "Développement",
-    "ja": "現像中",
-    "zh-Hans": "正在显影"
+  "正在导出…": {
+    "de": "Wird exportiert…",
+    "en": "Exporting…",
+    "es": "Exportando…",
+    "fr": "Exportation…",
+    "ja": "書き出し中…",
+    "zh-Hans": "正在导出…"
   },
   "正在显影…": {
     "de": "Wird entwickelt…",
@@ -1519,6 +1679,14 @@
     "ja": "アップデートを確認中…",
     "zh-Hans": "正在检查更新…"
   },
+  "正在检查照片…": {
+    "de": "Fotos werden geprüft…",
+    "en": "Checking photos…",
+    "es": "Comprobando fotos…",
+    "fr": "Vérification des photos…",
+    "ja": "写真を確認中…",
+    "zh-Hans": "正在检查照片…"
+  },
   "正在读取镜头信息…": {
     "de": "Objektivinformationen werden gelesen…",
     "en": "Reading Lens Information…",
@@ -1534,6 +1702,14 @@
     "fr": "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.",
     "ja": "このRAWの撮影時ホワイトバランスを解析できないため、レシピの色合いを適用できません。",
     "zh-Hans": "此 RAW 无法解析拍摄白平衡，不能应用配方色调。"
+  },
+  "此目录没有照片。": {
+    "de": "Dieser Ordner enthält keine Fotos.",
+    "en": "This folder contains no photos.",
+    "es": "Esta carpeta no contiene fotos.",
+    "fr": "Ce dossier ne contient aucune photo.",
+    "ja": "このフォルダに写真はありません。",
+    "zh-Hans": "此目录没有照片。"
   },
   "此输入不支持镜头校正": {
     "de": "Objektivkorrektur für diese Eingabe nicht unterstützt",
@@ -1590,6 +1766,14 @@
     "fr": "Ajouter du RAW",
     "ja": "RAWを追加",
     "zh-Hans": "添加 RAW"
+  },
+  "添加照片": {
+    "de": "Fotos hinzufügen",
+    "en": "Add Photos",
+    "es": "Añadir fotos",
+    "fr": "Ajouter des photos",
+    "ja": "写真を追加",
+    "zh-Hans": "添加照片"
   },
   "添加照片目录": {
     "de": "Fotoordner hinzufügen",
@@ -1703,6 +1887,14 @@
     "ja": "映画的な夜景フィルムトーン、赤い光と深いクールシアン・グリーンの暗部",
     "zh-Hans": "电影夜景胶片色调，红色灯光与深邃冷青绿暗部"
   },
+  "画面比例": {
+    "de": "Bildseitenverhältnis",
+    "en": "Image Aspect Ratio",
+    "es": "Relación de aspecto",
+    "fr": "Format de l’image",
+    "ja": "画像の縦横比",
+    "zh-Hans": "画面比例"
+  },
   "畸变": {
     "de": "Verzeichnung",
     "en": "Distortion",
@@ -1815,14 +2007,6 @@
     "ja": "粗い斑点の抑制",
     "zh-Hans": "粗色斑抑制"
   },
-  "粗颗粒降噪": {
-    "de": "Grobkorngeräuschreduzierung",
-    "en": "Coarse grain noise reduction",
-    "es": "Reducción del ruido de grano grueso",
-    "fr": "Réduction du bruit des gros grains",
-    "ja": "粗粒ノイズ低減",
-    "zh-Hans": "粗颗粒降噪"
-  },
   "精细": {
     "de": "Fein",
     "en": "Fine",
@@ -1926,6 +2110,14 @@
     "fr": "Continuer les éléments inachevés",
     "ja": "未完了の項目を続行",
     "zh-Hans": "继续未完成项"
+  },
+  "继续查看上次任务，或保留已导出文件并新建任务。": {
+    "de": "Sehen Sie sich weiterhin die letzte Aufgabe an oder behalten Sie die exportierte Datei und erstellen Sie eine neue Aufgabe.",
+    "en": "Continue viewing the last task, or keep the exported file and create a new task.",
+    "es": "Continúe viendo la última tarea o conserve el archivo exportado y cree una nueva tarea.",
+    "fr": "Continuez à afficher la dernière tâche ou conservez le fichier exporté et créez une nouvelle tâche.",
+    "ja": "前回のタスクを引き続き表示するか、書き出し済みのファイルを残して新しいタスクを作成します。",
+    "zh-Hans": "继续查看上次任务，或保留已导出文件并新建任务。"
   },
   "继续编辑": {
     "de": "Weiter bearbeiten",
@@ -2031,14 +2223,6 @@
     "ja": "カスタム",
     "zh-Hans": "自定义"
   },
-  "自定义…": {
-    "de": "Benutzerdefiniert…",
-    "en": "Custom…",
-    "es": "Personalizado…",
-    "fr": "Personnalisé…",
-    "ja": "カスタム…",
-    "zh-Hans": "自定义…"
-  },
   "自由": {
     "de": "Frei",
     "en": "Free",
@@ -2111,6 +2295,14 @@
     "ja": "英国の田園の秋を描く油彩、重厚なアースカラー、枯れ草の金色と深い森の緑",
     "zh-Hans": "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织"
   },
+  "草稿尚未应用": {
+    "de": "Entwurf noch nicht angewendet",
+    "en": "Draft Not Applied",
+    "es": "Borrador sin aplicar",
+    "fr": "Brouillon non appliqué",
+    "ja": "下書きは未適用",
+    "zh-Hans": "草稿尚未应用"
+  },
   "蓝": {
     "de": "Blau",
     "en": "Blue",
@@ -2127,13 +2319,45 @@
     "ja": "切り抜き",
     "zh-Hans": "裁切"
   },
-  "裁切与旋转": {
-    "de": "Zuschneiden und Drehen",
-    "en": "Crop and Rotate",
-    "es": "Recortar y girar",
-    "fr": "Recadrer et pivoter",
-    "ja": "切り抜きと回転",
-    "zh-Hans": "裁切与旋转"
+  "裁切、旋转、翻转和拉直": {
+    "de": "Zuschneiden, drehen, spiegeln und begradigen",
+    "en": "Crop, rotate, flip and straighten",
+    "es": "Recortar, girar, voltear y enderezar",
+    "fr": "Recadrer, pivoter, retourner et redresser",
+    "ja": "切り抜き、回転、反転、傾き補正",
+    "zh-Hans": "裁切、旋转、翻转和拉直"
+  },
+  "裁切上边": {
+    "de": "Zuschnitt oben",
+    "en": "Crop top",
+    "es": "Borde superior",
+    "fr": "Bord supérieur",
+    "ja": "切り抜き上端",
+    "zh-Hans": "裁切上边"
+  },
+  "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。": {
+    "de": "Position und Größe des Zuschnitts beziehen sich prozentual auf die Fläche nach Drehen, Spiegeln und Begradigen.",
+    "en": "Crop position and size use a percentage of the canvas after rotation, flips and straightening.",
+    "es": "La posición y el tamaño del recorte se expresan como porcentaje del lienzo tras girarlo, voltearlo y enderezarlo.",
+    "fr": "La position et la taille du recadrage sont exprimées en pourcentage du canevas après rotation, retournement et redressement.",
+    "ja": "切り抜きの位置とサイズは、回転、反転、傾き補正後の画像に対する割合で設定します。",
+    "zh-Hans": "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。"
+  },
+  "裁切右上角": {
+    "de": "Obere rechte Zuschnittecke",
+    "en": "Crop Top-Right Corner",
+    "es": "Esquina superior derecha del recorte",
+    "fr": "Coin supérieur droit du recadrage",
+    "ja": "切り抜き右上角",
+    "zh-Hans": "裁切右上角"
+  },
+  "裁切右下角": {
+    "de": "Untere rechte Zuschnittecke",
+    "en": "Crop Bottom-Right Corner",
+    "es": "Esquina inferior derecha del recorte",
+    "fr": "Coin inférieur droit du recadrage",
+    "ja": "切り抜き右下角",
+    "zh-Hans": "裁切右下角"
   },
   "裁切宽度": {
     "de": "Zuschnittbreite",
@@ -2142,6 +2366,30 @@
     "fr": "Largeur du recadrage",
     "ja": "切り抜き幅",
     "zh-Hans": "裁切宽度"
+  },
+  "裁切左上角": {
+    "de": "Obere linke Zuschnittecke",
+    "en": "Crop Top-Left Corner",
+    "es": "Esquina superior izquierda del recorte",
+    "fr": "Coin supérieur gauche du recadrage",
+    "ja": "切り抜き左上角",
+    "zh-Hans": "裁切左上角"
+  },
+  "裁切左下角": {
+    "de": "Untere linke Zuschnittecke",
+    "en": "Crop Bottom-Left Corner",
+    "es": "Esquina inferior izquierda del recorte",
+    "fr": "Coin inférieur gauche du recadrage",
+    "ja": "切り抜き左下角",
+    "zh-Hans": "裁切左下角"
+  },
+  "裁切左边": {
+    "de": "Zuschnitt links",
+    "en": "Crop left",
+    "es": "Borde izquierdo",
+    "fr": "Bord gauche",
+    "ja": "切り抜き左端",
+    "zh-Hans": "裁切左边"
   },
   "裁切选区": {
     "de": "Zuschnittauswahl",
@@ -2191,13 +2439,21 @@
     "ja": "プレビューの完了後に書き出してください。",
     "zh-Hans": "请等待预览完成后导出。"
   },
-  "请输入 1–65535 之间的像素数": {
-    "de": "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein",
-    "en": "Enter a pixel count from 1 to 65,535",
-    "es": "Introduce un número de píxeles entre 1 y 65.535",
-    "fr": "Entrez un nombre de pixels compris entre 1 et 65 535",
-    "ja": "1～65,535ピクセルの範囲で入力してください",
-    "zh-Hans": "请输入 1–65535 之间的像素数"
+  "请至少选择一张照片。": {
+    "de": "Bitte wählen Sie mindestens ein Foto aus.",
+    "en": "Please select at least one photo.",
+    "es": "Selecciona al menos una foto.",
+    "fr": "Veuillez sélectionner au moins une photo.",
+    "ja": "写真を1枚以上選択してください。",
+    "zh-Hans": "请至少选择一张照片。"
+  },
+  "请输入有效数字": {
+    "de": "Bitte geben Sie eine gültige Zahl ein",
+    "en": "Please enter a valid number",
+    "es": "Introduce un número válido",
+    "fr": "Veuillez saisir un nombre valide",
+    "ja": "有効な数字を入力してください",
+    "zh-Hans": "请输入有效数字"
   },
   "请输入范围内的有效数字": {
     "de": "Bitte geben Sie eine gültige Zahl innerhalb des Bereichs ein",
@@ -2230,14 +2486,6 @@
     "fr": "Ajustements non enregistrés · Réessayez",
     "ja": "調整は未保存 · 再試行",
     "zh-Hans": "调整未保存 · 重试"
-  },
-  "调整未保存，点击重试": {
-    "de": "Anpassungen nicht gespeichert; zum Wiederholen tippen",
-    "en": "Adjustments Not Saved; Tap to Retry",
-    "es": "Ajustes no guardados; toca para reintentar",
-    "fr": "Réglages non enregistrés ; touchez pour réessayer",
-    "ja": "調整を保存できませんでした。タップして再試行",
-    "zh-Hans": "调整未保存，点击重试"
   },
   "调整来源": {
     "de": "Anpassungsquelle",
@@ -2303,6 +2551,14 @@
     "ja": "戻る",
     "zh-Hans": "返回"
   },
+  "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。": {
+    "de": "Diese Änderungen wurden noch nicht angewendet. Wenden Sie sie an und verlassen Sie die Bearbeitung, verwerfen Sie sie oder bearbeiten Sie weiter.",
+    "en": "These changes have not been applied. Apply them and leave, discard them, or keep editing.",
+    "es": "Estos cambios aún no se han aplicado. Aplícalos y sal, descártalos o sigue editando.",
+    "fr": "Ces modifications n’ont pas encore été appliquées. Appliquez-les et quittez, abandonnez-les ou continuez à modifier.",
+    "ja": "変更はまだ適用されていません。適用して終了、変更を破棄、または編集を続けます。",
+    "zh-Hans": "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。"
+  },
   "适合窗口": {
     "de": "An Fenster anpassen",
     "en": "Fit to window",
@@ -2310,14 +2566,6 @@
     "fr": "Ajuster à la fenêtre",
     "ja": "ウィンドウに合わせる",
     "zh-Hans": "适合窗口"
-  },
-  "适应画面": {
-    "de": "An Bildschirm anpassen",
-    "en": "Fit to Screen",
-    "es": "Ajustar a la pantalla",
-    "fr": "Adapter à l’écran",
-    "ja": "画面に合わせる",
-    "zh-Hans": "适应画面"
   },
   "选择大师配方": {
     "de": "Master-Rezept auswählen",
@@ -2423,6 +2671,14 @@
     "ja": "ルック名を変更",
     "zh-Hans": "重命名外观"
   },
+  "重新读取目录": {
+    "de": "Ordner neu einlesen",
+    "en": "Reload Folder",
+    "es": "Volver a cargar la carpeta",
+    "fr": "Recharger le dossier",
+    "ja": "フォルダを再読み込み",
+    "zh-Hans": "重新读取目录"
+  },
   "重置 HSL": {
     "de": "HSL zurücksetzen",
     "en": "Reset HSL",
@@ -2447,13 +2703,13 @@
     "ja": "すべての調整をリセット",
     "zh-Hans": "重置全部调整"
   },
-  "重置几何": {
+  "重置几何编辑": {
     "de": "Geometrie zurücksetzen",
-    "en": "Reset geometry",
+    "en": "Reset geometry edits",
     "es": "Restablecer geometría",
     "fr": "Réinitialiser la géométrie",
     "ja": "ジオメトリをリセット",
-    "zh-Hans": "重置几何"
+    "zh-Hans": "重置几何编辑"
   },
   "重置当前颜色": {
     "de": "Aktuelle Farbe zurücksetzen",
@@ -2462,6 +2718,14 @@
     "fr": "Réinitialiser la couleur actuelle",
     "ja": "現在の色をリセット",
     "zh-Hans": "重置当前颜色"
+  },
+  "重置本工具": {
+    "de": "Dieses Werkzeug zurücksetzen",
+    "en": "Reset This Tool",
+    "es": "Restablecer esta herramienta",
+    "fr": "Réinitialiser cet outil",
+    "ja": "このツールをリセット",
+    "zh-Hans": "重置本工具"
   },
   "重置调整": {
     "de": "Anpassungen zurücksetzen",

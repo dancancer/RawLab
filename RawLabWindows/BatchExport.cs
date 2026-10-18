@@ -137,9 +137,9 @@ public static class BatchRunner
     private static void RunCore(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
                                 Action<BatchJob, string?> changed, SizedRender render)
     {
-        if (job.SelectedCount == 0) throw new InvalidOperationException(Loc.Text("请至少选择一张 RAW。"));
-        if (job.OutputDirectory == null) throw new OutputWriteException(Loc.Text("请选择输出文件夹。"));
-        if (job.Look != null && !File.Exists(job.Look)) throw new InvalidOperationException(Loc.Text("任务外观不可用，请重新创建任务。"));
+        if (job.SelectedCount == 0) throw new InvalidOperationException(Loc.Text("请至少选择一张照片。"));
+        if (job.OutputDirectory == null) throw new OutputWriteException(Loc.Text("选择输出文件夹"));
+        if (job.Look != null && !File.Exists(job.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
         job.Started = true; job.Interrupted = false; job.Cancelled = false; job.Error = null;
         journal.Save(job);
         try
@@ -174,7 +174,7 @@ public static class BatchRunner
         {
             try
             {
-                if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择。"));
+                if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
                 var settings=PhotoInput.PrepareBatchSettings(job.Source,item.Input,job.Settings.Restore());
                 render(item.Input, settings, job.Look, temporary, job.LongEdge);
             }
@@ -192,7 +192,7 @@ public static class BatchRunner
             job.Items[index] = item;
             journal.Save(job);
             try { File.Move(temporary, destination, overwrite: false); }
-            catch (IOException error) { throw new OutputWriteException(Loc.Text("无法发布成片，请检查输出目录。"), error); }
+            catch (IOException error) { throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"), error); }
             job.Items[index] = item with { Status = BatchStatus.Succeeded, Error = null };
             journal.Save(job);
         }
@@ -214,6 +214,6 @@ public static class BatchRunner
     {
         var probe = Path.Combine(directory, ".rawlab-write-" + Guid.NewGuid());
         try { using (var stream = new FileStream(probe, FileMode.CreateNew)) stream.WriteByte(0); File.Delete(probe); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { throw new OutputWriteException(Loc.Text("输出文件夹不可写，请检查权限和剩余空间。"), error); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { throw new OutputWriteException(Loc.Text("无法写入输出目录，请检查访问权限和剩余空间。"), error); }
     }
 }

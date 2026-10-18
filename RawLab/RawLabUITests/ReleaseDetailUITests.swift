@@ -59,7 +59,7 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
     }
 
-    // 两个旋转按钮并排时一样高：英文"90° Counterclockwise"折成多行，不能把左边按钮撑得比右边高
+    // 两个旋转按钮并排时一样高：英文"Rotate left 90°"折成多行，不能把左边按钮撑得比右边高
     func testRotationButtonsShareOneHeight() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
@@ -91,7 +91,7 @@ final class ReleaseDetailUITests: XCTestCase {
         let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Export Size'")).firstMatch
         XCTAssertTrue(size.waitForExistence(timeout: 10), app.debugDescription)
         size.tap()
-        app.buttons["Custom…"].tap()
+        app.buttons["Specify long edge"].tap()
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(field.label, "Long Edge (1–65535 px)")
@@ -129,16 +129,16 @@ final class ReleaseDetailUITests: XCTestCase {
         discardBatch(in: app)
     }
 
-    // 同时只有一个批量任务：已有任务时导出菜单只给"查看批量任务"，不再并列一个同样打开旧任务的新建入口
+    // 同时只有一个批量任务：已有任务时导出菜单只给"查看批量任务…"，不再并列一个同样打开旧任务的新建入口
     func testExportMenuOffersOneEntryForAPendingBatch() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
         try openBatch(in: app)
         app.buttons["Back"].tap()
         app.buttons["editor.export"].tap()
-        XCTAssertTrue(app.buttons["View Batch Task"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["View Batch Task…"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["editor.batchExport"].exists, "a second entry opens the same pending task")
-        app.buttons["View Batch Task"].tap()
+        app.buttons["View Batch Task…"].tap()
         discardBatch(in: app)
     }
 

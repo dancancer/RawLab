@@ -3,8 +3,8 @@
 <resources>
     <string name="adjustment_apply">"Anwenden"</string>
     <string name="adjustment_continue">"Weiter bearbeiten"</string>
-    <string name="adjustment_discard">"Verwerfen"</string>
-    <string name="adjustment_draft">"Nicht angewendeter Entwurf"</string>
+    <string name="adjustment_discard">"Änderungen verwerfen"</string>
+    <string name="adjustment_draft">"Entwurf noch nicht angewendet"</string>
     <string name="adjustment_fine">"Fein"</string>
     <string name="adjustment_haptics">"Haptisches Feedback bei Anpassungen"</string>
     <string name="adjustment_leave">"Änderungen vor dem Verlassen anwenden?"</string>
@@ -15,7 +15,7 @@
     <string name="dng_description">"Fest eingerechneter Look, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien."</string>
     <string name="editor_settings">"Einstellungen"</string>
     <string name="empty_hint">"RAW aus einem Album auswählen oder aus Systemdateien importieren."</string>
-    <string name="geometry_drag_hint">"Zuschnittrechteck"</string>
+    <string name="geometry_drag_hint">"Zuschnittauswahl"</string>
     <string name="geometry_full">"Zuschnitt zurücksetzen"</string>
     <string name="geometry_move_down">"Zuschnitt nach unten"</string>
     <string name="geometry_move_left">"Zuschnitt nach links"</string>
@@ -23,11 +23,11 @@
     <string name="geometry_move_up">"Zuschnitt nach oben"</string>
     <string name="info_unavailable">"Nicht verfügbar"</string>
     <string name="jpeg_description">"sRGB · Qualität 95 · Aufnahmemetadaten"</string>
-    <string name="look_remove_body">"Nur die verwaltete Kopie wird entfernt. Die Originaldatei bleibt erhalten."</string>
+    <string name="look_remove_body">"Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht."</string>
     <string name="output_destination">"Speicherort"</string>
     <string name="png_description">"sRGB · verlustfreie 16-Bit-Bilder · Aufnahmemetadaten"</string>
     <string name="reset_all_body">"Der aktuelle Film bleibt erhalten. Das Rezept und alle anderen Anpassungen werden zurückgesetzt. Fotos, Looks und Stapelaufträge bleiben erhalten."</string>
     <string name="reset_all_title">"Alle Anpassungen zurücksetzen?"</string>
     <string name="select_photo">"Foto auswählen"</string>
-    <string name="vignette_highlights_unavailable">"Lichterschutz ist bei negativen Vignettenwerten verfügbar."</string>
+    <string name="vignette_highlights_unavailable">"Nur bei negativer Vignettenstärke verfügbar."</string>
 </resources>

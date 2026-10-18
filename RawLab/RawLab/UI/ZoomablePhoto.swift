@@ -58,7 +58,7 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate {
     func refreshAccessibilityActions() {
         accessibilityCustomActions = [
             UIAccessibilityCustomAction(name: "100%", target: self, selector: #selector(showActualPixels)),
-            UIAccessibilityCustomAction(name: L10n.text("适应画面"), target: self, selector: #selector(showFit))
+            UIAccessibilityCustomAction(name: L10n.text("适合窗口"), target: self, selector: #selector(showFit))
         ]
     }
 

@@ -18,7 +18,7 @@ extension ContentView {
                 .accessibilityLabel(L10n.text("照片信息"))
                 .accessibilityValue(photoInfoMode.title)
                 .accessibilityIdentifier("editor.photoInfo")
-                .help(L10n.text("切换照片信息"))
+                .help(L10n.text("照片信息"))
             }
 
             if photoInfoMode != .hidden, let photoInformation, !editorBusy {

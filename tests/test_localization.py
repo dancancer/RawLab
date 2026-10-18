@@ -178,6 +178,35 @@ class GeneratorFormatTests(unittest.TestCase):
 
 class LocalizationTests(unittest.TestCase):
 
+    def test_aligned_controls_reuse_macos_copy_in_every_language(self):
+        sys.path.insert(0, str(ROOT / "scripts/localization"))
+        from formats import android_unquote
+        aligned = {
+            "ios": (("指定长边", "自定义…"), ("向左旋转 90°", "逆时针 90°")),
+            "windows": (("重新读取目录", "刷新目录"), ("三分网格", "网格"), ("导出长边像素", "长边像素")),
+            "android": (("geometry_swap_ratio", "交换横纵比例"), ("output_size_error", "导出长边必须为 1-65535 像素。"),
+                        ("message_as_shot_for_each_photo", "按每张照片")),
+        }
+        android = android_catalogs()
+        for language in LANGUAGES:
+            macos = apple_catalog(ROOT / "RawLabMac/Resources" / (language + ".lproj") / "Localizable.strings")
+            catalogs = {
+                "ios": apple_catalog(ROOT / "RawLab/RawLab/Resources" / (language + ".lproj") / "Localizable.strings"),
+                "windows": windows_catalog(language),
+                "android": android[language],
+            }
+            for client, pairs in aligned.items():
+                for key, previous_or_source in pairs:
+                    expected_key = previous_or_source if client == "android" else key
+                    actual = catalogs[client].get(key)
+                    if client == "android" and actual is not None:
+                        actual = android_unquote(actual)
+                    self.assertEqual(actual, macos[expected_key], (client, language, key))
+                    if client != "android":
+                        self.assertNotIn(previous_or_source, catalogs[client], (client, previous_or_source))
+        self.assertEqual(android_unquote(android["zh-Hans"]["look_unavailable"]), "此外观文件不可用，请删除后重新导入。")
+        self.assertIn("降噪预设", windows_catalog("en"))
+
     def test_macos_photography_terms(self):
         catalog = apple_catalog(ROOT / "RawLabMac/Resources/en.lproj/Localizable.strings")
         for key, expected in {

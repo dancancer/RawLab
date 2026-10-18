@@ -119,7 +119,7 @@ internal static class Program
                 lensPanel.Refresh(adjustments.Lens, lensInfo);
                 geometryPanel.Refresh(adjustments.Geometry);
                 Check(Loc.Language == language, $"Resolved language {language}");
-                foreach(var (name,key) in new[]{("AddDirectoryButton","添加目录"),("ExportRevealButton","在资源管理器中查看"),("BatchNotice","继续上次批量任务"),("RetrySave","重试保存"),("RetryButton","重新显影")})
+                foreach(var (name,key) in new[]{("AddDirectoryButton","添加目录"),("ExportRevealButton","在资源管理器中查看"),("BatchNotice","继续上次批量任务"),("RetrySave","重试保存"),("RetryButton","重试")})
                 {
                     var button=(Button)window.FindName(name);
                     Check(UIElementAutomationPeer.CreatePeerForElement(button)?.GetName()==Loc.Text(key),$"Sidebar/status action has a localized automation name: {name}/{language}");

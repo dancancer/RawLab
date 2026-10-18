@@ -18,11 +18,11 @@ struct ExportSizePicker: View {
         let _ = localizationLocale
         VStack(alignment: .leading, spacing: 8) {
             Picker(title ?? L10n.text("导出尺寸"), selection: $choice) {
-                Text(L10n.text("原始分辨率")).tag(0)
+                Text(L10n.text("原始尺寸")).tag(0)
                 ForEach(ExportSize.presets, id: \.self) { edge in
                     Text(L10n.format("长边 %@ px", String(describing: edge))).tag(edge)
                 }
-                Text(L10n.text("自定义…")).tag(-1)
+                Text(L10n.text("指定长边")).tag(-1)
             }
             .pickerStyle(.menu)
             .id(localizationLocale.identifier)

@@ -6,7 +6,7 @@
     <StackPanel Margin="22,20,22,14">
       <DockPanel>
         <StackPanel x:Name="SelectionActions" DockPanel.Dock="Right" Orientation="Horizontal">
-          <Button Click="AddClicked" ToolTip="{DynamicResource '添加 RAW 照片'}" AutomationProperties.Name="{DynamicResource '添加 RAW'}"><local:EditorIcon Kind="Add" Width="20" Height="20"/></Button>
+          <Button Click="AddClicked" ToolTip="{DynamicResource '添加照片'}" AutomationProperties.Name="{DynamicResource '添加 RAW'}"><local:EditorIcon Kind="Add" Width="20" Height="20"/></Button>
           <Button Content="{DynamicResource '全选'}" Click="SelectAllClicked"/><Button Content="{DynamicResource '全不选'}" Click="SelectNoneClicked"/>
         </StackPanel>
         <TextBlock x:Name="Heading" Text="{DynamicResource '批量导出'}" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"/>

@@ -68,10 +68,10 @@ public partial class MainWindow
     {
         var menu=new ContextMenu{PlacementTarget=ResetAllButton,Placement=PlacementMode.Top};
         void Add(string title,RoutedEventHandler action){var item=new MenuItem{Header=Loc.Text(title)};item.Click+=action;menu.Items.Add(item);}
-        Add("重置当前工具",ResetCurrentToolClicked);
+        Add("重置本工具",ResetCurrentToolClicked);
         menu.Items.Add(new Separator());
         foreach(var group in ResetGroups)menu.Items.Add(ResetGroupItem(group));
-        menu.Items.Add(new Separator());Add("全部重置",ResetAllClicked);
+        menu.Items.Add(new Separator());Add("重置全部调整",ResetAllClicked);
         ResetAllButton.ContextMenu=menu;menu.IsOpen=true;
     }
 }

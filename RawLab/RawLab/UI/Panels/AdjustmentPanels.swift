@@ -109,10 +109,10 @@ extension ContentView {
         let isRaster = viewModel.sourceKind == .raster
         return VStack(alignment: .leading, spacing: 12) {
             if viewModel.sourceKind == .raw {
-                Picker(L10n.text("白平衡模式"), selection: Binding(
+                Picker(L10n.text("白平衡"), selection: Binding(
                     get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
                 )) {
-                    Text(L10n.text("拍摄时")).tag(RawWhiteBalanceMode.camera)
+                    Text(L10n.text("拍摄时设置")).tag(RawWhiteBalanceMode.camera)
                     Text(L10n.text("自定义")).tag(RawWhiteBalanceMode.custom)
                 }
                 .pickerStyle(.segmented)

@@ -14,19 +14,19 @@
       </MenuItem>
       <MenuItem Header="{DynamicResource '编辑(_E)'}">
         <!-- 分组重置项由 BuildResetMenu 按 ResetGroups 插在这里，与调整栏的重置菜单同源 -->
-        <MenuItem Header="{DynamicResource '重置当前工具'}" Click="ResetCurrentToolClicked"/>
-        <Separator/><MenuItem Header="{DynamicResource '全部重置'}" Click="ResetAllClicked"/>
+        <MenuItem Header="{DynamicResource '重置本工具'}" Click="ResetCurrentToolClicked"/>
+        <Separator/><MenuItem Header="{DynamicResource '重置全部调整'}" Click="ResetAllClicked"/>
       </MenuItem>
       <MenuItem Header="{DynamicResource '查看(_V)'}">
         <MenuItem Header="{DynamicResource '文件树'}" Click="LibraryToggle"/>
         <MenuItem Header="{DynamicResource '调整栏'}" Click="DockToggle"/>
         <MenuItem Header="{DynamicResource '直方图'}" Click="HistogramClicked"/>
         <MenuItem Header="{DynamicResource '照片信息'}" InputGestureText="I" Click="InfoClicked"/>
-        <MenuItem Header="{DynamicResource '曝光裁切提示'}" Click="ClippingClicked"/>
+        <MenuItem Header="{DynamicResource '显示裁切提示'}" Click="ClippingClicked"/>
         <Separator/><MenuItem Header="{DynamicResource '对比模式'}"><MenuItem x:Name="MenuCompareOff" Header="{DynamicResource '关闭对比'}" IsCheckable="True" Click="CompareOffClicked"/><MenuItem x:Name="MenuCompareSide" Header="{DynamicResource '并排对比'}" IsCheckable="True" Click="CompareSideClicked"/><MenuItem x:Name="MenuCompareSwipe" Header="{DynamicResource '滑动对比'}" IsCheckable="True" Click="CompareSwipeClicked"/></MenuItem>
-        <MenuItem Header="{DynamicResource '缩放'}"><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '100% 实际像素'}" InputGestureText="1" Click="ActualClicked"/><MenuItem Header="{DynamicResource '放大'}" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" Click="ZoomOutClicked"/></MenuItem>
+        <MenuItem Header="{DynamicResource '缩放'}"><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '实际像素 · 100%'}" InputGestureText="1" Click="ActualClicked"/><MenuItem Header="{DynamicResource '放大'}" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" Click="ZoomOutClicked"/></MenuItem>
       </MenuItem>
-      <MenuItem Header="{DynamicResource '工具(_T)'}"><MenuItem x:Name="MenuAutoExposure" Header="{DynamicResource '自动曝光'}" Click="AutoExposureClicked" IsEnabled="False"/><MenuItem x:Name="MenuAsShot" Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked" IsEnabled="False"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
+      <MenuItem Header="{DynamicResource '工具(_T)'}"><MenuItem x:Name="MenuAutoExposure" Header="{DynamicResource '自动调整曝光'}" Click="AutoExposureClicked" IsEnabled="False"/><MenuItem x:Name="MenuAsShot" Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked" IsEnabled="False"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
       <MenuItem Header="{DynamicResource '帮助(_H)'}"><MenuItem Header="{DynamicResource '关于 RawLab'}" Click="AboutClicked"/></MenuItem>
     </Menu>
     <Border Grid.Row="1" MinHeight="48" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,0,1">
@@ -35,7 +35,7 @@
         <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '关于 RawLab / 检查更新'}" AutomationProperties.Name="{DynamicResource '关于 RawLab'}"><local:EditorIcon Kind="Help" Width="22" Height="22"/></Button>
         <Button Click="SettingsClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '设置'}" AutomationProperties.Name="{DynamicResource '设置'}"><local:EditorIcon Kind="Settings" Width="22" Height="22"/></Button>
         <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '查看更新'}"/>
-        <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="{DynamicResource '导出照片'}" AutomationProperties.Name="{DynamicResource '导出'}">
+        <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="{DynamicResource '导出'}" AutomationProperties.Name="{DynamicResource '导出'}">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
           <Button.ContextMenu><ContextMenu>
             <MenuItem Header="{DynamicResource '尺寸'}"><MenuItem x:Name="ExportOriginalSize" Header="{DynamicResource '原尺寸'}" IsCheckable="True" Click="ExportOriginalSizeClicked"/><MenuItem x:Name="ExportSize2048" Header="{DynamicResource '长边 2048 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="2048"/><MenuItem x:Name="ExportSize3000" Header="{DynamicResource '长边 3000 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="3000"/><MenuItem x:Name="ExportSize4096" Header="{DynamicResource '长边 4096 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="4096"/><MenuItem x:Name="ExportCustomSize" Header="{DynamicResource '自定义…'}" IsCheckable="True" Click="ExportCustomSizeClicked"/></MenuItem>
@@ -44,14 +44,14 @@
         </Button>
         <StackPanel Orientation="Horizontal">
           <Button x:Name="OpenPhoto" AutomationProperties.AutomationId="OpenPhoto" Click="OpenClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '打开 RAW（Ctrl+O）'}" AutomationProperties.Name="{DynamicResource '打开 RAW'}"><local:EditorIcon Kind="Folder" Width="22" Height="22"/></Button>
-          <Button x:Name="LibraryToggleButton" Click="LibraryToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示或隐藏照片目录'}" AutomationProperties.Name="{DynamicResource '文件树'}"><local:EditorIcon Kind="Library" Width="22" Height="22"/></Button>
+          <Button x:Name="LibraryToggleButton" Click="LibraryToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示或收起文件树'}" AutomationProperties.Name="{DynamicResource '文件树'}"><local:EditorIcon Kind="Library" Width="22" Height="22"/></Button>
           <Border Width="1" Background="{DynamicResource Outline}" Height="22" Margin="12,0"/>
           <Button x:Name="CompareButton" Click="CompareClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '对比模式：并排 / 滑动'}" AutomationProperties.Name="{DynamicResource '对比模式'}">
             <local:EditorIcon Kind="Compare" Width="22" Height="22"/>
             <Button.ContextMenu><ContextMenu><MenuItem x:Name="CompareOff" Header="{DynamicResource '关闭对比'}" IsCheckable="True" IsChecked="True" Click="CompareOffClicked"/><MenuItem x:Name="CompareSide" Header="{DynamicResource '并排对比'}" IsCheckable="True" Click="CompareSideClicked"/><MenuItem x:Name="CompareSwipe" Header="{DynamicResource '滑动对比'}" IsCheckable="True" Click="CompareSwipeClicked"/></ContextMenu></Button.ContextMenu>
           </Button>
-          <Button Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '缩放与适合窗口'}" AutomationProperties.Name="{DynamicResource '缩放'}"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '100% 实际像素'}" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="{DynamicResource '放大'}" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
-          <Button x:Name="ClippingButton" Click="ClippingClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示高光与暗部裁切提示'}" AutomationProperties.Name="{DynamicResource '裁切提示'}"><local:EditorIcon Kind="Clipping" Width="22" Height="22"/></Button>
+          <Button Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '缩放与适合窗口'}" AutomationProperties.Name="{DynamicResource '缩放'}"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '实际像素 · 100%'}" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="{DynamicResource '放大'}" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
+          <Button x:Name="ClippingButton" Click="ClippingClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示输出高光与黑位裁切'}" AutomationProperties.Name="{DynamicResource '裁切提示'}"><local:EditorIcon Kind="Clipping" Width="22" Height="22"/></Button>
           <Button x:Name="InfoButton" Click="InfoClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '照片信息：隐藏 / 文件信息 / 拍摄参数（I）'}" AutomationProperties.Name="{DynamicResource '照片信息'}"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
           <Button x:Name="AdjustToggleButton" Click="DockToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示或隐藏调整栏'}" AutomationProperties.Name="{DynamicResource '调整栏'}"><local:EditorIcon Kind="Adjust" Width="22" Height="22"/></Button>
         </StackPanel>
@@ -98,7 +98,7 @@
               </ResourceDictionary>
             </TreeView.Resources>
             <TreeView.ItemContainerStyleSelector><StaticResource ResourceKey="PhotoTreeStyles"/></TreeView.ItemContainerStyleSelector>
-            <TreeView.ContextMenu><ContextMenu x:Name="FileTreeContextMenu" Opened="FileTreeContextMenuOpened"><MenuItem x:Name="OpenTreeEntryMenu" Header="{DynamicResource '在资源管理器中打开'}" Click="OpenInExplorerClicked"/><MenuItem x:Name="ApplyTreeEntryMenu" Header="{DynamicResource '应用当前设置'}" Click="ApplyCurrentSettingsClicked"/><Separator/><MenuItem x:Name="RemoveRootMenu" Header="{DynamicResource '从列表移除根目录'}" Click="RemoveFolderClicked"/><MenuItem x:Name="RefreshRootMenu" Header="{DynamicResource '刷新目录'}" Click="RefreshFolderClicked"/></ContextMenu></TreeView.ContextMenu>
+            <TreeView.ContextMenu><ContextMenu x:Name="FileTreeContextMenu" Opened="FileTreeContextMenuOpened"><MenuItem x:Name="OpenTreeEntryMenu" Header="{DynamicResource '在资源管理器中打开'}" Click="OpenInExplorerClicked"/><MenuItem x:Name="ApplyTreeEntryMenu" Header="{DynamicResource '应用当前设置'}" Click="ApplyCurrentSettingsClicked"/><Separator/><MenuItem x:Name="RemoveRootMenu" Header="{DynamicResource '从列表移除根目录'}" Click="RemoveFolderClicked"/><MenuItem x:Name="RefreshRootMenu" Header="{DynamicResource '重新读取目录'}" Click="RefreshFolderClicked"/></ContextMenu></TreeView.ContextMenu>
           </TreeView>
         </DockPanel>
       </Border>
@@ -156,7 +156,7 @@
               <Button x:Name="LensCategory" Click="LensCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '镜头匹配'}" AutomationProperties.Name="{DynamicResource '镜头'}">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="LensCategoryRing"/><local:EditorIcon Kind="Lens" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '镜头'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
-              <Button x:Name="GeometryCategory" Click="GeometryCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '裁切与旋转'}" AutomationProperties.Name="{DynamicResource '几何'}">
+              <Button x:Name="GeometryCategory" Click="GeometryCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '裁切、旋转、翻转和拉直'}" AutomationProperties.Name="{DynamicResource '几何'}">
                 <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '几何'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
               </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
@@ -169,7 +169,7 @@
             <ScrollViewer x:Name="ParameterPanel" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center" Margin="0,5">
               <local:ParameterRow x:Name="OrdinaryParameter"/>
               <WrapPanel HorizontalAlignment="Center">
-              <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Auto" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
+              <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动调整曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Auto" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
               </WrapPanel>
             </StackPanel></ScrollViewer>
@@ -209,7 +209,7 @@
         <TextBlock x:Name="SaveState" DockPanel.Dock="Right" MaxWidth="240" TextTrimming="CharacterEllipsis" Margin="8,0" VerticalAlignment="Center" FontSize="{DynamicResource EditorCaptionSize}" AutomationProperties.LiveSetting="Polite"/>
         <ComboBox x:Name="GpuMode" DockPanel.Dock="Right" MinWidth="116" SelectedIndex="0" SelectionChanged="GpuModeChanged" Margin="10,2,0,2" AutomationProperties.Name="{DynamicResource '渲染加速'}"><ComboBoxItem Content="{DynamicResource 'GPU 自动'}"/><ComboBoxItem Content="{DynamicResource '仅 CPU'}"/><ComboBoxItem Content="{DynamicResource '强制 GPU'}"/></ComboBox>
         <TextBlock x:Name="BackendLabel" MaxWidth="240" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right" VerticalAlignment="Center"/>
-        <Button x:Name="RetryButton" ToolTip="{DynamicResource '重新显影'}" AutomationProperties.Name="{DynamicResource '重新显影'}" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2" Margin="6,0"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
+        <Button x:Name="RetryButton" ToolTip="{DynamicResource '重试'}" AutomationProperties.Name="{DynamicResource '重试'}" Click="RetryClicked" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" Width="36" Padding="6,2" Margin="6,0"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
         <ProgressBar x:Name="BusyIndicator" Width="34" Height="3" Margin="0,0,10,0" Foreground="{DynamicResource Indicator}" Background="{DynamicResource ProgressSurface}" IsIndeterminate="True" Visibility="Collapsed"/>
         <TextBlock x:Name="Status" Text="{DynamicResource '就绪'}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
       </DockPanel>
