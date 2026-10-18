@@ -18,7 +18,7 @@
     <string name="adjustment_haptics">Haptisches Feedback bei Anpassungen</string>
     <string name="jpeg_description">sRGB · Qualität 95 · Aufnahmemetadaten</string>
     <string name="png_description">sRGB · verlustfreie 16-Bit-Bilder · Aufnahmemetadaten</string>
-    <string name="dng_description">Fest gerendertes Aussehen, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien.</string>
+    <string name="dng_description">Fest eingerechneter Look, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien.</string>
     <string name="geometry_full">Zuschnitt zurücksetzen</string>
     <string name="geometry_drag_hint">Zuschnittrechteck</string>
     <string name="geometry_move_left">Zuschnitt nach links</string>

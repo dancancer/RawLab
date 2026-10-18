@@ -159,6 +159,14 @@ class LocalizationTests(unittest.TestCase):
         for recipe in json.loads((ROOT / "Shared/master-recipes.json").read_text()):
             self.assertIn("recipe_subtitle_" + recipe["id"], catalogs["en"])
 
+    def test_android_dng_description_uses_the_look_term(self):
+        # 导入的外观统一叫 Look：渲染型 DNG 的说明也用同一个词，不另造“appearance”之类的说法
+        catalogs = android_catalogs()
+        terms = {"en": "look", "zh-Hans": "外观", "de": "Look", "fr": "look", "ja": "ルック", "es": "look"}
+        for language, term in terms.items():
+            for key in ("import_look", "dng_description"):
+                self.assertIn(term.lower(), catalogs[language][key].lower(), (language, key))
+
     def test_android_recipe_names_are_localized(self):
         # 汉字写的人名配方按语言显示：资源名 recipe_name_<id>；拉丁字母语言不得出现汉字
         catalogs = android_catalogs()

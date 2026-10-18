@@ -18,7 +18,7 @@
     <string name="adjustment_haptics">Respuesta háptica de ajustes</string>
     <string name="jpeg_description">sRGB · calidad 95 · metadatos de captura</string>
     <string name="png_description">sRGB · 16 bits sin pérdida · metadatos de captura</string>
-    <string name="dng_description">Aspecto final, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos.</string>
+    <string name="dng_description">Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos.</string>
     <string name="geometry_full">Restablecer recorte</string>
     <string name="geometry_drag_hint">Rectángulo de recorte</string>
     <string name="geometry_move_left">Mover a la izquierda</string>
