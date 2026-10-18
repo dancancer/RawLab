@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+import sys
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -64,6 +65,13 @@ def android_catalogs():
 
 
 class LocalizationTests(unittest.TestCase):
+    def test_generated_catalogs_have_no_unowned_entries(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/localization/generate.py"), "--check"],
+            capture_output=True, text=True, cwd=ROOT,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_macos_photography_terms(self):
         catalog = apple_catalog(ROOT / "RawLabMac/Resources/en.lproj/Localizable.strings")
         for key, expected in {
