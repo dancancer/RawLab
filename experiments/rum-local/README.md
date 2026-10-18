@@ -24,7 +24,7 @@ env -u DEBUG -u NODE_DEBUG node experiments/rum-local/readback.mjs <UUID> <macos
 - macOS：`RAWLAB_RUM_TARGET=production RAWLAB_RUM_VALIDATION_RUN=<UUID> RAWLAB_RUM_LIMIT_VERIFIED=1 RAWLAB_RUM_NETWORK=china-telecom bash experiments/rum-pilot/local-adapter.sh`。正式包本身：用隔离的 `CFFIXED_USER_HOME` 启动 `build.sh` 产物，再用 `--launches macos` 回读。
 - iOS：`bash scripts/rum/prepare-ios.sh` 后以 Release 配置编模拟器包；启动时传 `SIMCTL_CHILD_RAWLAB_RUM_VALIDATE=1 SIMCTL_CHILD_RAWLAB_RUM_VALIDATION_RUN=<UUID>` 只跑探针，不带这两个变量即正常上报。
 - Windows：`bash experiments/rum-local/windows/run.sh --publish` 打出不依赖 .NET 的探针包，复制到 Windows 后运行包内 `validate.ps1 -ValidationRun <UUID>`。
-- Android：ANDROID_PROBE_PLACEHOLDER
+- Android：按下文"本地构建"编出 `.rumlocal` 包和测试包，安装到模拟器后运行 `adb shell am instrument -w -e class com.rawlab.android.analytics.RumValidationProbeTest -e rumProbe true -e rumEnvironment PROD -e rumValidationRun <UUID> -e rumLimitVerified true -e rumNetwork china-telecom -e rumConfigVerified true com.rawlab.android.rumlocal.test/androidx.test.runner.AndroidJUnitRunner`。`rumEnvironment=PROD` 走与正式包相同的构造路径，只多一个 `validation_run` 字段。正式包本身：装 `assembleRelease` 产物，冷启动后用 `--launches android` 回读。2026-10-18 实测：探针 `e14f0692-…` 五类事件入库（`ingestionPassed`），正式包两次冷启动回读到同一设备短哈希 `fbbff99d`；模拟器地区字段为空，`mainlandGeoVerified` 为否。
 
 ## 本地构建
 
