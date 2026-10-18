@@ -235,7 +235,8 @@ private fun BatchConfirmContent(
             state.error?.let { Text(it, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error) }
         }
     }
-    Text(AppStrings.text(R.string.message_for_this_export_only_each_photo_s), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+    Text(AppStrings.text(R.string.message_for_this_export_only_each_photo_s), Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+        style = MaterialTheme.typography.bodySmall)
     val longEdge = ExportSize.parse(sizeChoice, customSize)
     val sizeValid = sizeChoice != ExportSizeChoice.CUSTOM || longEdge != null
     Button(onClick = onStart, enabled = sizeValid && state.job.rows.isNotEmpty() && (destination != null || (Build.VERSION.SDK_INT >= 29 && format.allowsGallery)), modifier = Modifier.fillMaxWidth().padding(20.dp)) {

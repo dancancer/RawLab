@@ -151,10 +151,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         leadingIcon = { Icon(Icons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_settings)) },
                         leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { menu = false; settings = true })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) }, onClick = { menu = false; leave(onLicenses) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) },
+                        leadingIcon = { Icon(Icons.Outlined.Description, null) }, onClick = { menu = false; leave(onLicenses) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.about_rawlab)) },
                         leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; leave(onAbout) })
-                    if (updateVersion != null) DropdownMenuItem(text = { Text(stringResource(R.string.view_update)) }, onClick = { menu = false; leave(onAbout) })
+                    if (updateVersion != null) DropdownMenuItem(text = { Text(stringResource(R.string.view_update)) },
+                        leadingIcon = { Icon(Icons.Outlined.SystemUpdate, null) }, onClick = { menu = false; leave(onAbout) })
                 }
             }
             ToolIcon(Icons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)

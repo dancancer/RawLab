@@ -27,6 +27,7 @@ internal fun DenoiseControls(value: DenoiseSettings, enabled: Boolean,
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.denoise), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(8.dp))
             Switch(value.enabled, { onChange(value.copy(enabled = it), false) }, enabled = enabled)
             Spacer(Modifier.weight(1f))
             Box {

@@ -46,4 +46,15 @@ class DenoiseControlsTest {
         val directory = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)
         File(directory, "denoise-controls-compact.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
+
+    // 标题与开关之间要留出间隔，不能贴在一起
+    @Test fun titleKeepsAGapBeforeTheSwitch() {
+        compose.setChineseContent {
+            MaterialTheme { Box(Modifier.width(360.dp)) { DenoiseControls(DenoiseSettings(), true) { _, _ -> } } }
+        }
+        val title = compose.onNodeWithText("降噪", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val switch = compose.onNode(isToggleable()).fetchSemanticsNode().boundsInRoot
+        val gap = with(compose.density) { (switch.left - title.right).toDp() }
+        assertTrue("gap=$gap", gap >= 8.dp)
+    }
 }

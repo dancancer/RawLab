@@ -274,7 +274,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
 @Composable
 internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, enabled: Boolean, onSelect: (MasterRecipe?) -> Unit) {
     val list = rememberLazyListState()
-    LazyRow(state = list, modifier = Modifier.fillMaxWidth().testTag("master-recipe-choices"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyRow(state = list, modifier = Modifier.fillMaxWidth().testTag("master-recipe-choices"),
+        contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(listOf<MasterRecipe?>(null) + recipes, key = { it?.id ?: "neutral" }) { recipe ->
             Column(Modifier.width(112.dp).selectable(selected == recipe?.id, enabled = enabled,
                 role = Role.RadioButton, onClick = { onSelect(recipe) }), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assert
@@ -86,5 +87,20 @@ class EditorToolsTest {
             assertEquals(6500f, edits.temperature)
             assertEquals(0f, edits.tint)
         }
+    }
+
+    // “更多”菜单每一项都带前置图标：文字落在同一列，不出现缩进不一的条目
+    @Test fun moreMenuItemsShareOneTextColumn() {
+        compose.setContent {
+            RawLabTheme {
+                EditorScreen(state = EditorState(), onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onReset = {}, onRetry = {},
+                    onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {}, updateVersion = "9.9.9")
+            }
+        }
+        compose.onNodeWithContentDescription("更多").performClick()
+        val lefts = listOf("从文件导入", "批量导出", "设置", "开源许可", "关于 RawLab", "查看更新").associateWith { label ->
+            compose.onAllNodesWithText(label, useUnmergedTree = true).fetchSemanticsNodes().last().boundsInRoot.left
+        }
+        assertEquals(lefts.toString(), 1, lefts.values.distinct().size)
     }
 }
