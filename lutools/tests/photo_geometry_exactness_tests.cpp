@@ -32,8 +32,13 @@ ImageData input(int width, int height) {
     ImageData image(width, height);
     for (auto& pixel : image.pixels) {
         /* 覆盖负值、超白及不同指数，避免渐变掩盖插值舍入差异。 */
-        auto value = [] { return std::ldexp(unit() - .5f, int(randomBits() % 32) - 12); };
-        pixel = RGB(value(), value(), value());
+        auto value = [] {
+            const float fraction = unit() - .5f;
+            const int exponent = int(randomBits() % 32) - 12;
+            return std::ldexp(fraction, exponent);
+        };
+        const float r = value(), g = value(), b = value();
+        pixel = RGB(r, g, b);
     }
     image.pixels.front().r = -0.f;
     image.pixels.back().b = std::numeric_limits<float>::denorm_min();
@@ -116,7 +121,8 @@ void matrix(const ImageData& source) {
 
 void randomized() {
     for (int iteration = 0; iteration < 1200; ++iteration) {
-        const auto source = input(1 + randomBits() % 131, 1 + randomBits() % 97);
+        const int width = 1 + randomBits() % 131, height = 1 + randomBits() % 97;
+        const auto source = input(width, height);
         GeometryOptions options;
         options.quarter_turns = randomBits() % 4;
         options.flip_horizontal = randomBits() & 1;
@@ -152,6 +158,17 @@ int main() {
             {7, 5}, {32, 33}, {65, 49}}) matrix(input(size.first, size.second));
         randomized();
         exceptionalPixels();
+        for (const auto size : {std::pair<int, int>{32, 32}, {256, 32}}) {
+            const auto source = input(size.first, size.second);
+            for (int turns = 0; turns < 4; ++turns) for (int flips = 0; flips < 4; ++flips) {
+                GeometryOptions options;
+                options.quarter_turns = turns;
+                options.flip_horizontal = flips & 1; options.flip_vertical = flips & 2;
+                compare(source, options);
+                options.straighten_degrees = std::numeric_limits<float>::denorm_min();
+                compare(source, options);
+            }
+        }
         /* 大画布的坐标舍入及分块尾部也必须覆盖。 */
         const auto large = input(1601, 1067);
         for (int turns = 0; turns < 4; ++turns) for (int flips = 0; flips < 4; ++flips) {
@@ -159,9 +176,14 @@ int main() {
             options.quarter_turns = turns;
             options.flip_horizontal = flips & 1; options.flip_vertical = flips & 2;
             compare(large, options);
+            options.straighten_degrees = 3;
+            compare(large, options);
+            options.perspective_horizontal = .2f;
+            compare(large, options);
+            options.perspective_vertical = -.7f;
+            compare(large, options);
             options.crop_x = .123f; options.crop_y = .731f;
             options.crop_width = .043f; options.crop_height = .037f;
-            options.straighten_degrees = 3; options.perspective_horizontal = .2f;
             compare(large, options);
         }
         std::cout << "PASS " << comparisons << " bit-exact geometry comparisons (seed 0x67a91e35)\n";
