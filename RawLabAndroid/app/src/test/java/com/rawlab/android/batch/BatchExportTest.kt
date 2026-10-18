@@ -1,5 +1,6 @@
 package com.rawlab.android.batch
 
+import com.rawlab.android.batch.journal.BatchJournal
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -69,7 +70,7 @@ class BatchExportTest {
             assertTrue(dng.rows.single().outputName.endsWith(".dng"))
             journal.save(dng)
             val dngJournal = File(root, "${dng.id}.properties").readText()
-            assertTrue(dngJournal.contains("journal.version=2"))
+            assertTrue(dngJournal.contains("journal.version=3"))
             assertTrue(dngJournal.contains("output.format=dng"))
             assertEquals(ExportFormat.DNG, journal.load(dng.id)!!.outputFormat)
         } finally { root.deleteRecursively() }

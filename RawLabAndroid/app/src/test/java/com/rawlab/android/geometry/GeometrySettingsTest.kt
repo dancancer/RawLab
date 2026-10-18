@@ -5,7 +5,7 @@ import org.junit.Test
 import java.io.File
 import java.nio.file.Files
 import com.rawlab.android.batch.BatchJob
-import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchRunner
 import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.batch.BatchTarget
