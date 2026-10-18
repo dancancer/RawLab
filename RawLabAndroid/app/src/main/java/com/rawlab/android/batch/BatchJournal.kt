@@ -24,6 +24,10 @@ class BatchJournal(private val directory: File) {
 
     init { if (!directory.exists() && !directory.mkdirs()) throw IOException("Cannot create batch journal") }
 
+    private fun journalFile(id: String) = File(directory, "$id.properties")
+
+    fun contains(id: String): Boolean = journalFile(id).isFile
+
     @Synchronized
     fun save(job: BatchJob) {
         val properties = Properties()
@@ -54,7 +58,7 @@ class BatchJournal(private val directory: File) {
             properties.setProperty(prefix + "output.uri", row.outputUri.orEmpty())
             properties.setProperty(prefix + "output.ready", row.outputReady.toString())
         }
-        val file = File(directory, "${job.id}.properties")
+        val file = journalFile(job.id)
         val temporary = File(directory, "${job.id}.${System.nanoTime()}.tmp")
         try {
             temporary.outputStream().use { properties.store(it, null) }
@@ -67,8 +71,8 @@ class BatchJournal(private val directory: File) {
     }
 
     fun load(id: String): BatchJob? {
-        val file = File(directory, "${id}.properties")
-        if (!file.isFile) return null
+        if (!contains(id)) return null
+        val file = journalFile(id)
         val properties = Properties().also { file.inputStream().use(it::load) }
         val source = BatchSourceSnapshot(PhotoIdentity(properties.getProperty("source.identity")),
             File(properties.getProperty("source.path")), SettingsCodec.decode(properties.getProperty("source.settings")),
@@ -120,7 +124,7 @@ class BatchJournal(private val directory: File) {
         } }
 
     fun discard(id: String) {
-        File(directory, "${id}.properties").delete()
+        journalFile(id).delete()
         File(directory, id).deleteRecursively()
     }
 }

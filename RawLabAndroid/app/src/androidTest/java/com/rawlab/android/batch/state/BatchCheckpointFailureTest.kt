@@ -1,5 +1,8 @@
-package com.rawlab.android.batch
+package com.rawlab.android.batch.state
 
+import com.rawlab.android.batch.BatchJob
+import com.rawlab.android.batch.BatchPhase
+import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.settings.EditSettings

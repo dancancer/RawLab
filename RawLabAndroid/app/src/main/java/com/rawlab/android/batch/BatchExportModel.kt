@@ -52,7 +52,19 @@ data class BatchExportState(
     val confirmationCount: Int get() = job.rows.count { it.status == BatchRowStatus.NEEDS_CONFIRMATION }
     val completionFraction: Float get() = successCount.toFloat() / selectedCount.coerceAtLeast(1)
     val unfinishedCount: Int get() = job.rows.count { it.status !in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION) }
+
+    fun canStart(retry: Boolean) = phase !in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) &&
+        job.rows.isNotEmpty() && (!retry || unfinishedCount > 0)
+
+    fun configuredFor(format: ExportFormat, destination: Uri?, longEdge: Int?) = copy(
+        job = job.copy(outputFormat = format, destination = destination?.toString(), outputLongEdge = longEdge,
+            rows = job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) }),
+        phase = BatchPhase.PREPARING, outputFormat = format, destination = destination, error = null, stopping = false)
 }
+
+private fun BatchJob.confirmedOutput(id: String, saved: Boolean) = withRows(rows.map {
+    if (it.id == id && it.status == BatchRowStatus.NEEDS_CONFIRMATION) it.copy(status = if (saved) BatchRowStatus.SUCCESS else BatchRowStatus.PENDING, outputUri = null) else it
+})
 
 internal class BatchCancellation {
     private val reason = AtomicReference<UsageBatchOutcome?>(null)
@@ -151,24 +163,16 @@ class BatchExportModel(
             destination == null && !format.allowsGallery -> AppStrings.text(R.string.dng_file_only)
             else -> null
         }
-        var current: BatchExportState
-        var configured: BatchJob
-        /* CAS 成功后才启动副作用；冲突时重新校验最新状态，不复用活动快照。 */
-        while (true) {
-            current = mutable.value
-            if (current.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) || current.job.rows.isEmpty()) return
-            if (retry && current.unfinishedCount == 0) return
-            if (validationError != null) {
-                if (mutable.compareAndSet(current, current.copy(error = validationError))) return
-                continue
-            }
-            configured = current.job.copy(outputFormat = format, destination = destination?.toString(),
-                outputLongEdge = longEdge,
-                rows = current.job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) })
-            if (mutable.compareAndSet(current, current.copy(job = configured, phase = BatchPhase.PREPARING,
-                    outputFormat = format, destination = destination, error = null, stopping = false))) break
+        if (validationError != null) {
+            mutable.update { if (it.canStart(retry)) it.copy(error = validationError) else it }
+            return
         }
-        val successBefore = current.successCount
+        val previous = mutable.getAndUpdate {
+            if (it.canStart(retry)) it.configuredFor(format, destination, longEdge) else it
+        }
+        if (!previous.canStart(retry)) return
+        val configured = previous.configuredFor(format, destination, longEdge).job
+        val successBefore = previous.successCount
         val attempted = mutableSetOf<String>()
         var terminalReported = false
         suspend fun reportTerminal(job: BatchJob, outcome: UsageBatchOutcome) {
@@ -351,23 +355,17 @@ class BatchExportModel(
     }
 
     fun confirmOutput(id: String, saved: Boolean) {
-        while (true) {
-            val current = mutable.value
-            val updated = current.job.withRows(current.job.rows.map {
-                if (it.id == id && it.status == BatchRowStatus.NEEDS_CONFIRMATION) it.copy(status = if (saved) BatchRowStatus.SUCCESS else BatchRowStatus.PENDING, outputUri = null) else it
-            })
-            try { BatchJournal(journalRoot).save(updated) }
-            catch (error: Exception) { mutable.update { it.copy(error = error.message) }; return }
-            if (mutable.compareAndSet(current, current.copy(job = updated))) return
-        }
+        val updated = mutable.value.job.confirmedOutput(id, saved)
+        try { BatchJournal(journalRoot).save(updated); mutable.update { it.copy(job = it.job.confirmedOutput(id, saved)) } }
+        catch (error: Exception) { mutable.update { it.copy(error = error.message) } }
     }
 
     fun setDestination(destination: Uri?) { mutable.update { it.copy(destination = destination) } }
 
     fun discardDraftOrCompleted(): Deferred<Unit>? {
         val job = mutable.value.job
-        /* 失败 phase 不代表已持久化；恢复扫描读取的 journal 文件才决定副本归属。 */
-        if (!File(journalRoot, "${job.id}.properties").isFile || job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
+        // 失败 phase 不代表已持久化；journal 决定副本是否需要保留。
+        if (!BatchJournal(journalRoot).contains(job.id) || job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
         return discardCompletion
     }
 

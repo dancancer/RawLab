@@ -1,4 +1,4 @@
-package com.rawlab.android.batch
+package com.rawlab.android.batch.state
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -9,6 +9,12 @@ import com.rawlab.android.analytics.UnavailableUsageTransport
 import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.analytics.UsageConsentStore
 import com.rawlab.android.analytics.UsageInstallId
+import com.rawlab.android.batch.BatchExportModel
+import com.rawlab.android.batch.BatchExportState
+import com.rawlab.android.batch.BatchJob
+import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.BatchPhase
+import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.editor.EditorBatches
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.PhotoInputKind
@@ -33,7 +39,7 @@ import org.junit.Assert.*
 
 internal fun CountDownLatch.awaitBatch() { assertTrue("Batch latch timed out", await(30, TimeUnit.SECONDS)) }
 
-/* factory 无法暂停读改写窗口；这里只拦截真实 Flow 写入，model、runner 和日志照常执行。 */
+// factory 无法暂停读改写窗口；这里只拦截真实 Flow 写入，model、runner 和日志照常执行。
 @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
 internal class GatedBatchState(
     private val delegate: MutableStateFlow<BatchExportState>,
