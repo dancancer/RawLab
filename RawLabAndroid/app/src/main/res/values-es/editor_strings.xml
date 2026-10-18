@@ -3,7 +3,7 @@
 <resources>
     <string name="adjustment_apply">"Aplicar"</string>
     <string name="adjustment_continue">"Seguir editando"</string>
-    <string name="adjustment_discard">"Descartar"</string>
+    <string name="adjustment_discard">"Descartar cambios"</string>
     <string name="adjustment_draft">"Borrador sin aplicar"</string>
     <string name="adjustment_fine">"Ajuste fino"</string>
     <string name="adjustment_haptics">"Respuesta háptica al ajustar"</string>
@@ -15,7 +15,7 @@
     <string name="dng_description">"Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos."</string>
     <string name="editor_settings">"Ajustes"</string>
     <string name="empty_hint">"Elige un RAW de un álbum o impórtalo desde los archivos del sistema."</string>
-    <string name="geometry_drag_hint">"Rectángulo de recorte"</string>
+    <string name="geometry_drag_hint">"Selección de recorte"</string>
     <string name="geometry_full">"Restablecer recorte"</string>
     <string name="geometry_move_down">"Mover hacia abajo"</string>
     <string name="geometry_move_left">"Mover a la izquierda"</string>
@@ -23,11 +23,11 @@
     <string name="geometry_move_up">"Mover hacia arriba"</string>
     <string name="info_unavailable">"No disponible"</string>
     <string name="jpeg_description">"sRGB · calidad 95 · metadatos de captura"</string>
-    <string name="look_remove_body">"Solo se elimina la copia administrada. El archivo original se conserva."</string>
+    <string name="look_remove_body">"Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará."</string>
     <string name="output_destination">"Ubicación de guardado"</string>
     <string name="png_description">"sRGB · 16 bits sin pérdida · metadatos de captura"</string>
     <string name="reset_all_body">"Se conserva la película actual. Se elimina la receta y se restablecen los demás ajustes. Las fotos, estilos y tareas por lotes se conservan."</string>
     <string name="reset_all_title">"¿Restablecer todos los ajustes?"</string>
     <string name="select_photo">"Elegir foto"</string>
-    <string name="vignette_highlights_unavailable">"La protección de luces solo está disponible con viñeta negativa."</string>
+    <string name="vignette_highlights_unavailable">"Disponible solo cuando la intensidad de la viñeta es negativa."</string>
 </resources>

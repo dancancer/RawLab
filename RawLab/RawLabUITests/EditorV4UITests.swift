@@ -205,7 +205,7 @@ final class EditorV4UITests: XCTestCase {
 
         try setValue("4.5", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
         try selectTool("exposure", in: app)
-        let discard = app.buttons["Discard Adjustments"]
+        let discard = app.buttons["Discard Changes"]
         XCTAssertTrue(discard.waitForExistence(timeout: 5), app.debugDescription)
         let continueEditing = app.buttons["Continue Editing"]
         XCTAssertTrue(continueEditing.waitForExistence(timeout: 5), app.debugDescription)
@@ -566,7 +566,7 @@ final class EditorV4UITests: XCTestCase {
         XCTAssertTrue(confirm.isHittable)
         let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Export Size'")).firstMatch
         XCTAssertTrue(size.waitForExistence(timeout: 5))
-        XCTAssertTrue(size.label.contains("Original Resolution") || (size.value as? String)?.contains("Original Resolution") == true,
+        XCTAssertTrue(size.label.contains("Original size") || (size.value as? String)?.contains("Original size") == true,
                       size.debugDescription)
         capture("v4-jpeg-export-confirmation-portrait", in: app)
         XCUIDevice.shared.orientation = .landscapeLeft

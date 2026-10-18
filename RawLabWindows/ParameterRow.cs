@@ -81,7 +81,7 @@ public sealed class ParameterRow : Grid
     {
         if(!dirty || !IsEnabled || Number.IsReadOnly)return !HasInvalidInput;
         if(range.Parse(Number.Text) is { } next){Publish(next,false);return true;}
-        Number.ToolTip=Loc.Text("请输入有限数值。");InvalidInput?.Invoke();
+        Number.ToolTip=Loc.Text("请输入有效数字");InvalidInput?.Invoke();
         if(!KeepInvalidInput)RestoreText();
         return false;
     }

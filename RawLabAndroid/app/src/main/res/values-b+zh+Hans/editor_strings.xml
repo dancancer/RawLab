@@ -3,8 +3,8 @@
 <resources>
     <string name="adjustment_apply">"应用"</string>
     <string name="adjustment_continue">"继续编辑"</string>
-    <string name="adjustment_discard">"放弃"</string>
-    <string name="adjustment_draft">"未应用草稿"</string>
+    <string name="adjustment_discard">"放弃修改"</string>
+    <string name="adjustment_draft">"草稿尚未应用"</string>
     <string name="adjustment_fine">"精细"</string>
     <string name="adjustment_haptics">"调整触觉反馈"</string>
     <string name="adjustment_leave">"离开前应用更改？"</string>
@@ -15,7 +15,7 @@
     <string name="dng_description">"保存最终外观，不是传感器 RAW；不保留可编辑历史或拍摄 EXIF，仅保存到文件。"</string>
     <string name="editor_settings">"设置"</string>
     <string name="empty_hint">"选择相册中的 RAW，或从系统文件中导入。"</string>
-    <string name="geometry_drag_hint">"裁切矩形"</string>
+    <string name="geometry_drag_hint">"裁切选区"</string>
     <string name="geometry_full">"重置裁切"</string>
     <string name="geometry_move_down">"向下移动裁切"</string>
     <string name="geometry_move_left">"向左移动裁切"</string>
@@ -23,11 +23,11 @@
     <string name="geometry_move_up">"向上移动裁切"</string>
     <string name="info_unavailable">"不可用"</string>
     <string name="jpeg_description">"sRGB · 质量 95 · 保留拍摄元数据"</string>
-    <string name="look_remove_body">"仅移除托管副本，原文件保留。"</string>
+    <string name="look_remove_body">"将移除 RawLab 保存的外观副本，原始文件不会被删除。"</string>
     <string name="output_destination">"保存位置"</string>
     <string name="png_description">"sRGB · 16 位无损图像 · 保留拍摄元数据"</string>
     <string name="reset_all_body">"保留当前普通胶片，清除配方并恢复其余默认值。照片、外观库和批量任务保留。"</string>
     <string name="reset_all_title">"重置所有调整？"</string>
     <string name="select_photo">"选择照片"</string>
-    <string name="vignette_highlights_unavailable">"高光保护仅在负暗角量时可用。"</string>
+    <string name="vignette_highlights_unavailable">"仅在暗角强度为负值时可用。"</string>
 </resources>

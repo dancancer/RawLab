@@ -150,7 +150,7 @@ class PhotoCanvasTest {
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
         compose.runOnIdle { editor = editor.copy(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-b"), "photo-b", File("photo-b")), preview = pair) }
         canvas.assert(SemanticsMatcher("photo starts fitted") {
-            it.config[SemanticsProperties.StateDescription].startsWith("适应画面")
+            it.config[SemanticsProperties.StateDescription].startsWith("适合窗口")
         })
     }
 

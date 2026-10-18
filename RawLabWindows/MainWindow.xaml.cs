@@ -155,7 +155,7 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting || transform.Active)return;
             interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
         };
-        OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有限数值。"),true);
+        OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
         ready=true; RefreshControls(); RefreshRenderLabels();
         InitializeEditWorkflow();
         Closing+=WindowClosing;
@@ -385,7 +385,7 @@ public partial class MainWindow : Window
         BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
         ExportButton.ToolTip=file==null ? Loc.Text("打开 RAW 照片后导出") : transform.Active ? Loc.Text("草稿预览 · 尚未应用") :
-            !exactReady || scheduler.Busy || previewResize.IsEnabled ? Loc.Text("精确预览完成后可导出") : Loc.Text("导出照片（尺寸可选）");
+            !exactReady || scheduler.Busy || previewResize.IsEnabled ? Loc.Text("请等待预览完成后导出。") : Loc.Text("导出照片（尺寸可选）");
         ToolTipService.SetShowOnDisabled(ExportButton,true);
         ToolTipService.SetShowOnDisabled(ExportJpeg,true);ToolTipService.SetShowOnDisabled(ExportPng,true);ToolTipService.SetShowOnDisabled(ExportDng,true);
     }
@@ -509,7 +509,7 @@ public partial class MainWindow : Window
         previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
-        if(!LookAvailable){exactReady=false;result=null;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新导入或选择外观。"),true);UpdateBusy();return;}
+        if(!LookAvailable){exactReady=false;result=null;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"),true);UpdateBusy();return;}
         renderFailed=false;
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
@@ -598,7 +598,7 @@ public partial class MainWindow : Window
     private async void ImportClicked(object sender,RoutedEventArgs e)
     {
         if(exporting || file==null || !ResolveTransformDraft())return;
-        var dialog=new OpenFileDialog{Title=Loc.Text("导入胶片外观"),Multiselect=true,Filter=Loc.Text("胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook")};
+        var dialog=new OpenFileDialog{Title=Loc.Text("导入外观"),Multiselect=true,Filter=Loc.Text("胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook")};
         if(dialog.ShowDialog(this)!=true)return;
         var errors=await ImportLookFiles(dialog.FileNames);
         if(errors.Count>0 && !closing)MessageBox.Show(this,string.Join("\n\n",errors),Loc.Text("导入外观"),MessageBoxButton.OK,MessageBoxImage.Warning);
@@ -822,13 +822,13 @@ public partial class MainWindow : Window
                     .Select(child=>new LibraryEntry(child.FullName,false)).ToArray());
             }
             else targets=LibraryEntry.IsImage(entry.Path) ? [entry] : [];
-            if (targets.Length == 0) { SetStatus(() => Loc.Text("目录中没有直接照片。"),true); return; }
+            if (targets.Length == 0) { SetStatus(() => Loc.Text("此目录没有照片。"),true); return; }
             var answer=MessageBox.Show(this,
                 Loc.Format("将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？", targets.Length),
                 Loc.Text("应用当前设置"),MessageBoxButton.YesNo,MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
             SaveSettingsCopies(targets.Select(target=>target.Path),snapshot,look);
-            SetStatus(() => Loc.Format("已应用当前设置到 {0} 张照片。", targets.Length),false);
+            SetStatus(() => Loc.Format("已将当前设置应用到 {0} 张照片", targets.Length),false);
         }
         catch (Exception error) { Report(error); }
     }

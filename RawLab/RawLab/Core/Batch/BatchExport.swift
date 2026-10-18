@@ -185,7 +185,7 @@ final class BatchExportModel: ObservableObject {
             : job.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
         guard !snapshot.source.settings.hasLook ||
                 snapshot.source.lookURL.map({ FileManager.default.isReadableFile(atPath: $0.path) }) == true else {
-            validationMessage = L10n.text("任务外观不可用，请放弃此任务并重新创建。")
+            validationMessage = L10n.text("任务使用的外观文件不可用，请重新创建任务。")
             return
         }
         isRunning = true; isStopping = false; validationMessage = nil
@@ -375,7 +375,7 @@ final class BatchExportModel: ObservableObject {
         let snapshot = job.source
         return try await perform {
             if snapshot.settings.hasLook && snapshot.lookURL.map({ FileManager.default.isReadableFile(atPath: $0.path) }) != true {
-                throw BatchExportError.global(L10n.text("任务外观不可用。"))
+                throw BatchExportError.global(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))
             }
             let processor = Sony2FujiProcessor()
             let result: Sony2FujiProcessor.ProcessResult
@@ -391,7 +391,7 @@ final class BatchExportModel: ObservableObject {
                                                           rawWhiteBalance: nil)
             }
             guard let image = processor.makeUIImage(from: result.buffer, orientation: result.orientation) else {
-                throw BatchExportError.target(L10n.text("无法显示预览。"))
+                throw BatchExportError.target(L10n.text("无法显示处理结果"))
             }
             return image
         }
@@ -476,7 +476,7 @@ final class BatchExportModel: ObservableObject {
     private func saveJournal() {
         guard let journalStore else { return }
         do { try journalStore.save(job) }
-        catch { validationMessage = L10n.format("任务记录未保存：%@", String(describing: error.localizedDescription)) }
+        catch { validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
     }
 }
 

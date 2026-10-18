@@ -3,7 +3,7 @@
 <resources>
     <string name="adjustment_apply">"Appliquer"</string>
     <string name="adjustment_continue">"Continuer à modifier"</string>
-    <string name="adjustment_discard">"Abandonner"</string>
+    <string name="adjustment_discard">"Abandonner les modifications"</string>
     <string name="adjustment_draft">"Brouillon non appliqué"</string>
     <string name="adjustment_fine">"Réglage fin"</string>
     <string name="adjustment_haptics">"Retour haptique lors des réglages"</string>
@@ -15,7 +15,7 @@
     <string name="dng_description">"Look final intégré, pas un RAW du capteur. Sans historique modifiable ni EXIF de prise de vue. Fichiers uniquement."</string>
     <string name="editor_settings">"Réglages"</string>
     <string name="empty_hint">"Choisissez un RAW dans un album ou importez-le depuis les fichiers système."</string>
-    <string name="geometry_drag_hint">"Rectangle de recadrage"</string>
+    <string name="geometry_drag_hint">"Zone de recadrage"</string>
     <string name="geometry_full">"Réinitialiser le recadrage"</string>
     <string name="geometry_move_down">"Déplacer vers le bas"</string>
     <string name="geometry_move_left">"Déplacer à gauche"</string>
@@ -23,11 +23,11 @@
     <string name="geometry_move_up">"Déplacer vers le haut"</string>
     <string name="info_unavailable">"Indisponible"</string>
     <string name="jpeg_description">"sRGB · qualité 95 · métadonnées de prise de vue"</string>
-    <string name="look_remove_body">"Seule la copie gérée est supprimée. Le fichier original est conservé."</string>
+    <string name="look_remove_body">"La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé."</string>
     <string name="output_destination">"Emplacement"</string>
     <string name="png_description">"sRGB · 16 bits sans perte · métadonnées de prise de vue"</string>
     <string name="reset_all_body">"Le film actuel est conservé. La recette et les autres réglages sont réinitialisés. Les photos, looks et tâches par lot sont conservés."</string>
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
     <string name="select_photo">"Choisir une photo"</string>
-    <string name="vignette_highlights_unavailable">"La protection des hautes lumières exige un vignettage négatif."</string>
+    <string name="vignette_highlights_unavailable">"Disponible uniquement lorsque l’intensité du vignettage est négative."</string>
 </resources>

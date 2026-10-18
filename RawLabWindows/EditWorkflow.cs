@@ -110,7 +110,7 @@ public partial class MainWindow
         var previous = CurrentBatch;
         if (previous is { Started: true } && previous.SucceededCount < previous.SelectedCount)
         {
-            var answer = MessageBox.Show(this, Loc.Text("继续查看上次未完成的任务吗？选择“否”会新建任务，已导出的文件会保留。"),
+            var answer = MessageBox.Show(this, Loc.Text("继续查看上次任务，或保留已导出文件并新建任务。"),
                 Loc.Text("上次批量任务尚未完成"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) return;
             if (answer == MessageBoxResult.Yes) { ShowBatchClicked(sender, e); return; }

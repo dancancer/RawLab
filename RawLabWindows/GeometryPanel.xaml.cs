@@ -54,7 +54,7 @@ public partial class GeometryPanel : UserControl
     }
     public void RefreshLanguage()
     {
-        syncing=true;AspectBox.ItemsSource=new[]{Loc.Text("自由比例"),Loc.Text("原始比例"),"1:1","3:2","4:3","16:9"};AspectBox.SelectedIndex=(int)preset;syncing=false;
+        syncing=true;AspectBox.ItemsSource=new[]{Loc.Text("自由"),Loc.Text("原始比例"),"1:1","3:2","4:3","16:9"};AspectBox.SelectedIndex=(int)preset;syncing=false;
         Refresh(value);
     }
     public void Refresh(GeometrySettings settings)
