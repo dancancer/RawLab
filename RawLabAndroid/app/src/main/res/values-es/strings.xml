@@ -35,7 +35,7 @@
     <string name="look_importing">Importando look…</string>
     <string name="look_imported">Look importado</string>
     <string name="look_import_result">Resultado de la importación</string>
-    <string name="look_import_summary">Se importaron %1$d looks; falló la importación de %2$d archivos</string>
+    <string name="look_import_summary">Looks importados: %1$d; archivos no importados: %2$d</string>
     <string name="look_error">Error en la operación del look. Selecciona un archivo .cube o .rlook válido.</string>
     <string name="look_storage_error">No se pudo leer la biblioteca de looks. Inténtalo de nuevo más tarde o elimina los registros de looks dañados.</string>
     <string name="look_unavailable">Este archivo de look no está disponible. Elimínalo e impórtalo de nuevo.</string>

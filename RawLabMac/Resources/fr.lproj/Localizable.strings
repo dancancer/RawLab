@@ -79,7 +79,7 @@
 "导入外观…" = "Importer un look…";
 "导入结果" = "Résultat de l’importation";
 "导出" = "Exporter";
-"导出 %@ 张" = "Exporter %@ photos";
+"导出 %@ 张" = "Exporter les photos (%@)";
 "导出 JPEG…" = "Exporter JPEG…";
 "导出失败" = "Échec de l’exportation";
 "导出完成" = "Exportation terminée";
@@ -96,7 +96,7 @@
 "展开直方图" = "Développer l'histogramme";
 "展开调整栏" = "Développer les réglages";
 "已关闭" = "Désactivé";
-"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "%@ looks importés, %@ fichiers n’ont pas pu être importés :\n";
+"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importés : %@ ; fichiers non importés : %@\n";
 "已导出" = "Exporté";
 "已导出：%@" = "Exporté : %@";
 "已将当前设置应用到 %@ 张照片" = "Paramètres actuels appliqués à la photo %@";
@@ -207,7 +207,7 @@
 "细节" = "Détails";
 "细节优先" = "Priorité aux détails";
 "继续上次批量任务" = "Reprendre la dernière exportation par lots";
-"继续未完成的 %@ 张" = "Reprendre les %@ photos restantes";
+"继续未完成的 %@ 张" = "Reprendre les photos restantes (%@)";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continuez à afficher la dernière tâche ou conservez le fichier exporté et créez une nouvelle tâche.";
 "缩小" = "Zoom arrière";
 "缩放" = "Zoomer";
@@ -255,7 +255,7 @@
 "重置调整" = "Réinitialiser les réglages";
 "重置降噪" = "Réinitialiser la réduction du bruit";
 "重试" = "Réessayer";
-"重试失败的 %@ 张" = "Réessayer %@ photos en échec";
+"重试失败的 %@ 张" = "Réessayer les photos en échec (%@)";
 "锐化" = "Netteté";
 "长边" = "Bord long";
 "长边 %@ px" = "Bord long %@ px";
@@ -378,9 +378,9 @@
 "核对 DNG 文件保存结果" = "Vérifier les fichiers DNG enregistrés";
 "导出到文件…" = "Exporter vers Fichiers…";
 "导出已完成的 DNG 到文件…" = "Exporter les DNG terminés vers Fichiers…";
-"已导出 %@ 个渲染型 DNG" = "%@ fichiers DNG développés exportés";
-"已生成 %@ 个渲染型 DNG" = "%@ fichiers DNG développés créés";
-"已生成 %@ 个渲染型 DNG，未另存到所选位置" = "%@ fichiers DNG développés créés, mais non enregistrés à l’emplacement choisi";
+"已导出 %@ 个渲染型 DNG" = "Fichiers DNG développés exportés : %@";
+"已生成 %@ 个渲染型 DNG" = "Fichiers DNG développés créés : %@";
+"已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Fichiers DNG développés créés : %@ (non enregistrés à l’emplacement choisi)";
 "DNG 只能保存到文件" = "Le DNG ne peut être enregistré que dans Fichiers";
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
 "自动匹配" = "Correspondance automatique";

@@ -79,7 +79,7 @@
 "导入外观…" = "Importar look…";
 "导入结果" = "Resultado de la importación";
 "导出" = "Exportar";
-"导出 %@ 张" = "Exportar %@ fotos";
+"导出 %@ 张" = "Exportar fotos (%@)";
 "导出 JPEG…" = "Exportar JPEG…";
 "导出失败" = "Error de exportación";
 "导出完成" = "Exportación completada";
@@ -96,7 +96,7 @@
 "展开直方图" = "Expandir histograma";
 "展开调整栏" = "Expandir ajustes";
 "已关闭" = "Desactivado";
-"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "%@ looks importados, %@ archivos no se pudieron importar:\n";
+"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importados: %@; archivos no importados: %@\n";
 "已导出" = "Exportado";
 "已导出：%@" = "Exportado: %@";
 "已将当前设置应用到 %@ 张照片" = "Configuración actual aplicada a la foto %@";
@@ -207,7 +207,7 @@
 "细节" = "Detalles";
 "细节优先" = "Prioridad al detalle";
 "继续上次批量任务" = "Continuar con la última tarea por lotes";
-"继续未完成的 %@ 张" = "Continuar con %@ fotos pendientes";
+"继续未完成的 %@ 张" = "Continuar con las fotos pendientes (%@)";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continúe viendo la última tarea o conserve el archivo exportado y cree una nueva tarea.";
 "缩小" = "Alejar";
 "缩放" = "Ampliar";
@@ -255,7 +255,7 @@
 "重置调整" = "Restablecer ajustes";
 "重置降噪" = "Restablecer la reducción de ruido";
 "重试" = "Reintentar";
-"重试失败的 %@ 张" = "Reintentar %@ fotos fallidas";
+"重试失败的 %@ 张" = "Reintentar las fotos fallidas (%@)";
 "锐化" = "Enfoque";
 "长边" = "Borde largo";
 "长边 %@ px" = "Borde largo %@ px";
@@ -378,9 +378,9 @@
 "核对 DNG 文件保存结果" = "Verificar archivos DNG guardados";
 "导出到文件…" = "Exportar a Archivos…";
 "导出已完成的 DNG 到文件…" = "Exportar DNG completados a Archivos…";
-"已导出 %@ 个渲染型 DNG" = "%@ archivos DNG revelados exportados";
-"已生成 %@ 个渲染型 DNG" = "%@ archivos DNG revelados creados";
-"已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Se crearon %@ archivos DNG revelados, pero no se guardaron en la ubicación elegida";
+"已导出 %@ 个渲染型 DNG" = "Archivos DNG revelados exportados: %@";
+"已生成 %@ 个渲染型 DNG" = "Archivos DNG revelados creados: %@";
+"已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Archivos DNG revelados creados: %@ (no se guardaron en la ubicación elegida)";
 "DNG 只能保存到文件" = "El DNG solo se puede guardar en Archivos";
 "请等待预览完成后导出。" = "Espera a que termine la vista previa antes de exportar.";
 "自动匹配" = "Coincidencia automática";

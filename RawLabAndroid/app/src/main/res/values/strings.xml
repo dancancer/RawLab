@@ -35,7 +35,7 @@
     <string name="look_importing">Importing look…</string>
     <string name="look_imported">Look imported</string>
     <string name="look_import_result">Import result</string>
-    <string name="look_import_summary">Imported %1$d looks, %2$d file imports failed</string>
+    <string name="look_import_summary">Looks imported: %1$d; files not imported: %2$d</string>
     <string name="look_error">Look operation failed. Select a valid .cube or .rlook file.</string>
     <string name="look_storage_error">The look library could not be read. Try again later or delete corrupted look records.</string>
     <string name="look_unavailable">This look file is unavailable. Delete it and import it again.</string>

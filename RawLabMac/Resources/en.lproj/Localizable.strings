@@ -79,7 +79,7 @@
 "导入外观…" = "Import Look…";
 "导入结果" = "Import results";
 "导出" = "Export";
-"导出 %@ 张" = "Export %@ Photos";
+"导出 %@ 张" = "Export Photos (%@)";
 "导出 JPEG…" = "Export JPEG…";
 "导出失败" = "Export Failed";
 "导出完成" = "Export Complete";
@@ -96,7 +96,7 @@
 "展开直方图" = "Expand histogram";
 "展开调整栏" = "Expand Adjustments";
 "已关闭" = "Off";
-"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "%@ looks imported; %@ files could not be imported:\n";
+"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks imported: %@; files not imported: %@\n";
 "已导出" = "Exported";
 "已导出：%@" = "Exported: %@";
 "已将当前设置应用到 %@ 张照片" = "Current settings applied to %@ photo";
@@ -207,7 +207,7 @@
 "细节" = "Details";
 "细节优先" = "Detail Priority";
 "继续上次批量任务" = "Continue the last batch task";
-"继续未完成的 %@ 张" = "Continue %@ Unfinished Photos";
+"继续未完成的 %@ 张" = "Continue Unfinished Photos (%@)";
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continue viewing the last task, or keep the exported file and create a new task.";
 "缩小" = "Zoom out";
 "缩放" = "Zoom";
@@ -255,7 +255,7 @@
 "重置调整" = "Reset Adjustments";
 "重置降噪" = "Reset noise reduction";
 "重试" = "Try again";
-"重试失败的 %@ 张" = "Retry %@ Failed Photos";
+"重试失败的 %@ 张" = "Retry Failed Photos (%@)";
 "锐化" = "Sharpening";
 "长边" = "Long edge";
 "长边 %@ px" = "Long Edge %@ px";
@@ -378,9 +378,9 @@
 "核对 DNG 文件保存结果" = "Verify Saved DNG Files";
 "导出到文件…" = "Export to Files…";
 "导出已完成的 DNG 到文件…" = "Export Completed DNGs to Files…";
-"已导出 %@ 个渲染型 DNG" = "%@ Rendered DNG Files Exported";
-"已生成 %@ 个渲染型 DNG" = "%@ Rendered DNG Files Created";
-"已生成 %@ 个渲染型 DNG，未另存到所选位置" = "%@ Rendered DNG Files Created, but Not Saved to the Selected Location";
+"已导出 %@ 个渲染型 DNG" = "Rendered DNG Files Exported: %@";
+"已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
+"已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "DNG 只能保存到文件" = "DNG Can Only Be Saved to Files";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "自动匹配" = "Automatic Matching";

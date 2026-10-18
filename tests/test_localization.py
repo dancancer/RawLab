@@ -196,5 +196,28 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(sorted(keys - catalogs["en"].keys()), [])
 
 
+# ----------------------------------------------------------------------------
+#  数量不能写在复数名词前面：英德法西会出现"1 Photos""1 Fotos"
+#  改写成"名词：数量"或"动作（数量）"，不需要单复数规则
+# ----------------------------------------------------------------------------
+PLURAL_NOUNS = {"en": "photos|files|looks|images", "de": "fotos|dateien|looks|bilder",
+                "fr": "photos|fichiers|looks|images", "es": "fotos|archivos|looks|imágenes"}
+COUNT = r"(?:%(?:\d+\$)?(?:l{0,2}d|@)|\{\d+\})"
+
+
+class CountPhrasingTests(unittest.TestCase):
+    def test_counts_do_not_precede_plural_nouns(self):
+        android = android_catalogs()
+        for language, nouns in PLURAL_NOUNS.items():
+            pattern = re.compile(COUNT + r"(?:\s+[^\s:;,.()]+){0,3}?[\s-]+(?:" + nouns + r")\b", re.I)
+            catalogs = {client: apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
+                        for client in APPLE_CLIENTS}
+            catalogs["RawLabWindows"] = windows_catalog(language)
+            catalogs["RawLabAndroid"] = android[language]
+            found = [(client, value) for client, catalog in catalogs.items()
+                     for value in catalog.values() if pattern.search(value)]
+            self.assertEqual(found, [], language)
+
+
 if __name__ == "__main__":
     unittest.main()
