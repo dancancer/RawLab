@@ -17,6 +17,12 @@ CJK = re.compile(r"[一-鿿]")
 TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
 
 
+def windows_sources():
+    directory = ROOT / "RawLabWindows"
+    return sorted(path for path in directory.rglob("*.cs")
+                  if not {"tests", "bin", "obj"}.intersection(path.relative_to(directory).parts))
+
+
 def apple_catalog(path):
     return json.loads(subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(path)]))
 
@@ -246,7 +252,7 @@ class LocalizationTests(unittest.TestCase):
         # 对配方做 map 时闭包里的 $0 也是配方
         mapped = re.compile(r"[Rr]ecipe\w*\??\.map\b.*\$0\.name\b")
         sources = [*(ROOT / "RawLabMac/Sources").rglob("*.swift"), *(ROOT / "RawLab/RawLab/UI").rglob("*.swift"),
-                   *(ROOT / "RawLabWindows").glob("*.cs")]
+                   *windows_sources()]
         hits = [f"{p.relative_to(ROOT)}:{n}" for p in sources for n, line in enumerate(p.read_text().splitlines(), 1)
                 if raw.search(line) or mapped.search(line)]
         self.assertEqual(hits, [])
@@ -281,7 +287,7 @@ class LocalizationTests(unittest.TestCase):
             files = list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
-        self.assertEqual(untranslated(windows.glob("*.cs"), windows_catalog("en"), "Loc."), [], "RawLabWindows")
+        self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc."), [], "RawLabWindows")
         self.assertEqual([hit for path in windows.glob("*.xaml") for hit in xaml_literals(path)], [], "XAML")
 
     def test_ui_labels_start_with_capital(self):
@@ -331,7 +337,7 @@ class LocalizationTests(unittest.TestCase):
         catalogs = {language: windows_catalog(language) for language in LANGUAGES}
         self.assert_parity(catalogs, lambda s: sorted(re.findall(r"\{\d+(?:[^{}]*)\}", s)))
         windows = ROOT / "RawLabWindows"
-        keys = {json.loads('"' + raw + '"') for source in windows.glob("*.cs")
+        keys = {json.loads('"' + raw + '"') for source in windows_sources()
                 for raw in re.findall(r'Loc\.(?:Text|Format)\("((?:[^"\\]|\\.)*)"', source.read_text())}
         for source in windows.glob("*.xaml"):
             ET.parse(source)
