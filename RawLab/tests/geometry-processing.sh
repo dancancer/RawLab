@@ -37,11 +37,11 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
     "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchExportModels.swift" \
-  "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
-  "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
-  "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
+    "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \
     "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/GeometryProcessingTests.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \

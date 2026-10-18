@@ -10,6 +10,9 @@ extension EditorUITests {
 
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         XCTAssertTrue(ruler.isEnabled)
+        let reset = app.buttons["adjustment.reset"]
+        if reset.isEnabled { reset.tap() }
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
         dragRuler(ruler)
         XCTAssertNotEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
         app.buttons["重置曝光"].tap()

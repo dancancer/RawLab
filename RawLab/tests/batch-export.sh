@@ -10,8 +10,8 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
     "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchExportModels.swift" \
-  "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
-  "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
+    "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
     "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchSettingsSummary.swift" \
     "$ROOT/RawLab/tests/BatchExportTests.swift" \

@@ -30,6 +30,11 @@ git -C "$ROOT" check-ignore -q "$OUT/" || {
 }
 PROCESSOR_ROOT="${RAWLAB_PROCESSOR_SOURCE_ROOT:-$ROOT/RawLab/RawLab/Core/RawProcessing}"
 PROCESSOR_ROOT="$(cd "$PROCESSOR_ROOT" && pwd)"
+PROCESSOR_SOURCES=("$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift"
+                   "$PROCESSOR_ROOT/Sony2FujiProcessor+Lens.swift")
+if [[ -f "$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift" ]]; then
+    PROCESSOR_SOURCES+=("$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift")
+fi
 DEFINES=()
 if [[ -z "${RAWLAB_PROCESSOR_SOURCE_ROOT:-}" ]]; then
     DEFINES+=(-D RAWLAB_RECIPE_CACHE_TESTS)
@@ -64,9 +69,7 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -O -sdk "$
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" \
     "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ExportMetadata.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
-    "$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift" \
-  "$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift" \
-    "$PROCESSOR_ROOT/Sony2FujiProcessor+Lens.swift" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
+    "${PROCESSOR_SOURCES[@]}" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/preview-performance"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
