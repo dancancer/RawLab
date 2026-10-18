@@ -179,7 +179,7 @@ final class EditorUITests: XCTestCase {
         scroll.swipeUp()
         app.segmentedControls["batch.format"].buttons["DNG · Rendered"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Export Size'")).firstMatch.tap()
-        app.buttons["Custom…"].tap()
+        app.buttons["Specify long edge"].tap()
         let longEdge = app.textFields["Long Edge (1–65535 px)"]
         XCTAssertTrue(longEdge.waitForExistence(timeout: 5), app.debugDescription)
         longEdge.tap()
@@ -187,12 +187,12 @@ final class EditorUITests: XCTestCase {
         app.buttons["Back"].tap()
 
         let cases = [
-            ("简体中文", "自动", "手动", "DNG · 渲染型", "RawLab 文件", "查看批量任务", "返回"),
-            ("English", "Auto", "Manual", "DNG · Rendered", "RawLab Files", "View Batch Task", "Back"),
-            ("Deutsch", "Automatisch", "Manuell", "DNG · Entwickelt", "RawLab-Dateien", "Stapelauftrag anzeigen", "Zurück"),
-            ("Français", "Auto", "Manuel", "DNG · Développé", "Fichiers RawLab", "Afficher la tâche par lots", "Retour"),
-            ("日本語", "自動", "手動", "DNG · 現像済み", "RawLabファイル", "一括タスクを表示", "戻る"),
-            ("Español", "Automático", "Manual", "DNG · Revelado", "Archivos RawLab", "Ver tarea por lotes", "Volver")
+            ("简体中文", "自动", "手动", "DNG · 渲染型", "RawLab 文件", "查看批量任务…", "返回"),
+            ("English", "Auto", "Manual", "DNG · Rendered", "RawLab Files", "View Batch Task…", "Back"),
+            ("Deutsch", "Automatisch", "Manuell", "DNG · Entwickelt", "RawLab-Dateien", "Stapel-Export anzeigen…", "Zurück"),
+            ("Français", "Auto", "Manuel", "DNG · Développé", "Fichiers RawLab", "Afficher la tâche par lots…", "Retour"),
+            ("日本語", "自動", "手動", "DNG · 現像済み", "RawLabファイル", "一括書き出しを表示…", "戻る"),
+            ("Español", "Automático", "Manual", "DNG · Revelado", "Archivos RawLab", "Ver tarea por lotes…", "Volver")
         ]
         for c in cases {
             app.buttons["settings.language"].tap()
@@ -218,7 +218,7 @@ final class EditorUITests: XCTestCase {
             app.buttons[c.6].tap()
         }
         app.buttons["editor.export"].tap()
-        app.buttons["Ver tarea por lotes"].tap()
+        app.buttons["Ver tarea por lotes…"].tap()
         app.buttons["batch.export"].tap()
         let save = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].buttons["Save"]
         XCTAssertTrue(save.waitForExistence(timeout: 180), app.debugDescription)
@@ -239,12 +239,12 @@ final class EditorUITests: XCTestCase {
         importPhoto(in: app)
         let names = ["简体中文", "English", "Deutsch", "Français", "日本語", "Español"]
         let copies: [[String]] = [
-            ["语言", "标准显影", "匹配内嵌预览", "传感器基准", "拍摄时", "自定义", "细节优先", "去噪优先", "原始分辨率", "自定义…", "长边 %@ px", "取消", "保存当前照片", "返回", "查看批量任务", "调整来源", "已选 %@ 张照片", "导出尺寸", "已保存 %@ 张到照片图库", "完成", "跟随系统"],
-            ["Language", "Standard Development", "Match Embedded Preview", "Sensor Reference", "As Shot", "Custom", "Detail Priority", "Noise Reduction Priority", "Original Resolution", "Custom…", "Long Edge %@ px", "Cancel", "Save Current Photo", "Back", "View Batch Task", "Adjustment Source", "Photos Selected: %@", "Export Size", "Saved to Photos: %@", "Done", "Follow system"],
-            ["Sprache", "Standardentwicklung", "Eingebettete Vorschau abgleichen", "Sensorreferenz", "Wie aufgenommen", "Benutzerdefiniert", "Detailpriorität", "Rauschunterdrückung priorisieren", "Originalauflösung", "Benutzerdefiniert…", "Lange Kante %@ px", "Abbrechen", "Aktuelles Foto sichern", "Zurück", "Stapelauftrag anzeigen", "Anpassungsquelle", "Ausgewählte Fotos: %@", "Exportgröße", "In Fotos gespeichert: %@", "Fertig", "Systemsprache verwenden"],
-            ["Langue", "Développement standard", "Faire correspondre l’aperçu intégré", "Référence du capteur", "Selon la prise", "Personnalisé", "Priorité aux détails", "Priorité à la réduction du bruit", "Résolution originale", "Personnalisé…", "Bord long %@ px", "Annuler", "Enregistrer la photo actuelle", "Retour", "Afficher la tâche par lots", "Source des réglages", "Photos sélectionnées : %@", "Taille d’exportation", "Enregistrées dans Photos : %@", "Terminé", "Suivre le système"],
-            ["言語", "標準現像", "埋め込みプレビューに一致", "センサー基準", "撮影時", "カスタム", "ディテール優先", "ノイズ低減優先", "元の解像度", "カスタム…", "長辺 %@ px", "キャンセル", "現在の写真を保存", "戻る", "一括タスクを表示", "調整元", "%@枚の写真を選択", "書き出しサイズ", "写真に%@枚保存しました", "完了", "システムに従う"],
-            ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Resolución original", "Personalizado…", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes", "Origen de los ajustes", "Fotos seleccionadas: %@", "Tamaño de exportación", "Guardadas en Fotos: %@", "Listo", "Seguir el sistema"]
+            ["语言", "标准显影", "匹配内嵌预览", "传感器基准", "拍摄时设置", "自定义", "细节优先", "去噪优先", "原始尺寸", "指定长边", "长边 %@ px", "取消", "保存当前照片", "返回", "查看批量任务…", "调整来源", "已选 %@ 张", "导出尺寸", "已保存 %@ 张到照片图库", "完成", "跟随系统"],
+            ["Language", "Standard Development", "Match Embedded Preview", "Sensor Reference", "As-Shot Setting", "Custom", "Detail Priority", "Noise Reduction Priority", "Original size", "Specify long edge", "Long Edge %@ px", "Cancel", "Save Current Photo", "Back", "View Batch Task…", "Adjustment Source", "%@ selected", "Export Size", "Saved to Photos: %@", "Done", "Follow system"],
+            ["Sprache", "Standardentwicklung", "Eingebettete Vorschau abgleichen", "Sensorreferenz", "Einstellung wie aufgenommen", "Benutzerdefiniert", "Detailpriorität", "Rauschunterdrückung priorisieren", "Originalgröße", "Lange Seite festlegen", "Lange Kante %@ px", "Abbrechen", "Aktuelles Foto sichern", "Zurück", "Stapel-Export anzeigen…", "Anpassungsquelle", "%@ ausgewählt", "Exportgröße", "In Fotos gespeichert: %@", "Fertig", "Systemsprache verwenden"],
+            ["Langue", "Développement standard", "Faire correspondre l’aperçu intégré", "Référence du capteur", "Réglage selon la prise", "Personnalisé", "Priorité aux détails", "Priorité à la réduction du bruit", "Taille d’origine", "Spécifier le bord long", "Bord long %@ px", "Annuler", "Enregistrer la photo actuelle", "Retour", "Afficher la tâche par lots…", "Source des réglages", "Sélection : %@", "Taille d’exportation", "Enregistrées dans Photos : %@", "Terminé", "Suivre le système"],
+            ["言語", "標準現像", "埋め込みプレビューに一致", "センサー基準", "撮影時の設定", "カスタム", "ディテール優先", "ノイズ低減優先", "元のサイズ", "長辺を指定", "長辺 %@ px", "キャンセル", "現在の写真を保存", "戻る", "一括書き出しを表示…", "調整元", "%@ 枚を選択", "書き出しサイズ", "写真に%@枚保存しました", "完了", "システムに従う"],
+            ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Ajuste según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Tamaño original", "Especificar borde largo", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes…", "Origen de los ajustes", "Seleccionadas: %@", "Tamaño de exportación", "Guardadas en Fotos: %@", "Listo", "Seguir el sistema"]
         ]
         func tapTool(_ id: String) {
             let button = app.buttons["tool." + id]
@@ -554,7 +554,7 @@ final class EditorUITests: XCTestCase {
         app.buttons["长边 2,048 px"].tap()
         XCTAssertTrue(batchSizePicker.label.contains("长边 2,048 px"))
         batchSizePicker.tap()
-        app.buttons["自定义…"].tap()
+        app.buttons["指定长边"].tap()
         let batchCustom = app.textFields["长边（1–65535 px）"]
         XCTAssertTrue(batchCustom.waitForExistence(timeout: 5), app.debugDescription)
         batchCustom.tap()
@@ -739,7 +739,7 @@ final class EditorUITests: XCTestCase {
         let original = app.buttons["editor.export.confirm"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(original.isEnabled)
-        XCTAssertTrue(picker.label.contains("原始分辨率"))
+        XCTAssertTrue(picker.label.contains("原始尺寸"))
         capture("export-size-original")
 
         picker.tap()
@@ -749,8 +749,8 @@ final class EditorUITests: XCTestCase {
         capture("export-size-2048")
 
         picker.tap()
-        XCTAssertTrue(app.buttons["自定义…"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["自定义…"].tap()
+        XCTAssertTrue(app.buttons["指定长边"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["指定长边"].tap()
         let invalid = app.textFields["长边（1–65535 px）"]
         XCTAssertTrue(invalid.waitForExistence(timeout: 5), app.debugDescription)
         invalid.tap()
@@ -764,7 +764,7 @@ final class EditorUITests: XCTestCase {
         let validPicker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '导出尺寸'")).firstMatch
         let validConfirm = app.buttons["editor.export.confirm"]
         validPicker.tap()
-        app.buttons["自定义…"].tap()
+        app.buttons["指定长边"].tap()
         let valid = app.textFields["长边（1–65535 px）"]
         XCTAssertTrue(valid.waitForExistence(timeout: 5), app.debugDescription)
         valid.tap()
@@ -799,7 +799,7 @@ final class EditorUITests: XCTestCase {
         app.buttons["editor.histogram"].tap()
         capture("photo-film-portrait")
         compare.tap()
-        XCTAssertEqual(compare.value as? String, "调整前")
+        XCTAssertEqual(compare.value as? String, "中性显影")
         compare.tap()
         app.buttons["editor.adjustments"].tap()
         XCTAssertFalse(app.buttons["tool.film"].exists)
