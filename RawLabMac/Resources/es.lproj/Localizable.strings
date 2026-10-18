@@ -90,7 +90,6 @@
 "导出长边必须为 1-65535 像素。" = "El lado largo de exportación debe tener entre 1 y 65535 píxeles.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "El registro de ajuste nativo de la foto de destino se reemplazará sin sobrescribir el RAW original.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará.";
-"小波降噪" = "Reducción de ruido por wavelets";
 "尚未检查更新" = "Aún no se han buscado actualizaciones";
 "尚未选择 RAW" = "No se han seleccionado fotos RAW";
 "展开直方图" = "Expandir histograma";
@@ -203,7 +202,6 @@
 "等待导出" = "En espera de exportación";
 "粗糙度" = "Rugosidad";
 "粗色斑抑制" = "Supresión de artefactos gruesos";
-"粗颗粒降噪" = "Reducción del ruido de grano grueso";
 "细节" = "Detalles";
 "细节优先" = "Prioridad al detalle";
 "继续上次批量任务" = "Continuar con la última tarea por lotes";

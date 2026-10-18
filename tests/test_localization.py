@@ -219,5 +219,14 @@ class CountPhrasingTests(unittest.TestCase):
             self.assertEqual(found, [], language)
 
 
+class BatchSummaryTermTests(unittest.TestCase):
+    # 批量摘要沿用编辑器里的叫法；开关关着写"停用"，"关闭"是关窗口按钮的词，英文会显示成 Close
+    def test_batch_summaries_use_editor_terms(self):
+        for path in ("RawLabMac/Sources/BatchExportView.swift", "RawLabWindows/BatchExportWindow.xaml.cs"):
+            text = (ROOT / path).read_text()
+            self.assertEqual([term for term in ("小波降噪", "粗颗粒降噪") if term in text], [], path)
+            self.assertEqual(re.findall(r'(?:Loc\.Text|L10n\.text)\("开启"\) : (?:Loc\.Text|L10n\.text)\("关闭"\)|_ => Loc\.Text\("关闭"\)', text), [], path)
+
+
 if __name__ == "__main__":
     unittest.main()

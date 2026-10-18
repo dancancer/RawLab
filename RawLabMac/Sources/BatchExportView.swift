@@ -125,10 +125,10 @@ struct BatchExportView: View {
                                  ? L10n.text("按每张照片") : spec.display(model.job.settings[keyPath: spec.keyPath]))
                     }
                     if let denoise = model.job.settings.waveletNoiseReduction {
-                        valueRow(L10n.text("小波降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))
+                        valueRow(L10n.text("降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))
                         valueRow(L10n.text("亮度降噪"), String(format: "%.0f", denoise.luma))
                         valueRow(L10n.text("色彩降噪"), String(format: "%.0f", denoise.chroma))
-                        valueRow(L10n.text("粗颗粒降噪"), String(format: "%.0f", denoise.coarse))
+                        valueRow(L10n.text("粗色斑抑制"), String(format: "%.0f", denoise.coarse))
                     }
                     let lens = model.job.settings.lensSettings
                     valueRow(L10n.text("镜头匹配"), lens.mode == .automatic ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))" : L10n.text("手动"))
