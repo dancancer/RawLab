@@ -72,7 +72,7 @@ struct EditorCropOverlay: View {
                         .frame(width: frame.width - 44, height: frame.height - 44)
                         .position(x: frame.midX, y: frame.midY)
                         .gesture(drag(.move, canvas: canvas))
-                        .accessibilityLabel(L10n.text("移动裁切"))
+                        .accessibilityLabel(L10n.text("裁切选区"))
                         .accessibilityIdentifier("geometry.crop.move")
                 }
                 ForEach(handles(for: frame), id: \.self) { handle in
@@ -125,11 +125,11 @@ struct EditorCropOverlay: View {
 
     private func handleTitle(_ handle: CropHandle) -> String {
         switch handle {
-        case .topLeft: return L10n.text("左上角")
-        case .topRight: return L10n.text("右上角")
-        case .bottomLeft: return L10n.text("左下角")
-        case .bottomRight: return L10n.text("右下角")
-        case .move: return L10n.text("移动裁切")
+        case .topLeft: return L10n.text("裁切左上角")
+        case .topRight: return L10n.text("裁切右上角")
+        case .bottomLeft: return L10n.text("裁切左下角")
+        case .bottomRight: return L10n.text("裁切右下角")
+        case .move: return L10n.text("裁切选区")
         }
     }
 

@@ -39,9 +39,9 @@ extension ContentView {
                 Image(systemName: "circle.lefthalf.filled")
                     .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
             }
-            .accessibilityLabel(L10n.text("前后对比"))
-            .accessibilityValue(showingBefore ? L10n.text("调整前") : L10n.text("调整后"))
-            .help(L10n.text("切换调整前后"))
+            .accessibilityLabel(L10n.text("对比"))
+            .accessibilityValue(showingBefore ? L10n.text("中性显影") : L10n.text("调整后"))
+            .help(L10n.text("中性显影与调整后对比"))
             .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.compare")
             .opacity(rulerFocusOpacity)
@@ -75,13 +75,13 @@ extension ContentView {
                         .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
                         .accessibilityIdentifier("editor.batchExport")
                 } else {
-                    Button(L10n.text("查看批量任务")) { showingBatchExport = true }
+                    Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
                 }
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }
             .accessibilityLabel(L10n.text("导出"))
-            .help(L10n.text("导出照片"))
+            .help(L10n.text("导出"))
             .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
             .accessibilityIdentifier("editor.export")
             .opacity(rulerFocusOpacity)
@@ -94,7 +94,7 @@ extension ContentView {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
                     ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
-                                  label: showingBefore ? L10n.text("调整前的照片") : L10n.text("调整后的照片"),
+                                  label: showingBefore ? L10n.text("中性显影") : L10n.text("调整后"),
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
                         .id(viewModel.basePreviewImage)
                         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -160,7 +160,7 @@ extension ContentView {
             }
             .overlay(alignment: .bottomLeading) {
                 if showingBefore && viewModel.hasImage {
-                    Text(L10n.text("调整前")).font(.caption)
+                    Text(L10n.text("中性显影")).font(.caption)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
                         .padding(12)
@@ -245,7 +245,7 @@ extension ContentView {
             Button {
                 viewModel.retrySave(settings: settings)
             } label: {
-                editSaveLabel(L10n.text("调整未保存，点击重试"), symbol: "exclamationmark.triangle.fill")
+                editSaveLabel(L10n.text("调整未保存 · 重试"), symbol: "exclamationmark.triangle.fill")
                     .frame(minWidth: 44, minHeight: 44)
             }
             .foregroundStyle(.orange)

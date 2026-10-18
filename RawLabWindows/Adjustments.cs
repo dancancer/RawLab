@@ -186,7 +186,7 @@ public sealed class Adjustments
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))
-            throw new ArgumentOutOfRangeException(nameof(longEdge), Loc.Text("导出长边必须在 1 到 65535 像素之间。"));
+            throw new ArgumentOutOfRangeException(nameof(longEdge), Loc.Text("导出长边必须为 1-65535 像素。"));
         var limitedFinal = output != null && longEdge.HasValue;
         var scale = MasterRecipeID == null ? 1 : this[Parameter.Strength] / 100;
         var tintOffset = MasterRecipeID == null ? 0 : this[Parameter.Tint] * scale;

@@ -39,15 +39,15 @@ struct IOSGeometryControls: View {
                                identifier: "geometry.perspectiveVertical")
             aspectMenu
                 .disabled(canvasSize.width <= 0 || canvasSize.height <= 0)
-            cropControl("裁切左侧", key: \.cropX, identifier: "geometry.cropX")
-            cropControl("裁切顶部", key: \.cropY, identifier: "geometry.cropY")
+            cropControl("裁切左边", key: \.cropX, identifier: "geometry.cropX")
+            cropControl("裁切上边", key: \.cropY, identifier: "geometry.cropY")
             cropControl("裁切宽度", key: \.cropWidth, identifier: "geometry.cropWidth")
             cropControl("裁切高度", key: \.cropHeight, identifier: "geometry.cropHeight")
             if settings.cropX > 0 || settings.cropY > 0 {
                 Text(L10n.text("此默认值不可达，请重置裁切组。"))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Text(L10n.text("裁切百分比基于旋转、翻转和拉直后的画面。"))
+            Text(L10n.text("裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -66,7 +66,7 @@ struct IOSGeometryControls: View {
             } label: {
                 Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
             }
-            .accessibilityLabel(L10n.text("重置几何调整"))
+            .accessibilityLabel(L10n.text("重置本工具"))
             .accessibilityIdentifier("geometry.reset")
             .disabled(settings.isIdentity)
         }
@@ -88,7 +88,7 @@ struct IOSGeometryControls: View {
             settings.quarterTurns = (settings.quarterTurns + (clockwise ? 1 : 3)) % 4
         } label: {
             Label {
-                Text(L10n.text(clockwise ? "顺时针 90°" : "逆时针 90°"))
+                Text(L10n.text(clockwise ? "向右旋转 90°" : "向左旋转 90°"))
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: clockwise ? "rotate.right" : "rotate.left")
@@ -174,7 +174,7 @@ struct IOSGeometryControls: View {
             }
         } label: {
             HStack {
-                Text(L10n.text("画幅比例"))
+                Text(L10n.text("画面比例"))
                 Spacer()
                 Text(L10n.text(activeAspectPreset.titleKey))
                 Image(systemName: "chevron.up.chevron.down")

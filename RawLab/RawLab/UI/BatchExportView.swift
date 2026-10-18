@@ -180,7 +180,7 @@ struct BatchExportView: View {
             }
             // 空任务只说"尚未选择照片"，有照片时给出张数
             Text(model.job.targets.isEmpty ? L10n.text("尚未选择照片")
-                 : L10n.format("已选 %@ 张照片", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
+                 : L10n.format("已选 %@ 张", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
                 .padding(.horizontal, 20).padding(.bottom, 16)
         }
     }

@@ -441,7 +441,7 @@ extension ContentView {
                 batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
                 batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
             }
-        } catch { viewModel.statusMessage = L10n.format("无法恢复批量任务：%@", String(describing: error.localizedDescription)) }
+        } catch { viewModel.statusMessage = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
     }
 
     func loadPhotoSource(from item: PhotosPickerItem) async throws -> PhotoImportSource {

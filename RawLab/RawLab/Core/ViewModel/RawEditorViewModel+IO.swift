@@ -191,7 +191,7 @@ extension RawEditorViewModel {
                         if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                         onSettingsRestored?(restoredSettings)
                         if self.hasImage && adjustedImage != nil { onImported?() }
-                        if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。") }
+                        if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                         if adjustedImage == nil {
                             self.statusMessage = L10n.text("Preview render failed.")
                         }
@@ -243,7 +243,7 @@ extension RawEditorViewModel {
                         if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                         onSettingsRestored?(restoredSettings)
                         if self.hasImage && adjustedImage != nil { onImported?() }
-                        if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。") }
+                        if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                         if adjustedImage == nil {
                             self.statusMessage = L10n.text("Preview render failed.")
                         }

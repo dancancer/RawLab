@@ -145,7 +145,7 @@ struct Sony2FujiProcessor {
             case .histogramFailed(let message):
                 return L10n.format("Histogram failed: %@", String(describing: message))
             case .invalidExportSize:
-                return L10n.text("导出长边必须在 1 到 65535 像素之间。")
+                return L10n.text("导出长边必须为 1-65535 像素。")
             }
         }
     }

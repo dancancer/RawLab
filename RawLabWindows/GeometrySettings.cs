@@ -44,7 +44,7 @@ public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double
             !double.IsFinite(StraightenDegrees) || StraightenDegrees is < -45 or > 45 ||
             !double.IsFinite(PerspectiveHorizontal) || PerspectiveHorizontal is < -1 or > 1 ||
             !double.IsFinite(PerspectiveVertical) || PerspectiveVertical is < -1 or > 1)
-            throw new ArgumentOutOfRangeException(nameof(GeometrySettings), Loc.Text("几何调整无效。"));
+            throw new ArgumentOutOfRangeException(nameof(GeometrySettings), Loc.Text("无效的几何参数"));
         return new() { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.GeometryConfig>(),
             CropX = (float)CropX, CropY = (float)CropY, CropWidth = (float)CropWidth, CropHeight = (float)CropHeight,
             QuarterTurns = QuarterTurns, FlipHorizontal = FlipHorizontal ? 1 : 0,

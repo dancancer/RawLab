@@ -17,7 +17,7 @@ internal sealed class LongEdgeDialog : Window
         Owner=owner; WindowStartupLocation=WindowStartupLocation.CenterOwner;
         Title=Loc.Text("自定义导出尺寸"); SizeToContent=SizeToContent.WidthAndHeight; MinWidth=320; ResizeMode=ResizeMode.NoResize;
         valueBox=new TextBox { Width=120, Text= current?.ToString() ?? "", Margin=new Thickness(0,0,8,0) };
-        AutomationProperties.SetName(valueBox,Loc.Text("长边像素"));
+        AutomationProperties.SetName(valueBox,Loc.Text("导出长边像素"));
         errorText=new TextBlock { Margin=new Thickness(0,8,0,0), TextWrapping=TextWrapping.Wrap };
         errorText.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");
         var accept=new Button { Content=Loc.Text("确定"), IsDefault=true, MinWidth=72 };
