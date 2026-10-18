@@ -51,6 +51,25 @@ typedef enum sony2fuji_look_format {
     SONY2FUJI_LOOK_RLOOK = 2
 } sony2fuji_look_format;
 
+typedef struct sony2fuji_blob {
+    void* data;
+    size_t size_bytes;
+} sony2fuji_blob;
+
+typedef enum sony2fuji_dcp_error {
+    SONY2FUJI_DCP_ERROR_NONE = 0,
+    SONY2FUJI_DCP_ERROR_MALFORMED = 1,
+    SONY2FUJI_DCP_ERROR_TOO_LARGE = 2,
+    SONY2FUJI_DCP_ERROR_INVALID_CALIBRATION = 3,
+    SONY2FUJI_DCP_ERROR_MISSING_TONE_CURVE = 4,
+    SONY2FUJI_DCP_ERROR_AUTOMATIC_BLACK = 5,
+    SONY2FUJI_DCP_ERROR_TRIPLE_ILLUMINANT = 6,
+    SONY2FUJI_DCP_ERROR_UNSUPPORTED_STAGES = 7,
+    SONY2FUJI_DCP_ERROR_INVALID_TABLE = 8,
+    SONY2FUJI_DCP_ERROR_INVALID_TONE_CURVE = 9,
+    SONY2FUJI_DCP_ERROR_INVALID_EXPOSURE = 10
+} sony2fuji_dcp_error;
+
 typedef enum sony2fuji_output_format {
     SONY2FUJI_OUTPUT_JPEG = 0,
     SONY2FUJI_OUTPUT_PNG = 1,
@@ -317,6 +336,16 @@ sony2fuji_status sony2fuji_session_get_lens_report(sony2fuji_session* session, s
 sony2fuji_status sony2fuji_validate_look(
     const char* path, sony2fuji_look_format* format, uint32_t* format_version
 );
+
+// Compile a bounded DCP byte buffer into the native RLOOK format. The output
+// blob is owned by the caller and must be released with sony2fuji_release_blob.
+// A zero-initialized or previously returned blob is accepted; failures clear it.
+sony2fuji_status sony2fuji_compile_dcp(
+    const void* data, size_t size_bytes, const char* source_name,
+    sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason
+);
+
+void sony2fuji_release_blob(sony2fuji_blob* blob);
 
 // Reduced RAW processing is allowed only for PREVIEW + BUFFER requests.
 // FINAL requests and every file export ignore this flag.

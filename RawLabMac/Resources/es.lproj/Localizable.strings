@@ -21,7 +21,7 @@
 "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。" = "Los datos, las dimensiones o la codificación de HueSatMap/LookTable del DCP no son compatibles.";
 "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。" = "Al DCP le falta ProfileToneCurve; no se puede inferir automáticamente la curva predeterminada de Adobe. Especifique primero una curva con la herramienta de preparación.";
 "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。" = "Al DCP le falta una ColorMatrix/ForwardMatrix D65 única y válida, por lo que no se puede convertir.";
-"DCP 要求自动黑位处理，Mac 自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "El DCP requiere un procesamiento automático del nivel de negros, que la conversión en Mac aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación.";
+"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación.";
 "DNG · 渲染型" = "DNG · Revelado";
 "DNG 只能保存到文件" = "El DNG solo se puede guardar en Archivos";
 "DNG 已执行内嵌 Stage3 处理，未叠加校正" = "El procesamiento DNG Stage 3 integrado ya se aplicó; se omitió la corrección adicional";

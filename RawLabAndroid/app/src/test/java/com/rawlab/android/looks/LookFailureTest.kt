@@ -29,4 +29,17 @@ class LookFailureTest {
             assertSame(cause, error)
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun dcpFailureIsNotReclassifiedAsGenericInvalidLook() {
+        val root = Files.createTempDirectory("rawlab-look-dcp-typed").toFile()
+        val failure = DcpCompilationException(DcpFailureReason.INVALID_CALIBRATION)
+        try {
+            val error = assertThrows(DcpCompilationException::class.java) {
+                LookLibrary(root, dcpCompiler = DcpCompiler { _, _ -> throw failure })
+                    .importLook("dcp".byteInputStream(), "camera.dcp")
+            }
+            assertSame(failure, error)
+            assertNotEquals(InvalidLookException::class.java, error.javaClass)
+        } finally { root.deleteRecursively() }
+    }
 }

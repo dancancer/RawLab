@@ -83,6 +83,9 @@ val prepareAssets by tasks.registering(Sync::class) {
     from(repo.resolve("lutools/third_party/lensfun")) { into("licenses/lensfun"); include("*.txt", "*.md") }
     from(repo.resolve("lutools/third_party/lensfun/dependency-licenses")) { into("licenses/lensfun"); include("*.txt") }
     from(repo.resolve("lutools/third_party")) { into("licenses"); include("*LICENSE*") }
+    from(repo.resolve("lutools/third_party/nlohmann/LICENSE.MIT")) {
+        into("licenses"); rename { "nlohmann-JSON-MIT.txt" }
+    }
     from(repo.resolve("lutools/third_party/dng-sdk")) {
         into("licenses")
         include("*.txt")

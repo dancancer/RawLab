@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
     private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration);
     private readonly Library library=new();
+    private LookLibrary? lookLibrary;
+    private Exception? lookLibraryLoadError;
     private readonly Viewport viewport=new();
     private readonly List<Film> films=[];
     private readonly LatestWork<Work> scheduler=new();
@@ -67,10 +69,14 @@ public partial class MainWindow : Window
     private bool startupReported, analyticsDisposed;
     private long photoImportReportedRevision;
     public MainWindow() : this(new UsageAnalytics()) { }
-    public MainWindow(UsageAnalytics usageAnalytics)
+    public MainWindow(UsageAnalytics usageAnalytics) : this(usageAnalytics,null) { }
+    internal MainWindow(string lookLibraryDirectory) : this(new UsageAnalytics(),lookLibraryDirectory) { }
+    private MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory)
     {
         this.usageAnalytics = usageAnalytics;
         InitializeComponent();
+        if (!LookLibrary.TryLoad(lookLibraryDirectory, out lookLibrary, out lookLibraryLoadError))
+            lookLibrary = null;
         AutomationProperties.SetAutomationId(this,"MainWindow");
         foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareOff,CompareSide,CompareSwipe,
             MenuCompareOff,MenuCompareSide,MenuCompareSwipe,NeutralCanvas,ResultCanvas,ExportButton,ExportPng,SaveState,Status,Files})
@@ -125,6 +131,8 @@ public partial class MainWindow : Window
             films.Add(new(name,path,icon != null ? Path.Combine(AppContext.BaseDirectory,"FilmIcons",icon+".png") : null,
                 FilmGrouping.ForBuiltIn(Path.GetFileName(path))));
         }
+        foreach(var look in lookLibrary?.Looks ?? [])
+            films.Add(new(look.Name,look.Path,null));
         lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
         BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
@@ -161,6 +169,8 @@ public partial class MainWindow : Window
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
+            if (lookLibraryLoadError != null)
+                SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
             if(input!=null)OpenFile(input);
             await updates.CheckAsync(false, updateCancellation.Token);

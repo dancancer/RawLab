@@ -8,6 +8,7 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 
 | Component | Version | Source | Notices |
 | --- | --- | --- | --- |
+| JSON for Modern C++ | Vendored header | https://github.com/nlohmann/json | nlohmann-JSON-MIT.txt |
 | LibRaw | 0.22.2 | https://github.com/LibRaw/LibRaw/tree/0.22.2 | LibRaw-LICENSE.CDDL, LibRaw-LICENSE.LGPL, LibRaw-COPYRIGHT |
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
 | libjpeg-turbo | 3.1.3 | https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3 | libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg |

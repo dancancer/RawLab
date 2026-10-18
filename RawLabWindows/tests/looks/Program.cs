@@ -19,3 +19,4 @@ Check(ordered.Where(item => item.StartsGroup).Select(item => item.Value.Id).Sequ
 Check(ordered.Select(item => item.Value).ToHashSet().SetEquals(input), "Grouping preserves original identities");
 Check(FilmGrouping.Arrange(input.Take(1), item => item.Neutral, item => item.Group).All(item => !item.StartsGroup), "A single group has no leading separator");
 Check(FilmGrouping.Arrange(input.Take(0), item => item.Neutral, item => item.Group).Count == 0, "Empty lists have no phantom separators");
+LookImportChecks.Run();

@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cmp "$ROOT/Shared/master-recipes.json" "${1:-$ROOT/build/RawLab Mac.app}/Contents/Resources/master-recipes.json"
 APP="${1:-$ROOT/build/RawLab Mac.app}"
+cmp "$ROOT/lutools/third_party/nlohmann/LICENSE.MIT" "$APP/Contents/Resources/Licenses/nlohmann-JSON-MIT.txt"
 cmp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 for asset in "$ROOT"/Shared/BundledLooks/*.cube; do
     cmp "$asset" "$APP/Contents/Resources/LUTs/$(basename "$asset")"

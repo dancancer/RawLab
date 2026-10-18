@@ -76,6 +76,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     done
     cp "$ROOT/third_party/rawspeed-camera-calibration.inc" "$framework/Licenses/"
     cp "$ROOT/third_party/Adobe-DNG-SDK-LICENSE.txt" "$framework/Licenses/"
+    cp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$framework/Licenses/nlohmann-JSON-MIT.txt"
     cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/platform/ios/ThirdPartyNotices.md" "$framework/Licenses/"
     cp "$core/licenses/OpenCV-LICENSE" "$core/licenses/wavelib-COPYRIGHT" "$framework/Licenses/"

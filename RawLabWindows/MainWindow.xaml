@@ -7,6 +7,7 @@
       <MenuItem Header="{DynamicResource '文件(_F)'}">
         <MenuItem Header="{DynamicResource '打开 RAW'}" InputGestureText="Ctrl+O" Click="OpenClicked"/>
         <MenuItem Header="{DynamicResource '添加目录'}" Click="AddFolderClicked"/>
+        <MenuItem x:Name="MenuImportLook" Header="{DynamicResource '导入外观'}" Click="ImportClicked"/>
         <Separator/><MenuItem x:Name="MenuExport" Header="{DynamicResource '导出'}" Click="MainExportClicked" IsEnabled="False"/>
         <MenuItem x:Name="MenuBatch" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/>
         <MenuItem x:Name="MenuViewBatch" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>

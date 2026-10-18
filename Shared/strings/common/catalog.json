@@ -39,6 +39,86 @@
     "ja": "4:3",
     "zh-Hans": "4:3"
   },
+  "DCP 文件损坏，或使用了不支持的 TIFF 结构。": {
+    "de": "Die DCP-Datei ist beschädigt oder verwendet eine nicht unterstützte TIFF-Struktur.",
+    "en": "The DCP file is damaged or uses an unsupported TIFF structure.",
+    "es": "El archivo DCP está dañado o utiliza una estructura TIFF no compatible.",
+    "fr": "Le fichier DCP est endommagé ou utilise une structure TIFF non prise en charge.",
+    "ja": "DCP ファイルが破損しているか、サポートされていない TIFF 構造を使用しています。",
+    "zh-Hans": "DCP 文件损坏，或使用了不支持的 TIFF 结构。"
+  },
+  "DCP 文件或外观数据超过安全大小限制。": {
+    "de": "Die DCP-Datei oder die Look-Daten überschreiten die sichere Größenbegrenzung.",
+    "en": "The DCP file or look data exceeds the safe size limit.",
+    "es": "El archivo DCP o los datos del look superan el límite de tamaño seguro.",
+    "fr": "Le fichier DCP ou les données du look dépassent la limite de taille sûre.",
+    "ja": "DCP ファイルまたはルックデータが安全なサイズ制限を超えています。",
+    "zh-Hans": "DCP 文件或外观数据超过安全大小限制。"
+  },
+  "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。": {
+    "de": "Dem DCP fehlt eine eindeutige, gültige D65 ColorMatrix/ForwardMatrix; die Konvertierung ist nicht möglich.",
+    "en": "The DCP lacks a unique, valid D65 ColorMatrix/ForwardMatrix and cannot be converted.",
+    "es": "Al DCP le falta una ColorMatrix/ForwardMatrix D65 única y válida, por lo que no se puede convertir.",
+    "fr": "Le DCP ne contient pas de ColorMatrix/ForwardMatrix D65 unique et valide ; conversion impossible.",
+    "ja": "DCP に一意で有効な D65 ColorMatrix/ForwardMatrix がないため、変換できません。",
+    "zh-Hans": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"
+  },
+  "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。": {
+    "de": "Dem DCP fehlt ProfileToneCurve; die Adobe-Standardkurve kann nicht automatisch abgeleitet werden. Geben Sie zuerst mit dem Vorbereitungswerkzeug eine Kurve an.",
+    "en": "The DCP is missing ProfileToneCurve; Adobe's default curve cannot be inferred automatically. Specify a curve explicitly with the preparation tool first.",
+    "es": "Al DCP le falta ProfileToneCurve; no se puede inferir automáticamente la curva predeterminada de Adobe. Especifique primero una curva con la herramienta de preparación.",
+    "fr": "Le DCP ne contient pas ProfileToneCurve ; la courbe Adobe par défaut ne peut pas être déduite automatiquement. Spécifiez d’abord une courbe avec l’outil de préparation.",
+    "ja": "DCP に ProfileToneCurve がないため、Adobe のデフォルト曲線を自動推定できません。準備ツールで曲線を明示的に指定してください。",
+    "zh-Hans": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"
+  },
+  "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。": {
+    "de": "Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie.",
+    "en": "The DCP requires automatic black-level processing, which is not yet supported by this conversion. Select a black-level policy explicitly with the preparation tool first.",
+    "es": "El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación.",
+    "fr": "Le DCP nécessite un traitement automatique du niveau de noir, que cette conversion ne prend pas encore en charge. Sélectionnez d’abord explicitement une stratégie de niveau de noir avec l’outil de préparation.",
+    "ja": "DCP には自動ブラックレベル処理が必要ですが、この変換はまだ対応していません。準備ツールでブラックレベルの方針を明示的に選択してください。",
+    "zh-Hans": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"
+  },
+  "DCP 使用三光源 HueSatMap，暂不支持转换。": {
+    "de": "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.",
+    "en": "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.",
+    "es": "El DCP utiliza un HueSatMap de tres iluminantes, que aún no se admite para la conversión.",
+    "fr": "Le DCP utilise une HueSatMap à trois illuminants, qui n’est pas encore prise en charge pour la conversion.",
+    "ja": "DCP は 3 光源の HueSatMap を使用しており、変換にはまだ対応していません。",
+    "zh-Hans": "DCP 使用三光源 HueSatMap，暂不支持转换。"
+  },
+  "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。": {
+    "de": "Das DCP enthält nicht unterstützte räumliche Verstärkungen, HDR- oder RGB-Tabellenverarbeitung und kann nicht konvertiert werden.",
+    "en": "The DCP contains unsupported spatial gains, HDR, or RGB-table processing and cannot be converted.",
+    "es": "El DCP contiene ganancias espaciales, procesamiento HDR o tablas RGB no compatibles y no se puede convertir.",
+    "fr": "Le DCP contient des gains spatiaux, un traitement HDR ou des tables RGB non pris en charge et ne peut pas être converti.",
+    "ja": "DCP に未対応の空間ゲイン、HDR、または RGB テーブル処理が含まれているため、変換できません。",
+    "zh-Hans": "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。"
+  },
+  "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。": {
+    "de": "Die HueSatMap-/LookTable-Daten, Dimensionen oder Kodierung des DCP werden nicht unterstützt.",
+    "en": "The DCP HueSatMap/LookTable data, dimensions, or encoding are unsupported.",
+    "es": "Los datos, las dimensiones o la codificación de HueSatMap/LookTable del DCP no son compatibles.",
+    "fr": "Les données, dimensions ou l’encodage HueSatMap/LookTable du DCP ne sont pas pris en charge.",
+    "ja": "DCP の HueSatMap/LookTable データ、次元、またはエンコーディングには対応していません。",
+    "zh-Hans": "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。"
+  },
+  "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。": {
+    "de": "Die DCP-Kurve ist ungültig; erforderlich sind 2 bis 8192 endliche Punkte im Bereich 0 bis 1 mit aufsteigenden x-Koordinaten.",
+    "en": "The DCP tone curve is invalid; it needs 2 to 8192 finite points in the 0 to 1 range with increasing x-coordinates.",
+    "es": "La curva del DCP no es válida; necesita de 2 a 8192 puntos finitos en el rango de 0 a 1 con coordenadas x crecientes.",
+    "fr": "La courbe DCP n’est pas valide ; elle doit contenir 2 à 8192 points finis dans l’intervalle 0 à 1, avec des coordonnées x croissantes.",
+    "ja": "DCP 曲線が無効です。0 から 1 の範囲にあり、x 座標が増加する有限の点を 2～8192 個指定してください。",
+    "zh-Hans": "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。"
+  },
+  "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。": {
+    "de": "Der DCP-Belichtungsversatz ist ungültig; erforderlich ist ein endlicher Wert von -16 bis +16 EV.",
+    "en": "The DCP exposure offset is invalid; it must be a finite value from -16 to +16 EV.",
+    "es": "El desplazamiento de exposición del DCP no es válido; debe ser un valor finito de -16 a +16 EV.",
+    "fr": "Le décalage d’exposition du DCP n’est pas valide ; il doit s’agir d’une valeur finie de -16 à +16 EV.",
+    "ja": "DCP の露出オフセットが無効です。-16～+16 EV の有限値が必要です。",
+    "zh-Hans": "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。"
+  },
   "DNG · 渲染型": {
     "de": "DNG · Entwickelt",
     "en": "DNG · Rendered",
@@ -639,6 +719,14 @@
     "ja": "処理に失敗しました: {0}",
     "zh-Hans": "处理失败：{0}"
   },
+  "外观名称不能为空或包含控制字符。": {
+    "de": "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.",
+    "en": "The look name cannot be empty or contain control characters.",
+    "es": "El nombre del look no puede estar vacío ni contener caracteres de control.",
+    "fr": "Le nom du look ne peut pas être vide ni contenir de caractères de contrôle.",
+    "ja": "ルック名は空にできず、制御文字も使えません。",
+    "zh-Hans": "外观名称不能为空或包含控制字符。"
+  },
   "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。": {
     "de": "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.",
     "en": "The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required.",
@@ -694,6 +782,14 @@
     "fr": "Importer un look",
     "ja": "ルックを読み込む",
     "zh-Hans": "导入外观"
+  },
+  "导入外观…": {
+    "de": "Look importieren…",
+    "en": "Import Look…",
+    "es": "Importar look…",
+    "fr": "Importer un look…",
+    "ja": "ルックを読み込む…",
+    "zh-Hans": "导入外观…"
   },
   "导入结果": {
     "de": "Importergebnis",
@@ -1407,6 +1503,22 @@
     "ja": "前回の一括書き出しを読み込めません: {0}",
     "zh-Hans": "无法读取上次批量任务：{0}"
   },
+  "无法读取外观文件。": {
+    "de": "Die Look-Datei konnte nicht gelesen werden.",
+    "en": "Unable to read the look file.",
+    "es": "No se puede leer el archivo de look.",
+    "fr": "Impossible de lire le fichier de look.",
+    "ja": "ルックファイルを読み込めません。",
+    "zh-Hans": "无法读取外观文件。"
+  },
+  "无法读取已保存的外观库，原有记录未被覆盖。": {
+    "de": "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.",
+    "en": "The saved look library cannot be read; the original records were not overwritten.",
+    "es": "No se puede leer la biblioteca de looks guardada; los registros originales no se sobrescribieron.",
+    "fr": "La bibliothèque de looks enregistrée est illisible ; les enregistrements d’origine n’ont pas été écrasés.",
+    "ja": "保存済みのルックライブラリを読み込めません。元の記録は上書きされていません。",
+    "zh-Hans": "无法读取已保存的外观库，原有记录未被覆盖。"
+  },
   "无法读取或写入文件，请检查路径和访问权限。": {
     "de": "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.",
     "en": "Unable to read or write the file. Check the path and access permissions.",
@@ -1887,6 +1999,14 @@
     "ja": "このRAWの撮影時ホワイトバランスを解析できないため、レシピの色合いを適用できません。",
     "zh-Hans": "此 RAW 无法解析拍摄白平衡，不能应用配方色调。"
   },
+  "此外观已不在外观库中。": {
+    "de": "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.",
+    "en": "This look is no longer in the look library.",
+    "es": "Este look ya no está en la biblioteca de looks.",
+    "fr": "Ce look n'est plus dans la bibliothèque de looks.",
+    "ja": "このルックはルック ライブラリに存在しません。",
+    "zh-Hans": "此外观已不在外观库中。"
+  },
   "此目录没有照片。": {
     "de": "Dieser Ordner enthält keine Fotos.",
     "en": "This folder contains no photos.",
@@ -1902,6 +2022,14 @@
     "fr": "Correction optique non prise en charge pour cette image",
     "ja": "この入力ではレンズ補正に対応していません",
     "zh-Hans": "此输入不支持镜头校正"
+  },
+  "用户外观 · {0}": {
+    "de": "Eigener Look · {0}",
+    "en": "User Look · {0}",
+    "es": "Look personal · {0}",
+    "fr": "Look personnel · {0}",
+    "ja": "ユーザールック · {0}",
+    "zh-Hans": "用户外观 · {0}"
   },
   "此镜头没有所选校正的标定数据": {
     "de": "Keine Kalibrierungsdaten für die gewählten Korrekturen",

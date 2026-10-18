@@ -15,6 +15,8 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
+    private Button? importLookButton;
+
     private void AboutClicked(object sender, RoutedEventArgs e)
     {
         if (aboutWindow == null)
@@ -74,7 +76,7 @@ public partial class MainWindow
     private void GeometryCategoryClicked(object sender,RoutedEventArgs e)=>BeginTransform(TransformTool.Geometry);
     private void BuildFilms()
     {
-        FilmStrip.Children.Clear(); filmButtons.Clear();
+        FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=null;
         foreach(var item in FilmGrouping.Arrange(films,film=>film.Path==null,film=>film.Group))
         {
             var film=item.Value;
@@ -108,8 +110,9 @@ public partial class MainWindow
         importContent.Children.Add(new EditorIcon{Kind="Add",Width=26,Height=64});
         var importCaption=new TextBlock{Text=Loc.Text("导入外观"),MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
         importCaption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");importContent.Children.Add(importCaption);
-        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip=Loc.Text("导入兼容 CUBE 或 RLOOK，可选择多个文件")};
-        AutomationProperties.SetName(importButton,Loc.Text("导入外观"));importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
+        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip=Loc.Text("导入兼容 CUBE、RLOOK 或 DCP，可选择多个文件")};
+        AutomationProperties.SetName(importButton,Loc.Text("导入外观"));importButton.IsEnabled=!exporting;importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
+        importLookButton=importButton;
     }
     private void RefreshControls()
     {
@@ -178,7 +181,9 @@ public partial class MainWindow
             DenoiseCategoryRing.Selected=choosingDenoise;
             DenoiseCategoryRing.Progress=settings.Denoise.Enabled ? 1 : 0;DenoiseCategoryRing.InvalidateVisual();
             FilmCategory.Tag=choosingFilm ? "selected" : null;
+            FilmCategory.IsEnabled=!exporting;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
+            if(importLookButton!=null)importLookButton.IsEnabled=!exporting;
             foreach(var (tool,controls) in effectToolButtons)
             {
                 var selected=choosingPhotoEffects && selectedEffect==tool;
@@ -228,6 +233,7 @@ public partial class MainWindow
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
         MenuExport.IsEnabled=ExportJpeg.IsEnabled;MenuBatch.IsEnabled=BatchExportMenu.IsEnabled;
         ApplyDraftButton.IsEnabled=CanApplyTransform;
+        MenuImportLook.IsEnabled=!exporting;
         HistogramSurface.Visibility=result!=null ? Visibility.Visible : Visibility.Collapsed;
         RefreshStateToolTips();
         CompareButton.IsEnabled=ClippingButton.IsEnabled=InfoButton.IsEnabled=AdjustToggleButton.IsEnabled=file!=null && !exporting;

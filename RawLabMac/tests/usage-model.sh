@@ -18,7 +18,7 @@ swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX
   "$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift" \
   "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" \
   "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift" \
-  "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/RawLabMac/Sources/Library/DCPCompiler.swift" "$ROOT/RawLabMac/Sources/Library/LookLibrary.swift" \
+  "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
   "$ROOT/RawLabMac/tests/UsageModelTests.swift" "$BUILD/libsony2fuji_core.a" \
   $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
