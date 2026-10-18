@@ -94,7 +94,12 @@ final class ReleaseDetailUITests: XCTestCase {
         app.buttons["Specify long edge"].tap()
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(field.label, "Long Edge (1–65535 px)")
+        XCTAssertEqual(field.label, "Export Long Edge (Pixels)")
+        XCTAssertTrue(app.staticTexts["Enter a pixel count from 1 to 65,535"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "export-size-custom-en"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         app.buttons["Cancel"].tap()
     }
 

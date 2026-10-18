@@ -70,7 +70,7 @@ public partial class MainWindow
         var invalid=transform.Tool==TransformTool.Geometry && GeometryEditor.HasInvalidInput;
         if(!transform.Dirty && !invalid){CancelTransformDraft();return true;}
         var focus=Keyboard.FocusedElement;
-        var dialog=new Window{Title=Loc.Text("未应用的调整"),Owner=this,Width=520,SizeToContent=SizeToContent.Height,
+        var dialog=new Window{Title=Loc.Text("保留这次几何或镜头修改？"),Owner=this,Width=520,SizeToContent=SizeToContent.Height,
             ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         KeyboardNavigation.SetTabNavigation(dialog,KeyboardNavigationMode.Cycle);
         var panel=new StackPanel{Margin=new Thickness(24)};

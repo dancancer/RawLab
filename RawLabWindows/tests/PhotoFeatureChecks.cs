@@ -50,8 +50,12 @@ internal static class PhotoFeatureChecks
         var target = Path.Combine(targets, "target.ARW"); File.Copy(fixture, target);
         var second = Path.Combine(targets, "second.ARW"); File.Copy(fixture, second);
         var excluded = Path.Combine(nested, "excluded.ARW"); File.Copy(fixture, excluded);
-        File.WriteAllText(Path.Combine(targets, "ignored.jpg"), "not RAW");
-        var hashes = new[] { source, target, second, excluded }.ToDictionary(path => path, path => SHA256.HashData(File.ReadAllBytes(path)));
+        File.WriteAllText(Path.Combine(targets, "ignored.txt"), "not a photo");
+        var rasterTarget = Path.Combine(targets, "ordinary.png");
+        var bitmap=BitmapSource.Create(8,6,96,96,PixelFormats.Bgr24,null,Enumerable.Repeat((byte)120,8*6*3).ToArray(),8*3);
+        var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using(var stream=File.Create(rasterTarget))encoder.Save(stream);
+        var hashes = new[] { source, target, second, rasterTarget, excluded }.ToDictionary(path => path, path => SHA256.HashData(File.ReadAllBytes(path)));
         var info = PhotoInfoReader.Read(source);
         Check(info?.Camera?.Contains("SONY", StringComparison.OrdinalIgnoreCase) == true && info.Lens != null && info.Shutter != null,
             "Production ExifTool reads actual RAW camera, lens and shutter");
@@ -124,6 +128,8 @@ internal static class PhotoFeatureChecks
             batch.Close();
 
             window.OpenFile(source); InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
+            window.ExportPhoto(ExportFormat.Png,source).GetAwaiter().GetResult();
+            Check(window.Status.Text==Loc.Text("不能覆盖原始文件。"),"RAW export uses the dedicated original-file protection message");
             window.ExportSize2048.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             Check((int?)Field(window, "exportLongEdge") == 2048 && window.ExportSize2048.IsChecked, "Single export preset updates the real menu state");
             window.ExportOriginalSize.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -173,12 +179,13 @@ internal static class PhotoFeatureChecks
             OpenContext(window, root);
             Check(window.FileTreeContextMenu.IsOpen && window.ApplyTreeEntryMenu.IsEnabled, "Folder context menu offers enabled apply-current-settings action");
             window.FileTreeContextMenu.IsOpen = false;
-            var confirmation = ConfirmApply(2);
+            var confirmation = ConfirmApply(3);
             window.ApplyTreeEntryMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            InteractionChecks.PumpUntil(() => window.Status.Text.Contains("已应用当前设置到 2"));
+            InteractionChecks.PumpUntil(() => window.Status.Text == Loc.Format("已将当前设置应用到 {0} 张照片", 3));
             confirmation.Stop();
-            Check(store.Find(target)?.Settings.SameAs(current) == true && store.Find(second)?.Settings.SameAs(current) == true,
-                "Confirmed folder action writes current settings to direct RAW children");
+            Check(store.Find(target)?.Settings.SameAs(current) == true && store.Find(second)?.Settings.SameAs(current) == true &&
+                  store.Find(rasterTarget)?.Settings.SameAs(current) == true,
+                "Confirmed folder action writes current settings to direct RAW and raster children");
             Check(store.Find(excluded) == null && (string?)Field(window, "file") == source,
                 "Folder action excludes nested files and never changes the source photo");
             Check(store.Find(target)?.Look == window.CurrentLookIdentity(), "Apply-current-settings also copies the current look identity");
@@ -247,6 +254,12 @@ internal static class PhotoFeatureChecks
             else Console.WriteLine("NOT REACHED Explorer desktop interaction: process is in session 0");
 
             using var engine = new RenderEngine(0);
+            var rasterGuard=Path.Combine(output,"overwrite-raster.png");
+            File.Copy(rasterTarget,rasterGuard);
+            window.OpenFile(rasterGuard);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            window.ExportPhoto(ExportFormat.Png,rasterGuard).GetAwaiter().GetResult();
+            Check(window.Status.Text==Loc.Text("不能覆盖原始文件。"),"Raster export uses the same original-file protection message");
+            window.OpenFile(source);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             foreach (var png in new[] { false, true })
             {
                 var destination = Path.Combine(output, png ? "limited.png" : "limited.jpg");
@@ -305,13 +318,13 @@ internal static class PhotoFeatureChecks
             EnumWindows((candidate, _) => {
                 GetWindowThreadProcessId(candidate, out var pid);
                 var title = new StringBuilder(1024); GetWindowText(candidate, title, title.Capacity);
-                if (pid == Environment.ProcessId && title.ToString() == "应用当前设置") { dialog = candidate; return false; }
+                if (pid == Environment.ProcessId && title.ToString() == Loc.Format("应用当前设置到 {0} 张照片？",count)) { dialog = candidate; return false; }
                 return true;
             }, IntPtr.Zero);
             if (dialog == IntPtr.Zero) return;
             var text = new StringBuilder();
             EnumChildWindows(dialog, (child, _) => { var part = new StringBuilder(1024); GetWindowText(child, part, part.Capacity); text.Append(part); return true; }, IntPtr.Zero);
-            var valid = text.ToString().Contains($"{count} 张照片");
+            var valid = text.ToString().Contains(Loc.Text("将替换目标照片的本机调整记录，不改写原始文件。"));
             SendMessage(GetDlgItem(dialog, valid ? 6 : 7), 0x00F5, IntPtr.Zero, IntPtr.Zero);
             timer.Stop();
             Check(valid, "Native confirmation shows the actual target count");

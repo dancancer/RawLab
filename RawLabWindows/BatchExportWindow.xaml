@@ -61,16 +61,16 @@
             <TextBlock Text="{DynamicResource '输出'}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14"/>
             <WrapPanel x:Name="FormatOptions" Margin="0,0,0,20">
               <RadioButton x:Name="Jpeg" Content="JPEG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
-              <RadioButton x:Name="Png" Content="16-bit PNG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
+              <RadioButton x:Name="Png" Content="{DynamicResource '16-bit PNG'}" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
               <RadioButton x:Name="Dng" Content="{DynamicResource 'DNG · 渲染型'}" AutomationProperties.Name="{DynamicResource 'DNG · 渲染型'}" GroupName="Format" Checked="FormatChanged" Foreground="{DynamicResource Foreground}"/>
             </WrapPanel>
             <StackPanel Margin="0,0,0,18">
-              <TextBlock Text="{DynamicResource '尺寸'}"/>
+              <TextBlock Text="{DynamicResource '导出尺寸'}"/>
               <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <ComboBox x:Name="SizeSelection" Width="150" SelectionChanged="ExportSizeChanged" AutomationProperties.Name="{DynamicResource '导出尺寸'}">
                   <ComboBoxItem Content="{DynamicResource '原尺寸'}" Tag="original"/><ComboBoxItem Content="{DynamicResource '长边 2048 px'}" Tag="2048"/><ComboBoxItem Content="{DynamicResource '长边 3000 px'}" Tag="3000"/><ComboBoxItem Content="{DynamicResource '长边 4096 px'}" Tag="4096"/><ComboBoxItem Content="{DynamicResource '自定义'}" Tag="custom"/>
                 </ComboBox>
-                <TextBox x:Name="CustomLongEdge" Width="82" Margin="8,0,0,0" Visibility="Collapsed" TextChanged="CustomSizeTextChanged" LostKeyboardFocus="CustomSizeCommitted" KeyDown="CustomSizeKeyDown" AutomationProperties.Name="{DynamicResource '自定义长边'}"/>
+                <TextBox x:Name="CustomLongEdge" Width="82" Margin="8,0,0,0" Visibility="Collapsed" TextChanged="CustomSizeTextChanged" LostKeyboardFocus="CustomSizeCommitted" KeyDown="CustomSizeKeyDown" AutomationProperties.Name="{DynamicResource '导出长边像素'}"/>
                 <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0" Visibility="{Binding Visibility, ElementName=CustomLongEdge}"/>
               </StackPanel>
               <TextBlock x:Name="SizeError" Foreground="{DynamicResource ErrorForeground}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
@@ -90,7 +90,7 @@
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
           <Button x:Name="CloseAction" Content="{DynamicResource '取消'}" Click="CloseClicked"/>
           <Button x:Name="RevealFolder" Content="{DynamicResource '打开文件夹'}" Click="RevealFolderClicked" Visibility="Collapsed"/>
-          <Button x:Name="PrimaryAction" Content="{DynamicResource '导出 0 张'}" Click="PrimaryClicked" Style="{StaticResource AccentButton}" FontWeight="SemiBold" MinWidth="125"/>
+          <Button x:Name="PrimaryAction"  Click="PrimaryClicked" Style="{StaticResource AccentButton}" FontWeight="SemiBold" MinWidth="125"/>
         </StackPanel>
         <TextBlock x:Name="Footnote" Text="{DynamicResource '仅用于本次导出，保留各照片原有调整'}" Foreground="{DynamicResource Muted}" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0"/>
       </DockPanel>

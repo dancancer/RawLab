@@ -38,7 +38,7 @@ final class BatchExportModel: ObservableObject {
         job = BatchExportJob(source: source, targets: [])
         jpegWriter = nil
         do { journalStore = try BatchJournalStore.appStore() }
-        catch { journalStore = nil; validationMessage = L10n.format("无法保存批量任务：%@", String(describing: error.localizedDescription)) }
+        catch { journalStore = nil; validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
         guard let journalStore else { return }
         let look = editor.lutURL(for: source.settings)
         var snapshot = job

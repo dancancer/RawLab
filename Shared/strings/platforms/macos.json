@@ -137,9 +137,9 @@
       "formats": [],
       "source": "上次批量任务尚未完成"
     },
-    "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。": {
+    "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": {
       "formats": [],
-      "source": "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"
+      "source": "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"
     },
     "不是支持的 RAW 文件": {
       "formats": [],
@@ -148,6 +148,14 @@
     "不是支持的图像文件": {
       "formats": [],
       "source": "不是支持的图像文件"
+    },
+    "不能覆盖原始文件。": {
+      "formats": [],
+      "source": "不能覆盖原始文件。"
+    },
+    "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": {
+      "formats": [],
+      "source": "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"
     },
     "中性": {
       "formats": [],
@@ -330,6 +338,10 @@
       "formats": [],
       "source": "关闭镜头选择"
     },
+    "内存不足，无法解码普通图片。": {
+      "formats": [],
+      "source": "内存不足，无法解码普通图片。"
+    },
     "减少边缘彩色条纹": {
       "formats": [],
       "source": "减少边缘彩色条纹"
@@ -392,9 +404,9 @@
       "formats": [],
       "source": "去噪优先"
     },
-    "参数或输出路径无效，不能覆盖原始 RAW。": {
+    "参数或输出路径无效。": {
       "formats": [],
-      "source": "参数或输出路径无效，不能覆盖原始 RAW。"
+      "source": "参数或输出路径无效。"
     },
     "发现新版本 %@": {
       "formats": [
@@ -767,9 +779,9 @@
       "formats": [],
       "source": "开启"
     },
-    "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": {
+    "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。": {
       "formats": [],
-      "source": "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"
+      "source": "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。"
     },
     "强度": {
       "formats": [],
@@ -1005,6 +1017,12 @@
       ],
       "source": "无法自动调整曝光：{0}"
     },
+    "无法解码普通图片：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法解码普通图片：{0}"
+    },
     "无法计算直方图": {
       "formats": [],
       "source": "无法计算直方图"
@@ -1030,6 +1048,10 @@
     "无法读取或写入文件，请检查路径和访问权限。": {
       "formats": [],
       "source": "无法读取或写入文件，请检查路径和访问权限。"
+    },
+    "无法读取照片，请检查文件和访问权限。": {
+      "formats": [],
+      "source": "无法读取照片，请检查文件和访问权限。"
     },
     "无法读取统计设置，已保持关闭。": {
       "formats": [],
@@ -2122,14 +2144,6 @@
       "ja": "0～100",
       "zh-Hans": "0 至 100"
     },
-    "PNG · 16-bit…": {
-      "de": "PNG · 16 Bit…",
-      "en": "PNG · 16-bit…",
-      "es": "PNG · 16 bits…",
-      "fr": "PNG · 16 bits…",
-      "ja": "PNG · 16ビット…",
-      "zh-Hans": "PNG · 16 位…"
-    },
     "RAW 降噪": {
       "de": "RAW-Rauschreduzierung",
       "en": "RAW noise reduction",
@@ -2153,14 +2167,6 @@
       "fr": "{0} · Recette maître",
       "ja": "{0} · マスターレシピ",
       "zh-Hans": "{0} · 大师配方"
-    },
-    "{0} · 本次导出效果": {
-      "de": "{0} · Für diesen Export",
-      "en": "{0} · For This Export",
-      "es": "{0} · Para esta exportación",
-      "fr": "{0} · Pour cette exportation",
-      "ja": "{0} · 今回の書き出し結果",
-      "zh-Hans": "{0} · 本次导出效果"
     },
     "{0} 至 {1}": {
       "de": "{0} bis {1}",
@@ -2282,14 +2288,6 @@
       "ja": "以前の編集記録のノイズ低減方式を維持",
       "zh-Hans": "保留旧编辑记录的降噪算法"
     },
-    "保留这次几何或镜头修改？": {
-      "de": "Diese Geometrie- oder Objektivänderungen behalten?",
-      "en": "Keep these geometry or lens changes?",
-      "es": "¿Conservar estos cambios de geometría u objetivo?",
-      "fr": "Conserver ces modifications de géométrie ou d’objectif ?",
-      "ja": "ジオメトリやレンズの変更を保持しますか？",
-      "zh-Hans": "保留这次几何或镜头修改？"
-    },
     "修正直线弯曲": {
       "de": "Gekrümmte Linien begradigen",
       "en": "Straighten Curved Lines",
@@ -2378,22 +2376,6 @@
       "ja": "ジオメトリとレンズの編集をキャンセル",
       "zh-Hans": "取消几何和镜头编辑"
     },
-    "向右滚动{0}": {
-      "de": "{0} nach rechts scrollen",
-      "en": "Scroll {0} to the right",
-      "es": "Desplazar {0} a la derecha",
-      "fr": "Faire défiler {0} vers la droite",
-      "ja": "{0}を右へスクロール",
-      "zh-Hans": "向右滚动{0}"
-    },
-    "向左滚动{0}": {
-      "de": "{0} nach links scrollen",
-      "en": "Scroll {0} to the left",
-      "es": "Desplazar {0} a la izquierda",
-      "fr": "Faire défiler {0} vers la gauche",
-      "ja": "{0}を左へスクロール",
-      "zh-Hans": "向左滚动{0}"
-    },
     "在 Finder 中打开": {
       "de": "Im Finder öffnen",
       "en": "Open in Finder",
@@ -2418,14 +2400,6 @@
       "ja": "基本露出オフセット",
       "zh-Hans": "基础曝光偏移"
     },
-    "处理失败：{0}": {
-      "de": "Verarbeitung fehlgeschlagen: {0}",
-      "en": "Processing failed: {0}",
-      "es": "Error de procesamiento: {0}",
-      "fr": "Échec du traitement : {0}",
-      "ja": "処理に失敗しました: {0}",
-      "zh-Hans": "处理失败：{0}"
-    },
     "处理结果为空": {
       "de": "Das Verarbeitungsergebnis ist leer",
       "en": "The processing result is empty",
@@ -2441,14 +2415,6 @@
       "fr": "Le nom du look ne peut pas être vide ni contenir de caractères de contrôle.",
       "ja": "ルック名は空にできず、制御文字も使えません。",
       "zh-Hans": "外观名称不能为空或包含控制字符。"
-    },
-    "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。": {
-      "de": "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.",
-      "en": "The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required.",
-      "es": "El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible.",
-      "fr": "Le fichier de look est endommagé ou incompatible ; un fichier CUBE ou RLOOK compatible est requis.",
-      "ja": "ルックファイルが壊れているか互換性がありません。互換性のある CUBE または RLOOK ファイルが必要です。",
-      "zh-Hans": "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。"
     },
     "大师配方外观文件不可用。": {
       "de": "Die Look-Datei des Master-Rezepts ist nicht verfügbar.",
@@ -2481,22 +2447,6 @@
       "fr": "Remplace les réglages locaux des photos cibles sans modifier le RAW d’origine.",
       "ja": "対象写真のローカル調整記録を置き換えます。元の RAW は書き換えません。",
       "zh-Hans": "将替换目标照片的本机调整记录，不改写原始 RAW。"
-    },
-    "将替换目标照片的本机调整记录，不改写原始文件。": {
-      "de": "Lokale Anpassungen werden ersetzt. Originaldateien bleiben unverändert.",
-      "en": "This replaces local adjustments without modifying original files.",
-      "es": "Se sustituyen los ajustes locales sin modificar los archivos originales.",
-      "fr": "Les réglages locaux sont remplacés sans modifier les fichiers originaux.",
-      "ja": "元のファイルを変更せず、ローカルの調整を置き換えます。",
-      "zh-Hans": "将替换目标照片的本机调整记录，不改写原始文件。"
-    },
-    "展开直方图": {
-      "de": "Histogramm erweitern",
-      "en": "Expand histogram",
-      "es": "Expandir histograma",
-      "fr": "Développer l'histogramme",
-      "ja": "ヒストグラムを展開する",
-      "zh-Hans": "展开直方图"
     },
     "展开精细调整": {
       "de": "Feinabstimmung ausklappen",
@@ -2554,14 +2504,6 @@
       "ja": "有効",
       "zh-Hans": "已启用"
     },
-    "已导入 {0} 个外观，{1} 个文件导入失败：\n": {
-      "de": "Importierte Looks: {0}; nicht importierte Dateien: {1}\n",
-      "en": "Looks imported: {0}; files not imported: {1}\n",
-      "es": "Looks importados: {0}; archivos no importados: {1}\n",
-      "fr": "Looks importés : {0} ; fichiers non importés : {1}\n",
-      "ja": "{0} 個のルックを読み込みました。{1} 個のファイルは読み込めませんでした:\n",
-      "zh-Hans": "已导入 {0} 个外观，{1} 个文件导入失败：\n"
-    },
     "已导出：{0}": {
       "de": "Exportiert: {0}",
       "en": "Exported: {0}",
@@ -2617,14 +2559,6 @@
       "fr": "Appliquer les réglages de géométrie et d’objectif",
       "ja": "ジオメトリとレンズの変更を適用",
       "zh-Hans": "应用几何和镜头编辑"
-    },
-    "应用当前设置到 {0} 张照片？": {
-      "de": "Aktuelle Einstellungen anwenden (Fotos: {0})?",
-      "en": "Apply current settings (photos: {0})?",
-      "es": "¿Aplicar los ajustes actuales (fotos: {0})?",
-      "fr": "Appliquer les réglages actuels (photos : {0}) ?",
-      "ja": "現在の設定を {0} 枚の写真に適用しますか？",
-      "zh-Hans": "应用当前设置到 {0} 张照片？"
     },
     "强度为 0，其他参数会保留。": {
       "de": "Die Stärke ist 0. Andere Einstellungen bleiben erhalten.",
@@ -2682,22 +2616,6 @@
       "ja": "他のRAWを開く…",
       "zh-Hans": "打开其他 RAW…"
     },
-    "操作失败": {
-      "de": "Der Vorgang ist fehlgeschlagen",
-      "en": "Operation failed",
-      "es": "Operación fallida",
-      "fr": "L'opération a échoué",
-      "ja": "操作が失敗しました",
-      "zh-Hans": "操作失败"
-    },
-    "收起直方图": {
-      "de": "Histogramm ausblenden",
-      "en": "Collapse histogram",
-      "es": "Contraer histograma",
-      "fr": "Réduire l'histogramme",
-      "ja": "ヒストグラムを折りたたむ",
-      "zh-Hans": "收起直方图"
-    },
     "收起精细调整": {
       "de": "Feinabstimmung einklappen",
       "en": "Hide Fine Adjustments",
@@ -2746,14 +2664,6 @@
       "ja": "クロマノイズ低減モードが無効または使用不可です",
       "zh-Hans": "无效或不可用的色度降噪模式"
     },
-    "无效或不可用的降噪参数": {
-      "de": "Ungültiger oder nicht verfügbarer Rauschreduzierungsparameter",
-      "en": "Invalid or unavailable noise reduction settings",
-      "es": "Ajustes de reducción de ruido no válidos o no disponibles",
-      "fr": "Paramètres de réduction du bruit invalides ou indisponibles",
-      "ja": "無効または使用できないノイズ低減パラメータ",
-      "zh-Hans": "无效或不可用的降噪参数"
-    },
     "无效的 RAW 降噪档位": {
       "de": "Ungültiger Grad der RAW-Rauschreduzierung",
       "en": "Invalid RAW noise reduction level",
@@ -2761,22 +2671,6 @@
       "fr": "Niveau de réduction du bruit RAW invalide",
       "ja": "無効な RAW ノイズ リダクション レベル",
       "zh-Hans": "无效的 RAW 降噪档位"
-    },
-    "无效的暗角或颗粒参数": {
-      "de": "Ungültiger Vignettierungs- oder Körnungsparameter",
-      "en": "Invalid vignette or grain settings",
-      "es": "Parámetro de viñeteado o grano no válido",
-      "fr": "Paramètre de vignettage ou de grain invalide",
-      "ja": "無効な口径食または粒子パラメータ",
-      "zh-Hans": "无效的暗角或颗粒参数"
-    },
-    "无效的曝光基准": {
-      "de": "Ungültige Belichtungsreferenz",
-      "en": "Invalid exposure reference",
-      "es": "Punto de referencia de exposición no válido",
-      "fr": "Référence d'exposition invalide",
-      "ja": "無効な露出基準",
-      "zh-Hans": "无效的曝光基准"
     },
     "无效的透视参数": {
       "de": "Ungültige Perspektivwerte",
@@ -2810,14 +2704,6 @@
       "ja": "調整を復元できません: {0}",
       "zh-Hans": "无法恢复调整：{0}"
     },
-    "无法生成预览": {
-      "de": "Vorschau kann nicht generiert werden",
-      "en": "Unable to generate preview",
-      "es": "No se puede generar una vista previa",
-      "fr": "Impossible de générer un aperçu",
-      "ja": "プレビューを生成できません",
-      "zh-Hans": "无法生成预览"
-    },
     "无法计算直方图": {
       "de": "Histogramm kann nicht berechnet werden",
       "en": "Unable to calculate histogram",
@@ -2849,14 +2735,6 @@
       "fr": "La bibliothèque de looks enregistrée est illisible ; les enregistrements d’origine n’ont pas été écrasés.",
       "ja": "保存済みのルックライブラリを読み込めません。元の記録は上書きされていません。",
       "zh-Hans": "无法读取已保存的外观库，原有记录未被覆盖。"
-    },
-    "无法读取调整记录：{0}": {
-      "de": "Anpassungsdatensatz konnte nicht gelesen werden: {0}",
-      "en": "Unable to read adjustment record: {0}",
-      "es": "No se puede leer el registro de ajuste: {0}",
-      "fr": "Impossible de lire l'enregistrement d'ajustement : {0}",
-      "ja": "調整レコードを読み取れません: {0}",
-      "zh-Hans": "无法读取调整记录：{0}"
     },
     "无照片": {
       "de": "Keine Fotos",
@@ -2905,14 +2783,6 @@
       "fr": "Afficher la grille des tiers du recadrage",
       "ja": "切り抜きの三分割グリッドを表示",
       "zh-Hans": "显示裁剪三分网格"
-    },
-    "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。": {
-      "de": "Rasterbilder müssen undurchsichtige 8-Bit-SDR-Bilder im Format JPEG, PNG, TIFF oder HEIF sein.",
-      "en": "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.",
-      "es": "La imagen debe ser opaca, SDR de 8 bits, en formato JPEG, PNG, TIFF o HEIF.",
-      "fr": "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.",
-      "ja": "通常画像は、不透明な8ビットSDRのJPEG、PNG、TIFF、HEIFに対応しています。",
-      "zh-Hans": "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"
     },
     "更换镜头…": {
       "de": "Objektiv ändern…",
@@ -3074,22 +2944,6 @@
       "ja": "歪曲収差の校正データなし",
       "zh-Hans": "畸变标定不可用"
     },
-    "移除“{0}”？": {
-      "de": "„{0}“ entfernen?",
-      "en": "Remove \"{0}\"?",
-      "es": "¿Eliminar \"{0}\"?",
-      "fr": "Supprimer \"{0}\" ?",
-      "ja": "「{0}」を削除しますか?",
-      "zh-Hans": "移除“{0}”？"
-    },
-    "移除外观…": {
-      "de": "Look entfernen…",
-      "en": "Remove Look…",
-      "es": "Quitar look…",
-      "fr": "Supprimer le look…",
-      "ja": "ルックを削除…",
-      "zh-Hans": "移除外观…"
-    },
     "精确调整": {
       "de": "Präzise Anpassung",
       "en": "Precise Adjustment",
@@ -3121,14 +2975,6 @@
       "fr": "Teinte, saturation et luminosité",
       "ja": "色相、彩度、明度",
       "zh-Hans": "色相、饱和度和明度"
-    },
-    "草稿未应用，无法导出或复制设置。": {
-      "de": "Den Entwurf vor dem Exportieren oder Kopieren der Einstellungen anwenden.",
-      "en": "Apply the draft before exporting or copying settings.",
-      "es": "Aplica el borrador antes de exportar o copiar ajustes.",
-      "fr": "Appliquez le brouillon avant d’exporter ou de copier les réglages.",
-      "ja": "書き出しや設定のコピーを行うには、先に下書きを適用してください。",
-      "zh-Hans": "草稿未应用，无法导出或复制设置。"
     },
     "裁切下边": {
       "de": "Zuschnitt unten",
@@ -3194,14 +3040,6 @@
       "ja": "調整ツール",
       "zh-Hans": "调整工具"
     },
-    "调整未保存：{0}": {
-      "de": "Anpassungen nicht gespeichert: {0}",
-      "en": "Adjustments not saved: {0}",
-      "es": "Ajustes no guardados: {0}",
-      "fr": "Ajustements non enregistrés : {0}",
-      "ja": "調整が保存されませんでした: {0}",
-      "zh-Hans": "调整未保存：{0}"
-    },
     "调整栏高度": {
       "de": "Höhe des Anpassungsbereichs",
       "en": "Adjustment Panel Height",
@@ -3217,22 +3055,6 @@
       "fr": "Doux",
       "ja": "マイルド",
       "zh-Hans": "轻度"
-    },
-    "载入照片后可用": {
-      "de": "Verfügbar nach dem Laden von Fotos",
-      "en": "Available after loading photos",
-      "es": "Disponible después de cargar fotos",
-      "fr": "Disponible après le chargement des photos",
-      "ja": "写真をロードすると利用可能になります",
-      "zh-Hans": "载入照片后可用"
-    },
-    "输入调整": {
-      "de": "Eingangsanpassung",
-      "en": "Input adjustments",
-      "es": "Ajustes de entrada",
-      "fr": "Réglages d’entrée",
-      "ja": "入力調整",
-      "zh-Hans": "输入调整"
     },
     "选择 {0}": {
       "de": "{0} auswählen",
@@ -3257,14 +3079,6 @@
       "fr": "Renommer…",
       "ja": "名前を変更…",
       "zh-Hans": "重命名…"
-    },
-    "长边": {
-      "de": "Lange Seite",
-      "en": "Long edge",
-      "es": "Borde largo",
-      "fr": "Bord long",
-      "ja": "長辺",
-      "zh-Hans": "长边"
     },
     "降噪亮度": {
       "de": "Luminanz",

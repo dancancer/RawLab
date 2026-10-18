@@ -28,9 +28,11 @@
 "三分网格" = "Grille des tiers";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.";
 "上次批量任务尚未完成" = "La dernière exportation par lots n’est pas terminée";
-"不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。" = "Ce RAW ou ce fichier de look n’est pas pris en charge. Sélectionnez un CUBE Fuji déclaré compatible avec l’entrée et la sortie BT.709, ou un fichier .rlook valide.";
+"不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Cette photo, ce look ou ce mode de traitement n’est pas pris en charge. Vérifiez la compatibilité des fichiers et les réglages de traitement.";
 "不是支持的 RAW 文件" = "Il ne s'agit pas d'un fichier RAW pris en charge";
 "不是支持的图像文件" = "Fichier image non pris en charge";
+"不能覆盖原始文件。" = "Le fichier d’origine ne peut pas être écrasé.";
+"不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.";
 "中性" = "Neutre";
 "中性显影" = "Développement neutre";
 "中性显影与调整后对比" = "Comparer le développement neutre et les réglages";
@@ -75,6 +77,7 @@
 "关闭" = "Fermer";
 "关闭提示" = "Fermer l’alerte";
 "关闭镜头选择" = "Fermer la sélection d’objectif";
+"内存不足，无法解码普通图片。" = "Mémoire insuffisante pour décoder l’image.";
 "减少边缘彩色条纹" = "Réduire les franges colorées";
 "几何" = "Géométrie";
 "几何与镜头草稿" = "Brouillon de géométrie et d’objectif";
@@ -90,7 +93,7 @@
 "原始比例" = "Format d’origine";
 "原尺寸" = "Taille d’origine";
 "去噪优先" = "Priorité à la réduction du bruit";
-"参数或输出路径无效，不能覆盖原始 RAW。" = "Paramètres ou chemin de sortie non valides ; le RAW d’origine ne peut pas être écrasé.";
+"参数或输出路径无效。" = "Paramètres ou chemin de sortie non valides.";
 "发现新版本 %@" = "Nouvelle version disponible : %@";
 "取消" = "Annuler";
 "取消几何和镜头编辑" = "Annuler les réglages de géométrie et d’objectif";
@@ -134,7 +137,7 @@
 "导出长边像素" = "Bord long à l’export (pixels)";
 "导出长边必须为 1-65535 像素。" = "Le bord long doit être compris entre 1 et 65535 pixels.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Remplace les réglages locaux des photos cibles sans modifier le RAW d’origine.";
-"将替换目标照片的本机调整记录，不改写原始文件。" = "Les réglages locaux sont remplacés sans modifier les fichiers originaux.";
+"将替换目标照片的本机调整记录，不改写原始文件。" = "Les réglages locaux des photos cibles seront remplacés. Les fichiers d’origine ne seront pas modifiés.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé.";
 "尚未检查更新" = "Mises à jour pas encore vérifiées";
 "尚未选择 RAW" = "Aucune photo RAW sélectionnée";
@@ -176,7 +179,7 @@
 "应用当前设置" = "Appliquer les paramètres actuels";
 "应用当前设置到 %@ 张照片？" = "Appliquer les réglages actuels (photos : %@) ?";
 "开启" = "Activé";
-"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions. Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.";
+"开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions.";
 "强度" = "Intensité";
 "强度为 0，其他参数会保留。" = "L’intensité est à 0. Les autres réglages sont conservés.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude";
@@ -233,12 +236,14 @@
 "无法显示处理结果" = "Impossible d'afficher les résultats du traitement";
 "无法生成预览" = "Impossible de générer un aperçu";
 "无法自动调整曝光：%@" = "Impossible d’ajuster automatiquement l’exposition : %@";
+"无法解码普通图片：%@" = "Impossible de décoder l’image : %@";
 "无法计算直方图" = "Impossible de calculer l'histogramme";
 "无法读取上次批量任务：%@" = "Impossible de lire la dernière exportation par lots : %@";
 "无法读取基础曝光" = "Impossible de lire l'exposition de base";
 "无法读取外观文件。" = "Impossible de lire le fichier de look.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "La bibliothèque de looks enregistrée est illisible ; les enregistrements d’origine n’ont pas été écrasés.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Impossible de lire ou d’écrire le fichier. Vérifiez le chemin et les autorisations d’accès.";
+"无法读取照片，请检查文件和访问权限。" = "Impossible de lire la photo. Vérifiez le fichier et les autorisations d’accès.";
 "无法读取统计设置，已保持关闭。" = "Le réglage d’analyse n’a pas pu être lu. L’analyse reste désactivée.";
 "无法读取调整记录：%@" = "Impossible de lire l'enregistrement d'ajustement : %@";
 "无法读取镜头校正状态" = "Impossible de lire l’état de la correction de l’objectif";

@@ -30,7 +30,7 @@ git -C "$ROOT" check-ignore -q "$OUT/" || {
 }
 PROCESSOR_ROOT="${RAWLAB_PROCESSOR_SOURCE_ROOT:-$ROOT/RawLab/RawLab/Core/RawProcessing}"
 PROCESSOR_ROOT="$(cd "$PROCESSOR_ROOT" && pwd)"
-PROCESSOR_SOURCES=("$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift"
+PROCESSOR_SOURCES=("$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Errors/ProcessorError.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift"
                    "$PROCESSOR_ROOT/Sony2FujiProcessor+Lens.swift")
 if [[ -f "$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift" ]]; then
     PROCESSOR_SOURCES+=("$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift")

@@ -48,6 +48,26 @@ public partial class MainWindow
         ResultCanvas.ComparisonEnabled=file!=null && swipe;
     }
     private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
+    private void RefreshCopyLabels()
+    {
+        ExportJpeg.Header=Loc.Text("JPEG…");
+        ExportPng.Header=Loc.Text("PNG · 16-bit…");
+        foreach(var (button,direction,group) in new[] {
+            (FilmScrollLeft,"向左滚动{0}","胶片"),(FilmScrollRight,"向右滚动{0}","胶片"),
+            (RecipeScrollLeft,"向左滚动{0}","大师配方"),(RecipeScrollRight,"向右滚动{0}","大师配方") })
+        {
+            var label=Loc.Format(direction,Loc.Text(group));
+            button.ToolTip=label;
+            AutomationProperties.SetName(button,label);
+        }
+        RefreshStateToolTips();
+    }
+    private void RefreshStateToolTips()
+    {
+        HistogramButton.ToolTip=HistogramSurface.Visibility==Visibility.Visible ?
+            Loc.Text(HistogramPanel.Visibility==Visibility.Visible ? "收起直方图" : "展开直方图") : null;
+        AdjustToggleButton.ToolTip=Loc.Text(AdjustmentPanel.Visibility==Visibility.Visible ? "收起调整栏" : "展开调整栏");
+    }
     private void DockToggle(object sender,RoutedEventArgs e)
     {
         if(file==null)return;
@@ -57,6 +77,7 @@ public partial class MainWindow
         AdjustmentSplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
         DockRow.MinHeight=visible ? 0 : 216; DockRow.Height=new(visible ? 0 : dockHeight);SplitterRow.Height=new(visible ? 0 : 6);
         RefreshControls();
+        RefreshStateToolTips();
         UpdateDockMinimum();
     }
     private void UpdateDockMinimum()
@@ -68,7 +89,11 @@ public partial class MainWindow
             if(DockRow.Height.Value>DockRow.MaxHeight)DockRow.Height=new(DockRow.MaxHeight);
         }
     }
-    private void HistogramClicked(object sender,RoutedEventArgs e)=>HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+    private void HistogramClicked(object sender,RoutedEventArgs e)
+    {
+        HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        RefreshStateToolTips();
+    }
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置
     private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.Placement=PlacementMode.Bottom;menu.IsOpen=true;} }
@@ -115,9 +140,9 @@ public partial class MainWindow
     {
         if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
         var suffix=format.Suffix();
-        var dialog=new SaveFileDialog{Title=Loc.Text("全分辨率导出"),Filter=format switch {
-                ExportFormat.Jpeg => Loc.Text("导出 JPEG")+"|*.jpg;*.jpeg",
-                ExportFormat.Png => Loc.Text("导出 16-bit PNG")+"|*.png",
+        var dialog=new SaveFileDialog{Title=Loc.Text("导出"),Filter=format switch {
+                ExportFormat.Jpeg => format.Title()+"|*.jpg;*.jpeg",
+                ExportFormat.Png => format.Title()+"|*.png",
                 ExportFormat.RenderedDng => Loc.Text("DNG · 渲染型")+"|*.dng",
                 _ => throw new ArgumentOutOfRangeException(nameof(format))
             },DefaultExt="."+suffix,AddExtension=true,OverwritePrompt=true,
@@ -136,24 +161,24 @@ public partial class MainWindow
     internal async Task ExportPhoto(ExportFormat format,string destination)
     {
         if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
-        if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始 RAW。"),true);return;}
+        if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始文件。"),true);return;}
         var input=file;var adjustment=settings.Clone();var film=lut;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
         var temp=Path.Combine(Path.GetDirectoryName(destination)!,".rawlab-"+Guid.NewGuid().ToString("N")+"."+format.Suffix());
         var size=exportLongEdge;
-        foregroundBusy=true;RefreshControls();SetStatus(() => Loc.Text("正在全分辨率导出…"));
+        foregroundBusy=true;RefreshControls();SetStatus(() => Loc.Text("正在导出…"));
         try
         {
             using var sourceLock = WindowsFileIdentity.OpenReadLock(input);
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
-                SetStatus(() => Loc.Text("不能覆盖原始 RAW。"), true);
+                SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);
                 return;
             }
             await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size));
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
-                SetStatus(() => Loc.Text("不能覆盖原始 RAW。"), true);
+                SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);
                 return;
             }
             File.Move(temp,destination,true);

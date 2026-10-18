@@ -9,6 +9,7 @@ struct ProcessorExportTests {
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         let lensDatabase = root.appendingPathComponent("lutools/third_party/lensfun/version_1")
         let processor = Sony2FujiProcessor(lensDatabaseURL: lensDatabase)
+        checkProcessorErrorMapping(processor)
         let cpuProcessor = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: lensDatabase)
         let forcedProcessor = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_FORCE, lensDatabaseURL: lensDatabase)
         var random: UInt32 = 8171
@@ -244,6 +245,7 @@ struct ProcessorExportTests {
             print("SKIP: RAW sample unavailable; buffer export checks above passed")
             return
         }
+        try checkOriginalProtection(processor, raw: raw, output: output)
         let standardRaw = try processor.processRaw(url: raw, settings: .default, previewLongEdge: 128, lutURL: lut)
         let lensOff = try cpuProcessor.processRaw(url: raw, settings: .default, previewLongEdge: 180, lutURL: nil)
         var unselectedLens = RawSettings.default

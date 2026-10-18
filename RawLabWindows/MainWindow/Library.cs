@@ -250,8 +250,8 @@ public partial class MainWindow
             else targets=LibraryEntry.IsImage(entry.Path) ? [entry] : [];
             if (targets.Length == 0) { SetStatus(() => Loc.Text("此目录没有照片。"),true); return; }
             var answer=MessageBox.Show(this,
-                Loc.Format("将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？", targets.Length),
-                Loc.Text("应用当前设置"),MessageBoxButton.YesNo,MessageBoxImage.Question);
+                Loc.Text("将替换目标照片的本机调整记录，不改写原始文件。"),
+                Loc.Format("应用当前设置到 {0} 张照片？", targets.Length),MessageBoxButton.YesNo,MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
             SaveSettingsCopies(targets.Select(target=>target.Path),snapshot,look);
             SetStatus(() => Loc.Format("已将当前设置应用到 {0} 张照片", targets.Length),false);

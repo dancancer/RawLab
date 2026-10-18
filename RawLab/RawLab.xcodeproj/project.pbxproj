@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
         D01100000000000000000001 /* BundledLooks in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000011; };
         D01100000000000000000002 /* Ektar Phuket artwork in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000012; };
         D01100000000000000000003 /* BundledLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000013; };
@@ -166,6 +167,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
         D01100000000000000000011 /* BundledLooks */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../Shared/BundledLooks"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000012 /* Ektar Phuket artwork */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "../RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000013 /* BundledLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/BundledLook.swift"; sourceTree = SOURCE_ROOT; };
@@ -540,6 +542,7 @@
 			path = RawProcessing;
 			isa = PBXGroup;
 			children = (
+				D01800000000000000000011,
 				AB1700000000000000000002,
 				D00300000000000000000011,
 				AB1900000000000000000011,
@@ -1037,6 +1040,7 @@
 				D00100000000000000000006,
 				D00100000000000000000007,
 				8F3A1B2C3D4E5F6789012345,
+				D01800000000000000000001,
 				8F3A1B2C3D4E5F678901234F,
 				D00200000000000000000001,
 				D00200000000000000000002,

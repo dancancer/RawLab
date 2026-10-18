@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP="${1:?Pass the built arm64-simulator RawLab.app path}"
 DEVICE="${2:-booted}"
-OUT="$(mktemp -d /tmp/rawlab-ios-export.XXXXXX)"
+OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-export.XXXXXX")"
 HARNESS="$OUT/ProcessorExportTests.app"
 mkdir -p "$HARNESS/Frameworks"
 cp "$APP/Info.plist" "$HARNESS/Info.plist"
@@ -20,7 +20,7 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -Xcc -I"$ROOT/lutools/include" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
+    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \

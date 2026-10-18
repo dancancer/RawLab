@@ -283,7 +283,11 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
             }
         } }
         if (state.unfinishedCount > 0) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
-        if (state.unfinishedCount > 0) Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(6.dp)); Text(if (state.failedCount == state.unfinishedCount) AppStrings.text(R.string.message_retry_failed_items) else AppStrings.text(R.string.message_continue_unfinished_items)) }
+        if (state.unfinishedCount > 0) Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(6.dp))
+            Text(if (state.failedCount == state.unfinishedCount) AppStrings.text(R.string.message_retry_failed_items)
+                else AppStrings.format(R.string.message_continue_unfinished_items, state.unfinishedCount.toString()))
+        }
         OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.text(R.string.message_close)) }
         if (state.phase != BatchPhase.COMPLETE) TextButton(onClick = onDiscard, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.text(R.string.message_discard_task)) }
     }

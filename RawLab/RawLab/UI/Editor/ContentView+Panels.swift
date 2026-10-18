@@ -51,7 +51,7 @@ extension ContentView {
                     .foregroundStyle(!viewModel.hasImage ? Color.secondary : adjustmentsExpanded ? .yellow : .primary)
             }
             .accessibilityLabel(!viewModel.hasImage ? L10n.text("调整") : adjustmentsExpanded ? L10n.text("收起调整栏") : L10n.text("展开调整栏"))
-            .help(L10n.text("显示或收起调整栏"))
+            .help(L10n.text(adjustmentsExpanded ? "收起调整栏" : "展开调整栏"))
             .disabled(!viewModel.hasImage)
             .accessibilityIdentifier("editor.adjustments")
             .opacity(rulerFocusOpacity)

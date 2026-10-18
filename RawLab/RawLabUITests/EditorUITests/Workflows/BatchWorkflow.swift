@@ -51,12 +51,12 @@ extension EditorUITests {
         XCTAssertTrue(batchSizePicker.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(batchSizePicker.isHittable, app.debugDescription)
         batchSizePicker.tap()
-        XCTAssertTrue(app.buttons["长边 2,048 px"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["长边 2,048 px"].tap()
-        XCTAssertTrue(batchSizePicker.label.contains("长边 2,048 px"))
+        XCTAssertTrue(app.buttons["长边 2048 px"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["长边 2048 px"].tap()
+        XCTAssertTrue(batchSizePicker.label.contains("长边 2048 px"))
         batchSizePicker.tap()
         app.buttons["指定长边"].tap()
-        let batchCustom = app.textFields["长边（1–65535 px）"]
+        let batchCustom = app.textFields["导出长边像素"]
         XCTAssertTrue(batchCustom.waitForExistence(timeout: 5), app.debugDescription)
         batchCustom.tap()
         batchCustom.typeText("128")

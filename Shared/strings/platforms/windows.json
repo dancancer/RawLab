@@ -28,13 +28,9 @@
       ],
       "source": "\n显示色彩降噪  {0}\n暗角  强度 {1} · 中点 {2} · 圆度 {3} · 羽化 {4} · 高光保护 {5}\n颗粒  强度 {6} · 大小 {7} · 粗糙度 {8}"
     },
-    " · 未读取到拍摄参数": {
+    "16-bit PNG": {
       "formats": [],
-      "source": " · 未读取到拍摄参数"
-    },
-    " · 本次导出效果": {
-      "formats": [],
-      "source": " · 本次导出效果"
+      "source": "16-bit PNG"
     },
     "CPU · GPU 已回退": {
       "formats": [],
@@ -72,9 +68,17 @@
       "formats": [],
       "source": "HSL"
     },
+    "JPEG…": {
+      "formats": [],
+      "source": "JPEG…"
+    },
     "JPEG：质量 95，保留可读取拍摄信息。": {
       "formats": [],
       "source": "JPEG：质量 95，保留可读取拍摄信息。"
+    },
+    "PNG · 16-bit…": {
+      "formats": [],
+      "source": "PNG · 16-bit…"
     },
     "PNG：16-bit，保留可读取拍摄信息。": {
       "formats": [],
@@ -105,6 +109,12 @@
     "S 曲线": {
       "formats": [],
       "source": "S 曲线"
+    },
+    "{0} · 本次导出效果": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "{0} · 本次导出效果"
     },
     "{0}数值（{1}）": {
       "formats": [
@@ -137,13 +147,13 @@
       "formats": [],
       "source": "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"
     },
-    "不支持此照片或外观文件。": {
+    "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": {
       "formats": [],
-      "source": "不支持此照片或外观文件。"
+      "source": "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"
     },
-    "不能覆盖原始 RAW。": {
+    "不能覆盖原始文件。": {
       "formats": [],
-      "source": "不能覆盖原始 RAW。"
+      "source": "不能覆盖原始文件。"
     },
     "不适用": {
       "formats": [],
@@ -185,10 +195,6 @@
       "formats": [],
       "source": "亮度降噪"
     },
-    "亮度降噪数值": {
-      "formats": [],
-      "source": "亮度降噪数值"
-    },
     "仅 CPU": {
       "formats": [],
       "source": "仅 CPU"
@@ -205,13 +211,15 @@
       "formats": [],
       "source": "任务使用的外观文件不可用，请重新创建任务。"
     },
-    "任务外观不可用。": {
+    "任务未保存。": {
       "formats": [],
-      "source": "任务外观不可用。"
+      "source": "任务未保存。"
     },
-    "任务未保存：": {
-      "formats": [],
-      "source": "任务未保存："
+    "任务未保存：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "任务未保存：{0}"
     },
     "传感器基准": {
       "formats": [],
@@ -237,6 +245,10 @@
       "formats": [],
       "source": "保存到"
     },
+    "保留这次几何或镜头修改？": {
+      "formats": [],
+      "source": "保留这次几何或镜头修改？"
+    },
     "停用": {
       "formats": [],
       "source": "停用"
@@ -257,17 +269,9 @@
       "formats": [],
       "source": "全不选"
     },
-    "全分辨率导出": {
-      "formats": [],
-      "source": "全分辨率导出"
-    },
     "全选": {
       "formats": [],
       "source": "全选"
-    },
-    "全部 HSL": {
-      "formats": [],
-      "source": "全部 HSL"
     },
     "全部调整": {
       "formats": [],
@@ -352,9 +356,9 @@
       "formats": [],
       "source": "去噪优先"
     },
-    "参数或输出路径无效，不能覆盖原始 RAW。": {
+    "参数或输出路径无效。": {
       "formats": [],
-      "source": "参数或输出路径无效，不能覆盖原始 RAW。"
+      "source": "参数或输出路径无效。"
     },
     "取消": {
       "formats": [],
@@ -376,25 +380,21 @@
       "formats": [],
       "source": "向右旋转 90°"
     },
-    "向右滚动大师配方": {
-      "formats": [],
-      "source": "向右滚动大师配方"
-    },
-    "向右滚动胶片": {
-      "formats": [],
-      "source": "向右滚动胶片"
+    "向右滚动{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "向右滚动{0}"
     },
     "向左旋转 90°": {
       "formats": [],
       "source": "向左旋转 90°"
     },
-    "向左滚动大师配方": {
-      "formats": [],
-      "source": "向左滚动大师配方"
-    },
-    "向左滚动胶片": {
-      "formats": [],
-      "source": "向左滚动胶片"
+    "向左滚动{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "向左滚动{0}"
     },
     "圆度": {
       "formats": [],
@@ -438,10 +438,6 @@
       "formats": [],
       "source": "实际像素 · 100%"
     },
-    "宽度 (%)": {
-      "formats": [],
-      "source": "宽度 (%)"
-    },
     "对比度": {
       "formats": [],
       "source": "对比度"
@@ -465,18 +461,6 @@
     "导出": {
       "formats": [],
       "source": "导出"
-    },
-    "导出 0 张": {
-      "formats": [],
-      "source": "导出 0 张"
-    },
-    "导出 16-bit PNG": {
-      "formats": [],
-      "source": "导出 16-bit PNG"
-    },
-    "导出 JPEG": {
-      "formats": [],
-      "source": "导出 JPEG"
     },
     "导出 {0} 张": {
       "formats": [
@@ -532,11 +516,9 @@
       "formats": [],
       "source": "导出长边必须为 1-65535 像素。"
     },
-    "将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？": {
-      "formats": [
-        "{0}"
-      ],
-      "source": "将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？"
+    "将替换目标照片的本机调整记录，不改写原始文件。": {
+      "formats": [],
+      "source": "将替换目标照片的本机调整记录，不改写原始文件。"
     },
     "尚未检查更新": {
       "formats": [],
@@ -550,21 +532,17 @@
       "formats": [],
       "source": "就绪"
     },
-    "尺寸": {
+    "展开直方图": {
       "formats": [],
-      "source": "尺寸"
+      "source": "展开直方图"
     },
-    "展开或收起直方图": {
+    "展开调整栏": {
       "formats": [],
-      "source": "展开或收起直方图"
+      "source": "展开调整栏"
     },
     "工具(_T)": {
       "formats": [],
       "source": "工具(_T)"
-    },
-    "左边 (%)": {
-      "formats": [],
-      "source": "左边 (%)"
     },
     "已允许使用统计；可随时关闭。": {
       "formats": [],
@@ -661,6 +639,12 @@
       "formats": [],
       "source": "应用当前设置"
     },
+    "应用当前设置到 {0} 张照片？": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "应用当前设置到 {0} 张照片？"
+    },
     "开启": {
       "formats": [],
       "source": "开启"
@@ -721,21 +705,9 @@
       "formats": [],
       "source": "打开 RAW 照片"
     },
-    "打开 RAW 照片后导出": {
-      "formats": [],
-      "source": "打开 RAW 照片后导出"
-    },
     "打开 RAW（Ctrl+O）": {
       "formats": [],
       "source": "打开 RAW（Ctrl+O）"
-    },
-    "打开一张 RAW": {
-      "formats": [],
-      "source": "打开一张 RAW"
-    },
-    "打开一张 RAW 照片": {
-      "formats": [],
-      "source": "打开一张 RAW 照片"
     },
     "打开文件夹": {
       "formats": [],
@@ -752,10 +724,6 @@
     "拉直": {
       "formats": [],
       "source": "拉直"
-    },
-    "拉直角度": {
-      "formats": [],
-      "source": "拉直角度"
     },
     "拍摄时白平衡": {
       "formats": [],
@@ -800,6 +768,14 @@
       "formats": [],
       "source": "收起"
     },
+    "收起直方图": {
+      "formats": [],
+      "source": "收起直方图"
+    },
+    "收起调整栏": {
+      "formats": [],
+      "source": "收起调整栏"
+    },
     "放大": {
       "formats": [],
       "source": "放大"
@@ -811,10 +787,6 @@
     "效果": {
       "formats": [],
       "source": "效果"
-    },
-    "数值（": {
-      "formats": [],
-      "source": "数值（"
     },
     "文件(_F)": {
       "formats": [],
@@ -833,10 +805,6 @@
         "{0}"
       ],
       "source": "方向 {0}"
-    },
-    "旋转与翻转": {
-      "formats": [],
-      "source": "旋转与翻转"
     },
     "无效或不可用的镜头校正设置": {
       "formats": [],
@@ -890,9 +858,11 @@
       "formats": [],
       "source": "无法访问原始照片。"
     },
-    "无法读取上次批量任务：": {
-      "formats": [],
-      "source": "无法读取上次批量任务："
+    "无法读取上次批量任务：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "无法读取上次批量任务：{0}"
     },
     "无法读取或写入文件，请检查路径和访问权限。": {
       "formats": [],
@@ -938,10 +908,6 @@
       "formats": [],
       "source": "明度"
     },
-    "明度数值": {
-      "formats": [],
-      "source": "明度数值"
-    },
     "明暗": {
       "formats": [],
       "source": "明暗"
@@ -957,10 +923,6 @@
     "显示或收起文件树": {
       "formats": [],
       "source": "显示或收起文件树"
-    },
-    "显示或隐藏调整栏": {
-      "formats": [],
-      "source": "显示或隐藏调整栏"
     },
     "显示色彩降噪模式必须为 0、1 或 2。": {
       "formats": [],
@@ -1069,10 +1031,6 @@
       "formats": [],
       "source": "未发现适用于 Windows 的新版本"
     },
-    "未应用的调整": {
-      "formats": [],
-      "source": "未应用的调整"
-    },
     "未找到机身或传感器尺寸信息": {
       "formats": [],
       "source": "未找到机身或传感器尺寸信息"
@@ -1080,6 +1038,10 @@
     "未找到镜头": {
       "formats": [],
       "source": "未找到镜头"
+    },
+    "未读取到拍摄参数": {
+      "formats": [],
+      "source": "未读取到拍摄参数"
     },
     "未调整": {
       "formats": [],
@@ -1149,10 +1111,6 @@
       "formats": [],
       "source": "正在停止…"
     },
-    "正在全分辨率导出…": {
-      "formats": [],
-      "source": "正在全分辨率导出…"
-    },
     "正在完成当前任务后关闭…": {
       "formats": [],
       "source": "正在完成当前任务后关闭…"
@@ -1160,6 +1118,10 @@
     "正在导出": {
       "formats": [],
       "source": "正在导出"
+    },
+    "正在导出…": {
+      "formats": [],
+      "source": "正在导出…"
     },
     "正在显影…": {
       "formats": [],
@@ -1293,9 +1255,11 @@
       "formats": [],
       "source": "照片预览"
     },
-    "版本": {
-      "formats": [],
-      "source": "版本"
+    "版本 {0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "版本 {0}"
     },
     "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光": {
       "formats": [],
@@ -1320,10 +1284,6 @@
     "白平衡": {
       "formats": [],
       "source": "白平衡"
-    },
-    "目录中没有直接 RAW 照片。": {
-      "formats": [],
-      "source": "目录中没有直接 RAW 照片。"
     },
     "直方图": {
       "formats": [],
@@ -1459,10 +1419,6 @@
       "formats": [],
       "source": "缩放"
     },
-    "缩放与适合窗口": {
-      "formats": [],
-      "source": "缩放与适合窗口"
-    },
     "缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。": {
       "formats": [],
       "source": "缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。"
@@ -1517,10 +1473,6 @@
       "formats": [],
       "source": "自定义导出尺寸"
     },
-    "自定义长边": {
-      "formats": [],
-      "source": "自定义长边"
-    },
     "自由": {
       "formats": [],
       "source": "自由"
@@ -1537,10 +1489,6 @@
       "formats": [],
       "source": "色彩降噪"
     },
-    "色彩降噪数值": {
-      "formats": [],
-      "source": "色彩降噪数值"
-    },
     "色温": {
       "formats": [],
       "source": "色温"
@@ -1548,10 +1496,6 @@
     "色相": {
       "formats": [],
       "source": "色相"
-    },
-    "色相数值": {
-      "formats": [],
-      "source": "色相数值"
     },
     "色调": {
       "formats": [],
@@ -1565,9 +1509,13 @@
       "formats": [],
       "source": "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织"
     },
-    "草稿预览 · 尚未应用": {
+    "草稿尚未应用": {
       "formats": [],
-      "source": "草稿预览 · 尚未应用"
+      "source": "草稿尚未应用"
+    },
+    "草稿未应用，无法导出或复制设置。": {
+      "formats": [],
+      "source": "草稿未应用，无法导出或复制设置。"
     },
     "蓝": {
       "formats": [],
@@ -1581,9 +1529,21 @@
       "formats": [],
       "source": "裁切、旋转、翻转和拉直"
     },
-    "裁切提示": {
+    "裁切上边": {
       "formats": [],
-      "source": "裁切提示"
+      "source": "裁切上边"
+    },
+    "裁切宽度": {
+      "formats": [],
+      "source": "裁切宽度"
+    },
+    "裁切左边": {
+      "formats": [],
+      "source": "裁切左边"
+    },
+    "裁切高度": {
+      "formats": [],
+      "source": "裁切高度"
     },
     "裁边 {0}%": {
       "formats": [
@@ -1633,10 +1593,6 @@
       "formats": [],
       "source": "请选择支持的照片文件。"
     },
-    "调整值": {
-      "formats": [],
-      "source": "调整值"
-    },
     "调整后": {
       "formats": [],
       "source": "调整后"
@@ -1644,14 +1600,6 @@
     "调整已保存": {
       "formats": [],
       "source": "调整已保存"
-    },
-    "调整数值": {
-      "formats": [],
-      "source": "调整数值"
-    },
-    "调整未保存": {
-      "formats": [],
-      "source": "调整未保存"
     },
     "调整未保存 · 重试": {
       "formats": [],
@@ -1689,9 +1637,13 @@
       "formats": [],
       "source": "跟随系统"
     },
-    "输入": {
+    "载入照片后可用": {
       "formats": [],
-      "source": "输入"
+      "source": "载入照片后可用"
+    },
+    "输入调整": {
+      "formats": [],
+      "source": "输入调整"
     },
     "输出": {
       "formats": [],
@@ -1780,10 +1732,6 @@
       "formats": [],
       "source": "重新读取目录"
     },
-    "重置": {
-      "formats": [],
-      "source": "重置"
-    },
     "重置 HSL": {
       "formats": [],
       "source": "重置 HSL"
@@ -1857,6 +1805,10 @@
     "重置色彩降噪": {
       "formats": [],
       "source": "重置色彩降噪"
+    },
+    "重置调整": {
+      "formats": [],
+      "source": "重置调整"
     },
     "重置镜头校正": {
       "formats": [],
@@ -1968,10 +1920,6 @@
       "formats": [],
       "source": "青"
     },
-    "顶边 (%)": {
-      "formats": [],
-      "source": "顶边 (%)"
-    },
     "项目与作者": {
       "formats": [],
       "source": "项目与作者"
@@ -2031,10 +1979,6 @@
     "高光保护": {
       "formats": [],
       "source": "高光保护"
-    },
-    "高度 (%)": {
-      "formats": [],
-      "source": "高度 (%)"
     },
     "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色": {
       "formats": [],
@@ -2108,22 +2052,6 @@
       "ja": "\n表示色ノイズ低減  {0}\nビネット  強度 {1} · 中点 {2} · 円形度 {3} · ぼかし {4} · ハイライト保護 {5}\n粒子  強度 {6} · サイズ {7} · 粗さ {8}",
       "zh-Hans": "\n显示色彩降噪  {0}\n暗角  强度 {1} · 中点 {2} · 圆度 {3} · 羽化 {4} · 高光保护 {5}\n颗粒  强度 {6} · 大小 {7} · 粗糙度 {8}"
     },
-    " · 未读取到拍摄参数": {
-      "de": " · Aufnahmedaten nicht verfügbar",
-      "en": " · Capture settings unavailable",
-      "es": " · Datos de captura no disponibles",
-      "fr": " · Paramètres de prise de vue indisponibles",
-      "ja": " · 撮影情報を読み取れません",
-      "zh-Hans": " · 未读取到拍摄参数"
-    },
-    " · 本次导出效果": {
-      "de": " · Exportvorschau",
-      "en": " · Export preview",
-      "es": " · Vista previa de exportación",
-      "fr": " · Aperçu de l'export",
-      "ja": " · 書き出しプレビュー",
-      "zh-Hans": " · 本次导出效果"
-    },
     "CPU · GPU 已回退": {
       "de": "CPU · GPU-Fallback",
       "en": "CPU · GPU fallback",
@@ -2155,6 +2083,14 @@
       "fr": "GPU automatique",
       "ja": "GPU 自動",
       "zh-Hans": "GPU 自动"
+    },
+    "JPEG…": {
+      "de": "JPEG…",
+      "en": "JPEG…",
+      "es": "JPEG…",
+      "fr": "JPEG…",
+      "ja": "JPEG…",
+      "zh-Hans": "JPEG…"
     },
     "JPEG：质量 95，保留可读取拍摄信息。": {
       "de": "JPEG: Qualität 95; lesbare Aufnahmedaten bleiben erhalten.",
@@ -2220,21 +2156,13 @@
       "ja": "、",
       "zh-Hans": "、"
     },
-    "不支持此照片或外观文件。": {
-      "de": "Diese Foto- oder Look-Datei wird nicht unterstützt.",
-      "en": "This photo or look file is unsupported.",
-      "es": "Este archivo de foto o aspecto no es compatible.",
-      "fr": "Ce fichier photo ou de rendu n'est pas pris en charge.",
-      "ja": "この写真またはルックファイルには対応していません。",
-      "zh-Hans": "不支持此照片或外观文件。"
-    },
-    "不能覆盖原始 RAW。": {
-      "de": "Das Originalfoto kann nicht überschrieben werden.",
-      "en": "Cannot overwrite the original photo.",
-      "es": "No se puede sobrescribir la foto original.",
-      "fr": "Impossible de remplacer la photo originale.",
-      "ja": "元の写真は上書きできません。",
-      "zh-Hans": "不能覆盖原始照片。"
+    "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。": {
+      "de": "Dieses RAW oder diese Look-Datei wird nicht unterstützt. Wählen Sie eine als eingabe- und BT.709-Ausgabe-kompatibel deklarierte Fuji-CUBE- oder eine gültige .rlook-Datei.",
+      "en": "This RAW or look file is unsupported. Select a Fuji CUBE declared compatible with input and BT.709 output, or a valid .rlook file.",
+      "es": "Este RAW o archivo de look no es compatible. Selecciona un CUBE de Fuji declarado compatible con la entrada y la salida BT.709, o un archivo .rlook válido.",
+      "fr": "Ce RAW ou ce fichier de look n’est pas pris en charge. Sélectionnez un CUBE Fuji déclaré compatible avec l’entrée et la sortie BT.709, ou un fichier .rlook valide.",
+      "ja": "このRAWまたはルックファイルはサポートされていません。入力とBT.709出力に対応すると明記されたFuji CUBE、または有効な.rlookファイルを選択してください。",
+      "zh-Hans": "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"
     },
     "不适用": {
       "de": "Nicht anwendbar",
@@ -2252,14 +2180,6 @@
       "ja": "インタラクティブプレビュー",
       "zh-Hans": "交互预览"
     },
-    "亮度降噪数值": {
-      "de": "Wert der Luminanz-Rauschreduzierung",
-      "en": "Luma denoise value",
-      "es": "Valor de reducción de ruido de luminancia",
-      "fr": "Valeur de réduction du bruit de luminance",
-      "ja": "輝度ノイズ低減値",
-      "zh-Hans": "亮度降噪数值"
-    },
     "仅 CPU": {
       "de": "Nur CPU",
       "en": "CPU only",
@@ -2276,37 +2196,13 @@
       "ja": "ルートフォルダーをリストから削除",
       "zh-Hans": "从列表移除根目录"
     },
-    "任务外观不可用。": {
-      "de": "Look des Auftrags nicht verfügbar.",
-      "en": "Task Look Unavailable.",
-      "es": "El aspecto de la tarea no está disponible.",
-      "fr": "Look de la tâche indisponible.",
-      "ja": "タスクのルックを利用できません。",
-      "zh-Hans": "任务外观不可用。"
-    },
-    "任务未保存：": {
-      "de": "Auftrag nicht gespeichert: ",
-      "en": "Job not saved: ",
-      "es": "Tarea no guardada: ",
-      "fr": "Tâche non enregistrée : ",
-      "ja": "タスクを保存できません: ",
-      "zh-Hans": "任务未保存："
-    },
-    "全分辨率导出": {
-      "de": "Export in voller Auflösung",
-      "en": "Full-resolution export",
-      "es": "Exportación a resolución completa",
-      "fr": "Exportation en pleine résolution",
-      "ja": "フル解像度で書き出し",
-      "zh-Hans": "全分辨率导出"
-    },
-    "全部 HSL": {
-      "de": "Alle HSL-Einstellungen",
-      "en": "All HSL",
-      "es": "Todos los ajustes HSL",
-      "fr": "Tous les réglages HSL",
-      "ja": "すべてのHSL",
-      "zh-Hans": "全部 HSL"
+    "任务未保存。": {
+      "de": "Die Aufgabe wurde nicht gespeichert.",
+      "en": "The task was not saved.",
+      "es": "La tarea no se ha guardado.",
+      "fr": "La tâche n’a pas été enregistrée.",
+      "ja": "タスクは保存されませんでした。",
+      "zh-Hans": "任务未保存。"
     },
     "关于 RawLab / 检查更新": {
       "de": "Über RawLab / Nach Updates suchen",
@@ -2372,38 +2268,6 @@
       "ja": "ルートフォルダーを右クリックして削除できます。ファイルは削除されません",
       "zh-Hans": "右键根目录可移除；不会删除文件"
     },
-    "向右滚动大师配方": {
-      "de": "Master-Rezepturen nach rechts scrollen",
-      "en": "Scroll master recipes right",
-      "es": "Desplazar recetas maestras a la derecha",
-      "fr": "Faire défiler les recettes maîtres vers la droite",
-      "ja": "マスターレシピを右にスクロール",
-      "zh-Hans": "向右滚动大师配方"
-    },
-    "向右滚动胶片": {
-      "de": "Filme nach rechts scrollen",
-      "en": "Scroll films right",
-      "es": "Desplazar películas a la derecha",
-      "fr": "Faire défiler les films vers la droite",
-      "ja": "フィルムを右にスクロール",
-      "zh-Hans": "向右滚动胶片"
-    },
-    "向左滚动大师配方": {
-      "de": "Master-Rezepturen nach links scrollen",
-      "en": "Scroll master recipes left",
-      "es": "Desplazar recetas maestras a la izquierda",
-      "fr": "Faire défiler les recettes maîtres vers la gauche",
-      "ja": "マスターレシピを左にスクロール",
-      "zh-Hans": "向左滚动大师配方"
-    },
-    "向左滚动胶片": {
-      "de": "Filme nach links scrollen",
-      "en": "Scroll films left",
-      "es": "Desplazar películas a la izquierda",
-      "fr": "Faire défiler les films vers la gauche",
-      "ja": "フィルムを左にスクロール",
-      "zh-Hans": "向左滚动胶片"
-    },
     "在资源管理器中打开": {
       "de": "Im Datei-Explorer öffnen",
       "en": "Open in File Explorer",
@@ -2436,14 +2300,6 @@
       "ja": "基準オフセット —",
       "zh-Hans": "基础偏移 —"
     },
-    "宽度 (%)": {
-      "de": "Breite (%)",
-      "en": "Width (%)",
-      "es": "Ancho (%)",
-      "fr": "Largeur (%)",
-      "ja": "幅 (%)",
-      "zh-Hans": "宽度 (%)"
-    },
     "对比模式": {
       "de": "Vergleichsmodus",
       "en": "Comparison mode",
@@ -2468,22 +2324,6 @@
       "ja": "互換性のあるCUBEまたはRLOOKファイルを読み込みます。複数選択できます",
       "zh-Hans": "导入兼容 CUBE 或 RLOOK，可选择多个文件"
     },
-    "导出 16-bit PNG": {
-      "de": "16-Bit-PNG exportieren",
-      "en": "Export 16-bit PNG",
-      "es": "Exportar PNG de 16 bits",
-      "fr": "Exporter en PNG 16 bits",
-      "ja": "16-bit PNGを書き出す",
-      "zh-Hans": "导出 16-bit PNG"
-    },
-    "导出 JPEG": {
-      "de": "JPEG exportieren",
-      "en": "Export JPEG",
-      "es": "Exportar JPEG",
-      "fr": "Exporter en JPEG",
-      "ja": "JPEGを書き出す",
-      "zh-Hans": "导出 JPEG"
-    },
     "导出照片（尺寸可选）": {
       "de": "Foto exportieren (Größe auswählbar)",
       "en": "Export photo (size selectable)",
@@ -2491,14 +2331,6 @@
       "fr": "Exporter la photo (taille sélectionnable)",
       "ja": "写真を書き出す（サイズを選択可能）",
       "zh-Hans": "导出照片（尺寸可选）"
-    },
-    "将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？": {
-      "de": "Die lokalen Bearbeitungsdaten werden überschrieben (Fotos: {0}). RAW-Dateien werden nicht geändert. Fortfahren?",
-      "en": "Local edit records will be overwritten (photos: {0}). RAW files will not be modified. Continue?",
-      "es": "Se sobrescribirán los registros de edición locales (fotos: {0}). Los archivos RAW no se modificarán. ¿Continuar?",
-      "fr": "Les enregistrements locaux des réglages seront remplacés (photos : {0}). Les fichiers RAW ne seront pas modifiés. Continuer ?",
-      "ja": "この操作は{0}枚の写真のローカル編集記録を上書きします。RAWファイルは変更されません。続行しますか？",
-      "zh-Hans": "将覆盖 {0} 张照片的本机编辑记录。不会修改 RAW 文件。继续？"
     },
     "就绪": {
       "de": "Bereit",
@@ -2508,22 +2340,6 @@
       "ja": "準備完了",
       "zh-Hans": "就绪"
     },
-    "尺寸": {
-      "de": "Größe",
-      "en": "Size",
-      "es": "Tamaño",
-      "fr": "Taille",
-      "ja": "サイズ",
-      "zh-Hans": "尺寸"
-    },
-    "展开或收起直方图": {
-      "de": "Histogramm ein- oder ausblenden",
-      "en": "Expand or collapse histogram",
-      "es": "Expandir o contraer el histograma",
-      "fr": "Développer ou réduire l’histogramme",
-      "ja": "ヒストグラムを展開または折りたたむ",
-      "zh-Hans": "展开或收起直方图"
-    },
     "工具(_T)": {
       "de": "Werkzeuge (_T)",
       "en": "Tools (_T)",
@@ -2531,14 +2347,6 @@
       "fr": "Outils (_T)",
       "ja": "ツール (_T)",
       "zh-Hans": "工具(_T)"
-    },
-    "左边 (%)": {
-      "de": "Links (%)",
-      "en": "Left (%)",
-      "es": "Izquierda (%)",
-      "fr": "Gauche (%)",
-      "ja": "左 (%)",
-      "zh-Hans": "左边 (%)"
     },
     "已导出文件": {
       "de": "Exportierte Dateien",
@@ -2604,14 +2412,6 @@
       "ja": "現在の色",
       "zh-Hans": "当前颜色"
     },
-    "打开 RAW 照片后导出": {
-      "de": "Zum Exportieren ein Foto öffnen",
-      "en": "Open a photo to export",
-      "es": "Abre una foto para exportar",
-      "fr": "Ouvrir une photo pour exporter",
-      "ja": "写真を開いて書き出す",
-      "zh-Hans": "打开照片后导出"
-    },
     "打开 RAW（Ctrl+O）": {
       "de": "Foto öffnen (Strg+O)",
       "en": "Open photo (Ctrl+O)",
@@ -2619,30 +2419,6 @@
       "fr": "Ouvrir une photo (Ctrl+O)",
       "ja": "写真を開く（Ctrl+O）",
       "zh-Hans": "打开照片（Ctrl+O）"
-    },
-    "打开一张 RAW": {
-      "de": "Ein Foto öffnen",
-      "en": "Open a photo",
-      "es": "Abrir una foto",
-      "fr": "Ouvrir une photo",
-      "ja": "写真を開く",
-      "zh-Hans": "打开一张照片"
-    },
-    "打开一张 RAW 照片": {
-      "de": "RAW-Foto öffnen",
-      "en": "Open a RAW photo",
-      "es": "Abrir una foto RAW",
-      "fr": "Ouvrir une photo RAW",
-      "ja": "RAW写真を開く",
-      "zh-Hans": "打开一张 RAW 照片"
-    },
-    "拉直角度": {
-      "de": "Ausrichtungswinkel",
-      "en": "Straighten angle",
-      "es": "Ángulo de enderezamiento",
-      "fr": "Angle de redressement",
-      "ja": "傾き補正の角度",
-      "zh-Hans": "拉直角度"
     },
     "拍摄时白平衡": {
       "de": "Weißabgleich wie aufgenommen",
@@ -2692,14 +2468,6 @@
       "ja": "ドラッグしてファイルツリーの幅を調整",
       "zh-Hans": "拖动调整文件树宽度"
     },
-    "数值（": {
-      "de": "Wert (",
-      "en": "Value (",
-      "es": "Valor (",
-      "fr": "Valeur (",
-      "ja": "数値（",
-      "zh-Hans": "数值（"
-    },
     "文件(_F)": {
       "de": "Datei (_F)",
       "en": "File (_F)",
@@ -2723,14 +2491,6 @@
       "fr": "Orientation {0}",
       "ja": "向き {0}",
       "zh-Hans": "方向 {0}"
-    },
-    "旋转与翻转": {
-      "de": "Drehen und spiegeln",
-      "en": "Rotate and flip",
-      "es": "Girar y voltear",
-      "fr": "Rotation et retournement",
-      "ja": "回転と反転",
-      "zh-Hans": "旋转与翻转"
     },
     "无法保存更新设置，请检查应用数据目录权限": {
       "de": "Update-Einstellungen konnten nicht gespeichert werden; prüfen Sie die Berechtigungen des Anwendungsdatenordners",
@@ -2788,14 +2548,6 @@
       "ja": "元の写真にアクセスできません。",
       "zh-Hans": "无法访问原始照片。"
     },
-    "无法读取上次批量任务：": {
-      "de": "Vorheriger Stapelauftrag konnte nicht gelesen werden: ",
-      "en": "Unable to read the previous batch job: ",
-      "es": "No se pudo leer la tarea anterior: ",
-      "fr": "Impossible de lire la tâche précédente : ",
-      "ja": "前回の一括タスクを読み込めません: ",
-      "zh-Hans": "无法读取上次批量任务："
-    },
     "无法读取文件身份。": {
       "de": "Die Dateiidentität konnte nicht gelesen werden.",
       "en": "Unable to read the file identity.",
@@ -2828,14 +2580,6 @@
       "ja": "編集記録を読み込めません",
       "zh-Hans": "无法读取调整记录"
     },
-    "明度数值": {
-      "de": "Helligkeitswert",
-      "en": "Lightness value",
-      "es": "Valor de luminosidad",
-      "fr": "Valeur de luminosité",
-      "ja": "明度値",
-      "zh-Hans": "明度数值"
-    },
     "显示图像": {
       "de": "Anzeigebild",
       "en": "Display image",
@@ -2843,14 +2587,6 @@
       "fr": "Image affichée",
       "ja": "表示画像",
       "zh-Hans": "显示图像"
-    },
-    "显示或隐藏调整栏": {
-      "de": "Anpassungsleiste ein- oder ausblenden",
-      "en": "Show or hide adjustment panel",
-      "es": "Mostrar u ocultar el panel de ajustes",
-      "fr": "Afficher ou masquer le panneau de réglages",
-      "ja": "調整パネルを表示または非表示",
-      "zh-Hans": "显示或隐藏调整栏"
     },
     "显示色彩降噪模式必须为 0、1 或 2。": {
       "de": "Der Anzeigefarb-Rauschreduzierungsmodus muss 0, 1 oder 2 sein.",
@@ -2939,14 +2675,6 @@
       "fr": "Affichage (_V)",
       "ja": "表示 (_V)",
       "zh-Hans": "查看(_V)"
-    },
-    "正在全分辨率导出…": {
-      "de": "Export in voller Auflösung läuft…",
-      "en": "Exporting at full resolution…",
-      "es": "Exportando a resolución completa…",
-      "fr": "Exportation en pleine résolution…",
-      "ja": "フル解像度で書き出し中…",
-      "zh-Hans": "正在全分辨率导出…"
     },
     "正在完成当前任务后关闭…": {
       "de": "Der aktuelle Auftrag wird vor dem Schließen abgeschlossen…",
@@ -3044,14 +2772,6 @@
       "ja": "写真プレビュー",
       "zh-Hans": "照片预览"
     },
-    "目录中没有直接 RAW 照片。": {
-      "de": "Der Ordner enthält keine direkten RAW-Fotos.",
-      "en": "The folder contains no RAW photos directly.",
-      "es": "La carpeta no contiene fotos RAW directamente.",
-      "fr": "Le dossier ne contient directement aucune photo RAW.",
-      "ja": "フォルダー直下にRAW写真がありません。",
-      "zh-Hans": "目录中没有直接 RAW 照片。"
-    },
     "相机内嵌预览 · 正在显影…": {
       "de": "Eingebettete Kameravorschau · wird gerendert…",
       "en": "Camera embedded preview · rendering…",
@@ -3116,14 +2836,6 @@
       "ja": "編集 (_E)",
       "zh-Hans": "编辑(_E)"
     },
-    "缩放与适合窗口": {
-      "de": "Zoomen und an Fenster anpassen",
-      "en": "Zoom and fit window",
-      "es": "Zoom y ajustar a la ventana",
-      "fr": "Zoom et ajustement à la fenêtre",
-      "ja": "ズームとウィンドウに合わせる",
-      "zh-Hans": "缩放与适合窗口"
-    },
     "缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。": {
       "de": "Die EXIF-Exportkomponente fehlt; entpacken Sie das vollständige RawLab-Paket erneut.",
       "en": "The EXIF export component is missing; extract the complete RawLab package again.",
@@ -3163,46 +2875,6 @@
       "fr": "Taille d’exportation personnalisée",
       "ja": "カスタム書き出しサイズ",
       "zh-Hans": "自定义导出尺寸"
-    },
-    "自定义长边": {
-      "de": "Benutzerdefinierte lange Kante",
-      "en": "Custom long edge",
-      "es": "Borde largo personalizado",
-      "fr": "Grand côté personnalisé",
-      "ja": "カスタム長辺",
-      "zh-Hans": "自定义长边"
-    },
-    "色彩降噪数值": {
-      "de": "Wert der Chrominanz-Rauschreduzierung",
-      "en": "Chroma denoise value",
-      "es": "Valor de reducción de ruido de crominancia",
-      "fr": "Valeur de réduction du bruit de chrominance",
-      "ja": "色差ノイズ低減値",
-      "zh-Hans": "色彩降噪数值"
-    },
-    "色相数值": {
-      "de": "Farbtonwert",
-      "en": "Hue value",
-      "es": "Valor de tono",
-      "fr": "Valeur de teinte",
-      "ja": "色相値",
-      "zh-Hans": "色相数值"
-    },
-    "草稿预览 · 尚未应用": {
-      "de": "Entwurfsvorschau · Noch nicht angewendet",
-      "en": "Draft preview · Not yet applied",
-      "es": "Vista previa del borrador · Aún no aplicado",
-      "fr": "Aperçu du brouillon · Pas encore appliqué",
-      "ja": "下書きプレビュー · 未適用",
-      "zh-Hans": "草稿预览 · 尚未应用"
-    },
-    "裁切提示": {
-      "de": "Clipping-Warnungen",
-      "en": "Clipping warnings",
-      "es": "Avisos de recorte",
-      "fr": "Alertes d’écrêtage",
-      "ja": "クリッピング警告",
-      "zh-Hans": "裁切提示"
     },
     "请先打开一张照片作为调整来源。": {
       "de": "Öffnen Sie zuerst ein Foto als Anpassungsquelle.",
@@ -3244,30 +2916,6 @@
       "ja": "対応する写真ファイルを選択してください。",
       "zh-Hans": "请选择支持的照片文件。"
     },
-    "调整值": {
-      "de": "Anpassungswert",
-      "en": "Adjustment value",
-      "es": "Valor del ajuste",
-      "fr": "Valeur du réglage",
-      "ja": "調整値",
-      "zh-Hans": "调整值"
-    },
-    "调整数值": {
-      "de": "Anpassungszahl",
-      "en": "Adjustment number",
-      "es": "Valor numérico del ajuste",
-      "fr": "Valeur numérique du réglage",
-      "ja": "調整値",
-      "zh-Hans": "调整数值"
-    },
-    "调整未保存": {
-      "de": "Anpassungen nicht gespeichert",
-      "en": "Adjustments not saved",
-      "es": "Ajustes no guardados",
-      "fr": "Réglages non enregistrés",
-      "ja": "調整を保存できませんでした",
-      "zh-Hans": "调整未保存"
-    },
     "调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。": {
       "de": "Der Anzeigefarb-Rauschreduzierungsmodus im Bearbeitungsdatensatz ist ungültig; die Originaldatei wurde nicht überschrieben.",
       "en": "The display chroma denoise mode in the edit record is invalid; the original file was not overwritten.",
@@ -3299,14 +2947,6 @@
       "fr": "L’Explorateur de fichiers est ouvert, mais la photo n’a pas pu être sélectionnée.",
       "ja": "エクスプローラーは開いていますが、写真を選択できませんでした。",
       "zh-Hans": "资源管理器已打开，但未能选中照片。"
-    },
-    "输入": {
-      "de": "Eingabe",
-      "en": "Input",
-      "es": "Entrada",
-      "fr": "Entrée",
-      "ja": "入力",
-      "zh-Hans": "输入"
     },
     "退出": {
       "de": "Beenden",
@@ -3347,14 +2987,6 @@
       "fr": "Catalogue de recettes invalide.",
       "ja": "レシピカタログが無効です。",
       "zh-Hans": "配方目录无效。"
-    },
-    "重置": {
-      "de": "Zurücksetzen",
-      "en": "Reset",
-      "es": "Restablecer",
-      "fr": "Réinitialiser",
-      "ja": "リセット",
-      "zh-Hans": "重置"
     },
     "重置亮度降噪": {
       "de": "Luminanz-Rauschreduzierung zurücksetzen",
@@ -3524,14 +3156,6 @@
       "ja": "ノイズ低減プリセット",
       "zh-Hans": "降噪预设"
     },
-    "顶边 (%)": {
-      "de": "Oben (%)",
-      "en": "Top (%)",
-      "es": "Arriba (%)",
-      "fr": "Haut (%)",
-      "ja": "上 (%)",
-      "zh-Hans": "顶边 (%)"
-    },
     "颗粒大小数值": {
       "de": "Wert der Korngröße",
       "en": "Grain size value",
@@ -3571,14 +3195,6 @@
       "fr": "Échec de la validation",
       "ja": "検証に失敗しました",
       "zh-Hans": "验证失败"
-    },
-    "高度 (%)": {
-      "de": "Höhe (%)",
-      "en": "Height (%)",
-      "es": "Alto (%)",
-      "fr": "Hauteur (%)",
-      "ja": "高さ (%)",
-      "zh-Hans": "高度 (%)"
     }
   }
 }

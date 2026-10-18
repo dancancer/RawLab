@@ -29,7 +29,7 @@ components:
 
 ## Overview
 
-Native macOS RAW verification and editing, with a Photos-inspired bottom adjustment dock. The actual photo leads; this is not a marketing page or a catalog database. Preserve RAW originals and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
+Native macOS RAW and raster photo verification and editing, with a Photos-inspired bottom adjustment dock. The actual photo leads; this is not a marketing page or a catalog database. Preserve source photos and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
 
 <!-- BEGIN RAWLAB IOS IPADOS OVERVIEW -->
 ### iOS / iPadOS
@@ -38,7 +38,7 @@ Native macOS RAW verification and editing, with a Photos-inspired bottom adjustm
 
 The native iOS and iPadOS editor uses the same restrained gray-and-yellow identity for an Operate surface: import a photo, inspect a real preview, adjust it and export. The photograph leads; system navigation, sheets, menus, SF Symbols and semantic text styles carry the interface.
 
-This extension is scoped to `RawLab/RawLab/UI/ContentView.swift`, its Adjustments, EditorState and Panels, and `EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.
+This extension is scoped to `RawLab/RawLab/UI/Editor/ContentView.swift`, its Adjustments, EditorState and Panels, and `RawLab/RawLab/UI/Controls/EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.
 
 **Key Characteristics:**
 - A dark photo workspace with yellow functional selection.
@@ -83,7 +83,7 @@ Film names retain stable two-line slots. Do not shrink text to make a circle, wi
 ## Layout
 
 - Minimum content size is 950x620 points; the photo workspace expands with the window.
-- A collapsible 200-300 point file tree spans the full content height on the left. Folder rows expand into subfolders and two-column RAW thumbnail grids.
+- A collapsible 200-300 point file tree spans the full content height on the left. Folder rows expand into subfolders and two-column supported-photo thumbnail grids.
 - The photo area contains neutral/result comparison panes sharing zoom and pan. Fit mode uses bounded previews; actual-pixel viewing requests native resolution and accounts for display scale.
 - A collapsible histogram floats at the photo area's upper-right. Optional photo information at the upper-left cycles between file details and capture settings, with a hidden state. Keep its width clear of the histogram and its text non-interactive so zoom and pan remain usable. There is no fixed right-side adjustment inspector.
 - Every edit control is in the bottom of the right-hand workspace, never beneath the file tree. Its header holds the active film name, exposure baseline and reset menu. Drag its upper edge to resize; collapse completely and restore using the toolbar adjustment icon without losing values or the previous height.
@@ -142,10 +142,10 @@ Film artwork and film selection outlines use the namespaced rounded tokens. Hist
 - The toolbar contains file-tree visibility, open, a comparison toggle, photo information, one zoom menu, adjustment visibility and export. The information action cycles hidden/file/capture; desktop `I` is inactive while entering text. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
 - Directory contents load on demand. Thumbnail decoding uses embedded previews with orientation; no full RAW decode is triggered merely to populate the file tree.
 - Histogram collapse state survives photo changes. Bottom tool selection survives film/numeric editor changes. Changed values retain their signed ring and marker.
-- No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite RAW input.
+- No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite the source file.
 - Photo adjustments and look identities persist locally per original photo; unseen photos start with defaults. Save failures remain visible and retryable. No sidecars or cloud catalog are created.
 - Batch export uses a frozen source adjustment snapshot, including denoise settings, in a separate desktop window or mobile task page. It never changes target photos' saved edits. The confirmed flow is documented in [the batch export design](docs/design/2026-10-09-edit-memory-batch-export/README.md).
-- Single and batch export size controls default to native resolution, with a long-edge pixel ceiling, presets and custom entry. Keep this setting separate from preview quality. Desktop file-tree context actions can explicitly copy current settings to confirmed targets' local edit records, without opening targets first or writing RAW originals; folder scope is direct RAW children only.
+- Single and batch export size controls default to native resolution, with a long-edge pixel ceiling, presets and custom entry. Keep this setting separate from preview quality. Desktop file-tree context actions can explicitly copy current settings to confirmed targets' local edit records, without opening targets first or changing source photos; folder scope is direct supported RAW/raster children only.
 
 <!-- BEGIN RAWLAB IOS IPADOS COMPONENTS -->
 ### iOS / iPadOS

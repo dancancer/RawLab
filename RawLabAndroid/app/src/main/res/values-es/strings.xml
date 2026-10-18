@@ -26,7 +26,7 @@
     <string name="comparison_wipe">"Divisor entre original y ajustada"</string>
     <string name="confirm">"Aceptar"</string>
     <string name="contrast">"Contraste"</string>
-    <string name="delete_look">"Eliminar look"</string>
+    <string name="delete_look">"Quitar look…"</string>
     <string name="denoise">"Reducción de ruido"</string>
     <string name="denoise_chroma">"Reducción de ruido de crominancia"</string>
     <string name="denoise_clean">"Prioridad a la reducción de ruido"</string>
@@ -40,7 +40,6 @@
     <string name="dng_file_only">"El DNG solo se puede guardar en Archivos"</string>
     <string name="edit_restored">"Ajustes anteriores restaurados"</string>
     <string name="edit_saved">"Ajustes guardados"</string>
-    <string name="edit_storage_error">"No se pueden abrir los ajustes locales. Comprueba el permiso de almacenamiento."</string>
     <string name="edit_unsaved">"Ajustes no guardados · Inténtalo de nuevo"</string>
     <string name="expand_adjustments">"Expandir ajustes"</string>
     <string name="expand_vignette">"Mostrar ajustes de viñeta"</string>
@@ -145,9 +144,9 @@
     <string name="lens_tca">"Aberración cromática lateral"</string>
     <string name="lens_unmatched">"No hay lente coincidente"</string>
     <string name="licenses">"Licencias de código abierto"</string>
-    <string name="look_error">"Error en la operación del look. Selecciona un archivo .cube o .rlook válido."</string>
+    <string name="look_error">"Operación fallida"</string>
     <string name="look_import_result">"Resultado de la importación"</string>
-    <string name="look_import_summary">"Looks importados: %1$d; archivos no importados: %2$d"</string>
+    <string name="look_import_summary">"Looks importados: %1$d; archivos no importados: %2$d\n"</string>
     <string name="look_imported">"Look importado"</string>
     <string name="look_importing">"Importando look…"</string>
     <string name="look_name">"Nombre del look"</string>
@@ -169,7 +168,7 @@
     <string name="message_collapse">"Contraer"</string>
     <string name="message_completed">"Completadas %1$s / %2$s"</string>
     <string name="message_confirm_photos">"Confirmar %1$s fotos"</string>
-    <string name="message_continue_unfinished_items">"Continuar elementos sin terminar"</string>
+    <string name="message_continue_unfinished_items">"Continuar con las fotos pendientes (%1$s)"</string>
     <string name="message_contrast">"Contraste"</string>
     <string name="message_could_not_confirm_whether_the_photo_was">"No se pudo confirmar si la foto se guardó. Comprueba la galería de fotos."</string>
     <string name="message_custom">"Personalizado"</string>
@@ -219,9 +218,10 @@
     <string name="message_stopping">"Deteniendo…"</string>
     <string name="message_succeeded_failed_not_processed">"Correctas %1$s · Fallidas %2$s · No procesadas %3$s"</string>
     <string name="message_target_photos_selected">"Fotos de destino (%1$s seleccionadas)"</string>
+    <string name="message_task_source_unavailable">"El archivo de origen de la tarea no está disponible. Vuelve a crear la tarea por lotes."</string>
     <string name="message_temperature">"Temperatura"</string>
     <string name="message_the_previous_save_result_is_uncertain_check">"El resultado del guardado anterior es incierto. Comprueba primero la galería o la carpeta de salida."</string>
-    <string name="message_the_task_source_or_look_file_is">"El origen de la tarea o el archivo de look no está disponible. Crea de nuevo la tarea por lotes."</string>
+    <string name="message_the_task_source_or_look_file_is">"El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea."</string>
     <string name="message_tint">"Matiz"</string>
     <string name="message_unable_to_read_batch_task">"No se puede leer la última tarea por lotes: %1$s"</string>
     <string name="message_unable_to_read_file">"No se puede leer el archivo"</string>
@@ -274,9 +274,7 @@
     <string name="rendering">"Revelando…"</string>
     <string name="reset">"Restablecer ajustes"</string>
     <string name="reset_denoise">"Restablecer la reducción de ruido"</string>
-    <string name="reset_grain">"Restablecer grano"</string>
     <string name="reset_value">"Restablecer este valor"</string>
-    <string name="reset_vignette">"Restablecer viñeta"</string>
     <string name="result">"Después"</string>
     <string name="retry">"Reintentar"</string>
     <string name="saturation">"Saturación"</string>

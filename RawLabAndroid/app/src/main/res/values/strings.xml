@@ -26,7 +26,7 @@
     <string name="comparison_wipe">"Original/adjusted divider"</string>
     <string name="confirm">"OK"</string>
     <string name="contrast">"Contrast"</string>
-    <string name="delete_look">"Delete look"</string>
+    <string name="delete_look">"Remove Look…"</string>
     <string name="denoise">"Noise Reduction"</string>
     <string name="denoise_chroma">"Chroma Noise Reduction"</string>
     <string name="denoise_clean">"Noise Reduction Priority"</string>
@@ -40,7 +40,6 @@
     <string name="dng_file_only">"DNG Can Only Be Saved to Files"</string>
     <string name="edit_restored">"Previous Adjustments Restored"</string>
     <string name="edit_saved">"Adjustments Saved"</string>
-    <string name="edit_storage_error">"Cannot open local adjustment records. Check storage permission."</string>
     <string name="edit_unsaved">"Adjustments not saved · Try again"</string>
     <string name="expand_adjustments">"Expand Adjustments"</string>
     <string name="expand_vignette">"Show Vignette Settings"</string>
@@ -145,9 +144,9 @@
     <string name="lens_tca">"Lateral Chromatic Aberration"</string>
     <string name="lens_unmatched">"No Lens Match"</string>
     <string name="licenses">"Open-source licenses"</string>
-    <string name="look_error">"Look operation failed. Select a valid .cube or .rlook file."</string>
+    <string name="look_error">"Operation failed"</string>
     <string name="look_import_result">"Import results"</string>
-    <string name="look_import_summary">"Looks imported: %1$d; files not imported: %2$d"</string>
+    <string name="look_import_summary">"Looks imported: %1$d; files not imported: %2$d\n"</string>
     <string name="look_imported">"Look imported"</string>
     <string name="look_importing">"Importing look…"</string>
     <string name="look_name">"Look name"</string>
@@ -169,7 +168,7 @@
     <string name="message_collapse">"Collapse"</string>
     <string name="message_completed">"Completed %1$s / %2$s"</string>
     <string name="message_confirm_photos">"Confirm %1$s photos"</string>
-    <string name="message_continue_unfinished_items">"Continue Unfinished Items"</string>
+    <string name="message_continue_unfinished_items">"Continue Unfinished Photos (%1$s)"</string>
     <string name="message_contrast">"Contrast"</string>
     <string name="message_could_not_confirm_whether_the_photo_was">"Could not confirm whether the photo was saved. Check the photo gallery."</string>
     <string name="message_custom">"Custom"</string>
@@ -219,9 +218,10 @@
     <string name="message_stopping">"Stopping…"</string>
     <string name="message_succeeded_failed_not_processed">"Succeeded %1$s · Failed %2$s · Unprocessed %3$s"</string>
     <string name="message_target_photos_selected">"Target photos (%1$s selected)"</string>
+    <string name="message_task_source_unavailable">"The task’s source file is unavailable. Create the batch task again."</string>
     <string name="message_temperature">"Temperature"</string>
     <string name="message_the_previous_save_result_is_uncertain_check">"The previous save result is uncertain. Check the gallery or output directory first."</string>
-    <string name="message_the_task_source_or_look_file_is">"The task source or look file is unavailable. Create the batch task again."</string>
+    <string name="message_the_task_source_or_look_file_is">"The look file used by this task is unavailable. Create the task again."</string>
     <string name="message_tint">"Tint"</string>
     <string name="message_unable_to_read_batch_task">"Unable to read last batch task: %1$s"</string>
     <string name="message_unable_to_read_file">"Unable to read file"</string>
@@ -274,9 +274,7 @@
     <string name="rendering">"Developing…"</string>
     <string name="reset">"Reset Adjustments"</string>
     <string name="reset_denoise">"Reset Noise Reduction"</string>
-    <string name="reset_grain">"Reset grain"</string>
     <string name="reset_value">"Reset this item"</string>
-    <string name="reset_vignette">"Reset vignette"</string>
     <string name="result">"After"</string>
     <string name="retry">"Try again"</string>
     <string name="saturation">"Saturation"</string>

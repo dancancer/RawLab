@@ -29,19 +29,18 @@ struct ExportSizePicker: View {
 
             if customSelected {
                 // 占位文字在填入数字后就不显示了，读屏名称要单独给
-                TextField(L10n.text("长边（1–65535 px）"), text: $customText)
-                    .accessibilityLabel(L10n.text("长边（1–65535 px）"))
+                TextField(L10n.text("长边"), text: $customText)
+                    .accessibilityLabel(L10n.text("导出长边像素"))
+                    .accessibilityHint(L10n.text("请输入 1–65535 之间的像素数"))
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: customText) { _, value in
                         longEdge = ExportSize.normalized(Int(value))
                         onValidityChanged(customValueIsValid)
                     }
-                if !customValueIsValid {
-                    Text(L10n.text("请输入 1–65535 之间的像素数"))
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+                Text(L10n.text("请输入 1–65535 之间的像素数"))
+                    .font(.caption)
+                    .foregroundStyle(customValueIsValid ? Color.secondary : Color.orange)
             }
         }
         .onAppear {

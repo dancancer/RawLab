@@ -165,7 +165,10 @@ class BatchExportModel(
         running = scope.launch(Dispatchers.IO) {
             try {
                 val materialized = configured
-                if (!materialized.source.sourceFile.isFile || ((materialized.source.settings.film != "neutral" || materialized.source.settings.recipeID != null) && materialized.source.lookFile?.isFile != true)) {
+                if (!materialized.source.sourceFile.isFile) {
+                    throw BatchGlobalFailure(AppStrings.text(R.string.message_task_source_unavailable))
+                }
+                if ((materialized.source.settings.film != "neutral" || materialized.source.settings.recipeID != null) && materialized.source.lookFile?.isFile != true) {
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)

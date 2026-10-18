@@ -46,12 +46,19 @@ def code_literals(path):
             yield number, line, decode(token)
 
 
-def untranslated(files, catalog, call):
+def untranslated(files, catalog, call, internal=lambda path, line, text: False):
     """既不是翻译键、也不在翻译调用里的中文字面量；本地化模块自身的母语名称除外"""
     return sorted(f"{path.relative_to(ROOT)}:{number}: {text}"
                   for path in files if path.stem != "Localization"
                   for number, line, text in code_literals(path)
-                  if CJK.search(text) and text not in catalog and call not in line)
+                  if CJK.search(text) and text not in catalog and call not in line and not internal(path, line, text))
+
+
+def windows_internal_group(path, line, text):
+    # 输入是持久的分组标识；可见标题改用“输入调整”，不改 Tag/Group 的契约。
+    return text == "输入" and (
+        path.name == "Adjustments.cs" and ("new(Parameter." in line or 'if (group ==' in line)
+        or path.name == "MainWindow.Commands.cs" and "ResetGroups=" in line)
 
 
 def xaml_literals(path):
@@ -184,6 +191,64 @@ class GeneratorFormatTests(unittest.TestCase):
 
 class LocalizationTests(unittest.TestCase):
 
+    def test_pr74_aligned_copy_matches_macos_in_all_six_languages(self):
+        aligned = {
+            "ios": ["无效的 HSL 参数", "无效或不可用的降噪参数", "无效的曝光基准", "无效的几何参数",
+                    "无效的暗角或颗粒参数", "无法生成预览", "保留这次几何或镜头修改？"],
+            "windows": ["导出", "裁切左边", "裁切上边", "裁切宽度", "裁切高度", "导出尺寸", "载入照片后可用",
+                        "打开照片", "保留这次几何或镜头修改？", "正在导出…", "缩放", "导出长边像素",
+                        "显示裁切提示", "输入调整", "重置调整", "任务使用的外观文件不可用，请重新创建任务。"],
+        }
+        for language in LANGUAGES:
+            macos = apple_catalog(ROOT / "RawLabMac/Resources" / (language + ".lproj") / "Localizable.strings")
+            ios = apple_catalog(ROOT / "RawLab/RawLab/Resources" / (language + ".lproj") / "Localizable.strings")
+            for client, keys in aligned.items():
+                catalog = ios if client == "ios" else windows_catalog(language)
+                for key in keys:
+                    self.assertEqual(catalog[key], macos[key], (client, language, key))
+            for key in ("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。", "参数或输出路径无效。", "不能覆盖原始文件。"):
+                self.assertEqual(ios[key], macos[key], (language, key))
+                self.assertEqual(windows_catalog(language)[key], macos[key], (language, key))
+
+    def test_pr74_cleanup_keeps_the_error_constructed_by_geometry_tests(self):
+        ios = json.loads((ROOT / "Shared/strings/platforms/ios.json").read_text())["entries"]
+        windows = json.loads((ROOT / "Shared/strings/platforms/windows.json").read_text())["entries"]
+        ios_retired = ["Histogram failed: %@", "不是 RAW 照片。", "小波降噪", "已选 %@ 张 RAW", "所选 RAW：%@",
+                       "批量导出目前仅支持 RAW 照片。", "无法保存语言设置。", "普通图片未加入，请选择 RAW。", "曝光补偿",
+                       "正在准备 RAW…", "版本", "粗颗粒降噪", "自定义白平衡", "请先导入一张 RAW 照片。"]
+        windows_retired = ["亮度降噪数值", "全部 HSL", "打开一张 RAW 照片", "拉直角度", "数值（", "旋转与翻转",
+                           "明度数值", "目录中没有直接 RAW 照片。", "色彩降噪数值", "色相数值", "调整值", "调整数值", "调整未保存"]
+        self.assertEqual(len(ios_retired) + len(windows_retired), 27)
+        self.assertFalse(set(ios_retired) & ios.keys())
+        self.assertFalse(set(windows_retired) & windows.keys())
+        self.assertIn("Image render failed.", ios)
+        self.assertIn("EditorError.renderFailed", (ROOT / "RawLab/tests/GeometrySourceHarness.swift").read_text())
+
+    def test_pr74_android_composition_preserves_argument_types_and_failure_roles(self):
+        entries = json.loads((ROOT / "Shared/strings/platforms/android.json").read_text())["entries"]
+        expected = {
+            "message_the_task_source_or_look_file_is": ("任务使用的外观文件不可用，请重新创建任务。", []),
+            "delete_look": ("移除外观…", []), "remove_look_confirmation": ("移除“{0}”？", ["s"]),
+            "look_error": ("操作失败", []), "look_import_summary": ("已导入 {0} 个外观，{1} 个文件导入失败：\n", ["d", "d"]),
+            "edit_read_error": ("无法读取调整记录：{0}", ["s"]), "edit_unsaved_detail": ("调整未保存：{0}", ["s"]),
+            "message_continue_unfinished_items": ("继续未完成的 {0} 张", ["s"]), "reset_effect": ("重置{0}", ["s"]),
+        }
+        for key, (source, types) in expected.items():
+            self.assertEqual(entries[key]["source"], source, key)
+            self.assertEqual(entries[key]["types"], types, key)
+        self.assertEqual(entries["look_storage_error"]["source"], "外观库读取失败，请稍后重试或删除损坏的外观记录。")
+        self.assertIn("edit_unsaved", entries)
+        for retired in ("edit_storage_error", "reset_vignette", "reset_grain"):
+            self.assertNotIn(retired, entries)
+
+    def test_complete_privacy_units_preserve_the_macos_paragraph_in_every_language(self):
+        catalog = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
+        first = "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。"
+        second = "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"
+        for language in LANGUAGES:
+            separator = "" if language in ("zh-Hans", "ja") else " "
+            self.assertEqual(catalog[first][language] + separator + catalog[second][language], catalog[first + second][language], language)
+
     def test_aligned_controls_reuse_macos_copy_in_every_language(self):
         sys.path.insert(0, str(ROOT / "scripts/localization"))
         from formats import android_unquote
@@ -287,7 +352,7 @@ class LocalizationTests(unittest.TestCase):
             files = list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
-        self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc."), [], "RawLabWindows")
+        self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")
         self.assertEqual([hit for path in windows.glob("*.xaml") for hit in xaml_literals(path)], [], "XAML")
 
     def test_ui_labels_start_with_capital(self):

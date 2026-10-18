@@ -26,7 +26,7 @@ public partial class MainWindow
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
         try { previousBatch = batchJournal.Load(); }
-        catch (Exception error) { Report(new IOException(Loc.Text("无法读取上次批量任务：") + error.Message, error)); }
+        catch (Exception error) { Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", error.Message), error)); }
         RefreshBatchNotice(); UpdateBusy();
     }
 
@@ -164,7 +164,7 @@ public partial class MainWindow
         closing=false;IsEnabled=true;
         ResumePreview();QueueThumbnailRefresh();
         RefreshControls();RefreshBatchNotice();
-        SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);
+        SetStatus(window.Job.Error ?? Loc.Text("任务未保存。"),true);
     }
     private void RefreshBatchNotice()
     {

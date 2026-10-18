@@ -111,18 +111,18 @@ internal static class AboutChecks
             BindingOperations.GetBinding(run, TextRun.TextProperty)?.Path?.Path == nameof(UpdateChecker.CurrentVersion)));
         var versionRun = versionText.Inlines.OfType<TextRun>().Single(run =>
             BindingOperations.GetBinding(run, TextRun.TextProperty)?.Path?.Path == nameof(UpdateChecker.CurrentVersion));
-        check(about.IsVisible && ReferenceEquals(about.DataContext, updates) && versionRun.Text == updates.CurrentVersion &&
+        var expectedVersion = Loc.Format("版本 {0}", updates.CurrentVersion);
+        check(about.IsVisible && ReferenceEquals(about.DataContext, updates) && versionRun.Text == expectedVersion &&
               BindingOperations.GetBinding(versionRun, TextRun.TextProperty)!.Mode == BindingMode.OneWay &&
               BindingOperations.GetBindingExpression(versionRun, TextRun.TextProperty)!.Status == BindingStatus.Active,
             $"About displays the current version through an active OneWay binding ({language})");
-        var actualLabel = versionText.Inlines.OfType<TextRun>().First().Text;
         var actualText = new TextRange(versionText.ContentStart, versionText.ContentEnd).Text;
         var selectedLanguage = ((ComboBox)about.FindName("LanguageBox")!).SelectedValue?.ToString();
-        var localized = about.Title == Loc.Text("关于 RawLab") && actualLabel == label &&
-                        actualText == label + " " + updates.CurrentVersion && selectedLanguage == language;
+        var localized = about.Title == Loc.Text("关于 RawLab") &&
+                        actualText == expectedVersion && selectedLanguage == language;
         if (!localized) Console.WriteLine("About values: " + System.Text.Json.JsonSerializer.Serialize(new {
-            about.Title, ExpectedTitle = Loc.Text("关于 RawLab"), Label = actualLabel, ExpectedLabel = label,
-            Text = actualText, ExpectedText = label + " " + updates.CurrentVersion, Language = selectedLanguage, ExpectedLanguage = language }));
+            about.Title, ExpectedTitle = Loc.Text("关于 RawLab"),
+            Text = actualText, ExpectedText = expectedVersion, Language = selectedLanguage, ExpectedLanguage = language }));
         check(localized,
             $"About title, version label and language selection follow the {language} catalog");
         var texts = Descendants(about).OfType<TextBlock>().Select(text => text.Text).ToList();

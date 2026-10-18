@@ -254,12 +254,13 @@ struct BatchExportView: View {
                         .font(.footnote)
                 }
                 if model.pendingCount > 0 {
-                    primary(model.job.status == .draft ? L10n.format("导出 %@ 张", String(describing: model.selectedCount)) : L10n.text("继续未完成项")) { model.start() }
+                    primary(model.job.status == .draft ? L10n.format("导出 %@ 张", String(describing: model.selectedCount)) :
+                                L10n.format("继续未完成的 %@ 张", String(describing: model.pendingCount))) { model.start() }
                         .disabled(!model.canStart || !exportSizeValid).accessibilityIdentifier("batch.export")
                 } else if model.failedCount > 0 {
                     primary(L10n.format("重试失败的 %@ 张", String(describing: model.failedCount))) { model.retryFailed() }.disabled(!model.canStart)
                 } else if model.job.status == .draft {
-                    primary(L10n.text("导出 0 张")) { }.disabled(true).accessibilityIdentifier("batch.export")
+                    primary(L10n.format("导出 %@ 张", String(describing: model.selectedCount))) { }.disabled(true).accessibilityIdentifier("batch.export")
                 }
             }
         }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: .infinity)

@@ -82,7 +82,7 @@ public partial class MainWindow : Window
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
             BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
-            RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu();
+            RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
@@ -156,7 +156,7 @@ public partial class MainWindow : Window
             interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
         };
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
-        ready=true; RefreshControls(); RefreshRenderLabels();
+        ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();
         InitializeEditWorkflow();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
