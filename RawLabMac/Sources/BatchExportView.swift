@@ -118,7 +118,8 @@ struct BatchExportView: View {
             valueRow(L10n.text("曝光基准"), model.job.settings.exposureMode.title)
             DisclosureGroup(L10n.text("全部调整")) {
                 VStack(spacing: 10) {
-                    ForEach(AdjustmentParameter.allCases) { parameter in
+                    // 曝光已在上方摘要中，这里不再重复
+                    ForEach(AdjustmentParameter.allCases.filter { $0 != .exposure }) { parameter in
                         let spec = parameter.spec(for: model.job.settings)
                         valueRow(spec.title, parameter.isWhiteBalance && model.job.settings.whiteBalanceMode == .asShot
                                  ? L10n.text("按每张照片") : spec.display(model.job.settings[keyPath: spec.keyPath]))

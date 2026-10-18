@@ -202,6 +202,16 @@ class InterfaceCopy(unittest.TestCase):
         self.assertNotIn('String(format: "%+.2f EV"', view)
         self.assertIn("spec.display(model.job.settings[keyPath: spec.keyPath])", view)
 
+    # ------------------------------------------------------------------------
+    #  同一面板不重复显示同一个数值：批量导出摘要已列出曝光，"全部调整"展开后不再列一次
+    # ------------------------------------------------------------------------
+    def test_batch_summary_does_not_repeat_exposure(self):
+        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        summary = view[view.index('Text(L10n.text("调整来源"))'):view.index('DisclosureGroup(L10n.text("全部调整"))')]
+        full = view[view.index('DisclosureGroup(L10n.text("全部调整"))'):view.index('Text(L10n.text("输出"))')]
+        self.assertIn("AdjustmentParameter.exposure", summary)
+        self.assertIn("AdjustmentParameter.allCases.filter { $0 != .exposure }", full)
+
 
 if __name__ == "__main__":
     unittest.main()
