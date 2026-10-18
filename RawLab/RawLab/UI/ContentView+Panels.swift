@@ -69,10 +69,14 @@ extension ContentView {
                     showingExportSize = true
                 }
                 .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
-                Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
-                    .accessibilityIdentifier("editor.batchExport")
-                if batchModel != nil { Button(L10n.text("查看批量任务")) { showingBatchExport = true } }
+                // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
+                if batchModel == nil {
+                    Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
+                        .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                        .accessibilityIdentifier("editor.batchExport")
+                } else {
+                    Button(L10n.text("查看批量任务")) { showingBatchExport = true }
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }

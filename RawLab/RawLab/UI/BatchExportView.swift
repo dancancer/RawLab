@@ -131,7 +131,7 @@ struct BatchExportView: View {
                 }
             }.padding(.horizontal, 20).padding(.top, 12)
             if model.job.targets.isEmpty {
-                Text(L10n.text("尚未选择照片")).foregroundStyle(.secondary).padding(.horizontal, 20)
+                EmptyView()
             } else if model.job.status == .draft {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 12) {
@@ -178,7 +178,9 @@ struct BatchExportView: View {
                     }
                 }.padding(.horizontal, 20)
             }
-            Text(L10n.format("已选 %@ 张照片", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
+            // 空任务只说"尚未选择照片"，有照片时给出张数
+            Text(model.job.targets.isEmpty ? L10n.text("尚未选择照片")
+                 : L10n.format("已选 %@ 张照片", String(describing: model.job.targets.count))).foregroundStyle(.secondary)
                 .padding(.horizontal, 20).padding(.bottom, 16)
         }
     }

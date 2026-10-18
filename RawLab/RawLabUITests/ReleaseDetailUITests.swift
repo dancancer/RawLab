@@ -59,6 +59,29 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
     }
 
+    // 空批量任务只说"尚未选择照片"，不再重复一行"已选 0 张照片"
+    func testEmptyBatchStatesTheSelectionOnce() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        try openBatch(in: app)
+        XCTAssertTrue(app.staticTexts["No Photos Selected"].exists, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["0 Photos Selected"].exists, "the empty batch repeats its selection count")
+        discardBatch(in: app)
+    }
+
+    // 同时只有一个批量任务：已有任务时导出菜单只给"查看批量任务"，不再并列一个同样打开旧任务的新建入口
+    func testExportMenuOffersOneEntryForAPendingBatch() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        try openBatch(in: app)
+        app.buttons["Back"].tap()
+        app.buttons["editor.export"].tap()
+        XCTAssertTrue(app.buttons["View Batch Task"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["editor.batchExport"].exists, "a second entry opens the same pending task")
+        app.buttons["View Batch Task"].tap()
+        discardBatch(in: app)
+    }
+
     // ------------------------------------------------------------------------
     //  工具函数
     // ------------------------------------------------------------------------
@@ -102,6 +125,25 @@ final class ReleaseDetailUITests: XCTestCase {
         }
         let frame = tool.frame
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+    }
+
+    private func openBatch(in app: XCUIApplication) throws {
+        app.buttons["editor.export"].tap()
+        let create = app.buttons["editor.batchExport"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10), app.debugDescription)
+        create.tap()
+        XCTAssertTrue(app.buttons["batch.pick"].waitForExistence(timeout: 30), app.debugDescription)
+    }
+
+    // 放弃任务，免得留下的批量任务影响之后的用例
+    private func discardBatch(in app: XCUIApplication) {
+        let actions = app.buttons["Task Actions"]
+        guard actions.waitForExistence(timeout: 10) else { return }
+        actions.tap()
+        app.buttons["Discard Task"].firstMatch.tap()
+        // 菜单项和确认框按钮同名：菜单收起后再点确认框里的那个
+        let confirm = app.buttons["Discard Task"].firstMatch
+        if confirm.waitForExistence(timeout: 5) { confirm.tap() }
     }
 
     // 两张截图缩到同一尺寸后的平均灰度差（0–255）
