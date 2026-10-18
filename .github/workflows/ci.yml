@@ -46,6 +46,8 @@ jobs:
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
           python scripts/ci/test_workflow.py
+          python scripts/localization/generate.py --check
+          python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
           python lutools/tests/test_cli_test_encoding.py
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
