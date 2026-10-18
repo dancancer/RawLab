@@ -72,19 +72,14 @@ struct IOSGeometryControls: View {
         }
     }
 
-    @ViewBuilder
+    // 两个按钮等高：一侧文字折行时另一侧跟着拉高；大字号时上下排列
     private var rotationControls: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(spacing: 8) {
-                rotationButton(clockwise: false)
-                rotationButton(clockwise: true)
-            }
-        } else {
-            HStack(alignment: .top, spacing: 8) {
-                rotationButton(clockwise: false)
-                rotationButton(clockwise: true)
-            }
+        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            rotationButton(clockwise: false)
+            rotationButton(clockwise: true)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func rotationButton(clockwise: Bool) -> some View {
@@ -98,7 +93,7 @@ struct IOSGeometryControls: View {
             } icon: {
                 Image(systemName: clockwise ? "rotate.right" : "rotate.left")
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: .infinity)
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier(clockwise ? "geometry.rotateRight" : "geometry.rotateLeft")

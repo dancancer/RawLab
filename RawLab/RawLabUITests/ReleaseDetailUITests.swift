@@ -59,6 +59,17 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
     }
 
+    // 两个旋转按钮并排时一样高：英文"90° Counterclockwise"折成多行，不能把左边按钮撑得比右边高
+    func testRotationButtonsShareOneHeight() throws {
+        let app = launch()
+        try importFirstVisiblePhoto(in: app)
+        try selectTool("geometry", in: app)
+        let left = app.buttons["geometry.rotateLeft"], right = app.buttons["geometry.rotateRight"]
+        XCTAssertTrue(left.waitForExistence(timeout: 10) && right.exists, app.debugDescription)
+        XCTAssertEqual(left.frame.height, right.frame.height, accuracy: 1)
+        XCTAssertEqual(left.frame.minY, right.frame.minY, accuracy: 1)
+    }
+
     // 空批量任务只说"尚未选择照片"，不再重复一行"已选 0 张照片"
     func testEmptyBatchStatesTheSelectionOnce() throws {
         let app = launch()
