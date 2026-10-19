@@ -2,3 +2,4 @@ self-hosted-runner:
   labels:
     - rawlab-android
     - rawlab-windows
+    - rawlab-apple

@@ -17,6 +17,18 @@ class WindowsRunnerConfigurationTests(unittest.TestCase):
         self.assertNotIn('WriteAllText("$runner\\.path"', text)
 
 
+class MacRunnerConfigurationTests(unittest.TestCase):
+    def test_listener_environment_keeps_python_after_config_overwrites_dot_path(self):
+        text = SCRIPT.with_name('provision-macos-runner.sh').read_text()
+        self.assertIn('"PATH=$root/venv/bin:$PATH"', text)
+
+    def test_provisioning_refuses_the_developer_or_non_mac_account(self):
+        script = SCRIPT.with_name('provision-macos-runner.sh')
+        result = subprocess.run(['bash', str(script)], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Use the non-administrator rawlab-ci account on an Apple Silicon Mac.', result.stderr)
+
+
 @unittest.skipUnless(shutil.which("bash") and shutil.which("curl") and shutil.which("sha256sum"),
                      "Requires bash, curl and sha256sum")
 class RunnerArchiveTests(unittest.TestCase):

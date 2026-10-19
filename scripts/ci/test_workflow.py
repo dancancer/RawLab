@@ -34,17 +34,17 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("if", job)
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
                 self.assertNotIn("permissions", job)
-                if name not in ("android", "windows"):
+                if name == "contracts":
                     self.assertNotIn("self-hosted", job["runs-on"])
         mac = jobs["macos"]
         self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
         self.assertEqual(mac["env"]["MACOSX_DEPLOYMENT_TARGET"], "14.0")
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], [
-            {"runner": "macos-26", "arch": "arm64"},
-            {"runner": "macos-26-intel", "arch": "x86_64"},
+            {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "2"},
         ])
-        self.assertEqual(jobs["ios"]["runs-on"], "macos-26")
+        self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
     def test_actions_and_artifact_paths_are_constrained(self):
         for name, job in self.workflow["jobs"].items():
@@ -78,7 +78,24 @@ class WorkflowContractTests(unittest.TestCase):
         configuration = ROOT / ".github/actionlint.yaml"
         self.assertTrue(configuration.is_file(), "Declare custom labels for actionlint")
         policy = yaml.load(configuration.read_text(), Loader=yaml.BaseLoader)
-        self.assertEqual(policy["self-hosted-runner"]["labels"], ["rawlab-android", "rawlab-windows"])
+        self.assertEqual(policy["self-hosted-runner"]["labels"],
+                         ["rawlab-android", "rawlab-windows", "rawlab-apple"])
+
+    def test_local_apple_jobs_use_prepared_tools_and_preserve_selected_xcode(self):
+        jobs = self.workflow['jobs']
+        self.assertEqual(jobs['macos']['env']['JOBS'], '${{ matrix.jobs }}')
+        self.assertEqual(jobs['ios']['env']['JOBS'], '6')
+        for name in ('macos', 'ios'):
+            steps = jobs[name]['steps']
+            python_setup = [step for step in steps if step.get('uses', '').startswith('actions/setup-python@')]
+            if name == 'macos':
+                self.assertEqual(python_setup[0]['if'], "matrix.arch == 'x86_64'")
+            else:
+                self.assertEqual(python_setup, [])
+            key_step = next(step for step in steps if step.get('id') == 'native-key')
+            self.assertIn('pip install -r scripts/ci/requirements.txt', key_step['run'])
+            commands = '\n'.join(step.get('run', '') for step in steps)
+            self.assertIn('DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"', commands)
 
     def test_windows_uses_a_dedicated_runner_and_data_volume(self):
         windows = self.workflow["jobs"]["windows"]

@@ -11,10 +11,10 @@ credentials. A workflow run is not release authorization.
 | Check | Runner | Coverage |
 | --- | --- | --- |
 | Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, single-preview source contracts, whitespace |
-| macOS build and parity (arm64 / x86_64) | macOS 26 arm64 and Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
+| macOS build and parity (arm64 / x86_64) | Dedicated Apple Silicon Mac and hosted macOS 26 Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
 | Windows build and parity | Dedicated Windows 11 x64 KVM / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
 | Android build and JVM tests | Dedicated Ubuntu 24.04 KVM / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
-| iOS framework and unsigned app | macOS 26 arm64 / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
+| iOS framework and unsigned app | Apple Silicon runner pool / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
 
 All six checks (five job groups, including both Mac architectures) must
 **succeed on the current PR head/test merge**. A missing,
@@ -35,7 +35,7 @@ protection settings or grant permission to bypass them.
   mismatch; the Android and iOS jobs build Debug, which carries no SDK. No job
   launches a packaged app, uses secrets or sends RUM traffic.
 - macOS explicitly excludes `native_dcp_metal`, `gpu_photo` and `metal_denoise`
-  from the hosted CTest invocation. Other tests may exercise an available GPU
+  from the CI CTest invocation. Other tests may exercise an available GPU
   opportunistically; this is not a guaranteed physical GPU gate.
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
@@ -44,14 +44,14 @@ protection settings or grant permission to bypass them.
   XCTest, import Photos fixtures, sign a device app or validate installation.
 - Android compiles instrumentation tests but does **not** run connected-device
   tests. GLES, SAF, OEM locale and physical interaction evidence stays separate.
-- Building both architectures with a 14.0 minimum on macOS 26 does not establish
+- Building both architectures with a 14.0 minimum on a newer macOS does not establish
   runtime support on macOS 14; native acceptance on the minimum OS is separate.
   [Runner labels](https://github.com/actions/runner-images/blob/main/README.md)
   and toolchains can change; logs identify the actual environment.
 - Mac dependencies include source-built dynamic GLib/Lensfun rather than a
   higher-minimum Homebrew bottle. App/bundled-dylib architecture and minimum OS
   are checked by the existing bundle gate. The 14.0-target picker model/native
-  bridge regressions run on both hosted architectures, not on an OS 14 host.
+  bridge regressions run on both architectures, not on an OS 14 host.
 
 ## Safety and Results
 
@@ -62,8 +62,8 @@ The workflow has bounded jobs and cancels obsolete runs for the same PR/ref.
 ## Local Android Runner
 
 GitHub Actions still owns triggers, check results, logs and dependency caches.
-The Android job selects `[self-hosted, linux, x64, rawlab-android]`; Apple and
-contract jobs currently keep their hosted runners. This label belongs only to a dedicated Ubuntu
+The Android job selects `[self-hosted, linux, x64, rawlab-android]`. This label
+belongs only to a dedicated Ubuntu
 24.04 KVM guest with 32 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
 Proxmox host must not carry a runner, JDK or Android toolchain.
 
@@ -116,11 +116,17 @@ Use a separate 120 GiB NTFS data volume for `E:\RawLabCI`: runner installation, 
 toolcache, SDK downloads, NuGet/Python caches, temporary files and build output
 belong there, not on the existing system drive or developer build workspace.
 `provision-windows-runner.ps1` rejects system-drive and relative roots. Supply
-the pinned PowerShell 7.6.7 and runner 2.338.0 ZIPs from their official GitHub
-releases plus the source-archive bundle and `lens-dependencies.json`; the
+the pinned PowerShell 7.6.7, runner 2.338.0 and actions/python-versions 3.12.10
+ZIPs from their official GitHub releases plus the source-archive bundle and `lens-dependencies.json`; the
 script verifies all SHA-256 values before use. Run
 `test_windows_runner_provisioning.ps1` as an administrator in the guest to
-exercise the no-install safety guards.
+exercise the no-install safety guards; add `-VerifyToolchain` after provisioning
+to verify the completed Python cache. The administrator seeds the official
+Python tool cache once because setup-python invokes Windows PowerShell without
+an execution-policy override and the installer needs administrator privileges.
+The bootstrap overrides policy only in that installer process, not on the
+machine or service account. It refuses to replace an existing Python 3.12
+installation outside this cache. Keep the runner service unprivileged.
 
 Register the runner separately with the `rawlab-windows` label, `_work` on the
 data volume, and `NT AUTHORITY\NETWORK SERVICE`, not LocalSystem or the
@@ -139,6 +145,46 @@ cover real Explorer/UIA interaction. To roll back, restore `windows-2022`, its
 previous parallelism and matching policy/actionlint declarations rather than
 skipping required checks.
 
+## Local Apple Runners
+
+macOS arm64 and iOS both select `[self-hosted, macOS, ARM64, rawlab-apple]`.
+Each Mac runs one runner, so the two Apple jobs can execute concurrently without
+sharing memory or build directories. When the developer laptop is offline, the
+always-on Mac can execute both jobs sequentially instead of waiting indefinitely
+for a role-specific runner. Either host must have both complete toolchains.
+Their initial build parallelism is six. The Intel matrix
+entry remains on `macos-26-intel` with two workers; neither cross-compilation
+nor Rosetta substitutes for its native x86_64 runtime checks.
+
+These two runners run directly on user-approved physical Macs, unlike the
+Android/Windows KVM guests. Use the dedicated non-administrator `rawlab-ci`
+account, not a personal administrator account. Prepare full Xcode and Homebrew
+`cmake`, `pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
+administrator. Keep Xcode on a local disk with sufficient capacity and use
+`DEVELOPER_DIR` rather than changing another user's selected developer tools.
+`provision-macos-runner.sh <ci-root> <Xcode.app> <runner-archive>` checks the
+account and SDKs, verifies the pinned official arm64 runner archive, and creates
+an isolated Python 3.12 venv and dedicated build/cache/temp directories. Do not
+copy private SSH keys, personal Keychains or signing credentials into this account.
+
+Local Apple jobs use that prepared Python instead of setup-python's macOS
+installer, whose fixed framework installation requires elevated privileges.
+CI installs its pinned requirements only in the venv. Keep the complete PATH in
+the runner's `.path` and literal SDK/cache variables in `.env`. PATH is also
+stored in `.env` because `config.sh` rewrites `.path` during registration.
+Configure each runner separately with its shared pool label and own workspace, then install its
+official user LaunchAgent while `rawlab-ci` is logged in. A user LaunchAgent
+depends on that login session: fast user switching is fine, logout or machine
+sleep makes the runner unavailable. Do not grant the CI account sudo or change
+sleep/security settings silently on a developer's laptop.
+
+This remains trusted-code execution, not a security sandbox. Use separate
+workspaces per machine and keep persistent source/download caches separate from
+the exact dependency-output cache. Logs record the actual macOS/Xcode versions;
+moving hosts is not evidence for minimum-OS, physical GPU or device acceptance.
+To roll back, restore hosted `macos-26` for the relevant job and its Python setup
+step, parallelism, policy tests and actionlint declarations. Keep all six checks.
+
 ## Native Dependency Caches
 
 PR checks restore third-party native dependencies using an exact cache key.
@@ -153,10 +199,18 @@ seed unrelated PRs. See the [GitHub cache scope reference](https://docs.github.c
 
 [`native_cache.py`](../../scripts/ci/native_cache.py) owns the input/path allowlists.
 Keys include pinned dependency versions/checksums, patches and build scripts,
-workflow configuration, compiler and SDK identity, runner image, target
+the complete consuming workflow job and shared defaults, compiler and SDK
+identity, runner image, target
 architectures/minimum OS, and the absolute workspace/toolchain paths. This last
 constraint matters for pkg-config prefixes, Lensfun's `libraries.json` and
 CMake/Xcode/MSBuild state. There are no prefix/fallback restore keys.
+Changing an unrelated platform's job no longer invalidates every native cache.
+Mac matrix identity includes only the selected architecture row. Shared job
+steps, build environment/defaults and cache-helper changes still invalidate their
+consumers. Mac tool identity includes the relevant Homebrew build tools and m4,
+not unrelated installed applications; CMake, Python, Xcode and SDK identities
+remain explicit. This reduces false misses without caching product outputs or
+changing the cold-push policy.
 
 | Platform | Cached | Always rebuilt |
 | --- | --- | --- |
