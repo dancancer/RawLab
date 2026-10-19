@@ -179,6 +179,12 @@ After installing or updating Xcode, an administrator must accept that version's
 license and run its first-launch initialization with the same `DEVELOPER_DIR`.
 The CI account must pass `xcodebuild -checkFirstLaunchStatus` and SDK discovery
 without sudo before runner registration; an older Xcode license is not sufficient.
+The iOS simulator SDK alone is not enough: both pool hosts need an available iOS
+simulator runtime for the look-import regression. Prepare one with the selected
+Xcode's `xcodebuild -downloadPlatform iOS -architectureVariant arm64`, or export
+and import an official runtime using `-exportPath` and `-importPlatform`.
+Provisioning checks `xcrun simctl list runtimes available -j` as the runner user
+before creating runner files; it never installs system components from a CI job.
 `provision-macos-runner.sh <ci-root> <Xcode.app> <runner-archive>` checks the
 account and SDKs, verifies the pinned official arm64 runner archive, and creates
 an isolated Python 3.12 venv and dedicated build/cache/temp directories. Do not

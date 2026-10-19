@@ -31,6 +31,13 @@ xcodebuild -checkFirstLaunchStatus
 xcrun --sdk macosx --show-sdk-path
 xcrun --sdk iphoneos --show-sdk-path
 xcrun --sdk iphonesimulator --show-sdk-path
+xcrun simctl list runtimes available -j | "$python" -c '
+import json, sys
+runtimes = json.load(sys.stdin).get("runtimes", [])
+if not any(runtime.get("platform") == "iOS" and runtime.get("isAvailable") and runtime.get("identifier")
+           for runtime in runtimes):
+    sys.exit("Install an available iOS simulator runtime before registering this Apple runner.")
+'
 for tool in brew cmake pkg-config autoconf automake glibtoolize; do command -v "$tool"; done
 brew list --versions autoconf automake libtool m4 pkgconf
 printf '%s  %s\n' df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2 "$archive" | shasum -a 256 -c -

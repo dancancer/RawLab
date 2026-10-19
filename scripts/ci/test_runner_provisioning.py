@@ -19,6 +19,13 @@ class WindowsRunnerConfigurationTests(unittest.TestCase):
 
 
 class MacRunnerConfigurationTests(unittest.TestCase):
+    def test_ios_runtime_is_checked_before_runner_files_are_created(self):
+        text = SCRIPT.with_name('provision-macos-runner.sh').read_text()
+        command = 'xcrun simctl list runtimes available -j'
+        self.assertIn(command, text)
+        self.assertIn('runtime.get("platform") == "iOS" and runtime.get("isAvailable")', text)
+        self.assertLess(text.index(command), text.index('mkdir -p'))
+
     def test_personal_account_requires_explicit_opt_in_and_never_root(self):
         script = SCRIPT.with_name('provision-macos-runner.sh')
         with tempfile.TemporaryDirectory(prefix='rawlab-mac-personal-runner-') as temporary:
