@@ -68,7 +68,7 @@ extension RawEditorViewModel {
                                    sourceURL: sourceURL,
                                    displayName: sourceDisplayName ?? sourceURL.lastPathComponent,
                                    sourceKind: sourceKind == .raw ? .raw : .raster,
-                                   settings: settings)
+                                   settings: settings, cachedSource: cachedSource)
     }
 
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
@@ -82,7 +82,8 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation)
+        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation,
+                      owner: cachedSource)
         guard let sourceURL = source.url, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -93,8 +94,8 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
-
-        DispatchQueue.global(qos: .userInitiated).async {
+        exportQueue.async {
+            defer { withExtendedLifetime(source.owner) {} }
             do {
                 let lutURL = self.lutURL(for: settings)
                 let data: Data
@@ -154,7 +155,8 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation)
+        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation,
+                      owner: cachedSource)
         guard let sourceURL = source.url, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -169,7 +171,8 @@ extension RawEditorViewModel {
             ? "RawLab" : sourceURL.deletingPathExtension().lastPathComponent
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(base)-rendered-\(UUID().uuidString).dng")
-        DispatchQueue.global(qos: .userInitiated).async {
+        exportQueue.async {
+            defer { withExtendedLifetime(source.owner) {} }
             do {
                 let lutURL = self.lutURL(for: settings)
                 if sourceKind == .raw {

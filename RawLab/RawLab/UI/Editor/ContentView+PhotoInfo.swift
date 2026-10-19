@@ -48,8 +48,10 @@ extension ContentView {
             guard let url = viewModel.sourceURL else { return }
             let revision = viewModel.sourceRevision
             let displayName = viewModel.sourceDisplayName ?? url.lastPathComponent
+            let cachedSource = viewModel.cachedSource
             let info = await Task.detached(priority: .utility) {
-                readPhotoInformation(url: url, displayName: displayName)
+                defer { withExtendedLifetime(cachedSource) {} }
+                return readPhotoInformation(url: url, displayName: displayName)
             }.value
             guard !Task.isCancelled, viewModel.sourceRevision == revision,
                   viewModel.sourceURL == url else { return }

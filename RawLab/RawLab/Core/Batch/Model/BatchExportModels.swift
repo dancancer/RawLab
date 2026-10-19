@@ -72,23 +72,40 @@ enum BatchExportError: LocalizedError {
 
 struct BatchSourceSnapshot: Codable, Equatable {
     let identity: PhotoIdentity
-    var sourceURL: URL
+    var sourceURL: URL {
+        didSet {
+            if sourceURL != cachedSource?.url { cachedSource = nil }
+        }
+    }
     let displayName: String
     let sourceKind: BatchSourceKind
     let settings: RawSettings
     var lookURL: URL?
     var lookName: String?
+    var cachedSource: CachedPhotoFile?
+
+    private enum CodingKeys: String, CodingKey {
+        case identity, sourceURL, displayName, sourceKind, settings, lookURL, lookName
+    }
 
     init(identity: PhotoIdentity,
          sourceURL: URL,
          displayName: String,
          sourceKind: BatchSourceKind = .raw,
-         settings: RawSettings) {
+         settings: RawSettings,
+         cachedSource: CachedPhotoFile? = nil) {
         self.identity = identity
         self.sourceURL = sourceURL
         self.displayName = displayName
         self.sourceKind = sourceKind
         self.settings = settings
+        self.cachedSource = cachedSource
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.identity == rhs.identity && lhs.sourceURL == rhs.sourceURL &&
+            lhs.displayName == rhs.displayName && lhs.sourceKind == rhs.sourceKind &&
+            lhs.settings == rhs.settings && lhs.lookURL == rhs.lookURL && lhs.lookName == rhs.lookName
     }
 
     func settings(for targetKind: BatchSourceKind) -> RawSettings {

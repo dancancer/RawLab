@@ -126,8 +126,10 @@ extension RawEditorViewModel {
         requestedPreviewLongEdge = previewLongEdge
 
         let sourceKind: ImageSourceKind = source.isRaw ? .raw : .raster
+        let inputOwner = source.url == cachedSource?.url ? cachedSource : nil
 
         DispatchQueue.global(qos: .userInitiated).async {
+            defer { withExtendedLifetime(inputOwner) {} }
             defer { PhotoImportFile.release(source.url) }
             let didStart = source.url.startAccessingSecurityScopedResource()
             defer {
@@ -141,7 +143,8 @@ extension RawEditorViewModel {
                 let record = resolvedIdentity.flatMap { self.editPersistence?.state(for: $0) }
                 let restoredSettings = record?.settings ?? .default
                 let missingLook = !self.isLookAvailable(for: restoredSettings)
-                let localURL = try self.copyToCache(source.url, identity: resolvedIdentity)
+                let cachedSource = try CachedPhotoFile.copy(source.url)
+                let localURL = cachedSource.url
                 if sourceKind == .raw {
                     let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry)
                     let lutURL = self.lutURL(for: restoredSettings)
@@ -165,6 +168,7 @@ extension RawEditorViewModel {
                         guard self.activeImportRevision == importRevision else { return }
                         self.invalidatePreviewRequests()
                         self.activeImportRevision = nil
+                        self.cachedSource = cachedSource
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity
@@ -217,6 +221,7 @@ extension RawEditorViewModel {
                         guard self.activeImportRevision == importRevision else { return }
                         self.invalidatePreviewRequests()
                         self.activeImportRevision = nil
+                        self.cachedSource = cachedSource
                         self.sourceURL = localURL
                         self.sourceKind = sourceKind
                         self.sourceIdentity = resolvedIdentity

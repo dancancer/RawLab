@@ -345,9 +345,12 @@ struct ImportStateTests {
         return hasVersion && width > 0 && height > 0 && max(width, height) == longEdge
     }
     static func main() throws {
-        guard CommandLine.arguments.count == 2 else { throw TestFailure.message("Pass an isolated output directory") }
+        guard (2...3).contains(CommandLine.arguments.count) else { throw TestFailure.message("Pass an isolated output directory and optional RAW fixture") }
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try check(Thread.isMainThread, "Import state harness starts on the main thread")
+        try ImportCacheLifetimeTests.run(root: root.appendingPathComponent("cache-lifetime"))
+        let raw = CommandLine.arguments.dropFirst(2).first.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        try ExportCacheLifetimeTests.run(root: root.appendingPathComponent("export-cache-lifetime"), rawURL: raw)
         try cropSessions()
         try normalFlow(Fixture(directory: root.appendingPathComponent("normal")))
         try lateSuccess(Fixture(directory: root.appendingPathComponent("late-success")))
