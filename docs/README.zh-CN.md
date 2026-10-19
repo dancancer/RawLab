@@ -58,7 +58,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 - [集成协作](process/integration-workflow.md)、[CI 门禁](process/ci.md)和[多语言维护](process/localization.md)
 - [格式契约](reference/formats/)、[镜头校正](reference/platforms/lens-correction.md)、[统计契约](reference/rum-analytics.md)和[LUT 来源审计](luts/README.md)
 - [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md)和[跨相机路线图](architecture/cross-camera-presets-roadmap.md)
-- [跨 PR 的发布、集成与评审历史](archive/README.md)；单个 PR 的过程证据放在 PR 描述，见[文档规则](../agent.md#文档)。
+- [跨 PR 的发布、集成与评审历史](archive/README.md)；单个 PR 的过程证据放在 PR 描述，见[文档规则](../AGENTS.md#文档)。
 
 ## 许可
 

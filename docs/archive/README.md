@@ -7,7 +7,7 @@ references are adjusted when records move.
 
 Single-change plans, verification logs and redundant navigation wrappers are
 available through Git history, not retained here. New per-PR evidence belongs
-in PR descriptions under the [documentation policy](../../agent.md#文档).
+in PR descriptions under the [documentation policy](../../AGENTS.md#文档).
 See the [documentation index](../README.md) for current references and active work.
 
 ## Releases

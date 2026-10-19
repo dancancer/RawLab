@@ -15,7 +15,7 @@ published packages, checksums and package provenance.
 
 ## Process
 
-- [Gitflow, release authority and documentation policy](../agent.md) and [repository instructions](../AGENTS.md)
+- [Repository instructions: Gitflow, release authority and documentation policy](../AGENTS.md)
 - [Multi-PR integration workflow](process/integration-workflow.md)
 - [Hosted CI policy and coverage boundaries](process/ci.md)
 - [Localization](process/localization.md)
