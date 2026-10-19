@@ -34,7 +34,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("if", job)
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
                 self.assertNotIn("permissions", job)
-                if name != "android":
+                if name not in ("android", "windows"):
                     self.assertNotIn("self-hosted", job["runs-on"])
         mac = jobs["macos"]
         self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
@@ -78,7 +78,14 @@ class WorkflowContractTests(unittest.TestCase):
         configuration = ROOT / ".github/actionlint.yaml"
         self.assertTrue(configuration.is_file(), "Declare custom labels for actionlint")
         policy = yaml.load(configuration.read_text(), Loader=yaml.BaseLoader)
-        self.assertEqual(policy["self-hosted-runner"]["labels"], ["rawlab-android"])
+        self.assertEqual(policy["self-hosted-runner"]["labels"], ["rawlab-android", "rawlab-windows"])
+
+    def test_windows_uses_a_dedicated_runner_and_data_volume(self):
+        windows = self.workflow["jobs"]["windows"]
+        self.assertEqual(windows["runs-on"], ["self-hosted", "windows", "x64", "rawlab-windows"])
+        self.assertEqual(windows["env"]["DOTNET_INSTALL_DIR"], "E:\\RawLabCI\\dotnet")
+        self.assertEqual(windows["env"]["RAWLAB_LENS_SOURCE_CACHE"], "E:\\RawLabCI\\cache\\lens-sources")
+        self.assertEqual(windows["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
 
     def test_existing_default_builds_are_not_feature_reduced(self):
         for command in ("RawLabMac/build.sh", "RawLabWindows/build.ps1", "testDebugUnitTest",

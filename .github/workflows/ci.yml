@@ -153,8 +153,13 @@ jobs:
 
   windows:
     name: Windows build and parity
-    runs-on: windows-2022
+    runs-on: [self-hosted, windows, x64, rawlab-windows]
     timeout-minutes: 120
+    env:
+      DOTNET_INSTALL_DIR: 'E:\RawLabCI\dotnet'
+      RAWLAB_LENS_SOURCE_CACHE: 'E:\RawLabCI\cache\lens-sources'
+      JOBS: '8'
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

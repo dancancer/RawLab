@@ -10,6 +10,13 @@ import unittest
 SCRIPT = Path(__file__).with_name("provision-android-runner.sh")
 
 
+class WindowsRunnerConfigurationTests(unittest.TestCase):
+    def test_windows_path_is_in_the_environment_file_loaded_by_runner_listener(self):
+        text = SCRIPT.with_name("provision-windows-runner.ps1").read_text()
+        self.assertIn('"Path=$path"', text)
+        self.assertNotIn('WriteAllText("$runner\\.path"', text)
+
+
 @unittest.skipUnless(shutil.which("bash") and shutil.which("curl") and shutil.which("sha256sum"),
                      "Requires bash, curl and sha256sum")
 class RunnerArchiveTests(unittest.TestCase):

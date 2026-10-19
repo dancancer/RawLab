@@ -8,11 +8,11 @@ credentials. A workflow run is not release authorization.
 
 ## Required Checks
 
-| Check | Hosted runner | Coverage |
+| Check | Runner | Coverage |
 | --- | --- | --- |
 | Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, single-preview source contracts, whitespace |
 | macOS build and parity (arm64 / x86_64) | macOS 26 arm64 and Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
-| Windows build and parity | Windows Server 2022 x64 / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
+| Windows build and parity | Dedicated Windows 11 x64 KVM / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
 | Android build and JVM tests | Dedicated Ubuntu 24.04 KVM / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
 | iOS framework and unsigned app | macOS 26 arm64 / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
 
@@ -62,9 +62,9 @@ The workflow has bounded jobs and cancels obsolete runs for the same PR/ref.
 ## Local Android Runner
 
 GitHub Actions still owns triggers, check results, logs and dependency caches.
-The Android job selects `[self-hosted, linux, x64, rawlab-android]`; all other
-jobs keep their hosted runners. This label belongs only to a dedicated Ubuntu
-24.04 KVM guest with 16 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
+The Android job selects `[self-hosted, linux, x64, rawlab-android]`; Apple and
+contract jobs currently keep their hosted runners. This label belongs only to a dedicated Ubuntu
+24.04 KVM guest with 32 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
 Proxmox host must not carry a runner, JDK or Android toolchain.
 
 Run `sudo bash scripts/ci/provision-android-runner.sh` inside the new guest to
@@ -103,6 +103,41 @@ offline. To roll back, restore the Android `ubuntu-24.04` runner and its previou
 parallelism, and update the matching workflow-policy test. Do not skip the check
 or weaken branch protection. Keep device/GLES acceptance separate from this
 build-only runner.
+
+## Local Windows Runner
+
+Windows selects `[self-hosted, windows, x64, rawlab-windows]` in a dedicated
+Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and
+the Windows SDK. This
+changes the verification host from hosted Windows Server 2022 to Windows 11;
+it does not establish physical GPU or interactive-desktop acceptance.
+
+Use a separate 120 GiB NTFS data volume for `E:\RawLabCI`: runner installation, `_work`,
+toolcache, SDK downloads, NuGet/Python caches, temporary files and build output
+belong there, not on the existing system drive or developer build workspace.
+`provision-windows-runner.ps1` rejects system-drive and relative roots. Supply
+the pinned PowerShell 7.6.7 and runner 2.338.0 ZIPs from their official GitHub
+releases plus the source-archive bundle and `lens-dependencies.json`; the
+script verifies all SHA-256 values before use. Run
+`test_windows_runner_provisioning.ps1` as an administrator in the guest to
+exercise the no-install safety guards.
+
+Register the runner separately with the `rawlab-windows` label, `_work` on the
+data volume, and `NT AUTHORITY\NETWORK SERVICE`, not LocalSystem or the
+developer's interactive account. The provisioning script restricts its root
+ACL to that service account, SYSTEM and administrators, and prepares its
+environment/tool paths. Keep `cmake` and `ctest` discoverable on the runner
+PATH before cache identification. `setup-python` and `setup-dotnet` still
+select the workflow's Python 3.12 and .NET 8 SDK; their caches/install directory
+are on the data volume. No registration token or service credentials belong
+in source control or uploaded logs.
+
+Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
+exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
+requires physical GPU/external-RAW evidence. Service-session results do not
+cover real Explorer/UIA interaction. To roll back, restore `windows-2022`, its
+previous parallelism and matching policy/actionlint declarations rather than
+skipping required checks.
 
 ## Native Dependency Caches
 
@@ -143,8 +178,9 @@ cold/restore regression also verifies that changed JNI code is rebuilt.
 `build/ci/native-cache.json` records the key and its inputs; `native-cache-size.json`
 records the selected file count and bytes. Compare cold and warm hosted runs on
 the same source, separating queue time from job time. A successful restore alone
-does not demonstrate a speedup. Parallelism remains at the existing settings;
-increasing it requires separate hosted timing and memory evidence.
+does not demonstrate a speedup. Hosted jobs retain their existing parallelism.
+Local Android and Windows jobs use the bounded settings documented above;
+measure changes on their own guests rather than extrapolating from hosted timings.
 
 ### Hosted Measurement: 2026-10-18
 
