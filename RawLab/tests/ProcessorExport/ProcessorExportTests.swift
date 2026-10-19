@@ -386,33 +386,7 @@ struct ProcessorExportTests {
         let hslRawGPU = try forcedProcessor.processRaw(url: raw, settings: hsl, previewLongEdge: nil, lutURL: lut, exportLongEdge: 128)
         check(Self.maximumDifference(hslRawGPU.buffer.data, hslRawCPU.buffer.data) <= 2,
               "iOS HSL final RAW export uses Force Metal with CPU parity")
-        var viewportSettings = RawSettings.default
-        viewportSettings.denoise.apply(.clean)
-        let denoiseRaw = ProcessInfo.processInfo.environment["RAWLAB_TEST_DENOISE_RAW"].map { URL(fileURLWithPath: $0) } ?? raw
-        _ = try processor.processRaw(url: denoiseRaw, settings: viewportSettings, previewLongEdge: 512,
-                                     lutURL: lut, viewportPreview: true)
-        viewportSettings.exposure = 0.35
-        _ = try processor.processRaw(url: denoiseRaw, settings: viewportSettings, previewLongEdge: 768,
-                                     lutURL: lut, interactive: true, viewportPreview: true)
-        let nativeDenoise = try processor.processRaw(url: denoiseRaw, settings: viewportSettings, previewLongEdge: nil,
-                                                    lutURL: lut, interactive: true, viewportPreview: true)
-        var withoutDenoise = viewportSettings
-        withoutDenoise.denoise.enabled = false
-        let nativeOff = try processor.processRaw(url: denoiseRaw, settings: withoutDenoise, previewLongEdge: nil, lutURL: lut)
-        check(nativeDenoise.buffer.data != nativeOff.buffer.data, "iOS native export fixture actually applies denoise")
-        let freshDenoise = try Sony2FujiProcessor().processRaw(url: denoiseRaw, settings: viewportSettings,
-                                                             previewLongEdge: nil, lutURL: lut)
-        let dimensions = denoiseRaw.path.withCString { rawlab_get_raw_dimensions($0) }
-        check(nativeDenoise.buffer.width == Int(dimensions.width) && nativeDenoise.buffer.height == Int(dimensions.height),
-              "iOS denoise export after viewport resize remains native size")
-        check(nativeDenoise.buffer.data == freshDenoise.buffer.data,
-              "iOS native denoise export never reuses viewport pixels")
-        let nativeJPEG = try processor.makeJPEGData(from: nativeDenoise.buffer, sourceURL: denoiseRaw,
-                                                    orientation: nativeDenoise.orientation, quality: 0.92)
-        let freshJPEG = try processor.makeJPEGData(from: freshDenoise.buffer, sourceURL: denoiseRaw,
-                                                   orientation: freshDenoise.orientation, quality: 0.92)
-        check(nativeJPEG == freshJPEG, "iOS native JPEG matches independent FINAL processing")
-        try nativeJPEG.write(to: output.appendingPathComponent("ios-denoised-native.jpg"))
+        try checkNativeDenoiseExport(processor, raw: raw, lut: lut, output: output)
         let rawJPEG = try processor.makeJPEGData(from: strongRaw.buffer, sourceURL: raw,
                                                 orientation: strongRaw.orientation, quality: 0.92)
         let rawFields = properties(rawJPEG)
