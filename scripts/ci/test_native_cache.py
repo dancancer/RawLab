@@ -42,6 +42,8 @@ class NativeCacheTests(unittest.TestCase):
                 for path in ("lutools/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
                              "lutools/cmake/dng-sdk/CMakeLists.txt", "lutools/cmake/lens-dependencies.json",
                              "lutools/third_party/rawspeed-camera-calibration.inc",
+                             "lutools/third_party/nikon_he/codec.h",
+                             "lutools/third_party/nikon_he/entropy.cpp",
                              "scripts/ci/native_cache.py", ".github/workflows/ci.yml"):
                     self.assertIn(path, inputs)
                 self.assertNotIn("lutools/src/core/raw_processor.cpp", inputs)

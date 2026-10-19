@@ -228,6 +228,8 @@ internal static class UiDetailChecks
         Pump(()=>(bool)failed.GetValue(window)!,TimeSpan.FromSeconds(20));
         check((bool)failed.GetValue(window)! && window.BackendLabel.Text!=Loc.Text("相机预览 · 正在显影"),$"Failed open does not keep reporting development: {window.BackendLabel.Text}");
         check(window.HistogramSurface.Visibility!=Visibility.Visible,"Failed open leaves no empty histogram box: "+language);
+        check(!string.IsNullOrWhiteSpace(window.Status.Text) && window.ExportButton.ToolTip as string==window.Status.Text,"Failed render export hint reports the actual failure, not waiting: "+language);
+        check(!window.ExportPng.IsEnabled && window.RetryButton.Visibility==Visibility.Visible,"Failed render keeps export disabled and retry visible: "+language);
     }
     // 关于窗口变矮时，“关闭”按钮仍完整可见，不随内容一起被截掉
     private static void AboutFooter(MainWindow window,string output,Action<bool,string> check)

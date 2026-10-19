@@ -69,6 +69,10 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/licenses")
 foreach(name COPYRIGHT LICENSE.CDDL LICENSE.LGPL)
     configure_file("${libraw_SOURCE_DIR}/${name}" "${CMAKE_BINARY_DIR}/licenses/LibRaw-${name}" COPYONLY)
 endforeach()
+foreach(name README.md LICENSE.LGPL-2.1)
+    configure_file("${REPO}/lutools/third_party/nikon_he/${name}"
+        "${CMAKE_BINARY_DIR}/licenses/nikon-he/${name}" COPYONLY)
+endforeach()
 configure_file("${zlib_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/licenses/zlib-LICENSE" COPYONLY)
 configure_file("${REPO}/lutools/third_party/nlohmann/LICENSE.MIT"
     "${CMAKE_BINARY_DIR}/licenses/nlohmann-JSON-MIT.txt" COPYONLY)

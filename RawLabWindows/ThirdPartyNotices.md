@@ -15,7 +15,7 @@
   the upstream SVG to WPF vector geometry; notice in `Licenses/Lucide-LICENSE.txt`.
 
 - LibRaw 0.22.2: https://github.com/LibRaw/LibRaw/tree/0.22.2
-  Built as a replaceable `raw.dll`; redistribution here uses the CDDL 1.0 option.
+  Built as a replaceable `raw.dll`; redistribution here uses the LGPL 2.1 option.
   Copyright and both upstream license options are in `Licenses/LibRaw-*`.
   Corresponding source: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
   The exact source archive and SHA-256 are pinned in `native/CMakeLists.txt`.
@@ -24,6 +24,11 @@
   R6 III layout/matrix evidence is from ErikCJohansson's contribution at
   https://github.com/LibRaw/LibRaw/issues/821; the parser reuses LibRaw v12 offsets.
   This local correction does not imply upstream R6 III support.
+- Nikon HE decoder: local C++ adaptation of Nicolai Buchwitz's dnglab commit
+  0f044c2c30d78c4ed5fcede6ab4e8db893d566f6 and LibRaw PR 826 by Dmitri Sotnikov,
+  with RdWing's reconstruction/transfer corrections. LGPL 2.1, not CDDL.
+  Attribution, source links and modification details: `Licenses/nikon-he/README.md`;
+  full license: `Licenses/nikon-he/LICENSE.LGPL-2.1`.
 - Additional camera matrix data: adapted from RawSpeed contributors' cameras.xml,
   https://github.com/darktable-org/rawspeed/blob/c835b05aecfacb7343f7c424abd620aa12116c3f/data/cameras.xml
   CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/.

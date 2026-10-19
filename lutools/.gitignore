@@ -95,6 +95,8 @@ third_party/*
 !third_party/rawspeed-camera-calibration.inc
 !third_party/lensfun/
 !third_party/lensfun/**
+!third_party/nikon_he/
+!third_party/nikon_he/**
 !third_party/nlohmann/
 !third_party/nlohmann/**
 !cmake/lens-dependencies.cmake

@@ -17,9 +17,15 @@ writer stores baked display-sRGB output as float32 LinearRaw and does not embed
 original sensor data or claim reversible RAW edits. See `libtiff-LICENSE.md`.
 Source: https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz
 
-LibRaw 0.22.2 is statically linked into sony2fuji.framework under its CDDL 1.0
+LibRaw 0.22.2 is statically linked into sony2fuji.framework under its LGPL 2.1
 option. Copyright and both upstream license texts accompany the framework.
 Base source: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+
+The Nikon HE decoder is a local C++ adaptation of Nicolai Buchwitz's dnglab
+commit 0f044c2c30d78c4ed5fcede6ab4e8db893d566f6 and Dmitri Sotnikov's LibRaw
+PR 826, with RdWing's reconstruction/transfer corrections. It is LGPL 2.1, not
+CDDL. See nikon-he/README.md for source links and changes, and
+nikon-he/LICENSE.LGPL-2.1 for the full license.
 
 The corresponding local modifications and build instructions are in the RawLab
 source repository: https://github.com/dancancer/RawLab

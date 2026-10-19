@@ -33,7 +33,7 @@ fi
 CHROMA_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 LENS_PREFIX="$RAWLAB_LENS_PREFIX"
 if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
-    if ! pkg-config --exists rawlab-dng-sdk; then
+    if ! pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
     fi
     if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
@@ -57,6 +57,8 @@ cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resource
 cp "$ROOT/lutools/third_party/nlohmann/LICENSE.MIT" "$APP/Contents/Resources/Licenses/nlohmann-JSON-MIT.txt"
 cp -R "$ROOT/RawLabMac/Resources/Licenses/." "$APP/Contents/Resources/Licenses/"
 cp "$ROOT/RawLabMac/Resources/ThirdPartyNotices.md" "$APP/Contents/Resources/Licenses/"
+mkdir -p "$APP/Contents/Resources/Licenses/nikon-he"
+cp "$ROOT/lutools/third_party/nikon_he/README.md" "$ROOT/lutools/third_party/nikon_he/LICENSE.LGPL-2.1" "$APP/Contents/Resources/Licenses/nikon-he/"
 mkdir -p "$APP/Contents/Resources/Lensfun" "$APP/Contents/Resources/Licenses/Lensfun"
 cp -R "$ROOT/lutools/third_party/lensfun/version_1/." "$APP/Contents/Resources/Lensfun/"
 cp "$ROOT/lutools/third_party/lensfun/"*.txt "$ROOT/lutools/third_party/lensfun/"*.md "$APP/Contents/Resources/Licenses/Lensfun/"

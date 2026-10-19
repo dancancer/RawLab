@@ -342,6 +342,13 @@ if(BUILD_TESTING AND NOT IOS)
 endif()
 
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    add_executable(nikon_he_codec_tests tests/nikon_he_tests.cpp
+        third_party/nikon_he/parser.cpp third_party/nikon_he/entropy.cpp
+        third_party/nikon_he/dwt.cpp third_party/nikon_he/output.cpp)
+    target_include_directories(nikon_he_codec_tests PRIVATE third_party/nikon_he)
+    add_test(NAME nikon_he_codec COMMAND nikon_he_codec_tests)
+    add_executable(nikon_he_reference_tests tests/nikon_he_reference_tests.cpp)
+    target_link_libraries(nikon_he_reference_tests sony2fuji_core)
     set(SONY2FUJI_TEST_RAW "" CACHE FILEPATH "External RAW fixture (never bundled)")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_RAW}" SONY2FUJI_TEST_RAW)
     set(SONY2FUJI_TEST_LENS_WAVELET_RAW "" CACHE FILEPATH "External RAW with calibrated Lens and applied wavelet NR")

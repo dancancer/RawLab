@@ -51,6 +51,15 @@ class AgentCommands(unittest.TestCase):
         return subprocess.run([str(CLI), *map(str, arguments)], cwd=cwd,
                               capture_output=True, text=True, encoding="utf-8", timeout=120)
 
+    def test_raw_failure_without_lut_does_not_blame_the_look(self):
+        broken = self.root / "broken.NEF"
+        broken.write_bytes(b"not a raw file")
+        process = self.run_cli(broken, "--no-lut", "-o", self.root / "out.jpg")
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn("Processing failed", process.stderr)
+        self.assertNotIn("Use a declared Fuji", process.stderr)
+        self.assertFalse((self.root / "out.jpg").exists())
+
     def envelope(self, process, command=None, error=None):
         # json.loads rejects banners, LibRaw progress and a second JSON object.
         try:

@@ -79,6 +79,8 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     cp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$framework/Licenses/nlohmann-JSON-MIT.txt"
     cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/platform/ios/ThirdPartyNotices.md" "$framework/Licenses/"
+    mkdir -p "$framework/Licenses/nikon-he"
+    cp "$ROOT/third_party/nikon_he/README.md" "$ROOT/third_party/nikon_he/LICENSE.LGPL-2.1" "$framework/Licenses/nikon-he/"
     cp "$core/licenses/OpenCV-LICENSE" "$core/licenses/wavelib-COPYRIGHT" "$framework/Licenses/"
     cp -R "$core/licenses/lensfun" "$framework/Licenses/"
     rm -rf "$framework/Lensfun"

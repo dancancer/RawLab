@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 
@@ -9,6 +10,38 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BuildEnvironmentTests(unittest.TestCase):
+    def test_libraw_stamp_tracks_patch_contents_not_timestamps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("RawLabMac/build-env.sh", "RawLabMac/build-dependencies.sh",
+                         "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                         "lutools/third_party/rawspeed-camera-calibration.inc",
+                         "lutools/third_party/nikon_he/entropy.cpp"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("original")
+            prefix = root / "prefix"
+            stamp = prefix / "share/rawlab/libraw-patch.sha256"
+
+            def invoke(function):
+                return subprocess.run(
+                    ["/bin/bash", "-euc", 'ROOT="$1"; source "$2"; ' + function,
+                     "test", str(root), str(ROOT / "RawLabMac/build-env.sh")],
+                    env={**os.environ, "RAWLAB_ARCH": "arm64", "RAWLAB_DEPENDENCY_PREFIX": str(prefix)},
+                    capture_output=True, text=True)
+
+            self.assertNotEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+            fingerprint = invoke("rawlab_libraw_patch_fingerprint")
+            self.assertEqual(fingerprint.returncode, 0, fingerprint.stderr)
+            stamp.parent.mkdir(parents=True)
+            stamp.write_text(fingerprint.stdout)
+            self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+            source = root / "lutools/third_party/nikon_he/entropy.cpp"
+            source.touch()
+            self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+            source.write_text("changed")
+            self.assertNotEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+
     def environment(self, **overrides):
         env = {key: value for key, value in os.environ.items()
                if not key.startswith("RAWLAB_") and key != "MACOSX_DEPLOYMENT_TARGET"}

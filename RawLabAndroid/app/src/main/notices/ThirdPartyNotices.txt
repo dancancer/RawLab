@@ -40,6 +40,13 @@ is supplied in app/src/main/cpp/CMakeLists.txt. LGPL/CDDL license choices and
 copyright notices are included in this directory. Optional LCMS, JPEG/JasPer,
 and RawSpeed integrations are not compiled into LibRaw here.
 
+The patched LibRaw is used under its LGPL 2.1 option. The Nikon HE decoder is
+a local C++ adaptation of Nicolai Buchwitz's dnglab commit
+0f044c2c30d78c4ed5fcede6ab4e8db893d566f6 and Dmitri Sotnikov's LibRaw PR 826,
+with RdWing's reconstruction/transfer corrections. This decoder is LGPL 2.1,
+not CDDL. Source links and changes: nikon-he/README.md.
+Full license: nikon-he/LICENSE.LGPL-2.1.
+
 This product includes DNG technology under license by Adobe.
 Adobe DNG SDK 1.7.1 Build 2724 and its bundled JPEG XL/Brotli/Highway/skcms
 sources are pinned by lutools/cmake/dng-sdk.cmake and statically linked for
