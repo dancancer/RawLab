@@ -100,6 +100,17 @@ class WorkflowContractTests(unittest.TestCase):
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
         self.assertIn("RawLabMac/tests/batch-export.sh", mac)
 
+    def test_macos_straighten_regression_runs_after_build_with_bundled_raw(self):
+        steps = self.workflow["jobs"]["macos"]["steps"]
+        build = next(step for step in steps if "bash RawLabMac/build.sh" in step.get("run", ""))
+        run = build["run"]
+        command = 'bash RawLabMac/tests/mac-straighten-preview.sh "$raw"'
+        self.assertNotIn("if", build)
+        self.assertIn(command, run)
+        self.assertLess(run.index("bash RawLabMac/build.sh"), run.index(command))
+        self.assertLess(run.index('raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"'), run.index(command))
+        self.assertNotIn("RAWLAB_TEST_RAW", run)
+
     def test_macos_dcp_regressions_require_synthetic_python_parity(self):
         steps = self.workflow["jobs"]["macos"]["steps"]
         build = next(step for step in steps if "bash RawLabMac/build.sh" in step.get("run", ""))

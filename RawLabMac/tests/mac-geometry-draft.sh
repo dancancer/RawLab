@@ -11,12 +11,12 @@ test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2;
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 mkdir -p "$OUT"
 SOURCES=()
-for name in Engine RenderError Film Adjustments AdjustmentTypes MasterRecipe EditPersistence BatchExport EditorModel EditorModel+Geometry EditorModel+Workflow EditorModel+Rendering LookLibrary RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard GeometryControls ParameterValueField ParameterPrecision AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
+for name in Engine RenderError Film Adjustments AdjustmentTypes MasterRecipe EditPersistence BatchExport EditorModel EditorModel+Geometry EditorModel+Workflow EditorModel+Rendering RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard GeometryControls ParameterValueField ParameterPrecision AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
     source="$(find "$ROOT/RawLabMac/Sources" -name "$name.swift" -print -quit)"
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in Localization GeometrySettings HSLSettings HSLNative ExportMetadata UsageAnalytics BundledLook; do
+for name in Localization GeometrySettings HSLSettings HSLNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 swiftc -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
