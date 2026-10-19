@@ -1,5 +1,6 @@
 """Contracts for target-built Lensfun/GLib dependency configuration."""
 import argparse
+import ast
 import importlib.util
 import io
 from pathlib import Path
@@ -96,6 +97,23 @@ class LensDependencyContracts(unittest.TestCase):
         self.assertEqual(BUILDER.cmake_fresh_args("macos"), ["--fresh"])
         self.assertEqual(BUILDER.cmake_fresh_args("android"), [])
         self.assertEqual(BUILDER.cmake_fresh_args("ios"), [])
+
+    def test_windows_lensfun_data_stays_inside_the_install_prefix(self):
+        tree = ast.parse(BUILDER_PATH.read_text())
+        condition = ast.dump(ast.parse('args.platform == "windows"', mode='eval').body)
+        branches = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+                    and ast.dump(node.test) == condition
+                    and any(isinstance(child, ast.AugAssign)
+                            and isinstance(child.target, ast.Name)
+                            and child.target.id == 'configure' for child in node.body)]
+        self.assertEqual(len(branches), 1)
+        prefix = Path('C:/ci/lens-dependencies/install')
+        scope = {'configure': [], 'prefix': prefix}
+        # Exercise the real Windows options without downloading or compiling dependencies.
+        options = ast.Module(body=branches[0].body, type_ignores=[])
+        exec(compile(options, str(BUILDER_PATH), 'exec'), scope)
+        self.assertIn('-DPLATFORM_WINDOWS=ON', scope['configure'])
+        self.assertIn('-DCMAKE_INSTALL_DATAROOTDIR=' + str(prefix / 'share'), scope['configure'])
 
     def test_lipo_input_precedes_variadic_architecture_option(self):
         script = (self.ROOT / "RawLabMac" / "build-lens-dependency.sh").read_text()

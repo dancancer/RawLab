@@ -55,6 +55,14 @@ class BuildEnvironmentTests(unittest.TestCase):
         self.assertEqual(values[5], expected)
         self.assertEqual(values[6], expected)
 
+    def test_full_source_swift_builds_use_bounded_whole_module_compilation(self):
+        for relative in ('RawLabMac/build.sh', 'RawLabMac/tests/mac-straighten-preview.sh'):
+            with self.subTest(script=relative):
+                source = (ROOT / relative).read_text()
+                self.assertIn('-whole-module-optimization', source)
+                self.assertIn('-num-threads "${JOBS:-$(sysctl -n hw.ncpu)}"', source)
+                self.assertNotIn('-Ounchecked', source)
+
 
 if __name__ == "__main__":
     unittest.main()

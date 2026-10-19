@@ -3,6 +3,9 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,10 +45,61 @@ class NativeCacheTests(unittest.TestCase):
                 for path in ("lutools/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
                              "lutools/cmake/dng-sdk/CMakeLists.txt", "lutools/cmake/lens-dependencies.json",
                              "lutools/third_party/rawspeed-camera-calibration.inc",
-                             "scripts/ci/native_cache.py", ".github/workflows/ci.yml"):
+                             "scripts/ci/native_cache.py", "scripts/ci/requirements.txt",
+                             ".github/workflows/ci.yml#" + platform):
                     self.assertIn(path, inputs)
                 self.assertNotIn("lutools/src/core/raw_processor.cpp", inputs)
                 self.assertNotIn("RawLabMac/Sources/App.swift", inputs)
+
+    def test_workflow_identity_is_platform_specific_and_keeps_shared_defaults(self):
+        workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / '.github/workflows/ci.yml'
+            path.parent.mkdir(parents=True)
+            path.write_text(yaml.safe_dump(workflow))
+            before = {platform: self.cache.workflow_identity(root, platform) for platform in self.cache.PLATFORM_INPUTS}
+            path.write_text(yaml.safe_dump(workflow, sort_keys=False, indent=4))
+            for platform in self.cache.PLATFORM_INPUTS:
+                self.assertEqual(before[platform], self.cache.workflow_identity(root, platform))
+            workflow['jobs']['windows']['env']['JOBS'] = '6'
+            path.write_text(yaml.safe_dump(workflow))
+            for platform in self.cache.PLATFORM_INPUTS:
+                after = self.cache.workflow_identity(root, platform)
+                self.assertEqual(before[platform] == after, platform != 'windows')
+            workflow['env']['RAWLAB_RUM_LOCAL'] = '1'
+            path.write_text(yaml.safe_dump(workflow))
+            for platform in self.cache.PLATFORM_INPUTS:
+                self.assertNotEqual(before[platform], self.cache.workflow_identity(root, platform))
+            workflow['jobs'].pop('ios')
+            path.write_text(yaml.safe_dump(workflow))
+            with self.assertRaises(ValueError):
+                self.cache.workflow_identity(root, 'ios')
+
+    def test_macos_hashes_build_tools_not_unrelated_homebrew_packages(self):
+        with mock.patch.object(self.cache, 'command', return_value='tool version') as command:
+            self.cache.toolchain_identity('macos')
+        command.assert_any_call('brew', 'list', '--versions', 'autoconf', 'automake',
+                                'libtool', 'm4', 'pkgconf')
+        self.assertNotIn(mock.call('brew', 'list', '--versions'), command.call_args_list)
+
+    def test_mac_matrix_rows_have_separate_workflow_identities(self):
+        workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / '.github/workflows/ci.yml'
+            path.parent.mkdir(parents=True)
+            path.write_text(yaml.safe_dump(workflow))
+            before = {arch: self.cache.workflow_identity(root, 'macos', arch) for arch in ('arm64', 'x86_64')}
+            workflow['jobs']['macos']['strategy']['matrix']['include'][0]['jobs'] = '4'
+            path.write_text(yaml.safe_dump(workflow))
+            self.assertNotEqual(before['arm64'], self.cache.workflow_identity(root, 'macos', 'arm64'))
+            self.assertEqual(before['x86_64'], self.cache.workflow_identity(root, 'macos', 'x86_64'))
+            workflow['jobs']['macos']['steps'].append({'run': 'changed shared build command'})
+            path.write_text(yaml.safe_dump(workflow))
+            self.assertNotEqual(before['x86_64'], self.cache.workflow_identity(root, 'macos', 'x86_64'))
+            with self.assertRaises(ValueError):
+                self.cache.workflow_identity(root, 'macos', 'unsupported')
 
     def test_content_not_file_timestamp_controls_dependency_hash(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -309,7 +309,8 @@ def main():
         configure += ["-DCMAKE_TOOLCHAIN_FILE=" + args.toolchain, "-DANDROID_ABI=" + args.arch,
                       "-DANDROID_PLATFORM=android-" + args.minimum, "-DANDROID_STL=c++_shared"]
     elif args.platform == "windows":
-        configure += ["-DPLATFORM_WINDOWS=ON"]
+        configure += ["-DPLATFORM_WINDOWS=ON",
+                      "-DCMAKE_INSTALL_DATAROOTDIR=" + str(prefix / "share")]
     run(configure, env)
     run([args.cmake, "--build", lens_build, "--parallel", args.jobs], env)
     run([args.cmake, "--install", lens_build], env)

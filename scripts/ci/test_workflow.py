@@ -1,5 +1,7 @@
 """Regression guards for the hosted verification boundary, not a YAML linter."""
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -34,16 +36,17 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("if", job)
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
                 self.assertNotIn("permissions", job)
-                self.assertNotIn("self-hosted", job["runs-on"])
+                if name == "contracts":
+                    self.assertNotIn("self-hosted", job["runs-on"])
         mac = jobs["macos"]
         self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
         self.assertEqual(mac["env"]["MACOSX_DEPLOYMENT_TARGET"], "14.0")
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], [
-            {"runner": "macos-26", "arch": "arm64"},
-            {"runner": "macos-26-intel", "arch": "x86_64"},
+            {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"},
         ])
-        self.assertEqual(jobs["ios"]["runs-on"], "macos-26")
+        self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
     def test_actions_and_artifact_paths_are_constrained(self):
         for name, job in self.workflow["jobs"].items():
@@ -61,6 +64,75 @@ class WorkflowContractTests(unittest.TestCase):
                     for path in step["with"]["path"].splitlines():
                         self.assertRegex(path, r"^build/ci/\*\.(?:log|json|xml)$")
             self.assertEqual(len(uploads), 1, name)
+
+    def test_android_uses_a_dedicated_linux_runner_with_bounded_parallelism(self):
+        android = self.workflow["jobs"]["android"]
+        self.assertEqual(android["runs-on"], ["self-hosted", "linux", "x64", "rawlab-android"])
+        self.assertEqual(android["env"]["JOBS"], "8")
+        self.assertEqual(android["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
+        self.assertEqual(android["env"]["ANDROID_HOME"], "/opt/android-sdk")
+        self.assertEqual(android["env"]["RAWLAB_LENS_SOURCE_CACHE"], "/var/cache/rawlab-ci/lens-sources")
+        commands = "\n".join(step.get("run", "") for step in android["steps"])
+        self.assertIn("--max-workers=8", commands)
+        self.assertIn("RAWLAB_TEST_ANDROID_CACHE=1", commands)
+
+    def test_actionlint_recognizes_only_the_declared_local_runner_label(self):
+        configuration = ROOT / ".github/actionlint.yaml"
+        self.assertTrue(configuration.is_file(), "Declare custom labels for actionlint")
+        policy = yaml.load(configuration.read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(policy["self-hosted-runner"]["labels"],
+                         ["rawlab-android", "rawlab-windows", "rawlab-apple"])
+
+    def test_local_apple_jobs_use_prepared_tools_and_preserve_selected_xcode(self):
+        jobs = self.workflow['jobs']
+        self.assertEqual(jobs['macos']['env']['JOBS'], '${{ matrix.jobs }}')
+        self.assertEqual(jobs['ios']['env']['JOBS'], '6')
+        for name in ('macos', 'ios'):
+            steps = jobs[name]['steps']
+            python_setup = [step for step in steps if step.get('uses', '').startswith('actions/setup-python@')]
+            if name == 'macos':
+                self.assertEqual(python_setup[0]['if'], "matrix.arch == 'x86_64'")
+            else:
+                self.assertEqual(python_setup, [])
+            key_step = next(step for step in steps if step.get('id') == 'native-key')
+            self.assertIn('pip install -r scripts/ci/requirements.txt', key_step['run'])
+            commands = '\n'.join(step.get('run', '') for step in steps)
+            self.assertIn('DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"', commands)
+
+    def test_macos_uses_available_intel_cpus_and_bounded_test_parallelism(self):
+        macos = self.workflow['jobs']['macos']
+        intel = next(row for row in macos['strategy']['matrix']['include']
+                     if row['arch'] == 'x86_64')
+        self.assertEqual(intel['jobs'], '4')
+        self.assertEqual(macos['env']['CMAKE_BUILD_PARALLEL_LEVEL'], '${{ matrix.jobs }}')
+        run = '\n'.join(step.get('run', '') for step in macos['steps'])
+        self.assertIn('ctest --test-dir lutools/build-macos --parallel 2', run)
+        self.assertIn("-E '^(native_dcp_metal|gpu_photo|metal_denoise)$'", run)
+
+    def test_macos_timing_records_success_without_masking_command_failure(self):
+        build = next(step for step in self.workflow['jobs']['macos']['steps']
+                     if 'bash RawLabMac/build.sh' in step.get('run', ''))
+        run = build['run']
+        self.assertIn('ci_timed() {', run)
+        function = 'ci_timed() {' + run.split('ci_timed() {', 1)[1].split('\n}', 1)[0] + '\n}'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'build/ci').mkdir(parents=True)
+            probe = ("\nPROBE_ENV=expected ci_timed passed bash -c 'test \"$PROBE_ENV\" = expected'"
+                     "\nci_timed failed bash -c 'exit 7'\ntouch should-not-exist")
+            result = subprocess.run(['bash', '-euc', function + probe], cwd=root,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+            self.assertFalse((root / 'should-not-exist').exists())
+            self.assertRegex((root / 'build/ci/macos-timings.log').read_text(),
+                             r'^passed\t\d+\t0\nfailed\t\d+\t7\n$')
+
+    def test_windows_uses_a_dedicated_runner_and_data_volume(self):
+        windows = self.workflow["jobs"]["windows"]
+        self.assertEqual(windows["runs-on"], ["self-hosted", "windows", "x64", "rawlab-windows"])
+        self.assertEqual(windows["env"]["DOTNET_INSTALL_DIR"], "E:\\RawLabCI\\dotnet")
+        self.assertEqual(windows["env"]["RAWLAB_LENS_SOURCE_CACHE"], "E:\\RawLabCI\\cache\\lens-sources")
+        self.assertEqual(windows["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
 
     def test_existing_default_builds_are_not_feature_reduced(self):
         for command in ("RawLabMac/build.sh", "RawLabWindows/build.ps1", "testDebugUnitTest",
