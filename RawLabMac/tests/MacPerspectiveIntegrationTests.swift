@@ -216,15 +216,10 @@ import Darwin
 
     static func backendChecks(raw: URL, settings: Adjustments, baseline: RenderedImage, expected: RenderedImage, edge: Int) throws {
         let force = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
-        let cpuOnly = ProcessInfo.processInfo.environment["RAWLAB_TEST_CPU_ONLY"] == "1"
-        if cpuOnly {
-            print("SKIP: identity Metal parity (RAWLAB_TEST_CPU_ONLY=1)")
-        } else {
-            let identity = try force.render(raw, settings: Adjustments(), lut: nil, edge: edge)!
-            let identityDelta = maximumDelta([UInt8](bytes(identity.image)), [UInt8](bytes(baseline.image)))
-            try check(force.lastBackend == SONY2FUJI_BACKEND_METAL && identityDelta <= 2,
-                      "identity uses actual Metal and agrees with CPU (max \(identityDelta)/255)")
-        }
+        let identity = try force.render(raw, settings: Adjustments(), lut: nil, edge: edge)!
+        let identityDelta = maximumDelta([UInt8](bytes(identity.image)), [UInt8](bytes(baseline.image)))
+        try check(force.lastBackend == SONY2FUJI_BACKEND_METAL && identityDelta <= 2,
+                  "identity uses actual Metal and agrees with CPU (max \(identityDelta)/255)")
         let auto = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         let transformed = try auto.render(raw, settings: settings, lut: nil, edge: edge)!
         let delta = maximumDelta([UInt8](bytes(transformed.image)), [UInt8](bytes(expected.image)))
@@ -233,10 +228,8 @@ import Darwin
         try reject("GPU Force rejects unsupported perspective instead of reporting accelerated geometry") {
             _ = try force.render(raw, settings: settings, lut: nil, edge: edge)
         }
-        if !cpuOnly {
-            let reset = try force.render(raw, settings: Adjustments(), lut: nil, edge: edge)!
-            try check(force.lastBackend == SONY2FUJI_BACKEND_METAL && maximumDelta([UInt8](bytes(reset.image)), [UInt8](bytes(baseline.image))) <= 2,
-                      "identity reset after perspective restores actual Metal rendering")
-        }
+        let reset = try force.render(raw, settings: Adjustments(), lut: nil, edge: edge)!
+        try check(force.lastBackend == SONY2FUJI_BACKEND_METAL && maximumDelta([UInt8](bytes(reset.image)), [UInt8](bytes(baseline.image))) <= 2,
+                  "identity reset after perspective restores actual Metal rendering")
     }
 }
