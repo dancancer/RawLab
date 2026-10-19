@@ -100,6 +100,26 @@ class WorkflowContractTests(unittest.TestCase):
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
         self.assertIn("RawLabMac/tests/batch-export.sh", mac)
 
+    def test_macos_dcp_regressions_require_synthetic_python_parity(self):
+        steps = self.workflow["jobs"]["macos"]["steps"]
+        build = next(step for step in steps if "bash RawLabMac/build.sh" in step.get("run", ""))
+        run = build["run"]
+        self.assertNotIn("if", build, "Both Mac architectures must execute the DCP suites")
+        dependency = "python -m pip install -r lutools/requirements-lutprep.txt"
+        self.assertIn(dependency, run, "Synthetic parity needs the existing NumPy/OCIO requirements")
+        discovery = 'lutprep_python="$(command -v python)"'
+        parity = 'RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh'
+        self.assertIn(discovery, run, "Resolve the setup-python interpreter without masking discovery errors")
+        self.assertIn(parity, run, "The compiler script must not silently skip Python parity")
+        self.assertLess(run.index(dependency), run.index(parity))
+        self.assertLess(run.index(discovery), run.index(parity))
+        for script in ("dcp-compiler.sh", "look-library.sh", "look-import-model.sh"):
+            command = "bash RawLabMac/tests/" + script
+            self.assertIn(command, run)
+            self.assertLess(run.index("bash RawLabMac/build.sh"), run.index(command))
+        self.assertNotIn("RAWLAB_TEST_DCP", run, "Hosted DCP coverage must not require private profiles")
+        self.assertNotIn("RAWLAB_TEST_CANON_DCP", run)
+
     def test_only_prs_restore_exact_native_caches_and_cold_pushes_seed_them(self):
         for name in ("macos", "windows", "android", "ios"):
             with self.subTest(job=name):
