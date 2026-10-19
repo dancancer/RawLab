@@ -15,6 +15,7 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
     "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchSettingsSummary.swift" \
+    "$ROOT/RawLab/tests/ImportState/BatchSourceJournalTests.swift" \
     "$ROOT/RawLab/tests/BatchExportTests.swift" \
     -o "$OUT/batch-export"
 mkdir -p "$OUT/profile"

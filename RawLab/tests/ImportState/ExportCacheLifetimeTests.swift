@@ -14,7 +14,7 @@ enum ExportCacheLifetimeTests {
         f.model.importImage(from: source, identity: f.aIdentity)
         try f.collector.take().forEach { $0() }
         try check(f.model.hasImage, "Export lifetime fixture imports \(rawURL == nil ? "raster" : "RAW")")
-        let oldURL = f.model.sourceURL!
+        let oldURL = f.model.sourceFile!.withReadAccess({ $0 })
         let oldBytes = try Data(contentsOf: oldURL)
         let oldMetadata = try ExportMetadata.properties(from: oldURL, width: 40, height: 30, orientation: .up)
         let oldTIFF = oldMetadata[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
@@ -35,7 +35,7 @@ enum ExportCacheLifetimeTests {
         try check(f.model.isBusy && jpegResult == nil && dngResult == nil, "Single export is in flight before it can read the source")
         f.model.importImage(from: .raster(f.bURL), identity: f.bIdentity)
         try f.collector.take().forEach { $0() }
-        try check(f.model.sourceIdentity == f.bIdentity && f.model.sourceURL != oldURL,
+        try check(f.model.sourceIdentity == f.bIdentity && f.model.sourceFile?.withReadAccess({ $0 }) != oldURL,
                   "New photo publishes before the queued export reads its old photo")
         try check(try Data(contentsOf: oldURL) == oldBytes, "In-flight export keeps the old cached bytes readable")
         queue.resume()
@@ -71,6 +71,32 @@ enum ExportCacheLifetimeTests {
         try check(f.model.sourceIdentity == f.bIdentity && f.model.hasImage, "Old export completion leaves the new photo published")
     }
 
+    private static func previewAfterRelease(directory: URL, rawURL: URL) throws {
+        let f = try Fixture(directory: directory)
+        f.model.importImage(from: .raw(rawURL), identity: f.aIdentity)
+        try f.collector.take().forEach { $0() }
+        try check(f.model.hasImage, "Preview lifetime fixture imports RAW")
+        let oldURL = f.model.sourceFile!.withReadAccess({ $0 })
+        f.model.renderQueue.suspend()
+        var suspended = true
+        defer { if suspended { f.model.renderQueue.resume() } }
+        var settings = RawSettings.default
+        settings.exposure = 0.75
+        settings.geometry.quarterTurns = 1
+        f.model.updatePreview(settings: settings, includeHistogram: false)
+        f.model.sourceFile = nil
+        try check(FileManager.default.fileExists(atPath: oldURL.path), "Queued RAW preview captures its source before editor release")
+        f.model.renderQueue.resume()
+        suspended = false
+        f.model.renderQueue.sync {}
+        try f.collector.take(minimum: 2).forEach { $0() }
+        f.model.previewWorkItem = nil
+        try check(f.model.statusMessage == nil && f.model.previewImage != nil &&
+                  f.model.basePreviewGeometry == settings.geometry,
+                  "Queued RAW preview and comparison read successfully after editor release")
+        try check(!FileManager.default.fileExists(atPath: oldURL.path), "Preview releases the old file after its final read")
+    }
+
     static func run(root: URL, rawURL: URL?) throws {
         for dng in [false, true] {
             try exportAfterReplacement(directory: root.appendingPathComponent("raster-\(dng)"), dng: dng, rawURL: nil)
@@ -78,6 +104,7 @@ enum ExportCacheLifetimeTests {
                 try exportAfterReplacement(directory: root.appendingPathComponent("raw-\(dng)"), dng: dng, rawURL: rawURL)
             }
         }
+        if let rawURL { try previewAfterRelease(directory: root.appendingPathComponent("raw-preview"), rawURL: rawURL) }
         if rawURL == nil { print("SKIP: RAW export lifetime (pass a private RAW fixture as the third script argument)") }
         print("PASS: export cache lifetime regression suite")
     }

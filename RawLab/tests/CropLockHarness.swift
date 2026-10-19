@@ -153,7 +153,7 @@ private final class CropHarnessState: ObservableObject {
     private func restore(_ settings: RawSettings) {
         precondition(Thread.isMainThread)
         geometry = settings.geometry
-        if let url = model.sourceURL, let image = UIImage(contentsOfFile: url.path) {
+        if let url = model.sourceFile?.withReadAccess({ $0 }), let image = UIImage(contentsOfFile: url.path) {
             sourceImage = image
             imageSize = image.size
         }

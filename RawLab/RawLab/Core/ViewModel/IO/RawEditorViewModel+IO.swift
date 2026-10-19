@@ -126,160 +126,161 @@ extension RawEditorViewModel {
         requestedPreviewLongEdge = previewLongEdge
 
         let sourceKind: ImageSourceKind = source.isRaw ? .raw : .raster
-        let inputOwner = source.url == cachedSource?.url ? cachedSource : nil
+        let input = sourceFile.flatMap { $0.matches(source.url) ? $0 : nil }
+            ?? .externallyManaged(source.url)
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            defer { withExtendedLifetime(inputOwner) {} }
-            defer { PhotoImportFile.release(source.url) }
-            let didStart = source.url.startAccessingSecurityScopedResource()
-            defer {
-                if didStart {
-                    source.url.stopAccessingSecurityScopedResource()
+        importQueue.async {
+            input.withReadAccess { inputURL in
+                defer { PhotoImportFile.release(inputURL) }
+                let didStart = inputURL.startAccessingSecurityScopedResource()
+                defer {
+                    if didStart {
+                        inputURL.stopAccessingSecurityScopedResource()
+                    }
                 }
-            }
 
-            do {
-                let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: source.url))
-                let record = resolvedIdentity.flatMap { self.editPersistence?.state(for: $0) }
-                let restoredSettings = record?.settings ?? .default
-                let missingLook = !self.isLookAvailable(for: restoredSettings)
-                let cachedSource = try CachedPhotoFile.copy(source.url)
-                let localURL = cachedSource.url
-                if sourceKind == .raw {
-                    let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry)
-                    let lutURL = self.lutURL(for: restoredSettings)
-                    let previewResult = try self.processor.processRaw(
-                        url: localURL,
-                        settings: restoredSettings,
-                        previewLongEdge: self.previewMaxDimension,
-                        lutURL: lutURL,
-                        viewportPreview: true
-                    )
-                    let adjustedImage = self.processor.makeUIImage(
-                        from: previewResult.buffer,
-                        orientation: previewResult.orientation ?? rawBase.orientation
-                    )
-                    let adjustedHistogram = self.processor.computeHistogram(
-                        from: previewResult.buffer,
-                        bins: self.histogramBins
-                    )
+                do {
+                    let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
+                    let record = resolvedIdentity.flatMap { self.editPersistence?.state(for: $0) }
+                    let restoredSettings = record?.settings ?? .default
+                    let missingLook = !self.isLookAvailable(for: restoredSettings)
+                    let sourceFile = try PhotoSourceFile.copy(inputURL)
+                    try sourceFile.withReadAccess { localURL in
+                        if sourceKind == .raw {
+                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry)
+                            let lutURL = self.lutURL(for: restoredSettings)
+                            let previewResult = try self.processor.processRaw(
+                                url: localURL,
+                                settings: restoredSettings,
+                                previewLongEdge: self.previewMaxDimension,
+                                lutURL: lutURL,
+                                viewportPreview: true
+                            )
+                            let adjustedImage = self.processor.makeUIImage(
+                                from: previewResult.buffer,
+                                orientation: previewResult.orientation ?? rawBase.orientation
+                            )
+                            let adjustedHistogram = self.processor.computeHistogram(
+                                from: previewResult.buffer,
+                                bins: self.histogramBins
+                            )
 
-                    self.resultDelivery {
-                        guard self.activeImportRevision == importRevision else { return }
-                        self.invalidatePreviewRequests()
-                        self.activeImportRevision = nil
-                        self.cachedSource = cachedSource
-                        self.sourceURL = localURL
-                        self.sourceKind = sourceKind
-                        self.sourceIdentity = resolvedIdentity
-                        self.sourceDisplayName = source.displayName
-                        self.restoredSettings = restoredSettings
-                        self.currentPreviewSettings = restoredSettings
-                        self.pendingSettings = nil
-                        self.sourceOrientation = previewResult.orientation ?? rawBase.orientation
-                        self.draftBuffer = rawBase.buffer
-                        self.draftPreviewBuffer = rawBase.previewBuffer
-                        self.basePreviewImage = rawBase.basePreviewImage
-                        self.baseHistogram = rawBase.baseHistogram
-                        self.basePreviewGeometry = restoredSettings.geometry
-                        self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
-                        self.lensInfo = previewResult.lensInfo
-                        self.rawLUTID = restoredSettings.lutID
-                        self.rawLUTApplied = restoredSettings.lutID != nil && restoredSettings.lutStrength > 0
-                        self.previewImage = adjustedImage
-                        self.nativeImageSize = previewResult.buffer.nativeSize
-                        self.histogram = adjustedHistogram
-                        self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
-                        self.isBusy = false
-                        self.sourceRevision = UUID()
-                        if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
-                        onSettingsRestored?(restoredSettings)
-                        if self.hasImage && adjustedImage != nil { onImported?() }
-                        if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
-                        if adjustedImage == nil {
-                            self.statusMessage = L10n.text("无法生成预览")
+                            self.resultDelivery {
+                                guard self.activeImportRevision == importRevision else { return }
+                                self.invalidatePreviewRequests()
+                                self.activeImportRevision = nil
+                                self.sourceFile = sourceFile
+                                self.sourceKind = sourceKind
+                                self.sourceIdentity = resolvedIdentity
+                                self.sourceDisplayName = source.displayName
+                                self.restoredSettings = restoredSettings
+                                self.currentPreviewSettings = restoredSettings
+                                self.pendingSettings = nil
+                                self.sourceOrientation = previewResult.orientation ?? rawBase.orientation
+                                self.draftBuffer = rawBase.buffer
+                                self.draftPreviewBuffer = rawBase.previewBuffer
+                                self.basePreviewImage = rawBase.basePreviewImage
+                                self.baseHistogram = rawBase.baseHistogram
+                                self.basePreviewGeometry = restoredSettings.geometry
+                                self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
+                                self.lensInfo = previewResult.lensInfo
+                                self.rawLUTID = restoredSettings.lutID
+                                self.rawLUTApplied = restoredSettings.lutID != nil && restoredSettings.lutStrength > 0
+                                self.previewImage = adjustedImage
+                                self.nativeImageSize = previewResult.buffer.nativeSize
+                                self.histogram = adjustedHistogram
+                                self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
+                                self.isBusy = false
+                                self.sourceRevision = UUID()
+                                if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
+                                onSettingsRestored?(restoredSettings)
+                                if self.hasImage && adjustedImage != nil { onImported?() }
+                                if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
+                                if adjustedImage == nil {
+                                    self.statusMessage = L10n.text("无法生成预览")
+                                }
+                            }
+                        } else {
+                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry)
+                            let adjustedBuffer = try self.processor.processBuffer(
+                                buffer: rasterBase.buffer,
+                                settings: restoredSettings,
+                                previewLongEdge: self.previewMaxDimension,
+                                lutURL: self.lutURL(for: restoredSettings)
+                            )
+                            let adjustedImage = self.processor.makeUIImage(
+                                from: adjustedBuffer,
+                                orientation: rasterBase.orientation
+                            )
+                            let adjustedHistogram = self.processor.computeHistogram(
+                                from: adjustedBuffer,
+                                bins: self.histogramBins
+                            )
+
+                            self.resultDelivery {
+                                guard self.activeImportRevision == importRevision else { return }
+                                self.invalidatePreviewRequests()
+                                self.activeImportRevision = nil
+                                self.sourceFile = sourceFile
+                                self.sourceKind = sourceKind
+                                self.sourceIdentity = resolvedIdentity
+                                self.sourceDisplayName = source.displayName
+                                self.restoredSettings = restoredSettings
+                                self.currentPreviewSettings = restoredSettings
+                                self.pendingSettings = nil
+                                self.sourceOrientation = rasterBase.orientation
+                                self.draftBuffer = rasterBase.buffer
+                                self.draftPreviewBuffer = rasterBase.previewBuffer
+                                self.basePreviewImage = rasterBase.basePreviewImage
+                                self.baseHistogram = rasterBase.baseHistogram
+                                self.basePreviewGeometry = restoredSettings.geometry
+                                self.rawLUTID = nil
+                                self.rawLUTApplied = false
+                                self.rawWhiteBalance = nil
+                                self.lensInfo = nil
+                                self.previewImage = adjustedImage
+                                self.nativeImageSize = adjustedBuffer.nativeSize
+                                self.histogram = adjustedHistogram
+                                self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
+                                self.isBusy = false
+                                self.sourceRevision = UUID()
+                                if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
+                                onSettingsRestored?(restoredSettings)
+                                if self.hasImage && adjustedImage != nil { onImported?() }
+                                if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
+                                if adjustedImage == nil {
+                                    self.statusMessage = L10n.text("无法生成预览")
+                                }
+                            }
                         }
                     }
-                } else {
-                    let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry)
-                    let adjustedBuffer = try self.processor.processBuffer(
-                        buffer: rasterBase.buffer,
-                        settings: restoredSettings,
-                        previewLongEdge: self.previewMaxDimension,
-                        lutURL: self.lutURL(for: restoredSettings)
-                    )
-                    let adjustedImage = self.processor.makeUIImage(
-                        from: adjustedBuffer,
-                        orientation: rasterBase.orientation
-                    )
-                    let adjustedHistogram = self.processor.computeHistogram(
-                        from: adjustedBuffer,
-                        bins: self.histogramBins
-                    )
-
+                } catch {
                     self.resultDelivery {
                         guard self.activeImportRevision == importRevision else { return }
                         self.invalidatePreviewRequests()
                         self.activeImportRevision = nil
-                        self.cachedSource = cachedSource
-                        self.sourceURL = localURL
-                        self.sourceKind = sourceKind
-                        self.sourceIdentity = resolvedIdentity
-                        self.sourceDisplayName = source.displayName
-                        self.restoredSettings = restoredSettings
-                        self.currentPreviewSettings = restoredSettings
-                        self.pendingSettings = nil
-                        self.sourceOrientation = rasterBase.orientation
-                        self.draftBuffer = rasterBase.buffer
-                        self.draftPreviewBuffer = rasterBase.previewBuffer
-                        self.basePreviewImage = rasterBase.basePreviewImage
-                        self.baseHistogram = rasterBase.baseHistogram
-                        self.basePreviewGeometry = restoredSettings.geometry
+                        self.statusMessage = error.localizedDescription
+                        self.isBusy = false
+                        self.previewImage = nil
+                        self.basePreviewImage = nil
+                        self.nativeImageSize = nil
+                        self.draftPreviewBuffer = nil
+                        self.draftBuffer = nil
+                        self.sourceFile = nil
+                        self.sourceKind = nil
+                        self.sourceIdentity = nil
+                        self.sourceDisplayName = nil
+                        self.sourceOrientation = nil
                         self.rawLUTID = nil
                         self.rawLUTApplied = false
                         self.rawWhiteBalance = nil
                         self.lensInfo = nil
-                        self.previewImage = adjustedImage
-                        self.nativeImageSize = adjustedBuffer.nativeSize
-                        self.histogram = adjustedHistogram
-                        self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
-                        self.isBusy = false
+                        self.editSaveState = .idle
+                        self.hasImage = false
+                        self.histogram = []
+                        self.baseHistogram = []
                         self.sourceRevision = UUID()
-                        if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
-                        onSettingsRestored?(restoredSettings)
-                        if self.hasImage && adjustedImage != nil { onImported?() }
-                        if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
-                        if adjustedImage == nil {
-                            self.statusMessage = L10n.text("无法生成预览")
-                        }
                     }
-                }
-            } catch {
-                self.resultDelivery {
-                    guard self.activeImportRevision == importRevision else { return }
-                    self.invalidatePreviewRequests()
-                    self.activeImportRevision = nil
-                    self.statusMessage = error.localizedDescription
-                    self.isBusy = false
-                    self.previewImage = nil
-                    self.basePreviewImage = nil
-                    self.nativeImageSize = nil
-                    self.draftPreviewBuffer = nil
-                    self.draftBuffer = nil
-                    self.sourceURL = nil
-                    self.sourceKind = nil
-                    self.sourceIdentity = nil
-                    self.sourceDisplayName = nil
-                    self.sourceOrientation = nil
-                    self.rawLUTID = nil
-                    self.rawLUTApplied = false
-                    self.rawWhiteBalance = nil
-                    self.lensInfo = nil
-                    self.editSaveState = .idle
-                    self.hasImage = false
-                    self.histogram = []
-                    self.baseHistogram = []
-                    self.sourceRevision = UUID()
                 }
             }
         }

@@ -54,7 +54,7 @@ struct PublishedContent: Equatable {
     let hasImage: Bool
 
     init(_ model: RawEditorViewModel) {
-        url = model.sourceURL
+        url = model.sourceFile?.withReadAccess({ $0 })
         identity = model.sourceIdentity
         switch model.sourceKind {
         case .raw?: kind = "raw"
@@ -80,7 +80,8 @@ struct Fixture {
     let aIdentity: PhotoIdentity, bIdentity: PhotoIdentity
     let aSettings: RawSettings, bSettings: RawSettings
 
-    init(directory: URL, exportQueue: DispatchQueue = .global(qos: .userInitiated)) throws {
+    init(directory: URL, exportQueue: DispatchQueue = .global(qos: .userInitiated),
+         importQueue: DispatchQueue = .global(qos: .userInitiated)) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         aURL = directory.appendingPathComponent("source-a.png")
         bURL = directory.appendingPathComponent("source-b.png")
@@ -101,7 +102,7 @@ struct Fixture {
         try persistence.save(aIdentity, state: PhotoEditState(settings: a))
         try persistence.save(bIdentity, state: PhotoEditState(settings: b))
         let collector = self.collector
-        model = RawEditorViewModel(editPersistence: persistence, exportQueue: exportQueue,
+        model = RawEditorViewModel(editPersistence: persistence, exportQueue: exportQueue, importQueue: importQueue,
                                   resultDelivery: { collector.append($0) })
         try Self.writeImage(aURL, size: CGSize(width: 80, height: 60),
                             colors: [UIColor(red: 0.45, green: 0.15, blue: 0.1, alpha: 1), UIColor(white: 0.25, alpha: 1)])

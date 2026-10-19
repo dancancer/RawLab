@@ -45,16 +45,14 @@ extension ContentView {
         .task(id: viewModel.sourceRevision) {
             photoInformation = nil
             photoInfoMode = .hidden
-            guard let url = viewModel.sourceURL else { return }
+            guard let sourceFile = viewModel.sourceFile else { return }
             let revision = viewModel.sourceRevision
-            let displayName = viewModel.sourceDisplayName ?? url.lastPathComponent
-            let cachedSource = viewModel.cachedSource
+            let displayName = viewModel.sourceDisplayName ?? sourceFile.displayName
             let info = await Task.detached(priority: .utility) {
-                defer { withExtendedLifetime(cachedSource) {} }
-                return readPhotoInformation(url: url, displayName: displayName)
+                sourceFile.withReadAccess { readPhotoInformation(url: $0, displayName: displayName) }
             }.value
             guard !Task.isCancelled, viewModel.sourceRevision == revision,
-                  viewModel.sourceURL == url else { return }
+                  viewModel.sourceFile == sourceFile else { return }
             photoInformation = info
         }
     }

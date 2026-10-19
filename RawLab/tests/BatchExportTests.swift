@@ -53,6 +53,7 @@ struct BatchExportTests {
             .appendingPathComponent("rawlab-batch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
         try Data("source".utf8).write(to: sourceURL)
@@ -71,7 +72,7 @@ struct BatchExportTests {
         settings.hsl.set(.hue, channel: 3, value: 32)
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
-                                          sourceURL: sourceURL, displayName: "source.ARW", settings: settings)
+                                          sourceFile: .externallyManaged(sourceURL), displayName: "source.ARW", settings: settings)
         var rasterSettings = settings
         rasterSettings.masterRecipeID = nil
         rasterSettings.whiteBalanceMode = .custom
@@ -80,8 +81,7 @@ struct BatchExportTests {
         rasterSettings.tint = 18
         rasterSettings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         let rasterSource = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "raster-source"),
-                                                sourceURL: root.appendingPathComponent("source.jpg"),
-                                                displayName: "source.jpg", sourceKind: .raster,
+                                                sourceFile: .externallyManaged(root.appendingPathComponent("source.jpg")), displayName: "source.jpg", sourceKind: .raster,
                                                 settings: rasterSettings)
         let rawTargetSettings = rasterSource.settings(for: .raw)
         check(rawTargetSettings.whiteBalanceMode == .camera && rawTargetSettings.temperature == 6500 &&
@@ -302,11 +302,11 @@ struct BatchExportTests {
         try FileManager.default.moveItem(at: oldContainer, to: newContainer)
         let movedStore = try BatchJournalStore(directory: newContainer)
         let relocated = try movedStore.load(id: moved.id)!
-        check(FileManager.default.fileExists(atPath: relocated.source.sourceURL.path), "source survives iOS data-container relocation")
+        check(FileManager.default.fileExists(atPath: relocated.source.sourceFile.withReadAccess({ $0 }).path), "source survives iOS data-container relocation")
         check(FileManager.default.fileExists(atPath: relocated.targets[0].sourceURL.path), "target survives iOS data-container relocation")
         check(FileManager.default.fileExists(atPath: relocated.source.lookURL!.path), "look survives iOS data-container relocation")
         let relocatedPending = try movedStore.pendingJobs()
-        check(relocatedPending.first?.source.sourceURL == relocated.source.sourceURL, "startup uses relocated owned paths")
+        check(relocatedPending.first?.source.sourceFile.withReadAccess({ $0 }) == relocated.source.sourceFile.withReadAccess({ $0 }), "startup uses relocated owned paths")
         let outputRoot = BatchFileOutputStore.root()
         let hadOutputRoot = FileManager.default.fileExists(atPath: outputRoot.path)
         try FileManager.default.createDirectory(at: outputRoot, withIntermediateDirectories: true)

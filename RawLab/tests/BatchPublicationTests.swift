@@ -53,7 +53,7 @@ struct BatchPublicationTests {
         settings.hsl.set(.saturation, channel: 2, value: -20)
         settings.photoEffects.vignetteAmount = -25
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "raster-source"),
-                                         sourceURL: rasterURL, displayName: "batch-source.jpg",
+                                         sourceFile: .externallyManaged(rasterURL), displayName: "batch-source.jpg",
                                          sourceKind: .raster, settings: settings)
         let rasterTarget = BatchTarget(identity: PhotoIdentity(resourceIdentifier: "raster-target"),
                                        sourceURL: rasterURL, displayName: "batch-target.jpg",
@@ -117,13 +117,12 @@ struct BatchPublicationTests {
         let journal = try BatchJournalStore(directory: root.appendingPathComponent("journal"))
         try await testRasterBatchRender(root: root, journal: journal)
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
-                                        sourceURL: root.appendingPathComponent("source.ARW"),
-                                        displayName: "source.ARW", settings: .default)
+                                        sourceFile: .externallyManaged(root.appendingPathComponent("source.ARW")), displayName: "source.ARW", settings: .default)
         let output = root.appendingPathComponent("published.dng")
         let bytes = Data("already published DNG".utf8)
         try bytes.write(to: output)
         var job = BatchExportJob(source: source, targets: [BatchTarget(
-            identity: PhotoIdentity(resourceIdentifier: "target"), sourceURL: source.sourceURL,
+            identity: PhotoIdentity(resourceIdentifier: "target"), sourceURL: source.sourceFile.withReadAccess({ $0 }),
             displayName: "target.ARW", status: .needsConfirmation, outputFileURL: output)],
             outputFormat: .renderedDNG, status: .interrupted)
         job.globalError = "DNG 已生成，但任务记录未更新，请先核对保存结果。"

@@ -154,8 +154,7 @@ enum RasterExportBenchmark {
         let model = RawEditorViewModel(editPersistence: persistence)
         defer {
             model.invalidatePreviewRequests()
-            if let cached = model.sourceURL { try? fileManager.removeItem(at: cached) }
-            model.sourceURL = nil
+            model.sourceFile = nil
             model.editPersistence = nil
             try? fileManager.removeItem(at: edits)
         }
@@ -166,7 +165,7 @@ enum RasterExportBenchmark {
             throw Failure(message: "Raster import published the wrong source kind: \(String(describing: model.sourceKind))")
         }
         guard model.hasImage, model.sourceIdentity == identity,
-              model.sourceURL != nil,
+              model.sourceFile != nil,
               model.previewImage != nil, model.basePreviewImage != nil,
               model.draftBuffer != nil, model.draftPreviewBuffer != nil,
               !model.previewRendering, !model.previewResizePending else {
