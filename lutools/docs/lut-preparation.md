@@ -169,13 +169,14 @@ separately when reproducibility across machines matters.
 
 ## DCP Appearance Adaptation
 
-Mac can import supported `.dcp` files directly through **Import Look**, using a
-native compiler without Python/OCIO. It installs a validated `.rlook` in the managed
-library. Automatic import requires an embedded tone curve and explicit
+Mac, iOS, Android and Windows import supported `.dcp` files through the same
+C++ compiler and additive C ABI, without Python/OCIO. Each client installs a
+validated `.rlook` in managed storage. Automatic import requires an embedded tone curve and explicit
 `DefaultBlackRender=None` (1); it rejects unknown Adobe defaults instead of choosing
-a curve or omitting Auto black. Other client import capabilities are unchanged.
+a curve or omitting Auto black. Platform adapters do not implement TIFF parsing
+or color conversion; Mac and iOS also share their Swift file adapter and library.
 The CLI below remains available for explicit tone/black/exposure choices and
-preparing looks for other platforms.
+preparing profiles outside the automatic-import subset.
 
 ```bash
 lutools/.venv-lutprep/bin/python -m lutools.lutprep inspect /path/to/profile.dcp

@@ -71,6 +71,9 @@ enum PhotoImportFile {
     static let supportedContentTypes: [UTType] = [
         .rawImage, .jpeg, .png, .tiff, .heif, .heic
     ]
+    static let supportedLookContentTypes: [UTType] = ["cube", "rlook", "dcp"].compactMap {
+        UTType(filenameExtension: $0)
+    }
 
     static func sourceKind(for url: URL) -> PhotoImportSource? {
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return nil }

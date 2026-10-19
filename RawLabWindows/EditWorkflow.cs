@@ -58,7 +58,7 @@ public partial class MainWindow
         if (settings.Recipe is {} recipe) return "recipe:" + recipe.Id;
         if (lut != null && StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(lut), Path.Combine(AppContext.BaseDirectory, "LUTs")))
             return "builtin:" + Path.GetFileName(lut);
-        return lut;
+        return lookLibrary?.IdentityForPath(lut) ?? lut;
     }
 
     internal void SaveSettingsCopy(string input, AdjustmentSnapshot snapshot, string? look)
@@ -76,7 +76,7 @@ public partial class MainWindow
     {
         var saved = editStore?.Find(input);
         settings = saved?.Settings.Restore() ?? new Adjustments();
-        lut = saved == null ? films.FirstOrDefault(f => f.Name == "PROVIA")?.Path : saved.Look;
+        lut = saved == null ? films.FirstOrDefault(f => f.Name == "PROVIA")?.Path : lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
         if (settings.Recipe is {} recipe) lut = recipe.LutPath;
         if (lut?.StartsWith("builtin:", StringComparison.Ordinal) == true)
             lut = Path.Combine(AppContext.BaseDirectory, "LUTs", Path.GetFileName(lut[8..]));

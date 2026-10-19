@@ -27,6 +27,7 @@ import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.i18n.AppStrings
+import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
@@ -153,7 +154,8 @@ class EditorViewModel @JvmOverloads constructor(
                 val report = if (result.failures.isEmpty()) null else
                     AppStrings.format(R.string.look_import_summary, result.imported.size, result.failures.size) +
                         result.failures.joinToString("\n") { failure ->
-                            if (failure.invalid) failure.message + "\n" + text(R.string.look_invalid_file) else failure.message
+                            val message = failure.dcpReason?.let(::dcpFailureText) ?: failure.message
+                            if (failure.invalid) message + "\n" + text(R.string.look_invalid_file) else message
                         }
                 mutable.value = mutation.state.copy(looks = result.looks, lookImportReport = report,
                     message = if (result.imported.isEmpty()) null else text(R.string.look_imported))
@@ -182,6 +184,19 @@ class EditorViewModel @JvmOverloads constructor(
         if (edits == null) return
         currentRevision = queue.submit(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
     }
+
+    private fun dcpFailureText(reason: DcpFailureReason): String = text(when (reason) {
+        DcpFailureReason.MALFORMED -> R.string.dcp_malformed
+        DcpFailureReason.TOO_LARGE -> R.string.dcp_too_large
+        DcpFailureReason.INVALID_CALIBRATION -> R.string.dcp_invalid_calibration
+        DcpFailureReason.MISSING_TONE_CURVE -> R.string.dcp_missing_tone_curve
+        DcpFailureReason.AUTOMATIC_BLACK -> R.string.dcp_automatic_black
+        DcpFailureReason.TRIPLE_ILLUMINANT -> R.string.dcp_triple_illuminant
+        DcpFailureReason.UNSUPPORTED_STAGES -> R.string.dcp_unsupported_stages
+        DcpFailureReason.INVALID_TABLE -> R.string.dcp_invalid_table
+        DcpFailureReason.INVALID_TONE_CURVE -> R.string.dcp_invalid_tone_curve
+        DcpFailureReason.INVALID_EXPOSURE -> R.string.dcp_invalid_exposure
+    })
 
     fun importPhoto(uri: Uri?) {
         if (uri == null) {

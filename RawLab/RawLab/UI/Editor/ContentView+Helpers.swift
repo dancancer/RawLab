@@ -30,7 +30,7 @@ extension ContentView {
     }
 
     var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
-    var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || editingLocked }
+    var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || viewModel.isImportingLooks || editingLocked }
     var selectedFilmName: String {
         settings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
     }
@@ -280,6 +280,34 @@ extension ContentView {
         .help(L10n.text("从文件导入"))
         .accessibilityIdentifier("editor.import.file")
         .disabled(!isEnabled)
+    }
+
+    @MainActor
+    func importLooks(_ result: Result<[URL], Error>) {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        switch result {
+        case .failure(let error):
+            if !(error is CancellationError), (error as NSError).code != CocoaError.Code.userCancelled.rawValue {
+                viewModel.statusMessage = error.localizedDescription
+            }
+        case .success(let sources):
+            viewModel.importLooks(from: sources) { report in
+                if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
+                                                                                imported: report.imported) {
+                    var updated = settings
+                    updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
+                    updated.lutID = selectedID
+                    applySettingsChange(updated)
+                }
+                guard !report.failures.isEmpty else { return }
+                let prefix = L10n.format("已导入 %@ 个外观，%@ 个文件导入失败：\n",
+                                         String(report.imported.count), String(report.failures.count))
+                let details = report.failures.map {
+                    "\($0.fileName): \($0.reason.localizedDescription)"
+                }.joined(separator: "\n")
+                viewModel.statusMessage = prefix + details
+            }
+        }
     }
 
     @MainActor

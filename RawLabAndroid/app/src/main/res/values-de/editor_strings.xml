@@ -12,6 +12,16 @@
     <string name="adjustment_toggle_sign">"Vorzeichen wechseln"</string>
     <string name="all_tools">"Alle Werkzeuge"</string>
     <string name="batch_confirmation_count">"%1$d Ausgaben müssen überprüft werden"</string>
+    <string name="dcp_automatic_black">"Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie."</string>
+    <string name="dcp_invalid_calibration">"Dem DCP fehlt eine eindeutige, gültige D65 ColorMatrix/ForwardMatrix; die Konvertierung ist nicht möglich."</string>
+    <string name="dcp_invalid_exposure">"Der DCP-Belichtungsversatz ist ungültig; erforderlich ist ein endlicher Wert von -16 bis +16 EV."</string>
+    <string name="dcp_invalid_table">"Die HueSatMap-/LookTable-Daten, Dimensionen oder Kodierung des DCP werden nicht unterstützt."</string>
+    <string name="dcp_invalid_tone_curve">"Die DCP-Kurve ist ungültig; erforderlich sind 2 bis 8192 endliche Punkte im Bereich 0 bis 1 mit aufsteigenden x-Koordinaten."</string>
+    <string name="dcp_malformed">"Die DCP-Datei ist beschädigt oder verwendet eine nicht unterstützte TIFF-Struktur."</string>
+    <string name="dcp_missing_tone_curve">"Dem DCP fehlt ProfileToneCurve; die Adobe-Standardkurve kann nicht automatisch abgeleitet werden. Geben Sie zuerst mit dem Vorbereitungswerkzeug eine Kurve an."</string>
+    <string name="dcp_too_large">"Die DCP-Datei oder die Look-Daten überschreiten die sichere Größenbegrenzung."</string>
+    <string name="dcp_triple_illuminant">"Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird."</string>
+    <string name="dcp_unsupported_stages">"Das DCP enthält nicht unterstützte räumliche Verstärkungen, HDR- oder RGB-Tabellenverarbeitung und kann nicht konvertiert werden."</string>
     <string name="dng_description">"Fest eingerechneter Look, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien."</string>
     <string name="edit_read_error">"Anpassungsdatensatz konnte nicht gelesen werden: %1$s"</string>
     <string name="edit_unsaved_detail">"Anpassungen nicht gespeichert: %1$s"</string>

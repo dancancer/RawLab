@@ -36,6 +36,50 @@
       "formats": [],
       "source": "CPU · GPU 已回退"
     },
+    "DCP 文件损坏，或使用了不支持的 TIFF 结构。": {
+      "formats": [],
+      "source": "DCP 文件损坏，或使用了不支持的 TIFF 结构。"
+    },
+    "DCP 文件或外观数据超过安全大小限制。": {
+      "formats": [],
+      "source": "DCP 文件或外观数据超过安全大小限制。"
+    },
+    "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。": {
+      "formats": [],
+      "source": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"
+    },
+    "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。": {
+      "formats": [],
+      "source": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"
+    },
+    "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。": {
+      "formats": [],
+      "source": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"
+    },
+    "DCP 使用三光源 HueSatMap，暂不支持转换。": {
+      "formats": [],
+      "source": "DCP 使用三光源 HueSatMap，暂不支持转换。"
+    },
+    "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。": {
+      "formats": [],
+      "source": "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。"
+    },
+    "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。": {
+      "formats": [],
+      "source": "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。"
+    },
+    "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。": {
+      "formats": [],
+      "source": "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。"
+    },
+    "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。": {
+      "formats": [],
+      "source": "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。"
+    },
+    "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。": {
+      "formats": [],
+      "source": "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。"
+    },
     "DNG · 渲染型": {
       "formats": [],
       "source": "DNG · 渲染型"
@@ -450,9 +494,9 @@
       "formats": [],
       "source": "对比模式：并排 / 滑动"
     },
-    "导入兼容 CUBE 或 RLOOK，可选择多个文件": {
+    "导入兼容 CUBE、RLOOK 或 DCP，可选择多个文件": {
       "formats": [],
-      "source": "导入兼容 CUBE 或 RLOOK，可选择多个文件"
+      "source": "导入兼容 CUBE、RLOOK 或 DCP，可选择多个文件"
     },
     "导入外观": {
       "formats": [],
@@ -1431,9 +1475,9 @@
       "formats": [],
       "source": "胶片"
     },
-    "胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook": {
+    "胶片外观|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp": {
       "formats": [],
-      "source": "胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"
+      "source": "胶片外观|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp"
     },
     "自动": {
       "formats": [],
@@ -2316,13 +2360,13 @@
       "ja": "比較モード: 並列 / スワイプ",
       "zh-Hans": "对比模式：并排 / 滑动"
     },
-    "导入兼容 CUBE 或 RLOOK，可选择多个文件": {
-      "de": "Kompatible CUBE- oder RLOOK-Dateien importieren; mehrere Dateien können ausgewählt werden",
-      "en": "Import compatible CUBE or RLOOK files; multiple files can be selected",
-      "es": "Importar archivos CUBE o RLOOK compatibles; se pueden seleccionar varios archivos",
-      "fr": "Importer des fichiers CUBE ou RLOOK compatibles ; plusieurs fichiers peuvent être sélectionnés",
-      "ja": "互換性のあるCUBEまたはRLOOKファイルを読み込みます。複数選択できます",
-      "zh-Hans": "导入兼容 CUBE 或 RLOOK，可选择多个文件"
+    "导入兼容 CUBE、RLOOK 或 DCP，可选择多个文件": {
+      "de": "Kompatible CUBE-, RLOOK- oder DCP-Dateien importieren; mehrere Dateien können ausgewählt werden",
+      "en": "Import compatible CUBE, RLOOK, or DCP files; multiple files can be selected",
+      "es": "Importar archivos CUBE, RLOOK o DCP compatibles; se pueden seleccionar varios archivos",
+      "fr": "Importer des fichiers CUBE, RLOOK ou DCP compatibles ; plusieurs fichiers peuvent être sélectionnés",
+      "ja": "互換性のあるCUBE、RLOOK、またはDCPファイルを読み込みます。複数選択できます",
+      "zh-Hans": "导入兼容 CUBE、RLOOK 或 DCP，可选择多个文件"
     },
     "导出照片（尺寸可选）": {
       "de": "Foto exportieren (Größe auswählbar)",
@@ -2844,13 +2888,13 @@
       "ja": "EXIF書き出しコンポーネントがありません。RawLabの完全なパッケージをもう一度展開してください。",
       "zh-Hans": "缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。"
     },
-    "胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook": {
-      "de": "Filmlooks|*.cube;*.rlook|CUBE LUT|*.cube|RawLab-DCP-Looks|*.rlook",
-      "en": "Film looks|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP looks|*.rlook",
-      "es": "Looks de película|*.cube;*.rlook|CUBE LUT|*.cube|Looks RawLab DCP|*.rlook",
-      "fr": "Looks de film|*.cube;*.rlook|CUBE LUT|*.cube|Looks RawLab DCP|*.rlook",
-      "ja": "フィルムルック|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP ルック|*.rlook",
-      "zh-Hans": "胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook"
+    "胶片外观|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp": {
+      "de": "Filmlooks|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab-RLOOK-Looks|*.rlook|DCP-Looks|*.dcp",
+      "en": "Film looks|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK looks|*.rlook|DCP looks|*.dcp",
+      "es": "Looks de película|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|Looks RLOOK de RawLab|*.rlook|Looks DCP|*.dcp",
+      "fr": "Looks de film|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|Looks RLOOK RawLab|*.rlook|Looks DCP|*.dcp",
+      "ja": "フィルムルック|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK ルック|*.rlook|DCP ルック|*.dcp",
+      "zh-Hans": "胶片外观|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp"
     },
     "自定义 {0} px": {
       "de": "Benutzerdefiniert {0} px",

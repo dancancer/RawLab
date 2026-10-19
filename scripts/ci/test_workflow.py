@@ -88,7 +88,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("test_tool_group_ui.py", commands["contracts"])
         self.assertIn("RawLabMac/tests/presentation.sh", commands["macos"])
         self.assertIn("RawLabMac/tests/control-groups.sh", commands["macos"])
-        self.assertIn("comparison-default,tool-groups,looks", commands["windows"])
+        self.assertIn("comparison-default,tool-groups,ui-details,looks", commands["windows"])
 
     def test_lut_contracts_include_the_adapter_dependencies(self):
         contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
@@ -142,6 +142,22 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("if", builds[0], "Cache hits must still build and test the product")
                 self.assertLess(steps.index(restore), steps.index(builds[0]))
                 self.assertLess(steps.index(builds[0]), steps.index(save))
+
+    def test_windows_shared_dcp_compiler_and_python_parity_are_required(self):
+        run = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["windows"]["steps"])
+        self.assertIn("dcp_compiler", run, "Windows must execute the shared compiler CTest")
+        self.assertIn("lutools/requirements-lutprep.txt", run)
+        self.assertIn("lutools/tests/test_dcp_compiler.py", run)
+        self.assertIn("build/windows-native/bin/Release/dcp_compiler_tests.exe", run)
+        self.assertIn("RAWLAB_TEST_DCP_NATIVE_LIB", run)
+        self.assertIn("RAWLAB_TEST_DCP_FIXTURE_DIR", run)
+        self.assertIn("'--fixtures'", run)
+
+    def test_ios_shared_look_import_runs_after_framework_build(self):
+        run = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["ios"]["steps"])
+        self.assertIn("bash RawLab/tests/look-import.sh", run)
+        self.assertLess(run.index("bash lutools/platform/ios/build-framework.sh"),
+                        run.index("bash RawLab/tests/look-import.sh"))
 
 
 if __name__ == "__main__":

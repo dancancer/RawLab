@@ -38,6 +38,7 @@ struct ContentView: View {
     @State var photoImportTask: Task<Void, Never>?
     @State var photoImportRequestID: UUID?
     @State var showingFileImporter = false
+    @State var showingLookImporter = false
     @State private var checkedBatchRecovery = false
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
@@ -100,13 +101,22 @@ struct ContentView: View {
                       allowsMultipleSelection: false) { result in
             importFromFile(result)
         }
+        .fileImporter(isPresented: $showingLookImporter,
+                      allowedContentTypes: PhotoImportFile.supportedLookContentTypes,
+                      allowsMultipleSelection: true) { result in
+            importLooks(result)
+        }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
             set: { if !$0 { viewModel.statusMessage = nil } }
         )) {
             Button(L10n.text("关闭"), role: .cancel) { viewModel.statusMessage = nil }
         } message: {
-            Text(viewModel.statusMessage ?? "")
+            ScrollView {
+                Text(viewModel.statusMessage ?? "")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 320)
         }
     }
 

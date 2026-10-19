@@ -28,6 +28,8 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
   Ten film looks, neutral/result comparison, strength, exposure and calibrated RAW white balance.
 - v0.4.0 支持从胶片栏的加号导入兼容 CUBE/RLOOK v1/v2，复制到 `filesDir/looks`，不依赖外部 URI 或 RAW 缓存。导入后自动选中，可重命名、删除并在重启后恢复；原文件删除不影响托管副本，同名导入不会覆盖。缺失外观记录保留可删除，损坏索引不会被静默清空。
   v0.4.0 imports prepared CUBE/RLOOK looks into a persistent managed library. Copies survive original removal and restart, support rename/delete, and never overwrite same-name imports.
+- Android 现在也接受受支持的 `.dcp`。文件流在进入 JNI 前限制为 128 MiB，shared C++ core 在 native 侧再次限制输入并将结果限制为 64 MiB；编译出的 RLOOK 先验证再安装，具体 DCP 拒绝原因会保留给导入结果，不回退成通用无效外观。
+  Android also accepts supported `.dcp` files. The stream is bounded at 128 MiB before JNI, the shared C++ core enforces the input bound again and caps output at 64 MiB; compiled RLOOK data is validated before installation, and typed DCP rejection reasons remain visible instead of becoming a generic invalid-look error.
 - 富士 F-Log/F-Log2/F-Log2C CUBE 在声明匹配的输入色域和 BT.709 输出后可直接导入。技术 Log 输出会解码并转换为显示图像，均支持 GLES；Auto 在后端失败时回退 CPU，Force 要求实际 GPU 执行。
   Declared Fuji F-Log/F-Log2/F-Log2C CUBEs can be imported directly. Technical Log outputs are decoded and display-rendered on GLES. Auto falls back on backend failure; Force requires successful GPU execution.
 - 外观选择器可一次选择多个文件，作为单个顺序任务导入。部分失败不回滚成功项，完成后选中最后成功外观；失败文件集中显示在可滚动的结果对话框中，不会被随后完成的预览清除。全部失败保留原选择，取消选择不启动任务。
@@ -55,9 +57,9 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
 
 RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits persist locally by original resource identity.
 
-外观导入只接受已制备成品，不直接执行源 DCP/XMP。先在桌面按 [LUT Preparation](../lutools/docs/lut-preparation.md) 制备，再传给手机；Android 不安装 Python/OCIO。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
+外观导入不执行 Python/OCIO，也不修改源文件；CUBE、RLOOK 和受支持的 DCP 均通过 shared native 校验，DCP 会在 Android 上直接编译成托管 RLOOK。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
 
-Prepare source assets on a desktop, then transfer the finished look; Python/OCIO is not required on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
+Look import does not execute Python/OCIO or modify the source. CUBE, RLOOK, and supported DCP files pass shared native validation; DCP is compiled to a managed RLOOK on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
 
 ## 构建 / Build
 

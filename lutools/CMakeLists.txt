@@ -147,6 +147,7 @@ set(CORE_SOURCES
     src/core/lut_parser.cpp
     src/core/lut_applicator.cpp
     src/core/dcp_look.cpp
+    src/core/dcp_compiler.cpp
     src/core/color_converter.cpp
     src/core/raw_processor.cpp
     src/core/lens_correction.cpp
@@ -159,6 +160,7 @@ set(CORE_SOURCES
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/dcp_compiler_c.cpp
     src/gpu/lut_gpu.cpp
     src/gpu/image_stats.cpp
     src/gpu/denoise.cpp
@@ -189,6 +191,7 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+target_include_directories(sony2fuji_core PRIVATE third_party)
 if(WIN32)
     target_link_libraries(sony2fuji_core windowscodecs ole32)
 endif()
@@ -232,6 +235,7 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    target_include_directories(sony2fuji PRIVATE third_party)
     if(WIN32)
         target_link_libraries(sony2fuji windowscodecs ole32)
     endif()
@@ -446,6 +450,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(dcp_look_tests tests/dcp_look_tests.cpp)
     target_link_libraries(dcp_look_tests sony2fuji_core)
     add_test(NAME native_dcp_look COMMAND dcp_look_tests)
+    add_executable(dcp_compiler_tests tests/dcp_compiler_tests.cpp)
+    target_link_libraries(dcp_compiler_tests sony2fuji_core)
+    add_test(NAME dcp_compiler COMMAND dcp_compiler_tests)
     if(SONY2FUJI_ENABLE_GPU AND APPLE)
         add_test(NAME native_dcp_metal COMMAND dcp_look_tests --metal)
     endif()
@@ -653,6 +660,7 @@ endif()
 install(TARGETS sony2fuji_core
     ARCHIVE DESTINATION lib
 )
+install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION share/licenses/sony2fuji)
 
 if(BUILD_SHARED_LIB)
     install(TARGETS sony2fuji

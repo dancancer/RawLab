@@ -84,6 +84,10 @@ struct Buffer {
     sony2fuji_buffer value{};
     ~Buffer() { sony2fuji_release_buffer(&value); }
 };
+struct DcpBlob {
+    sony2fuji_blob value{};
+    ~DcpBlob() { sony2fuji_release_blob(&value); }
+};
 void prepareRecipeWb(sony2fuji_session* session, const char* input, bool active, float strength,
     bool& custom, float& temperature, float& tint) {
     if (!active || (!custom && tint * strength == 0)) return;
@@ -256,6 +260,68 @@ Java_com_rawlab_android_engine_NativeLookBridge_validate(JNIEnv* env, jclass, js
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to validate look");
     } catch (const std::exception& error) {
         throwJava(env, "java/io/IOException", error.what());
+    }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_rawlab_android_engine_NativeDcpBridge_compile(JNIEnv* env, jclass, jbyteArray source, jbyteArray sourceNameUtf8) {
+    DcpBlob blob;
+    try {
+        if (!source || !sourceNameUtf8) throw std::invalid_argument("Missing DCP source");
+        ByteArrayElements bytes(env, source);
+        ByteArrayElements sourceName(env, sourceNameUtf8);
+        const auto sourceNameLength = env->GetArrayLength(sourceNameUtf8);
+        if (sourceNameLength <= 0) throw std::invalid_argument("Missing DCP source filename");
+        const std::string name(reinterpret_cast<const char*>(sourceName.bytes),
+            static_cast<size_t>(sourceNameLength));
+        sony2fuji_dcp_error reason = SONY2FUJI_DCP_ERROR_NONE;
+        const auto status = sony2fuji_compile_dcp(bytes.bytes,
+            static_cast<size_t>(env->GetArrayLength(source)), name.c_str(), &blob.value, &reason);
+        if (status != SONY2FUJI_STATUS_OK) {
+            if (status == SONY2FUJI_STATUS_OUT_OF_MEMORY) {
+                throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to compile DCP");
+            } else {
+                if (reason == SONY2FUJI_DCP_ERROR_NONE) reason = SONY2FUJI_DCP_ERROR_MALFORMED;
+                auto type = env->FindClass("com/rawlab/android/looks/DcpCompilationException");
+                if (!type) {
+                    env->ExceptionClear();
+                    throwJava(env, "java/io/IOException", "DCP compilation failed");
+                } else {
+                    auto constructor = env->GetMethodID(type, "<init>", "(I)V");
+                    if (!constructor) {
+                        env->ExceptionClear();
+                        throwJava(env, "java/io/IOException", "DCP compilation failed");
+                    } else {
+                        auto exception = env->NewObject(type, constructor, static_cast<jint>(reason));
+                        if (exception) env->Throw(static_cast<jthrowable>(exception));
+                    }
+                }
+            }
+            return nullptr;
+        }
+        if (!blob.value.data || blob.value.size_bytes == 0 ||
+            blob.value.size_bytes > 64u * 1024u * 1024u || blob.value.size_bytes > INT32_MAX) {
+            auto type = env->FindClass("com/rawlab/android/looks/DcpCompilationException");
+            if (type) {
+                auto constructor = env->GetMethodID(type, "<init>", "(I)V");
+                if (constructor) {
+                    auto exception = env->NewObject(type, constructor,
+                        static_cast<jint>(SONY2FUJI_DCP_ERROR_TOO_LARGE));
+                    if (exception) env->Throw(static_cast<jthrowable>(exception));
+                }
+            }
+            return nullptr;
+        }
+        auto result = env->NewByteArray(static_cast<jsize>(blob.value.size_bytes));
+        if (!result) return nullptr;
+        env->SetByteArrayRegion(result, 0, static_cast<jsize>(blob.value.size_bytes),
+            static_cast<const jbyte*>(blob.value.data));
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to compile DCP");
+    } catch (const std::exception& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
     }
     return nullptr;
 }

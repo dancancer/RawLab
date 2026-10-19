@@ -6,6 +6,8 @@ import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.ManagedLook
+import com.rawlab.android.looks.DcpCompilationException
+import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.InvalidLookException
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
@@ -55,7 +57,8 @@ internal sealed interface LookWork {
     data class Rename(val id: String, val name: String) : LookWork
     data class Delete(val id: String) : LookWork
 }
-internal data class LookImportFailure(val message: String, val invalid: Boolean)
+internal data class LookImportFailure(val message: String, val invalid: Boolean,
+    val dcpReason: DcpFailureReason? = null)
 
 internal sealed interface LookResult {
     data class Loaded(val looks: List<LookChoice>) : LookResult
@@ -75,8 +78,12 @@ internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = sy
             for (uri in work.uris) {
                 try { imported += storage.importLook(uri) }
                 catch (error: Exception) {
-                    failures += LookImportFailure(error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
-                        generateSequence<Throwable>(error) { it.cause }.any { it is InvalidLookException })
+                    val causes = generateSequence<Throwable>(error) { it.cause }.toList()
+                    val dcpReason = causes.firstOrNull { it is DcpCompilationException }
+                        ?.let { (it as DcpCompilationException).reason }
+                    failures += LookImportFailure(
+                        error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
+                        causes.any { it is InvalidLookException }, dcpReason)
                 }
             }
             LookResult.Imported(imported, failures, storage.looks())
