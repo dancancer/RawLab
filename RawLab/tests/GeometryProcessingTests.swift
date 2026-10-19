@@ -123,7 +123,7 @@ struct GeometryProcessingTests {
             let preview = try processor.processBuffer(buffer: source, settings: settings,
                                                       previewLongEdge: CGFloat(edge), lutURL: nil,
                                                       interactive: true, viewportPreview: true)
-            check(same(preview, final), "active perspective bypasses proxies and matches FINAL")
+            check(same(preview, final), "native-size perspective preview remains identical to FINAL")
             let auto = try perspectiveReference(source, settings: settings, mode: SONY2FUJI_GPU_AUTO)
             check(auto.width == final.width && auto.height == final.height &&
                   zip(auto.data, final.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 },
@@ -194,10 +194,14 @@ struct GeometryProcessingTests {
         settings.geometry.perspectiveHorizontal = 0.5
         settings.geometry.perspectiveVertical = -0.25
         let preview = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128,
-                                               lutURL: nil, interactive: true, viewportPreview: true).buffer
+                                               lutURL: nil, interactive: true, viewportPreview: false).buffer
         let final = try processor.processRaw(url: url, settings: settings, previewLongEdge: nil,
                                              lutURL: nil, exportLongEdge: 128).buffer
         check(same(preview, final), "real RAW tinted recipe perspective preview equals FINAL after cold WB lookup")
+        let reduced = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128,
+                                               lutURL: nil, interactive: true, viewportPreview: true).buffer
+        check(reduced.width == preview.width && reduced.height == preview.height && reduced.nativeSize == preview.nativeSize,
+              "reduced RAW geometry keeps preview and full geometry dimensions")
         settings.geometry = GeometrySettings()
         let reset = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128, lutURL: nil).buffer
         let fresh = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: lensDatabase)
@@ -210,8 +214,8 @@ struct GeometryProcessingTests {
         settings.geometry.perspectiveVertical = -0.25
         let gpu = try auto.processRaw(url: url, settings: settings, previewLongEdge: 128,
                                       lutURL: nil, interactive: true, viewportPreview: true).buffer
-        check(gpu.width == preview.width && gpu.height == preview.height && gpu.nativeSize == preview.nativeSize &&
-              zip(gpu.data, preview.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 },
+        check(gpu.width == reduced.width && gpu.height == reduced.height && gpu.nativeSize == reduced.nativeSize &&
+              zip(gpu.data, reduced.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 },
               "real RAW perspective Auto and CPU agree within two RGB8 values")
     }
 

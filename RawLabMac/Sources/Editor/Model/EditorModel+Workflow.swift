@@ -183,7 +183,7 @@ extension EditorModel {
         guard !lookLibraryBusy, !exporting, geometryDraft == nil else { return }
         let panel = NSOpenPanel()
         panel.title = L10n.text("导入外观")
-        panel.allowedContentTypes = ["cube", "rlook"].map { UTType(filenameExtension: $0) ?? .data }
+        panel.allowedContentTypes = ["cube", "rlook", "dcp"].map { UTType(filenameExtension: $0) ?? .data }
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {

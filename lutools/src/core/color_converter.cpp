@@ -352,7 +352,6 @@ ColorConverter::Matrix3x3 ColorConverter::getChromaticAdaptationMatrix(
 // GammaConverter Implementation
 // ============================================================================
 
-
 float GammaConverter::applyGamma(float linear, float gamma) {
     if (linear <= 0.0f) return 0.0f;
     return std::pow(linear, 1.0f / gamma);
@@ -410,8 +409,11 @@ GammaConverter::FLog2Diagnostics GammaConverter::applyFLog2ToImage(
     ImageData& image,
     const FLog2Options& options
 ) {
-    (void)options;
     FLog2Diagnostics result;
+    if (!options.enableDiagnostics) {
+        for (auto& pixel : image.pixels) pixel = applyFLog2ToRGB(pixel);
+        return result;
+    }
     if (image.pixels.empty()) return result;
     result.min_linear = std::numeric_limits<float>::max();
     result.max_linear = std::numeric_limits<float>::lowest();

@@ -7,7 +7,7 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d /tmp/rawlab-look-library.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-SOURCES=("$ROOT/RawLabMac/tests/LookLibraryTests.swift")
+SOURCES=("$ROOT/RawLabMac/tests/LookLibraryTests.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" "$ROOT/RawLabMac/Sources/Library/DCPCompiler.swift")
 if [ -f "$ROOT/RawLabMac/Sources/Library/LookLibrary.swift" ]; then
     SOURCES+=("$ROOT/RawLabMac/Sources/Library/LookLibrary.swift")
 fi

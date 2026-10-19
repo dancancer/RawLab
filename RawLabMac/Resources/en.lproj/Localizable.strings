@@ -12,6 +12,16 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"DCP 使用三光源 HueSatMap，暂不支持转换。" = "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.";
+"DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "The DCP contains unsupported spatial gains, HDR, or RGB-table processing and cannot be converted.";
+"DCP 文件或外观数据超过安全大小限制。" = "The DCP file or look data exceeds the safe size limit.";
+"DCP 文件损坏，或使用了不支持的 TIFF 结构。" = "The DCP file is damaged or uses an unsupported TIFF structure.";
+"DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。" = "The DCP exposure offset is invalid; it must be a finite value from -16 to +16 EV.";
+"DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。" = "The DCP tone curve is invalid; it needs 2 to 8192 finite points in the 0 to 1 range with increasing x-coordinates.";
+"DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。" = "The DCP HueSatMap/LookTable data, dimensions, or encoding are unsupported.";
+"DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。" = "The DCP is missing ProfileToneCurve; Adobe's default curve cannot be inferred automatically. Specify a curve explicitly with the preparation tool first.";
+"DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。" = "The DCP lacks a unique, valid D65 ColorMatrix/ForwardMatrix and cannot be converted.";
+"DCP 要求自动黑位处理，Mac 自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "The DCP requires automatic black-level processing, which Mac conversion does not support yet. Select a black-level policy explicitly with the preparation tool first.";
 "DNG · 渲染型" = "DNG · Rendered";
 "DNG 只能保存到文件" = "DNG Can Only Be Saved to Files";
 "DNG 已执行内嵌 Stage3 处理，未叠加校正" = "Embedded DNG Stage 3 Already Applied; Additional Correction Skipped";

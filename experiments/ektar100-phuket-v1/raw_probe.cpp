@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
             savePFM(image, std::string(argv[3]) + ".linear.pfm");
             check(converter.convertImage(image, ColorSpace::sRGB, ColorSpace::FujiFilm_FGamut));
             GammaConverter::FLog2Options logOptions;
+            logOptions.enableDiagnostics = true;
             const auto diagnostics = GammaConverter::applyFLog2ToImage(image, logOptions);
             savePFM(image, std::string(argv[3]) + ".log.pfm");
             std::cout << raw.getCameraMake() << " " << raw.getCameraModel()

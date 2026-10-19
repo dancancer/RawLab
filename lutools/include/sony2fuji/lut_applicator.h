@@ -47,23 +47,6 @@ private:
      */
     RGB trilinearInterpolate(float r, float g, float b) const;
 
-    /**
-     * @brief 线性插值辅助函数
-     */
-    static float lerp(float a, float b, float t) {
-        return a + t * (b - a);
-    }
-
-    /**
-     * @brief RGB 线性插值
-     */
-    static RGB lerpRGB(const RGB& a, const RGB& b, float t) {
-        return RGB(
-            lerp(a.r, b.r, t),
-            lerp(a.g, b.g, t),
-            lerp(a.b, b.b, t)
-        );
-    }
 };
 
 } // namespace sony2fuji

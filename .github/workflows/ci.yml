@@ -118,6 +118,7 @@ jobs:
           export DEVELOPER_DIR
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
+          python -m pip install -r lutools/requirements-lutprep.txt
           python RawLabMac/tests/test_photo_copy.py
           python RawLabMac/tests/test_build_environment.py
           python lutools/tests/test_lens_dependencies.py
@@ -125,6 +126,10 @@ jobs:
           bash RawLabMac/tests/horizontal-picker.sh
           bash RawLabMac/tests/horizontal-picker-native.sh
           bash RawLabMac/build.sh
+          lutprep_python="$(command -v python)"
+          RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
+          bash RawLabMac/tests/look-library.sh
+          bash RawLabMac/tests/look-import-model.sh
           ctest --test-dir lutools/build-macos --output-on-failure --no-tests=error \
             -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
             --output-junit "$PWD/build/ci/macos-ctest.xml"

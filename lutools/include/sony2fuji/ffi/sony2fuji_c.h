@@ -384,9 +384,9 @@ sony2fuji_status sony2fuji_session_set_hsl(
 // centered inscribed canvas, then crop (floor start/ceil end) before output resizing.
 // Crop coordinates refer to that transformed canvas. Invalid values preserve
 // the previous configuration. Normalized ends tolerate at most 1e-6 beyond
-// one for Float UI rounding and clamp to the canvas. Active geometry uses an
-// exact RAW source even for interactive/viewport previews. Geometry is CPU-only:
-// GPU Auto may render
+// one for Float UI rounding and clamp to the canvas. Active geometry disables
+// half-size RAW; a viewport preview may reduce the source, while FINAL and file
+// outputs keep the exact source. Geometry is CPU-only: GPU Auto may render
 // color on GPU, but the mixed result reports CPU; Force returns UNSUPPORTED.
 sony2fuji_status sony2fuji_session_set_geometry(
     sony2fuji_session* session, const sony2fuji_geometry_config* config
@@ -401,14 +401,15 @@ sony2fuji_status sony2fuji_session_set_geometry(
 // before straightening and crop. Perspective and straightening sample once
 // bilinearly; zero perspective retains the exact existing geometry path.
 // Invalid values preserve all state. Success clears the last geometry size.
-// Active perspective has the same exact-source and GPU semantics as geometry.
+// Active perspective has the same viewport and GPU semantics as geometry.
 sony2fuji_status sony2fuji_session_set_perspective(
     sony2fuji_session* session, const sony2fuji_perspective_config* config
 );
 
 // Native canvas from the last successful process, after geometry and before
 // output resizing. Identity records the decoded input dimensions even when
-// its preview is reduced later. Active geometry always uses the exact source.
+// its preview is reduced later. Active geometry reports the full-source canvas
+// even when a viewport preview reduced its source.
 // Successful geometry/perspective setters and every new process clear the size.
 // Failed processes, including output I/O failures, leave the size unavailable.
 // Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.

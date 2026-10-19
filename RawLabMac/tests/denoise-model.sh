@@ -17,7 +17,7 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target
   "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" \
   "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift" \
   "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
-  "$ROOT/RawLabMac/Sources/Library/LookLibrary.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" \
+  "$ROOT/RawLabMac/Sources/Library/DCPCompiler.swift" "$ROOT/RawLabMac/Sources/Library/LookLibrary.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" \
   "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/RawLabMac/tests/DenoiseModelTests.swift" \
   "$ROOT/lutools/build-macos/libsony2fuji_core.a" $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
