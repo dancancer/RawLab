@@ -5,6 +5,16 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"DCP 使用三光源 HueSatMap，暂不支持转换。" = "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.";
+"DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Das DCP enthält nicht unterstützte räumliche Verstärkungen, HDR- oder RGB-Tabellenverarbeitung und kann nicht konvertiert werden.";
+"DCP 文件或外观数据超过安全大小限制。" = "Die DCP-Datei oder die Look-Daten überschreiten die sichere Größenbegrenzung.";
+"DCP 文件损坏，或使用了不支持的 TIFF 结构。" = "Die DCP-Datei ist beschädigt oder verwendet eine nicht unterstützte TIFF-Struktur.";
+"DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。" = "Der DCP-Belichtungsversatz ist ungültig; erforderlich ist ein endlicher Wert von -16 bis +16 EV.";
+"DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。" = "Die DCP-Kurve ist ungültig; erforderlich sind 2 bis 8192 endliche Punkte im Bereich 0 bis 1 mit aufsteigenden x-Koordinaten.";
+"DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。" = "Die HueSatMap-/LookTable-Daten, Dimensionen oder Kodierung des DCP werden nicht unterstützt.";
+"DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。" = "Dem DCP fehlt ProfileToneCurve; die Adobe-Standardkurve kann nicht automatisch abgeleitet werden. Geben Sie zuerst mit dem Vorbereitungswerkzeug eine Kurve an.";
+"DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。" = "Dem DCP fehlt eine eindeutige, gültige D65 ColorMatrix/ForwardMatrix; die Konvertierung ist nicht möglich.";
+"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie.";
 "DNG · 渲染型" = "DNG · Entwickelt";
 "DNG 只能保存到文件" = "DNG kann nur in Dateien gespeichert werden";
 "DNG 已执行内嵌 Stage3 处理，未叠加校正" = "Eingebettete DNG-Stage-3-Verarbeitung bereits angewendet; zusätzliche Korrektur übersprungen";
@@ -85,12 +95,17 @@
 "垂直透视" = "Vertikale Perspektive";
 "处理失败：%@" = "Verarbeitung fehlgeschlagen: %@";
 "外观不可用" = "Look nicht verfügbar";
+"外观名称不能为空或包含控制字符。" = "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.";
+"外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.";
 "大小" = "Größe";
 "大师配方" = "Master-Rezept";
 "完成" = "Fertig";
 "对比" = "Vergleich";
 "对比度" = "Kontrast";
+"导入外观" = "Look importieren";
+"导入外观…" = "Look importieren…";
 "导入照片" = "Foto importieren";
+"导入结果" = "Importergebnis";
 "导出" = "Exportieren";
 "导出 %@ 张" = "Fotos exportieren (%@)";
 "导出到文件…" = "In Dateien exportieren…";
@@ -105,6 +120,7 @@
 "导出渲染型 DNG…" = "Entwickeltes DNG exportieren…";
 "导出长边像素" = "Lange Seite beim Export (Pixel)";
 "导出长边必须为 1-65535 像素。" = "Die lange Seite muss 1-65535 Pixel betragen.";
+"将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
 "尚未保存，允许重新导出" = "Noch nicht gespeichert; erneuten Export erlauben";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
 "尚未选择照片" = "Keine Fotos ausgewählt";
@@ -118,6 +134,7 @@
 "已匹配镜头" = "Objektiv zugeordnet";
 "已在照片图库中确认保存" = "In Fotos als gespeichert bestätigt";
 "已处理 %@ / %@" = "Verarbeitet: %@ / %@";
+"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Importierte Looks: %@; nicht importierte Dateien: %@\n";
 "已导出 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien exportiert: %@";
 "已导出渲染型 DNG。" = "Entwickeltes DNG exportiert.";
 "已展开" = "Aufgeklappt";
@@ -175,6 +192,8 @@
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法识别原始照片，调整尚未保存。" = "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.";
 "无法读取上次批量任务：%@" = "Der letzte Stapel-Export konnte nicht gelesen werden: %@";
+"无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";
+"无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
 "无法读取已保存的调整，原有记录未被覆盖。" = "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.";
 "无法读取照片，请检查文件和访问权限。" = "Das Foto kann nicht gelesen werden. Prüfen Sie die Datei und Zugriffsrechte.";
@@ -233,6 +252,7 @@
 "正在生成效果预览…" = "Vorschau wird erstellt…";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
+"此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
 "此镜头没有所选校正的标定数据" = "Keine Kalibrierungsdaten für die gewählten Korrekturen";
 "此默认值不可达，请重置裁切组。" = "Dieser Standardwert lässt sich nicht einstellen. Setze die Zuschnitteinstellungen zurück.";
@@ -249,6 +269,7 @@
 "照片图库" = "Fotos";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "Das Foto wurde geschrieben, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst das Ergebnis.";
 "照片缺少有效焦距，未应用校正" = "Keine gültige Brennweite; Korrektur nicht angewendet";
+"用户外观 · %@" = "Eigener Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Filmische Breitbild-Ästhetik, hart geschnittenes Licht und Schatten, tiefe Dunkelheit und goldenes Scheinwerferlicht";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Filmische Nachtfarben, rote Lichter und tiefe kühl-cyane-grüne Schatten";
 "画面比例" = "Bildseitenverhältnis";
@@ -257,6 +278,8 @@
 "白平衡" = "Weißabgleich";
 "目标照片" = "Zielfotos";
 "移除 %@" = "%@ entfernen";
+"移除“%@”？" = "„%@“ entfernen?";
+"移除外观…" = "Look entfernen…";
 "空气清透 · 少女淡蓝" = "Luftige Klarheit · zartes Blau";
 "童话油画 · 梦幻微光" = "Märchenhaftes Ölgemälde · verträumtes Leuchten";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Ölgemälde wie ein Märchenbilderbuch, tiefe ruhige Schatten, umhüllendes Warmgold und diffuses Leuchten";
@@ -329,6 +352,7 @@
 "部分照片导出失败" = "Export einiger Fotos fehlgeschlagen";
 "配方会调整多个参数。" = "Ein Rezept passt mehrere Parameter an.";
 "酒井贵弘" = "Takahiro Sakai";
+"重命名外观" = "Look umbenennen";
 "重置 HSL" = "HSL zurücksetzen";
 "重置%@" = "%@ zurücksetzen";
 "重置全部调整" = "Alle Anpassungen zurücksetzen";

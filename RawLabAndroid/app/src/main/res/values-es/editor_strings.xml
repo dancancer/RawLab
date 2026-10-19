@@ -12,6 +12,16 @@
     <string name="adjustment_toggle_sign">"Cambiar signo"</string>
     <string name="all_tools">"Todas las herramientas"</string>
     <string name="batch_confirmation_count">"%1$d resultados pendientes de verificación"</string>
+    <string name="dcp_automatic_black">"El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación."</string>
+    <string name="dcp_invalid_calibration">"Al DCP le falta una ColorMatrix/ForwardMatrix D65 única y válida, por lo que no se puede convertir."</string>
+    <string name="dcp_invalid_exposure">"El desplazamiento de exposición del DCP no es válido; debe ser un valor finito de -16 a +16 EV."</string>
+    <string name="dcp_invalid_table">"Los datos, las dimensiones o la codificación de HueSatMap/LookTable del DCP no son compatibles."</string>
+    <string name="dcp_invalid_tone_curve">"La curva del DCP no es válida; necesita de 2 a 8192 puntos finitos en el rango de 0 a 1 con coordenadas x crecientes."</string>
+    <string name="dcp_malformed">"El archivo DCP está dañado o utiliza una estructura TIFF no compatible."</string>
+    <string name="dcp_missing_tone_curve">"Al DCP le falta ProfileToneCurve; no se puede inferir automáticamente la curva predeterminada de Adobe. Especifique primero una curva con la herramienta de preparación."</string>
+    <string name="dcp_too_large">"El archivo DCP o los datos del look superan el límite de tamaño seguro."</string>
+    <string name="dcp_triple_illuminant">"El DCP utiliza un HueSatMap de tres iluminantes, que aún no se admite para la conversión."</string>
+    <string name="dcp_unsupported_stages">"El DCP contiene ganancias espaciales, procesamiento HDR o tablas RGB no compatibles y no se puede convertir."</string>
     <string name="dng_description">"Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos."</string>
     <string name="edit_read_error">"No se puede leer el registro de ajuste: %1$s"</string>
     <string name="edit_unsaved_detail">"Ajustes no guardados: %1$s"</string>

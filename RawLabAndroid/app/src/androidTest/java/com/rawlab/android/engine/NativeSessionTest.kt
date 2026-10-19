@@ -6,12 +6,17 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.UUID
 import androidx.exifinterface.media.ExifInterface
 import java.nio.ByteBuffer
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.testing.syntheticRlook
+import com.rawlab.android.testing.syntheticDcp
+import com.rawlab.android.looks.DcpCompilationException
+import com.rawlab.android.looks.DcpFailureReason
 
 // ============================================================================
 //  原生处理器的会话与后端：真实 RAW 全尺寸导出、关闭后拒绝渲染、外观校验、富士契约
@@ -93,6 +98,44 @@ class NativeSessionTest {
             }
         } finally {
             cube.delete(); rlook.delete(); input.delete()
+        }
+    }
+
+    @Test fun nativeDcpCompilerReportsTypedMalformedInput() {
+        val error = assertThrows(DcpCompilationException::class.java) {
+            NativeProcessor.compileDcp(byteArrayOf(0x49, 0x49, 0x2A), "synthetic.dcp")
+        }
+        assertEquals(DcpFailureReason.MALFORMED, error.reason)
+    }
+
+    @Test fun nativeDcpCompilerAcceptsUtf8SourceFilename() {
+        val compiled = NativeProcessor.compileDcp(syntheticDcp(), "相机😀.dcp")
+        assertTrue(compiled.copyOfRange(0, 8).contentEquals("RLOOKDCP".toByteArray()))
+    }
+
+    @Test fun nativeDcpImportInstallsAndRestoresManagedRlook() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = File(context.cacheDir, "native-dcp-library-${UUID.randomUUID()}")
+        val source = File(context.cacheDir, "相机😀.dcp")
+        val sourceBytes = syntheticDcp()
+        source.writeBytes(sourceBytes)
+        try {
+            val imported = LookLibrary(root).importLook(source, source.name)
+            assertEquals(LookFormat.RLOOK, imported.format)
+            assertTrue(imported.version in 1..2)
+            assertArrayEquals(sourceBytes, source.readBytes())
+            assertTrue(imported.file(root).readBytes().copyOfRange(0, 8)
+                .contentEquals("RLOOKDCP".toByteArray()))
+
+            assertTrue(source.delete())
+            val restored = LookLibrary(root).list().single()
+            assertEquals(imported.id, restored.id)
+            assertTrue(restored.available)
+            assertEquals(LookValidation(LookFormat.RLOOK, restored.version),
+                NativeProcessor.validateLook(restored.file(root)))
+        } finally {
+            root.deleteRecursively()
+            source.delete()
         }
     }
 

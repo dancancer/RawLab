@@ -446,6 +446,23 @@ curve, not an inferred identity/Adobe curve. New HSM/external-tone profiles that
 default to Auto black require an explicit omission policy. Triple-illuminant HSM,
 HDR/spatial/RGB stages and full Adobe rendering remain unsupported.
 
+Application DCP import uses one portable C++ compiler through
+`sony2fuji_compile_dcp`, separate from rendering. The additive C ABI accepts
+bounded input bytes and a source filename and returns an owned RLOOK blob plus
+a stable, localized-by-client rejection reason. Release blobs with
+`sony2fuji_release_blob`; existing request and image-buffer layouts are unchanged.
+All four clients use the same D65 adapter, parser limits and serialization.
+The blob and reason pointers are required; initialize the blob to zero or reuse
+a previous returned blob. Failure clears both output fields. DCP content
+rejection returns `UNSUPPORTED` with a typed reason; invalid API arguments and
+allocation failures use `INVALID_ARGUMENT` and `OUT_OF_MEMORY`. `source_name` is
+a UTF-8 filename for metadata, not a path used to read or write files. Input
+bytes are read-only and limited to 128 MiB; output is limited to 64 MiB.
+Automatic import is deliberately stricter than the legacy preparation CLI:
+it requires an embedded tone curve and explicit `DefaultBlackRender=None`.
+Import never substitutes the donor profile for the target RAW calibration/WB,
+and it does not enable a new GPU backend or change rendering results.
+
 Native DCP now has a dedicated Metal kernel on macOS 15+/iOS 18+, using the same
 immutable decoded stages and float32 arithmetic. CPU double evaluation remains
 the reference. Stage nonfiniteness or Metal failure returns to CPU in Auto and

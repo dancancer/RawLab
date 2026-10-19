@@ -83,6 +83,9 @@
   automatic crash, network and CEF collection are turned off. Offline packages built
   with `build.ps1 -NoRumSdk` omit the DLL.
 
+The shared DCP compiler uses JSON for Modern C++ (Niels Lohmann), under MIT.
+Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
+
 No binaries are checked into source control. The build downloads version-pinned
 LibRaw, zlib, libtiff, DNG SDK/JPEG XL, OpenCV and wavelib source archives and verifies their hashes before compilation.
 The ExifTool runtime archive and the RUM SDK archive are also version-pinned and hash-verified.

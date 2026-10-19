@@ -23,33 +23,63 @@ public partial class MainWindow
     }
     private async void ImportClicked(object sender,RoutedEventArgs e)
     {
-        if(exporting || file==null || !ResolveTransformDraft())return;
-        var dialog=new OpenFileDialog{Title=Loc.Text("导入外观"),Multiselect=true,Filter=Loc.Text("胶片外观|*.cube;*.rlook|CUBE LUT|*.cube|RawLab DCP 外观|*.rlook")};
+        if(exporting || !ResolveTransformDraft())return;
+        var dialog=new OpenFileDialog{Title=Loc.Text("导入外观"),Multiselect=true,Filter=Loc.Text("胶片外观|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp")};
         if(dialog.ShowDialog(this)!=true)return;
         var errors=await ImportLookFiles(dialog.FileNames);
         if(errors.Count>0 && !closing)MessageBox.Show(this,string.Join("\n\n",errors),Loc.Text("导入外观"),MessageBoxButton.OK,MessageBoxImage.Warning);
     }
     internal async Task<IReadOnlyList<string>> ImportLookFiles(IEnumerable<string> paths)
     {
-        if(exporting || file==null || transform.Active)return [];
-        var input=file;var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if(exporting || transform.Active)return [];
+        var input=file;
+        var library=lookLibrary;
+        var libraryLoadError=lookLibraryLoadError;
+        var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         foregroundBusy=true;RefreshControls();SetStatus(()=>Loc.Text("正在显影…"));
-        var errors=new List<string>();var accepted=new List<string>();
+        var errors=new List<string>();var accepted=new List<(string Path,string Name)>();
         try
         {
             await Task.Run(()=>{
-                using var validator=new RenderEngine(0);
-                foreach(var path in selected)
+                RenderEngine? validator=null;
+                try
                 {
-                    try{validator.Render(input,new Adjustments(),path,64,statistics:false,clipping:false,viewportPreview:true);accepted.Add(path);}
-                    catch(Exception error){errors.Add(Path.GetFileName(path)+": "+error.Message);}
+                    foreach(var path in selected)
+                    {
+                        try
+                        {
+                            if (Path.GetExtension(path).Equals(".dcp",StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (library == null)
+                                    throw libraryLoadError ?? new LookLibraryException(LookLibraryError.InvalidRegistry);
+                                // DCP compilation is independent of the current photo and GPU. ImportLook
+                                // validates and commits the converted RLOOK transactionally.
+                                var imported=library.ImportLook(path);
+                                accepted.Add((imported.Path,imported.Name));
+                            }
+                            else
+                            {
+                                // Keep the existing external-path workflow, but reject malformed files
+                                // before rendering (and allow validation-only import without a RAW).
+                                _ = LookLibrary.ValidateExternal(path);
+                                if (input is not null)
+                                {
+                                    validator ??= new RenderEngine(0);
+                                    validator.Render(input,new Adjustments(),path,64,statistics:false,clipping:false,viewportPreview:true);
+                                }
+                                accepted.Add((path,Path.GetFileNameWithoutExtension(path)));
+                            }
+                        }
+                        catch(Exception error){errors.Add(Path.GetFileName(path)+": "+error.Message);}
+                    }
                 }
+                finally { validator?.Dispose(); }
             });
             if(!closing && accepted.Count>0)
             {
                 settings.ClearMasterRecipe();
-                foreach(var path in accepted)if(!films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,path)))films.Add(new(Path.GetFileNameWithoutExtension(path),path,null));
-                lut=accepted[^1];previewDeferred=true;MarkEdited();BuildFilms();
+                foreach(var look in accepted)if(!films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,look.Path)))films.Add(new(look.Name,look.Path,null));
+                lut=accepted[^1].Path;previewDeferred=true;MarkEdited();BuildFilms();
             }
         }
         catch(Exception error){errors.Add(error.Message);}

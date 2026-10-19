@@ -70,3 +70,5 @@ foreach(name COPYRIGHT LICENSE.CDDL LICENSE.LGPL)
     configure_file("${libraw_SOURCE_DIR}/${name}" "${CMAKE_BINARY_DIR}/licenses/LibRaw-${name}" COPYONLY)
 endforeach()
 configure_file("${zlib_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/licenses/zlib-LICENSE" COPYONLY)
+configure_file("${REPO}/lutools/third_party/nlohmann/LICENSE.MIT"
+    "${CMAKE_BINARY_DIR}/licenses/nlohmann-JSON-MIT.txt" COPYONLY)

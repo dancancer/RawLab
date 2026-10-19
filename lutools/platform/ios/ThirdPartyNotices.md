@@ -1,5 +1,8 @@
 # RawLab iOS Native Framework
 
+The shared DCP compiler uses JSON for Modern C++ (Niels Lohmann), under MIT.
+Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
+
 OpenCV 4.12.0 (core/imgproc) and wavelib are statically linked for linear-light
 wavelet denoising. OpenCV uses Apache 2.0; wavelib uses BSD 3-Clause. See the
 included `OpenCV-LICENSE` and `wavelib-COPYRIGHT`.

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Automation;
@@ -39,10 +40,12 @@ internal static class UiDetailChecks
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         try
         {
+            NoRawImport(output,check);
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-                var window=new MainWindow();TestWindowState.Isolate(window,output);window.Show();window.UpdateLayout();
+                var lookRoot=Path.Combine(Path.GetTempPath(),"rawlab-ui-looks-"+Guid.NewGuid().ToString("N"));
+                var window=new MainWindow(lookRoot);TestWindowState.Isolate(window,output);window.Show();window.UpdateLayout();
                 try
                 {
                     Icons(window,language,check);
@@ -50,6 +53,7 @@ internal static class UiDetailChecks
                     ActiveLook(window,language,check);
                     TypeNames(window,output,language,check);
                     IdleStatus(window,check);
+                    ImportEntry(window,language,check);
                     Selection(window,language,check);
                     MenuPlacement(window,check);
                     CopyCompletionChecks.Run(window,language,check);
@@ -60,7 +64,11 @@ internal static class UiDetailChecks
                     ToolCaptions(window,language,check);
                     WholeText(window,language,check);
                 }
-                finally { window.Close(); }
+                finally
+                {
+                    window.Close();
+                    try { Directory.Delete(lookRoot,recursive:true); } catch { }
+                }
                 UiPanelChecks.Run(output,language,check);
             }
         }
@@ -126,6 +134,50 @@ internal static class UiDetailChecks
                 $"Idle status bar neither repeats nor contradicts the GPU selector: {window.BackendLabel.Text} / {mode}");
         }
         window.GpuMode.SelectedIndex=0;
+    }
+    // The film strip lives inside the collapsed adjustment dock before a photo opens;
+    // the File menu must remain the reachable import entry in that state.
+    private static void ImportEntry(MainWindow window,string language,Action<bool,string> check)
+    {
+        check(window.MenuImportLook.IsEnabled && window.AdjustmentPanel.Visibility==Visibility.Collapsed &&
+              window.FilmPanel.Visibility==Visibility.Collapsed,
+            $"File menu exposes look import before a RAW photo is opened: {language}");
+        var foreground=typeof(MainWindow).GetField("foregroundBusy",PrivateInstance)!;
+        foreground.SetValue(window,true);Refresh(window);
+        check(!window.MenuImportLook.IsEnabled,$"File menu disables look import during foreground work: {language}");
+        foreground.SetValue(window,false);Refresh(window);
+        check(window.MenuImportLook.IsEnabled,$"File menu re-enables look import after foreground work: {language}");
+    }
+    private static void NoRawImport(string output,Action<bool,string> check)
+    {
+        var root=Path.Combine(Path.GetTempPath(),"rawlab-ui-dcp-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var lookRoot=Path.Combine(root,"looks");
+        var appWindow=new MainWindow(lookRoot);
+        TestWindowState.Isolate(appWindow,output);appWindow.Show();appWindow.UpdateLayout();
+        var source=Path.Combine(root,"without-photo.dcp");File.WriteAllBytes(source,[1,2,3]);
+        var library=new LookLibrary(lookRoot,
+            compileDcp:_=>Encoding.ASCII.GetBytes("RLOOKDCP synthetic"),
+            validateLook:_=>new LookValidation(LookFormat.Rlook,1));
+        typeof(MainWindow).GetField("lookLibrary",PrivateInstance)!.SetValue(appWindow,library);
+        try
+        {
+            var import=appWindow.ImportLookFiles([source]);
+            Pump(()=>import.IsCompleted,TimeSpan.FromSeconds(20));
+            check(import.IsCompleted,"DCP import completes without a RAW photo");
+            if(!import.IsCompleted)return;
+            var errors=import.GetAwaiter().GetResult();
+            var selected=(string?)typeof(MainWindow).GetField("lut",PrivateInstance)!.GetValue(appWindow);
+            check(errors.Count==0 && selected!=null && File.Exists(selected),
+                "DCP import selects a durable look without opening a RAW photo");
+            check(typeof(MainWindow).GetField("engine",PrivateInstance)!.GetValue(appWindow)==null,
+                "DCP import does not create a renderer when no RAW photo is open");
+        }
+        finally
+        {
+            appWindow.Close();
+            try { Directory.Delete(root,recursive:true); } catch { }
+        }
     }
     private static void Selection(MainWindow window,string language,Action<bool,string> check)
     {

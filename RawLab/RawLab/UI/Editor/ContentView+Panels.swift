@@ -15,6 +15,11 @@ extension ContentView {
                 }
                 .disabled(editorBusy || isEditorDraftChanged)
                 .accessibilityIdentifier("editor.import.file")
+                Button { showingLookImporter = true } label: {
+                    Label(L10n.text("导入外观"), systemImage: "camera.filters")
+                }
+                .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
+                .accessibilityIdentifier("editor.import.look")
             } label: {
                 Image(systemName: "gearshape")
             }

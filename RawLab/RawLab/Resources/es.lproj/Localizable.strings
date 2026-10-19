@@ -5,6 +5,16 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"DCP 使用三光源 HueSatMap，暂不支持转换。" = "El DCP utiliza un HueSatMap de tres iluminantes, que aún no se admite para la conversión.";
+"DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "El DCP contiene ganancias espaciales, procesamiento HDR o tablas RGB no compatibles y no se puede convertir.";
+"DCP 文件或外观数据超过安全大小限制。" = "El archivo DCP o los datos del look superan el límite de tamaño seguro.";
+"DCP 文件损坏，或使用了不支持的 TIFF 结构。" = "El archivo DCP está dañado o utiliza una estructura TIFF no compatible.";
+"DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。" = "El desplazamiento de exposición del DCP no es válido; debe ser un valor finito de -16 a +16 EV.";
+"DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。" = "La curva del DCP no es válida; necesita de 2 a 8192 puntos finitos en el rango de 0 a 1 con coordenadas x crecientes.";
+"DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。" = "Los datos, las dimensiones o la codificación de HueSatMap/LookTable del DCP no son compatibles.";
+"DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。" = "Al DCP le falta ProfileToneCurve; no se puede inferir automáticamente la curva predeterminada de Adobe. Especifique primero una curva con la herramienta de preparación.";
+"DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。" = "Al DCP le falta una ColorMatrix/ForwardMatrix D65 única y válida, por lo que no se puede convertir.";
+"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación.";
 "DNG · 渲染型" = "DNG · Revelado";
 "DNG 只能保存到文件" = "El DNG solo se puede guardar en Archivos";
 "DNG 已执行内嵌 Stage3 处理，未叠加校正" = "El procesamiento DNG Stage 3 integrado ya se aplicó; se omitió la corrección adicional";
@@ -85,12 +95,17 @@
 "垂直透视" = "Perspectiva vertical";
 "处理失败：%@" = "Error de procesamiento: %@";
 "外观不可用" = "Aspecto no disponible";
+"外观名称不能为空或包含控制字符。" = "El nombre del look no puede estar vacío ni contener caracteres de control.";
+"外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible.";
 "大小" = "Tamaño";
 "大师配方" = "Receta maestra";
 "完成" = "Listo";
 "对比" = "Comparación";
 "对比度" = "Contraste";
+"导入外观" = "Importar look";
+"导入外观…" = "Importar look…";
 "导入照片" = "Importar foto";
+"导入结果" = "Resultado de la importación";
 "导出" = "Exportar";
 "导出 %@ 张" = "Exportar fotos (%@)";
 "导出到文件…" = "Exportar a Archivos…";
@@ -105,6 +120,7 @@
 "导出渲染型 DNG…" = "Exportar DNG revelado…";
 "导出长边像素" = "Borde largo al exportar (píxeles)";
 "导出长边必须为 1-65535 像素。" = "El borde largo debe tener entre 1 y 65535 píxeles.";
+"将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará.";
 "尚未保存，允许重新导出" = "Aún no se ha guardado; permitir volver a exportar";
 "尚未选择 RAW" = "No se han seleccionado fotos RAW";
 "尚未选择照片" = "No hay fotos seleccionadas";
@@ -118,6 +134,7 @@
 "已匹配镜头" = "Lente identificada";
 "已在照片图库中确认保存" = "Confirmado guardado en Fotos";
 "已处理 %@ / %@" = "Procesadas %@ / %@";
+"已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importados: %@; archivos no importados: %@\n";
 "已导出 %@ 个渲染型 DNG" = "Archivos DNG revelados exportados: %@";
 "已导出渲染型 DNG。" = "DNG revelado exportado.";
 "已展开" = "Expandido";
@@ -175,6 +192,8 @@
 "无法解码普通图片：%@" = "No se puede decodificar la imagen: %@";
 "无法识别原始照片，调整尚未保存。" = "No se puede identificar la foto original; los ajustes no se guardaron.";
 "无法读取上次批量任务：%@" = "No se puede leer la última tarea por lotes: %@";
+"无法读取外观文件。" = "No se puede leer el archivo de look.";
+"无法读取已保存的外观库，原有记录未被覆盖。" = "No se puede leer la biblioteca de looks guardada; los registros originales no se sobrescribieron.";
 "无法读取已保存的调整，原有记录未被覆盖。" = "No se pueden leer los ajustes guardados; no se sobrescribió el registro existente.";
 "无法读取或写入文件，请检查路径和访问权限。" = "No se puede leer ni escribir el archivo. Verifique la ruta y los permisos de acceso.";
 "无法读取照片，请检查文件和访问权限。" = "No se puede leer la foto. Comprueba el archivo y los permisos de acceso.";
@@ -233,6 +252,7 @@
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.";
+"此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
 "此输入不支持镜头校正" = "Esta entrada no admite corrección de lente";
 "此镜头没有所选校正的标定数据" = "No hay datos de calibración para las correcciones elegidas";
 "此默认值不可达，请重置裁切组。" = "No se puede alcanzar este valor predeterminado. Restablece los ajustes de recorte.";
@@ -249,6 +269,7 @@
 "照片图库" = "Fotos";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "La foto se escribió, pero no se actualizó el registro de la tarea. Comprueba primero el resultado guardado.";
 "照片缺少有效焦距，未应用校正" = "No hay distancia focal válida; corrección no aplicada";
+"用户外观 · %@" = "Look personal · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Estética cinematográfica panorámica, luz y sombra de alto contraste, negros profundos y dorado de foco";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Tonos de película nocturna cinematográfica, luces rojas y sombras profundas cian-verdes frías";
 "画面比例" = "Relación de aspecto";
@@ -257,6 +278,8 @@
 "白平衡" = "Balance de blancos";
 "目标照片" = "Fotos de destino";
 "移除 %@" = "Eliminar %@";
+"移除“%@”？" = "¿Eliminar \"%@\"?";
+"移除外观…" = "Quitar look…";
 "空气清透 · 少女淡蓝" = "Claridad aérea · azul suave";
 "童话油画 · 梦幻微光" = "Óleo de cuento de hadas · brillo de ensueño";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Óleo de cuento ilustrado, sombras profundas y serenas, luz dorada envolvente y brillo difuso";
@@ -329,6 +352,7 @@
 "部分照片导出失败" = "No se pudieron exportar algunas fotos";
 "配方会调整多个参数。" = "La receta ajusta varios parámetros.";
 "酒井贵弘" = "Takahiro Sakai";
+"重命名外观" = "Cambiar nombre del look";
 "重置 HSL" = "Restablecer HSL";
 "重置%@" = "Restablecer %@";
 "重置全部调整" = "Restablecer todos los ajustes";

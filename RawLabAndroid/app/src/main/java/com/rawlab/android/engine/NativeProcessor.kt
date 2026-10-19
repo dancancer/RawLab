@@ -5,6 +5,8 @@ import java.io.IOException
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.Locale
+import com.rawlab.android.looks.DcpCompilationException
+import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportMetadata
 import com.rawlab.android.format.ExportSize
@@ -212,9 +214,26 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             if (format == LookFormat.UNKNOWN) throw IOException("Unsupported look format")
             return LookValidation(format, result[1])
         }
+
+        fun compileDcp(source: ByteArray, sourceName: String): ByteArray {
+            if (source.size.toLong() > MAX_DCP_SOURCE_BYTES)
+                throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
+            require(sourceName.isNotBlank()) { "Missing DCP source filename" }
+            return NativeDcpBridge.compile(source, sourceName.toByteArray(Charsets.UTF_8)).also {
+                if (it.size.toLong() > MAX_DCP_OUTPUT_BYTES)
+                    throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
+            }
+        }
+
+        private const val MAX_DCP_SOURCE_BYTES = 128 * 1024 * 1024L
+        private const val MAX_DCP_OUTPUT_BYTES = 64 * 1024 * 1024L
     }
 }
 
 private object NativeLookBridge {
     @JvmStatic external fun validate(path: String): IntArray
+}
+
+private object NativeDcpBridge {
+    @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray): ByteArray
 }

@@ -15,10 +15,17 @@ from lutools.lutprep.dcp import D65, PROPHOTO_TO_XYZ, DCPProfile
 from lutools.lutprep.native import compile_dcp, read_native
 from lutools.tests.test_lutprep_dcp import identity_table, rationals, write_dcp
 
+if len(sys.argv) == 3 and sys.argv[1] == "--fixtures":
+    destination = Path(sys.argv[2])
+    destination.mkdir(parents=True, exist_ok=True)
+    write_dcp(destination / "Supported camera look.dcp", extra={51110: (4, [1])})
+    write_dcp(destination / "Missing tone.dcp", extra={51110: (4, [1])}, omit=(50940,))
+    sys.exit(0)
+
 COMPILER = sys.argv.pop(1)
 
 
-class NativeMacDCPTests(unittest.TestCase):
+class NativeDCPCompilerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="rawlab-dcp-parity-")
         self.addCleanup(self.temp.cleanup)
@@ -30,7 +37,7 @@ class NativeMacDCPTests(unittest.TestCase):
         return result
 
     def compare(self, **options):
-        source, output, reference = [self.root / name for name in ("源外观.dcp", "mac.rlook", "python.rlook")]
+        source, output, reference = [self.root / name for name in ("源外观.dcp", "native.rlook", "python.rlook")]
         options["extra"] = {51110: (4, [1]), **options.get("extra", {})}
         write_dcp(source, **options)
         original = source.read_bytes()
@@ -87,6 +94,14 @@ class NativeMacDCPTests(unittest.TestCase):
                               50964: (10, rationals(PROPHOTO_TO_XYZ)), 50779: (3, [17])})
             self.compare(extra=extra)
 
+    def test_nondiagonal_calibration_matrices_match_python(self):
+        rng = np.random.default_rng(9137)
+        for _ in range(12):
+            color = np.eye(3) + rng.uniform(-.04, .15, (3, 3))
+            forward = (np.eye(3) + rng.uniform(-.02, .1, (3, 3))) @ PROPHOTO_TO_XYZ
+            with self.subTest(color=color.tolist()):
+                self.compare(extra={50722: (10, rationals(color)), 50965: (10, rationals(forward))})
+
     def test_tone_endpoints_and_two_dimensional_tables(self):
         self.compare(table=identity_table(4, 3, 1), curve=[.1, .2, .9, .8], extra={50981: (4, [4, 3])})
         self.compare(omit=(50981, 50982, 51108))
@@ -126,7 +141,7 @@ class NativeMacDCPTests(unittest.TestCase):
         source = Path(os.environ["RAWLAB_TEST_CANON_DCP"])
         profile = DCPProfile.read(source)
         if profile.black_render_policy != "none-profile":
-            self.skipTest("Private fixture requires explicit black policy, not automatic Mac import")
+            self.skipTest("Private fixture requires explicit black policy, not automatic native import")
         output = self.root / "real.rlook"
         self.run_compiler(source, output)
         reference = self.root / "real-reference.rlook"

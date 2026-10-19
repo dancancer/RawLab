@@ -18,9 +18,9 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
     "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" \
     "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" \
     "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift" "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
-    "$ROOT/RawLabMac/Sources/Library/LookLibrary.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" \
+    "$ROOT/Shared/LookLibrary.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" \
     "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
-    "$ROOT/RawLabMac/Sources/Library/DCPCompiler.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \
+    "$ROOT/Shared/DCPCompiler.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \
     "$ROOT/RawLabMac/tests/LookImportModelTests.swift" "$BUILD/libsony2fuji_core.a" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

@@ -19,10 +19,12 @@ import com.rawlab.android.format.PhotoFiles
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.BundledLooks
+import com.rawlab.android.looks.DcpCompiler
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.looks.LookValidator
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.MasterRecipe
+import com.rawlab.android.looks.NativeDcpCompiler
 import com.rawlab.android.looks.NativeLookValidator
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.Film
@@ -46,10 +48,11 @@ class PhotoStorage(
     private val context: Context,
     looksDirectory: File = File(context.filesDir, "looks"),
     lookValidator: LookValidator = NativeLookValidator,
+    dcpCompiler: DcpCompiler = NativeDcpCompiler,
 ) : AutoCloseable {
     private val resolver = context.contentResolver
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
-    private val lookLibrary = LookLibrary(looksDirectory, lookValidator)
+    private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
     private val films = Film.all + BundledLooks.load(context)
     private var lensDirectory: File? = null
 
