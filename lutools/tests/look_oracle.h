@@ -56,6 +56,10 @@ private:
      * @param r, g, b 归一化的输入颜色值 [0, 1]
      * @return 插值后的 RGB 值
      */
+    /* 原样 oracle 保留 NaN 强转；仅豁免其已知检查，生产路径不豁免。 */
+#if defined(__clang__)
+    __attribute__((no_sanitize("float-cast-overflow")))
+#endif
     RGB trilinearInterpolate(float r, float g, float b) const;
 
     /**

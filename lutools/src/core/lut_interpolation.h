@@ -5,7 +5,7 @@
 #include <cmath>
 
 namespace sony2fuji::detail {
-/* 输入已归一化到 [0,1]；有效表含 size^3 个 R-fast 元素，size 为 2..256。 */
+/* 输入为 domain 归一化后的 [0,1] 或 NaN；有效表含 size^3 个 R-fast 元素，size 为 2..256。 */
 static inline RGB interpolateLUT(const RGB* table, int lutSize, float r, float g, float b) {
 
     // 将 [0, 1] 映射到 [0, lutSize-1]
@@ -14,9 +14,9 @@ static inline RGB interpolateLUT(const RGB* table, int lutSize, float r, float g
     float fb = b * (lutSize - 1);
 
     // 获取整数部分和小数部分
-    int r0 = static_cast<int>(std::floor(fr));
-    int g0 = static_cast<int>(std::floor(fg));
-    int b0 = static_cast<int>(std::floor(fb));
+    int r0 = static_cast<int>(std::floor(std::max(0.0f, fr)));
+    int g0 = static_cast<int>(std::floor(std::max(0.0f, fg)));
+    int b0 = static_cast<int>(std::floor(std::max(0.0f, fb)));
 
     int r1 = std::min(r0 + 1, lutSize - 1);
     int g1 = std::min(g0 + 1, lutSize - 1);
@@ -27,7 +27,7 @@ static inline RGB interpolateLUT(const RGB* table, int lutSize, float r, float g
     float dg = fg - g0;
     float db = fb - b0;
 
-    /* 归一化输入保证索引有效；边界处步长为零，复用同一顶点。 */
+    /* 索引把 NaN 归零；权重仍使用原始值，保留 NaN 传播和负零。 */
     const int base = (b0 * lutSize + g0) * lutSize + r0;
     const int red = r1 - r0;
     const int green = (g1 - g0) * lutSize;

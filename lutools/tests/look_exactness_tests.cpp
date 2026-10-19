@@ -80,7 +80,7 @@ void gammaMatrix() {
                 throw std::runtime_error("Disabled diagnostics must return default statistics");
             }
         }
-    /* 非有限值仅比较有定义的曲线，不送入 floor 后的整数 LUT 索引。 */
+    /* 曲线保留 NaN 的位级比较；LUT 的 NaN 传播单独按分类比较。 */
     const uint32_t edges[] = {0, 0x80000000, 1, 0x80000001, 0x7f800000, 0xff800000,
         0x7fc12345, 0xffc54321, 0x7f7fffff, 0xff7fffff};
     for (int i = 0; i < 100000; ++i) {
@@ -148,7 +148,7 @@ void look(ImageData& image, const LUTApplicator& lut, LUTTransfer in, LUTTransfe
         GammaConverter::applyFLog2ToImage(image, {});
     } else encodePhotoLUTInput(image, in);
     for (const auto& p : image.pixels) if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b))
-        throw std::runtime_error("Test supplied undefined nonfinite LUT index");
+        throw std::runtime_error("Full Look bit-exact fixture must enter LUT with finite pixels");
     if (lut.applyToImage(image) != ErrorCode::Success) throw std::runtime_error("LUT failed");
     renderPhotoLUTOutput(image, out);
     for (size_t i = 0; i < image.pixels.size(); ++i) {
@@ -172,7 +172,7 @@ void referenceLook(ImageData& image, const oracle::LUTApplicator& lut, LUTTransf
         oracle::GammaConverter::applyFLog2ToImage(image, {});
     } else oracle::encodePhotoLUTInput(image, in);
     for (const auto& p : image.pixels) if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b))
-        throw std::runtime_error("Test supplied undefined oracle LUT index");
+        throw std::runtime_error("Full Look oracle fixture must enter LUT with finite pixels");
     if (lut.applyToImage(image) != ErrorCode::Success) throw std::runtime_error("Oracle LUT failed");
     oracle::renderPhotoLUTOutput(image, out);
     for (size_t i = 0; i < image.pixels.size(); ++i) {
@@ -220,6 +220,20 @@ void lutMatrix() {
         const auto lut = table(temporary.path / "fixture.cube", grid, data, low, high);
         LUTApplicator actualLut(lut);
         oracle::LUTApplicator referenceLut(std::make_shared<oracle::LUT3D>(grid, data, low, high));
+        const float special[] = {-0.f, .375f, INFINITY, -INFINITY,
+            std::numeric_limits<float>::quiet_NaN(), -std::numeric_limits<float>::quiet_NaN()};
+        for (float r : special) for (float g : special) for (float b : special) {
+            const auto actual = actualLut.apply(RGB(r, g, b));
+            const auto expected = referenceLut.apply(RGB(r, g, b));
+            const float got[] = {actual.r, actual.g, actual.b};
+            const float reference[] = {expected.r, expected.g, expected.b};
+            for (int channel = 0; channel < 3; ++channel) {
+                if (std::isnan(reference[channel])) {
+                    ++comparisons;
+                    if (!std::isnan(got[channel])) throw std::runtime_error("LUT NaN propagation differs");
+                } else sameFloat(got[channel], reference[channel], "LUT nonfinite input");
+            }
+        }
         ImageData endpoints(4, 1);
         endpoints.pixels = {RGB(INFINITY, -INFINITY, -0.f), low, high,
             RGB(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max(),
@@ -260,6 +274,20 @@ void lutMatrix() {
         if (actualLut.applyToImage(empty) != referenceLut.applyToImage(empty))
             throw std::runtime_error("Empty LUT status differs");
     }
+    /* 低角为负零，其余顶点为正数，让原始权重的零符号可观测。 */
+    std::vector<RGB> zeroData(8, RGB(1, 1, 1));
+    zeroData[0] = RGB(-0.f, -0.f, -0.f);
+    LUTApplicator zeroLut(table(temporary.path / "signed-zero.cube", 2, zeroData, RGB(), RGB(1, 1, 1)));
+    oracle::LUTApplicator referenceZero(std::make_shared<oracle::LUT3D>(2, zeroData));
+    for (const auto p : {RGB(-0.f, -0.f, -0.f), RGB(), RGB(-0.f, 0, -0.f), RGB(0, -0.f, 0)}) {
+        const auto got = zeroLut.apply(p), expected = referenceZero.apply(p);
+        sameFloat(got.r, expected.r, "LUT signed zero red");
+        sameFloat(got.g, expected.g, "LUT signed zero green");
+        sameFloat(got.b, expected.b, "LUT signed zero blue");
+    }
+    const auto negativeZero = zeroLut.apply(RGB(-0.f, -0.f, -0.f));
+    if (!std::signbit(negativeZero.r) || !std::signbit(negativeZero.g) || !std::signbit(negativeZero.b))
+        throw std::runtime_error("LUT must preserve negative-zero weights");
     LUTApplicator invalid(nullptr);
     oracle::LUTApplicator referenceInvalid(nullptr);
     auto image = input(1, 1);
