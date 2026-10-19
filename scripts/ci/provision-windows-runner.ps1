@@ -83,8 +83,13 @@ Invoke-Checked "$cmake\cmake.exe" @('--version')
 if (!(Test-Path "$cmake\ctest.exe")) { throw 'CTest is required.' }
 $git = (Get-Command git.exe -ErrorAction Stop).Source
 Invoke-Checked $git @('--version')
+$gitTools = Join-Path (Split-Path (Split-Path $git)) 'usr\bin'
+foreach ($tool in @('tar.exe', 'gzip.exe')) {
+    if (!(Test-Path (Join-Path $gitTools $tool))) { throw "Git for Windows cache tool is required: $tool" }
+    Invoke-Checked (Join-Path $gitTools $tool) @('--version')
+}
 $utf8 = [Text.UTF8Encoding]::new($false)
-$path = "$pwsh;$cmake;$(Split-Path $git);" + [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$path = "$pwsh;$cmake;$(Split-Path $git);$gitTools;" + [Environment]::GetEnvironmentVariable('Path', 'Machine')
 [IO.File]::WriteAllLines("$runner\.env", @(
     "Path=$path",
     "TEMP=$CiRoot\tmp", "TMP=$CiRoot\tmp", "AGENT_TOOLSDIRECTORY=$CiRoot\toolcache",

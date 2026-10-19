@@ -121,8 +121,8 @@ ZIPs from their official GitHub releases plus the source-archive bundle and `len
 script verifies all SHA-256 values before use. Run
 `test_windows_runner_provisioning.ps1` as an administrator in the guest to
 exercise the no-install safety guards; add `-VerifyToolchain` after provisioning
-to verify the completed Python cache. The administrator seeds the official
-Python tool cache once because setup-python invokes Windows PowerShell without
+to verify the completed Python cache and a GNU tar/gzip cache round-trip. The
+administrator seeds the official Python tool cache once because setup-python invokes Windows PowerShell without
 an execution-policy override and the installer needs administrator privileges.
 The bootstrap overrides policy only in that installer process, not on the
 machine or service account. It refuses to replace an existing Python 3.12
@@ -137,6 +137,10 @@ PATH before cache identification. `setup-python` and `setup-dotnet` still
 select the workflow's Python 3.12 and .NET 8 SDK; their caches/install directory
 are on the data volume. No registration token or service credentials belong
 in source control or uploaded logs.
+
+Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
+directory. The cache action selects Git's GNU tar, which must also find `gzip`;
+a missing compressor can leave the job green while silently losing its cache.
 
 Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
 exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
