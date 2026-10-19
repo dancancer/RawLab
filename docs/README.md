@@ -1,72 +1,65 @@
 # Documentation
 
-The current source targets [v0.8.1, build 13](releases/v0.8.1.md). Use the
-[GitHub release record](https://github.com/dancancer/RawLab/releases) for actual
-published packages and checksums. v0.8.1 is a follow-up release; candidate
-gates for the 0.8 line are tracked in [v0.8.0 preparation](releases/v0.8.0-preparation.md); the older v0.7 records below
-retain their original candidate scope.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## Using RawLab
+The current source targets [v0.8.1, build 13](releases/v0.8/v0.8.1.md).
+The [GitHub release record](https://github.com/dancancer/RawLab/releases) owns
+published packages, checksums and package provenance.
 
-- [Installation and published packages](installation.md)
-- [iPhone installation](ios-installation.md) and [Simplified Chinese guide](ios-installation.zh-CN.md)
-- [macOS](../RawLabMac/README.md), [Windows](../RawLabWindows/README.md), and [Android](../RawLabAndroid/README.md)
-- [Core and CLI](../lutools/README.md) and [usage guide](../lutools/docs/usage-guide.md)
-- [Look reference](../lutools/docs/look-reference.md) and [LUT preparation](../lutools/docs/lut-preparation.md)
+## Guides
 
-## Rendering and Interfaces
+- [Installation and published packages](guides/installation.md)
+- [iPhone installation](guides/ios-installation.md) and [Simplified Chinese guide](guides/ios-installation.zh-CN.md)
+- [macOS](../RawLabMac/README.md), [Windows](../RawLabWindows/README.md), [Android](../RawLabAndroid/README.md) and [iOS builds](../lutools/platform/ios/README.md)
+- [Core and CLI](../lutools/README.md), [usage](../lutools/docs/usage-guide.md) and [look reference](../lutools/docs/look-reference.md)
 
-- [Color and rendering contract](../lutools/docs/color-contract.md)
-- [Platform integration](../lutools/docs/platform-integration.md) and [iOS API](../lutools/docs/ios-api.md)
-- [Native DCP look format](superpowers/specs/2026-10-03-native-dcp-look-design.md)
-- [DCP HueSatMap and Metal contract](superpowers/specs/2026-10-03-dcp-hsm-metal-design.md)
-- [Fujifilm LUT compatibility](superpowers/specs/2026-10-07-fuji-lut-compatibility.md)
+## Process
 
-## Development and Design
+- [Gitflow, release authority and documentation policy](../agent.md) and [repository instructions](../AGENTS.md)
+- [Multi-PR integration workflow](process/integration-workflow.md)
+- [Hosted CI policy and coverage boundaries](process/ci.md)
+- [Localization](process/localization.md)
 
-- [Gitflow, integration and release procedure](../agent.md) and [repository instructions](../AGENTS.md)
-- [Desktop design](../DESIGN.md) and [product scope](../PRODUCT.md)
-- [Product roadmap (Chinese)](roadmap.md), with dated planning status and links to current delivery records
+## Reference
+
+- [Color and rendering contract](../lutools/docs/color-contract.md), [platform integration](../lutools/docs/platform-integration.md) and [iOS API](../lutools/docs/ios-api.md)
+- [Edit JSON and Agent interface](../lutools/docs/edit-json.md)
+- [Native DCP look](reference/formats/native-dcp-look.md) and [DCP HueSatMap/Metal](reference/formats/dcp-hsm-metal.md)
+- [Universal LUT contract](reference/formats/universal-lut.md), [LUT preparation](../lutools/docs/lut-preparation.md) and [Fujifilm LUT compatibility](reference/formats/fuji-lut-compatibility.md)
+- [Native-client lens correction](reference/platforms/lens-correction.md)
+- [RUM privacy, events and packaging contract](reference/rum-analytics.md)
+- [Bundled looks and source audit](luts/README.md), [licensing and attribution](reference/licensing.md)
+
+## Architecture And Design
+
+- [Product scope](../PRODUCT.md), [desktop design](../DESIGN.md) and [product roadmap](architecture/roadmap.md)
+- [Active architecture and performance review, 2026-10-18](architecture/architecture-and-performance-review-2026-10-18.md), with separate historical measurements and current-code static recheck
+- [Active cross-camera preset roadmap](architecture/cross-camera-presets-roadmap.md), including outstanding quality gates
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
-- [Cross-camera preset roadmap](superpowers/specs/2026-10-07-cross-camera-presets-roadmap.md), including its outstanding quality gates
-- [Licensing and attribution](licensing.md)
-- [Hosted verification and its coverage boundaries](ci.md)
 
-## v0.8.0 Preparation
+## Releases
 
-- [Release notes](releases/v0.8.0.md) and [corresponding-source instructions](releases/v0.8.0-source.md)
-- [Release blockers, scope decisions and remaining acceptance](releases/v0.8.0-preparation.md)
-- [macOS Agent and ordinary-image verification](verification-agent-v08.md)
-- [Windows Agent and integrated-source verification](../RawLabWindows/VERIFICATION-agent-v08.md)
-- [All-platform ordinary-image input and current acceptance](verification-raster-input-all-platforms-2026-10-16.md)
-- [Android integrated geometry/native/device verification](../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md)
-- [iOS integrated-source verification](ios-v08-development-integration-2026-10-16.md)
-- [RUM local SDK verification (2026-10-16, before release builds carried the SDK)](verification-rum-analytics-2026-10-16.md)
+User-facing notes and corresponding-source instructions are grouped by release
+line. Historical acceptance and integration records are separate from these
+deliverables.
 
-## v0.7.0 Release Records
+| Release line | Notes and source instructions |
+| --- | --- |
+| 0.8 | [0.8.1](releases/v0.8/v0.8.1.md), [source](releases/v0.8/v0.8.1-source.md); [0.8.0](releases/v0.8/v0.8.0.md), [source](releases/v0.8/v0.8.0-source.md) |
+| 0.7 | [0.7.0](releases/v0.7/v0.7.0.md), [source](releases/v0.7/v0.7.0-source.md) |
+| 0.6 | [0.6.0](releases/v0.6/v0.6.0.md), [source](releases/v0.6/v0.6.0-source.md), [Chinese update notes](releases/v0.6/master-recipes-update.md) |
+| 0.5 | [0.5.1](releases/v0.5/v0.5.1.md), [source](releases/v0.5/v0.5.1-source.md); [0.5.0](releases/v0.5/v0.5.0.md), [source](releases/v0.5/v0.5.0-source.md) |
+| 0.4 | [0.4.1](releases/v0.4/v0.4.1.md), [LibRaw source build](releases/v0.4/libraw-0.22.2-build.md), [0.4.0](releases/v0.4/v0.4.0.md) |
+| 0.3 | [0.3.0](releases/v0.3/v0.3.0.md) |
+| 0.2 | [0.2.1](releases/v0.2/v0.2.1.md), [0.2](releases/v0.2/v0.2.md) |
+| 0.1 | [Mac 0.1](releases/v0.1/v0.1.md), [Android 0.1.0](releases/v0.1/android-v0.1.0.md) |
 
-- [Candidate notes](releases/v0.7.0.md) and [corresponding-source instructions](releases/v0.7.0-source.md)
-- [Feature deliveries and final verification](verification-v0.7.0.md)
-- [Final five-feature composition report](verification-final-composition-2026-10-13.md)
-- [Versioned local candidate package verification](verification-v0.7.0-candidate.md)
-- [Version and release preparation checklist](releases/v0.7.0-preparation.md)
-- [JPEG XL DNG verification](verification-dng-jpeg-xl-2026-10-12.md)
-
-The five v0.7 features were integrated before that release. Its final composition
-report distinguishes new execution from evidence reused through identical source.
-These candidate records retain their original local scope; the versioned
-[v0.7.0 Release](https://github.com/dancancer/RawLab/releases/tag/v0.7.0)
-records that publication, not the current v0.8 candidate state.
-
-## Published Releases and History
+## History
 
 - [Changelog](../CHANGELOG.md)
-- [v0.8.1 notes](releases/v0.8.1.md) and [corresponding source](releases/v0.8.1-source.md)
-- [v0.8.0 notes](releases/v0.8.0.md) and [corresponding source](releases/v0.8.0-source.md)
-- [v0.7.0 release](releases/v0.7.0.md) and [corresponding source](releases/v0.7.0-source.md)
-- [v0.6.0 release](releases/v0.6.0.md), [corresponding source](releases/v0.6.0-source.md), and [release verification](verification-v0.6.0.md)
-- [v0.5.1 release](releases/v0.5.1.md) and [v0.5.0 release](releases/v0.5.0.md)
-- [Historical plans, feature checks, reviews and experiment references](archive/README.md)
+- [Cross-PR release acceptance, integration and review archive](archive/README.md)
 
-Archived records preserve their dates, branch context, results and limitations.
-Use the current integration tracker when assessing the next release.
+Single-PR verification, measurements, reproduction notes and readiness lists
+belong in PR descriptions, not new repository documents. Removed historical
+records remain available through immutable Git links where existing references
+still need their original evidence.

@@ -201,7 +201,7 @@ Admission is a data-preservation precondition, not profile virtualization or a c
 
 ## All Windows Test Entry And State Preservation
 
-This follow-up starts at `a57dd992419787bd96678f33872902b2e1303928`. The user extended the previous main-runner-only fix to the independent localization UI executable and requested that all related Windows issues discovered during this pass be handled together. All code remains in `RawLabWindows/**`; the additional edit in `docs/localization.md` only corrects its Windows test instructions. Shared core/C ABI, production batch recovery, product automatic-update policy, other platforms and versions are unchanged.
+This follow-up starts at `a57dd992419787bd96678f33872902b2e1303928`. The user extended the previous main-runner-only fix to the independent localization UI executable and requested that all related Windows issues discovered during this pass be handled together. All code remains in `RawLabWindows/**`; the additional edit in `docs/process/localization.md` only corrects its Windows test instructions. Shared core/C ABI, production batch recovery, product automatic-update policy, other platforms and versions are unchanged.
 
 ### Complete Entry Inventory And Repairs
 

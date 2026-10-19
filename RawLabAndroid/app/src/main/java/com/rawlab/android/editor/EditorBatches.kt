@@ -6,7 +6,7 @@ import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.analytics.UsageEvent
 import com.rawlab.android.batch.BatchExportModel
 import com.rawlab.android.batch.BatchJob
-import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchPhase
 import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.engine.NativeProcessor

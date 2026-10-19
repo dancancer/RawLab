@@ -14,7 +14,7 @@ import org.junit.rules.ExternalResource
 import java.io.File
 import java.util.Properties
 import java.util.UUID
-import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.looks.LookLibrary
 
 /** 只清理本测试记录的资源；active native 必须先随进程退出，不能靠 cancel 假装已停止。 */

@@ -56,7 +56,7 @@ Simulator 不能证明物理震动品质、实际设备帧率或输入延迟。�
 
 ## 后续导入锁修复
 
-针对精确 `3f87abb` 独立 RAW 路径审查提出的加载期裁剪锁缺口，后续增加了 iOS 编辑锁、请求/来源身份保护及确定性异步回归。原 UI 视觉与 macOS 文档保持不变；该修复包含 iOS ViewModel 与照片获取保护，范围见 [导入锁验证记录](../../../docs/ios-v4-import-lock-verification-2026-10-14.md)。本页前述实现提交及截图是历史 UI 证据，后续提交的测试与源码以该记录为准。
+针对精确 `3f87abb` 独立 RAW 路径审查提出的加载期裁剪锁缺口，后续增加了 iOS 编辑锁、请求/来源身份保护及确定性异步回归。原 UI 视觉与 macOS 文档保持不变；该修复包含 iOS ViewModel 与照片获取保护，范围见 [导入锁验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/ios-v4-import-lock-verification-2026-10-14.md)。本页前述实现提交及截图是历史 UI 证据，后续提交的测试与源码以该记录为准。
 
 ## 2026-10-15 空状态文案精简
 

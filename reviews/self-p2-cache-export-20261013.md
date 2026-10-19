@@ -30,7 +30,7 @@
   no Must/Should findings. Relevant core, C ABI, cache and Mac tests/callers read.
 - Fresh core build, CTest 24/24 (136.96s), full Swift viewport/native export/model
   checks and `git diff --check` passed before this review.
-- Evidence: `docs/verification-preview-p2-2026-10-13.md`.
+- Evidence: `https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-preview-p2-2026-10-13.md`.
 - No PR automation or exact-head remote CI (self WIP); no remote review posted.
 - Remaining runtime limits: GPU fault injection and physical mobile memory/latency
   untested. Windows/Android/iOS rollout has not been reviewed or validated by this gate.

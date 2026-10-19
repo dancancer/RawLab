@@ -70,7 +70,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     mkdir -p "$framework/Licenses"
     cp "$ROOT/../LICENSE" "$framework/Licenses/RawLab-GPL-3.0.txt"
     cp "$ROOT/../LICENSE-ALIYUN-RUM-EXCEPTION" "$framework/Licenses/RawLab-Aliyun-RUM-Exception.txt"
-    cp "$ROOT/../docs/licensing.md" "$framework/Licenses/RawLab-Licensing.md"
+    cp "$ROOT/../docs/reference/licensing.md" "$framework/Licenses/RawLab-Licensing.md"
     for name in COPYRIGHT LICENSE.CDDL LICENSE.LGPL; do
         cp "$SOURCES/LibRaw-0.22.2/$name" "$framework/Licenses/LibRaw-$name"
     done

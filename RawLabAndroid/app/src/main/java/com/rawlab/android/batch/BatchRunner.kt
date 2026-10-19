@@ -1,5 +1,6 @@
 package com.rawlab.android.batch
 
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.settings.EditSettings
 
@@ -19,7 +20,10 @@ object BatchRunner {
         dispose: (T) -> Unit = {},
     ): BatchJob {
         var current = job.withRows(job.rows.map { if (it.status == BatchRowStatus.PROCESSING) it.copy(status = BatchRowStatus.PENDING) else it }, null)
-        fun commit() { journal?.save(current); didUpdate(current) }
+        fun commit(index: Int? = null) {
+            if (index == null) journal?.save(current) else journal?.recordRow(current, index)
+            didUpdate(current)
+        }
         commit()
         current.rows.indices.forEach { index ->
             if (current.rows[index].status in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION, BatchRowStatus.PUBLISHING)) return@forEach
@@ -33,20 +37,20 @@ object BatchRunner {
             val processing = current.rows.toMutableList()
             processing[index] = processing[index].copy(status = BatchRowStatus.PROCESSING, error = null)
             current = current.withRows(processing)
-            commit()
+            commit(index)
             try {
                 val row = current.rows[index]
                 val payload = render(row.target, current.source.settingsFor(row.target.inputKind))
                 try {
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
-                    commit()
+                    commit(index)
                     if (publish == null) write(payload, row.outputName, row.target)
                     else publish(payload, row.outputName, row.target) { uri ->
                         current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(outputUri = uri, outputReady = false) else item })
-                        commit()
+                        commit(index)
                     }
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(outputReady = true) else item })
-                    commit()
+                    commit(index)
                     val done = current.rows.toMutableList()
                     done[index] = done[index].copy(status = BatchRowStatus.SUCCESS)
                     current = current.withRows(done)
@@ -64,7 +68,7 @@ object BatchRunner {
                     error = error.message ?: error.javaClass.simpleName)
                 current = current.withRows(failed)
             }
-            commit()
+            commit(index)
         }
         return current
     }

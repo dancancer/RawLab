@@ -26,7 +26,7 @@ function Populate([bool]$withSdk = $true) {
     Copy-Item "$RepositoryRoot/LICENSE" "$fixture/LICENSE" -Force
     Copy-Item "$RepositoryRoot/LICENSE" "$fixture/Licenses/RawLab-GPL-3.0.txt" -Force
     Copy-Item "$RepositoryRoot/LICENSE-ALIYUN-RUM-EXCEPTION" "$fixture/Licenses/RawLab-Aliyun-RUM-Exception.txt" -Force
-    Copy-Item "$RepositoryRoot/docs/licensing.md" "$fixture/Licenses/RawLab-Licensing.md" -Force
+    Copy-Item "$RepositoryRoot/docs/reference/licensing.md" "$fixture/Licenses/RawLab-Licensing.md" -Force
     Copy-Item "$RepositoryRoot/RawLabWindows/ThirdPartyNotices.md" "$fixture/ThirdPartyNotices.md" -Force
     foreach ($name in 'RawLab.exe', 'sony2fuji.dll', 'raw.dll') {
         New-Item -ItemType File -Force (Join-Path $fixture $name) | Out-Null

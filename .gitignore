@@ -50,8 +50,6 @@ RawLabWindows/**/obj/
 
 # Local promotional material and acceptance evidence.
 /docs/releases/media/
-/docs/superpowers/plans/*-launch-video.md
-/docs/superpowers/specs/*-launch-video-design.md
 /reviews/pr-54-macos-v08-native-acceptance-20261015/
 /.impeccable/review/**/*.png
 /.impeccable/review/**/*.jpg
@@ -69,3 +67,6 @@ RawLab/Vendor/
 # Windows RUM 探针：直接 dotnet build 时的输出（run.sh 已把输出放到 .cache/tmp）
 experiments/rum-local/windows/bin/
 experiments/rum-local/windows/obj/
+
+# 技能生成的单次计划与设计稿属于过程文档，不入库（见 agent.md「文档」）
+/docs/superpowers/

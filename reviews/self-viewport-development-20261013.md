@@ -77,7 +77,7 @@ state; Android arm64/60 unit/lint, eight regressions plus Sony metadata and fres
 2.5 GiB cold/warm/recompute controls; Windows CTest 20/20, managed 136 checks,
 applied NR native exports/GPU parity/interactions and self-contained publish.
 Full controls, heap measurements, byte-identical output hashes and collection
-exceptions are in `docs/verification-viewport-development-2026-10-13.md`.
+exceptions are in `docs/archive/integration/v0.7/platforms/viewport.md`.
 
 An authorized documentation-only follow-up closed the standalone macOS bundle
 gap at source commit `e101b798c174356d0223ade1eff31ba8983f91db`: fresh dependencies

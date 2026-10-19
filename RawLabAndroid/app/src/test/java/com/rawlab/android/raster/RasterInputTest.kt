@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
 import com.rawlab.android.batch.BatchJob
-import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.format.PhotoFiles

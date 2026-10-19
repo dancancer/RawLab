@@ -1,5 +1,5 @@
 # RawLab Android
-镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。
+镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。
 源依赖构建当前支持 macOS/Linux 主机，需要 Python 3.11+、POSIX shell 和 make。Windows 主机的 GNU libiconv 交叉构建尚未支持；不要将 Windows 托管检查当作 Android 原生构建通过。
 
 
@@ -16,7 +16,7 @@ Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through
 - 几何面板支持百分比裁切、90° 旋转、水平/垂直翻转、±100% 水平/垂直透视及 ±45° 拉直；透视和拉直自动保留中心无黑边画面。所有操作在 RAW 方向校正之后、输出缩放之前执行，顺序为旋转/翻转→透视→拉直→裁切，裁切坐标基于变换后的画面。参数接入逐照片记忆与批量快照；旧基础几何记录保留原有设置并将透视设为零，无几何记录保持原图。原图对比使用同一几何，原始 RAW 不写回。当前几何在 CPU 执行，Auto 可回退，Force 不隐藏 CPU 混合处理。
   Geometry controls support normalized cropping, clockwise quarter-turns, horizontal/vertical flips, ±100% horizontal/vertical perspective and ±45° straightening within an inscribed centered canvas. Geometry follows RAW orientation and precedes output resizing, in the order turns/flips → perspective → straightening → crop. Crop percentages refer to the transformed canvas. Edit memory and batch snapshots retain the full settings; legacy basic geometry records keep their settings with zero perspective, and records without geometry default to identity. Neutral comparison uses the same geometry; source RAWs remain unchanged. Geometry currently executes on CPU; Auto retains fallback and Force rejects mixed CPU processing.
 
-v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当前参数、降噪设置和外观，支持相册/文件多选、目标效果检查、图库/目录输出、取消继续、失败重试与启动恢复；不改写 RAW 或目标编辑记录。新增高光、阴影、对比度、S 曲线、饱和度和锐化，参数约定与桌面对齐。验证见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 - 应用内 RAW 相册、按相册筛选、系统文件导入。相册权限被拒绝时仍可使用文件入口。
   In-app RAW albums with album filtering and a system document-picker fallback.
@@ -48,7 +48,7 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
   Single and batch rendered DNG exports retain current adjustments and final sizing. DNG uses documents/selected folders only, with streamed batch publication rather than full-file Java heap copies.
 - JPEG/PNG 导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等拍摄 EXIF，更新成片方向、尺寸及 sRGB 标记，不复制旧缩略图或 RAW 专有 MakerNotes。
   JPEG/PNG exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, and update output orientation, dimensions and sRGB tags without copying old thumbnails or opaque RAW MakerNotes.
-- 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩 float32 RGB 约占每像素 12 字节。构建和实测边界见[验证记录](../docs/verification-rendered-dng-export.md)。
+- 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩 float32 RGB 约占每像素 12 字节。格式和存储边界见[渲染型 DNG 契约](../lutools/docs/color-contract.md#rendered-dng)。
   Rendered DNG bakes appearance, not sensor RAW or reversible controls. It omits source capture EXIF and uses about 12 bytes per pixel for uncompressed float32 RGB. See the linked verification for runtime limits.
 
 只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
@@ -98,9 +98,9 @@ Assets are generated from existing repository resources rather than duplicated i
 
 [下载 Android v0.8.1 APK / Download Android v0.8.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Android-0.8.1.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.8.1`、`versionCode=13`，沿用正式发布签名，支持同签名旧正式版覆盖升级。0.8.1 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），不再申请电话状态、网络状态和应用列表权限，并修正配方插图、配方名语言和若干界面细节，见[发布说明](../docs/releases/v0.8.1.md)。0.8 系列：新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/releases/v0.8.0-preparation.md)。
+发布 APK 为 `versionName=0.8.1`、`versionCode=13`，沿用正式发布签名，支持同签名旧正式版覆盖升级。0.8.1 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），不再申请电话状态、网络状态和应用列表权限，并修正配方插图、配方名语言和若干界面细节，见[发布说明](../docs/releases/v0.8/v0.8.1.md)。0.8 系列：新增 JPEG/PNG 普通图像输入和混合批量，复用既有 RAW、胶片外观、配方、几何、降噪与导出核心。开发源码的 API35 真机回归覆盖原尺寸预览、FINAL 导出、ICC/cICP 和 RAW 切换；不把这一结果扩展成所有设备/最低系统通过。详见[发布验收](../docs/archive/releases/v0.8/preparation.md)。
 
-The release APK uses version 0.8.1/code 13 and the existing release identity. 0.8.1 turns usage statistics on by default (release builds include the Alibaba Cloud RUM SDK; turn it off in About) and drops phone-state, network-state and app-list permissions; see the [release notes](../docs/releases/v0.8.1.md). JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/releases/v0.8.0-preparation.md) and package provenance for actual candidate/device coverage.
+The release APK uses version 0.8.1/code 13 and the existing release identity. 0.8.1 turns usage statistics on by default (release builds include the Alibaba Cloud RUM SDK; turn it off in About) and drops phone-state, network-state and app-list permissions; see the [release notes](../docs/releases/v0.8/v0.8.1.md). JPEG/PNG input and mixed batches use the common rendering core while preserving RAW behavior. See [release acceptance](../docs/archive/releases/v0.8/preparation.md) and package provenance for actual candidate/device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -205,8 +205,8 @@ Stage2 GainMap、白平衡重载、解码器复用、损坏文件错误分类以
 
 - GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度、明暗处理、细节、暗角/颗粒、小波过滤和显示色度引导滤波。RAW 解码、去马赛克、噪声估计、OpenCV Lab 转换及文件编码仍在 CPU。
   GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending, tone, detail, vignette/grain, wavelet filtering and display-chroma guided filtering. RAW decoding/demosaic, noise estimation, OpenCV Lab conversion and encoding stay on CPU.
-- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
-  All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
+- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
+  All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
 - 全尺寸 RAW 显影需要较多 native 内存。低内存设备可能失败或被系统终止；没有验证所有相机和像素尺寸。
   Full-resolution RAW development is memory-intensive; low-memory devices may fail or be killed by the OS.
   X-Trans 并发修复新增每像素 8 字节的只读输入副本，40 MP 约增加 304 MiB 峰值内存；本轮仅验证 Android 构建，未验证这些机型在设备上的内存表现。

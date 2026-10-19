@@ -1,7 +1,9 @@
 #include "core/photo_geometry.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <new>
 
 namespace sony2fuji {
@@ -69,7 +71,8 @@ RGB sampleBilinear(const ImageData& image, Point point) {
     // when the inscribed canvas samples that support; never introduce black.
     const double x = std::clamp(point.x, 0.0, double(image.width - 1));
     const double y = std::clamp(point.y, 0.0, double(image.height - 1));
-    const int left = static_cast<int>(std::floor(x)), top = static_cast<int>(std::floor(y));
+    // 钳位后非负，截断等同 floor。
+    const int left = static_cast<int>(x), top = static_cast<int>(y);
     const int right = std::min(left + 1, image.width - 1);
     const int bottom = std::min(top + 1, image.height - 1);
     const float dx = static_cast<float>(x - left), dy = static_cast<float>(y - top);
@@ -77,15 +80,72 @@ RGB sampleBilinear(const ImageData& image, Point point) {
         interpolate(image.at(left, bottom), image.at(right, bottom), dx), dy);
 }
 
-Point transformedPoint(int x, int y, const Canvas& canvas, const GeometryOptions& options) {
-    const double dx = x - (canvas.width - 1) * .5;
-    const double dy = y - (canvas.height - 1) * .5;
-    const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
-    const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
-    const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
-        .25 * options.perspective_vertical * (2 * rotated_y / canvas.rotated_height);
-    return {(canvas.rotated_width - 1) * .5 + rotated_x / denominator,
-        (canvas.rotated_height - 1) * .5 + rotated_y / denominator};
+void copyRectangle(const RGB* source, RGB* target, int width, int height,
+    ptrdiff_t step_x, ptrdiff_t step_y, int target_stride) {
+    for (int y = 0; y < height; ++y) {
+        const auto* source_row = source + y * step_y;
+        auto* target_row = target + size_t(y) * target_stride;
+        if (step_x == 1) {
+            std::copy_n(source_row, width, target_row);
+        } else {
+            for (int x = 0; x < width; ++x) target_row[x] = source_row[x * step_x];
+        }
+    }
+}
+
+void copyInteger(const ImageData& image, ImageData& result, const Canvas& canvas,
+    const GeometryOptions& options) {
+    const Point origin = sourcePoint({double(canvas.left), double(canvas.top)}, canvas,
+        options, image.width, image.height);
+    const Point next_x = sourcePoint({double(canvas.left) + 1, double(canvas.top)}, canvas,
+        options, image.width, image.height);
+    const Point next_y = sourcePoint({double(canvas.left), double(canvas.top) + 1}, canvas,
+        options, image.width, image.height);
+    const ptrdiff_t start = ptrdiff_t(origin.y) * image.width + ptrdiff_t(origin.x);
+    const ptrdiff_t step_x = ptrdiff_t(next_x.y - origin.y) * image.width + ptrdiff_t(next_x.x - origin.x);
+    const ptrdiff_t step_y = ptrdiff_t(next_y.y - origin.y) * image.width + ptrdiff_t(next_y.x - origin.x);
+    // 转置分块，让源图与目标图的局部行留在缓存中。
+    const int tile_width = options.quarter_turns % 2 ? 32 : result.width;
+    const int tile_height = options.quarter_turns % 2 ? 32 : result.height;
+    for (int top = 0; top < result.height;) {
+        const int bottom = top + std::min(tile_height, result.height - top);
+        for (int left = 0; left < result.width;) {
+            const int right = left + std::min(tile_width, result.width - left);
+            const auto* source = image.pixels.data() + start + top * step_y + left * step_x;
+            auto* target = result.pixels.data() + size_t(top) * result.width + left;
+            copyRectangle(source, target, right - left, bottom - top, step_x, step_y, result.width);
+            left = right;
+        }
+        top = bottom;
+    }
+}
+
+void resample(const ImageData& image, ImageData& result, const Canvas& canvas,
+    const GeometryOptions& options) {
+    std::array<Point, 256> points;
+    for (int y = 0; y < result.height; ++y) {
+        const double dy = canvas.top + y - (canvas.height - 1) * .5;
+        auto* target = result.pixels.data() + size_t(y) * result.width;
+        for (int begin = 0; begin < result.width;) {
+            const int count = std::min(int(points.size()), result.width - begin);
+            // 分批计算坐标，让独立除法流水执行。
+            for (int i = 0; i < count; ++i) {
+                const int x = begin + i;
+                const double dx = canvas.left + x - (canvas.width - 1) * .5;
+                // 保持乘加顺序，不累加坐标或改用倒数。
+                const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
+                const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
+                const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
+                    .25 * options.perspective_vertical * (2 * rotated_y / canvas.rotated_height);
+                points[i] = {(canvas.rotated_width - 1) * .5 + rotated_x / denominator,
+                    (canvas.rotated_height - 1) * .5 + rotated_y / denominator};
+            }
+            for (int i = 0; i < count; ++i)
+                target[begin + i] = sampleBilinear(image,
+                    sourcePoint(points[i], canvas, options, image.width, image.height));
+            begin += count;
+        }
+    }
 }
 
 } // namespace
@@ -121,16 +181,8 @@ ErrorCode applyGeometry(ImageData& image, const GeometryOptions& options) {
         result.pixels.resize(static_cast<size_t>(result.width) * result.height);
         const bool interpolate = options.straighten_degrees != 0 ||
             options.perspective_horizontal != 0 || options.perspective_vertical != 0;
-        for (int y = 0; y < result.height; ++y) {
-            for (int x = 0; x < result.width; ++x) {
-                const Point rotated = interpolate ?
-                    transformedPoint(canvas.left + x, canvas.top + y, canvas, options) :
-                    Point{double(canvas.left + x), double(canvas.top + y)};
-                const Point source = sourcePoint(rotated, canvas, options, image.width, image.height);
-                result.at(x, y) = interpolate ? sampleBilinear(image, source) :
-                    image.at(static_cast<int>(source.x), static_cast<int>(source.y));
-            }
-        }
+        if (!interpolate) copyInteger(image, result, canvas, options);
+        else resample(image, result, canvas, options);
         image = std::move(result);
         return ErrorCode::Success;
     } catch (const std::bad_alloc&) {
