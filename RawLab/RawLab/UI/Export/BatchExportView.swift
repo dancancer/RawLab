@@ -89,7 +89,7 @@ struct BatchExportView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.text("调整来源")).font(.title3.weight(.semibold))
             HStack(spacing: 14) {
-                BatchPhotoThumbnail(url: model.job.source.sourceURL, cachedSource: model.job.source.cachedSource)
+                BatchPhotoThumbnail(sourceFile: model.job.source.sourceFile)
                     .frame(width: 92, height: 72)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(model.job.source.displayName).font(.body.weight(.medium)).lineLimit(2)
@@ -139,7 +139,7 @@ struct BatchExportView: View {
                         ForEach(model.job.targets) { target in
                             VStack(spacing: 4) {
                                 Button { selectedTarget = target } label: {
-                                    BatchPhotoThumbnail(url: target.sourceURL).frame(width: 88, height: 88)
+                                    BatchPhotoThumbnail(sourceFile: .externallyManaged(target.sourceURL)).frame(width: 88, height: 88)
                                 }.buttonStyle(.plain).disabled(model.isPreparing)
                                     .accessibilityLabel(L10n.format("检查 %@ 的效果", String(describing: target.displayName)))
                                 Text(target.displayName).font(.caption).lineLimit(2).frame(width: 88, height: 34)
@@ -155,7 +155,7 @@ struct BatchExportView: View {
                     ForEach(model.job.targets) { target in
                         HStack(alignment: .top, spacing: 12) {
                             Button { selectedTarget = target } label: {
-                                BatchPhotoThumbnail(url: target.sourceURL).frame(width: 64, height: 64)
+                                BatchPhotoThumbnail(sourceFile: .externallyManaged(target.sourceURL)).frame(width: 64, height: 64)
                             }.buttonStyle(.plain).disabled(model.isRunning)
                                 .accessibilityLabel(L10n.format("检查 %@ 的效果", String(describing: target.displayName)))
                             VStack(alignment: .leading, spacing: 6) {
@@ -313,8 +313,7 @@ private struct TargetEffectInspectionView: View {
 
 private struct BatchPhotoThumbnail: View {
     @Environment(\.locale) private var localizationLocale
-    let url: URL
-    var cachedSource: CachedPhotoFile? = nil
+    let sourceFile: PhotoSourceFile
     @State private var image: UIImage?
     var body: some View {
         let _ = localizationLocale
@@ -323,16 +322,17 @@ private struct BatchPhotoThumbnail: View {
             if let image { Image(uiImage: image).resizable().scaledToFill() }
             else { Image(systemName: "photo").foregroundStyle(.secondary) }
         }.clipped().clipShape(RoundedRectangle(cornerRadius: 4))
-            .task(id: url) {
+            .task(id: sourceFile) {
                 image = await Task.detached(priority: .utility) {
-                    defer { withExtendedLifetime(cachedSource) {} }
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                          let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                            kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: 240
-                          ] as CFDictionary) else { return nil as UIImage? }
-                    return UIImage(cgImage: thumbnail)
+                    sourceFile.withReadAccess { url in
+                        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                kCGImageSourceThumbnailMaxPixelSize: 240
+                              ] as CFDictionary) else { return nil as UIImage? }
+                        return UIImage(cgImage: thumbnail)
+                    }
                 }.value
             }
     }

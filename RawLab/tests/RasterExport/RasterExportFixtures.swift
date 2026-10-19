@@ -28,7 +28,7 @@ final class RasterExportFixture {
         let identity = PhotoIdentity(resourceIdentifier: "raster-export-\(UUID().uuidString)")
         let request = model.importImage(from: source, identity: identity)
         try Self.waitUntil { self.model.activeImportRevision != request }
-        guard model.hasImage, model.sourceIdentity == identity, let url = model.sourceURL else {
+        guard model.hasImage, model.sourceIdentity == identity, let url = model.sourceFile?.withReadAccess({ $0 }) else {
             throw RasterExportFailure.message("Import failed: \(model.statusMessage ?? "no published image")")
         }
         cacheURLs.insert(url)

@@ -43,12 +43,7 @@ final class RawEditorViewModel: ObservableObject {
     let processor = Sony2FujiProcessor()
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
-    @Published var sourceURL: URL? {
-        didSet {
-            if sourceURL != cachedSource?.url { cachedSource = nil }
-        }
-    }
-    var cachedSource: CachedPhotoFile?
+    @Published var sourceFile: PhotoSourceFile?
     @Published var sourceRevision = UUID()
     var sourceKind: ImageSourceKind?
     var sourceIdentity: PhotoIdentity?
@@ -65,6 +60,7 @@ final class RawEditorViewModel: ObservableObject {
     var activeImportRevision: UUID?
     let resultDelivery: (@escaping () -> Void) -> Void
     let exportQueue: DispatchQueue
+    let importQueue: DispatchQueue
     let lookImportCoordinator: LookImportCoordinator
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
@@ -89,10 +85,12 @@ final class RawEditorViewModel: ObservableObject {
     init(editPersistence: EditPersistence? = nil,
          lookImportCoordinator: LookImportCoordinator = LookImportCoordinator(),
          exportQueue: DispatchQueue = .global(qos: .userInitiated),
+         importQueue: DispatchQueue = .global(qos: .userInitiated),
          resultDelivery: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
         self.lookImportCoordinator = lookImportCoordinator
         self.resultDelivery = resultDelivery
         self.exportQueue = exportQueue
+        self.importQueue = importQueue
         do { self.editPersistence = try editPersistence ?? EditPersistence.appStore() }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }

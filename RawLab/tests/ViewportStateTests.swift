@@ -17,7 +17,7 @@ struct ViewportStateTests {
         let model = RawEditorViewModel(editPersistence: try EditPersistence(directory: directory.appendingPathComponent(UUID().uuidString)))
         model.hasImage = true
         model.sourceKind = .raster
-        model.sourceURL = imageURL
+        model.sourceFile = .externallyManaged(imageURL)
         let buffer = try model.processor.loadRasterBuffer(url: imageURL).buffer
         model.draftBuffer = succeeds ? buffer : nil
         model.draftPreviewBuffer = buffer

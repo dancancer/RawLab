@@ -152,7 +152,7 @@ struct GeometryProcessingTests {
         var editable = settings
         let url = output.appendingPathComponent("oriented.jpg")
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
-                                         sourceURL: url, displayName: "source.jpg", sourceKind: .raster,
+                                         sourceFile: .externallyManaged(url), displayName: "source.jpg", sourceKind: .raster,
                                          settings: editable)
         let target = BatchTarget(identity: PhotoIdentity(resourceIdentifier: "target"),
                                  sourceURL: url, displayName: "target.jpg", sourceKind: .raster)

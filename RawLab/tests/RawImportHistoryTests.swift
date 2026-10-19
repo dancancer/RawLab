@@ -40,7 +40,7 @@ private struct Content: Equatable {
     let baseHistogram: [CGFloat]
 
     init(_ model: RawEditorViewModel) {
-        source = model.sourceURL
+        source = model.sourceFile?.withReadAccess({ $0 })
         identity = model.sourceIdentity
         restored = model.restoredSettings
         preview = model.previewImage?.pngData()
@@ -108,7 +108,7 @@ struct RawImportHistoryTests {
         let currentB = try deliveries.take()
         try check(model.isBusy && !model.hasImage, "completed but held RAW A cannot publish while B is pending")
         currentB.forEach { $0() }
-        if let url = model.sourceURL { ownedCacheURLs.insert(url) }
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { ownedCacheURLs.insert(url) }
         let publishedB = Content(model)
         try check(model.hasImage && !model.isBusy && model.sourceKind == .raw && model.sourceIdentity == b,
                   "actual RAW B owns the editor after import")
@@ -127,7 +127,7 @@ struct RawImportHistoryTests {
 
         model.importImage(from: .raw(raw), identity: a)
         try deliveries.take().forEach { $0() }
-        if let url = model.sourceURL { ownedCacheURLs.insert(url) }
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { ownedCacheURLs.insert(url) }
         var aEdit = aSettings
         aEdit.exposure = 0.7
         let oldPreview = try render(model, settings: aEdit, deliveries: deliveries)

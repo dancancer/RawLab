@@ -21,7 +21,7 @@ enum ImportCacheLifetimeTests {
 
     private static func rejectedReimport(_ f: Fixture, fails: Bool, cancelled: Bool) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
-        let oldURL = f.model.sourceURL!
+        let oldURL = f.model.sourceFile!.withReadAccess({ $0 })
         let original = try Data(contentsOf: oldURL)
         let baseline = try files(near: oldURL)
         let replacement = f.bURL.deletingLastPathComponent().appendingPathComponent("invalid.png")
@@ -41,7 +41,7 @@ enum ImportCacheLifetimeTests {
             try check(try files(near: oldURL) == baseline, "Cancelled \(fails ? "failed" : "successful") import leaves no extra cache file")
         } else {
             try f.collector.take().forEach { $0() }
-            try check(try files(near: f.model.sourceURL!) == baseline.subtracting([oldURL]).union([f.model.sourceURL!]),
+            try check(try files(near: f.model.sourceFile!.withReadAccess({ $0 })) == baseline.subtracting([oldURL]).union([f.model.sourceFile!.withReadAccess({ $0 })]),
                       "Superseded \(fails ? "failed" : "successful") import leaves only the new published file")
         }
     }
@@ -49,7 +49,7 @@ enum ImportCacheLifetimeTests {
     private static func currentFailure(_ f: Fixture, afterCopy: Bool) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
         var reader = f.model.currentBatchSource(settings: .default)
-        let oldURL = reader!.sourceURL
+        let oldURL = reader!.sourceFile.withReadAccess({ $0 })
         let original = try Data(contentsOf: oldURL)
         let baseline = try files(near: oldURL)
         let invalid = f.aURL.deletingLastPathComponent().appendingPathComponent("broken.png")
@@ -58,7 +58,7 @@ enum ImportCacheLifetimeTests {
         try f.collector.take().forEach { $0() }
         try check(try Data(contentsOf: oldURL) == original && CGImageSourceCreateWithURL(oldURL as CFURL, nil) != nil,
                   "Current import failure \(afterCopy ? "after decode" : "during copy") cannot destroy a captured source")
-        try check(f.model.statusMessage != nil && !f.model.isBusy && f.model.sourceURL == nil,
+        try check(f.model.statusMessage != nil && !f.model.isBusy && f.model.sourceFile == nil,
                   "Current failure still reports the error and clears the editor as before")
         try check(try files(near: oldURL) == baseline, "Failed import leaves no extra copy while the old reader is alive")
         withExtendedLifetime(reader) {}
@@ -70,7 +70,7 @@ enum ImportCacheLifetimeTests {
     private static func batchSnapshot(_ f: Fixture) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
         var source = f.model.currentBatchSource(settings: f.aSettings)
-        let oldURL = source!.sourceURL
+        let oldURL = source!.sourceFile.withReadAccess({ $0 })
         let original = try Data(contentsOf: oldURL)
         let baseline = try files(near: oldURL)
         try publish(f, url: f.bURL, identity: f.bIdentity)
@@ -78,9 +78,9 @@ enum ImportCacheLifetimeTests {
         source = nil
         let root = f.aURL.deletingLastPathComponent().appendingPathComponent("batch")
         try BatchInputStore.prepare(&job, look: nil, root: root)
-        try check(try Data(contentsOf: job.source.sourceURL) == original && job.source.sourceURL != oldURL,
+        try check(try Data(contentsOf: job.source.sourceFile.withReadAccess({ $0 })) == original && job.source.sourceFile.withReadAccess({ $0 }) != oldURL,
                   "A captured batch source freezes the old bytes after a new photo publishes")
-        try check(try files(near: f.model.sourceURL!) == baseline.subtracting([oldURL]).union([f.model.sourceURL!]),
+        try check(try files(near: f.model.sourceFile!.withReadAccess({ $0 })) == baseline.subtracting([oldURL]).union([f.model.sourceFile!.withReadAccess({ $0 })]),
                   "Batch preparation releases the editor copy after freezing its own input")
         let decoded = try JSONDecoder().decode(BatchExportJob.self, from: JSONEncoder().encode(job))
         try check(decoded == job, "Runtime cache ownership does not change the batch journal format or equality")
@@ -88,33 +88,54 @@ enum ImportCacheLifetimeTests {
 
     private static func successfulReimport(_ f: Fixture) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
-        let firstURL = f.model.sourceURL!
+        let firstURL = f.model.sourceFile!.withReadAccess({ $0 })
         try publish(f, url: f.bURL, identity: f.aIdentity)
-        try check(try Data(contentsOf: f.model.sourceURL!) == Data(contentsOf: f.bURL),
+        try check(try Data(contentsOf: f.model.sourceFile!.withReadAccess({ $0 })) == Data(contentsOf: f.bURL),
                   "Successful same-identity reimport publishes the new source bytes")
-        try check(f.model.sourceURL != firstURL && f.model.restoredSettings == f.aSettings,
+        try check(f.model.sourceFile?.withReadAccess({ $0 }) != firstURL && f.model.restoredSettings == f.aSettings,
                   "Cache paths change independently of PhotoIdentity and restored edits")
     }
 
     private static func repeatedImports(_ f: Fixture) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
-        let initial = try files(near: f.model.sourceURL!)
-        let unrelated = initial.subtracting([f.model.sourceURL!])
+        let initial = try files(near: f.model.sourceFile!.withReadAccess({ $0 }))
+        let unrelated = initial.subtracting([f.model.sourceFile!.withReadAccess({ $0 })])
         for index in 0..<12 {
             try publish(f, url: index.isMultiple(of: 2) ? f.bURL : f.aURL,
                         identity: PhotoIdentity(resourceIdentifier: "cache-repeat-\(UUID().uuidString)"))
-            try check(try files(near: f.model.sourceURL!) == unrelated.union([f.model.sourceURL!]),
+            try check(try files(near: f.model.sourceFile!.withReadAccess({ $0 })) == unrelated.union([f.model.sourceFile!.withReadAccess({ $0 })]),
                       "Repeated imports retain only the current photo after readers finish (\(index + 1))")
         }
     }
 
     private static func cachedInput(_ f: Fixture) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
-        let previousURL = f.model.sourceURL!
+        let previousURL = f.model.sourceFile!.withReadAccess({ $0 })
         let bytes = try Data(contentsOf: previousURL)
         try publish(f, url: previousURL, identity: f.aIdentity)
-        try check(f.model.sourceURL != previousURL && (try Data(contentsOf: f.model.sourceURL!)) == bytes,
+        try check(f.model.sourceFile?.withReadAccess({ $0 }) != previousURL && (try Data(contentsOf: f.model.sourceFile!.withReadAccess({ $0 }))) == bytes,
                   "Importing an already cached source still creates a separately owned immutable copy")
+    }
+
+    private static func queuedCachedInput(directory: URL) throws {
+        let queue = DispatchQueue(label: "com.rawlab.tests.import-cache")
+        let f = try Fixture(directory: directory, importQueue: queue)
+        try publish(f, url: f.aURL, identity: f.aIdentity)
+        let previousURL = f.model.sourceFile!.withReadAccess({ $0 })
+        let bytes = try Data(contentsOf: previousURL)
+        queue.suspend()
+        var suspended = true
+        defer { if suspended { queue.resume() } }
+        f.model.importImage(from: .raster(previousURL), identity: f.aIdentity)
+        f.model.sourceFile = nil
+        try check(try Data(contentsOf: previousURL) == bytes, "Queued import captures the reused input before the editor releases it")
+        queue.resume()
+        suspended = false
+        try f.collector.take().forEach { $0() }
+        queue.sync {}
+        try check(try f.model.hasImage && f.model.sourceFile!.withReadAccess { try Data(contentsOf: $0) } == bytes,
+                  "Queued input reuse publishes an independent copy of the original bytes")
+        try check(!FileManager.default.fileExists(atPath: previousURL.path), "Input reuse releases its old file after copying")
     }
 
     static func run(root: URL) throws {
@@ -134,13 +155,13 @@ enum ImportCacheLifetimeTests {
         try manager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: managed.path)
         defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: managed.path) }
         var rejected = false
-        do { _ = try CachedPhotoFile.copy(input) }
+        do { _ = try PhotoSourceFile.copy(input) }
         catch { rejected = true }
         try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: managed.path)
         try check(rejected, "An inaccessible stale cache surfaces the first initialization error")
         do {
-            let retried = try CachedPhotoFile.copy(input)
-            try check(try Data(contentsOf: retried.url) == Data("retry source".utf8),
+            let retried = try PhotoSourceFile.copy(input)
+            try check(try retried.withReadAccess { try Data(contentsOf: $0) } == Data("retry source".utf8),
                       "Cache initialization retries after a transient directory failure")
         }
         for fails in [false, true] {
@@ -151,6 +172,7 @@ enum ImportCacheLifetimeTests {
         }
         try successfulReimport(Fixture(directory: root.appendingPathComponent("successful-reimport")))
         try cachedInput(Fixture(directory: root.appendingPathComponent("cached-input")))
+        try queuedCachedInput(directory: root.appendingPathComponent("queued-cached-input"))
         for afterCopy in [false, true] {
             try currentFailure(Fixture(directory: root.appendingPathComponent("current-failure-\(afterCopy)")),
                                afterCopy: afterCopy)

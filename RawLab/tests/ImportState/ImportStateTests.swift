@@ -70,7 +70,7 @@ struct ImportStateTests {
         let b = try f.collector.take()
         if whileBPending {
             try deliver(failure)
-            try check(f.model.isBusy && !f.model.hasImage && f.model.statusMessage == nil && f.model.sourceURL == nil,
+            try check(f.model.isBusy && !f.model.hasImage && f.model.statusMessage == nil && f.model.sourceFile == nil,
                       "Old failure cannot clear pending B's busy state or report an error for B")
             try deliver(b)
         } else {
@@ -146,7 +146,7 @@ struct ImportStateTests {
             // Negative IO fixture: exercise the real RAW error path without a
             // private RAW. This is publication testing, not RAW correctness.
             f.model.sourceKind = .raw
-            f.model.sourceURL = f.missingURL.deletingPathExtension().appendingPathExtension("raw")
+            f.model.sourceFile = .externallyManaged(f.missingURL.deletingPathExtension().appendingPathExtension("raw"))
         }
         let old = try renderHeld(f, settings: aEdit)
         try check(old.count >= (fails ? 2 : 3), "Old render holds \(fails ? "error/finish" : "image/histogram/finish") results")
@@ -349,6 +349,8 @@ struct ImportStateTests {
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try check(Thread.isMainThread, "Import state harness starts on the main thread")
         try ImportCacheLifetimeTests.run(root: root.appendingPathComponent("cache-lifetime"))
+        try PhotoSourceFileTests.run(root: root.appendingPathComponent("source-file"))
+        try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
         let raw = CommandLine.arguments.dropFirst(2).first.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
         try ExportCacheLifetimeTests.run(root: root.appendingPathComponent("export-cache-lifetime"), rawURL: raw)
         try cropSessions()

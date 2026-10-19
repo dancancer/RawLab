@@ -18,7 +18,7 @@ struct RasterExportTests {
             try RasterExportFixture.writeRaster(source, orientation: orientation)
             try fixture.importRaster(source)
             let model = fixture.model
-            let url = model.sourceURL!
+            let url = model.sourceFile!.withReadAccess({ $0 })
             let decoded = try model.processor.loadRasterBuffer(url: url)
             let expectedWidth = orientation == 6 ? 64 : 96
             let expectedHeight = orientation == 6 ? 96 : 64
@@ -50,7 +50,7 @@ struct RasterExportTests {
         let model = fixture.model
         let published = model.draftBuffer!
         let preview = model.previewImage?.pngData()
-        let url = model.sourceURL!
+        let url = model.sourceFile!.withReadAccess({ $0 })
         try RasterExportFixture.writeRaster(url, variant: 1)
         let replacement = try model.processor.loadRasterBuffer(url: url).buffer
         try check(replacement.data != published.data && model.previewImage?.pngData() == preview,
@@ -94,7 +94,7 @@ struct RasterExportTests {
         try RasterExportFixture.writeRaster(second, variant: 1)
         for format in ["JPEG", "DNG"] {
             try fixture.importRaster(first)
-            let originalURL = fixture.model.sourceURL!
+            let originalURL = fixture.model.sourceFile!.withReadAccess({ $0 })
             let originalBuffer = fixture.model.draftBuffer!
             let expected = try format == "JPEG"
                 ? fixture.referenceJPEG(buffer: originalBuffer, source: originalURL)
@@ -117,7 +117,7 @@ struct RasterExportTests {
             else { fixture.model.exportDNG(settings: .default) { dng = $0 } }
             if let importFailure { throw importFailure }
             try check(switched && jpeg == nil && dng == nil && fixture.model.isBusy &&
-                      fixture.model.sourceURL != originalURL && fixture.model.draftBuffer?.data != originalBuffer.data,
+                      fixture.model.sourceFile?.withReadAccess({ $0 }) != originalURL && fixture.model.draftBuffer?.data != originalBuffer.data,
                       "\(format): the second import publishes before the export worker is queued")
             try RasterExportFixture.waitUntil { jpeg != nil || dng != nil }
             let actual: Data
@@ -127,7 +127,7 @@ struct RasterExportTests {
                 defer { try? FileManager.default.removeItem(at: url) }
                 actual = try Data(contentsOf: url)
             }
-            try check(actual == expected && fixture.model.sourceURL != originalURL &&
+            try check(actual == expected && fixture.model.sourceFile?.withReadAccess({ $0 }) != originalURL &&
                       fixture.model.draftBuffer?.data != originalBuffer.data,
                       "\(format): importing another photo cannot mix the new source with the in-flight export")
         }
@@ -136,7 +136,7 @@ struct RasterExportTests {
     private static func rawIgnoresDraft(_ fixture: RasterExportFixture, raw: URL) throws {
         try fixture.importPhoto(.raw(raw))
         let model = fixture.model
-        let source = model.sourceURL!
+        let source = model.sourceFile!.withReadAccess({ $0 })
         let result = try model.processor.processRaw(url: source, settings: .default,
             previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         let expectedJPEG = try model.processor.makeJPEGData(from: result.buffer, sourceURL: source,

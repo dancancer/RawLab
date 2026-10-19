@@ -63,12 +63,12 @@ extension RawEditorViewModel {
     }
 
     func currentBatchSource(settings: RawSettings) -> BatchSourceSnapshot? {
-        guard let sourceURL, let sourceKind, let sourceIdentity else { return nil }
+        guard let sourceFile, let sourceKind, let sourceIdentity else { return nil }
         return BatchSourceSnapshot(identity: sourceIdentity,
-                                   sourceURL: sourceURL,
-                                   displayName: sourceDisplayName ?? sourceURL.lastPathComponent,
+                                   sourceFile: sourceFile,
+                                   displayName: sourceDisplayName ?? sourceFile.displayName,
                                    sourceKind: sourceKind == .raw ? .raw : .raster,
-                                   settings: settings, cachedSource: cachedSource)
+                                   settings: settings)
     }
 
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
@@ -82,9 +82,8 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation,
-                      owner: cachedSource)
-        guard let sourceURL = source.url, let sourceKind = source.kind else {
+        let source = (file: sourceFile, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation)
+        guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
         }
@@ -95,54 +94,55 @@ extension RawEditorViewModel {
 
         isBusy = true
         exportQueue.async {
-            defer { withExtendedLifetime(source.owner) {} }
-            do {
-                let lutURL = self.lutURL(for: settings)
-                let data: Data
+            sourceFile.withReadAccess { sourceURL in
+                do {
+                    let lutURL = self.lutURL(for: settings)
+                    let data: Data
 
-                if sourceKind == .raw {
-                    let result = try self.processor.processRaw(
-                        url: sourceURL,
-                        settings: settings,
-                        previewLongEdge: nil,
-                        lutURL: lutURL,
-                        exportLongEdge: longEdge
-                    )
-                    let output = try self.processor.makeJPEGData(
-                        from: result.buffer,
-                        sourceURL: sourceURL,
-                        orientation: result.orientation,
-                        quality: 0.92
-                    )
-                    data = output
-                } else {
-                    guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
-                    let outputBuffer = try self.processor.processBuffer(
-                        buffer: sourceBuffer,
-                        settings: settings,
-                        previewLongEdge: nil,
-                        lutURL: lutURL,
-                        exportLongEdge: longEdge
-                    )
-                    let output = try self.processor.makeJPEGData(
-                        from: outputBuffer,
-                        sourceURL: sourceURL,
-                        orientation: source.orientation,
-                        quality: 0.92
-                    )
-                    data = output
-                }
+                    if sourceKind == .raw {
+                        let result = try self.processor.processRaw(
+                            url: sourceURL,
+                            settings: settings,
+                            previewLongEdge: nil,
+                            lutURL: lutURL,
+                            exportLongEdge: longEdge
+                        )
+                        let output = try self.processor.makeJPEGData(
+                            from: result.buffer,
+                            sourceURL: sourceURL,
+                            orientation: result.orientation,
+                            quality: 0.92
+                        )
+                        data = output
+                    } else {
+                        guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
+                        let outputBuffer = try self.processor.processBuffer(
+                            buffer: sourceBuffer,
+                            settings: settings,
+                            previewLongEdge: nil,
+                            lutURL: lutURL,
+                            exportLongEdge: longEdge
+                        )
+                        let output = try self.processor.makeJPEGData(
+                            from: outputBuffer,
+                            sourceURL: sourceURL,
+                            orientation: source.orientation,
+                            quality: 0.92
+                        )
+                        data = output
+                    }
 
-                DispatchQueue.main.async {
-                    self.isBusy = false
-                    completion(.success(data))
-                    self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.isBusy = false
-                    completion(.failure(error))
-                    self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                    DispatchQueue.main.async {
+                        self.isBusy = false
+                        completion(.success(data))
+                        self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.isBusy = false
+                        completion(.failure(error))
+                        self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                    }
                 }
             }
         }
@@ -155,9 +155,8 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation,
-                      owner: cachedSource)
-        guard let sourceURL = source.url, let sourceKind = source.kind else {
+        let source = (file: sourceFile, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation)
+        guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
         }
@@ -167,33 +166,34 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
-        let base = sourceURL.deletingPathExtension().lastPathComponent.isEmpty
-            ? "RawLab" : sourceURL.deletingPathExtension().lastPathComponent
+        let name = sourceFile.withReadAccess { $0.deletingPathExtension().lastPathComponent }
+        let base = name.isEmpty ? "RawLab" : name
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(base)-rendered-\(UUID().uuidString).dng")
         exportQueue.async {
-            defer { withExtendedLifetime(source.owner) {} }
-            do {
-                let lutURL = self.lutURL(for: settings)
-                if sourceKind == .raw {
-                    try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
-                                                 outputURL: outputURL, exportLongEdge: longEdge)
-                } else {
-                    guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
-                    try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
-                                                 outputURL: outputURL, exportLongEdge: longEdge)
-                }
-                self.resultDelivery {
-                    self.isBusy = false
-                    completion(.success(outputURL))
-                    self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
-                }
-            } catch {
-                try? FileManager.default.removeItem(at: outputURL)
-                self.resultDelivery {
-                    self.isBusy = false
-                    completion(.failure(error))
-                    self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+            sourceFile.withReadAccess { sourceURL in
+                do {
+                    let lutURL = self.lutURL(for: settings)
+                    if sourceKind == .raw {
+                        try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
+                                                     outputURL: outputURL, exportLongEdge: longEdge)
+                    } else {
+                        guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
+                        try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
+                                                     outputURL: outputURL, exportLongEdge: longEdge)
+                    }
+                    self.resultDelivery {
+                        self.isBusy = false
+                        completion(.success(outputURL))
+                        self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                    }
+                } catch {
+                    try? FileManager.default.removeItem(at: outputURL)
+                    self.resultDelivery {
+                        self.isBusy = false
+                        completion(.failure(error))
+                        self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                    }
                 }
             }
         }
@@ -209,83 +209,86 @@ extension RawEditorViewModel {
         isBusy = true
         sourceRevision = UUID()
         let lutURL = lutURL(for: settings)
+        let sourceFile = PhotoSourceFile.externallyManaged(url)
 
         DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry)
-                let previewResult = try self.processor.processRaw(
-                    url: url,
-                    settings: settings,
-                    previewLongEdge: self.previewMaxDimension,
-                    lutURL: lutURL
-                )
-                let previewImage = self.processor.makeUIImage(
-                    from: previewResult.buffer,
-                    orientation: previewResult.orientation ?? rawPreview.orientation
-                )
-                let previewHistogram = self.processor.computeHistogram(
-                    from: previewResult.buffer,
-                    bins: self.histogramBins
-                )
+            sourceFile.withReadAccess { url in
+                do {
+                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry)
+                    let previewResult = try self.processor.processRaw(
+                        url: url,
+                        settings: settings,
+                        previewLongEdge: self.previewMaxDimension,
+                        lutURL: lutURL
+                    )
+                    let previewImage = self.processor.makeUIImage(
+                        from: previewResult.buffer,
+                        orientation: previewResult.orientation ?? rawPreview.orientation
+                    )
+                    let previewHistogram = self.processor.computeHistogram(
+                        from: previewResult.buffer,
+                        bins: self.histogramBins
+                    )
 
-                let fullResult = try self.processor.processRaw(
-                    url: url,
-                    settings: settings,
-                    previewLongEdge: nil,
-                    lutURL: lutURL
-                )
-                let data = try self.processor.makeJPEGData(
-                    from: fullResult.buffer,
-                    sourceURL: url,
-                    orientation: fullResult.orientation,
-                    quality: 0.92
-                )
+                    let fullResult = try self.processor.processRaw(
+                        url: url,
+                        settings: settings,
+                        previewLongEdge: nil,
+                        lutURL: lutURL
+                    )
+                    let data = try self.processor.makeJPEGData(
+                        from: fullResult.buffer,
+                        sourceURL: url,
+                        orientation: fullResult.orientation,
+                        quality: 0.92
+                    )
 
-                DispatchQueue.main.async {
-                    self.sourceURL = url
-                    self.sourceKind = .raw
-                    self.sourceDisplayName = url.lastPathComponent
-                    self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
-                    self.draftBuffer = rawPreview.buffer
-                    self.draftPreviewBuffer = rawPreview.previewBuffer
-                    self.basePreviewImage = rawPreview.basePreviewImage
-                    self.baseHistogram = rawPreview.baseHistogram
-                    self.basePreviewGeometry = settings.geometry
-                    self.lensInfo = previewResult.lensInfo
-                    self.rawLUTID = settings.lutID
-                    self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
-                    self.previewImage = previewImage
-                    self.nativeImageSize = previewResult.buffer.nativeSize
-                    self.histogram = previewHistogram
-                    self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
-                    self.isBusy = false
-                    self.sourceRevision = UUID()
-                    let sizeKB = Double(data.count) / 1024.0
-                    let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
-                    self.statusMessage = message
-                    self.writeSmokeTestResult("OK: \(message)")
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.statusMessage = error.localizedDescription
-                    self.isBusy = false
-                    self.previewImage = nil
-                    self.basePreviewImage = nil
-                    self.nativeImageSize = nil
-                    self.draftPreviewBuffer = nil
-                    self.draftBuffer = nil
-                    self.sourceURL = nil
-                    self.sourceKind = nil
-                    self.sourceDisplayName = nil
-                    self.sourceOrientation = nil
-                    self.rawLUTID = nil
-                    self.rawLUTApplied = false
-                    self.hasImage = false
-                    self.lensInfo = nil
-                    self.histogram = []
-                    self.baseHistogram = []
-                    self.sourceRevision = UUID()
-                    self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        self.sourceFile = sourceFile
+                        self.sourceKind = .raw
+                        self.sourceDisplayName = url.lastPathComponent
+                        self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
+                        self.draftBuffer = rawPreview.buffer
+                        self.draftPreviewBuffer = rawPreview.previewBuffer
+                        self.basePreviewImage = rawPreview.basePreviewImage
+                        self.baseHistogram = rawPreview.baseHistogram
+                        self.basePreviewGeometry = settings.geometry
+                        self.lensInfo = previewResult.lensInfo
+                        self.rawLUTID = settings.lutID
+                        self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
+                        self.previewImage = previewImage
+                        self.nativeImageSize = previewResult.buffer.nativeSize
+                        self.histogram = previewHistogram
+                        self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
+                        self.isBusy = false
+                        self.sourceRevision = UUID()
+                        let sizeKB = Double(data.count) / 1024.0
+                        let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
+                        self.statusMessage = message
+                        self.writeSmokeTestResult("OK: \(message)")
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.statusMessage = error.localizedDescription
+                        self.isBusy = false
+                        self.previewImage = nil
+                        self.basePreviewImage = nil
+                        self.nativeImageSize = nil
+                        self.draftPreviewBuffer = nil
+                        self.draftBuffer = nil
+                        self.sourceFile = nil
+                        self.sourceKind = nil
+                        self.sourceDisplayName = nil
+                        self.sourceOrientation = nil
+                        self.rawLUTID = nil
+                        self.rawLUTApplied = false
+                        self.hasImage = false
+                        self.lensInfo = nil
+                        self.histogram = []
+                        self.baseHistogram = []
+                        self.sourceRevision = UUID()
+                        self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
+                    }
                 }
             }
         }

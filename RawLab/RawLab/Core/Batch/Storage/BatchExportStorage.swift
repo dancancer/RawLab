@@ -59,7 +59,7 @@ final class BatchJournalStore {
             return url
         }
         var job = original
-        job.source.sourceURL = relocate(job.source.sourceURL)
+        job.source.sourceFile = job.source.sourceFile.withReadAccess { .externallyManaged(relocate($0)) }
         job.source.lookURL = job.source.lookURL.map(relocate)
         for index in job.targets.indices { job.targets[index].sourceURL = relocate(job.targets[index].sourceURL) }
         return job
@@ -112,7 +112,9 @@ enum BatchInputStore {
     }
 
     static func prepare(_ job: inout BatchExportJob, look: URL?, root: URL? = nil) throws {
-        job.source.sourceURL = try copy(job.source.sourceURL, identity: job.source.identity, jobID: job.id, root: root)
+        job.source.sourceFile = try job.source.sourceFile.withReadAccess {
+            .externallyManaged(try copy($0, identity: job.source.identity, jobID: job.id, root: root))
+        }
         if job.source.settings.hasLook {
             guard let look, FileManager.default.isReadableFile(atPath: look.path) else {
                 throw BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))
