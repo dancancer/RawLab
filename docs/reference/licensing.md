@@ -65,6 +65,13 @@ notice also retained. Its corresponding patched source is supplied with the
 release. OpenCV, wavelib, stb, Adobe-derived code, calibration data, ExifTool,
 runtime libraries and LUTs retain their respective notices.
 
+The local Nikon HE decoder is LGPL 2.1, adapted from dnglab and LibRaw PR 826;
+it is not covered by LibRaw's alternative CDDL license. Its provenance and
+modifications are recorded in [the decoder notice](../../lutools/third_party/nikon_he/README.md).
+The notice and full license accompany all native clients and patched LibRaw
+source packages. Adobe DNG Converter is a development reference only, not a
+distributed component or runtime dependency.
+
 Profile-based lens correction uses unmodified Lensfun 0.3.4 (LGPL-3.0).
 The vendored DB1 snapshot is separately licensed under CC BY-SA 3.0, with its
 provenance, attribution and original license retained in

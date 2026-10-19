@@ -22,6 +22,21 @@ export RAWLAB_LENS_BASE RAWLAB_LENS_PREFIX RAWLAB_SOURCE_CACHE
 export PKG_CONFIG_PATH="$RAWLAB_LENS_PREFIX/lib/pkgconfig:$RAWLAB_DEPENDENCY_PREFIX/lib/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 
+rawlab_libraw_patch_fingerprint() {
+    (
+        cd "$ROOT"
+        shasum -a 256 RawLabMac/build-env.sh RawLabMac/build-dependencies.sh \
+            lutools/cmake/libraw/CMakeLists.txt lutools/cmake/patch-libraw.cmake \
+            lutools/third_party/rawspeed-camera-calibration.inc \
+            lutools/third_party/nikon_he/* | shasum -a 256 | awk '{print $1}'
+    )
+}
+
+rawlab_libraw_patch_current() {
+    local stamp="$RAWLAB_DEPENDENCY_PREFIX/share/rawlab/libraw-patch.sha256"
+    [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$(rawlab_libraw_patch_fingerprint)" ]
+}
+
 rawlab_macos_version_at_most() {
     local actual="${1:-}" required="${2:-}" index actual_part required_part
     local -a actual_parts required_parts

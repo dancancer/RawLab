@@ -4,6 +4,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cmp "$ROOT/Shared/master-recipes.json" "${1:-$ROOT/build/RawLab Mac.app}/Contents/Resources/master-recipes.json"
 APP="${1:-$ROOT/build/RawLab Mac.app}"
 cmp "$ROOT/lutools/third_party/nlohmann/LICENSE.MIT" "$APP/Contents/Resources/Licenses/nlohmann-JSON-MIT.txt"
+for name in README.md LICENSE.LGPL-2.1; do
+    cmp "$ROOT/lutools/third_party/nikon_he/$name" "$APP/Contents/Resources/Licenses/nikon-he/$name"
+done
 cmp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 for asset in "$ROOT"/Shared/BundledLooks/*.cube; do
     cmp "$asset" "$APP/Contents/Resources/LUTs/$(basename "$asset")"

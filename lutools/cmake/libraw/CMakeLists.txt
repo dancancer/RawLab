@@ -12,6 +12,7 @@ if(NOT RAWLAB_DNGSDK_SHARED)
 endif()
 add_subdirectory("${LIBRAW_CMAKE_SOURCE_DIR}" "libraw")
 foreach(raw_target raw raw_r)
+    target_compile_features(${raw_target} PRIVATE cxx_std_17)
     target_compile_definitions(${raw_target} PRIVATE USE_DNGSDK qDNGSupportJXL=1)
     target_include_directories(${raw_target} SYSTEM PRIVATE
         "$<TARGET_PROPERTY:rawlab_dng_sdk,INTERFACE_INCLUDE_DIRECTORIES>")

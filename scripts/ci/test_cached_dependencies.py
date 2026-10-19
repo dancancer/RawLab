@@ -67,7 +67,7 @@ class CachedMacTests(unittest.TestCase):
                 shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
             for name in ("build-dependencies.sh", "build-chroma-dependency.sh",
                          "build-wavelet-dependency.sh", "build-tiff-dependency.sh"):
-                (scripts / name).write_text("echo 'Dependency build requested' >&2\nexit 29\n")
+                (scripts / name).write_text(f"echo 'Dependency build requested: {name}' >&2\nexit 29\n")
             (scripts / "build-lens-dependency.sh").write_text("echo 'Lensfun validation retained'\n")
             tools = root / "tools"
             tools.mkdir()
@@ -93,6 +93,11 @@ class CachedMacTests(unittest.TestCase):
         result = self.build("")
         self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
         self.assertIn("Dependency build requested", result.stderr)
+
+    def test_local_build_does_not_reuse_libraw_without_current_patch_stamp(self):
+        result = self.build("")
+        self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
+        self.assertIn("Dependency build requested: build-dependencies.sh", result.stderr)
 
 
 if __name__ == "__main__":

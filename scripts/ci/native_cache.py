@@ -20,6 +20,7 @@ COMMON_INPUTS = (
     "lutools/cmake/**/*.py", "lutools/cmake/**/*.json", "lutools/cmake/**/*.in",
     "lutools/cmake/**/*.inc", "lutools/third_party/rawspeed-camera-calibration.inc",
     "lutools/third_party/lensfun/*.*",
+    "lutools/third_party/nikon_he/*",
 )
 PLATFORM_INPUTS = {
     "macos": ("RawLabMac/build*.sh",),

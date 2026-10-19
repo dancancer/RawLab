@@ -30,6 +30,9 @@ fetch LibRaw-0.22.2.tar.gz de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a
 fetch LibRaw-cmake-eb98e43.tar.gz 3cd218bf6d1254de86e27269541277fbfc5bae57a9002ce0b46fbe2a97088b43 \
     https://github.com/LibRaw/LibRaw-cmake/archive/eb98e4325aef2ce85d2eb031c2ff18640ca616d3.tar.gz LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3
 if [ ! -e "$SOURCES/cmake" ]; then ln -s cmake-21.1.8.src "$SOURCES/cmake"; fi
+# 重新生成可重建的工作副本，避免旧补丁或已删除的 codec 文件留在源码缓存。
+rm -r "$SOURCES/LibRaw-0.22.2"
+tar -xf "$SOURCES/LibRaw-0.22.2.tar.gz" -C "$SOURCES"
 cmake -DLIBRAW_SOURCE_DIR="$SOURCES/LibRaw-0.22.2" -P "$ROOT/lutools/cmake/patch-libraw.cmake"
 
 COMMON=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH"
@@ -88,6 +91,8 @@ for feature in LCMS DNGDEFLATECODEC DNGLOSSYCODEC OPENMP; do
 done
 cmake --build "$BUILD/libraw-dng-cmake" -j "$JOBS"
 cmake --install "$BUILD/libraw-dng-cmake"
+mkdir -p "$PREFIX/share/rawlab"
+rawlab_libraw_patch_fingerprint > "$PREFIX/share/rawlab/libraw-patch.sha256"
 RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-chroma-dependency.sh"
 RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
 echo "Dependencies installed: $PREFIX"

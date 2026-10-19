@@ -130,10 +130,12 @@ static class Program
                 Check(lean.Clipping==null && lean.Histogram.SequenceEqual(rendered.Histogram) && lean.Shadows==rendered.Shadows && lean.Highlights==rendered.Highlights && Pixels(lean.Image).SequenceEqual(Pixels(rendered.Image)),"Optional clipping mask preserves pixels and exact statistics");
                 var referenceOnly=engine.Render(unicodeRaw,settings,null,800,statistics:false,clipping:false)!;
                 Check(referenceOnly.Histogram.Length==0 && referenceOnly.Clipping==null && Pixels(referenceOnly.Image).SequenceEqual(Pixels(neutral.Image)),"Neutral comparison skips unused statistics without changing pixels");
+                // Compare like-for-like viewport stages, not a downscaled final render.
+                var viewport=engine.Render(unicodeRaw,settings,unicodeLut,800,viewportPreview:true)!;
                 var single=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,false,false);
-                Check(ReferenceEquals(single.Neutral,single.Result) && Pixels(single.Result.Image).SequenceEqual(Pixels(rendered.Image)),"Comparison off renders only the edited image without changing pixels");
+                Check(ReferenceEquals(single.Neutral,single.Result) && Pixels(single.Result.Image).SequenceEqual(Pixels(viewport.Image)),"Comparison off renders only the edited image without changing viewport pixels");
                 var masked=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,true,true);
-                Check(masked.Neutral.Clipping==null && masked.Result.Clipping!=null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(rendered.Clipping!)),"Clipping applies only to the edited result, never the original");
+                Check(masked.Neutral.Clipping==null && masked.Result.Clipping!=null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(viewport.Clipping!)),"Clipping applies only to the edited result, never the original");
                 PreviewChecks.Run(engine,unicodeRaw,unicodeLut,Check);
                 settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 foreach(var parameter in new[]{Parameter.Exposure,Parameter.Contrast,Parameter.Highlights,Parameter.Shadows,Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
@@ -197,7 +199,7 @@ static class Program
                 var a=Pixels(native.Image);var b=Pixels(pngFrame);var delta=a.Zip(b,(x,y)=>Math.Abs(x-y)).Max();
                 Check(delta<=1,"100% preview agrees with 16-bit PNG within 8-bit quantization");
                 try{engine.Render(unicodeRaw,settings,unicodeLut,0,false,unicodeRaw);throw new Exception("Input overwrite accepted");}catch(InvalidOperationException){checks++;Console.WriteLine("PASS input RAW overwrite rejected");}
-                try{engine.Render(Path.Combine(output,"missing.arw"),settings,null,800);throw new Exception("Missing file accepted");}catch(InvalidOperationException){checks++;Console.WriteLine("PASS missing input reported");}
+                try{engine.Render(Path.Combine(output,"missing.arw"),settings,null,800);throw new Exception("Missing file accepted");}catch(FileNotFoundException){checks++;Console.WriteLine("PASS missing input reported");}
             }
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.

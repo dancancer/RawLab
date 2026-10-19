@@ -187,8 +187,7 @@ int processRequest(const sony2fuji_request& request, sony2fuji_raw_exposure_mode
     if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session, &request, nullptr);
     sony2fuji_session_destroy(session);
     if (status != SONY2FUJI_STATUS_OK) {
-        std::cerr << "Processing failed: " << sony2fuji_status_message(status)
-                  << ". Use a declared Fuji F-Log/F-Log2/F-Log2C CUBE with BT.709 output or compiled DCP .rlook.\n";
+        std::cerr << "Processing failed: " << sony2fuji_status_message(status) << '\n';
         return 1;
     }
     std::cout << "Saved: " << request.output_path << '\n';

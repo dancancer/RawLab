@@ -34,6 +34,9 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     done
     cmp "$ROOT/../LICENSE-ALIYUN-RUM-EXCEPTION" "$(dirname "$binary")/Licenses/RawLab-Aliyun-RUM-Exception.txt"
     cmp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$(dirname "$binary")/Licenses/nlohmann-JSON-MIT.txt"
+    for name in README.md LICENSE.LGPL-2.1; do
+        cmp "$ROOT/third_party/nikon_he/$name" "$(dirname "$binary")/Licenses/nikon-he/$name"
+    done
     nm -gU "$binary" | grep -F '_sony2fuji_compile_dcp' >/dev/null
     nm -gU "$binary" | grep -F '_sony2fuji_release_blob' >/dev/null
     dng_licenses="$(dirname "$binary")/Licenses/dng-sdk"
