@@ -130,7 +130,7 @@ struct Sony2FujiProcessor {
         }
         let session = try createSession()
         defer { destroySession(session) }
-        try loadLensDatabase(session)
+        try loadLensDatabase(session, inputType: inputType)
         let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
         try configureLens(session, settings: settings.lensSettings)
         let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
@@ -230,15 +230,15 @@ struct Sony2FujiProcessor {
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
+        let inputType = semanticInputType(for: buffer)
         let session = try createSession()
         defer { destroySession(session) }
-        try loadLensDatabase(session)
-        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: semanticInputType(for: buffer))
+        try loadLensDatabase(session, inputType: inputType)
+        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
         try configureSession(session, settings: settings,
                              interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
                              viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
 
-        let inputType = semanticInputType(for: buffer)
         var request = makeBaseRequest(settings: settings, inputType: inputType)
         request.input_type = inputType
         request.input_width = UInt32(buffer.width)
@@ -314,8 +314,8 @@ struct Sony2FujiProcessor {
         }
         let session = try createSession()
         defer { destroySession(session) }
-        try loadLensDatabase(session)
         let inputType = semanticInputType(for: buffer)
+        try loadLensDatabase(session, inputType: inputType)
         let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
         try configureSession(session, settings: settings, interactive: false)
 
