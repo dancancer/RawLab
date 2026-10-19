@@ -166,6 +166,12 @@ account, not a personal administrator account. Prepare full Xcode and Homebrew
 `cmake`, `pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
 administrator. Keep Xcode on a local disk with sufficient capacity and use
 `DEVELOPER_DIR` rather than changing another user's selected developer tools.
+Keep the CI root, runner startup files, credentials and Python venv inside the
+CI user's home on the internal disk. A LaunchAgent can be denied access to an
+external volume even when SSH under the same user works. Configure the runner's
+`--work` separately for a large external build volume; allow only the necessary
+external-storage access when macOS prompts in the CI desktop session. Do not
+grant system-wide shells Full Disk Access to work around this restriction.
 After installing or updating Xcode, an administrator must accept that version's
 license and run its first-launch initialization with the same `DEVELOPER_DIR`.
 The CI account must pass `xcodebuild -checkFirstLaunchStatus` and SDK discovery

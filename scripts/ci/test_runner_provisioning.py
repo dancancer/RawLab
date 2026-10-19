@@ -1,5 +1,6 @@
 """Exercise archive recovery without installing anything on the test host."""
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -27,6 +28,27 @@ class MacRunnerConfigurationTests(unittest.TestCase):
         result = subprocess.run(['bash', str(script)], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Use the non-administrator rawlab-ci account on an Apple Silicon Mac.', result.stderr)
+
+    def test_runner_startup_files_must_stay_inside_the_ci_home(self):
+        script = SCRIPT.with_name('provision-macos-runner.sh')
+        with tempfile.TemporaryDirectory(prefix='rawlab-mac-runner-') as temporary:
+            root = Path(temporary)
+            home, external, tools = (root / name for name in ('home', 'external', 'tools'))
+            for directory in (home, external, tools):
+                directory.mkdir()
+            for name, cases in {
+                'uname': '-s) echo Darwin;; -m) echo arm64;;',
+                'id': '-un) echo rawlab-ci;; -Gn) echo staff;;',
+            }.items():
+                tool = tools / name
+                tool.write_text('#!/bin/sh\ncase "$1" in ' + cases + ' esac\n')
+                tool.chmod(0o755)
+            result = subprocess.run([
+                'bash', str(script), str(external), str(root / 'Xcode.app'), str(root / 'runner.tar.gz'),
+            ], env={**os.environ, 'HOME': str(home), 'PATH': str(tools) + os.pathsep + os.defpath},
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Keep runner startup files and Python inside the rawlab-ci home.', result.stderr)
 
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("curl") and shutil.which("sha256sum"),

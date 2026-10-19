@@ -8,6 +8,12 @@ root=${1:?Pass the dedicated CI root}
 xcode=${2:?Pass the full Xcode.app path}
 archive=${3:?Pass the verified runner archive}
 [[ "$root" == /* && -d "$root" && ! -L "$root" && -O "$root" && -w "$root" ]]
+root="$(cd "$root" && pwd -P)"
+home="$(cd "$HOME" && pwd -P)"
+if [[ "$root" != "$home/"* ]]; then
+    echo 'Keep runner startup files and Python inside the rawlab-ci home. Use --work for an external build volume.' >&2
+    exit 1
+fi
 [[ -d "$xcode/Contents/Developer" && -r "$xcode/Contents/Info.plist" ]]
 export DEVELOPER_DIR="$xcode/Contents/Developer"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
