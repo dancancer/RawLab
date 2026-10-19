@@ -19,6 +19,33 @@ class WindowsRunnerConfigurationTests(unittest.TestCase):
 
 
 class MacRunnerConfigurationTests(unittest.TestCase):
+    def test_personal_account_requires_explicit_opt_in_and_never_root(self):
+        script = SCRIPT.with_name('provision-macos-runner.sh')
+        with tempfile.TemporaryDirectory(prefix='rawlab-mac-personal-runner-') as temporary:
+            root = Path(temporary)
+            home, external, tools = (root / name for name in ('home', 'external', 'tools'))
+            for directory in (home, external, tools):
+                directory.mkdir()
+            for name, cases in {
+                'uname': '-s) echo Darwin;; -m) echo arm64;;',
+                'id': '-un) echo developer;; -Gn) echo "staff admin";; -u) echo "${TEST_UID:-501}";;',
+            }.items():
+                tool = tools / name
+                tool.write_text('#!/bin/sh\ncase "$1" in ' + cases + ' esac\n')
+                tool.chmod(0o755)
+            command = ['bash', str(script), str(external), str(root / 'Xcode.app'), str(root / 'runner.tar.gz')]
+            environment = {**os.environ, 'HOME': str(home), 'PATH': str(tools) + os.pathsep + os.defpath}
+            denied = subprocess.run(command, env=environment, capture_output=True, text=True)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn('Use the non-administrator rawlab-ci account', denied.stderr)
+            allowed = subprocess.run(command + ['--allow-current-user'], env=environment,
+                                     capture_output=True, text=True)
+            self.assertIn('Keep runner startup files and Python inside', allowed.stderr)
+            root_user = subprocess.run(command + ['--allow-current-user'],
+                                       env={**environment, 'TEST_UID': '0'}, capture_output=True, text=True)
+            self.assertNotEqual(root_user.returncode, 0)
+            self.assertNotIn('Keep runner startup files', root_user.stderr)
+
     def test_listener_environment_keeps_python_after_config_overwrites_dot_path(self):
         text = SCRIPT.with_name('provision-macos-runner.sh').read_text()
         self.assertIn('"PATH=$root/venv/bin:$PATH"', text)
@@ -48,7 +75,7 @@ class MacRunnerConfigurationTests(unittest.TestCase):
             ], env={**os.environ, 'HOME': str(home), 'PATH': str(tools) + os.pathsep + os.defpath},
                 capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('Keep runner startup files and Python inside the rawlab-ci home.', result.stderr)
+            self.assertIn('Keep runner startup files and Python inside the CI user home.', result.stderr)
 
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("curl") and shutil.which("sha256sum"),

@@ -1,8 +1,15 @@
 #!/bin/bash
 set -euo pipefail
-if [[ $(uname -s) != Darwin || $(uname -m) != arm64 || $(id -un) != rawlab-ci || " $(id -Gn) " == *' admin '* ]]; then
+if [[ $(uname -s) != Darwin || $(uname -m) != arm64 || $(id -u) == 0 ]]; then
     echo 'Use the non-administrator rawlab-ci account on an Apple Silicon Mac.' >&2
     exit 1
+fi
+if [[ $(id -un) != rawlab-ci || " $(id -Gn) " == *' admin '* ]]; then
+    if [[ ${4:-} != --allow-current-user ]]; then
+        echo 'Use the non-administrator rawlab-ci account on an Apple Silicon Mac.' >&2
+        exit 1
+    fi
+    echo 'Personal-account runner explicitly enabled; trusted CI inherits the current user file access.' >&2
 fi
 root=${1:?Pass the dedicated CI root}
 xcode=${2:?Pass the full Xcode.app path}
@@ -11,7 +18,7 @@ archive=${3:?Pass the verified runner archive}
 root="$(cd "$root" && pwd -P)"
 home="$(cd "$HOME" && pwd -P)"
 if [[ "$root" != "$home/"* ]]; then
-    echo 'Keep runner startup files and Python inside the rawlab-ci home. Use --work for an external build volume.' >&2
+    echo 'Keep runner startup files and Python inside the CI user home. Use --work for an external build volume.' >&2
     exit 1
 fi
 [[ -d "$xcode/Contents/Developer" && -r "$xcode/Contents/Info.plist" ]]
@@ -43,4 +50,4 @@ printf '%s\n' \
     "RAWLAB_SOURCE_CACHE=$root/cache/macos-sources" \
     'LANG=en_US.UTF-8' 'LC_ALL=en_US.UTF-8' \
     'HOMEBREW_NO_AUTO_UPDATE=1' 'HOMEBREW_NO_INSTALL_CLEANUP=1' > "$root/runner/.env"
-echo 'Tools are ready. Register the runner separately and install its user LaunchAgent from a logged-in rawlab-ci session.'
+echo 'Tools are ready. Register the runner separately and install its user LaunchAgent from the selected user login session.'

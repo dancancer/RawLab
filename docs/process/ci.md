@@ -161,8 +161,11 @@ entry remains on `macos-26-intel` with two workers; neither cross-compilation
 nor Rosetta substitutes for its native x86_64 runtime checks.
 
 These two runners run directly on user-approved physical Macs, unlike the
-Android/Windows KVM guests. Use the dedicated non-administrator `rawlab-ci`
-account, not a personal administrator account. Prepare full Xcode and Homebrew
+Android/Windows KVM guests. Prefer the dedicated non-administrator `rawlab-ci`
+account. An owner-approved personal account may opt in by appending
+`--allow-current-user` to the provisioning command; this is not isolation and
+CI inherits that user's access to personal files and credentials. Root is
+always refused, and CI jobs must not use sudo. Prepare full Xcode and Homebrew
 `cmake`, `pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
 administrator. Keep Xcode on a local disk with sufficient capacity and use
 `DEVELOPER_DIR` rather than changing another user's selected developer tools.
@@ -187,7 +190,7 @@ CI installs its pinned requirements only in the venv. Keep the complete PATH in
 the runner's `.path` and literal SDK/cache variables in `.env`. PATH is also
 stored in `.env` because `config.sh` rewrites `.path` during registration.
 Configure each runner separately with its shared pool label and own workspace, then install its
-official user LaunchAgent while `rawlab-ci` is logged in. A user LaunchAgent
+official user LaunchAgent while the selected runner user is logged in. A user LaunchAgent
 depends on that login session: fast user switching is fine, logout or machine
 sleep makes the runner unavailable. Do not grant the CI account sudo or change
 sleep/security settings silently on a developer's laptop.
