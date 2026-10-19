@@ -261,7 +261,12 @@ enum DCPCompiler {
         var second = [Double](repeating: 0, count: count)
         if count > 2 {
             var diagonal = (0..<(count - 2)).map { 2 * (h[$0] + h[$0 + 1]) }
-            var rhs = (0..<(count - 2)).map { 6 * ((y[$0 + 2] - y[$0 + 1]) / h[$0 + 1] - (y[$0 + 1] - y[$0]) / h[$0]) }
+            var rhs = [Double](repeating: 0, count: count - 2)
+            for j in rhs.indices {
+                let rightSlope = (y[j + 2] - y[j + 1]) / h[j + 1]
+                let leftSlope = (y[j + 1] - y[j]) / h[j]
+                rhs[j] = 6 * (rightSlope - leftSlope)
+            }
             if diagonal.count > 1 { for j in 1..<diagonal.count {
                 let ratio = h[j] / diagonal[j - 1]
                 diagonal[j] -= ratio * h[j]
