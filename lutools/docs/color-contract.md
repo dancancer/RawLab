@@ -109,11 +109,13 @@ the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, optional geometry, and final resizing.
 
-Geometry uses the oriented, lens-processed full source: clockwise quarter turns,
+Geometry uses the oriented, lens-processed source: clockwise quarter turns,
 flips in that canvas, centered horizontal/vertical perspective, centered inscribed
 straightening, then normalized crop. Perspective and straightening share one
 bilinear sampling pass; zero perspective preserves basic geometry exactly.
-It bypasses interactive proxies and early resizing while active. Integer geometry
+It bypasses interactive half-size proxies and the default early resize while active;
+PREVIEW+BUFFER viewport opt-in may instead use a reduced source as described below.
+FINAL and file output retain the full source. Integer geometry
 copies pixels; straightening samples once with bilinear edge extension, without
 clipping linear values. Identity preserves existing rendering. The common CPU
 geometry stage also finishes GPU Auto output; Force with active geometry returns
@@ -488,9 +490,14 @@ uses viewport-sized proxies during dragging and always submits a settled pass on
 No post-demosaic RGB tint approximation replaces camera-space white balance.
 
 `sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
-for PREVIEW+BUFFER only, without changing request v2. It reduces linear input to
-the requested dimensions before wavelet, tone/LUT, chroma, sharpening and photo
-effects on CPU/Metal. The immutable RAW cache is sampled directly without first
+for PREVIEW+BUFFER only, without changing request v2. It reduces linear input before
+wavelet, tone/LUT, chroma, sharpening and photo effects on CPU/GPU, including active
+geometry. Requested output dimensions are computed from the full-resolution
+geometry canvas; the reduced source is the smallest proportional integer canvas
+whose geometry covers both requested dimensions, capped at the source size.
+Final geometry resizing never enlarges a reduced result. Output dimensions and
+reported geometry dimensions retain their full-source meaning; requests at or
+above the native geometry size remain exact. The immutable RAW cache is sampled directly without first
 copying the entire image. Wavelet cache keys include the viewport dimensions and
 quality mode; reduced results cannot serve exact requests. GPU Auto fallback
 preserves the reduced source, while Force still requires GPU success.

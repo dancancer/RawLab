@@ -1,4 +1,5 @@
 #include "sony2fuji/lut_applicator.h"
+#include "lut_interpolation.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -80,49 +81,7 @@ ErrorCode LUTApplicator::applyToImage(const ImageData& input, ImageData& output)
 }
 
 RGB LUTApplicator::trilinearInterpolate(float r, float g, float b) const {
-    int lutSize = lut_->getSize();
-
-    // 将 [0, 1] 映射到 [0, lutSize-1]
-    float fr = r * (lutSize - 1);
-    float fg = g * (lutSize - 1);
-    float fb = b * (lutSize - 1);
-
-    // 获取整数部分和小数部分
-    int r0 = static_cast<int>(std::floor(fr));
-    int g0 = static_cast<int>(std::floor(fg));
-    int b0 = static_cast<int>(std::floor(fb));
-
-    int r1 = std::min(r0 + 1, lutSize - 1);
-    int g1 = std::min(g0 + 1, lutSize - 1);
-    int b1 = std::min(b0 + 1, lutSize - 1);
-
-    // 插值因子
-    float dr = fr - r0;
-    float dg = fg - g0;
-    float db = fb - b0;
-
-    // 获取立方体的8个顶点
-    RGB c000 = lut_->getValue(r0, g0, b0);
-    RGB c001 = lut_->getValue(r0, g0, b1);
-    RGB c010 = lut_->getValue(r0, g1, b0);
-    RGB c011 = lut_->getValue(r0, g1, b1);
-    RGB c100 = lut_->getValue(r1, g0, b0);
-    RGB c101 = lut_->getValue(r1, g0, b1);
-    RGB c110 = lut_->getValue(r1, g1, b0);
-    RGB c111 = lut_->getValue(r1, g1, b1);
-
-    // 沿 B 轴插值
-    RGB c00 = lerpRGB(c000, c001, db);
-    RGB c01 = lerpRGB(c010, c011, db);
-    RGB c10 = lerpRGB(c100, c101, db);
-    RGB c11 = lerpRGB(c110, c111, db);
-
-    // 沿 G 轴插值
-    RGB c0 = lerpRGB(c00, c01, dg);
-    RGB c1 = lerpRGB(c10, c11, dg);
-
-    // 沿 R 轴插值
-    return lerpRGB(c0, c1, dr);
+    return detail::interpolateLUT(lut_->data_.data(), lut_->getSize(), r, g, b);
 }
 
 } // namespace sony2fuji

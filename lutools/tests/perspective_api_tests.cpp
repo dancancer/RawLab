@@ -238,7 +238,7 @@ void previewTests() {
     const auto source = grid(); auto request = requestFor(source); Session session;
     setGpu(session.value, SONY2FUJI_GPU_OFF);
     status(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK, "interactive preview");
-    status(sony2fuji_session_set_viewport_preview(session.value, 1), SONY2FUJI_STATUS_OK, "viewport preview");
+    status(sony2fuji_session_set_viewport_preview(session.value, 0), SONY2FUJI_STATUS_OK, "exact preview opts out of viewport");
     for (float angle : {-13.f, 0.f, 13.f}) {
         auto g = geometry(); g.straighten_degrees = angle;
         const auto p = perspective(angle == 0 ? 1.f : .6f, angle == 0 ? -1.f : -.4f);
@@ -319,7 +319,9 @@ void rawTests(const char* path, bool nativeGpu) {
     const float scale = 23.f / std::max(native.width, native.height);
     check(preview.width == std::max(1u, uint32_t(std::round(native.width * scale))) &&
         preview.height == std::max(1u, uint32_t(std::round(native.height * scale))), "RAW preview size follows combined canvas");
-    resized(preview, native, "RAW resize after exact perspective"); size(session.value, d.first, d.second, "RAW small preview query");
+    size(session.value, d.first, d.second, "RAW small preview query");
+    status(sony2fuji_session_set_viewport_preview(session.value, 0), SONY2FUJI_STATUS_OK, "RAW exact perspective opt-out");
+    resized(render(session.value, request, "RAW exact small PREVIEW"), native, "RAW resize after exact perspective");
     request.intent = SONY2FUJI_INTENT_FINAL; request.preview_long_edge = 0;
     equal(render(session.value, request, "RAW FINAL after preview"), native, "RAW cache retains exact combined pixels");
     setGpu(session.value, SONY2FUJI_GPU_AUTO);

@@ -987,12 +987,9 @@ sony2fuji_status finishOutput(
 ) {
     const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
     if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
-    if (session->geometry.active()) {
-        session->last_backend = SONY2FUJI_BACKEND_CPU;
-        native_width = image.width; native_height = image.height;
-    }
+    if (session->geometry.active()) session->last_backend = SONY2FUJI_BACKEND_CPU;
     uint32_t width, height;
-    const auto status = computeTargetSize(request, image.width, image.height, &width, &height);
+    const auto status = computeTargetSize(request, native_width, native_height, &width, &height);
     if (status != SONY2FUJI_STATUS_OK) return status;
     if (width != static_cast<uint32_t>(image.width) || height != static_cast<uint32_t>(image.height))
         image = resizeBilinear(image, width, height);
@@ -1394,7 +1391,7 @@ static sony2fuji_status processImpl(
     const bool geometryActive = session->geometry.active();
     if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
-    const bool viewportPreview = !geometryActive && session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
+    const bool viewportPreview = session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
         local.output_target == SONY2FUJI_TARGET_BUFFER;
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool cpuOnlyStages = false;
@@ -1447,23 +1444,31 @@ static sony2fuji_status processImpl(
     status = ensureLinear(image, color_space, &is_linear);
     if (status != SONY2FUJI_STATUS_OK) return status;
     if (color_space == SONY2FUJI_COLOR_SONY_NATIVE) return SONY2FUJI_STATUS_UNSUPPORTED;
-    const uint32_t native_width = image.width, native_height = image.height;
+    const auto native = sony2fuji::geometryOutputSize(image.width, image.height, session->geometry);
+    const uint32_t native_width = native.first, native_height = native.second;
 
     if (viewportPreview) {
         uint32_t width, height;
-        status = computeTargetSize(local, image.width, image.height, &width, &height);
+        status = computeTargetSize(local, native_width, native_height, &width, &height);
         if (status != SONY2FUJI_STATUS_OK) return status;
         const auto& source = local.input_type == SONY2FUJI_INPUT_RAW ? session->raw_cache : image;
-        const double scale = std::min({1.0, double(source.width) / width, double(source.height) / height});
-        width = std::max(1u, static_cast<uint32_t>(std::lround(width * scale)));
-        height = std::max(1u, static_cast<uint32_t>(std::lround(height * scale)));
+        std::pair<int, int> sourceSize;
+        if (geometryActive) {
+            sourceSize = sony2fuji::geometryViewportSourceSize(source.width, source.height,
+                session->geometry, width, height);
+        } else {
+            const double scale = std::min({1.0, double(source.width) / width, double(source.height) / height});
+            width = std::max(1u, static_cast<uint32_t>(std::lround(width * scale)));
+            height = std::max(1u, static_cast<uint32_t>(std::lround(height * scale)));
+            sourceSize = {width, height};
+        }
         // 新图可能比上一次视口需求小；后续阶段也必须沿用已限制的尺寸。
         local.preview_long_edge = 0;
         local.size_mode = SONY2FUJI_SIZE_EXACT;
         local.target_width = width; local.target_height = height;
         // RAW 缓存保持不变，直接读取源像素，避免先拷贝完整大图。
-        if (width != static_cast<uint32_t>(source.width) || height != static_cast<uint32_t>(source.height))
-            image = resizeBilinear(source, width, height);
+        if (sourceSize.first != source.width || sourceSize.second != source.height)
+            image = resizeBilinear(source, sourceSize.first, sourceSize.second);
         else if (local.input_type == SONY2FUJI_INPUT_RAW)
             image = source;
     }

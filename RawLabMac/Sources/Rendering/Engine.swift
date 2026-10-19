@@ -220,7 +220,7 @@ final class RenderEngine {
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
         }
-        guard sony2fuji_session_set_viewport_preview(session, viewportPreview && allowsProxy && edge != nil && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
+        guard sony2fuji_session_set_viewport_preview(session, viewportPreview && edge != nil && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的视口预览模式"))
         }
         guard sony2fuji_session_set_raw_exposure_mode(session, settings.exposureMode.core) == SONY2FUJI_STATUS_OK else {
