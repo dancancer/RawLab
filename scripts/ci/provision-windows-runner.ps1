@@ -3,6 +3,7 @@ param(
     [string]$CiRoot = 'E:\RawLabCI',
     [Parameter(Mandatory)][string]$PowerShellZip,
     [Parameter(Mandatory)][string]$RunnerZip,
+    [Parameter(Mandatory)][string]$PythonZip,
     [Parameter(Mandatory)][string]$LensSourcesTar,
     [Parameter(Mandatory)][string]$LensManifest
 )
@@ -25,6 +26,7 @@ function Assert-Hash([string]$Path, [string]$Expected) {
 }
 Assert-Hash $PowerShellZip 'd2f952ebdbf24386cb8923553aa58e41a846db35a6155ea04c58142a4b16dbb7'
 Assert-Hash $RunnerZip 'f48e0750a21812bca5f82de5f7f5aeae71abee647fab5a582f1742d07eba455f'
+Assert-Hash $PythonZip '17e4ee587e0ecee4674040da8b248e151475ff65becae18fe0ec81f8312b5035'
 
 New-Item -ItemType Directory -Force $CiRoot | Out-Null
 # Only the service account, SYSTEM and administrators can access runner credentials.
@@ -37,6 +39,33 @@ $pwsh = Join-Path $CiRoot 'pwsh\7.6.7'
 if (!(Test-Path "$pwsh\pwsh.exe")) { Expand-Archive -LiteralPath $PowerShellZip -DestinationPath $pwsh }
 if (!(Test-Path "$runner\bin\Runner.Listener.exe")) { Expand-Archive -LiteralPath $RunnerZip -DestinationPath $runner }
 Invoke-Checked "$pwsh\pwsh.exe" @('-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()')
+
+# setup-python invokes Windows PowerShell without an execution-policy override.
+# Seed its official cache once as administrator; keep the job service unprivileged.
+$env:AGENT_TOOLSDIRECTORY = Join-Path $CiRoot 'toolcache'
+$env:RUNNER_TOOL_CACHE = $env:AGENT_TOOLSDIRECTORY
+$env:TEMP = Join-Path $CiRoot 'tmp'
+$env:TMP = $env:TEMP
+$env:PIP_CACHE_DIR = Join-Path $CiRoot 'cache\pip'
+$pythonVersion = Join-Path $env:AGENT_TOOLSDIRECTORY 'Python\3.12.10'
+if (!(Test-Path "$pythonVersion\x64.complete")) {
+    $registryRoots = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKCU:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    $existingPython = @(Get-ItemProperty $registryRoots -ErrorAction SilentlyContinue | Where-Object DisplayName -match '^Python 3\.12')
+    if ($existingPython.Count) { throw 'Inspect the existing Python 3.12 installation before running its official tool-cache installer.' }
+    $installer = Join-Path $env:TEMP 'python-3.12.10-installer'
+    New-Item -ItemType Directory -Force $installer | Out-Null
+    Expand-Archive -LiteralPath $PythonZip -DestinationPath $installer -Force
+    Push-Location $installer
+    try { Invoke-Checked powershell.exe @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', './setup.ps1') *> (Join-Path $env:TEMP 'python-3.12.10-install.log') }
+    finally { Pop-Location }
+}
+if (!(Test-Path "$pythonVersion\x64.complete")) { throw 'Python tool-cache installation did not complete.' }
+Invoke-Checked "$pythonVersion\x64\python.exe" @('--version')
 
 $sources = Join-Path $CiRoot 'cache\lens-sources'
 Invoke-Checked tar.exe @('-xf', $LensSourcesTar, '-C', $sources)
