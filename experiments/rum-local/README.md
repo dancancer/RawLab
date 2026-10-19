@@ -1,6 +1,6 @@
 # RUM 本地接入与验证
 
-2026-10-17 起四端正式构建默认带 RUM SDK、以 `env=PROD` 上报，统计默认开启（见[设计](../../docs/superpowers/specs/2026-10-16-rum-analytics.md)）。本目录保留两类验证：正式配置的实网验证，以及显式本地验证构建（`env=LOCAL`、独立应用标识和同意存储）。五类合成事件不会读取照片，也不会改动日常统计的同意状态或安装标识。
+2026-10-17 起四端正式构建默认带 RUM SDK、以 `env=PROD` 上报，统计默认开启（见[设计](../../docs/reference/rum-analytics.md)）。本目录保留两类验证：正式配置的实网验证，以及显式本地验证构建（`env=LOCAL`、独立应用标识和同意存储）。五类合成事件不会读取照片，也不会改动日常统计的同意状态或安装标识。
 
 ## 云端只读检查
 
@@ -17,7 +17,7 @@ env -u DEBUG -u NODE_DEBUG node experiments/rum-local/readback.mjs <UUID> <macos
 
 回读：`node experiments/rum-local/readback.mjs <UUID> <macos|windows|ios|android> [local|prod]` 核对一次探针；`node experiments/rum-local/readback.mjs --launches <平台> <分钟>` 列出正式环境最近的真实启动（设备标识只输出短哈希）。脚本经 git 找到主工作区的 `.env` 与接口库，worktree 里也能用。
 
-`ingestionPassed` 验证五类事件各一条、对应 AppID、期望环境、固定字段与有界计数；`mainlandGeoVerified` 单独表示云端地区字段是否为中国。移动日志地区为空时，不能把入库成功当作云端地区证明。网络、线路、地域和运行时证据见[验证记录](../../docs/verification-rum-analytics-2026-10-16.md)。
+`ingestionPassed` 验证五类事件各一条、对应 AppID、期望环境、固定字段与有界计数；`mainlandGeoVerified` 单独表示云端地区字段是否为中国。移动日志地区为空时，不能把入库成功当作云端地区证明。网络、线路、地域和运行时证据见[验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-rum-analytics-2026-10-16.md)。
 
 ## 正式配置实网验证
 

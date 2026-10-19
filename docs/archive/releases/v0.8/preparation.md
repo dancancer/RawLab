@@ -1,0 +1,97 @@
+# v0.8.0 Release Preparation
+
+Updated: 2026-10-17. Integration baseline:
+`development@7671e429163d2d25248c9bc8b9a5b346f4a32e8a`.
+
+**State: candidate preparation.** All effective feature PRs, including #62,
+are integrated. Version metadata is now `0.8.0`, build `12`; packages, candidate
+CI, checksums and provenance must still be produced and accepted. This checklist
+does not turn a planned check into a passing result.
+
+On 2026-10-17 the owner authorized completing integration, then publishing 0.8
+and producing a separate RawLab introduction video. This supersedes the earlier
+no-tag/no-release restriction. The owner explicitly chose to retain and
+distribute the 28 third-party LUT derivatives with the unresolved rights record
+preserved; no third-party permission is inferred. Follow [the release procedure](../../../../agent.md)
+and [execution plan](2026-10-17-v080-release.md). Store upload,
+new signing identities, notarization and real vendor RUM deployment are not added
+to the scope by this authorization.
+
+## Release Blockers
+
+| ID | Gate | Current state / closure evidence needed |
+| --- | --- | --- |
+| V08-017 | Real hosted CI on the integrated source | PR #62 head `8201ef5` passed all six checks in [run 38935193221](https://github.com/dancancer/RawLab/actions/runs/38935193221); independent reviews closed, merged as `7671e42` with the identical tree. Its exact development push [run 38942298595](https://github.com/dancancer/RawLab/actions/runs/38942298595) is a separate gate. The frozen release candidate needs its own current-source checks; see the release PR/provenance for final results. |
+| V08-018 | Versioned candidate and release documentation | All four metadata files now use `0.8.0`/12. Freeze the release source, build intended-platform candidates, verify resources/signing/versions and produce checksums, source archives and BUILD-PROVENANCE. Existing 0.7 packages and development debug outputs are not 0.8 release artifacts. |
+| V08-019 | Final release authority | Closed by the owner's explicit 2026-10-17 authorization to publish 0.8 after acceptance. Keep the remaining technical gates; do not infer new Store/notarization/vendor deployment credentials. |
+
+## Scope Decisions Before Candidate Freeze
+
+These are conditional release blockers, not grounds to claim an untested platform
+has passed or to quietly drop a published compatibility promise.
+
+| Decision | Current evidence and required action |
+| --- | --- |
+| Simultaneous platforms or staged delivery | Candidate scope: Mac arm64/Intel ZIPs, Windows x64 self-contained ZIP and existing-key-signed Android APK, plus corresponding source and a supplemental explicitly unsigned iOS IPA. No directly installable, Store or TestFlight iOS package is claimed. |
+| macOS minimum and architectures | The user confirmed macOS **14+** for 0.8 on 2026-10-16; retain Apple Silicon/Intel. Both 14.0-target hosted app/bundle and parity jobs passed at `1949b6d` in [run 38871872601](https://github.com/dancancer/RawLab/actions/runs/38871872601), although that overall run failed in an iOS test compile. These newer-host results do not close runtime acceptance on macOS 14 for the frozen candidate. |
+| Distribution signing policy | Retain the existing distribution forms: macOS ad-hoc, Windows unsigned and Android's existing release certificate. Developer ID/notarization, Authenticode and store credentials are not newly configured. Record those limits in installation/release notes. |
+| iOS installable delivery | Existing simulator/source/framework results do not prove device signing, provisioning, archive/export or installation. Those are blockers if an installable iOS artifact is in scope. See [iOS readiness](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/ios-v08-pr-readiness-2026-10-15.md). |
+| All-platform ordinary-image input | The 2026-10-16 extension adds mobile file/import/edit/export and mixed batches. Delivery fixes at `41bf21c` passed host CTest 36/36, packaged Apple decoder 66 assertions, iPhone/iPad native Files selection and cancellation/dirty/busy guards, Android JVM 153 and API35 direct device 11/11, Windows native 42/42 and managed/raster regressions. See the [verification report](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-raster-input-all-platforms-2026-10-16.md). [PR #62](https://github.com/dancancer/RawLab/pull/62) owns final-head hosted CI/review/integration status; its first run exposed a now-fixed pure-model compilation dependency, so earlier CI cannot accept a later source. Minimum-OS/physical-device release acceptance remains open. Mobile Agent remains excluded. |
+| RUM packaging | Default/release paths remain vendor-SDK-free. Real RUM upload is not required for that scope. Shipping the vendor SDK instead requires explicit approval and closure of vendor redistribution/license/source obligations; the GPL linking exception does not grant a vendor license. See [licensing](../../../reference/licensing.md) and [RUM verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-rum-analytics-2026-10-16.md). |
+
+## Existing Evidence and Remaining Acceptance
+
+Do not replace historical reports with a blanket new-source pass. Source-specific
+reuse must say which relevant code is identical; changed integration paths need
+new execution on the frozen candidate.
+
+| Platform | Already established | Remaining acceptance / limitations |
+| --- | --- | --- |
+| macOS | [Agent/ordinary-image report](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-agent-v08.md): native CTest, RAW/raster GUI-Agent-batch parity, ordinary images and default single preview; [native geometry](../../../../RawLabMac/verification-native-v08-2026-10-15.md); SDK-free usage model/termination checks in the RUM report | Minimum OS/Intel gap above; repeat selected native interactions on candidate when relevant code changes. The latest RUM presentation-sheet change was compile-checked, not freshly accepted through native interaction. Six-language privacy/statistics copy remains a follow-up, not a blanket six-language pass. Physical accessibility, display color and soak coverage retain report limitations. |
+| Windows | [Latest Agent/integration report](../../../../RawLabWindows/VERIFICATION-agent-v08.md): fresh native/default self-contained package; managed/UIA editor 195, comparison 29, resources 23, Agent 132, raster 79, status 384, runner 37; 11/11 CTest and 8/8 schema. Physical host 125/RTX4090D CPU 60/60, Force 60/60 and Auto 57/57 were actually completed at `7061b65` | Physical evidence is not an exact-source hardware rerun of the later RUM-integrated `236e616` source. At freeze, rerun selected CPU/Force/Auto/native desktop checks or justify identical-source reuse. Remaining physical cases include real Explorer OLE, mouse/touch/pen, multi-DPI/Snap, Narrator/live high contrast/text scale, display color/HDR, long queues/64M images and device-loss/TDR. Existing native warnings are documented. RUM copy localization remains a release follow-up. Do not describe Windows GPU or self-contained packaging as never tested. |
+| Android | [Integrated device/native report](../../../../RawLabAndroid/docs/geometry-v08-integration-verification-2026-10-16.md): 129 JVM cases, both native ABIs/16 KB alignment, CPU/Auto new/resume geometry matrix, actual GLES baseline and process-resume evidence | Hosted CI adds JVM/lint/build, not physical GLES/SAF/OEM interaction. Retain the report's failed combined invocations as failures and Lenovo locale limitations; do not reinterpret them as an all-device pass or a proven product defect without evidence. Candidate install/resource/export checks still apply. |
+| iOS | [Integrated-source report](../../integration/v0.8/ios-development.md): prior simulator UI/model evidence, updated processor/header/loader checks and source framework integration | Hosted CI adds full three-architecture framework and unsigned simulator test compilation, not execution of the old UI matrix. Re-run appropriate simulator/device photo-library/edit/export acceptance at freeze; provider/iCloud, device installation and signing remain separate. Mobile Agent support is not in 0.8 scope. |
+
+### Cross-Platform Candidate Checklist
+
+- [ ] Record intended platform/OS/architecture/channel scope and any explicitly accepted limitations.
+- [ ] Freeze one candidate source revision; reconcile versions/build numbers and release notes.
+- [ ] Obtain exact-source hosted green checks; preserve the run/check links before seven-day artifacts expire.
+- [ ] Recheck Agent capability/schema/normalization and GUI-Agent-frozen-batch output parity on desktop candidates, including RAW and ordinary images, crop/perspective/orientation and final export.
+- [ ] Recheck default single preview, explicit before/after toggle, reopen/reset/undo, and batch/export workflows through native interaction where applicable.
+- [ ] Recheck geometry edges and preview/final framing at 100% detail, not only thumbnails.
+- [ ] Validate clean-machine install/start, bundled resources/notices/licenses, export metadata and uninstall/profile isolation for each shipped artifact.
+- [ ] Complete or explicitly scope the six-language privacy/statistics settings copy and accessibility acceptance.
+- [ ] Complete the chosen physical GPU/device/display/long-session gates; retain hardware and source identifiers rather than claiming universal support.
+- [ ] Audit source delivery, package manifests/checksums and release communication; obtain separate publication authorization.
+
+## CI Evidence Ledger
+
+| Revision / event | Result | Evidence |
+| --- | --- | --- |
+| Baseline `82b1d8e` | No hosted workflow existed | `.github/workflows` absent and GitHub Actions workflow inventory empty before this change. Local/device reports above are not hosted runs. |
+| `c2cae04` PR run | Failed; not accepted | [Run 38861925343](https://github.com/dancancer/RawLab/actions/runs/38861925343): hosted ShellCheck caught masked export-command status; Android SDK manager was not on PATH; iOS system Bash 3.2 rejected an empty array under `set -u`. Fixes preserve default product features and forward optional iOS CMake arguments directly with `"$@"`. Other jobs' results retain this older source scope. |
+| `d0273e1` PR run | Failed; not accepted | [Run 38862335587](https://github.com/dancancer/RawLab/actions/runs/38862335587): Android completed successfully. Photo-copy tests require Apple `plutil` and were moved to Mac, not skipped. The arm64 build exposed reliance on host GLib; Windows built its package but three Python CLI suites decoded UTF-8 using the host legacy locale. Source-built target-14 GLib and explicit UTF-8 test clients now address these failures; older run results are not final-head acceptance. |
+| `148cdb0` PR run | Failed; not accepted | [Run 38865455206](https://github.com/dancancer/RawLab/actions/runs/38865455206): Windows and Android completed successfully. Both Mac architectures failed because Xcode 26's `lipo -verify_arch` interpreted a trailing library path as another architecture. Put the input before the variadic option; the new invocation-order regression failed before the fix and all eight dependency contracts passed afterward. Local Xcode 27 accepted the old order, so local success did not close this hosted compatibility gap. iOS built and verified all framework slices, then Xcode 26.6 could not type-check the app's large `ContentView.body`; splitting its existing modifier chains preserves behavior and awaits a new hosted run. Other jobs retain their actual results at this older source. |
+| `1949b6d` PR run | Failed; not accepted | [Run 38871872601](https://github.com/dancancer/RawLab/actions/runs/38871872601): contracts, both Mac architectures, Windows and Android passed. iOS built and verified all framework slices and compiled the app; Xcode 26.6 then exceeded its type-check budget in the existing artwork pixel predicate in `EditorUITests.swift`. Naming the three typed channel values keeps the predicate unchanged and is subject to fresh current-head verification. |
+| CI feature PR | Live merge gate | [PR #59](https://github.com/dancancer/RawLab/pull/59) owns the current head, synthetic merge checkout, six check conclusions and run URLs. Do not reuse an older revision's checks as current-head success. |
+| Merged `development` push | Post-merge gate | Merge only after review/current-head checks pass, then attach the exact merge SHA and its push run to the PR verification record. See [development CI runs](https://github.com/dancancer/RawLab/actions/workflows/ci.yml?query=branch%3Adevelopment). |
+
+Publication is authorized but still conditional on candidate acceptance. Consult
+the release PR and BUILD-PROVENANCE for the actual tag/publication outcome; this
+preparation ledger is not a substitute for those records.
+
+### macOS 14 Compatibility Work
+
+The current change aligns the app minimum, dependency build targets and hosted
+Swift harnesses to 14.0, isolates dependency outputs by target/architecture and
+replaces the macOS-15-only picker APIs with a native scroll bridge. Locally,
+arm64/x86_64 Swift typechecking and source-built Lensfun/GLib metadata checks
+passed. The full arm64 app/bundle build passed with every embedded Mach-O at or
+below minimum 14.0, correct architecture, complete license resources and ad-hoc
+signatures. CPU-safe CTest passed 33/33; RAW/raster GUI-Agent-batch parity,
+edit/usage-model, SDK-free lifecycle, localization, 13 picker-model and nine
+native-bridge assertions also passed on the newer host. These are not macOS 14
+runtime results. The subsequent hosted Intel app/bundle and parity job passed
+at `1949b6d`; overall current-head acceptance still requires all six completed
+checks and the post-merge push run.

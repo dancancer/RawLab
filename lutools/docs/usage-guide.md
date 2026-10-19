@@ -305,4 +305,4 @@ LUT_3D_SIZE 33
 
 ## 许可证
 
-[GPLv3 only](../../LICENSE)（`GPL-3.0-only`），第三方许可见[许可与归属说明](../../docs/licensing.md)。
+[GPLv3 only](../../LICENSE)（`GPL-3.0-only`），第三方许可见[许可与归属说明](../../docs/reference/licensing.md)。

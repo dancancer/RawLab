@@ -50,7 +50,7 @@ PNG/DNG 解码像素和 Force Metal 独立滤波。未用 no-op 降噪冒充组�
 客户端定向验证、匹配 SDK/Lens/TIFF 的新构建、Mac RPATH RED/GREEN 与实际包内
 加载、iOS 测试 app 资源结构和 DNG busy-resize RED/GREEN 已由主代理执行或核对。
 评审者均只读，未自行重跑测试。完整结果与 fixture/产物身份见
-[组合验证报告](../docs/verification-viewport-lens-dng-integration-2026-10-13.md)。
+[组合验证报告](../docs/archive/integration/v0.7/viewport-lens-dng.md)。
 
 ## 剩余边界
 

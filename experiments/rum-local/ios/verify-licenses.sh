@@ -8,7 +8,7 @@ check_notices() {
     local directory="$1"
     cmp "$ROOT/LICENSE" "$directory/RawLab-GPL-3.0.txt"
     cmp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$directory/RawLab-Aliyun-RUM-Exception.txt"
-    cmp "$ROOT/docs/licensing.md" "$directory/RawLab-Licensing.md"
+    cmp "$ROOT/docs/reference/licensing.md" "$directory/RawLab-Licensing.md"
 }
 
 case "$ARTIFACT" in

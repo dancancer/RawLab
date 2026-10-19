@@ -97,7 +97,7 @@ val prepareAssets by tasks.registering(Sync::class) {
     from("src/main/notices") { into("licenses") }
     from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }
     from(repo.resolve("LICENSE-ALIYUN-RUM-EXCEPTION")) { into("licenses"); rename { "RawLab-Aliyun-RUM-Exception.txt" } }
-    from(repo.resolve("docs/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
+    from(repo.resolve("docs/reference/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
     from(androidComponents.sdkComponents.ndkDirectory) {
         include("toolchains/llvm/prebuilt/*/sysroot/NOTICE")
         eachFile { path = "licenses/NDK-libcxx-NOTICE" }

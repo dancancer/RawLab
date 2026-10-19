@@ -37,7 +37,7 @@
 
 | 范围 | 已执行结果 |
 | --- | --- |
-| Core/macOS | 新缓存测试先失败再修复，最终 CTest 24/24；真实 RAW viewport/native JPEG/16-bit PNG 和模型测试通过；完整记录见 `docs/verification-preview-p2-2026-10-13.md` |
+| Core/macOS | 新缓存测试先失败再修复，最终 CTest 24/24；真实 RAW viewport/native JPEG/16-bit PNG 和模型测试通过；完整记录见 `https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-preview-p2-2026-10-13.md` |
 | iOS framework | 当前 core 独立构建 iphoneos-arm64、simulator-arm64/x86_64 XCFramework，架构、LibRaw 补丁及许可证检查通过 |
 | iOS app | `xcodebuild -quiet -project RawLab/RawLab.xcodeproj -scheme RawLab -sdk iphonesimulator -configuration Debug -derivedDataPath build/ios-viewport-review CODE_SIGNING_ALLOWED=NO build` 通过 |
 | iOS 回归 | geometry、presentation、edit-memory、viewport-state 通过；`processor-export.sh` 使用真实 Panasonic，降噪视口尺寸变化后原尺寸 6000x4000 buffer/JPEG 与独立 FINAL 完全一致；iOS 产品本来仅支持 JPEG，未增加 PNG 功能 |

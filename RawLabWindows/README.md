@@ -1,5 +1,5 @@
 # RawLab Windows
-镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
+镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
 
 
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
@@ -13,13 +13,13 @@ Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
 Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
 
-v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ## 下载 v0.8.1 Windows 包
 
 [Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Windows-0.8.1-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/archive/releases/v0.8/preparation.md)及随包 BUILD-PROVENANCE。
 
 ## 构建
 
@@ -72,7 +72,7 @@ python3 RawLabWindows/build-remote.py \
 ./RawLabWindows/scripts/provision-build-tools.ps1 -InstallerDirectory 'D:\'
 ```
 
-平台实测范围见 [RAW 兼容性验证记录](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
+平台实测范围见 [RAW 兼容性验证记录](../docs/archive/compatibility/raw-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
 
 ## 功能与 Mac 对齐
 
@@ -150,7 +150,7 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 较多显存，显存不足时自动模式仍能导出。诊断环境变量 `RAWLAB_DISABLE_D3D11=1`
 用于验证自动回退及强制失败；正常运行不要设置。
 
-跨平台接入的构建与运行范围见 [本轮验证记录](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+跨平台接入的构建与运行范围见 [本轮验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路径已运行。
 
 ## 验证
@@ -296,7 +296,7 @@ python lutools/tests/make_denoise_fixture.py build/windows-fixtures/denoise.dng
 dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --interactions $PWD.Path 'C:/samples/photo.ARW'
 ```
 
-历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。
 

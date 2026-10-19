@@ -9,7 +9,7 @@ import java.io.File
 import java.util.UUID
 import java.util.Properties
 import com.rawlab.android.batch.BatchJob
-import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.batch.BatchTarget
