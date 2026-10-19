@@ -36,6 +36,11 @@
   `lutools/third_party/rawspeed-camera-calibration.inc`. Changes: four exact-model
   matrices extracted into LibRaw table syntax; black/white levels remain metadata-driven.
 - zlib 1.3.1: https://github.com/madler/zlib/tree/v1.3.1, zlib license.
+- libjpeg-turbo 3.1.3: https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3.
+  Static JPEG8 support for JPEG-compressed lossy DNG. IJG/BSD/zlib license notices
+  are included in `Licenses/libjpeg-turbo/`.
+- LibRaw's Sigma X3F tools are enabled; Roland Karlsson's BSD-style notice is
+  included in `Licenses/LibRaw-X3F-BSD.txt`.
 - OpenCV 4.12.0: https://github.com/opencv/opencv/tree/4.12.0, Apache 2.0.
   Static core/imgproc libraries support linear-light wavelet denoising.
   See `Licenses/OpenCV-LICENSE`.
@@ -94,3 +99,8 @@ Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
 No binaries are checked into source control. The build downloads version-pinned
 LibRaw, zlib, libtiff, DNG SDK/JPEG XL, OpenCV and wavelib source archives and verifies their hashes before compilation.
 The ExifTool runtime archive and the RUM SDK archive are also version-pinned and hash-verified.
+
+Sony ARW6 decoding and A7 V metadata are backported from LibRaw e419de0;
+A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
+784 and 856 under the original LibRaw LGPL/CDDL terms. Pinned sources and
+format boundaries: docs/reference/raw-format-support.md.

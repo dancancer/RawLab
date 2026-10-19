@@ -526,7 +526,7 @@ void runAppleTests() {
         CGColorSpaceRelease(extended);
     }
 #endif
-    if (const char* gainMap = std::getenv("RAWLAB_TEST_GAIN_MAP"))
+    if (const char* gainMap = std::getenv("RAWLAB_TEST_GAIN_MAP"); gainMap && *gainMap)
         expectUnsupported(gainMap, "External verified HDR gain-map JPEG", true);
 
     const auto dng = root / "not-a-dng.dng";
@@ -547,6 +547,23 @@ void runAppleTests() {
     expectUnsupported(corrupt, "Corrupt JPEG");
 
     expectEmptyPathClearsBuffer();
+
+    if (const char* photo = std::getenv("RAWLAB_TEST_RASTER"); photo && *photo) {
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_load_display_image(photo, &buffer);
+        check(status == SONY2FUJI_STATUS_OK,
+              "Supplied ICC plus EXIF JPEG decodes through the Apple adapter");
+        if (status == SONY2FUJI_STATUS_OK) {
+            check(buffer.width == 2000 && buffer.height == 1334 &&
+                  buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8,
+                  "Supplied JPEG preserves its 2000x1334 oriented RGB image");
+            const auto bytes = outputBytes(buffer);
+            check(bytes.size() == 2000u * 1334u * 4u &&
+                  *std::min_element(bytes.begin(), bytes.end()) < *std::max_element(bytes.begin(), bytes.end()),
+                  "Supplied JPEG produces nonempty photo pixels");
+        }
+        sony2fuji_release_buffer(&buffer);
+    }
 
     CGColorSpaceRelease(sRGB);
 }

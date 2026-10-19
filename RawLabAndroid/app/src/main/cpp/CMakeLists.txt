@@ -18,10 +18,12 @@ file(GLOB_RECURSE LIBRAW_SOURCES CONFIGURE_DEPENDS "${libraw_SOURCE_DIR}/src/*.c
 list(FILTER LIBRAW_SOURCES EXCLUDE REGEX "_ph\\.cpp$")
 add_library(raw SHARED ${LIBRAW_SOURCES})
 target_include_directories(raw PUBLIC "${libraw_SOURCE_DIR}")
-target_compile_definitions(raw PRIVATE USE_ZLIB)
+target_compile_definitions(raw PRIVATE USE_ZLIB USE_JPEG USE_JPEG8 USE_X3FTOOLS)
 # Keep RAW development responsive in the device-debug build, like sony2fuji_core.
 target_compile_options(raw PRIVATE $<$<CONFIG:Debug>:-O3>)
 target_link_libraries(raw PRIVATE z)
+include("${REPO}/lutools/cmake/raw-jpeg.cmake")
+target_link_libraries(raw PRIVATE rawlab_jpeg)
 target_link_options(raw PRIVATE "-Wl,-z,max-page-size=16384")
 include("${REPO}/lutools/cmake/dng-sdk.cmake")
 target_compile_definitions(raw PRIVATE USE_DNGSDK qDNGSupportJXL=1)

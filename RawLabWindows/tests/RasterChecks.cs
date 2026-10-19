@@ -11,12 +11,15 @@ internal static class RasterChecks
 {
     internal static void Run(string repo,string raw,string cli,Action<bool,string> check)
     {
+        FirstPreviewChecks.Run([],check);
         var raster=typeof(LibraryEntry).GetMethod("IsRaster",BindingFlags.Public|BindingFlags.Static);
         var image=typeof(LibraryEntry).GetMethod("IsImage",BindingFlags.Public|BindingFlags.Static);
         check(raster!=null && image!=null,"File library exposes ordinary-image and RAW/image classification");
         foreach(var name in new[]{"image.JPG","image.jpeg","image.PNG","image.tif","image.TIFF"})
             check((bool)raster!.Invoke(null,[name])! && (bool)image!.Invoke(null,[name])! && !LibraryEntry.IsRaw(name),"Ordinary image classification: "+name);
         check((bool)image!.Invoke(null,["image.ARW"])! && !(bool)image.Invoke(null,["image.txt"])!,"RAW classification is retained without admitting arbitrary files");
+        check(LibraryEntry.IsRaw("sigma.X3F") && (bool)image.Invoke(null,["sigma.X3F"])! &&
+            LibraryEntry.ImageFilter.Contains("*.x3f",StringComparison.Ordinal),"Sigma X3F is admitted as RAW by the photo picker");
         var output=Path.Combine(repo,"build","windows-raster",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]);
         var inputs=Path.Combine(output,"inputs");Directory.CreateDirectory(inputs);
         const int width=48,height=32;
@@ -33,6 +36,24 @@ internal static class RasterChecks
         check(metadataProtected,"Raster metadata writer reports the dedicated original-file protection message");
         var identities=new[]{raw,png,jpeg,tiff}.ToDictionary(path=>path,Hash);
         using var engine=new RenderEngine(0);
+        var suppliedRaster=Environment.GetEnvironmentVariable("RAWLAB_TEST_RASTER");
+        if(!string.IsNullOrEmpty(suppliedRaster))
+        {
+            foreach(var source in new[]{raw,suppliedRaster})
+            {
+                var input=Path.Combine(inputs,"用户样片"+Path.GetExtension(source));File.Copy(source,input,true);
+                var before=Hash(input);
+                var suppliedPreview=engine.RenderPreview(input,new(),null,512,false,false,false).Result.Image;
+                check(suppliedPreview.PixelWidth==512 && suppliedPreview.PixelHeight is >=341 and <=342,
+                    "Supplied original photo previews on a Unicode path: "+Path.GetExtension(input));
+                var gui=Path.Combine(output,Path.GetExtension(input).TrimStart('.')+"-supplied-gui.png");
+                var agent=Path.Combine(output,Path.GetExtension(input).TrimStart('.')+"-supplied-agent.png");
+                var suppliedRecipe=agent+".json";
+                engine.Render(input,new(),null,0,output:gui,longEdge:512);
+                File.WriteAllText(suppliedRecipe,engine.AgentRecipe(input,new(),null,agent,512));RunCli(suppliedRecipe);Compare(gui,agent);
+                check(before.SequenceEqual(Hash(input)),"Supplied original photo remains byte-for-byte unchanged");
+            }
+        }
         using(var forced=new RenderEngine(2))
         {
             var unsupported=false;try{forced.Render(png,new(),null,32,statistics:false,clipping:false);}

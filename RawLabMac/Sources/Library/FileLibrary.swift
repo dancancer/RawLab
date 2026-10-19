@@ -7,7 +7,7 @@ struct DirectoryContents {
     let folders: [URL]
     let photos: [URL]
     static let rawExtensions: Set<String> = ["arw", "arq", "dng", "nef", "nrw", "cr2", "cr3", "crw", "raf",
-        "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos"]
+        "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos", "x3f"]
     static let supportedExtensions = rawExtensions.union(["jpg", "jpeg", "png", "tif", "tiff", "heif", "heic"])
 
     static func read(_ url: URL) throws -> Self {

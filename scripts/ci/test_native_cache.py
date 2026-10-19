@@ -47,6 +47,7 @@ class NativeCacheTests(unittest.TestCase):
                              "lutools/third_party/rawspeed-camera-calibration.inc",
                              "lutools/third_party/nikon_he/codec.h",
                              "lutools/third_party/nikon_he/entropy.cpp",
+                             "lutools/third_party/libraw/sony_arw6.cpp",
                              "scripts/ci/native_cache.py", "scripts/ci/requirements.txt",
                              ".github/workflows/ci.yml#" + platform):
                     self.assertIn(path, inputs)

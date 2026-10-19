@@ -15,8 +15,10 @@ class BuildEnvironmentTests(unittest.TestCase):
             root = Path(directory)
             for name in ("RawLabMac/build-env.sh", "RawLabMac/build-dependencies.sh",
                          "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                         "lutools/cmake/libraw-cameras.cmake", "lutools/cmake/libraw-sony-arw6.cmake",
                          "lutools/third_party/rawspeed-camera-calibration.inc",
-                         "lutools/third_party/nikon_he/entropy.cpp"):
+                         "lutools/third_party/nikon_he/entropy.cpp",
+                         "lutools/third_party/libraw/sony_arw6.cpp"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("original")
@@ -36,11 +38,15 @@ class BuildEnvironmentTests(unittest.TestCase):
             stamp.parent.mkdir(parents=True)
             stamp.write_text(fingerprint.stdout)
             self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
-            source = root / "lutools/third_party/nikon_he/entropy.cpp"
-            source.touch()
-            self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
-            source.write_text("changed")
-            self.assertNotEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+            for name in ("lutools/third_party/nikon_he/entropy.cpp",
+                         "lutools/third_party/libraw/sony_arw6.cpp", "lutools/cmake/libraw-cameras.cmake"):
+                with self.subTest(source=name):
+                    source = root / name
+                    source.touch()
+                    self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+                    source.write_text("changed")
+                    self.assertNotEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+                    stamp.write_text(invoke("rawlab_libraw_patch_fingerprint").stdout)
 
     def environment(self, **overrides):
         env = {key: value for key, value in os.environ.items()

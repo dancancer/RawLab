@@ -21,6 +21,7 @@ COMMON_INPUTS = (
     "lutools/cmake/**/*.inc", "lutools/third_party/rawspeed-camera-calibration.inc",
     "lutools/third_party/lensfun/*.*",
     "lutools/third_party/nikon_he/*",
+    "lutools/third_party/libraw/*",
 )
 PLATFORM_INPUTS = {
     "macos": ("RawLabMac/build*.sh",),
@@ -80,11 +81,11 @@ def cache_paths(platform, arch):
         return [f"build/macos-deps/14.0/{arch}/install", f"build/lensfun/14.0/{arch}/install"]
     if platform == "windows":
         return [f"build/windows-native/{path}" for path in (
-            "_deps", "dng-sdk", "core/wavelib", "lens-dependencies/install", *OPENCV_HEADERS)]
+            "_deps", "dng-sdk", "raw-jpeg", "core/wavelib", "lens-dependencies/install", *OPENCV_HEADERS)]
     if platform == "android":
         base = "RawLabAndroid/app/.cxx/Debug/*"
         return [f"{base}/{abi}/{path}" for abi in ("arm64-v8a", "x86_64")
-                for path in ("_deps", "dng-sdk", "core/wavelib", "lens-dependencies/install",
+                for path in ("_deps", "dng-sdk", "raw-jpeg", "core/wavelib", "lens-dependencies/install",
                              ".ninja_deps", ".ninja_log", "configure_fingerprint.bin",
                              "metadata_generation_command.txt", *OPENCV_HEADERS)]
     if platform == "ios":
@@ -93,7 +94,7 @@ def cache_paths(platform, arch):
         for config in ("iphoneos-arm64", "iphonesimulator-arm64", "iphonesimulator-x86_64"):
             core = f"{base}/core-{config}"
             paths += [f"{core}/{path}" for path in (
-                "_deps", "raw-dependencies", "wavelib", "lens-dependencies/install", "build/XCBuildData",
+                "_deps", "raw-dependencies", "raw-jpeg", "wavelib", "lens-dependencies/install", "build/XCBuildData",
                 *OPENCV_HEADERS)]
             # Xcode puts object files in a shared directory, not each dependency's build tree.
             paths += [f"{core}/build/{target}.build" for target in (

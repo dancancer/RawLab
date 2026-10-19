@@ -12,6 +12,9 @@ CMakeFiles/
 cmake_install.cmake
 cmake-build-*/
 *.cmake
+!cmake/libraw-sony-arw6.cmake
+!cmake/libraw-cameras.cmake
+!cmake/raw-jpeg.cmake
 !cmake/tiff-dependencies.cmake
 !cmake/denoise-dependencies.cmake
 !CMakeLists.txt
@@ -88,6 +91,8 @@ __pycache__/
 # Dependencies
 deps/
 third_party/*
+!third_party/libraw/
+!third_party/libraw/**
 !third_party/stb_image_write.h
 !third_party/Adobe-DNG-SDK-LICENSE.txt
 !third_party/OpenCV-LICENSE.txt

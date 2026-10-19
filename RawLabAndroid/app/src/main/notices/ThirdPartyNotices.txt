@@ -37,8 +37,11 @@ Source archive: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
 SHA-256: de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
 Built from patched source as libraw.so; Android CMake build configuration
 is supplied in app/src/main/cpp/CMakeLists.txt. LGPL/CDDL license choices and
-copyright notices are included in this directory. Optional LCMS, JPEG/JasPer,
-and RawSpeed integrations are not compiled into LibRaw here.
+copyright notices are included in this directory. Sigma X3F tools are enabled;
+Roland Karlsson's BSD-style notice is in LibRaw-X3F-BSD.txt. JPEG-compressed lossy
+DNG uses statically linked libjpeg-turbo 3.1.3 (JPEG8 ABI), with IJG/BSD/zlib notices
+in libjpeg-turbo-LICENSE.md and libjpeg-turbo-README.ijg. Optional LCMS, JasPer and
+RawSpeed integrations are not compiled into LibRaw here.
 
 The patched LibRaw is used under its LGPL 2.1 option. The Nikon HE decoder is
 a local C++ adaptation of Nicolai Buchwitz's dnglab commit
@@ -83,3 +86,8 @@ Film LUTs and generated film-label artwork are reused unchanged from this
 repository. The artwork is not an official product image or brand endorsement.
 See RawLabMac/Resources/FilmIcons/generated-set-a.md and generated-set-b.md
 for artwork provenance. Film output follows lutools/docs/color-contract.md.
+
+Sony ARW6 decoding and A7 V metadata are backported from LibRaw e419de0;
+A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
+784 and 856 under the original LibRaw LGPL/CDDL terms. Pinned sources and
+format boundaries: docs/reference/raw-format-support.md.

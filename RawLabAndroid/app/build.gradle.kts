@@ -57,10 +57,15 @@ fun AndroidSourceSet.usageTransport(withSdk: Boolean) {
 }
 
 val testRaw = providers.gradleProperty("rawlabTestRaw").orElse(providers.environmentVariable("RAWLAB_TEST_RAW"))
+val testRaster = providers.gradleProperty("rawlabTestRaster").orElse(providers.environmentVariable("RAWLAB_TEST_RASTER"))
+val testSonyArw6 = providers.gradleProperty("rawlabTestSonyArw6").orElse(providers.environmentVariable("RAWLAB_TEST_SONY_ARW6"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
+    from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
+    if (testRaster.isPresent) from(testRaster.get()) { rename { "sample.jpg" } }
+    if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }
 }
 val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
 val prepareAssets by tasks.registering(Sync::class) {
@@ -95,7 +100,8 @@ val prepareAssets by tasks.registering(Sync::class) {
         rename { if (it == "Adobe-DNG-SDK-LICENSE.txt") "Adobe-DNG-SDK-1.7.1-LICENSE.txt" else it }
     }
     from(repo.resolve("RawLabMac/Resources/Licenses")) {
-        into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "stb-MIT-LICENSE.txt")
+        into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "LibRaw-X3F-BSD.txt",
+            "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "stb-MIT-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
     from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }

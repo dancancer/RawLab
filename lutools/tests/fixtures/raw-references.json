@@ -1,0 +1,112 @@
+{
+  "source": "https://raw.pixls.us",
+  "license": "CC0-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "retrieved_at": "2026-10-19",
+  "files": [
+    {
+      "id": 7827,
+      "camera": "Sony ILCE-1M2",
+      "mode": "14bit uncompressed (3:2), uncompressed full-frame",
+      "format": "ARW",
+      "url": "https://raw.pixls.us/getfile.php/7827/nice/Sony%20-%20ILCE-1M2%20-%2014bit%20uncompressed%20(3:2).ARW",
+      "local_path": "raw-pixls-20261019/7def3c8d80537f79af199052c6e13d86750203122dcb94888ada65291dabb793.ARW",
+      "sha256": "7def3c8d80537f79af199052c6e13d86750203122dcb94888ada65291dabb793",
+      "bytes": 103632896
+    },
+    {
+      "id": 7828,
+      "camera": "Sony ILCE-1M2",
+      "mode": "14bit lossless (4:3), lossless compressed large-size full-frame",
+      "format": "ARW",
+      "url": "https://raw.pixls.us/getfile.php/7828/nice/Sony%20-%20ILCE-1M2%20-%2014bit%20lossless%20(4:3).ARW",
+      "local_path": "raw-pixls-20261019/33ec5187659f8af4589113afbd138ec8d1cd14f6999d36a12de87ad5d8c7d439.ARW",
+      "sha256": "33ec5187659f8af4589113afbd138ec8d1cd14f6999d36a12de87ad5d8c7d439",
+      "bytes": 57909248
+    },
+    {
+      "id": 7829,
+      "camera": "Sony ILCE-1M2",
+      "mode": "lossless (4:3), lossless compressed medium-size full-frame",
+      "format": "ARW",
+      "url": "https://raw.pixls.us/getfile.php/7829/nice/Sony%20-%20ILCE-1M2%20-%20lossless%20(4:3).ARW",
+      "local_path": "raw-pixls-20261019/dfc66d4a6175378074bddf7deeb15f591083be1cb9fea1ccb7bac3c888db6e49.ARW",
+      "sha256": "dfc66d4a6175378074bddf7deeb15f591083be1cb9fea1ccb7bac3c888db6e49",
+      "bytes": 32260096
+    },
+    {
+      "id": 7831,
+      "camera": "Sony ILCE-1M2",
+      "mode": "14bit lossy (3:2), lossy compressed full-frame",
+      "format": "ARW",
+      "url": "https://raw.pixls.us/getfile.php/7831/nice/Sony%20-%20ILCE-1M2%20-%2014bit%20Lossy%20(3:2).ARW",
+      "local_path": "raw-pixls-20261019/bfe5113d3a6bc237ed0852a23d99da1c9733eb3f63056e362f40450fdd9644f8.ARW",
+      "sha256": "bfe5113d3a6bc237ed0852a23d99da1c9733eb3f63056e362f40450fdd9644f8",
+      "bytes": 53440512
+    },
+    {
+      "id": 8403,
+      "camera": "Canon EOS R50 V",
+      "mode": "RAW (3:2)",
+      "format": "CR3",
+      "url": "https://raw.pixls.us/getfile.php/8403/nice/Canon%20-%20EOS%20R50%20V%20-%20RAW%20(3:2).CR3",
+      "local_path": "raw-pixls-20261019/955ff98710505498ce7f98cbcc5875793ef2d6941b3b5692ed3baf2817ee7c9f.CR3",
+      "sha256": "955ff98710505498ce7f98cbcc5875793ef2d6941b3b5692ed3baf2817ee7c9f",
+      "bytes": 29026726
+    },
+    {
+      "id": 8500,
+      "camera": "Canon PowerShot V1",
+      "mode": "CRAW (3:2)",
+      "format": "CR3",
+      "url": "https://raw.pixls.us/getfile.php/8500/nice/Canon%20-%20PowerShot%20V1%20-%20CRAW%20(3:2).CR3",
+      "local_path": "raw-pixls-20261019/0a0abfd81b3a34fa513ac8ed24c809275160d65b07e892c2eb4353b77c535a31.CR3",
+      "sha256": "0a0abfd81b3a34fa513ac8ed24c809275160d65b07e892c2eb4353b77c535a31",
+      "bytes": 11423648
+    },
+    {
+      "id": 853,
+      "camera": "Sigma DP2 Merrill",
+      "mode": "Merrill X3F",
+      "format": "X3F",
+      "url": "https://raw.pixls.us/getfile.php/853/",
+      "local_path": "6598fd78ac45f0d142e5685eff02b7b202be67ff6a51c7d857e8d17a70b4a9d5.x3f",
+      "sha256": "6598fd78ac45f0d142e5685eff02b7b202be67ff6a51c7d857e8d17a70b4a9d5",
+      "bytes": 61215044
+    },
+    {
+      "id": 5540,
+      "camera": "Sigma dp2 Quattro",
+      "mode": "Quattro X3F",
+      "format": "X3F",
+      "url": "https://raw.pixls.us/getfile.php/5540/",
+      "local_path": "e89f40df6881bbf60a83e56eee92d04f71b89e9ff55d6ff5d498afd4590cfcb3.x3f",
+      "sha256": "e89f40df6881bbf60a83e56eee92d04f71b89e9ff55d6ff5d498afd4590cfcb3",
+      "bytes": 54740948
+    },
+    {
+      "id": 1023,
+      "camera": "Canon EOS 5D Mark III",
+      "mode": "Adobe lossy JPEG DNG",
+      "format": "DNG",
+      "url": "https://raw.pixls.us/getfile.php/1023/",
+      "local_path": "159326856c29073e845c3c5a9ecf98c6474f43ca15798a88ad5e2baecd0664b7.dng",
+      "sha256": "159326856c29073e845c3c5a9ecf98c6474f43ca15798a88ad5e2baecd0664b7",
+      "bytes": 6193902
+    },
+    {
+      "id": 1033,
+      "camera": "Canon EOS 5D Mark III",
+      "mode": "Adobe lossy JPEG RGB DNG",
+      "format": "DNG",
+      "url": "https://raw.pixls.us/getfile.php/1033/",
+      "local_path": "b22f1e36331f679abb8b13e433b9bbde3988723adf10fee7aa0dda6381016a98.dng",
+      "sha256": "b22f1e36331f679abb8b13e433b9bbde3988723adf10fee7aa0dda6381016a98",
+      "bytes": 2484836
+    }
+  ],
+  "not_found_in_raw_pixls_index": [
+    "Canon EOS R50 V CRAW",
+    "Canon PowerShot V1 RAW"
+  ]
+}

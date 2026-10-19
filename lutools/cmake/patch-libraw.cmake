@@ -4,6 +4,9 @@ if(NOT DEFINED LIBRAW_SOURCE_DIR)
 endif()
 
 function(replace_libraw relative before after)
+    if("${before}" STREQUAL "")
+        message(FATAL_ERROR "Empty LibRaw patch anchor: ${relative}")
+    endif()
     set(path "${LIBRAW_SOURCE_DIR}/${relative}")
     file(READ "${path}" source)
     string(FIND "${source}" "${after}" patched)
@@ -17,6 +20,9 @@ function(replace_libraw relative before after)
     string(REPLACE "${before}" "${after}" source "${source}")
     file(WRITE "${path}" "${source}")
 endfunction()
+
+include("${CMAKE_CURRENT_LIST_DIR}/libraw-sony-arw6.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/libraw-cameras.cmake")
 
 # 只替换 Nikon HE 像素解码，保留 LibRaw 的元数据、白平衡与显影流程。
 set(nikon_he_source "${CMAKE_CURRENT_LIST_DIR}/../third_party/nikon_he")
@@ -145,16 +151,24 @@ replace_libraw(src/metadata/tiff.cpp
     "|| !strcmp(model, \"NIKON Z6_3\")) &&"
     "|| !strcmp(model, \"NIKON Z6_3\") || !strcmp(model, \"NIKON Z5_2\") || !strcmp(model, \"NIKON Z50_2\")) &&")
 
-# R6 III ColorData subversion 66 uses the existing v12 offsets, not v11.
+# PowerShot V1 subversion 65 and R6 III subversion 66 use the existing v12 offsets.
 # Layout and Adobe-derived matrix: https://github.com/LibRaw/LibRaw/issues/821
 # This is a sample-verified local fix, not a claim of upstream camera support.
+# 兼容已缓存的 R6 III 补丁；V1 与 R6 III 共享 V12 布局。
+file(READ "${LIBRAW_SOURCE_DIR}/src/metadata/canon.cpp" canon_source)
+string(FIND "${canon_source}" "if (len == 3778 && imCanon.ColorDataSubVer == 66)" old_canon_layout)
+if(NOT old_canon_layout EQUAL -1)
+    replace_libraw(src/metadata/canon.cpp
+        "if (len == 3778 && imCanon.ColorDataSubVer == 66)"
+        "if (len == 3778 && (imCanon.ColorDataSubVer == 65 || imCanon.ColorDataSubVer == 66))")
+endif()
 replace_libraw(src/metadata/canon.cpp [=[
       imCanon.ColorDataVer = 11;
       AsShot_Auto_MeasuredWB(0x0069);
 ]=] [=[
       imCanon.ColorDataVer = 11;
       AsShot_Auto_MeasuredWB(0x0069);
-      if (len == 3778 && imCanon.ColorDataSubVer == 66)
+      if (len == 3778 && (imCanon.ColorDataSubVer == 65 || imCanon.ColorDataSubVer == 66))
       {
         imCanon.ColorDataVer = 12;
         fseek(ifp, save1 + ((0x006d+0x0001) << 1), SEEK_SET);

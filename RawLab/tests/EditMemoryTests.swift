@@ -8,6 +8,8 @@ struct EditMemoryTests {
     }
 
     static func main() throws {
+        check(PhotoImportFile.sourceKind(for: URL(fileURLWithPath: "/tmp/sigma.X3F"))?.isRaw == true,
+              "Sigma X3F imports as RAW even without a system UTI registration")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-edit-memory-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

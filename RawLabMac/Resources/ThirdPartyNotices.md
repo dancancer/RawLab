@@ -112,3 +112,9 @@ correction validated against PyWavelets. The DWT/IDWT filter kernels are unchang
 See wavelib-COPYRIGHT and lutools/cmake/wavelib-iswt2.c.inc in the source.
 Source: https://github.com/rafat/wavelib
 No darktable denoising code or noise-profile database is included.
+
+Sony ARW6 decoding and A7 V metadata are backported from LibRaw e419de0;
+A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
+784 and 856. The original LGPL/CDDL terms apply. Sigma X3F tools are enabled;
+Roland Karlsson's BSD-style notice is retained in LibRaw-X3F-BSD.txt.
+Pinned sources and scope: docs/reference/raw-format-support.md.

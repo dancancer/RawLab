@@ -50,6 +50,23 @@ void write(const fs::path& path, const std::vector<uint8_t>& bytes) {
     file.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     if (!file) throw std::runtime_error("Cannot write private fixture");
 }
+void addExifColorSpace(const fs::path& source, const fs::path& target,
+                       unsigned colorSpace, unsigned orientation = 1) {
+    // 独立构造 EXIF，保留原 JPEG 压缩像素和 ICC；与相机/编辑器的双重色彩标记一致。
+    std::vector<uint8_t> exif = {
+        'E','x','i','f',0,0,'I','I',42,0,8,0,0,0,
+        2,0, 0x12,0x01,3,0,1,0,0,0,static_cast<uint8_t>(orientation),0,0,0,
+        0x69,0x87,4,0,1,0,0,0,38,0,0,0, 0,0,0,0,
+        1,0, 1,0xa0,3,0,1,0,0,0,static_cast<uint8_t>(colorSpace),
+        static_cast<uint8_t>(colorSpace >> 8),0,0, 0,0,0,0
+    };
+    auto bytes = read(source);
+    const auto length = exif.size() + 2;
+    exif.insert(exif.begin(), {255,225,static_cast<uint8_t>(length >> 8),
+        static_cast<uint8_t>(length)});
+    bytes.insert(bytes.begin() + 2, exif.begin(), exif.end());
+    write(target, bytes);
+}
 void encodeFloatTiff(const fs::path& path) {
     // A separate encoder supplies real IEEE-float data, not a silently
     // converted WIC fixture or an optional test skip.
@@ -193,8 +210,27 @@ void checkPreview(const fs::path& path, uint32_t edge, unsigned sourceWidth, uns
         actualSourceHeight == sourceHeight && buffer.width == width && buffer.height == height &&
         buffer.stride_bytes == width * 4 && buffer.size_bytes == static_cast<size_t>(width) * height * 4 &&
         buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8;
+    if (valid) {
+        const auto full = decode(path, sourceWidth, sourceHeight);
+        const auto* preview = static_cast<const uint8_t*>(buffer.data);
+        std::array<uint64_t, 3> fullSum{}, previewSum{};
+        for (size_t pixel = 0; pixel < full.size(); pixel += 4)
+            for (size_t channel = 0; channel < 3; ++channel) fullSum[channel] += full[pixel + channel];
+        for (size_t pixel = 0; pixel < buffer.size_bytes; pixel += 4)
+            for (size_t channel = 0; channel < 3; ++channel) previewSum[channel] += preview[pixel + channel];
+        // 面积缩放应保持每个颜色通道的均值；独立于插值实现，允许量化误差。
+        bool colorsMatch = true;
+        for (size_t channel = 0; channel < 3; ++channel)
+            colorsMatch &= std::abs(double(fullSum[channel]) / (sourceWidth * sourceHeight) -
+                double(previewSum[channel]) / (width * height)) <= 1.5;
+        if (!colorsMatch) {
+            sony2fuji_release_buffer(&buffer);
+            check(false, "Scaled preview preserves RGB channel colors from the full decode");
+        }
+    }
     sony2fuji_release_buffer(&buffer);
     check(valid, "Display preview scales after orientation and reports source dimensions");
+    check(valid, "Scaled preview preserves RGB channel colors from the full decode");
 }
 
 void rejectPreview(const fs::path& path) {
@@ -400,6 +436,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("Untagged RGB was not preserved as display-sRGB exactly");
         }
         check(true, "Untagged RGB values assume sRGB without an extra transfer function");
+        checkPreview(png, 6, 12, 8, 6, 4);
         chunk(png, root / "orientation-6.png", {'e','X','I','f'}, {
             'I','I',42,0,8,0,0,0,1,0,
             0x12,0x01,3,0,1,0,0,0,6,0,0,0,
@@ -409,6 +446,7 @@ int main(int argc, char** argv) {
         check(true, "PNG eXIf orientation 6 is applied exactly once");
         encode(factory.Get(), jpeg, GUID_ContainerFormatJpeg, GUID_WICPixelFormat24bppBGR, 24);
         const auto upright = decode(jpeg, 12, 8);
+        checkPreview(jpeg, 6, 12, 8, 6, 4);
         write(root / "cmyk-header.jpg", {255,216,255,192,0,20,8,0,8,0,12,4,
             1,17,0,2,17,0,3,17,0,4,17,0,255,217});
         reject(root / "cmyk-header.jpg",SONY2FUJI_STATUS_UNSUPPORTED,"JPEG CMYK/YCCK components are refused before codec conversion");
@@ -429,6 +467,7 @@ int main(int argc, char** argv) {
         const auto tiff = root / "ordinary.tiff";
         encode(factory.Get(), tiff, GUID_ContainerFormatTiff, GUID_WICPixelFormat24bppBGR, 24);
         check(decode(tiff, 12, 8) == expected, "Single-page TIFF preserves RGB8");
+        checkPreview(tiff, 6, 12, 8, 6, 4);
         for (unsigned orientation = 1; orientation <= 8; ++orientation) {
             const auto orientedTiff = orientation == 1 ? tiff :
                 root / ("orientation-" + std::to_string(orientation) + ".tiff");
@@ -534,7 +573,32 @@ int main(int argc, char** argv) {
                 }
             }
             check(true, "Display P3 ICC conversion matches an independent WIC sRGB reference");
+            if (IsEqualGUID(*fixture.second, GUID_ContainerFormatJpeg)) {
+                for (unsigned exifSpace : {1u, 65535u}) {
+                    const auto tagged = root / ("icc-exif-" + std::to_string(exifSpace) + ".jpg");
+                    addExifColorSpace(displayP3, tagged, exifSpace);
+                    check(decode(tagged, 12, 8) == actual,
+                        "JPEG embedded ICC takes precedence over coexisting EXIF color space");
+                    checkPreview(tagged, 4, 12, 8, 4, 3);
+                }
+                const auto rotated = root / "icc-exif-oriented.jpg";
+                addExifColorSpace(displayP3, rotated, 1, 6);
+                compareOriented(reference, decode(rotated, 8, 12), 6, 2);
+                check(true, "JPEG ICC and EXIF coexist without double color conversion or rotation");
+                checkPreview(rotated, 4, 8, 12, 3, 4);
+                auto invalid = read(root / "icc-exif-1.jpg");
+                const std::string marker("ICC_PROFILE\0", 12);
+                const auto start = std::search(invalid.begin(), invalid.end(), marker.begin(), marker.end());
+                if (start == invalid.end()) throw std::runtime_error("ICC fixture has no profile marker");
+                const auto header = static_cast<size_t>(start - invalid.begin()) + 14;
+                invalid.at(header + 16) = 'C';
+                write(root / "invalid-icc-with-srgb-exif.jpg", invalid);
+                rejectEither(root / "invalid-icc-with-srgb-exif.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+                    SONY2FUJI_STATUS_PROCESSING_ERROR, "EXIF sRGB cannot hide an invalid embedded ICC");
             }
+            }
+            addExifColorSpace(jpeg, root / "uncalibrated-no-icc.jpg", 65535);
+            reject(root / "uncalibrated-no-icc.jpg", SONY2FUJI_STATUS_UNSUPPORTED);
         }
 
         std::cout << "PASS " << checks << " Windows display decoder checks; fixtures=" << root.u8string() << '\n';
