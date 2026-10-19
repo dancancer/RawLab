@@ -69,7 +69,10 @@ private func lensText<T>(_ tuple: T) -> String {
 }
 
 extension Sony2FujiProcessor {
-    func loadLensDatabase(_ session: OpaquePointer) throws {
+    func loadLensDatabase(_ session: OpaquePointer,
+                          inputType: sony2fuji_input_type = SONY2FUJI_INPUT_RAW) throws {
+        /* display 输入禁用相机镜头校正，RAW 和 legacy buffer 仍需加载数据库。 */
+        guard inputType != SONY2FUJI_INPUT_DISPLAY_BUFFER else { return }
         let framework = Bundle.main.bundleURL.appendingPathComponent("Frameworks/sony2fuji.framework")
         let bundled = Bundle(url: framework)?.url(forResource: "Lensfun", withExtension: nil)
         guard let url = lensDatabaseURL ?? Bundle.main.url(forResource: "Lensfun", withExtension: nil) ?? bundled else {

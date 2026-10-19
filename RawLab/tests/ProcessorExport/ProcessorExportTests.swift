@@ -7,6 +7,7 @@ struct ProcessorExportTests {
     static func main() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
+        try checkRasterLensDatabase(root: root, output: output)
         let lensDatabase = root.appendingPathComponent("lutools/third_party/lensfun/version_1")
         let processor = Sony2FujiProcessor(lensDatabaseURL: lensDatabase)
         checkProcessorErrorMapping(processor)
