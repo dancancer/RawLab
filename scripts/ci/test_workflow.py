@@ -34,7 +34,8 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("if", job)
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
                 self.assertNotIn("permissions", job)
-                self.assertNotIn("self-hosted", job["runs-on"])
+                if name != "android":
+                    self.assertNotIn("self-hosted", job["runs-on"])
         mac = jobs["macos"]
         self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
         self.assertEqual(mac["env"]["MACOSX_DEPLOYMENT_TARGET"], "14.0")
@@ -61,6 +62,23 @@ class WorkflowContractTests(unittest.TestCase):
                     for path in step["with"]["path"].splitlines():
                         self.assertRegex(path, r"^build/ci/\*\.(?:log|json|xml)$")
             self.assertEqual(len(uploads), 1, name)
+
+    def test_android_uses_a_dedicated_linux_runner_with_bounded_parallelism(self):
+        android = self.workflow["jobs"]["android"]
+        self.assertEqual(android["runs-on"], ["self-hosted", "linux", "x64", "rawlab-android"])
+        self.assertEqual(android["env"]["JOBS"], "8")
+        self.assertEqual(android["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
+        self.assertEqual(android["env"]["ANDROID_HOME"], "/opt/android-sdk")
+        self.assertEqual(android["env"]["RAWLAB_LENS_SOURCE_CACHE"], "/var/cache/rawlab-ci/lens-sources")
+        commands = "\n".join(step.get("run", "") for step in android["steps"])
+        self.assertIn("--max-workers=8", commands)
+        self.assertIn("RAWLAB_TEST_ANDROID_CACHE=1", commands)
+
+    def test_actionlint_recognizes_only_the_declared_local_runner_label(self):
+        configuration = ROOT / ".github/actionlint.yaml"
+        self.assertTrue(configuration.is_file(), "Declare custom labels for actionlint")
+        policy = yaml.load(configuration.read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(policy["self-hosted-runner"]["labels"], ["rawlab-android"])
 
     def test_existing_default_builds_are_not_feature_reduced(self):
         for command in ("RawLabMac/build.sh", "RawLabWindows/build.ps1", "testDebugUnitTest",

@@ -228,8 +228,13 @@ jobs:
 
   android:
     name: Android build and JVM tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, rawlab-android]
     timeout-minutes: 120
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      RAWLAB_LENS_SOURCE_CACHE: /var/cache/rawlab-ci/lens-sources
+      JOBS: '8'
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -264,7 +269,7 @@ jobs:
           git rev-parse HEAD
           java -version
           cd RawLabAndroid
-          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=8
           bash scripts/check-native.sh
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
           cd ..

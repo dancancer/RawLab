@@ -1,4 +1,4 @@
-# Hosted Verification
+# Continuous Verification
 
 The [workflow](../../.github/workflows/ci.yml) verifies pull requests targeting
 `development`, `release/**` or `main`, and pushes to `development` or `main`.
@@ -13,7 +13,7 @@ credentials. A workflow run is not release authorization.
 | Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, single-preview source contracts, whitespace |
 | macOS build and parity (arm64 / x86_64) | macOS 26 arm64 and Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
 | Windows build and parity | Windows Server 2022 x64 / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
-| Android build and JVM tests | Ubuntu 24.04 / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
+| Android build and JVM tests | Dedicated Ubuntu 24.04 KVM / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
 | iOS framework and unsigned app | macOS 26 arm64 / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
 
 All six checks (five job groups, including both Mac architectures) must
@@ -58,6 +58,51 @@ protection settings or grant permission to bypass them.
 Actions are pinned to full commit SHAs. Workflow permission is `contents: read`,
 checkout credentials are not persisted, and no `pull_request_target` is used.
 The workflow has bounded jobs and cancels obsolete runs for the same PR/ref.
+
+## Local Android Runner
+
+GitHub Actions still owns triggers, check results, logs and dependency caches.
+The Android job selects `[self-hosted, linux, x64, rawlab-android]`; all other
+jobs keep their hosted runners. This label belongs only to a dedicated Ubuntu
+24.04 KVM guest with 16 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
+Proxmox host must not carry a runner, JDK or Android toolchain.
+
+Run `sudo bash scripts/ci/provision-android-runner.sh` inside the new guest to
+install the Android toolchain. The script rejects a non-KVM/non-Ubuntu guest,
+verifies the pinned command-line tools archive, and installs the SDK under
+`/opt/android-sdk`. Register the official GitHub runner separately as the
+unprivileged `runner` account with the `rawlab-android` label. Do not copy an
+administrator's SSH keys or long-lived GitHub token into that account. The job
+sets `ANDROID_HOME=/opt/android-sdk`; keep SDK and Gradle
+download caches outside its checkout. No Docker socket, host filesystem mount,
+GPU passthrough or nested virtualization is needed for the current suite.
+
+`RAWLAB_LENS_SOURCE_CACHE=/var/cache/rawlab-ci/lens-sources` holds source archives
+from `lutools/cmake/lens-dependencies.json`, not compiled libraries. Pre-seed
+checksum-matching archives there when an upstream endpoint is unavailable;
+the existing builder verifies every archive again before use. Missing archives
+still download from their pinned upstream URL and failures remain fatal.
+
+This is a persistent, trusted-contributor runner: SDKs, download caches and the
+runner installation survive jobs. Checkout cleanup is not a security boundary
+against malicious workflow code. Review external contributions before allowing
+them onto this runner; do not treat it as an untrusted-code sandbox.
+
+Only one job runs in this runner workspace at a time. Checkout retains its
+default clean behavior, so product output and previous test results cannot
+make another job pass. Native dependencies still use the exact-key restore/save
+policy below; a persistent VM is not permission to bypass a cold push build.
+The Android job caps Gradle workers at eight. Native tools can use their own
+limits: AGP invokes Ninja directly, while Lensfun's builder retains four jobs;
+the guest's CPU and memory allocation is the overall resource boundary.
+This does not change parallelism or coverage on another platform.
+
+The runner must be online for required Android checks to finish. GitHub does
+not automatically fall back to hosted execution when a self-hosted runner is
+offline. To roll back, restore the Android `ubuntu-24.04` runner and its previous
+parallelism, and update the matching workflow-policy test. Do not skip the check
+or weaken branch protection. Keep device/GLES acceptance separate from this
+build-only runner.
 
 ## Native Dependency Caches
 
