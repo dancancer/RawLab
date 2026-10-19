@@ -10,10 +10,12 @@ import shutil
 import subprocess
 import sys
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMON_INPUTS = (
-    ".github/workflows/ci.yml", "scripts/ci/native_cache.py", "lutools/CMakeLists.txt",
+    "scripts/ci/native_cache.py", "scripts/ci/requirements.txt", "lutools/CMakeLists.txt",
     "lutools/cmake/**/*.cmake", "lutools/cmake/**/CMakeLists.txt",
     "lutools/cmake/**/*.py", "lutools/cmake/**/*.json", "lutools/cmake/**/*.in",
     "lutools/cmake/**/*.inc", "lutools/third_party/rawspeed-camera-calibration.inc",
@@ -38,14 +40,31 @@ def hash_inputs(root, paths):
             for path in sorted(set(paths))}
 
 
-def dependency_inputs(root, platform):
+def dependency_inputs(root, platform, arch=None):
     paths = set()
     for pattern in (*COMMON_INPUTS, *PLATFORM_INPUTS[platform]):
         matches = {path for path in root.glob(pattern) if path.is_file()}
         if not matches:
             raise ValueError(f"Native cache input is missing: {pattern}")
         paths.update(matches)
-    return hash_inputs(root, paths)
+    return {**hash_inputs(root, paths),
+            f".github/workflows/ci.yml#{platform}": workflow_identity(root, platform, arch)}
+
+
+def workflow_identity(root, platform, arch=None):
+    workflow = yaml.load((root / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
+    job = workflow.get("jobs", {}).get(platform)
+    if not isinstance(job, dict):
+        raise ValueError(f"Native cache job is missing: {platform}")
+    if platform == "macos" and arch is not None:
+        matrix = job.get("strategy", {}).get("matrix", {})
+        selected = [row for row in matrix.get("include", []) if row.get("arch") == arch]
+        if len(selected) != 1:
+            raise ValueError(f"Native cache matrix row is missing or ambiguous: {platform}/{arch}")
+        matrix["include"] = selected
+    # Keep the complete consumer job and shared build defaults, not unrelated jobs.
+    inputs = {"job": job, "env": workflow.get("env", {}), "defaults": workflow.get("defaults", {})}
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
 
 def cache_key(platform, arch, inputs, environment):
@@ -119,7 +138,8 @@ def toolchain_identity(platform):
                              for field in ("path", "version", "build-version")}
         if platform == "macos":
             identity["minimum_os"] = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "14.0")
-            identity["homebrew"] = command("brew", "list", "--versions")
+            identity["homebrew"] = command("brew", "list", "--versions", "autoconf", "automake",
+                                            "libtool", "m4", "pkgconf")
         else:
             identity["minimum_os"] = os.environ.get("IOS_DEPLOYMENT_TARGET", "18.0")
     elif platform == "windows":
@@ -157,7 +177,7 @@ def main():
         print(json.dumps(report, indent=2))
         (ROOT / "build/ci/native-cache-size.json").write_text(json.dumps(report, indent=2) + "\n")
         return
-    inputs = dependency_inputs(ROOT, args.platform)
+    inputs = dependency_inputs(ROOT, args.platform, args.arch)
     environment = toolchain_identity(args.platform)
     key = cache_key(args.platform, args.arch, inputs, environment)
     report = {"key": key, "inputs": inputs, "environment": environment, "paths": paths}

@@ -68,11 +68,12 @@ extension RawEditorViewModel {
                                    sourceURL: sourceURL,
                                    displayName: sourceDisplayName ?? sourceURL.lastPathComponent,
                                    sourceKind: sourceKind == .raw ? .raw : .raster,
-                                   settings: settings)
+                                   settings: settings, cachedSource: cachedSource)
     }
 
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
                     completion: @escaping (Result<Data, Error>) -> Void) {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard !previewRendering, !previewResizePending, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
             return
@@ -81,7 +82,9 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        guard let sourceURL, let sourceKind else {
+        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation,
+                      owner: cachedSource)
+        guard let sourceURL = source.url, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
         }
@@ -91,8 +94,8 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
-
-        DispatchQueue.global(qos: .userInitiated).async {
+        exportQueue.async {
+            defer { withExtendedLifetime(source.owner) {} }
             do {
                 let lutURL = self.lutURL(for: settings)
                 let data: Data
@@ -113,9 +116,9 @@ extension RawEditorViewModel {
                     )
                     data = output
                 } else {
-                    let raster = try self.processor.loadRasterBuffer(url: sourceURL, applyingOrientation: true)
+                    guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
                     let outputBuffer = try self.processor.processBuffer(
-                        buffer: raster.buffer,
+                        buffer: sourceBuffer,
                         settings: settings,
                         previewLongEdge: nil,
                         lutURL: lutURL,
@@ -124,7 +127,7 @@ extension RawEditorViewModel {
                     let output = try self.processor.makeJPEGData(
                         from: outputBuffer,
                         sourceURL: sourceURL,
-                        orientation: raster.orientation,
+                        orientation: source.orientation,
                         quality: 0.92
                     )
                     data = output
@@ -147,11 +150,14 @@ extension RawEditorViewModel {
 
     func exportDNG(settings: RawSettings, longEdge: Int? = nil,
                    completion: @escaping (Result<URL, Error>) -> Void) {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard isLookAvailable(for: settings) else {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        guard let sourceURL, let sourceKind else {
+        let source = (url: sourceURL, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation,
+                      owner: cachedSource)
+        guard let sourceURL = source.url, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
         }
@@ -165,15 +171,16 @@ extension RawEditorViewModel {
             ? "RawLab" : sourceURL.deletingPathExtension().lastPathComponent
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(base)-rendered-\(UUID().uuidString).dng")
-        DispatchQueue.global(qos: .userInitiated).async {
+        exportQueue.async {
+            defer { withExtendedLifetime(source.owner) {} }
             do {
                 let lutURL = self.lutURL(for: settings)
                 if sourceKind == .raw {
                     try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                  outputURL: outputURL, exportLongEdge: longEdge)
                 } else {
-                    let raster = try self.processor.loadRasterBuffer(url: sourceURL, applyingOrientation: true)
-                    try self.processor.exportDNG(buffer: raster.buffer, settings: settings, lutURL: lutURL,
+                    guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
+                    try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
                                                  outputURL: outputURL, exportLongEdge: longEdge)
                 }
                 self.resultDelivery {

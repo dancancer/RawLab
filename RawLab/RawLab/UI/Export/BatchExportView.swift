@@ -89,7 +89,8 @@ struct BatchExportView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.text("调整来源")).font(.title3.weight(.semibold))
             HStack(spacing: 14) {
-                BatchPhotoThumbnail(url: model.job.source.sourceURL).frame(width: 92, height: 72)
+                BatchPhotoThumbnail(url: model.job.source.sourceURL, cachedSource: model.job.source.cachedSource)
+                    .frame(width: 92, height: 72)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(model.job.source.displayName).font(.body.weight(.medium)).lineLimit(2)
                     Text(L10n.format("%@ · %@%%", model.job.source.settings.hasLook ? L10n.text(model.job.source.lookName ?? "中性") : L10n.text("中性"), String(Int(model.job.source.settings.lutStrength * 100))))
@@ -313,6 +314,7 @@ private struct TargetEffectInspectionView: View {
 private struct BatchPhotoThumbnail: View {
     @Environment(\.locale) private var localizationLocale
     let url: URL
+    var cachedSource: CachedPhotoFile? = nil
     @State private var image: UIImage?
     var body: some View {
         let _ = localizationLocale
@@ -323,6 +325,7 @@ private struct BatchPhotoThumbnail: View {
         }.clipped().clipShape(RoundedRectangle(cornerRadius: 4))
             .task(id: url) {
                 image = await Task.detached(priority: .utility) {
+                    defer { withExtendedLifetime(cachedSource) {} }
                     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                           let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                             kCGImageSourceCreateThumbnailFromImageIfAbsent: false,

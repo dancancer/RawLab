@@ -246,7 +246,7 @@ struct ImportStateTests {
                   f.model.requestedPreviewLongEdge == 640,
                   "DNG \(succeeds ? "success" : "failure"): denoise resize queues before export starts")
 
-        if !succeeds { f.model.sourceURL = f.missingURL }
+        if !succeeds { f.model.draftBuffer = nil }
         var exportResult: Result<URL, Error>?
         var exportedURL: URL?
         defer { if let exportedURL { try? FileManager.default.removeItem(at: exportedURL) } }
@@ -286,11 +286,11 @@ struct ImportStateTests {
             try check(source != nil && hasDNGVersionAndSize(bytes, longEdge: 64),
                       "DNG success writes a recognized TIFF container with DNG version and final dimensions")
         case .failure(let error):
-            var expectedRasterFailure = false
-            if let processorError = error as? Sony2FujiProcessor.ProcessorError,
-               case .rasterDecodeFailed = processorError { expectedRasterFailure = true }
-            try check(!succeeds && expectedRasterFailure,
-                      "DNG missing-source export delivers the expected raster decode failure")
+            var expectedFailure = false
+            if let editorError = error as? EditorError,
+               case .noImageLoaded = editorError { expectedFailure = true }
+            try check(!succeeds && expectedFailure,
+                      "DNG missing-buffer export delivers the expected no-image failure")
         }
         try check(!f.model.isBusy && f.model.previewResizePending &&
                   f.model.previewLongEdge == originalEdge && f.model.requestedPreviewLongEdge == 640,
@@ -345,9 +345,12 @@ struct ImportStateTests {
         return hasVersion && width > 0 && height > 0 && max(width, height) == longEdge
     }
     static func main() throws {
-        guard CommandLine.arguments.count == 2 else { throw TestFailure.message("Pass an isolated output directory") }
+        guard (2...3).contains(CommandLine.arguments.count) else { throw TestFailure.message("Pass an isolated output directory and optional RAW fixture") }
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try check(Thread.isMainThread, "Import state harness starts on the main thread")
+        try ImportCacheLifetimeTests.run(root: root.appendingPathComponent("cache-lifetime"))
+        let raw = CommandLine.arguments.dropFirst(2).first.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        try ExportCacheLifetimeTests.run(root: root.appendingPathComponent("export-cache-lifetime"), rawURL: raw)
         try cropSessions()
         try normalFlow(Fixture(directory: root.appendingPathComponent("normal")))
         try lateSuccess(Fixture(directory: root.appendingPathComponent("late-success")))
