@@ -30,12 +30,16 @@ import Darwin
         try check(baseline.nativeWidth == baseline.image.width && baseline.nativeHeight == baseline.image.height,
                   "identity native dimensions are reported by the core")
         let forced = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
-        let identityCPU = try cpu.render(raw, settings: Adjustments(), lut: nil, edge: 128)!
-        let identityGPU = try forced.render(raw, settings: Adjustments(), lut: nil, edge: 128)!
-        let identityDelta = zip(bytes(identityCPU.image), bytes(identityGPU.image)).map { abs(Int($0) - Int($1)) }.max()!
-        try check(forced.lastBackend == SONY2FUJI_BACKEND_METAL && identityDelta <= 2 &&
-                  identityGPU.nativeWidth == baseline.image.width && identityGPU.nativeHeight == baseline.image.height,
-                  "identity geometry retains Metal rendering, CPU parity and native dimension metadata")
+        if ProcessInfo.processInfo.environment["RAWLAB_TEST_CPU_ONLY"] == "1" {
+            print("SKIP: identity Metal parity (RAWLAB_TEST_CPU_ONLY=1)")
+        } else {
+            let identityCPU = try cpu.render(raw, settings: Adjustments(), lut: nil, edge: 128)!
+            let identityGPU = try forced.render(raw, settings: Adjustments(), lut: nil, edge: 128)!
+            let identityDelta = zip(bytes(identityCPU.image), bytes(identityGPU.image)).map { abs(Int($0) - Int($1)) }.max()!
+            try check(forced.lastBackend == SONY2FUJI_BACKEND_METAL && identityDelta <= 2 &&
+                      identityGPU.nativeWidth == baseline.image.width && identityGPU.nativeHeight == baseline.image.height,
+                      "identity geometry retains Metal rendering, CPU parity and native dimension metadata")
+        }
         var settings = Adjustments()
         settings.rotateGeometry(clockwise: true)
         settings.flipGeometry(horizontal: true)
