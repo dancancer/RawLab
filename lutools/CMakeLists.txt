@@ -315,6 +315,28 @@ if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY
     target_compile_options(gpu_filter_tests PRIVATE -UNDEBUG)
 endif()
 
+if(BUILD_TESTING AND NOT IOS)
+    foreach(contract default off fast)
+        set(look_test look_exactness)
+        if(NOT contract STREQUAL default)
+            if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+                continue()
+            endif()
+            set(look_test "look_exactness_${contract}")
+        endif()
+        add_executable(${look_test}_tests tests/look_exactness_tests.cpp
+            tests/look_lut_oracle.cpp tests/look_gamma_oracle.cpp
+            src/core/lut_applicator.cpp src/core/lut_parser.cpp src/core/color_converter.cpp)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(${look_test}_tests PRIVATE -O3)
+            if(NOT contract STREQUAL default)
+                target_compile_options(${look_test}_tests PRIVATE "-ffp-contract=${contract}")
+            endif()
+        endif()
+        add_test(NAME ${look_test} COMMAND ${look_test}_tests)
+    endforeach()
+endif()
+
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set(SONY2FUJI_TEST_RAW "" CACHE FILEPATH "External RAW fixture (never bundled)")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_RAW}" SONY2FUJI_TEST_RAW)
