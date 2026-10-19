@@ -148,7 +148,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("dcp_compiler", run, "Windows must execute the shared compiler CTest")
         self.assertIn("lutools/requirements-lutprep.txt", run)
         self.assertIn("lutools/tests/test_dcp_compiler.py", run)
-        self.assertIn("build/windows-native/core/Release/dcp_compiler_tests.exe", run)
+        self.assertIn("build/windows-native/bin/Release/dcp_compiler_tests.exe", run)
         self.assertIn("RAWLAB_TEST_DCP_NATIVE_LIB", run)
         self.assertIn("RAWLAB_TEST_DCP_FIXTURE_DIR", run)
         self.assertIn("'--fixtures'", run)

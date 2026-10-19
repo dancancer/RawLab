@@ -205,7 +205,7 @@ jobs:
             $env:PATH = "$package;$env:PATH"
             $tests = '^(dcp_compiler|windows_display_image|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema)$'
             Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
-            Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/core/Release/dcp_compiler_tests.exe')
+            Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
             Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
             $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
             $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
