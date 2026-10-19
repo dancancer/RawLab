@@ -12,7 +12,7 @@ On 2026-10-17 the owner authorized completing integration, then publishing 0.8
 and producing a separate RawLab introduction video. This supersedes the earlier
 no-tag/no-release restriction. The owner explicitly chose to retain and
 distribute the 28 third-party LUT derivatives with the unresolved rights record
-preserved; no third-party permission is inferred. Follow [the release procedure](../../../../agent.md)
+preserved; no third-party permission is inferred. Follow [the release procedure](../../../../AGENTS.md#版本发布)
 and [execution plan](2026-10-17-v080-release.md). Store upload,
 new signing identities, notarization and real vendor RUM deployment are not added
 to the scope by this authorization.
