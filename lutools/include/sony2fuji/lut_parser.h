@@ -57,6 +57,7 @@ public:
     bool isValid() const { return size_ > 0 && !data_.empty(); }
 
 private:
+    friend class LUTApplicator;
     int size_;                  // LUT 大小
     std::vector<RGB> data_;     // LUT 数据 (size^3 个元素)
     std::string title_;         // LUT 标题
