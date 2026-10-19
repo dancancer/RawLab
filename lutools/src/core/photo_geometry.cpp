@@ -168,6 +168,32 @@ bool GeometryOptions::active() const {
         perspective_horizontal != 0 || perspective_vertical != 0;
 }
 
+std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOptions& options) {
+    if (width <= 0 || height <= 0 || !options.valid()) return {0, 0};
+    const auto canvas = canvasFor(width, height, options);
+    return {canvas.right - canvas.left, canvas.bottom - canvas.top};
+}
+
+std::pair<int, int> geometryViewportSourceSize(int width, int height,
+    const GeometryOptions& options, int target_width, int target_height) {
+    const auto native = geometryOutputSize(width, height, options);
+    if (native.first == 0 || target_width <= 0 || target_height <= 0) return {0, 0};
+    if (target_width >= native.first || target_height >= native.second) return {width, height};
+    const int edge = std::max(width, height), short_edge = std::min(width, height);
+    /* 裁剪取整并非单调；按缩放顺序检查两个轴的整数边界，不能直接二分。 */
+    for (int candidate = 1; candidate <= edge; ++candidate) {
+        const int first = static_cast<int>(int64_t(short_edge) * (candidate - 1) / edge) + 1;
+        const int last = static_cast<int>((int64_t(short_edge) * candidate + edge - 1) / edge);
+        for (int minor = first; minor <= last; ++minor) {
+            const int w = width >= height ? candidate : minor;
+            const int h = width >= height ? minor : candidate;
+            const auto size = geometryOutputSize(w, h, options);
+            if (size.first >= target_width && size.second >= target_height) return {w, h};
+        }
+    }
+    return {width, height};
+}
+
 ErrorCode applyGeometry(ImageData& image, const GeometryOptions& options) {
     if (!options.valid() || image.width <= 0 || image.height <= 0 ||
         image.pixels.size() != static_cast<size_t>(image.width) * image.height)

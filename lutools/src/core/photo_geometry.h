@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <utility>
 
 namespace sony2fuji {
 
@@ -28,5 +29,10 @@ struct GeometryOptions {
 // Output resizing belongs to the caller. Identity is an exact bypass;
 // failures preserve input.
 ErrorCode applyGeometry(ImageData& image, const GeometryOptions& options);
+
+/* 只计算画布，使用与像素变换相同的取整；无效参数返回零尺寸。 */
+std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOptions& options);
+std::pair<int, int> geometryViewportSourceSize(int width, int height,
+    const GeometryOptions& options, int target_width, int target_height);
 
 } // namespace sony2fuji

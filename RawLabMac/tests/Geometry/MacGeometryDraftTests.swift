@@ -323,7 +323,7 @@ import SwiftUI
                   "matching rotated canvas refits the physical square before enabling Apply")
         try check(delta(model.result!.image, canvas, side: 128) > 8,
                   "draft rotation and nonzero H/V perspective change actual DNG pixels")
-        let direct = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF).render(a, settings: model.geometryPreviewSettings, lut: nil, edge: 240)!
+        let direct = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF).render(a, settings: model.geometryPreviewSettings, lut: nil, edge: 240, viewportPreview: true)!
         try check(direct.nativeWidth == model.result!.nativeWidth && direct.nativeHeight == model.result!.nativeHeight &&
                   delta(direct.image, model.result!.image) <= 2, "fresh processor and reused editor session agree on the transformed draft")
         try write(model.result!.image, to: output.appendingPathComponent("transformed-draft-preview.png"))
