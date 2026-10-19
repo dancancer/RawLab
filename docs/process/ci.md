@@ -157,8 +157,17 @@ sharing memory or build directories. When the developer laptop is offline, the
 always-on Mac can execute both jobs sequentially instead of waiting indefinitely
 for a role-specific runner. Either host must have both complete toolchains.
 Their initial build parallelism is six. The Intel matrix
-entry remains on `macos-26-intel` with two workers; neither cross-compilation
+entry remains on `macos-26-intel` with four workers; neither cross-compilation
 nor Rosetta substitutes for its native x86_64 runtime checks.
+
+Both Mac architectures run the existing CPU-safe CTest selection with at most
+two test processes. This limit is separate from build parallelism because RAW
+rendering tests may also use internal worker threads. The default Swift app and
+full-source straighten harness use whole-module optimization with compiler
+threads bounded by `JOBS`; they retain `-O`, all sources and runtime checks,
+not `-Ounchecked`. No app or test executable is cached. Each Mac regression
+stage records elapsed seconds and its exit code in `build/ci/macos-timings.log`; command failures
+still fail the job rather than being hidden by the timing wrapper.
 
 These two runners run directly on user-approved physical Macs, unlike the
 Android/Windows KVM guests. Prefer the dedicated non-administrator `rawlab-ci`
@@ -255,8 +264,9 @@ cold/restore regression also verifies that changed JNI code is rebuilt.
 `build/ci/native-cache.json` records the key and its inputs; `native-cache-size.json`
 records the selected file count and bytes. Compare cold and warm hosted runs on
 the same source, separating queue time from job time. A successful restore alone
-does not demonstrate a speedup. Hosted jobs retain their existing parallelism.
-Local Android and Windows jobs use the bounded settings documented above;
+does not demonstrate a speedup. Hosted Intel uses four build workers and two
+CTest processes; local Android and Windows jobs use the bounded settings
+documented above;
 measure changes on their own guests rather than extrapolating from hosted timings.
 
 ### Hosted Measurement: 2026-10-18

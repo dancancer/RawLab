@@ -1,5 +1,7 @@
 """Regression guards for the hosted verification boundary, not a YAML linter."""
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -42,7 +44,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], [
             {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6"},
-            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "2"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"},
         ])
         self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
@@ -96,6 +98,34 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn('pip install -r scripts/ci/requirements.txt', key_step['run'])
             commands = '\n'.join(step.get('run', '') for step in steps)
             self.assertIn('DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"', commands)
+
+    def test_macos_uses_available_intel_cpus_and_bounded_test_parallelism(self):
+        macos = self.workflow['jobs']['macos']
+        intel = next(row for row in macos['strategy']['matrix']['include']
+                     if row['arch'] == 'x86_64')
+        self.assertEqual(intel['jobs'], '4')
+        self.assertEqual(macos['env']['CMAKE_BUILD_PARALLEL_LEVEL'], '${{ matrix.jobs }}')
+        run = '\n'.join(step.get('run', '') for step in macos['steps'])
+        self.assertIn('ctest --test-dir lutools/build-macos --parallel 2', run)
+        self.assertIn("-E '^(native_dcp_metal|gpu_photo|metal_denoise)$'", run)
+
+    def test_macos_timing_records_success_without_masking_command_failure(self):
+        build = next(step for step in self.workflow['jobs']['macos']['steps']
+                     if 'bash RawLabMac/build.sh' in step.get('run', ''))
+        run = build['run']
+        self.assertIn('ci_timed() {', run)
+        function = 'ci_timed() {' + run.split('ci_timed() {', 1)[1].split('\n}', 1)[0] + '\n}'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'build/ci').mkdir(parents=True)
+            probe = ("\nPROBE_ENV=expected ci_timed passed bash -c 'test \"$PROBE_ENV\" = expected'"
+                     "\nci_timed failed bash -c 'exit 7'\ntouch should-not-exist")
+            result = subprocess.run(['bash', '-euc', function + probe], cwd=root,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+            self.assertFalse((root / 'should-not-exist').exists())
+            self.assertRegex((root / 'build/ci/macos-timings.log').read_text(),
+                             r'^passed\t\d+\t0\nfailed\t\d+\t7\n$')
 
     def test_windows_uses_a_dedicated_runner_and_data_volume(self):
         windows = self.workflow["jobs"]["windows"]
