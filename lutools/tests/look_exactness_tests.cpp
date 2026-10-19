@@ -114,11 +114,40 @@ void gammaMatrix() {
 }
 
 struct Temp {
-    std::filesystem::path path = std::filesystem::temp_directory_path() /
-        ("rawlab-look-exactness-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    Temp() { std::filesystem::create_directory(path); }
+    std::filesystem::path path;
+    explicit Temp(std::filesystem::path candidate = std::filesystem::temp_directory_path() /
+        ("rawlab-look-exactness-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))) {
+        // 时钟值可能跨进程重复；只有原子创建成功的目录才归本实例清理。
+        for (unsigned suffix = 0; suffix < 100; ++suffix) {
+            auto attempt = candidate;
+            if (suffix) attempt += "-" + std::to_string(suffix);
+            std::error_code error;
+            if (std::filesystem::create_directory(attempt, error)) {
+                path = std::move(attempt);
+                return;
+            }
+            if (error && error != std::errc::file_exists)
+                throw std::filesystem::filesystem_error("Cannot create fixture directory", attempt, error);
+        }
+        throw std::runtime_error("Cannot reserve fixture directory: " + candidate.string());
+    }
+    Temp(const Temp&) = delete;
+    Temp& operator=(const Temp&) = delete;
     ~Temp() { std::error_code error; std::filesystem::remove_all(path, error); }
 };
+
+void temporaryDirectoryIsolation() {
+    Temp first;
+    const auto marker = first.path / "owner";
+    std::ofstream(marker) << "first";
+    {
+        Temp collision(first.path);
+        if (collision.path == first.path)
+            throw std::runtime_error("Fixture directories must have exclusive ownership");
+    }
+    if (!std::filesystem::exists(marker))
+        throw std::runtime_error("Fixture cleanup removed another owner's files");
+}
 
 std::shared_ptr<LUT3D> table(const std::filesystem::path& path, int size, const std::vector<RGB>& data,
     RGB low, RGB high) {
@@ -128,7 +157,8 @@ std::shared_ptr<LUT3D> table(const std::filesystem::path& path, int size, const 
              << "LUT_3D_SIZE " << size << "\nDOMAIN_MIN " << low.r << ' ' << low.g << ' ' << low.b
              << "\nDOMAIN_MAX " << high.r << ' ' << high.g << ' ' << high.b << '\n';
         for (const auto& p : data) file << p.r << ' ' << p.g << ' ' << p.b << '\n';
-        if (!file) throw std::runtime_error("Cannot write fixture");
+        file.close();
+        if (!file) throw std::runtime_error("Cannot write fixture: " + path.string());
     }
     auto result = std::make_shared<LUT3D>();
     if (result->loadFromFile(path.string()) != ErrorCode::Success) throw std::runtime_error("Cannot parse fixture");
@@ -299,6 +329,7 @@ void lutMatrix() {
 int main(int argc, char** argv) {
     try {
         inject = argc == 2 && std::string(argv[1]) == "--inject-ulp";
+        temporaryDirectoryIsolation();
         gammaMatrix();
         lutMatrix();
         everyGrid();
