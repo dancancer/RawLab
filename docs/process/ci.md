@@ -162,6 +162,10 @@ account, not a personal administrator account. Prepare full Xcode and Homebrew
 `cmake`, `pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
 administrator. Keep Xcode on a local disk with sufficient capacity and use
 `DEVELOPER_DIR` rather than changing another user's selected developer tools.
+After installing or updating Xcode, an administrator must accept that version's
+license and run its first-launch initialization with the same `DEVELOPER_DIR`.
+The CI account must pass `xcodebuild -checkFirstLaunchStatus` and SDK discovery
+without sudo before runner registration; an older Xcode license is not sufficient.
 `provision-macos-runner.sh <ci-root> <Xcode.app> <runner-archive>` checks the
 account and SDKs, verifies the pinned official arm64 runner archive, and creates
 an isolated Python 3.12 venv and dedicated build/cache/temp directories. Do not
