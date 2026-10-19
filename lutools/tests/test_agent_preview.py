@@ -3,6 +3,7 @@ import argparse
 import copy
 import json
 import pathlib
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -230,18 +231,32 @@ class AgentPreview(unittest.TestCase):
         self.assertEqual(source.read_bytes(), before)
         self.assertFalse((self.recipe_dir / "final.png").exists())
 
-    def test_recipe_overwrite_and_aliases_are_rejected(self):
+    def test_recipe_overwrite_and_hardlink_are_rejected(self):
         self.prepare_synthetic()
         original = self.recipe.read_bytes()
-        symlink = self.cwd / "recipe-symlink.png"
-        symlink.symlink_to(self.recipe)
         hardlink = self.cwd / "recipe-hardlink.png"
         hardlink.hardlink_to(self.recipe)
-        for target in (self.recipe, symlink, hardlink):
+        for target in (self.recipe, hardlink):
             with self.subTest(target=target):
                 self.envelope(self.run_cli("--recipe", self.recipe, "--preview", target, "--json"),
                               "invalid_argument", status=1)
                 self.assertEqual(self.recipe.read_bytes(), original)
+
+    def test_recipe_symlink_overwrite_is_rejected(self):
+        self.prepare_synthetic()
+        original = self.recipe.read_bytes()
+        symlink = self.cwd / "recipe-symlink.png"
+        try:
+            symlink.symlink_to(self.recipe)
+        except NotImplementedError as failure:
+            self.skipTest(f"symlink unsupported: {failure}")
+        except OSError as failure:
+            if getattr(failure, "winerror", None) == 1314:
+                self.skipTest(f"symlink privilege unavailable: {failure}")
+            raise
+        self.envelope(self.run_cli("--recipe", self.recipe, "--preview", symlink, "--json"),
+                      "invalid_argument", status=1)
+        self.assertEqual(self.recipe.read_bytes(), original)
 
     def test_final_export_cannot_overwrite_recipe(self):
         self.prepare_synthetic()
@@ -270,7 +285,7 @@ class AgentPreview(unittest.TestCase):
     def test_real_raw_preview(self):
         if RAW is None or not RAW.is_file():
             self.skipTest("real RAW fixture not provided")
-        (self.recipe_dir / "photo.dng").symlink_to(RAW)
+        shutil.copyfile(RAW, self.recipe_dir / "photo.dng")
         self.write_recipe()
         target = self.cwd / "real-preview.png"
         result = self.run_cli("--json", "--recipe", self.recipe, "--preview", target, "--long-edge", "64")

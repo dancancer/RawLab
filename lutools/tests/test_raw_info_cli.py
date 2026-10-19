@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 import pathlib
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -210,7 +211,7 @@ class RawInfoCLI(unittest.TestCase):
     def test_relative_unicode_input_path(self):
         source = self.fixture("linear-uncompressed.dng")
         path = self.root / "样片 🌅.dng"
-        path.symlink_to(source)
+        shutil.copyfile(source, path)
         result = self.envelope(self.run_cli("--info", path.name, "--json", cwd=self.root))["result"]
         self.assert_metadata(result, path)
         self.assertIn(path.name, result["input_path"])

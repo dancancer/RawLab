@@ -2,6 +2,7 @@
 import argparse
 import json
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -69,8 +70,8 @@ class RecipeCLI(unittest.TestCase):
     def test_real_raw_legacy_parity_and_relative_paths(self):
         if not RAW or not RAW.is_file():
             self.skipTest("real RAW fixture not provided")
-        # Symlink keeps the original read-only and exercises recipe-relative input.
-        (self.root / "photo.DNG").symlink_to(RAW)
+        # A temporary copy exercises recipe-relative input without touching the original.
+        shutil.copyfile(RAW, self.root / "photo.DNG")
         self.document["input"]["path"] = "photo.DNG"
         for mode in ("scene", "preview", "sensor"):
             with self.subTest(mode=mode):
