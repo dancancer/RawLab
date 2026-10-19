@@ -987,9 +987,7 @@ sony2fuji_status finishOutput(
 ) {
     const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
     if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
-    if (session->geometry.active()) {
-        session->last_backend = SONY2FUJI_BACKEND_CPU;
-    }
+    if (session->geometry.active()) session->last_backend = SONY2FUJI_BACKEND_CPU;
     uint32_t width, height;
     const auto status = computeTargetSize(request, native_width, native_height, &width, &height);
     if (status != SONY2FUJI_STATUS_OK) return status;
