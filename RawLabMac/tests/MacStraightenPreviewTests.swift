@@ -13,9 +13,11 @@ struct MacStraightenPreviewTests {
     struct PreviewCase {
         let name: String
         let geometry: GeometrySettings
+        let pan: CGSize
     }
 
     struct Evidence: Codable {
+        let fixture: String
         let name: String
         let angle: Double
         let quarterTurns: Int
@@ -71,10 +73,17 @@ struct MacStraightenPreviewTests {
         app.setActivationPolicy(.prohibited)
         let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
         var evidence: [Evidence] = []
-        for previewCase in cases() {
-            evidence.append(try check(previewCase, raw: raw, output: output, engine: engine))
+        let fixtures = try StraightenPreviewFixtures.make(from: raw, engine: engine,
+                                                         in: output.appendingPathComponent("fixtures"))
+        for input in [raw] + fixtures {
+            let destination = output.appendingPathComponent(input.deletingPathExtension().lastPathComponent)
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            print("Fixture: \(input.lastPathComponent) (CPU)")
+            for previewCase in cases() {
+                evidence.append(try check(previewCase, raw: input, output: destination, engine: engine))
+            }
+            try activeOverlayCheck(raw: input, output: destination, engine: engine)
         }
-        try activeOverlayCheck(raw: raw, output: output, engine: engine)
 
         let report = try JSONEncoder().encode(evidence)
         try report.write(to: output.appendingPathComponent("report.json"))
@@ -86,7 +95,7 @@ struct MacStraightenPreviewTests {
         func make(_ name: String, _ angle: Double, _ quarterTurns: Int = 0,
                   _ horizontal: Bool = false, _ vertical: Bool = false,
                   _ perspectiveHorizontal: Double = 0, _ perspectiveVertical: Double = 0,
-                  _ crop: (Double, Double, Double, Double)) -> PreviewCase {
+                  _ crop: (Double, Double, Double, Double), pan: CGSize = .zero) -> PreviewCase {
             var geometry = GeometrySettings()
             geometry.straightenDegrees = angle
             geometry.quarterTurns = quarterTurns
@@ -98,13 +107,16 @@ struct MacStraightenPreviewTests {
             geometry.cropY = crop.1
             geometry.cropWidth = crop.2
             geometry.cropHeight = crop.3
-            return PreviewCase(name: name, geometry: geometry)
+            return PreviewCase(name: name, geometry: geometry, pan: pan)
         }
 
         return [
             make("q0-positive", 7.5, 0, false, false, 0, 0, (0.10, 0.12, 0.72, 0.68)),
             make("q0-negative", -22.5, 0, false, false, 0, 0, (0.05, 0.08, 0.86, 0.80)),
-            make("q0-angle45-hflip", 45, 0, true, false, 0, 0, (0.14, 0.10, 0.64, 0.72)),
+            make("q0-angle45-hflip", 45, 0, true, false, 0, 0, (0.14, 0.10, 0.64, 0.72),
+                 pan: CGSize(width: 60, height: 0)),
+            make("q0-angle45-hflip-negative-pan", 45, 0, true, false, 0, 0, (0.14, 0.10, 0.64, 0.72),
+                 pan: CGSize(width: -60, height: -60)),
             make("q1-negative-vflip", -7.5, 1, false, true, 0, 0, (0.08, 0.16, 0.70, 0.62)),
             make("q3-positive-both-flips", 22.5, 3, true, true, 0, 0, (0.18, 0.12, 0.60, 0.68)),
             make("q1-perspective-horizontal", -45, 1, false, false, 0.30, 0,
@@ -150,7 +162,7 @@ struct MacStraightenPreviewTests {
         }
 
         let canvasSize = CGSize(width: 600, height: 500)
-        let pan = previewCase.name == "q0-angle45-hflip" ? CGSize(width: 60, height: 0) : .zero
+        let pan = previewCase.pan
         let capture = try captureCanvas(frame: base, geometry: geometry, source: baseNative,
                                         pan: pan, size: canvasSize)
         let rendered = CGSize(width: base.image.width, height: base.image.height)
@@ -170,19 +182,37 @@ struct MacStraightenPreviewTests {
             throw Failure(description: "captured bitmap has nonuniform scale \(scaleX)x\(scaleY)")
         }
         let capturedCrop = cropRect.applying(CGAffineTransform(scaleX: scaleX, y: scaleY))
-        let capturedPixels = pixels(capture, from: capturedCrop, outputSize: CGSize(width: 128, height: 128))
-        let expectedPixels = pixels(expected.image, outputSize: CGSize(width: 128, height: 128))
-        let (mae, maximum) = error(capturedPixels, expectedPixels)
-        guard mae <= 8.0 / 255.0 else {
-            throw Failure(description: "\(previewCase.name): MAE \(mae) > 8/255 (max \(maximum))")
+        let visibleCrop = capturedCrop.intersection(CGRect(x: 0, y: 0, width: capture.width, height: capture.height))
+        guard !visibleCrop.isEmpty else {
+            throw Failure(description: "\(previewCase.name): crop is outside the captured viewport")
         }
-
+        /* 平移后的裁切可能超出视口；只比较截图与最终图中对应的可见区域。 */
+        let expectedCrop = CGRect(
+            x: (visibleCrop.minX - capturedCrop.minX) / capturedCrop.width * CGFloat(expected.image.width),
+            y: (visibleCrop.minY - capturedCrop.minY) / capturedCrop.height * CGFloat(expected.image.height),
+            width: visibleCrop.width / capturedCrop.width * CGFloat(expected.image.width),
+            height: visibleCrop.height / capturedCrop.height * CGFloat(expected.image.height))
+        guard let actualRegion = capture.cropping(to: visibleCrop),
+              let expectedRegion = expected.image.cropping(to: expectedCrop) else {
+            throw Failure(description: "\(previewCase.name): visible crop is unavailable")
+        }
+        let capturedPixels = pixels(actualRegion, outputSize: CGSize(width: 128, height: 128))
+        let expectedPixels = pixels(expectedRegion, outputSize: CGSize(width: 128, height: 128))
+        let (mae, maximum) = error(capturedPixels, expectedPixels)
         let actualName = "\(previewCase.name)-actual.png"
         let expectedName = "\(previewCase.name)-expected.png"
         try write(capture, to: output.appendingPathComponent(actualName))
         try write(expected.image, to: output.appendingPathComponent(expectedName))
+        try write(actualRegion, to: output.appendingPathComponent("\(previewCase.name)-actual-crop.png"))
+        try write(expectedRegion, to: output.appendingPathComponent("\(previewCase.name)-expected-crop.png"))
+        print("Capture: \(previewCase.name) crop=\(capturedCrop) visible=\(visibleCrop) expected=\(expectedCrop)")
+        guard mae <= 8.0 / 255.0 else {
+            throw Failure(description: "\(previewCase.name): MAE \(mae) > 8/255 (max \(maximum))")
+        }
+
         print("PASS: \(previewCase.name) safe=\(safeWidth)x\(safeHeight) final=\(expected.nativeWidth ?? -1)x\(expected.nativeHeight ?? -1) MAE=\(mae) max=\(maximum)")
-        return Evidence(name: previewCase.name, angle: geometry.straightenDegrees,
+        let fixture = raw.deletingPathExtension().lastPathComponent
+        return Evidence(fixture: raw.lastPathComponent, name: previewCase.name, angle: geometry.straightenDegrees,
                         quarterTurns: geometry.quarterTurns,
                         flipHorizontal: geometry.flipHorizontal,
                         flipVertical: geometry.flipVertical,
@@ -195,7 +225,7 @@ struct MacStraightenPreviewTests {
                         finalNativeHeight: expected.nativeHeight ?? expected.image.height,
                         capturedCropWidth: Int(cropRect.width), capturedCropHeight: Int(cropRect.height),
                         meanAbsoluteError: mae, maximumChannelError: maximum,
-                        actualPNG: actualName, expectedPNG: expectedName)
+                        actualPNG: "\(fixture)/\(actualName)", expectedPNG: "\(fixture)/\(expectedName)")
     }
 
     private static func previewGeometry(for geometry: GeometrySettings) -> GeometrySettings {
@@ -224,6 +254,8 @@ struct MacStraightenPreviewTests {
                                       size: canvas, mode: .plain)
         let active = try captureCanvas(frame: base, geometry: geometry, source: source,
                                        size: canvas, mode: .activeOverlay)
+        try write(plain, to: output.appendingPathComponent("active-overlay-plain.png"))
+        try write(active, to: output.appendingPathComponent("active-overlay.png"))
         let preview = MacStraightenPreview(source: source, degrees: geometry.straightenDegrees)
         let safeRendered = preview.safeRenderedSize(CGSize(width: base.image.width, height: base.image.height))
         let fit = min((canvas.width - 24) / max(1, preview.rotatedSize(CGSize(width: base.image.width,
@@ -238,13 +270,17 @@ struct MacStraightenPreviewTests {
                              y: safeBounds.minY + safeBounds.height * 0.50)
         let plainOutside = luminance(plain, at: outside, canvas: canvas)
         let activeOutside = luminance(active, at: outside, canvas: canvas)
+        let plainInside = luminance(plain, at: inside, canvas: canvas)
         let activeInside = luminance(active, at: inside, canvas: canvas)
-        guard plainOutside > 0.03, activeInside > 0.03, activeOutside < plainOutside * 0.75 else {
-            throw Failure(description: "active crop overlay did not show photo-plus-shade: plainOutside=\(plainOutside), activeOutside=\(activeOutside), activeInside=\(activeInside)")
+        guard plainOutside > 0.03, plainInside > 0.03 else {
+            throw Failure(description: "crop overlay reference patches are too dark: outside=\(plainOutside), inside=\(plainInside)")
         }
-        try write(plain, to: output.appendingPathComponent("active-overlay-plain.png"))
-        try write(active, to: output.appendingPathComponent("active-overlay.png"))
-        print("PASS: active crop overlay leaves photo visible outside selection and adds shade (\(activeOutside)/\(plainOutside))")
+        let outsideRatio = activeOutside / plainOutside
+        let insideRatio = activeInside / plainInside
+        guard outsideRatio > 0.10, outsideRatio < 0.75, abs(insideRatio - 1) < 0.10 else {
+            throw Failure(description: "active crop overlay changed the wrong regions: outside=\(activeOutside)/\(plainOutside) (\(outsideRatio)), inside=\(activeInside)/\(plainInside) (\(insideRatio))")
+        }
+        print("PASS: active crop overlay patch ratios outside=\(outsideRatio), inside=\(insideRatio) (plain outside=\(plainOutside), inside=\(plainInside))")
     }
 
     @MainActor
@@ -253,10 +289,16 @@ struct MacStraightenPreviewTests {
                                       mode: CaptureMode = .pending) throws -> CGImage {
         var currentPan = pan
         let pendingGeometry = mode == .pending ? geometry : nil
-        let cropSettings = mode == .activeOverlay ? geometry : nil
+        var cropSettings: GeometrySettings? = mode == .pending ? nil : geometry
+        /* 全画布选区保留相同旋转和缩放，让参考采样区域没有遮罩或网格。 */
+        if mode == .plain {
+            cropSettings?.cropX = 0; cropSettings?.cropY = 0
+            cropSettings?.cropWidth = 1; cropSettings?.cropHeight = 1
+        }
         let view = PhotoCanvas(frame: frame, viewport: PhotoViewport(), sourceWidth: Int(source.width),
             pan: Binding(get: { currentPan }, set: { currentPan = $0 }), clipping: false,
-            sourceHeight: Int(source.height), cropSettings: cropSettings, pendingGeometry: pendingGeometry)
+            sourceHeight: Int(source.height), cropSettings: cropSettings, pendingGeometry: pendingGeometry,
+            cropGrid: mode != .plain)
             .frame(width: size.width, height: size.height)
             .preferredColorScheme(.dark)
         let host = NSHostingView(rootView: view)
@@ -278,10 +320,14 @@ struct MacStraightenPreviewTests {
     }
 
     private static func luminance(_ image: CGImage, at point: CGPoint, canvas: CGSize) -> Double {
-        let scale = CGFloat(image.width) / canvas.width
-        let pixel = pixels(image, from: CGRect(x: point.x * scale, y: point.y * scale, width: 1, height: 1),
-                           outputSize: CGSize(width: 1, height: 1))
-        return (Double(pixel[0]) + Double(pixel[1]) + Double(pixel[2])) / (3 * 255)
+        let rect = CGRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8)
+            .applying(CGAffineTransform(scaleX: CGFloat(image.width) / canvas.width,
+                                       y: CGFloat(image.height) / canvas.height))
+        let patch = pixels(image, from: rect, outputSize: CGSize(width: 8, height: 8))
+        let total = stride(from: 0, to: patch.count, by: 4).reduce(0.0) { sum, index in
+            sum + Double(patch[index]) + Double(patch[index + 1]) + Double(patch[index + 2])
+        }
+        return total / Double(8 * 8 * 3 * 255)
     }
 
     private static func pixels(_ image: CGImage, from sourceRect: CGRect? = nil,

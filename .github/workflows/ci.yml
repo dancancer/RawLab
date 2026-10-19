@@ -135,6 +135,8 @@ jobs:
             --output-junit "$PWD/build/ci/macos-ctest.xml"
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
           cli="$PWD/lutools/build-macos/sony2fuji"
+          RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR="$RUNNER_TEMP/rawlab-straighten-preview" \
+            bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
           bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
           bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
           bash RawLabMac/tests/batch-export.sh
