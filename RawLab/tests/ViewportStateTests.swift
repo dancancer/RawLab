@@ -10,7 +10,7 @@ struct ViewportStateTests {
     static func checkDNGResize(directory: URL, succeeds: Bool) throws -> Bool {
         let imageURL = directory.appendingPathComponent("resize-source.jpg")
         let image = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 32)).image { context in
-            UIColor.gray.setFill()
+            UIColor(red: 0.4, green: 0.45, blue: 0.5, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 0, width: 48, height: 32))
         }
         try image.jpegData(compressionQuality: 0.9)!.write(to: imageURL)
