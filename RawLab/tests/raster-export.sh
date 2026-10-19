@@ -26,7 +26,9 @@ while IFS= read -r file; do
     else
         SOURCES+=("$file")
     fi
-done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**')
+done < <(find "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -name '*.swift' -not -path '*/tests/*' | sort)
+# bash 3.2 在 set -u 展开空数组失败时，EXIT trap 会把退出码吞成 0，所以显式失败。
+[[ ${#SOURCES[@]} -gt 0 ]] || { echo "No Swift sources found under $ROOT" >&2; exit 1; }
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
