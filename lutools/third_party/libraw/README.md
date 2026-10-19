@@ -13,14 +13,28 @@ packaged alongside the application.
 
 Original upstream SHA-256: `e7dc103273a6680e95ec5f423ac745635b20da9e38c1f49dc18bca1f60de5946`.
 
-Local changes reject coefficient magnitudes above INT32_MAX before narrowing,
-and apply signs with conditional negation instead of an overflowing doubled
-coefficient. These guards affect malformed streams. The exact upstream sign
-expression overflows for a validly encoded magnitude 1073758208 and sign bit 1;
-`sony_arw6_bounds_tests.cpp` exercises the decoder helpers directly, with UBSan
-enabled on Clang/GCC desktop builds.
+Local changes only affect malformed streams:
 
-The synthetic regression checks dispatch, corrected levels and damaged-stream
-refusal. Full pixel development is tested with an external, unbundled
-`DSC06333.ARW` via `SONY2FUJI_TEST_SONY_ARW6`. Sample checks prove decoding and
-rendering, not a colorimetric calibration of all Sony cameras.
+- Coefficient magnitudes above INT32_MAX are rejected before narrowing, and
+  signs use conditional negation instead of an overflowing doubled coefficient.
+- Inverse-wavelet, edge-detail and final-green reconstruction compute in 64-bit
+  and reject any intermediate value outside int32. Upstream overflows int32 for
+  encodable coefficients such as 1073758208 (`hp + hc + 2`, `2 * x`). Final
+  sample composition widens before clamping to the 12-bit code range.
+- Tiles shorter than 16 rows have no low-frequency row and are rejected before
+  reconstruction; upstream reads rows 0 and -1 of an empty plane.
+
+`sony_arw6_bounds_tests.cpp` compiles this file with UBSan on Clang/GCC desktop
+builds and drives synthetic containers through `sony_arw6_load_raw()`, from packet
+decoding to pixel output. It sweeps large coefficients over every subband, record
+and component, plus seeded multi-coefficient combinations, for aligned and
+guarded tile heights. CMake registers it when `SONY2FUJI_TEST_LIBRAW_SOURCE`
+points at a patched LibRaw source tree, which supplies the internal headers.
+
+`sony_arw6_tests.cpp` uses the linked LibRaw to check dispatch, corrected levels,
+well-formed synthetic tiles and refusal of short or out-of-range streams. Both
+tests need a RawLab-patched LibRaw (built in this tree, or a prefix carrying
+`share/rawlab/libraw-patch.sha256`); a stock system LibRaw skips them. Full pixel
+development is tested with an external, unbundled `DSC06333.ARW` via
+`SONY2FUJI_TEST_SONY_ARW6`. Sample checks prove decoding and rendering, not a
+colorimetric calibration of all Sony cameras.

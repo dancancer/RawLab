@@ -61,12 +61,19 @@ static inline void sony_arw6_require(bool cond)
     throw LIBRAW_EXCEPTION_IO_CORRUPT;
 }
 
-static inline int32_t sony_arw6_floor_shift(int64_t x, int bits)
+static inline int64_t sony_arw6_floor_shift(int64_t x, int bits)
 {
   if (bits <= 0)
-    return int32_t(x);
+    return x;
   const int64_t d = int64_t(1) << bits;
-  return int32_t(x >= 0 ? x >> bits : -(((-x) + d - 1) >> bits));
+  return x >= 0 ? x >> bits : -(((-x) + d - 1) >> bits);
+}
+
+// 构造的系数可让重建中间值超出 int32；在 int64 中计算，越界时按损坏流拒绝。
+static inline int32_t sony_arw6_narrow(int64_t x)
+{
+  sony_arw6_require(x >= INT32_MIN && x <= INT32_MAX);
+  return int32_t(x);
 }
 
 static inline int32_t sony_arw6_sign16(int32_t x)
@@ -81,7 +88,8 @@ static inline int32_t sony_arw6_edge_detail(int32_t x, bool odd_mode)
   const bool is_odd = (x % 2) != 0;
   const bool use_half_step =
       odd_mode ? is_odd : (x != 0 && !is_odd);
-  return 2 * x + (use_half_step ? signed_half_step : 0);
+  return sony_arw6_narrow(int64_t(2) * x +
+                           (use_half_step ? signed_half_step : 0));
 }
 
 static const ushort sony_arw6_llvc3_curve[4096] = {
@@ -1009,18 +1017,19 @@ static SonyArw6Plane sony_arw6_inv53_axis0(const SonyArw6Plane &low,
   for (int y = 0; y < low.rows; y++)
     for (int x = 0; x < low.cols; x++)
     {
-      const int32_t hp = high.at(y ? y - 1 : 0, x);
-      const int32_t hc = high.at(y, x);
-      lo2.at(y, x) = low.at(y, x) - sony_arw6_floor_shift(hp + hc + 2, 2);
+      const int64_t hp = high.at(y ? y - 1 : 0, x);
+      const int64_t hc = high.at(y, x);
+      lo2.at(y, x) =
+          sony_arw6_narrow(low.at(y, x) - sony_arw6_floor_shift(hp + hc + 2, 2));
     }
 
   SonyArw6Plane out(low.rows * 2, low.cols);
   for (int y = 0; y < low.rows; y++)
     for (int x = 0; x < low.cols; x++)
     {
-      const int32_t ln = lo2.at(y + 1 < low.rows ? y + 1 : y, x);
-      const int32_t hi2 =
-          high.at(y, x) + sony_arw6_floor_shift(lo2.at(y, x) + ln, 1);
+      const int64_t ln = lo2.at(y + 1 < low.rows ? y + 1 : y, x);
+      const int32_t hi2 = sony_arw6_narrow(
+          high.at(y, x) + sony_arw6_floor_shift(lo2.at(y, x) + ln, 1));
       out.at(y * 2, x) = lo2.at(y, x);
       out.at(y * 2 + 1, x) = hi2;
     }
@@ -1035,18 +1044,19 @@ static SonyArw6Plane sony_arw6_inv53_axis1(const SonyArw6Plane &low,
   for (int y = 0; y < low.rows; y++)
     for (int x = 0; x < low.cols; x++)
     {
-      const int32_t hp = high.at(y, x ? x - 1 : 0);
-      const int32_t hc = high.at(y, x);
-      lo2.at(y, x) = low.at(y, x) - sony_arw6_floor_shift(hp + hc + 2, 2);
+      const int64_t hp = high.at(y, x ? x - 1 : 0);
+      const int64_t hc = high.at(y, x);
+      lo2.at(y, x) =
+          sony_arw6_narrow(low.at(y, x) - sony_arw6_floor_shift(hp + hc + 2, 2));
     }
 
   SonyArw6Plane out(low.rows, low.cols * 2);
   for (int y = 0; y < low.rows; y++)
     for (int x = 0; x < low.cols; x++)
     {
-      const int32_t ln = lo2.at(y, x + 1 < low.cols ? x + 1 : x);
-      const int32_t hi2 =
-          high.at(y, x) + sony_arw6_floor_shift(lo2.at(y, x) + ln, 1);
+      const int64_t ln = lo2.at(y, x + 1 < low.cols ? x + 1 : x);
+      const int32_t hi2 = sony_arw6_narrow(
+          high.at(y, x) + sony_arw6_floor_shift(lo2.at(y, x) + ln, 1));
       out.at(y, x * 2) = lo2.at(y, x);
       out.at(y, x * 2 + 1) = hi2;
     }
@@ -1056,7 +1066,7 @@ static SonyArw6Plane sony_arw6_inv53_axis1(const SonyArw6Plane &low,
 static SonyArw6Plane sony_arw6_inv53_axis0_high_leading(
     const SonyArw6Plane &low, const SonyArw6Plane &high)
 {
-  sony_arw6_require(low.cols == high.cols);
+  sony_arw6_require(low.rows > 0 && low.cols == high.cols);
   sony_arw6_require(high.rows == low.rows || high.rows == low.rows + 1);
   SonyArw6Plane lo2(low.rows, low.cols);
   SonyArw6Plane hi2(high.rows, high.cols);
@@ -1065,22 +1075,22 @@ static SonyArw6Plane sony_arw6_inv53_axis0_high_leading(
   {
     for (int y = 0; y < low.rows; y++)
       for (int x = 0; x < low.cols; x++)
-        lo2.at(y, x) =
+        lo2.at(y, x) = sony_arw6_narrow(
             low.at(y, x) -
-            sony_arw6_floor_shift(high.at(y, x) + high.at(y + 1, x) + 2, 2);
+            sony_arw6_floor_shift(int64_t(high.at(y, x)) + high.at(y + 1, x) + 2,
+                                  2));
 
     for (int x = 0; x < high.cols; x++)
     {
-      hi2.at(0, x) = high.at(0, x) + lo2.at(0, x);
-      hi2.at(high.rows - 1, x) = high.at(high.rows - 1, x) +
-                                 lo2.at(low.rows - 1, x);
+      hi2.at(0, x) = sony_arw6_narrow(int64_t(high.at(0, x)) + lo2.at(0, x));
+      hi2.at(high.rows - 1, x) = sony_arw6_narrow(
+          int64_t(high.at(high.rows - 1, x)) + lo2.at(low.rows - 1, x));
     }
     for (int y = 1; y < high.rows - 1; y++)
       for (int x = 0; x < high.cols; x++)
-        hi2.at(y, x) = high.at(y, x) +
-                       sony_arw6_floor_shift(lo2.at(y - 1, x) +
-                                                 lo2.at(y, x),
-                                             1);
+        hi2.at(y, x) = sony_arw6_narrow(
+            high.at(y, x) +
+            sony_arw6_floor_shift(int64_t(lo2.at(y - 1, x)) + lo2.at(y, x), 1));
 
     SonyArw6Plane out(low.rows * 2 + 1, low.cols);
     for (int y = 0; y < low.rows; y++)
@@ -1098,17 +1108,18 @@ static SonyArw6Plane sony_arw6_inv53_axis0_high_leading(
     for (int x = 0; x < low.cols; x++)
     {
       const int next_y = y + 1 < high.rows ? y + 1 : y;
-      lo2.at(y, x) =
+      lo2.at(y, x) = sony_arw6_narrow(
           low.at(y, x) -
-          sony_arw6_floor_shift(high.at(y, x) + high.at(next_y, x) + 2, 2);
+          sony_arw6_floor_shift(int64_t(high.at(y, x)) + high.at(next_y, x) + 2,
+                                2));
     }
   for (int x = 0; x < high.cols; x++)
-    hi2.at(0, x) = high.at(0, x) + lo2.at(0, x);
+    hi2.at(0, x) = sony_arw6_narrow(int64_t(high.at(0, x)) + lo2.at(0, x));
   for (int y = 1; y < high.rows; y++)
     for (int x = 0; x < high.cols; x++)
-      hi2.at(y, x) =
+      hi2.at(y, x) = sony_arw6_narrow(
           high.at(y, x) +
-          sony_arw6_floor_shift(lo2.at(y - 1, x) + lo2.at(y, x), 1);
+          sony_arw6_floor_shift(int64_t(lo2.at(y - 1, x)) + lo2.at(y, x), 1));
 
   SonyArw6Plane out(low.rows * 2, low.cols);
   for (int y = 0; y < low.rows; y++)
@@ -1319,17 +1330,17 @@ static SonyArw6Plane sony_arw6_final_green(const SonyArw6Plane &ll,
     const int prev_y = y ? y - 1 : y;
     for (int x = 0; x < w; x++)
     {
-      int32_t pred;
+      int64_t pred;
       if (x + 1 < w)
         pred = sony_arw6_floor_shift(
-            selected.at(y, x + 1) + selected.at(prev_y, x) +
+            int64_t(selected.at(y, x + 1)) + selected.at(prev_y, x) +
                 selected.at(y, x) + selected.at(prev_y, x + 1),
             2);
       else
         pred = sony_arw6_floor_shift(
-            (selected.at(prev_y, x) + selected.at(y, x)) * 2, 2);
-      odd_green.at(y, x) =
-          sony_arw6_floor_shift(int64_t(2) * ll.at(y, x) - pred, 1);
+            (int64_t(selected.at(prev_y, x)) + selected.at(y, x)) * 2, 2);
+      odd_green.at(y, x) = sony_arw6_narrow(
+          sony_arw6_floor_shift(int64_t(2) * ll.at(y, x) - pred, 1));
     }
   }
 
@@ -1337,19 +1348,18 @@ static SonyArw6Plane sony_arw6_final_green(const SonyArw6Plane &ll,
   for (int y = 0; y < h; y++)
   {
     const int next_y = y + 1 < h ? y + 1 : y;
-    even_green.at(y, 0) =
+    even_green.at(y, 0) = sony_arw6_narrow(
         selected.at(y, 0) +
-        sony_arw6_floor_shift((odd_green.at(y, 0) + odd_green.at(next_y, 0)) *
-                                  int64_t(2),
-                              2);
+        sony_arw6_floor_shift(
+            (int64_t(odd_green.at(y, 0)) + odd_green.at(next_y, 0)) * 2, 2));
     for (int x = 1; x < w; x++)
-      even_green.at(y, x) =
+      even_green.at(y, x) = sony_arw6_narrow(
           selected.at(y, x) +
-          sony_arw6_floor_shift(odd_green.at(y, x - 1) +
+          sony_arw6_floor_shift(int64_t(odd_green.at(y, x - 1)) +
                                     odd_green.at(next_y, x - 1) +
                                     odd_green.at(next_y, x) +
                                     odd_green.at(y, x),
-                                2);
+                                2));
   }
 
   SonyArw6Plane out(h, w * 2);
@@ -1362,24 +1372,24 @@ static SonyArw6Plane sony_arw6_final_green(const SonyArw6Plane &ll,
   return out;
 }
 
-static inline ushort sony_arw6_sample_from_signed(int32_t x)
+static inline ushort sony_arw6_sample_from_signed(int64_t x)
 {
-  int code = x + SONY_ARW6_INTERNAL_BIAS;
+  int64_t code = x + SONY_ARW6_INTERNAL_BIAS;
   if (code < 0)
     code = 0;
   if (code > 4095)
     code = 4095;
-  return sony_arw6_llvc3_lut_value(code);
+  return sony_arw6_llvc3_lut_value(int(code));
 }
 
-static inline int32_t sony_arw6_clamp_signed_code(int32_t x)
+static inline int32_t sony_arw6_clamp_signed_code(int64_t x)
 {
-  int code = x + SONY_ARW6_INTERNAL_BIAS;
+  int64_t code = x + SONY_ARW6_INTERNAL_BIAS;
   if (code < 0)
     code = 0;
   if (code > 4095)
     code = 4095;
-  return code - SONY_ARW6_INTERNAL_BIAS;
+  return int32_t(code - SONY_ARW6_INTERNAL_BIAS);
 }
 
 struct SonyArw6DecodedTile
@@ -1404,6 +1414,8 @@ static SonyArw6DecodedTile sony_arw6_decode_stream_tile(const uchar *stream,
   const int low_rows = padded_height / 16;
   const int low_start = guarded_height ? 1 : 0;
   const int low_count = low_rows - low_start;
+  // 高度不足 16 行时没有低频行，后续重建会索引空平面。
+  sony_arw6_require(low_count > 0);
 
   std::vector<SonyArw6Plane> g0 =
       sony_arw6_decode_packet_arrays(stream, stream_size, dir,
@@ -1608,15 +1620,15 @@ void LibRaw::sony_arw6_load_raw()
             sony_arw6_clamp_signed_code(tile.full_green.at(y, x * 2));
         const int32_t g1 =
             sony_arw6_clamp_signed_code(tile.full_green.at(y, x * 2 + 1));
-        const int32_t gavg = sony_arw6_floor_shift(int64_t(g0) + g1, 1);
+        const int64_t gavg = sony_arw6_floor_shift(int64_t(g0) + g1, 1);
         row0[x * 2] = sony_arw6_sample_from_signed(
-            gavg + 2 * tile.red_residual.at(y, x));
+            gavg + 2 * int64_t(tile.red_residual.at(y, x)));
         row0[x * 2 + 1] =
             sony_arw6_sample_from_signed(tile.full_green.at(y, x * 2 + 1));
         row1[x * 2] =
             sony_arw6_sample_from_signed(tile.full_green.at(y, x * 2));
         row1[x * 2 + 1] = sony_arw6_sample_from_signed(
-            gavg + 2 * tile.blue_residual.at(y, x));
+            gavg + 2 * int64_t(tile.blue_residual.at(y, x)));
       }
     }
   }

@@ -22,7 +22,8 @@ RawLab 使用 LibRaw 0.22.2-Release 的 ABI 和数据布局，并通过
 | 有损 JPEG DNG（Compression 34892） | 各平台启用 LibRaw JPEG 解码，固定 libjpeg-turbo 3.1.3、JPEG8 ABI；不改变 Adobe DNG SDK 的 JPEG XL 路径 |
 
 相机补丁位于 [`libraw-cameras.cmake`](../../lutools/cmake/libraw-cameras.cmake)，
-ARW6 还对损坏码流补充系数范围检查和无溢出的符号运算。补丁和第三方源码位于
+ARW6 还对损坏码流补充系数范围检查、无溢出的符号运算、64 位重建中间值及越界拒绝，
+并拒绝不足 16 行、没有低频行的 tile。补丁和第三方源码位于
 [`libraw-sony-arw6.cmake`](../../lutools/cmake/libraw-sony-arw6.cmake)、
 [`third_party/libraw`](../../lutools/third_party/libraw/README.md)。依赖缓存必须包含这些输入；
 改变补丁后不能复用旧 LibRaw 二进制。
@@ -40,8 +41,11 @@ Nikon HE 使用项目已有、经过样片校验的实现；HE* 支持边界仍�
 
 ## 回归验证入口
 
-默认 CTest 包含合成 ARW6 容器的分派、修正电平及损坏流拒绝测试，以及可完整显影的
-JPEG-compressed DNG。真实照片不入库，通过 CMake 参数选择：
+默认 CTest 包含可完整显影的 JPEG-compressed DNG。链接 RawLab 补丁版 LibRaw 时
+（本树构建，或依赖前缀带 `share/rawlab/libraw-patch.sha256`）还包含合成 ARW6 容器的分派、
+修正电平、正常 tile 解码及短 tile、越界系数拒绝测试；未打补丁的系统 LibRaw 跳过这些测试。
+`SONY2FUJI_TEST_LIBRAW_SOURCE` 指向补丁后的 LibRaw 源码树时，另加带 UBSan 的
+`sony_arw6_bounds` 重建回归。真实照片不入库，通过 CMake 参数选择：
 
 ```sh
 cmake -S lutools -B lutools/build-macos \

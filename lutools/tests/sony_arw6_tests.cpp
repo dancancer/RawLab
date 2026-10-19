@@ -1,3 +1,4 @@
+#include "sony_arw6_fixture.h"
 #include <libraw/libraw.h>
 #include <algorithm>
 #include <cstdint>
@@ -14,32 +15,36 @@ void require(bool condition, const char* message) {
 }
 
 std::vector<unsigned char> malformedArw6(unsigned compression = 32766) {
-    // 合成容器只验证解码器分派和损坏流拒绝，不使用个人照片或内嵌 JPEG。
-    std::vector<unsigned char> bytes(1024 + 640, 0);
-    auto word = [&](size_t offset, uint16_t value) {
-        bytes.at(offset) = static_cast<unsigned char>(value);
-        bytes.at(offset + 1) = static_cast<unsigned char>(value >> 8);
-    };
-    auto dword = [&](size_t offset, uint32_t value) {
-        word(offset, static_cast<uint16_t>(value));
-        word(offset + 2, static_cast<uint16_t>(value >> 16));
-    };
-    bytes[0] = bytes[1] = 'I'; word(2, 42); dword(4, 8);
-    word(8, 14);
-    size_t entry = 10;
-    auto tag = [&](unsigned id, unsigned type, unsigned count, uint32_t value) {
-        word(entry, id); word(entry + 2, type); dword(entry + 4, count);
-        dword(entry + 8, value); entry += 12;
-    };
-    tag(256, 4, 1, 64); tag(257, 4, 1, 32); tag(258, 3, 1, 14);
-    tag(259, 3, 1, compression); tag(262, 3, 1, 32803);
-    tag(271, 2, 5, 512); tag(272, 2, 9, 520);
-    tag(273, 4, 1, 1024); tag(274, 3, 1, 1); tag(277, 3, 1, 1);
-    tag(278, 4, 1, 32); tag(279, 4, 1, 640);
-    tag(33421, 3, 2, 0x00020002); tag(33422, 1, 4, 0x02010100);
-    std::memcpy(bytes.data() + 512, "SONY", 5);
-    std::memcpy(bytes.data() + 520, "ILCE-7M5", 9);
-    return bytes;
+    return sony_arw6_fixture::arw6Tiff(64, 32, std::vector<unsigned char>(640), compression);
+}
+
+int unpackStatus(const std::vector<unsigned char>& bytes) {
+    auto raw = std::make_unique<LibRaw>();
+    require(raw->open_buffer(bytes.data(), bytes.size()) == LIBRAW_SUCCESS, "Synthetic ARW6 must open");
+    require(raw->unpack_function_name() &&
+        std::strcmp(raw->unpack_function_name(), "sony_arw6_load_raw()") == 0,
+        "Synthetic ARW6 must select the ARW6 decoder");
+    return raw->unpack();
+}
+
+void checkSyntheticStreams() {
+    // 对齐高度与需要保护行的高度都必须仍能完整解码，防止新增边界检查误拒正常码流。
+    for (int rows : {32, 18, 50})
+        require(unpackStatus(sony_arw6_fixture::tiledArw6(64, rows)) == LIBRAW_SUCCESS,
+            "Well-formed synthetic ARW6 tiles must decode");
+    require(unpackStatus(sony_arw6_fixture::tiledArw6(16, 2)) != LIBRAW_SUCCESS,
+        "Tiles without a low-frequency row must be rejected before reconstruction");
+    int rejected = 0;
+    for (int rows : {32, 18, 50})
+        sony_arw6_fixture::sweepLargeCoefficients(rows, [&](const std::vector<unsigned char>& bytes) {
+            const int status = unpackStatus(bytes);
+            require(status == LIBRAW_SUCCESS || status == LIBRAW_IO_ERROR,
+                "Large ARW6 coefficients must decode or fail as corrupt data");
+            rejected += status == LIBRAW_IO_ERROR;
+        });
+    require(rejected > 0, "Reconstruction values outside int32 must reject the stream");
+    std::cout << "PASS ARW6 synthetic tiles, short-tile refusal and " << rejected
+              << " out-of-range reconstructions refused\n";
 }
 
 void checkDispatch() {
@@ -91,6 +96,7 @@ void checkPhoto(const char* path) {
 int main(int argc, char** argv) {
     try {
         checkDispatch();
+        checkSyntheticStreams();
         if (argc == 2) checkPhoto(argv[1]);
         return 0;
     } catch (const std::exception& error) {
