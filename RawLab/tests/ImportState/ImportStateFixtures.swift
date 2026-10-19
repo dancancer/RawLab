@@ -80,7 +80,7 @@ struct Fixture {
     let aIdentity: PhotoIdentity, bIdentity: PhotoIdentity
     let aSettings: RawSettings, bSettings: RawSettings
 
-    init(directory: URL) throws {
+    init(directory: URL, exportQueue: DispatchQueue = .global(qos: .userInitiated)) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         aURL = directory.appendingPathComponent("source-a.png")
         bURL = directory.appendingPathComponent("source-b.png")
@@ -101,7 +101,8 @@ struct Fixture {
         try persistence.save(aIdentity, state: PhotoEditState(settings: a))
         try persistence.save(bIdentity, state: PhotoEditState(settings: b))
         let collector = self.collector
-        model = RawEditorViewModel(editPersistence: persistence, resultDelivery: { collector.append($0) })
+        model = RawEditorViewModel(editPersistence: persistence, exportQueue: exportQueue,
+                                  resultDelivery: { collector.append($0) })
         try Self.writeImage(aURL, size: CGSize(width: 80, height: 60),
                             colors: [UIColor(red: 0.45, green: 0.15, blue: 0.1, alpha: 1), UIColor(white: 0.25, alpha: 1)])
         try Self.writeImage(bURL, size: CGSize(width: 96, height: 64),

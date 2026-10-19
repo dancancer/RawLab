@@ -73,9 +73,11 @@ extension RawEditorViewModel {
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
         let sourceURL = self.sourceURL
+        let cachedSource = self.cachedSource
         let comparisonChanged = basePreviewGeometry != settings.geometry
 
         let workItem = DispatchWorkItem { [weak self] in
+            defer { withExtendedLifetime(cachedSource) {} }
             guard let self else { return }
             defer {
                 self.resultDelivery {
