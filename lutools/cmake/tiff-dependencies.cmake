@@ -29,9 +29,17 @@ set(lzma OFF CACHE BOOL "" FORCE)
 set(zstd OFF CACHE BOOL "" FORCE)
 set(webp OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(rawlab_libtiff
-    URL https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz
-    URL_HASH SHA256=f698d94f3103da8ca7438d84e0344e453fe0ba3b7486e04c5bf7a9a3fabe9b69)
+set(tiff_url https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz)
+set(tiff_sha256 f698d94f3103da8ca7438d84e0344e453fe0ba3b7486e04c5bf7a9a3fabe9b69)
+FetchContent_GetProperties(rawlab_libtiff)
+if(NOT rawlab_libtiff_POPULATED AND NOT FETCHCONTENT_SOURCE_DIR_RAWLAB_LIBTIFF
+        AND NOT FETCHCONTENT_FULLY_DISCONNECTED)
+    include("${CMAKE_CURRENT_LIST_DIR}/download-archive.cmake")
+    set(tiff_archive "${FETCHCONTENT_BASE_DIR}/rawlab_libtiff-cache/tiff-4.7.1.tar.gz")
+    rawlab_download_archive("${tiff_url}" "${tiff_sha256}" "${tiff_archive}")
+    set(tiff_url "${tiff_archive}")
+endif()
+FetchContent_Declare(rawlab_libtiff URL "${tiff_url}" URL_HASH "SHA256=${tiff_sha256}")
 FetchContent_MakeAvailable(rawlab_libtiff)
 if(TARGET tiff)
     set_target_properties(tiff PROPERTIES POSITION_INDEPENDENT_CODE ON)

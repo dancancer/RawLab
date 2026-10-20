@@ -15,6 +15,7 @@ cmake-build-*/
 !cmake/libraw-sony-arw6.cmake
 !cmake/libraw-cameras.cmake
 !cmake/raw-jpeg.cmake
+!cmake/download-archive.cmake
 !cmake/tiff-dependencies.cmake
 !cmake/denoise-dependencies.cmake
 !CMakeLists.txt
