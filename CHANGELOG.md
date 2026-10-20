@@ -27,6 +27,8 @@ release notes include assets, installation requirements and validation limits.
   now matches the other clients.
 - iOS imported-file lifetime across asynchronous import, editing, cancellation
   and frozen batch exports.
+- Correct the embedded iOS statistics framework's minimum-system metadata
+  during packaging, without modifying the vendor binary or shared SDK cache.
 - Android batch progress, restart recovery and checkpoint-failure handling,
   with incremental journal updates for larger jobs.
 - Remaining interface wording, translations, error messages and accessibility
