@@ -1,0 +1,11 @@
+/* Web-prototype tokens mapped from DESIGN.md and native controls. They do not replace native tokens. */
+body {
+  --bg: #1c1c1e;
+  --surface: #252527;
+  --raised: #303033;
+  --line: #3c3c3f;
+  --fg: #f2f2f3;
+  --muted: #b5b5bc;
+  --accent: #f2ce48;
+  --danger: #ffb1a9;
+}

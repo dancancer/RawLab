@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>RawLab 设计资产覆盖表</title
+  ><style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 36px;
+      max-width: 1600px;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      background: #f2f2ef;
+      color: #262921;
+    }
+    h1 {
+      font-size: 28px;
+      margin: 16px 0 12px;
+    }
+    p {
+      color: #606559;
+      line-height: 1.8;
+      font-size: 14px;
+    }
+    a {
+      color: #72601a;
+      text-underline-offset: 3px;
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    select {
+      padding: 9px;
+      border: 1px solid #c4c8bc;
+      background: white;
+      border-radius: 4px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+      margin-top: 24px;
+    }
+    th,
+    td {
+      border-bottom: 1px solid #c9cdbf;
+      text-align: left;
+      padding: 14px 12px;
+      vertical-align: top;
+      line-height: 1.7;
+    }
+    th {
+      color: #626758;
+      font-weight: 500;
+    }
+    td:first-child {
+      min-width: 135px;
+    }
+    .states {
+      display: flex;
+      gap: 7px 14px;
+      flex-wrap: wrap;
+    }
+    .states a {
+      white-space: nowrap;
+    }
+    code {
+      font-size: 11px;
+      color: #6c7164;
+    }
+    footer {
+      font-size: 12px;
+      color: #6c7164;
+      margin-top: 30px;
+      line-height: 1.8;
+    }
+    .summary {
+      font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 700px) {
+      body {
+        padding: 20px;
+      }
+      table {
+        display: block;
+        overflow: auto;
+      }
+      th,
+      td {
+        padding: 10px;
+      }
+    }
+  </style>
+  <nav>
+    <a href="index.html">返回交互设计板</a><a href="README.md">维护说明</a
+    ><label
+      >平台
+      <select id="platform">
+        <option value="ios">iOS / iPadOS</option>
+        <option value="android">Android</option>
+        <option value="macos">macOS</option>
+        <option value="windows">Windows</option>
+      </select></label
+    >
+  </nav>
+  <h1>界面与状态覆盖</h1>
+  <p id="version"></p>
+  <p>
+    按现有应用功能与本轮新增提案维护。功能来源描述已有能力，原型外观与交互仍需评审；“已覆盖”仅表示有可定位的设计稿，不表示原生界面或功能已验收。系统选择器只记录集成边界。
+  </p>
+  <p class="summary" id="summary"></p>
+  <table>
+    <thead>
+      <tr>
+        <th>功能 / 稳定 ID</th>
+        <th>范围与来源</th>
+        <th>已覆盖的界面与状态</th>
+        <th>当前原生依据</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <footer>
+    目录由 shared/screens.js
+    生成；与设计板使用同一份界面清单。设计状态与版本只读取
+    manifest.js。未来复制粘贴、用户预设、颜色分级、AI、HDR 等未进入本轮覆盖。
+  </footer>
+  <script src="manifest.js"></script>
+  <script src="shared/model.js"></script>
+  <script src="shared/screens.js"></script>
+  <script>
+    const m = RawLabDesignManifest;
+    document.querySelector("#version").textContent =
+      `设计 ${m.designVersion} · ${m.updatedAt} · ${m.status === "in_review" ? "待评审" : m.status}`;
+    function render() {
+      const p = document.querySelector("#platform").value;
+      const screens = RawLabDesignScreens.filter((s) =>
+        s.platforms.includes(p),
+      );
+      const ids = new Set();
+      document.querySelector("tbody").innerHTML = screens
+        .map((s) => {
+          const states = s.states.filter((id) =>
+            RawLabDesign.supportsScreen(s, id, p),
+          );
+          states.forEach((id) => ids.add(id));
+          const native = RawLabDesign.nativeSources[p]?.[s.area];
+          return `<tr><td>${s.title}<br><code>${s.id}</code></td><td>${s.area}<br>${s.scope === "proposed" ? "本轮新增提案" : s.scope === "existing_and_proposed" ? "已有功能＋本轮交互改动" : s.scope === "design_system" ? "可复用规范" : "已有功能"}</td><td><div class="states">${states.map((id) => `<a href="index.html?platform=${p}&scene=${id}">${RawLabDesign.descriptions[id]?.[0] || s.title}</a>`).join("")}</div></td><td>${native ? `<a href="${native}">查看原生来源</a>` : "设计资产自身"}<br>${s.source}</td></tr>`;
+        })
+        .join("");
+      document.querySelector("#summary").textContent =
+        `${screens.length} 个功能条目 · ${ids.size} 个可直达界面/状态`;
+    }
+    document.querySelector("#platform").onchange = render;
+    render();
+  </script>
+</html>
