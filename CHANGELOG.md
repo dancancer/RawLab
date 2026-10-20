@@ -3,7 +3,7 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
-## [0.8.2] - Unreleased
+## [0.8.2] - 2026-10-20
 
 ### Added
 
@@ -34,7 +34,7 @@ release notes include assets, installation requirements and validation limits.
 - Remaining interface wording, translations, error messages and accessibility
   labels.
 
-Version `0.8.2`, build `14` (release preparation). See the
+Version `0.8.2`, build `14`. See the
 [release notes](docs/releases/v0.8/v0.8.2.md) and
 [Chinese update announcement](docs/releases/v0.8/v0.8.2-xiaohongshu.md).
 
