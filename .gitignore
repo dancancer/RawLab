@@ -70,3 +70,7 @@ experiments/rum-local/windows/obj/
 
 # 技能生成的单次计划与设计稿属于过程文档，不入库（见 AGENTS.md「文档」）
 /docs/superpowers/
+
+/release-artifacts
+
+/reviews
