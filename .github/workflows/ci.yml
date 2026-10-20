@@ -240,8 +240,13 @@ jobs:
     env:
       DOTNET_INSTALL_DIR: 'E:\RawLabCI\dotnet'
       RAWLAB_LENS_SOURCE_CACHE: 'E:\RawLabCI\cache\lens-sources'
-      JOBS: '8'
-      CMAKE_BUILD_PARALLEL_LEVEL: '8'
+      JOBS: '16'
+      CMAKE_BUILD_PARALLEL_LEVEL: '16'
+      # MSBuild otherwise compiles each project's sources one at a time. The multi-tool task
+      # schedules individual cl.exe processes across projects, capped in total for 32 GiB.
+      UseMultiToolTask: 'true'
+      EnforceProcessCountAcrossBuilds: 'true'
+      CL_MPCount: '24'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

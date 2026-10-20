@@ -189,6 +189,12 @@ Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
 directory. The cache action selects Git's GNU tar, which must also find `gzip`;
 a missing compressor can leave the job green while silently losing its cache.
 
+The Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
+which otherwise leaves each project's sources compiling one at a time. A single
+cross-project cap of 24 `cl.exe` processes (`CL_MPCount` with
+`EnforceProcessCountAcrossBuilds`) keeps memory within the guest's 32 GiB. These
+are CI environment settings; `build.ps1` and local builds are unchanged.
+
 Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
 exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
 requires physical GPU/external-RAW evidence. Service-session results do not

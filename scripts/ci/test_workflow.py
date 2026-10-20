@@ -171,7 +171,12 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(windows["runs-on"], ["self-hosted", "windows", "x64", "rawlab-windows"])
         self.assertEqual(windows["env"]["DOTNET_INSTALL_DIR"], "E:\\RawLabCI\\dotnet")
         self.assertEqual(windows["env"]["RAWLAB_LENS_SOURCE_CACHE"], "E:\\RawLabCI\\cache\\lens-sources")
-        self.assertEqual(windows["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
+        self.assertEqual(windows["env"]["JOBS"], "16")
+        self.assertEqual(windows["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "16")
+        # File-level MSVC parallelism stays bounded by one cross-project process count.
+        self.assertEqual({name: windows["env"][name] for name in
+                          ("UseMultiToolTask", "EnforceProcessCountAcrossBuilds", "CL_MPCount")},
+                         {"UseMultiToolTask": "true", "EnforceProcessCountAcrossBuilds": "true", "CL_MPCount": "24"})
 
     def test_existing_default_builds_are_not_feature_reduced(self):
         for command in ("RawLabMac/build.sh", "RawLabWindows/build.ps1", "testDebugUnitTest",
