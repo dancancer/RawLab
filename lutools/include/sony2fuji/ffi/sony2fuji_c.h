@@ -51,6 +51,25 @@ typedef enum sony2fuji_look_format {
     SONY2FUJI_LOOK_RLOOK = 2
 } sony2fuji_look_format;
 
+typedef struct sony2fuji_blob {
+    void* data;
+    size_t size_bytes;
+} sony2fuji_blob;
+
+typedef enum sony2fuji_dcp_error {
+    SONY2FUJI_DCP_ERROR_NONE = 0,
+    SONY2FUJI_DCP_ERROR_MALFORMED = 1,
+    SONY2FUJI_DCP_ERROR_TOO_LARGE = 2,
+    SONY2FUJI_DCP_ERROR_INVALID_CALIBRATION = 3,
+    SONY2FUJI_DCP_ERROR_MISSING_TONE_CURVE = 4,
+    SONY2FUJI_DCP_ERROR_AUTOMATIC_BLACK = 5,
+    SONY2FUJI_DCP_ERROR_TRIPLE_ILLUMINANT = 6,
+    SONY2FUJI_DCP_ERROR_UNSUPPORTED_STAGES = 7,
+    SONY2FUJI_DCP_ERROR_INVALID_TABLE = 8,
+    SONY2FUJI_DCP_ERROR_INVALID_TONE_CURVE = 9,
+    SONY2FUJI_DCP_ERROR_INVALID_EXPOSURE = 10
+} sony2fuji_dcp_error;
+
 typedef enum sony2fuji_output_format {
     SONY2FUJI_OUTPUT_JPEG = 0,
     SONY2FUJI_OUTPUT_PNG = 1,
@@ -318,6 +337,16 @@ sony2fuji_status sony2fuji_validate_look(
     const char* path, sony2fuji_look_format* format, uint32_t* format_version
 );
 
+// Compile a bounded DCP byte buffer into the native RLOOK format. The output
+// blob is owned by the caller and must be released with sony2fuji_release_blob.
+// A zero-initialized or previously returned blob is accepted; failures clear it.
+sony2fuji_status sony2fuji_compile_dcp(
+    const void* data, size_t size_bytes, const char* source_name,
+    sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason
+);
+
+void sony2fuji_release_blob(sony2fuji_blob* blob);
+
 // Reduced RAW processing is allowed only for PREVIEW + BUFFER requests.
 // FINAL requests and every file export ignore this flag.
 sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* session, int32_t enabled);
@@ -384,9 +413,9 @@ sony2fuji_status sony2fuji_session_set_hsl(
 // centered inscribed canvas, then crop (floor start/ceil end) before output resizing.
 // Crop coordinates refer to that transformed canvas. Invalid values preserve
 // the previous configuration. Normalized ends tolerate at most 1e-6 beyond
-// one for Float UI rounding and clamp to the canvas. Active geometry uses an
-// exact RAW source even for interactive/viewport previews. Geometry is CPU-only:
-// GPU Auto may render
+// one for Float UI rounding and clamp to the canvas. Active geometry disables
+// half-size RAW; a viewport preview may reduce the source, while FINAL and file
+// outputs keep the exact source. Geometry is CPU-only: GPU Auto may render
 // color on GPU, but the mixed result reports CPU; Force returns UNSUPPORTED.
 sony2fuji_status sony2fuji_session_set_geometry(
     sony2fuji_session* session, const sony2fuji_geometry_config* config
@@ -401,14 +430,15 @@ sony2fuji_status sony2fuji_session_set_geometry(
 // before straightening and crop. Perspective and straightening sample once
 // bilinearly; zero perspective retains the exact existing geometry path.
 // Invalid values preserve all state. Success clears the last geometry size.
-// Active perspective has the same exact-source and GPU semantics as geometry.
+// Active perspective has the same viewport and GPU semantics as geometry.
 sony2fuji_status sony2fuji_session_set_perspective(
     sony2fuji_session* session, const sony2fuji_perspective_config* config
 );
 
 // Native canvas from the last successful process, after geometry and before
 // output resizing. Identity records the decoded input dimensions even when
-// its preview is reduced later. Active geometry always uses the exact source.
+// its preview is reduced later. Active geometry reports the full-source canvas
+// even when a viewport preview reduced its source.
 // Successful geometry/perspective setters and every new process clear the size.
 // Failed processes, including output I/O failures, leave the size unavailable.
 // Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.

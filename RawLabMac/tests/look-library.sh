@@ -7,9 +7,9 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d /tmp/rawlab-look-library.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-SOURCES=("$ROOT/RawLabMac/tests/LookLibraryTests.swift")
-if [ -f "$ROOT/RawLabMac/Sources/LookLibrary.swift" ]; then
-    SOURCES+=("$ROOT/RawLabMac/Sources/LookLibrary.swift")
+SOURCES=("$ROOT/RawLabMac/tests/LookLibraryTests.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" "$ROOT/Shared/DCPCompiler.swift")
+if [ -f "$ROOT/Shared/LookLibrary.swift" ]; then
+    SOURCES+=("$ROOT/Shared/LookLibrary.swift")
 fi
 swiftc "$ROOT/Shared/Localization.swift" -parse-as-library -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \

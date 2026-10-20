@@ -35,7 +35,7 @@ transforms = {
 }
 diffs = []
 for name, (before, after) in transforms.items():
-    source = root / "RawLab/RawLab/UI" / name
+    source = root / "RawLab/RawLab/UI/Editor" / name
     text = source.read_text()
     if text.count(before) != 1:
         raise SystemExit(f"Expected exactly one marker in {source}")

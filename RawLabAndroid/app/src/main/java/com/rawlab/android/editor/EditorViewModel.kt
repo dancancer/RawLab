@@ -27,10 +27,12 @@ import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.i18n.AppStrings
+import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
-import com.rawlab.android.settings.EditStore
+import com.rawlab.android.editor.storage.EditorEditStore
+import com.rawlab.android.editor.storage.EditSaveResult
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.geometry.uncropped
 
@@ -40,7 +42,7 @@ class EditorViewModel @JvmOverloads constructor(
 ) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
     private val usage = UsageAnalyticsRegistry.get(application)
-    private var editStore: EditStore? = runCatching { EditStore(File(application.filesDir, "edits")) }.getOrNull()
+    private val editStore = EditorEditStore(File(application.filesDir, "edits"))
     private val batches = EditorBatches(application, storage, viewModelScope, batchProcessorFactory, usage) { error ->
         mutable.value = mutable.value.copy(error = error)
     }
@@ -56,7 +58,7 @@ class EditorViewModel @JvmOverloads constructor(
     private val mutable = MutableStateFlow(EditorState())
     val state = mutable.asStateFlow()
     private var disposed = false
-    private val renderer = EditorRenderer(storage, { editStore?.load(it) },
+    private val renderer = EditorRenderer(storage, { editStore.load(it) },
         (application.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
     private val queue = RenderQueue<Work, WorkResult>(renderer::perform, { revision, result ->
         viewModelScope.launch {
@@ -70,8 +72,7 @@ class EditorViewModel @JvmOverloads constructor(
     }, ::releaseStorage)
 
     init {
-        if (editStore == null) mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED,
-            error = text(R.string.edit_storage_error))
+        editStore.initialResult.let { mutable.value = mutable.value.copy(saveState = it.state, saveError = it.message) }
         lookRevision = lookQueue.submit(LookWork.Load)
         batches.refreshPending()
     }
@@ -106,14 +107,16 @@ class EditorViewModel @JvmOverloads constructor(
                             tint = if (request.edits.recipeID == null) value.pair.tint.coerceIn(-150f, 150f) else request.edits.tint)
                     else request.edits
                     val saved = when {
-                        request.importing -> if (editStore == null) EditSaveState.FAILED else if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE
-                        request.interactive -> mutable.value.saveState
+                        request.importing -> if (!editStore.available) editStore.initialResult else
+                            EditSaveResult(if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE)
+                        request.interactive -> null
                         else -> persist(request.photo, settings)
                     }
                     mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
                         photo = request.photo, edits = settings, preview = value.pair,
                         exact = !request.interactive, error = null,
-                        saveState = if (request.restored && saved == EditSaveState.SAVED) EditSaveState.RESTORED else saved)
+                        saveState = if (request.restored && saved?.state == EditSaveState.SAVED) EditSaveState.RESTORED else saved?.state ?: mutable.value.saveState,
+                        saveError = if (saved == null) mutable.value.saveError else saved.message)
                 }
                 WorkResult.Export -> {
                     mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
@@ -150,7 +153,10 @@ class EditorViewModel @JvmOverloads constructor(
                     ?: EditorMutation(mutable.value.copy(operation = Operation.NONE), null)
                 val report = if (result.failures.isEmpty()) null else
                     AppStrings.format(R.string.look_import_summary, result.imported.size, result.failures.size) +
-                        "\n\n" + result.failures.joinToString("\n")
+                        result.failures.joinToString("\n") { failure ->
+                            val message = failure.dcpReason?.let(::dcpFailureText) ?: failure.message
+                            if (failure.invalid) message + "\n" + text(R.string.look_invalid_file) else message
+                        }
                 mutable.value = mutation.state.copy(looks = result.looks, lookImportReport = report,
                     message = if (result.imported.isEmpty()) null else text(R.string.look_imported))
                 scheduleLookPreview(mutation.preview)
@@ -179,6 +185,19 @@ class EditorViewModel @JvmOverloads constructor(
         currentRevision = queue.submit(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
     }
 
+    private fun dcpFailureText(reason: DcpFailureReason): String = text(when (reason) {
+        DcpFailureReason.MALFORMED -> R.string.dcp_malformed
+        DcpFailureReason.TOO_LARGE -> R.string.dcp_too_large
+        DcpFailureReason.INVALID_CALIBRATION -> R.string.dcp_invalid_calibration
+        DcpFailureReason.MISSING_TONE_CURVE -> R.string.dcp_missing_tone_curve
+        DcpFailureReason.AUTOMATIC_BLACK -> R.string.dcp_automatic_black
+        DcpFailureReason.TRIPLE_ILLUMINANT -> R.string.dcp_triple_illuminant
+        DcpFailureReason.UNSUPPORTED_STAGES -> R.string.dcp_unsupported_stages
+        DcpFailureReason.INVALID_TABLE -> R.string.dcp_invalid_table
+        DcpFailureReason.INVALID_TONE_CURVE -> R.string.dcp_invalid_tone_curve
+        DcpFailureReason.INVALID_EXPOSURE -> R.string.dcp_invalid_exposure
+    })
+
     fun importPhoto(uri: Uri?) {
         if (uri == null) {
             pendingPhotoImport.clear()
@@ -186,9 +205,12 @@ class EditorViewModel @JvmOverloads constructor(
         }
         if (mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         val current = mutable.value
-        if (current.photo != null && persist(current.photo, current.edits) == EditSaveState.FAILED) {
-            mutable.value = current.copy(saveState = EditSaveState.FAILED, error = text(R.string.edit_storage_error))
-            return
+        if (current.photo != null) {
+            val saved = persist(current.photo, current.edits)
+            if (saved.state == EditSaveState.FAILED) {
+                mutable.value = current.copy(saveState = saved.state, saveError = saved.message)
+                return
+            }
         }
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
         mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null)
@@ -237,8 +259,9 @@ class EditorViewModel @JvmOverloads constructor(
             previewResizeJob = null
             previewLongEdge = requestedPreviewLongEdge
         }
-        val saved = if (interactive) current.saveState else persist(current.photo!!, edits)
-        mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null, saveState = saved,
+        val saved = if (interactive) null else persist(current.photo!!, edits)
+        mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
+            saveState = saved?.state ?: current.saveState, saveError = if (saved == null) current.saveError else saved.message,
             previewResizePending = previewResizeJob != null)
         currentRevision = queue.submit(Work.Preview(current.photo!!, edits, interactive, gpuMode(), edge = previewLongEdge))
     }
@@ -334,11 +357,8 @@ class EditorViewModel @JvmOverloads constructor(
     }
     fun retrySave() {
         val photo = mutable.value.photo
-        if (photo != null) mutable.value = mutable.value.copy(saveState = persist(photo, mutable.value.edits))
-        else try {
-            editStore = EditStore(File(getApplication<Application>().filesDir, "edits"))
-            mutable.value = mutable.value.copy(saveState = EditSaveState.NONE, error = null)
-        } catch (_: Exception) { mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED) }
+        val saved = if (photo != null) persist(photo, mutable.value.edits) else editStore.reopen()
+        mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
         fadeSaveNotice()
     }
     fun reset() { edit(mutable.value.edits.reset()) }
@@ -355,11 +375,7 @@ class EditorViewModel @JvmOverloads constructor(
 
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
 
-    private fun persist(photo: ImportedPhoto, edits: EditSettings): EditSaveState = try {
-        if (editStore == null) editStore = EditStore(File(getApplication<Application>().filesDir, "edits"))
-        editStore!!.save(photo.identity, edits)
-        EditSaveState.SAVED
-    } catch (_: Throwable) { EditSaveState.FAILED }
+    private fun persist(photo: ImportedPhoto, edits: EditSettings) = editStore.save(photo.identity, edits)
     fun setGpuEnabled(enabled: Boolean) {
         if (mutable.value.operation != Operation.NONE) return
         mutable.value = mutable.value.copy(gpuEnabled = enabled)
@@ -370,8 +386,9 @@ class EditorViewModel @JvmOverloads constructor(
     fun beginExport(): Boolean {
         if (!mutable.value.canExport) return false
         val photo = mutable.value.photo ?: return false
-        if (persist(photo, mutable.value.edits) == EditSaveState.FAILED) {
-            mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED)
+        val saved = persist(photo, mutable.value.edits)
+        if (saved.state == EditSaveState.FAILED) {
+            mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             return false
         }
         mutable.value = mutable.value.copy(operation = Operation.PICK_EXPORT, error = null)
@@ -415,7 +432,8 @@ class EditorViewModel @JvmOverloads constructor(
     fun onBackground() {
         batches.cancelForBackground()
         mutable.value.photo?.let { photo ->
-            if (persist(photo, mutable.value.edits) == EditSaveState.FAILED) mutable.value = mutable.value.copy(saveState = EditSaveState.FAILED)
+            val saved = persist(photo, mutable.value.edits)
+            if (saved.state == EditSaveState.FAILED) mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
         }
     }
     private fun text(id: Int) = AppStrings.text(id)

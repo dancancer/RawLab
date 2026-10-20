@@ -3,8 +3,8 @@
 <resources>
     <string name="adjustment_apply">"Apply"</string>
     <string name="adjustment_continue">"Keep Editing"</string>
-    <string name="adjustment_discard">"Discard"</string>
-    <string name="adjustment_draft">"Unapplied draft"</string>
+    <string name="adjustment_discard">"Discard Changes"</string>
+    <string name="adjustment_draft">"Draft Not Applied"</string>
     <string name="adjustment_fine">"Fine"</string>
     <string name="adjustment_haptics">"Adjustment Haptics"</string>
     <string name="adjustment_leave">"Apply changes before leaving?"</string>
@@ -12,10 +12,22 @@
     <string name="adjustment_toggle_sign">"Toggle sign"</string>
     <string name="all_tools">"All tools"</string>
     <string name="batch_confirmation_count">"%1$d outputs need verification"</string>
+    <string name="dcp_automatic_black">"The DCP requires automatic black-level processing, which is not yet supported by this conversion. Select a black-level policy explicitly with the preparation tool first."</string>
+    <string name="dcp_invalid_calibration">"The DCP lacks a unique, valid D65 ColorMatrix/ForwardMatrix and cannot be converted."</string>
+    <string name="dcp_invalid_exposure">"The DCP exposure offset is invalid; it must be a finite value from -16 to +16 EV."</string>
+    <string name="dcp_invalid_table">"The DCP HueSatMap/LookTable data, dimensions, or encoding are unsupported."</string>
+    <string name="dcp_invalid_tone_curve">"The DCP tone curve is invalid; it needs 2 to 8192 finite points in the 0 to 1 range with increasing x-coordinates."</string>
+    <string name="dcp_malformed">"The DCP file is damaged or uses an unsupported TIFF structure."</string>
+    <string name="dcp_missing_tone_curve">"The DCP is missing ProfileToneCurve; Adobe\'s default curve cannot be inferred automatically. Specify a curve explicitly with the preparation tool first."</string>
+    <string name="dcp_too_large">"The DCP file or look data exceeds the safe size limit."</string>
+    <string name="dcp_triple_illuminant">"The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet."</string>
+    <string name="dcp_unsupported_stages">"The DCP contains unsupported spatial gains, HDR, or RGB-table processing and cannot be converted."</string>
     <string name="dng_description">"Baked-in look, not sensor RAW. No editable history or capture EXIF. Files only."</string>
+    <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
+    <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_settings">"Settings"</string>
     <string name="empty_hint">"Choose a RAW from an album or import from system files."</string>
-    <string name="geometry_drag_hint">"Crop rectangle"</string>
+    <string name="geometry_drag_hint">"Crop Selection"</string>
     <string name="geometry_full">"Reset crop"</string>
     <string name="geometry_move_down">"Move crop down"</string>
     <string name="geometry_move_left">"Move crop left"</string>
@@ -23,11 +35,14 @@
     <string name="geometry_move_up">"Move crop up"</string>
     <string name="info_unavailable">"Unavailable"</string>
     <string name="jpeg_description">"sRGB · quality 95 · capture metadata"</string>
-    <string name="look_remove_body">"Only the managed copy is removed. The original file is kept."</string>
+    <string name="look_invalid_file">"The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required."</string>
+    <string name="look_remove_body">"The copy of the look saved by RawLab will be removed; the original file will not be deleted."</string>
     <string name="output_destination">"Save location"</string>
     <string name="png_description">"sRGB · 16-bit lossless · capture metadata"</string>
+    <string name="remove_look_confirmation">"Remove \"%1$s\"?"</string>
     <string name="reset_all_body">"Keeps the current film. Clears the recipe and resets all other adjustments. Photos, looks and batch tasks are kept."</string>
     <string name="reset_all_title">"Reset all adjustments?"</string>
+    <string name="reset_effect">"Reset %1$s"</string>
     <string name="select_photo">"Choose photo"</string>
-    <string name="vignette_highlights_unavailable">"Highlight protection is available for negative vignette amounts."</string>
+    <string name="vignette_highlights_unavailable">"Available only when vignette intensity is negative."</string>
 </resources>

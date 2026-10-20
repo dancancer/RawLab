@@ -14,6 +14,8 @@ import org.junit.Test
 import java.io.File
 import java.util.UUID
 import com.rawlab.android.MainActivity
+import com.rawlab.android.R
+import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.testing.LanguageTestRule
@@ -49,9 +51,17 @@ class LookLibraryScreenTest {
         }
     }
 
-    @Test fun importedLookCanBeRenamedAndRemovedAfterOriginalIsDeleted() {
+    @Test fun importedLookCanBeRenamedAndRemovedAfterOriginalIsDeleted() = verifyManagedLook("zh-Hans")
+
+    @Test fun importedLookCanBeRenamedAndRemovedInEnglish() = verifyManagedLook("en")
+
+    private fun verifyManagedLook(language: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        compose.runOnUiThread { AppStrings.setPreference(context, language) }
+        compose.activityRule.scenario.recreate()
+        compose.waitForIdle()
+        fun text(id: Int) = AppStrings.text(id)
         val token = UUID.randomUUID().toString().take(8)
         val raw = File(context.cacheDir, "screen-$token.arw")
         val source = File(context.cacheDir, "Transferred-$token.cube")
@@ -67,7 +77,7 @@ class LookLibraryScreenTest {
             }
             compose.runOnUiThread { compose.activity.model.importPhoto(Uri.fromFile(raw)) }
             compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
-            compose.onNodeWithContentDescription("导入外观").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithContentDescription(text(R.string.import_look)).assertIsDisplayed().assertIsEnabled()
             compose.runOnUiThread { compose.activity.model.importLook(Uri.fromFile(source)) }
             compose.waitUntil(30_000) {
                 compose.activity.model.state.value.let { state ->
@@ -80,10 +90,10 @@ class LookLibraryScreenTest {
             val strip = compose.onNode(hasScrollToIndexAction() and !hasTestTag("editor-tools") and
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
             strip.performScrollToNode(hasText(source.name))
-            compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasScrollToIndexAction())).performClick()
-            compose.onNodeWithText("重命名外观").performClick()
+            compose.onNode(hasContentDescription(text(R.string.more)) and hasAnyAncestor(hasScrollToIndexAction())).performClick()
+            compose.onNodeWithText(text(R.string.rename_look)).performClick()
             compose.onNode(hasSetTextAction()).performTextReplacement("Transferred Look $token")
-            compose.onNodeWithText("确定").performClick()
+            compose.onNodeWithText(text(R.string.confirm)).performClick()
             compose.waitUntil(10_000) {
                 compose.activity.model.state.value.looks.any { it.id == lookId && it.name == "Transferred Look $token" }
             }
@@ -97,15 +107,19 @@ class LookLibraryScreenTest {
             compose.waitForIdle()
             val shape = if (context.resources.configuration.screenWidthDp >= 600) "tablet" else "phone"
             val screenshots = requireNotNull(context.getExternalFilesDir("look-screenshots"))
-            File(screenshots, "$shape-managed-look.png").outputStream().use {
+            File(screenshots, "$shape-$language-managed-look.png").outputStream().use {
                 compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
             }
             compose.activityRule.scenario.recreate()
             compose.waitForIdle()
             strip.performScrollToNode(hasText("Transferred Look $token"))
-            compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasScrollToIndexAction())).performClick()
-            compose.onNodeWithText("删除外观").performClick()
-            compose.onNodeWithText("确定").performClick()
+            compose.onNode(hasContentDescription(text(R.string.more)) and hasAnyAncestor(hasScrollToIndexAction())).performClick()
+            compose.onNodeWithText(text(R.string.delete_look)).performClick()
+            compose.onNodeWithText(AppStrings.format(R.string.remove_look_confirmation,"Transferred Look $token")).assertIsDisplayed()
+            File(screenshots, "$shape-$language-remove-look.png").outputStream().use {
+                instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            compose.onNodeWithText(text(R.string.confirm)).performClick()
             compose.waitUntil(30_000) {
                 compose.activity.model.state.value.let { state -> state.canExport && state.looks.none { it.id == lookId } }
             }

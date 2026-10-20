@@ -27,13 +27,13 @@ rm -f "$HARNESS/$ORIGINAL_EXECUTABLE"
 import difflib, hashlib, json, pathlib, subprocess, sys
 root, out = map(pathlib.Path, sys.argv[1:])
 transforms = {
-    "RawLab/RawLab/UI/ContentView.swift": [
+    "RawLab/RawLab/UI/Editor/ContentView.swift": [
         ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
          "        .onAppear {\n            PickerCancelHarnessState.shared.readEditor = { self.pickerCancelSnapshot() }\n            viewModel.loadLUTsIfNeeded()"),
         ("        .onDisappear { cancelRulerFocus(); cancelPhotoImport() }",
          "        .onDisappear { cancelRulerFocus(); cancelPhotoImport(); PickerCancelHarnessState.shared.disappearances += 1 }")
     ],
-    "RawLab/RawLab/UI/ContentView+Helpers.swift": [
+    "RawLab/RawLab/UI/Editor/ContentView+Helpers.swift": [
         ("try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }",
          "try await PhotoImportFile.loadSource { try await PickerCancelHarnessState.shared.acquire(item) }")
     ]

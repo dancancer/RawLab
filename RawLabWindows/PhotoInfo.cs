@@ -59,7 +59,7 @@ internal sealed record PhotoInfo(
             Add(fields, Loc.Text("光圈"), FormatAperture(Aperture));
             Add(fields, "ISO", FormatUnit(Iso, "ISO"));
             Add(fields, Loc.Text("焦距"), FormatUnit(FocalLength, "mm"));
-            return fields.Count == 1 ? FileName + Loc.Text(" · 未读取到拍摄参数") : string.Join(" · ", fields);
+            return fields.Count == 1 ? FileName + " · " + Loc.Text("未读取到拍摄参数") : string.Join(" · ", fields);
         }
     }
 

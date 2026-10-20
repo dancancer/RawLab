@@ -3,7 +3,7 @@
 <resources>
     <string name="adjustment_apply">"Appliquer"</string>
     <string name="adjustment_continue">"Continuer à modifier"</string>
-    <string name="adjustment_discard">"Abandonner"</string>
+    <string name="adjustment_discard">"Abandonner les modifications"</string>
     <string name="adjustment_draft">"Brouillon non appliqué"</string>
     <string name="adjustment_fine">"Réglage fin"</string>
     <string name="adjustment_haptics">"Retour haptique lors des réglages"</string>
@@ -12,10 +12,22 @@
     <string name="adjustment_toggle_sign">"Changer de signe"</string>
     <string name="all_tools">"Tous les outils"</string>
     <string name="batch_confirmation_count">"%1$d sorties à vérifier"</string>
+    <string name="dcp_automatic_black">"Le DCP nécessite un traitement automatique du niveau de noir, que cette conversion ne prend pas encore en charge. Sélectionnez d’abord explicitement une stratégie de niveau de noir avec l’outil de préparation."</string>
+    <string name="dcp_invalid_calibration">"Le DCP ne contient pas de ColorMatrix/ForwardMatrix D65 unique et valide ; conversion impossible."</string>
+    <string name="dcp_invalid_exposure">"Le décalage d’exposition du DCP n’est pas valide ; il doit s’agir d’une valeur finie de -16 à +16 EV."</string>
+    <string name="dcp_invalid_table">"Les données, dimensions ou l’encodage HueSatMap/LookTable du DCP ne sont pas pris en charge."</string>
+    <string name="dcp_invalid_tone_curve">"La courbe DCP n’est pas valide ; elle doit contenir 2 à 8192 points finis dans l’intervalle 0 à 1, avec des coordonnées x croissantes."</string>
+    <string name="dcp_malformed">"Le fichier DCP est endommagé ou utilise une structure TIFF non prise en charge."</string>
+    <string name="dcp_missing_tone_curve">"Le DCP ne contient pas ProfileToneCurve ; la courbe Adobe par défaut ne peut pas être déduite automatiquement. Spécifiez d’abord une courbe avec l’outil de préparation."</string>
+    <string name="dcp_too_large">"Le fichier DCP ou les données du look dépassent la limite de taille sûre."</string>
+    <string name="dcp_triple_illuminant">"Le DCP utilise une HueSatMap à trois illuminants, qui n’est pas encore prise en charge pour la conversion."</string>
+    <string name="dcp_unsupported_stages">"Le DCP contient des gains spatiaux, un traitement HDR ou des tables RGB non pris en charge et ne peut pas être converti."</string>
     <string name="dng_description">"Look final intégré, pas un RAW du capteur. Sans historique modifiable ni EXIF de prise de vue. Fichiers uniquement."</string>
+    <string name="edit_read_error">"Impossible de lire l\'enregistrement d\'ajustement : %1$s"</string>
+    <string name="edit_unsaved_detail">"Ajustements non enregistrés : %1$s"</string>
     <string name="editor_settings">"Réglages"</string>
     <string name="empty_hint">"Choisissez un RAW dans un album ou importez-le depuis les fichiers système."</string>
-    <string name="geometry_drag_hint">"Rectangle de recadrage"</string>
+    <string name="geometry_drag_hint">"Zone de recadrage"</string>
     <string name="geometry_full">"Réinitialiser le recadrage"</string>
     <string name="geometry_move_down">"Déplacer vers le bas"</string>
     <string name="geometry_move_left">"Déplacer à gauche"</string>
@@ -23,11 +35,14 @@
     <string name="geometry_move_up">"Déplacer vers le haut"</string>
     <string name="info_unavailable">"Indisponible"</string>
     <string name="jpeg_description">"sRGB · qualité 95 · métadonnées de prise de vue"</string>
-    <string name="look_remove_body">"Seule la copie gérée est supprimée. Le fichier original est conservé."</string>
+    <string name="look_invalid_file">"Le fichier de look est endommagé ou incompatible ; un fichier CUBE ou RLOOK compatible est requis."</string>
+    <string name="look_remove_body">"La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé."</string>
     <string name="output_destination">"Emplacement"</string>
     <string name="png_description">"sRGB · 16 bits sans perte · métadonnées de prise de vue"</string>
+    <string name="remove_look_confirmation">"Supprimer \"%1$s\" ?"</string>
     <string name="reset_all_body">"Le film actuel est conservé. La recette et les autres réglages sont réinitialisés. Les photos, looks et tâches par lot sont conservés."</string>
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
+    <string name="reset_effect">"Réinitialiser %1$s"</string>
     <string name="select_photo">"Choisir une photo"</string>
-    <string name="vignette_highlights_unavailable">"La protection des hautes lumières exige un vignettage négatif."</string>
+    <string name="vignette_highlights_unavailable">"Disponible uniquement lorsque l’intensité du vignettage est négative."</string>
 </resources>

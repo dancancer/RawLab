@@ -46,7 +46,7 @@ film looks do not promise an exact match to in-camera JPEGs.
 - JPEG and 16-bit PNG export on Windows, macOS and Android; JPEG export on iOS.
   Rendered DNG file export is available in single and batch workflows on all four
   clients. It bakes the current adjustments, not reversible sensor RAW controls.
-  See [verification and platform limits](docs/verification-rendered-dng-export.md).
+  See the [rendered DNG contract and limits](lutools/docs/color-contract.md#rendered-dng).
   Readable capture metadata is retained, while output size and orientation are
   updated.
 - Metal, Direct3D 11 and OpenGL ES processing where supported, with automatic CPU
@@ -71,11 +71,11 @@ film looks do not promise an exact match to in-camera JPEGs.
 
 - [Documentation index](docs/README.md)
 - [Download the latest release](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.8.1 release notes (build 13)](docs/releases/v0.8.1.md)
-- [Installation and distribution notes](docs/installation.md)
-- [iPhone installation guide](docs/ios-installation.md)
+- [v0.8.2 release notes (build 14)](docs/releases/v0.8/v0.8.2.md)
+- [Installation and distribution notes](docs/guides/installation.md)
+- [iPhone installation guide](docs/guides/ios-installation.md)
 - [Changelog](CHANGELOG.md)
-- [Product roadmap (Chinese)](docs/roadmap.md)
+- [Product roadmap (Chinese)](docs/architecture/roadmap.md)
 - [Windows client](RawLabWindows/README.md)
 - [macOS client](RawLabMac/README.md)
 - [Android client](RawLabAndroid/README.md)
@@ -90,4 +90,4 @@ Copyright (c) 2026 RawLab contributors. This release's original project code is
 distributed under the [GNU General Public License v3.0 only](LICENSE)
 (`GPL-3.0-only`), with a narrow [Alibaba Cloud RUM SDK linking exception](LICENSE-ALIYUN-RUM-EXCEPTION)
 under GPLv3 section 7. Third-party libraries, LUTs and other bundled assets retain
-their own licenses and copyright notices. See [licensing and attribution](docs/licensing.md).
+their own licenses and copyright notices. See [licensing and attribution](docs/reference/licensing.md).

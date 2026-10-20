@@ -21,13 +21,13 @@
     "adjustment_discard": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "放弃",
+      "source": "放弃修改",
       "types": []
     },
     "adjustment_draft": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "未应用草稿",
+      "source": "草稿尚未应用",
       "types": []
     },
     "adjustment_fine": {
@@ -195,7 +195,7 @@
     "collapse_adjustments": {
       "file": "strings.xml",
       "formats": [],
-      "source": "收起调整",
+      "source": "收起调整栏",
       "types": []
     },
     "collapse_vignette": {
@@ -231,7 +231,7 @@
     "delete_look": {
       "file": "strings.xml",
       "formats": [],
-      "source": "删除外观",
+      "source": "移除外观…",
       "types": []
     },
     "denoise": {
@@ -300,11 +300,81 @@
       "source": "保存最终外观，不是传感器 RAW；不保留可编辑历史或拍摄 EXIF，仅保存到文件。",
       "types": []
     },
+    "dcp_automatic_black": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。",
+      "types": []
+    },
+    "dcp_invalid_calibration": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。",
+      "types": []
+    },
+    "dcp_invalid_exposure": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。",
+      "types": []
+    },
+    "dcp_invalid_table": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。",
+      "types": []
+    },
+    "dcp_invalid_tone_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。",
+      "types": []
+    },
+    "dcp_malformed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 文件损坏，或使用了不支持的 TIFF 结构。",
+      "types": []
+    },
+    "dcp_missing_tone_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。",
+      "types": []
+    },
+    "dcp_too_large": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 文件或外观数据超过安全大小限制。",
+      "types": []
+    },
+    "dcp_triple_illuminant": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 使用三光源 HueSatMap，暂不支持转换。",
+      "types": []
+    },
+    "dcp_unsupported_stages": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。",
+      "types": []
+    },
     "dng_file_only": {
       "file": "strings.xml",
       "formats": [],
       "source": "DNG 只能保存到文件",
       "types": []
+    },
+    "edit_read_error": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "无法读取调整记录：{0}",
+      "types": [
+        "s"
+      ]
     },
     "edit_restored": {
       "file": "strings.xml",
@@ -318,17 +388,21 @@
       "source": "调整已保存",
       "types": []
     },
-    "edit_storage_error": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "无法打开本机调整记录，请检查存储权限。",
-      "types": []
-    },
     "edit_unsaved": {
       "file": "strings.xml",
       "formats": [],
-      "source": "调整未保存，点击重试",
+      "source": "调整未保存 · 重试",
       "types": []
+    },
+    "edit_unsaved_detail": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "调整未保存：{0}",
+      "types": [
+        "s"
+      ]
     },
     "editor_settings": {
       "file": "editor_strings.xml",
@@ -345,7 +419,7 @@
     "expand_adjustments": {
       "file": "strings.xml",
       "formats": [],
-      "source": "展开调整",
+      "source": "展开调整栏",
       "types": []
     },
     "expand_vignette": {
@@ -369,7 +443,7 @@
     "exporting": {
       "file": "strings.xml",
       "formats": [],
-      "source": "正在导出全分辨率照片",
+      "source": "正在导出…",
       "types": []
     },
     "exposure": {
@@ -423,7 +497,7 @@
     "geometry_crop_height": {
       "file": "strings.xml",
       "formats": [],
-      "source": "高度",
+      "source": "裁切高度",
       "types": []
     },
     "geometry_crop_hint": {
@@ -435,25 +509,25 @@
     "geometry_crop_width": {
       "file": "strings.xml",
       "formats": [],
-      "source": "宽度",
+      "source": "裁切宽度",
       "types": []
     },
     "geometry_crop_x": {
       "file": "strings.xml",
       "formats": [],
-      "source": "左边",
+      "source": "裁切左边",
       "types": []
     },
     "geometry_crop_y": {
       "file": "strings.xml",
       "formats": [],
-      "source": "顶部",
+      "source": "裁切上边",
       "types": []
     },
     "geometry_drag_hint": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "裁切矩形",
+      "source": "裁切选区",
       "types": []
     },
     "geometry_flip_horizontal": {
@@ -525,7 +599,7 @@
     "geometry_ratio_original": {
       "file": "strings.xml",
       "formats": [],
-      "source": "原始",
+      "source": "原始比例",
       "types": []
     },
     "geometry_reset": {
@@ -537,13 +611,13 @@
     "geometry_rotate_left": {
       "file": "strings.xml",
       "formats": [],
-      "source": "向左旋转",
+      "source": "向左旋转 90°",
       "types": []
     },
     "geometry_rotate_right": {
       "file": "strings.xml",
       "formats": [],
-      "source": "向右旋转",
+      "source": "向右旋转 90°",
       "types": []
     },
     "geometry_straighten": {
@@ -575,7 +649,7 @@
     "geometry_swap_ratio": {
       "file": "strings.xml",
       "formats": [],
-      "source": "切换裁切横竖方向",
+      "source": "交换横纵比例",
       "types": []
     },
     "github_repository": {
@@ -1041,7 +1115,7 @@
     "look_error": {
       "file": "strings.xml",
       "formats": [],
-      "source": "外观操作失败，请选择有效的 .cube 或 .rlook 文件。",
+      "source": "操作失败",
       "types": []
     },
     "look_import_result": {
@@ -1056,7 +1130,7 @@
         "%1$d",
         "%2$d"
       ],
-      "source": "已导入 {0} 个外观，{1} 个文件导入失败",
+      "source": "已导入 {0} 个外观，{1} 个文件导入失败：\n",
       "types": [
         "d",
         "d"
@@ -1074,6 +1148,12 @@
       "source": "正在导入外观",
       "types": []
     },
+    "look_invalid_file": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。",
+      "types": []
+    },
     "look_name": {
       "file": "strings.xml",
       "formats": [],
@@ -1083,7 +1163,7 @@
     "look_remove_body": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "仅移除托管副本，原文件保留。",
+      "source": "将移除 RawLab 保存的外观副本，原始文件不会被删除。",
       "types": []
     },
     "look_storage_error": {
@@ -1125,7 +1205,7 @@
     "message_as_shot_for_each_photo": {
       "file": "strings.xml",
       "formats": [],
-      "source": "各照片拍摄时设置",
+      "source": "按每张照片",
       "types": []
     },
     "message_awaiting_confirmation": {
@@ -1149,7 +1229,7 @@
     "message_choose_directory": {
       "file": "strings.xml",
       "formats": [],
-      "source": "选择目录",
+      "source": "选择输出文件夹",
       "types": []
     },
     "message_choose_output_directory_again": {
@@ -1173,7 +1253,7 @@
     "message_coarse_grain_denoise": {
       "file": "strings.xml",
       "formats": [],
-      "source": "粗颗粒降噪",
+      "source": "粗色斑抑制",
       "types": []
     },
     "message_collapse": {
@@ -1206,9 +1286,13 @@
     },
     "message_continue_unfinished_items": {
       "file": "strings.xml",
-      "formats": [],
-      "source": "继续未完成项",
-      "types": []
+      "formats": [
+        "%1$s"
+      ],
+      "source": "继续未完成的 {0} 张",
+      "types": [
+        "s"
+      ]
     },
     "message_contrast": {
       "file": "strings.xml",
@@ -1249,7 +1333,7 @@
     "message_enter_a_pixel_count_between_1_and": {
       "file": "strings.xml",
       "formats": [],
-      "source": "请输入 1–65535 之间的像素数",
+      "source": "导出长边必须为 1-65535 像素。",
       "types": []
     },
     "message_expand": {
@@ -1305,7 +1389,7 @@
     "message_failed": {
       "file": "strings.xml",
       "formats": [],
-      "source": "失败",
+      "source": "导出失败",
       "types": []
     },
     "message_film": {
@@ -1409,7 +1493,7 @@
     "message_processing": {
       "file": "strings.xml",
       "formats": [],
-      "source": "正在处理",
+      "source": "正在导出",
       "types": []
     },
     "message_remove": {
@@ -1449,7 +1533,7 @@
     "message_saved": {
       "file": "strings.xml",
       "formats": [],
-      "source": "已保存",
+      "source": "已导出",
       "types": []
     },
     "message_saved_photos_will_be_kept": {
@@ -1509,7 +1593,7 @@
     "message_stopping": {
       "file": "strings.xml",
       "formats": [],
-      "source": "正在停止",
+      "source": "正在停止…",
       "types": []
     },
     "message_succeeded_failed_not_processed": {
@@ -1519,7 +1603,7 @@
         "%2$s",
         "%3$s"
       ],
-      "source": "成功 {0} 张，失败 {1} 张，未处理 {2} 张",
+      "source": "成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张",
       "types": [
         "s",
         "s",
@@ -1536,6 +1620,12 @@
         "s"
       ]
     },
+    "message_task_source_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "任务来源文件不可用，请重新创建批量任务。",
+      "types": []
+    },
     "message_temperature": {
       "file": "strings.xml",
       "formats": [],
@@ -1551,7 +1641,7 @@
     "message_the_task_source_or_look_file_is": {
       "file": "strings.xml",
       "formats": [],
-      "source": "任务来源或外观文件不可用，请重新创建批量任务。",
+      "source": "任务使用的外观文件不可用，请重新创建任务。",
       "types": []
     },
     "message_tint": {
@@ -1565,7 +1655,7 @@
       "formats": [
         "%1$s"
       ],
-      "source": "无法读取批量任务：{0}",
+      "source": "无法读取上次批量任务：{0}",
       "types": [
         "s"
       ]
@@ -1697,13 +1787,13 @@
     "output_size": {
       "file": "strings.xml",
       "formats": [],
-      "source": "输出尺寸",
+      "source": "导出尺寸",
       "types": []
     },
     "output_size_error": {
       "file": "strings.xml",
       "formats": [],
-      "source": "请输入 1–65535 之间的像素数",
+      "source": "导出长边必须为 1-65535 像素。",
       "types": []
     },
     "output_size_range": {
@@ -1733,7 +1823,7 @@
     "png": {
       "file": "strings.xml",
       "formats": [],
-      "source": "PNG · 16 位",
+      "source": "16-bit PNG",
       "types": []
     },
     "png_description": {
@@ -1862,6 +1952,16 @@
       "source": "刷新",
       "types": []
     },
+    "remove_look_confirmation": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "移除“{0}”？",
+      "types": [
+        "s"
+      ]
+    },
     "rename_look": {
       "file": "strings.xml",
       "formats": [],
@@ -1871,7 +1971,7 @@
     "rendering": {
       "file": "strings.xml",
       "formats": [],
-      "source": "正在显影",
+      "source": "正在显影…",
       "types": []
     },
     "reset": {
@@ -1898,22 +1998,20 @@
       "source": "重置降噪",
       "types": []
     },
-    "reset_grain": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "重置颗粒",
-      "types": []
+    "reset_effect": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}",
+      "types": [
+        "s"
+      ]
     },
     "reset_value": {
       "file": "strings.xml",
       "formats": [],
       "source": "重置此项",
-      "types": []
-    },
-    "reset_vignette": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "重置暗角",
       "types": []
     },
     "result": {
@@ -2047,7 +2145,7 @@
     "usage_analytics": {
       "file": "strings.xml",
       "formats": [],
-      "source": "使用统计",
+      "source": "允许使用统计",
       "types": []
     },
     "usage_cleanup_failed": {
@@ -2095,7 +2193,7 @@
     "usage_restart_required": {
       "file": "strings.xml",
       "formats": [],
-      "source": "统计已停止；重新开启前请重启应用。",
+      "source": "统计已停止，请重启应用后再开启。",
       "types": []
     },
     "usage_start_failed": {
@@ -2113,7 +2211,7 @@
     "usage_storage_failed": {
       "file": "strings.xml",
       "formats": [],
-      "source": "统计设置未能保存，当前进程已停止统计。",
+      "source": "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。",
       "types": []
     },
     "usage_unavailable": {
@@ -2155,7 +2253,7 @@
     "vignette_highlights_unavailable": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "高光保护仅在负暗角量时可用。",
+      "source": "仅在暗角强度为负值时可用。",
       "types": []
     },
     "vignette_midpoint": {
@@ -2203,7 +2301,7 @@
     "zoom_fit": {
       "file": "strings.xml",
       "formats": [],
-      "source": "适应画面",
+      "source": "适合窗口",
       "types": []
     }
   },
@@ -2255,14 +2353,6 @@
       "fr": "JPEG",
       "ja": "JPEG",
       "zh-Hans": "JPEG"
-    },
-    "PNG · 16 位": {
-      "de": "PNG · 16 Bit",
-      "en": "PNG · 16-bit",
-      "es": "PNG · 16 bits",
-      "fr": "PNG · 16 bits",
-      "ja": "PNG・16 ビット",
-      "zh-Hans": "PNG · 16 位"
     },
     "RawLab": {
       "de": "RawLab",
@@ -2328,29 +2418,13 @@
       "ja": "許可された写真のみ表示",
       "zh-Hans": "仅显示已授权的照片"
     },
-    "仅移除托管副本，原文件保留。": {
-      "de": "Nur die verwaltete Kopie wird entfernt. Die Originaldatei bleibt erhalten.",
-      "en": "Only the managed copy is removed. The original file is kept.",
-      "es": "Solo se elimina la copia administrada. El archivo original se conserva.",
-      "fr": "Seule la copie gérée est supprimée. Le fichier original est conservé.",
-      "ja": "管理コピーのみを削除します。元のファイルは保持します。",
-      "zh-Hans": "仅移除托管副本，原文件保留。"
-    },
-    "任务来源或外观文件不可用，请重新创建批量任务。": {
-      "de": "Aufgabenquelle oder Look-Datei ist nicht verfügbar. Erstellen Sie den Stapelauftrag neu.",
-      "en": "The task source or look file is unavailable. Create the batch task again.",
-      "es": "El origen de la tarea o el archivo de look no está disponible. Crea de nuevo la tarea por lotes.",
-      "fr": "La source de la tâche ou le fichier de look est indisponible. Recréez la tâche par lots.",
-      "ja": "タスクの元画像またはルックファイルを利用できません。一括タスクを作成し直してください。",
-      "zh-Hans": "任务来源或外观文件不可用，请重新创建批量任务。"
-    },
-    "使用统计": {
-      "de": "Nutzungsanalyse",
-      "en": "Usage analytics",
-      "es": "Análisis de uso",
-      "fr": "Analyse d'utilisation",
-      "ja": "利用状況の分析",
-      "zh-Hans": "使用统计"
+    "任务来源文件不可用，请重新创建批量任务。": {
+      "de": "Die Quelldatei der Aufgabe ist nicht verfügbar. Erstellen Sie die Stapelaufgabe erneut.",
+      "en": "The task’s source file is unavailable. Create the batch task again.",
+      "es": "El archivo de origen de la tarea no está disponible. Vuelve a crear la tarea por lotes.",
+      "fr": "Le fichier source de la tâche est indisponible. Créez à nouveau la tâche par lot.",
+      "ja": "タスクのソースファイルを利用できません。バッチタスクを作り直してください。",
+      "zh-Hans": "任务来源文件不可用，请重新创建批量任务。"
     },
     "保存位置": {
       "de": "Speicherort",
@@ -2440,22 +2514,6 @@
       "ja": "符号を切り替え",
       "zh-Hans": "切换正负号"
     },
-    "切换裁切横竖方向": {
-      "de": "Zuschnittausrichtung wechseln",
-      "en": "Swap crop orientation",
-      "es": "Cambiar orientación del recorte",
-      "fr": "Inverser le format du recadrage",
-      "ja": "切り抜きの縦横を切り替え",
-      "zh-Hans": "切换裁切横竖方向"
-    },
-    "删除外观": {
-      "de": "Look löschen",
-      "en": "Delete look",
-      "es": "Eliminar look",
-      "fr": "Supprimer le look",
-      "ja": "ルックを削除",
-      "zh-Hans": "删除外观"
-    },
     "刷新": {
       "de": "Aktualisieren",
       "en": "Refresh",
@@ -2471,22 +2529,6 @@
       "fr": "Séparation original/réglé",
       "ja": "元画像と調整後の境界",
       "zh-Hans": "原图与调整后分界"
-    },
-    "原始": {
-      "de": "Original",
-      "en": "Original",
-      "es": "Original",
-      "fr": "Original",
-      "ja": "元の比率",
-      "zh-Hans": "原始"
-    },
-    "各照片拍摄时设置": {
-      "de": "Wie für jedes Foto aufgenommen",
-      "en": "As shot for each photo",
-      "es": "Según la toma de cada foto",
-      "fr": "Réglage de prise de vue de chaque photo",
-      "ja": "各写真の撮影時設定",
-      "zh-Hans": "各照片拍摄时设置"
     },
     "向上移动裁切": {
       "de": "Zuschnitt nach oben",
@@ -2552,30 +2594,6 @@
       "ja": "ルックライブラリを読み込めません。後でもう一度試すか、壊れたルック記録を削除してください。",
       "zh-Hans": "外观库读取失败，请稍后重试或删除损坏的外观记录。"
     },
-    "外观操作失败，请选择有效的 .cube 或 .rlook 文件。": {
-      "de": "Look-Vorgang fehlgeschlagen. Wählen Sie eine gültige .cube- oder .rlook-Datei aus.",
-      "en": "Look operation failed. Select a valid .cube or .rlook file.",
-      "es": "Error en la operación del look. Selecciona un archivo .cube o .rlook válido.",
-      "fr": "Échec de l'opération sur le look. Sélectionnez un fichier .cube ou .rlook valide.",
-      "ja": "ルックの操作に失敗しました。有効な .cube または .rlook ファイルを選択してください。",
-      "zh-Hans": "外观操作失败，请选择有效的 .cube 或 .rlook 文件。"
-    },
-    "失败": {
-      "de": "Fehlgeschlagen",
-      "en": "Failed",
-      "es": "Fallido",
-      "fr": "Échec",
-      "ja": "失敗",
-      "zh-Hans": "失败"
-    },
-    "宽度": {
-      "de": "Breite",
-      "en": "Width",
-      "es": "Anchura",
-      "fr": "Largeur",
-      "ja": "幅",
-      "zh-Hans": "宽度"
-    },
     "导出结果": {
       "de": "Exportergebnis",
       "en": "Export result",
@@ -2591,22 +2609,6 @@
       "fr": "Développer",
       "ja": "展開",
       "zh-Hans": "展开"
-    },
-    "展开调整": {
-      "de": "Anpassungen einblenden",
-      "en": "Expand adjustments",
-      "es": "Expandir ajustes",
-      "fr": "Développer les réglages",
-      "ja": "調整を展開",
-      "zh-Hans": "展开调整"
-    },
-    "左边": {
-      "de": "Links",
-      "en": "Left",
-      "es": "Izquierda",
-      "fr": "Gauche",
-      "ja": "左",
-      "zh-Hans": "左边"
     },
     "已保存的照片会保留。": {
       "de": "Gespeicherte Fotos bleiben erhalten.",
@@ -2631,14 +2633,6 @@
       "fr": "{0} / {1} terminés",
       "ja": "{0} / {1} 完了",
       "zh-Hans": "已完成 {0} / {1}"
-    },
-    "已导入 {0} 个外观，{1} 个文件导入失败": {
-      "de": "Importierte Looks: {0}; nicht importierte Dateien: {1}",
-      "en": "Looks imported: {0}; files not imported: {1}",
-      "es": "Looks importados: {0}; archivos no importados: {1}",
-      "fr": "Looks importés : {0} ; fichiers non importés : {1}",
-      "ja": "{0} 件のルックを読み込み、{1} 件のファイルの読み込みに失敗しました",
-      "zh-Hans": "已导入 {0} 个外观，{1} 个文件导入失败"
     },
     "已找到输出": {
       "de": "Ausgabe gefunden",
@@ -2680,14 +2674,6 @@
       "ja": "確認待ち",
       "zh-Hans": "待核对"
     },
-    "成功 {0} 张，失败 {1} 张，未处理 {2} 张": {
-      "de": "{0} erfolgreich, {1} fehlgeschlagen, {2} nicht verarbeitet",
-      "en": "{0} succeeded, {1} failed, {2} not processed",
-      "es": "{0} correctas, {1} fallidas, {2} sin procesar",
-      "fr": "{0} réussies, {1} échouées, {2} non traitées",
-      "ja": "成功 {0} 枚、失敗 {1} 枚、未処理 {2} 枚",
-      "zh-Hans": "成功 {0} 张，失败 {1} 张，未处理 {2} 张"
-    },
     "拍摄时间": {
       "de": "Aufnahmezeit",
       "en": "Capture time",
@@ -2695,22 +2681,6 @@
       "fr": "Heure de prise de vue",
       "ja": "撮影時刻",
       "zh-Hans": "拍摄时间"
-    },
-    "收起调整": {
-      "de": "Anpassungen ausblenden",
-      "en": "Collapse adjustments",
-      "es": "Contraer ajustes",
-      "fr": "Réduire les réglages",
-      "ja": "調整を折りたたむ",
-      "zh-Hans": "收起调整"
-    },
-    "放弃": {
-      "de": "Verwerfen",
-      "en": "Discard",
-      "es": "Descartar",
-      "fr": "Abandonner",
-      "ja": "破棄",
-      "zh-Hans": "放弃"
     },
     "放弃批量任务？": {
       "de": "Stapelauftrag verwerfen?",
@@ -2768,14 +2738,6 @@
       "ja": "出力フォルダに書き込めません: {0}",
       "zh-Hans": "无法写入输出目录：{0}"
     },
-    "无法打开本机调整记录，请检查存储权限。": {
-      "de": "Lokale Anpassungsdaten konnten nicht geöffnet werden. Prüfen Sie die Speicherberechtigung.",
-      "en": "Cannot open local adjustment records. Check storage permission.",
-      "es": "No se pueden abrir los ajustes locales. Comprueba el permiso de almacenamiento.",
-      "fr": "Impossible d'ouvrir les réglages locaux. Vérifiez l'autorisation de stockage.",
-      "ja": "本体の調整記録を開けません。ストレージ権限を確認してください。",
-      "zh-Hans": "无法打开本机调整记录，请检查存储权限。"
-    },
     "无法打开链接，请安装或启用浏览器。": {
       "de": "Link kann nicht geöffnet werden. Installieren oder aktivieren Sie einen Browser.",
       "en": "Unable to open the link. Install or enable a browser.",
@@ -2791,14 +2753,6 @@
       "fr": "Impossible de confirmer l'enregistrement de la photo. Vérifiez la galerie photo.",
       "ja": "写真の保存結果を確認できません。フォトギャラリーを確認してください。",
       "zh-Hans": "无法确认照片保存结果，请核对照片图库"
-    },
-    "无法读取批量任务：{0}": {
-      "de": "Stapelauftrag konnte nicht gelesen werden: {0}",
-      "en": "Unable to read batch task: {0}",
-      "es": "No se puede leer la tarea por lotes: {0}",
-      "fr": "Impossible de lire la tâche par lots : {0}",
-      "ja": "一括タスクを読み込めません: {0}",
-      "zh-Hans": "无法读取批量任务：{0}"
     },
     "无法读取文件": {
       "de": "Datei konnte nicht gelesen werden",
@@ -2888,14 +2842,6 @@
       "ja": "Android 向けの新しいバージョンはありません",
       "zh-Hans": "未发现适用于 Android 的新版本"
     },
-    "未应用草稿": {
-      "de": "Nicht angewendeter Entwurf",
-      "en": "Unapplied draft",
-      "es": "Borrador sin aplicar",
-      "fr": "Brouillon non appliqué",
-      "ja": "未適用の下書き",
-      "zh-Hans": "未应用草稿"
-    },
     "查看": {
       "de": "Anzeigen",
       "en": "View",
@@ -2903,14 +2849,6 @@
       "fr": "Afficher",
       "ja": "表示",
       "zh-Hans": "查看"
-    },
-    "正在停止": {
-      "de": "Wird angehalten",
-      "en": "Stopping",
-      "es": "Deteniendo",
-      "fr": "Arrêt en cours",
-      "ja": "停止中",
-      "zh-Hans": "正在停止"
     },
     "正在准备": {
       "de": "Wird vorbereitet",
@@ -2927,14 +2865,6 @@
       "fr": "Importation du look…",
       "ja": "ルックを読み込み中…",
       "zh-Hans": "正在导入外观"
-    },
-    "正在导出全分辨率照片": {
-      "de": "Foto in voller Auflösung wird exportiert",
-      "en": "Exporting full-resolution photo",
-      "es": "Exportando foto a resolución completa",
-      "fr": "Exportation de la photo en pleine résolution",
-      "ja": "フル解像度の写真を書き出し中",
-      "zh-Hans": "正在导出全分辨率照片"
     },
     "正在读取照片": {
       "de": "Foto wird gelesen",
@@ -3064,14 +2994,6 @@
       "ja": "分析イベントを送信できませんでした。写真編集への影響はありません。",
       "zh-Hans": "统计事件未能发送，照片编辑不受影响。"
     },
-    "统计已停止；重新开启前请重启应用。": {
-      "de": "Die Analyse wurde gestoppt. Starten Sie die App neu, bevor Sie sie wieder aktivieren.",
-      "en": "Analytics has stopped. Restart the app before enabling it again.",
-      "es": "El análisis se ha detenido. Reinicie la aplicación antes de volver a activarlo.",
-      "fr": "L'analyse est arrêtée. Redémarrez l'application avant de la réactiver.",
-      "ja": "分析は停止しています。再度有効にするにはアプリを再起動してください。",
-      "zh-Hans": "统计已停止；重新开启前请重启应用。"
-    },
     "统计服务停止失败；请重启应用后重试。": {
       "de": "Der Analysedienst konnte nicht gestoppt werden. Starten Sie die App vor einem erneuten Versuch neu.",
       "en": "The analytics service could not stop. Restart the app before trying again.",
@@ -3088,14 +3010,6 @@
       "ja": "ローカル分析データの削除が完了しませんでした。アプリを再起動してからもう一度お試しください。",
       "zh-Hans": "统计本地清理未完成；请重启应用后重试。"
     },
-    "统计设置未能保存，当前进程已停止统计。": {
-      "de": "Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt.",
-      "en": "The analytics setting could not be saved; collection is stopped for this process.",
-      "es": "No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso.",
-      "fr": "Le réglage d'analyse n'a pas pu être enregistré. La collecte est arrêtée pour ce processus.",
-      "ja": "分析の設定を保存できませんでした。このプロセスでの収集は停止しています。",
-      "zh-Hans": "统计设置未能保存，当前进程已停止统计。"
-    },
     "裁切 {0},{1} · {2} × {3}% · 旋转 {4}° · 拉直 {5}°": {
       "de": "Zuschnitt {0},{1} · {2} × {3}% · Drehung {4}° · Begradigung {5}°",
       "en": "Crop {0},{1} · {2} × {3}% · Rotate {4}° · Straighten {5}°",
@@ -3111,14 +3025,6 @@
       "fr": "Les pourcentages de recadrage suivent la rotation, les retournements, la perspective et le redressement.",
       "ja": "切り抜きの割合は、回転・反転・遠近補正・傾き補正後の画像に適用されます。",
       "zh-Hans": "裁切百分比基于旋转、翻转、透视校正和拉直后的画面。"
-    },
-    "裁切矩形": {
-      "de": "Zuschnittrechteck",
-      "en": "Crop rectangle",
-      "es": "Rectángulo de recorte",
-      "fr": "Rectangle de recadrage",
-      "ja": "切り抜き矩形",
-      "zh-Hans": "裁切矩形"
     },
     "视图选项": {
       "de": "Anzeigeoptionen",
@@ -3144,14 +3050,6 @@
       "ja": "出力の保存に失敗しました: {0}",
       "zh-Hans": "输出存储失败：{0}"
     },
-    "输出尺寸": {
-      "de": "Ausgabegröße",
-      "en": "Output size",
-      "es": "Tamaño de salida",
-      "fr": "Taille de sortie",
-      "ja": "出力サイズ",
-      "zh-Hans": "输出尺寸"
-    },
     "选择可供 RawLab 浏览的照片。也可以从文件导入 JPEG、PNG 或 RAW。": {
       "de": "Wählen Sie Fotos aus, die RawLab durchsuchen darf. JPEG-, PNG- oder RAW-Dateien können auch aus Dateien importiert werden.",
       "en": "Select photos for RawLab to browse. You can also import JPEG, PNG, or RAW files.",
@@ -3175,14 +3073,6 @@
       "fr": "Choisir l'accès aux photos",
       "ja": "写真へのアクセスを選択",
       "zh-Hans": "选择照片权限"
-    },
-    "选择目录": {
-      "de": "Verzeichnis auswählen",
-      "en": "Choose directory",
-      "es": "Elegir carpeta",
-      "fr": "Choisir un dossier",
-      "ja": "フォルダを選択",
-      "zh-Hans": "选择目录"
     },
     "选择相册中的 RAW，或从系统文件中导入。": {
       "de": "RAW aus einem Album auswählen oder aus Systemdateien importieren.",
@@ -3224,6 +3114,14 @@
       "ja": "出力フォルダを再選択",
       "zh-Hans": "重新选择输出目录"
     },
+    "重置几何": {
+      "de": "Geometrie zurücksetzen",
+      "en": "Reset geometry",
+      "es": "Restablecer geometría",
+      "fr": "Réinitialiser la géométrie",
+      "ja": "ジオメトリをリセット",
+      "zh-Hans": "重置几何"
+    },
     "重置所有调整？": {
       "de": "Alle Anpassungen zurücksetzen?",
       "en": "Reset all adjustments?",
@@ -3231,14 +3129,6 @@
       "fr": "Réinitialiser tous les réglages ?",
       "ja": "すべての調整をリセットしますか？",
       "zh-Hans": "重置所有调整？"
-    },
-    "重置暗角": {
-      "de": "Vignettierung zurücksetzen",
-      "en": "Reset vignette",
-      "es": "Restablecer viñeta",
-      "fr": "Réinitialiser la vignette",
-      "ja": "周辺減光をリセット",
-      "zh-Hans": "重置暗角"
     },
     "重置此项": {
       "de": "Diesen Wert zurücksetzen",
@@ -3256,14 +3146,6 @@
       "ja": "切り抜きをリセット",
       "zh-Hans": "重置裁切"
     },
-    "重置颗粒": {
-      "de": "Körnung zurücksetzen",
-      "en": "Reset grain",
-      "es": "Restablecer grano",
-      "fr": "Réinitialiser le grain",
-      "ja": "粒子をリセット",
-      "zh-Hans": "重置颗粒"
-    },
     "重试失败项": {
       "de": "Fehlgeschlagene Elemente erneut versuchen",
       "en": "Retry failed items",
@@ -3279,30 +3161,6 @@
       "fr": "Limite du grand côté (px)",
       "ja": "長辺の上限（px）",
       "zh-Hans": "长边上限（px）"
-    },
-    "顶部": {
-      "de": "Oben",
-      "en": "Top",
-      "es": "Arriba",
-      "fr": "Haut",
-      "ja": "上",
-      "zh-Hans": "顶部"
-    },
-    "高光保护仅在负暗角量时可用。": {
-      "de": "Lichterschutz ist bei negativen Vignettenwerten verfügbar.",
-      "en": "Highlight protection is available for negative vignette amounts.",
-      "es": "La protección de luces solo está disponible con viñeta negativa.",
-      "fr": "La protection des hautes lumières exige un vignettage négatif.",
-      "ja": "ハイライト保護は周辺光量が負の場合に利用できます。",
-      "zh-Hans": "高光保护仅在负暗角量时可用。"
-    },
-    "高度": {
-      "de": "Höhe",
-      "en": "Height",
-      "es": "Altura",
-      "fr": "Hauteur",
-      "ja": "高さ",
-      "zh-Hans": "高度"
     }
   }
 }

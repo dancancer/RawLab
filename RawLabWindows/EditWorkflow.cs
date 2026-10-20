@@ -26,7 +26,7 @@ public partial class MainWindow
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
         try { previousBatch = batchJournal.Load(); }
-        catch (Exception error) { Report(new IOException(Loc.Text("无法读取上次批量任务：") + error.Message, error)); }
+        catch (Exception error) { Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", error.Message), error)); }
         RefreshBatchNotice(); UpdateBusy();
     }
 
@@ -58,7 +58,7 @@ public partial class MainWindow
         if (settings.Recipe is {} recipe) return "recipe:" + recipe.Id;
         if (lut != null && StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(lut), Path.Combine(AppContext.BaseDirectory, "LUTs")))
             return "builtin:" + Path.GetFileName(lut);
-        return lut;
+        return lookLibrary?.IdentityForPath(lut) ?? lut;
     }
 
     internal void SaveSettingsCopy(string input, AdjustmentSnapshot snapshot, string? look)
@@ -76,7 +76,7 @@ public partial class MainWindow
     {
         var saved = editStore?.Find(input);
         settings = saved?.Settings.Restore() ?? new Adjustments();
-        lut = saved == null ? films.FirstOrDefault(f => f.Name == "PROVIA")?.Path : saved.Look;
+        lut = saved == null ? films.FirstOrDefault(f => f.Name == "PROVIA")?.Path : lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
         if (settings.Recipe is {} recipe) lut = recipe.LutPath;
         if (lut?.StartsWith("builtin:", StringComparison.Ordinal) == true)
             lut = Path.Combine(AppContext.BaseDirectory, "LUTs", Path.GetFileName(lut[8..]));
@@ -110,7 +110,7 @@ public partial class MainWindow
         var previous = CurrentBatch;
         if (previous is { Started: true } && previous.SucceededCount < previous.SelectedCount)
         {
-            var answer = MessageBox.Show(this, Loc.Text("继续查看上次未完成的任务吗？选择“否”会新建任务，已导出的文件会保留。"),
+            var answer = MessageBox.Show(this, Loc.Text("继续查看上次任务，或保留已导出文件并新建任务。"),
                 Loc.Text("上次批量任务尚未完成"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) return;
             if (answer == MessageBoxResult.Yes) { ShowBatchClicked(sender, e); return; }
@@ -164,7 +164,7 @@ public partial class MainWindow
         closing=false;IsEnabled=true;
         ResumePreview();QueueThumbnailRefresh();
         RefreshControls();RefreshBatchNotice();
-        SetStatus(window.Job.Error ?? Loc.Text("任务未保存："),true);
+        SetStatus(window.Job.Error ?? Loc.Text("任务未保存。"),true);
     }
     private void RefreshBatchNotice()
     {

@@ -171,6 +171,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         selection.selectMasterRecipe(.hamadaDaylightV2)
         selection.selectedFilmID = "PROVIA"
         try check(selection.settings.masterRecipeID == nil, "selecting a film clears an active recipe")
+        fputs("[EXPECTED RAW FAILURE] EditModelTests.persistence: a.ARW and b.ARW in \(root.path) contain one-byte placeholders, not RAW photos. Their asynchronous decoder rejections are expected; assertion failures are not.\n", stderr)
         let first = model()
         first.open(a)
         first.settings.exposure = 0.75
@@ -270,6 +271,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try rasterEditorChecks(root: root, lut: rasterLUT)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
         if CommandLine.arguments.count > 1 {
+            fputs("[RAW SUCCESS REQUIRED] EditModelTests.realRAW: \(CommandLine.arguments[1]) must render successfully; decoder failures for this input are not expected.\n", stderr)
             let live = model()
             live.open(URL(fileURLWithPath: CommandLine.arguments[1]))
             func waitForRender() throws {

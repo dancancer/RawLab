@@ -8,6 +8,6 @@ OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-text-fit.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     -module-cache-path "$OUT/ModuleCache" \
-    "$ROOT/Shared/Localization.swift" "$ROOT/RawLabMac/Sources/AdjustmentPanelLayout.swift" \
+    "$ROOT/Shared/Localization.swift" "$ROOT/RawLabMac/Sources/Editor/View/AdjustmentPanelLayout.swift" \
     "$ROOT/RawLabMac/tests/TextFitTests.swift" -framework SwiftUI -framework AppKit -o "$OUT/text-fit"
 "$OUT/text-fit" "$ROOT"

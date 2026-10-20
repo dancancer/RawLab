@@ -70,15 +70,15 @@ public partial class MainWindow
         var invalid=transform.Tool==TransformTool.Geometry && GeometryEditor.HasInvalidInput;
         if(!transform.Dirty && !invalid){CancelTransformDraft();return true;}
         var focus=Keyboard.FocusedElement;
-        var dialog=new Window{Title=Loc.Text("未应用的调整"),Owner=this,Width=520,SizeToContent=SizeToContent.Height,
+        var dialog=new Window{Title=Loc.Text("保留这次几何或镜头修改？"),Owner=this,Width=520,SizeToContent=SizeToContent.Height,
             ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         KeyboardNavigation.SetTabNavigation(dialog,KeyboardNavigationMode.Cycle);
         var panel=new StackPanel{Margin=new Thickness(24)};
-        panel.Children.Add(new TextBlock{Text=Loc.Text("几何和镜头调整尚未应用。请选择继续编辑、放弃草稿或应用并离开。"),TextWrapping=TextWrapping.Wrap});
+        panel.Children.Add(new TextBlock{Text=Loc.Text("这些修改尚未应用。应用并离开，放弃修改，或继续编辑。"),TextWrapping=TextWrapping.Wrap});
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};
         var choice=0;
         var stay=new Button{Content=Loc.Text("继续编辑"),IsCancel=true};stay.Click+=(_,_)=>dialog.Close();
-        var discard=new Button{Content=Loc.Text("放弃草稿")};discard.Click+=(_,_)=>{choice=1;dialog.Close();};
+        var discard=new Button{Content=Loc.Text("放弃修改")};discard.Click+=(_,_)=>{choice=1;dialog.Close();};
         var apply=new Button{Content=Loc.Text("应用并离开")};
         apply.SetBinding(IsEnabledProperty,new Binding(nameof(Button.IsEnabled)){Source=ApplyDraftButton,Mode=BindingMode.OneWay});
         apply.Click+=(_,_)=>{choice=2;dialog.Close();};

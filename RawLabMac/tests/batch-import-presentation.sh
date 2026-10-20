@@ -7,13 +7,13 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-batch-ui.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SOURCES=()
-for source in "$ROOT"/RawLabMac/Sources/*.swift; do
+while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
-done
+done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/BatchImportPresentationTests.swift" \
+    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" "$ROOT/RawLabMac/tests/BatchImportPresentationTests.swift" \
     "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/batch-ui"

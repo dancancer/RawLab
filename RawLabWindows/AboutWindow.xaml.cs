@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Data;
+using System.Windows.Documents;
 
 namespace RawLab.Windows;
 
@@ -16,6 +18,7 @@ public partial class AboutWindow : Window
         this.updates = updates;
         this.analytics = analytics ?? new UsageAnalytics();
         DataContext = updates;
+        RefreshVersion();
         LanguageBox.ItemsSource = Loc.Choices.Select(c => c.Code == "system" ? c with { NativeName = Loc.Text("跟随系统") } : c).ToList();
         LanguageBox.SelectedValue = Loc.Preference;
         languageReady = true;
@@ -27,12 +30,17 @@ public partial class AboutWindow : Window
     }
     private void RefreshLanguage()
     {
+        RefreshVersion();
         languageReady = false;
         LanguageBox.ItemsSource = Loc.Choices.Select(c => c.Code == "system" ? c with { NativeName = Loc.Text("跟随系统") } : c).ToList();
         LanguageBox.SelectedValue = Loc.Preference;
         languageReady = true;
         RefreshUsage();
     }
+    private void RefreshVersion() => VersionRun.SetBinding(Run.TextProperty,
+        new Binding(nameof(UpdateChecker.CurrentVersion)) {
+            Source=updates, Mode=BindingMode.OneWay, StringFormat=Loc.Text("版本 {0}")
+        });
     private void LanguageChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (!languageReady || LanguageBox.SelectedValue is not string preference || preference == Loc.Preference) return;

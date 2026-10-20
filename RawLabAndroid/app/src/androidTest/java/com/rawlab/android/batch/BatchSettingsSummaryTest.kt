@@ -1,5 +1,6 @@
 package com.rawlab.android.batch
 
+import com.rawlab.android.batch.journal.BatchJournal
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule

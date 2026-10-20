@@ -8,7 +8,9 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 
 | Component | Version | Source | Notices |
 | --- | --- | --- | --- |
+| JSON for Modern C++ | Vendored header | https://github.com/nlohmann/json | nlohmann-JSON-MIT.txt |
 | LibRaw | 0.22.2 | https://github.com/LibRaw/LibRaw/tree/0.22.2 | LibRaw-LICENSE.CDDL, LibRaw-LICENSE.LGPL, LibRaw-COPYRIGHT |
+| Nikon HE decoder | Local C++ adaptation of dnglab 0f044c2c and LibRaw PR 826 | https://github.com/dnglab/dnglab/pull/835 | nikon-he/README.md, nikon-he/LICENSE.LGPL-2.1 |
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
 | libjpeg-turbo | 3.1.3 | https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3 | libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg |
 | Little CMS | 2.17 | https://github.com/mm2/Little-CMS/tree/lcms2.17 | Little-CMS-LICENSE |
@@ -61,7 +63,7 @@ XMP toolkit. The local CMake adapter adds missing `qDNGUseXMP` guards to
 are statically linked into the DNG SDK dependency. Their full original licenses
 are retained under `dng-sdk/`.
 
-LibRaw is distributed here under its CDDL 1.0 option. Its base source is
+LibRaw is distributed here under its LGPL 2.1 option. Its base source is
 available from the official release archive below. `LibRaw-Homebrew.rb` records
 the older 0.21.5 build used by previous releases, not the current source build.
 Other installed recipes are available from Homebrew Core:
@@ -77,7 +79,9 @@ The pinned source build applies the changes below; a custom Homebrew/system
 library build does not necessarily contain them. Local LibRaw changes are
 reproducible with `lutools/cmake/patch-libraw.cmake`:
 X2D II crop backport (upstream bcb267e), immutable X-Trans tile input, Nikon
-HE model recognition, R6 III ColorData v12 parsing, and camera calibration matrices.
+HE model recognition and decoding, R6 III ColorData v12 parsing, and camera calibration matrices.
+The Nikon HE decoder is LGPL 2.1, not CDDL; see `nikon-he/README.md` and
+`nikon-he/LICENSE.LGPL-2.1` for attribution, source links and modifications.
 R6 III layout/matrix evidence is from ErikCJohansson's contribution at
 https://github.com/LibRaw/LibRaw/issues/821; the parser reuses LibRaw's existing
 v12 offsets. This is a local sample-verified correction, not upstream support.
@@ -108,3 +112,9 @@ correction validated against PyWavelets. The DWT/IDWT filter kernels are unchang
 See wavelib-COPYRIGHT and lutools/cmake/wavelib-iswt2.c.inc in the source.
 Source: https://github.com/rafat/wavelib
 No darktable denoising code or noise-profile database is included.
+
+Sony ARW6 decoding and A7 V metadata are backported from LibRaw e419de0;
+A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
+784 and 856. The original LGPL/CDDL terms apply. Sigma X3F tools are enabled;
+Roland Karlsson's BSD-style notice is retained in LibRaw-X3F-BSD.txt.
+Pinned sources and scope: docs/reference/raw-format-support.md.

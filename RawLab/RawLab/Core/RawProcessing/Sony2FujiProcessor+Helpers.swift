@@ -3,39 +3,6 @@ import Foundation
 import ImageIO
 import UIKit
 
-// =========================================================================
-// Immutable as-shot metadata, independent of the current render settings.
-// =========================================================================
-final class RecipeWhiteBalanceCache {
-    private struct Key: Equatable {
-        let url: URL
-        let size: Int
-        let modified: Date
-    }
-
-    private let lock = NSLock()
-    private var key: Key?
-    private var camera: Sony2FujiProcessor.RawWhiteBalance?
-
-    func resolve(url: URL, load: () throws -> Sony2FujiProcessor.RawWhiteBalance) throws -> Sony2FujiProcessor.RawWhiteBalance {
-        lock.lock()
-        defer { lock.unlock() }
-        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-        guard let size = (attributes?[.size] as? NSNumber)?.intValue,
-              let modified = attributes?[.modificationDate] as? Date else {
-            key = nil
-            camera = nil
-            return try load()
-        }
-        let next = Key(url: url.standardizedFileURL, size: size, modified: modified)
-        if key == next, let camera { return camera }
-        let loaded = try load()
-        key = next
-        camera = loaded
-        return loaded
-    }
-}
-
 extension Sony2FujiProcessor {
     func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
         buffer.semantic == .display ? SONY2FUJI_INPUT_DISPLAY_BUFFER : SONY2FUJI_INPUT_BUFFER
@@ -79,11 +46,13 @@ extension Sony2FujiProcessor {
         try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-        guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK,
-              settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid exposure mode or HSL parameters.")) }
+        guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
+        }
+        guard settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数")) }
         var hsl = settings.hsl.nativeConfig
         guard sony2fuji_session_set_hsl(session, &hsl) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("Invalid HSL parameters."))
+            throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数"))
         }
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
@@ -93,7 +62,7 @@ extension Sony2FujiProcessor {
         guard gpuStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.format("Invalid GPU configuration: %@", statusMessage(gpuStatus)))
         }
-        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid photo effects.")) }
+        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("无效的暗角或颗粒参数")) }
         var effects = sony2fuji_photo_effects_config()
         effects.version = UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION)
         effects.struct_size = UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size)
@@ -114,7 +83,7 @@ extension Sony2FujiProcessor {
         guard chromaStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.format("Invalid display chroma denoise mode: %@", statusMessage(chromaStatus)))
         }
-        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid denoise strengths.")) }
+        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("无效或不可用的降噪参数")) }
         var denoise = sony2fuji_wavelet_denoise_config()
         denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
         denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
@@ -138,7 +107,7 @@ extension Sony2FujiProcessor {
     }
 
     func configureGeometry(_ session: OpaquePointer, settings: GeometrySettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("Invalid geometry parameters.")) }
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的几何参数")) }
         var config = sony2fuji_geometry_config()
         config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
         config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)

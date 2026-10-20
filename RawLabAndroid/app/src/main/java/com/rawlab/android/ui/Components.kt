@@ -20,13 +20,16 @@ import androidx.core.view.WindowCompat
 //  各界面共用的小组件：带提示的图标按钮、底部面板的系统栏样式
 // ============================================================================
 
+@Composable
+fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, onClick: () -> Unit) =
+    ToolIcon(icon, stringResource(label), enabled, onClick)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, onClick: () -> Unit) {
-    val text = stringResource(label)
+fun ToolIcon(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(text) } }, state = rememberTooltipState()) {
-        IconButton(onClick = onClick, enabled = enabled) { Icon(icon, text) }
+        tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
+        IconButton(onClick = onClick, enabled = enabled) { Icon(icon, label) }
     }
 }
 

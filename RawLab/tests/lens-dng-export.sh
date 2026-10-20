@@ -5,7 +5,7 @@ APP="${1:?Pass the built arm64-simulator RawLab.app absolute path}"
 DEVICE="${2:?Pass the owned simulator UDID}"
 RAW="${3:?Pass a real RAW with matching Lensfun calibration}"
 OUTPUT="${4:-$ROOT/build/ios-lens-dng-output}"
-OUT="$(mktemp -d /tmp/rawlab-ios-lens-dng.XXXXXX)"
+OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-lens-dng.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 HARNESS="$OUT/LensDNGExportTests.app"
 mkdir -p "$HARNESS/Frameworks"
@@ -21,10 +21,11 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" \
+    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
+    "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \
-    "$ROOT/RawLab/RawLab/UI/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/ZoomablePhoto.swift" \
+    "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/Preview/ZoomablePhoto.swift" \
     "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/LensDNGExportTests.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/lens-dng-export"

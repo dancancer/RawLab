@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [development, 'release/**', main]
   push:
-    branches: [development, 'release/**', main]
+    branches: [development, main]
 
 permissions:
   contents: read
@@ -45,10 +45,11 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
-          python scripts/ci/test_workflow.py
+          python -m unittest discover -s scripts/ci -p 'test_*.py' -v
           python scripts/localization/generate.py --check
           python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
           python lutools/tests/test_cli_test_encoding.py
+          python lutools/tests/test_tiff_dependencies.py
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
           python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
@@ -68,70 +69,123 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-26
+          - runner: [self-hosted, macOS, ARM64, rawlab-apple]
             arch: arm64
+            jobs: '6'
           - runner: macos-26-intel
             arch: x86_64
+            jobs: '4'
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
       RAWLAB_ARCH: ${{ matrix.arch }}
+      JOBS: ${{ matrix.jobs }}
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.jobs }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: matrix.arch == 'x86_64'
         with:
           python-version: '3.12'
+      - name: Identify native dependency cache
+        id: native-key
+        shell: bash
+        run: |
+          if [[ "$RAWLAB_ARCH" == x86_64 ]]; then
+            brew install pkg-config autoconf automake libtool
+          fi
+          python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          python -m pip install -r scripts/ci/requirements.txt
+          python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
+      - name: Restore PR dependencies or look up push cache
+        id: native-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
+          lookup-only: ${{ github.event_name == 'push' }}
       - name: Build default app and exercise CPU-safe regression suites
         shell: bash
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/macos.log) 2>&1
+          ci_timed() {
+            local label="$1" started=$SECONDS status=0
+            shift
+            printf '[ci-time] start %s\n' "$label"
+            "$@" || status=$?
+            printf '%s\t%s\t%s\n' "$label" "$((SECONDS - started))" "$status" | tee -a build/ci/macos-timings.log
+            return "$status"
+          }
           git rev-parse HEAD
           sw_vers
           xcodebuild -version
-          DEVELOPER_DIR="$(xcode-select -p)"
+          sysctl hw.ncpu hw.memsize
+          DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
           export DEVELOPER_DIR
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
-          python -m pip install -r scripts/ci/requirements.txt
+          python -m pip install -r lutools/requirements-lutprep.txt
           python RawLabMac/tests/test_photo_copy.py
           python RawLabMac/tests/test_build_environment.py
           python lutools/tests/test_lens_dependencies.py
+          python scripts/ci/test_native_cache_xcode.py
           bash RawLabMac/tests/horizontal-picker.sh
           bash RawLabMac/tests/horizontal-picker-native.sh
-          brew install pkg-config autoconf automake libtool
-          bash RawLabMac/build.sh
-          ctest --test-dir lutools/build-macos --output-on-failure --no-tests=error \
+          ci_timed app-build bash RawLabMac/build.sh
+          lutprep_python="$(command -v python)"
+          ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
+          ci_timed look-library bash RawLabMac/tests/look-library.sh
+          ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
+          ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
             -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
             --output-junit "$PWD/build/ci/macos-ctest.xml"
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
           cli="$PWD/lutools/build-macos/sony2fuji"
-          bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
-          bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
-          bash RawLabMac/tests/batch-export.sh
-          bash RawLabMac/tests/edit-model.sh
-          bash RawLabMac/tests/presentation.sh
-          bash RawLabMac/tests/control-groups.sh
-          bash Shared/tests/usage-analytics.sh
-          bash Shared/tests/usage-transport.sh
-          bash RawLabMac/tests/usage-model.sh
-          bash RawLabMac/tests/usage-termination.sh
-          bash RawLabMac/tests/rum-configuration.sh
-          bash RawLabMac/tests/localization.sh
+          RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR="$RUNNER_TEMP/rawlab-straighten-preview" \
+            ci_timed straighten-preview bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
+          ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
+          ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
+          ci_timed batch-export bash RawLabMac/tests/batch-export.sh
+          ci_timed edit-model bash RawLabMac/tests/edit-model.sh
+          ci_timed presentation bash RawLabMac/tests/presentation.sh
+          ci_timed control-groups bash RawLabMac/tests/control-groups.sh
+          ci_timed usage-analytics bash Shared/tests/usage-analytics.sh
+          ci_timed usage-transport bash Shared/tests/usage-transport.sh
+          ci_timed usage-model bash RawLabMac/tests/usage-model.sh
+          ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
+          ci_timed rum-configuration bash RawLabMac/tests/rum-configuration.sh
+          ci_timed localization bash RawLabMac/tests/localization.sh
+          python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: macos-${{ matrix.arch }}-results
           path: |
             build/ci/*.log
+            build/ci/*.json
             build/ci/*.xml
           retention-days: 7
 
   windows:
     name: Windows build and parity
-    runs-on: windows-2022
+    runs-on: [self-hosted, windows, x64, rawlab-windows]
     timeout-minutes: 120
+    env:
+      DOTNET_INSTALL_DIR: 'E:\RawLabCI\dotnet'
+      RAWLAB_LENS_SOURCE_CACHE: 'E:\RawLabCI\cache\lens-sources'
+      JOBS: '8'
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -142,8 +196,26 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
+      - name: Identify native dependency cache
+        id: native-key
+        shell: pwsh
+        run: |
+          python -m pip install -r scripts/ci/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot install CI Python requirements' }
+          python scripts/ci/native_cache.py key --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify native dependency cache' }
+      - name: Restore PR dependencies or look up push cache
+        id: native-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
+          lookup-only: ${{ github.event_name == 'push' }}
       - name: Build default self-contained app and exercise CPU-safe suites
         shell: pwsh
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force build/ci | Out-Null
@@ -155,15 +227,20 @@ jobs:
           try {
             Invoke-Checked git @('rev-parse', 'HEAD')
             Invoke-Checked dotnet @('--info')
-            Invoke-Checked python @('-m', 'pip', 'install', '-r', 'scripts/ci/requirements.txt')
+            Invoke-Checked python @('-m', 'pip', 'install', '-r', 'lutools/requirements-lutprep.txt')
             & ./RawLabWindows/build.ps1 -SelfContained -Python (Get-Command python).Source
             $package = Join-Path $PWD 'build/RawLab-Windows'
             $env:PATH = "$package;$env:PATH"
-            $tests = '^(windows_display_image|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema)$'
+            $tests = '^(dcp_compiler|windows_display_image|raw_formats|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema)$'
             Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
+            Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
             Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
             $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
-            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,looks'
+            $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
+            $env:RAWLAB_TEST_DCP_FIXTURE_DIR = Join-Path $PWD 'build/ci/dcp-fixtures'
+            Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,ui-details,looks'
+            Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }
           finally {
             if (Test-Path build/windows-v08-results) {
@@ -171,6 +248,12 @@ jobs:
             }
             Stop-Transcript
           }
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -183,8 +266,13 @@ jobs:
 
   android:
     name: Android build and JVM tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, rawlab-android]
     timeout-minutes: 120
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      RAWLAB_LENS_SOURCE_CACHE: /var/cache/rawlab-ci/lens-sources
+      JOBS: '8'
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -193,44 +281,93 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install toolchain and identify native dependency cache
+        id: native-key
+        shell: bash
+        run: |
+          python -m pip install -r scripts/ci/requirements.txt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          python scripts/ci/native_cache.py key --platform android --arch arm64-x86_64
+      - name: Restore PR dependencies or look up push cache
+        id: native-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
+          lookup-only: ${{ github.event_name == 'push' }}
       - name: Build both ABIs, JVM tests, lint and instrumentation test APK
         shell: bash
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/android.log) 2>&1
           git rev-parse HEAD
           java -version
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
           cd RawLabAndroid
-          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=8
           bash scripts/check-native.sh
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
+          cd ..
+          RAWLAB_TEST_ANDROID_CACHE=1 python scripts/ci/test_native_cache_android.py
+          python scripts/ci/native_cache.py inventory --platform android --arch arm64-x86_64
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: android-results
           path: |
             build/ci/*.log
+            build/ci/*.json
             build/ci/*.xml
           retention-days: 7
 
   ios:
     name: iOS framework and unsigned app
-    runs-on: macos-26
+    runs-on: [self-hosted, macOS, ARM64, rawlab-apple]
     timeout-minutes: 180
+    env:
+      JOBS: '6'
+      CMAKE_BUILD_PARALLEL_LEVEL: '6'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Identify native dependency cache
+        id: native-key
+        shell: bash
+        run: |
+          python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          python -m pip install -r scripts/ci/requirements.txt
+          python scripts/ci/native_cache.py key --platform ios --arch arm64-x86_64
+      - name: Restore PR dependencies or look up push cache
+        id: native-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
+          lookup-only: ${{ github.event_name == 'push' }}
       - name: Build all framework slices and compile simulator app and tests
         shell: bash
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/ios.log) 2>&1
           git rev-parse HEAD
           sw_vers
           xcodebuild -version
-          DEVELOPER_DIR="$(xcode-select -p)"
+          DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
           export DEVELOPER_DIR
           bash lutools/platform/ios/build-framework.sh
           bash lutools/platform/ios/verify-framework.sh lutools/build-ios/sony2fuji.xcframework
@@ -238,9 +375,19 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
+          bash RawLab/tests/look-import.sh
+          python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
+      - name: Save successful native dependencies
+        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: ios-results
-          path: build/ci/*.log
+          path: |
+            build/ci/*.log
+            build/ci/*.json
           retention-days: 7

@@ -15,7 +15,7 @@
   the upstream SVG to WPF vector geometry; notice in `Licenses/Lucide-LICENSE.txt`.
 
 - LibRaw 0.22.2: https://github.com/LibRaw/LibRaw/tree/0.22.2
-  Built as a replaceable `raw.dll`; redistribution here uses the CDDL 1.0 option.
+  Built as a replaceable `raw.dll`; redistribution here uses the LGPL 2.1 option.
   Copyright and both upstream license options are in `Licenses/LibRaw-*`.
   Corresponding source: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
   The exact source archive and SHA-256 are pinned in `native/CMakeLists.txt`.
@@ -24,6 +24,11 @@
   R6 III layout/matrix evidence is from ErikCJohansson's contribution at
   https://github.com/LibRaw/LibRaw/issues/821; the parser reuses LibRaw v12 offsets.
   This local correction does not imply upstream R6 III support.
+- Nikon HE decoder: local C++ adaptation of Nicolai Buchwitz's dnglab commit
+  0f044c2c30d78c4ed5fcede6ab4e8db893d566f6 and LibRaw PR 826 by Dmitri Sotnikov,
+  with RdWing's reconstruction/transfer corrections. LGPL 2.1, not CDDL.
+  Attribution, source links and modification details: `Licenses/nikon-he/README.md`;
+  full license: `Licenses/nikon-he/LICENSE.LGPL-2.1`.
 - Additional camera matrix data: adapted from RawSpeed contributors' cameras.xml,
   https://github.com/darktable-org/rawspeed/blob/c835b05aecfacb7343f7c424abd620aa12116c3f/data/cameras.xml
   CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/.
@@ -31,6 +36,11 @@
   `lutools/third_party/rawspeed-camera-calibration.inc`. Changes: four exact-model
   matrices extracted into LibRaw table syntax; black/white levels remain metadata-driven.
 - zlib 1.3.1: https://github.com/madler/zlib/tree/v1.3.1, zlib license.
+- libjpeg-turbo 3.1.3: https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3.
+  Static JPEG8 support for JPEG-compressed lossy DNG. IJG/BSD/zlib license notices
+  are included in `Licenses/libjpeg-turbo/`.
+- LibRaw's Sigma X3F tools are enabled; Roland Karlsson's BSD-style notice is
+  included in `Licenses/LibRaw-X3F-BSD.txt`.
 - OpenCV 4.12.0: https://github.com/opencv/opencv/tree/4.12.0, Apache 2.0.
   Static core/imgproc libraries support linear-light wavelet denoising.
   See `Licenses/OpenCV-LICENSE`.
@@ -83,6 +93,14 @@
   automatic crash, network and CEF collection are turned off. Offline packages built
   with `build.ps1 -NoRumSdk` omit the DLL.
 
+The shared DCP compiler uses JSON for Modern C++ (Niels Lohmann), under MIT.
+Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
+
 No binaries are checked into source control. The build downloads version-pinned
 LibRaw, zlib, libtiff, DNG SDK/JPEG XL, OpenCV and wavelib source archives and verifies their hashes before compilation.
 The ExifTool runtime archive and the RUM SDK archive are also version-pinned and hash-verified.
+
+Sony ARW6 decoding and A7 V metadata are backported from LibRaw e419de0;
+A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
+784 and 856 under the original LibRaw LGPL/CDDL terms. Pinned sources and
+format boundaries: docs/reference/raw-format-support.md.

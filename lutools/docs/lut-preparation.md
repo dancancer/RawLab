@@ -69,7 +69,7 @@ runtime agreement from source-renderer and controlled cross-camera evidence.
 ## Explicit Contracts
 
 Use the LUT author's documentation, not the filename, to choose a contract.
-Examples are in [examples/lut-contracts](../examples/lut-contracts/):
+Examples are in [examples/lut-contracts](../examples/lut-contracts):
 
 | Example | Required source meaning | Rendering location |
 | --- | --- | --- |
@@ -169,6 +169,15 @@ separately when reproducibility across machines matters.
 
 ## DCP Appearance Adaptation
 
+Mac, iOS, Android and Windows import supported `.dcp` files through the same
+C++ compiler and additive C ABI, without Python/OCIO. Each client installs a
+validated `.rlook` in managed storage. Automatic import requires an embedded tone curve and explicit
+`DefaultBlackRender=None` (1); it rejects unknown Adobe defaults instead of choosing
+a curve or omitting Auto black. Platform adapters do not implement TIFF parsing
+or color conversion; Mac and iOS also share their Swift file adapter and library.
+The CLI below remains available for explicit tone/black/exposure choices and
+preparing profiles outside the automatic-import subset.
+
 ```bash
 lutools/.venv-lutprep/bin/python -m lutools.lutprep inspect /path/to/profile.dcp
 lutools/.venv-lutprep/bin/python -m lutools.lutprep compile-dcp \
@@ -180,7 +189,7 @@ normalized original HSV table, exposure multiplier and 4097 tone samples in a
 bounded, versioned binary file. The core evaluates these stages with double
 intermediates directly from common scene-linear sRGB. It never encodes F-Log2 or
 samples an intermediate RGB CUBE. Typical tested profiles are about 310 KB.
-See the [native format contract](../../docs/superpowers/specs/2026-10-03-native-dcp-look-design.md).
+See the [native format contract](../../docs/reference/formats/native-dcp-look.md).
 
 Native DCP runs on **CPU or Metal**. Metal acceleration uses float32 arithmetic
 and requires macOS 15+/iOS 18+; CPU remains the double-precision reference. GPU
@@ -196,7 +205,7 @@ only accept CUBE, subject to the original approximation gate. Native `.rlook`
 removes that RGB baking error for DCPs; it does not solve generic source-LUT baking,
 or establish Lightroom/camera color equivalence. Version 1 packages remain readable.
 Version 2 adds an optional calibration table and allows an absent LookTable,
-with the [extended format contract](../../docs/superpowers/specs/2026-10-03-dcp-hsm-metal-design.md).
+with the [extended format contract](../../docs/reference/formats/dcp-hsm-metal.md).
 
 No generic RGB manifest is accepted for DCP. This path adapts the following stages:
 

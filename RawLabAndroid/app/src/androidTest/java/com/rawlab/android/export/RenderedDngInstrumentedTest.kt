@@ -18,7 +18,7 @@ import com.rawlab.android.MainActivity
 import com.rawlab.android.R
 import com.rawlab.android.batch.BatchExportModel
 import com.rawlab.android.batch.BatchJob
-import com.rawlab.android.batch.BatchJournal
+import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchPhase
 import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.batch.BatchSourceSnapshot

@@ -68,8 +68,10 @@ import Darwin
         let preview = try cpu.render(raw, settings: settings, lut: nil, edge: edge)!
         let requestedProxy = try cpu.render(raw, settings: settings, lut: nil, edge: edge,
                                             interactive: true, viewportPreview: true)!
-        try check(bytes(preview.image) == bytes(requestedProxy.image),
-                  "active geometry uses exact processing even when proxy flags are requested")
+        try check(bytes(preview.image) != bytes(requestedProxy.image) &&
+                  preview.image.width == requestedProxy.image.width && preview.image.height == requestedProxy.image.height &&
+                  preview.nativeWidth == requestedProxy.nativeWidth && preview.nativeHeight == requestedProxy.nativeHeight,
+                  "active geometry uses the reduced viewport while preserving output and native dimensions")
         let accelerated = try auto.render(raw, settings: settings, lut: nil, edge: edge)!
         let geometryDelta = zip(bytes(accelerated.image), bytes(preview.image)).map { abs(Int($0) - Int($1)) }.max()!
         try check(auto.lastBackend == SONY2FUJI_BACKEND_CPU && geometryDelta <= 2,
@@ -82,6 +84,8 @@ import Darwin
                       "GPU Force rejects unsupported geometry instead of pretending GPU success")
         }
         let exact = try cpu.render(raw, settings: settings, lut: nil, edge: nil)!
+        let actualPixels = try cpu.render(raw, settings: settings, lut: nil, edge: nil, viewportPreview: true)!
+        try check(bytes(exact.image) == bytes(actualPixels.image), "actual-pixel view ignores the viewport opt-in")
         try check(exact.image.width == preview.nativeWidth && exact.image.height == preview.nativeHeight &&
                   exact.image.width < width && exact.image.height < height,
                   "straightened preview retains the exact inscribed native canvas dimensions")

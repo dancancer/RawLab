@@ -1,0 +1,440 @@
+import ImageIO
+import Photos
+import PhotosUI
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+
+extension ContentView {
+    var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
+    var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || viewModel.isImportingLooks || editingLocked }
+    var selectedFilmName: String {
+        settings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
+    }
+
+    var currentPreviewImage: UIImage? {
+        if showingBefore {
+            return viewModel.basePreviewImage ?? viewModel.previewImage
+        }
+        return viewModel.previewImage ?? viewModel.basePreviewImage
+    }
+
+    var currentHistogram: [CGFloat] {
+        if showingBefore {
+            return viewModel.baseHistogram.isEmpty ? viewModel.histogram : viewModel.baseHistogram
+        }
+        return viewModel.histogram.isEmpty ? viewModel.baseHistogram : viewModel.histogram
+    }
+
+    func adjustmentProgress(_ adjustment: AdjustmentKind) -> Double {
+        if viewModel.sourceKind == .raster && (adjustment == .temperature || adjustment == .tint) {
+            return 0
+        }
+        if adjustment == .temperature {
+            if viewModel.sourceKind == .raw, settings.whiteBalanceMode == .custom,
+               let camera = viewModel.rawWhiteBalance {
+                let temperatureOrigin = RawSettings.reciprocalSliderValue(for: camera.temperature)
+                let temperaturePosition = RawSettings.reciprocalSliderValue(for: settings.temperature)
+                let temperatureDelta = temperaturePosition - temperatureOrigin
+                let temperatureDistance = temperatureDelta < 0 ? temperatureOrigin : 1 - temperatureOrigin
+                let temperatureProgress = temperatureDistance > 0
+                    ? min(1, max(-1, temperatureDelta / temperatureDistance)) : 0
+                let tintOrigin = (camera.tint + 150) / 300
+                let tintPosition = (settings.tint + 150) / 300
+                let tintDelta = tintPosition - tintOrigin
+                let tintDistance = tintDelta < 0 ? tintOrigin : 1 - tintOrigin
+                let tintProgress = tintDistance > 0 ? min(1, max(-1, tintDelta / tintDistance)) : 0
+                return abs(temperatureProgress) >= abs(tintProgress) ? temperatureProgress : tintProgress
+            }
+            if viewModel.sourceKind == .raw {
+                return settings.masterRecipeID == nil ? 0 : settings.tint / 150
+            }
+            return adjustment.progress(in: settings)
+        }
+        if adjustment == .tint && settings.masterRecipeID != nil { return settings.tint / 150 }
+        if viewModel.sourceKind == .raw, adjustment == .tint {
+            guard settings.whiteBalanceMode == .custom, let camera = viewModel.rawWhiteBalance else { return 0 }
+            let origin = (camera.tint + 150) / 300
+            let position = (settings.tint + 150) / 300
+            let delta = position - origin
+            let distance = delta < 0 ? origin : 1 - origin
+            return distance > 0 ? min(1, max(-1, delta / distance)) : 0
+        }
+        return adjustment.progress(in: settings)
+    }
+
+    var manualWhiteBalanceSettings: RawSettings {
+        guard viewModel.sourceKind == .raw, let camera = viewModel.rawWhiteBalance else { return settings }
+        return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+    }
+
+    func exportJPEG(longEdge: Int? = nil) {
+        guard !isEditorDraftActive else { return }
+        isSaving = true
+        viewModel.exportJPEG(settings: settings, longEdge: longEdge) { result in
+            switch result {
+            case .success(let data):
+                saveToPhotoLibrary(data)
+            case .failure(let error):
+                isSaving = false
+                viewModel.statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func exportDNG(longEdge: Int? = nil) {
+        guard !isEditorDraftActive else { return }
+        isSaving = true
+        viewModel.exportDNG(settings: settings, longEdge: longEdge) { result in
+            switch result {
+            case .success(let url):
+                isSaving = false
+                fileExportRequest = FileExportRequest(
+                    urls: [url],
+                    removeAfterExport: true,
+                    successMessage: L10n.text("已导出渲染型 DNG。"),
+                    cancelMessage: L10n.text("已生成渲染型 DNG，未另存到所选位置。")
+                )
+            case .failure(let error):
+                isSaving = false
+                viewModel.statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func applySettingsChange(_ newSettings: RawSettings) {
+        settings = newSettings
+    }
+
+    func adjustmentBinding(_ adjustment: AdjustmentKind) -> Binding<Double> {
+        Binding(
+            get: { adjustment.value(from: settings) },
+            set: { value in
+                var updated = viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && settings.masterRecipeID == nil))
+                    ? manualWhiteBalanceSettings : settings
+                adjustment.setValue(value, in: &updated)
+                if viewModel.sourceKind == .raw,
+                   (adjustment == .temperature || adjustment == .tint) && !(updated.masterRecipeID != nil && adjustment == .tint) {
+                    updated.whiteBalanceMode = .custom
+                }
+                applySettingsChange(updated)
+            }
+        )
+    }
+
+    func reset(_ adjustment: AdjustmentKind) {
+        var updated = settings
+        adjustment.reset(in: &updated)
+        if viewModel.sourceKind == .raw,
+           adjustment == .temperature || adjustment == .tint {
+            if let whiteBalance = viewModel.rawWhiteBalance {
+                if adjustment == .temperature { updated.temperature = whiteBalance.temperature }
+                else { updated.tint = updated.masterRecipeID == nil ? whiteBalance.tint : 0 }
+                if updated.masterRecipeID != nil {
+                    if adjustment == .temperature { updated.whiteBalanceMode = .camera }
+                } else {
+                    updated.whiteBalanceMode = updated.temperature == whiteBalance.temperature && updated.tint == whiteBalance.tint ? .camera : .custom
+                }
+            }
+        }
+        applySettingsChange(updated)
+    }
+
+    func resetTool(_ adjustment: AdjustmentKind) {
+        if adjustment == .temperature || adjustment == .tint {
+            resetWhiteBalance()
+        } else {
+            reset(adjustment)
+        }
+    }
+
+    func resetSelectedAdjustment() {
+        guard let selectedAdjustment else { return }
+        resetTool(selectedAdjustment)
+    }
+
+    func resetWhiteBalance() {
+        var updated = settings
+        AdjustmentKind.resetWhiteBalance(in: &updated,
+                                          cameraTemperature: viewModel.rawWhiteBalance?.temperature,
+                                          cameraTint: viewModel.rawWhiteBalance?.tint)
+        applySettingsChange(updated)
+    }
+
+    func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
+        var updated = settings
+        if mode == .custom,
+           settings.whiteBalanceMode == .camera,
+           let whiteBalance = viewModel.rawWhiteBalance {
+            updated.temperature = whiteBalance.temperature
+            if updated.masterRecipeID == nil { updated.tint = whiteBalance.tint }
+        }
+        updated.whiteBalanceMode = mode
+        if mode == .camera, let whiteBalance = viewModel.rawWhiteBalance {
+            updated.temperature = whiteBalance.temperature
+            updated.tint = updated.masterRecipeID == nil ? whiteBalance.tint : 0
+        }
+        applySettingsChange(updated)
+    }
+
+    var displayedTemperature: Double {
+        guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
+        if viewModel.sourceKind == .raw,
+           settings.whiteBalanceMode == .camera,
+           let whiteBalance = viewModel.rawWhiteBalance {
+            return whiteBalance.temperature
+        }
+        return settings.temperature
+    }
+
+    var displayedTint: Double {
+        guard viewModel.sourceKind != .raster else { return 0 }
+        if settings.masterRecipeID != nil { return settings.tint }
+        if viewModel.sourceKind == .raw,
+           settings.whiteBalanceMode == .camera,
+           let whiteBalance = viewModel.rawWhiteBalance {
+            return whiteBalance.tint
+        }
+        return settings.tint
+    }
+
+    func reciprocalTemperatureBinding() -> Binding<Double> {
+        Binding(
+            get: { RawSettings.reciprocalSliderValue(for: displayedTemperature) },
+            set: { value in
+                var updated = manualWhiteBalanceSettings
+                updated.temperature = RawSettings.temperature(forReciprocalSliderValue: value)
+                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                applySettingsChange(updated)
+            }
+        )
+    }
+
+    func temperatureNumberBinding() -> Binding<Double> {
+        Binding(
+            get: { displayedTemperature },
+            set: { value in
+                guard value.isFinite else { return }
+                var updated = manualWhiteBalanceSettings
+                updated.temperature = min(max(value.rounded(), RawSettings.temperatureRange.lowerBound),
+                                          RawSettings.temperatureRange.upperBound)
+                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                applySettingsChange(updated)
+            }
+        )
+    }
+
+    func setSliderEditing(_ editing: Bool) {
+        guard !editorBusy else {
+            isAdjustingSlider = false
+            cancelRulerFocus()
+            return
+        }
+        let wasEditing = isAdjustingSlider
+        isAdjustingSlider = editing
+        updateRulerFocus(editing: editing, wasEditing: wasEditing)
+        if !editing {
+            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
+        }
+    }
+
+    func photoImportButton(isEnabled: Bool) -> some View {
+        PhotosPicker(selection: $selectedPhotoItem, matching: .images,
+                     preferredItemEncoding: .current, photoLibrary: .shared()) {
+            Image(systemName: "photo.badge.plus")
+        }
+        .accessibilityLabel(L10n.text("导入照片"))
+        .help(L10n.text("从照片图库导入"))
+        .accessibilityIdentifier("editor.import")
+        .disabled(!isEnabled)
+    }
+
+    func fileImportButton(isEnabled: Bool) -> some View {
+        Button { showingFileImporter = true } label: {
+            Image(systemName: "folder.badge.plus")
+        }
+        .accessibilityLabel(L10n.text("从文件导入"))
+        .help(L10n.text("从文件导入"))
+        .accessibilityIdentifier("editor.import.file")
+        .disabled(!isEnabled)
+    }
+
+    @MainActor
+    func importLooks(_ result: Result<[URL], Error>) {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        switch result {
+        case .failure(let error):
+            if !(error is CancellationError), (error as NSError).code != CocoaError.Code.userCancelled.rawValue {
+                viewModel.statusMessage = error.localizedDescription
+            }
+        case .success(let sources):
+            viewModel.importLooks(from: sources) { report in
+                if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
+                                                                                imported: report.imported) {
+                    var updated = settings
+                    updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
+                    updated.lutID = selectedID
+                    applySettingsChange(updated)
+                }
+                guard !report.failures.isEmpty else { return }
+                let prefix = L10n.format("已导入 %@ 个外观，%@ 个文件导入失败：\n",
+                                         String(report.imported.count), String(report.failures.count))
+                let details = report.failures.map {
+                    "\($0.fileName): \($0.reason.localizedDescription)"
+                }.joined(separator: "\n")
+                viewModel.statusMessage = prefix + details
+            }
+        }
+    }
+
+    @MainActor
+    func importFromPhotoItem(_ item: PhotosPickerItem, requestID: UUID) async {
+        guard photoImportRequestID == requestID, !Task.isCancelled else { return }
+        guard viewModel.saveCurrentSettings(settings) else {
+            selectedPhotoItem = nil
+            photoImportTask = nil
+            photoImportRequestID = nil
+            return
+        }
+        isImporting = true
+        showingBefore = false
+        do {
+            let source = try await loadPhotoSource(from: item)
+            guard photoImportRequestID == requestID, !Task.isCancelled else {
+                PhotoImportFile.release(source.url)
+                return
+            }
+            let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+                ?? (try? PhotoIdentity.fallback(for: source.url))
+            viewModel.importImage(from: source, identity: identity, settings: .default,
+                onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
+                guard photoImportRequestID == requestID else { return }
+                settings = restored
+            }
+            selectedPhotoItem = nil
+            photoImportTask = nil
+        } catch {
+            guard photoImportRequestID == requestID else { return }
+            photoImportTask = nil
+            photoImportRequestID = nil
+            isImporting = false
+            selectedPhotoItem = nil
+            if !Task.isCancelled && !(error is CancellationError) {
+                viewModel.statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func cancelPhotoImport() {
+        photoImportRequestID = nil
+        photoImportTask?.cancel()
+        photoImportTask = nil
+        selectedPhotoItem = nil
+        viewModel.cancelImageImport()
+        isImporting = false
+    }
+
+    @MainActor
+    func importFromFile(_ result: Result<[URL], Error>) {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        guard let url = try? result.get().first else {
+            if case .failure(let error) = result, !(error is CancellationError) {
+                viewModel.statusMessage = error.localizedDescription
+            }
+            return
+        }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        photoImportTask?.cancel()
+        let requestID = UUID()
+        photoImportRequestID = requestID
+        viewModel.cancelImageImport()
+        isImporting = true
+        showingBefore = false
+        photoImportTask = Task {
+            let prepared: Result<(PhotoImportSource, PhotoIdentity?), Error> = await Task.detached(priority: .userInitiated) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let source = try PhotoImportFile.retainSource(url)
+                    return .success((source, try? PhotoIdentity.fallback(for: source.url)))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            guard !Task.isCancelled, photoImportRequestID == requestID else {
+                if case .success(let value) = prepared { PhotoImportFile.release(value.0.url) }
+                return
+            }
+            switch prepared {
+            case .success(let value):
+                photoImportTask = nil
+                viewModel.importImage(from: value.0, identity: value.1, settings: .default,
+                                      onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
+                    settings = restored
+                }
+            case .failure(let error):
+                photoImportTask = nil
+                photoImportRequestID = nil
+                isImporting = false
+                if !Task.isCancelled { viewModel.statusMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    func openBatchExport() {
+        guard !isEditorDraftActive else { return }
+        if batchModel != nil { showingBatchExport = true; return }
+        guard let source = viewModel.currentBatchSource(settings: settings) else {
+            viewModel.statusMessage = L10n.text("请先导入一张照片。")
+            return
+        }
+        batchModel = BatchExportModel(source: source, editor: viewModel)
+        batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
+        batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false }
+        showingBatchExport = true
+    }
+
+    func recoverBatchExport() {
+        do {
+            let journal = try BatchJournalStore.appStore()
+            if let job = try journal.pendingJobs().first {
+                batchModel = BatchExportModel(job: job, journalStore: journal)
+                batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
+                batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
+            }
+        } catch { viewModel.statusMessage = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
+    }
+
+    func loadPhotoSource(from item: PhotosPickerItem) async throws -> PhotoImportSource {
+        try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }
+    }
+
+    func saveToPhotoLibrary(_ data: Data) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                DispatchQueue.main.async {
+                    isSaving = false
+                    viewModel.statusMessage = L10n.text("无法保存照片，请在系统设置中允许添加照片。")
+                }
+                return
+            }
+
+            PHPhotoLibrary.shared().performChanges({
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, data: data, options: nil)
+            }, completionHandler: { success, error in
+                DispatchQueue.main.async {
+                    isSaving = false
+                    if let error = error {
+                        viewModel.statusMessage = error.localizedDescription
+                    } else if success {
+                        UsageAnalytics.shared.record(.exportCompleted)
+                        viewModel.statusMessage = L10n.text("已保存到照片。")
+                    } else {
+                        viewModel.statusMessage = L10n.text("保存失败，请重试。")
+                    }
+                }
+            })
+        }
+    }
+}

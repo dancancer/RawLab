@@ -21,7 +21,7 @@ does not copy capture EXIF, old previews or sensor-only tags; its virtual camera
 profile describes rendered pixels. JPEG/PNG capture metadata remains unchanged.
 Uncompressed DNG uses approximately 12 bytes per pixel.
 
-v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
 ![RawLab Mac：中性与 Velvia 效果对比 / Neutral and Velvia comparison](../docs/images/rawlab-mac-velvia.png)
 
@@ -30,14 +30,14 @@ v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”�
 The left pane is the neutral render and the right pane is Velvia. Film selection and exposure, tone, color, white balance and sharpening controls are grouped at the bottom.
 
 ## 构建和启动 / Build and Launch
-镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。紫绿去边暂未实现。
+镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.8.1 构建13 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），四端文案改由同一份来源生成并以 Mac 为基准，并修正工具栏开关状态、系统菜单语言、文字截断等界面细节，见 [v0.8.1 发布说明](../docs/releases/v0.8.1.md)。v0.8.0 构建12补齐桌面 Agent 编辑参数、几何编辑和四端普通图像输入，默认单图预览，并统一白平衡和暗角控件。保留既有 RAW、胶片外观、大师配方、HSL、降噪、镜头校正和渲染型 DNG 工作流。详见[发布说明](../docs/releases/v0.8.0.md)和[验收范围](../docs/releases/v0.8.0-preparation.md)。
+v0.8.2 构建14 新增 DCP 直接导入，扩展 RAW 格式兼容性，并优化胶片外观、裁剪、旋转和透视预览。既有使用统计设置和渲染工作流保留，详见 [v0.8.2 发布说明](../docs/releases/v0.8/v0.8.2.md)。
 
-预编译版本：[GitHub Release v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
+预编译版本：[GitHub Release v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
 
-Prebuilt apps: [v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) for Apple Silicon and Intel, targeting macOS14 and ad-hoc signed without notarization. See [release acceptance](../docs/releases/v0.8.0-preparation.md) for actual coverage and minimum-OS limits.
+Prebuilt apps: [v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2), build 14, for Apple Silicon and Intel. Both target macOS14 and are ad-hoc signed without notarization. See the [release notes](../docs/releases/v0.8/v0.8.2.md) and published build provenance for actual coverage and minimum-OS limits.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 
@@ -83,9 +83,9 @@ The flat app icon uses overlapping yellow/cyan frames on charcoal to suggest the
 
 Rebuild third-party libraries from pinned upstream source archives and produce two separate apps without overwriting the default build. Requires CMake, pkg-config, make, Apple Command Line Tools, and curl. NASM optionally enables Intel libjpeg SIMD acceleration; decoding still works without it. OpenMP, JPEG, DNG deflate and LCMS are retained. LibRaw 0.22 no longer enables the legacy RedCine/JasPer path; prior JPEG2000 coverage is not promised.
 
-新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)。
+新版相机校准、R6 III 元数据、X2D II 裁切及 X-Trans 并发修复由 `lutools/cmake/patch-libraw.cmake` 应用到源码依赖。未打补丁的 Homebrew/系统 LibRaw 0.22.2 不包含这些修复；请使用下列源码构建和对应 `PKG_CONFIG_PATH`。逐样片结果及 HE* 限制见[兼容性报告](../docs/archive/compatibility/raw-2026-10-09.md)。
 
-Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md) for per-sample results and HE* limitations.
+Camera calibration, R6 III metadata, X2D II crop and X-Trans concurrency fixes are applied to source dependencies by `lutools/cmake/patch-libraw.cmake`. Unpatched Homebrew/system LibRaw 0.22.2 does not include them; use the source build and matching `PKG_CONFIG_PATH` below. See the [compatibility report](../docs/archive/compatibility/raw-2026-10-09.md) for per-sample results and HE* limitations.
 
 ```bash
 # Run independently on each target-architecture host.
@@ -105,18 +105,21 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 胶片强度支持 0–200%，默认及重置均为 100%。
 
   Film strength supports 0-200%, with 100% as the default and reset value.
-- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入兼容 CUBE 或准备好的 RLOOK v1/v2。
+- 打开或拖入 RAW；内置十种 Fuji 胶片 LUT，也可导入兼容 CUBE、准备好的 RLOOK v1/v2，或受支持的 DCP。
 
-  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; import compatible CUBE or prepared RLOOK v1/v2 files.
+  Open or drag in a RAW file. Ten Fuji film LUTs are bundled; import compatible CUBE, prepared RLOOK v1/v2, or supported DCP files.
 - 支持声明 BT.709 输出色域的 F-Log、F-Log2、F-Log2C 富士 CUBE。F-Log2C 使用独立色域转换；技术 Log 输出会解码后正常显示。这些类型均支持 Metal，Auto 只在后端失败时回退。原厂文件无需重新制备。
 
   Declared Fuji F-Log/F-Log2/F-Log2C CUBEs with BT.709 output can be imported directly. F-Log2C uses its own gamut conversion; technical Log outputs are decoded and display-rendered. All these contracts support Metal, with Auto fallback on backend failure.
-- 外观选择器支持一次多选 CUBE/RLOOK，按顺序导入。单个失败不影响其余文件；批次结束后选中最后成功项，并汇总失败文件。全部失败或取消选择时保留原选择。
+- 外观选择器支持一次多选 CUBE/RLOOK/DCP，按顺序导入。单个失败不影响其余文件；批次结束后选中最后成功项，并汇总失败文件和具体原因。全部失败或取消选择时保留原选择。
 
-  The look picker accepts multiple CUBE/RLOOK files. Imports run sequentially, retain partial success, select the last successful look and report failed filenames. All-failed or cancelled batches preserve the existing selection.
-- v0.4.0 将导入外观复制到 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。删除外部原文件不影响外观，重启后会恢复。外观右键菜单支持重命名和删除；删除仅影响托管副本，内置外观不受影响。导入先走共享 native 校验，失败保留原选择，不接受源 DCP/XMP。制备步骤见 [LUT Preparation](../lutools/docs/lut-preparation.md)。
+  The look picker accepts multiple CUBE/RLOOK/DCP files. Imports run sequentially, retain partial success, select the last successful look and report failed filenames with their reasons. All-failed or cancelled batches preserve the existing selection.
+- 外观库保存于 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。DCP 由四端共用的 C++ 核心在后台转换成 RLOOK，无需 Python/OCIO，也不经过 RGB CUBE 烘焙；所有成品均通过共享 native 校验后安装。Mac/iOS 共用 Swift 文件适配器及外观库存储。原 DCP 不会被修改，删除外部原文件不影响外观，重启后会恢复。右键菜单支持重命名和删除托管副本，内置外观不受影响。XMP 仍不支持。
 
-  v0.4.0 manages imported looks in Application Support with a persistent registry. Imported copies survive source removal and app restart; context menus rename or remove only managed copies. Native validation rejects incompatible files without changing selection. Compile supported source DCPs on the desktop first; XMP execution is not implemented.
+  The library manages looks in Application Support with a persistent registry. The cross-platform C++ compiler converts supported DCPs to RLOOK in the background without Python, OCIO or RGB-CUBE baking, then validates them through the shared core. Mac/iOS share the Swift file adapter and library storage. Sources remain unchanged; managed copies survive source removal and restart. Context menus rename or remove only managed copies. XMP execution is not implemented.
+- DCP 自动导入要求唯一且有效的显式 D65 ColorMatrix/ForwardMatrix、内嵌 ProfileToneCurve，以及 `DefaultBlackRender=None`（值 1）。缺失曲线、默认/显式自动黑位、三光源 HueSatMap、空间/HDR/RGB 表等会给出具体错误，不静默猜测或省略。这里比旧 CLI 的无 HSM 黑位策略更严格；需要自选曲线/黑位的资源可先用 [LUT Preparation](../lutools/docs/lut-preparation.md) 明确制备，再导入 RLOOK。转换仍只是 D65 外观适配，不承诺 Lightroom 或原厂 JPEG 一致。
+
+  Automatic DCP import requires one valid explicit D65 ColorMatrix/ForwardMatrix pair, an embedded ProfileToneCurve and DefaultBlackRender=None (1). Missing tone, default/explicit Auto black, triple-illuminant HSM and spatial/HDR/RGB stages report specific errors rather than being guessed or skipped. This is stricter than the legacy CLI's no-HSM black policy. Use the preparation CLI for explicit custom tone/black choices, then import the resulting RLOOK. D65 appearance adaptation is not Lightroom or manufacturer-JPEG parity.
 - 左侧文件树支持添加多个本地目录、按需展开子目录和点击 RAW 缩略图选片，可从工具栏收起。目录列表会保留；从侧栏移除目录不会删除原文件。缩略图只读取内嵌预览，不自动触发完整显影。
 
   Add multiple local directories, expand subdirectories on demand and select RAW thumbnails in the collapsible left file tree. The directory list persists; removing an entry never deletes files. Thumbnails use embedded previews rather than full RAW development.
@@ -207,7 +210,7 @@ run effects at source resolution on Metal; ordinary previews use reduced input. 
 and display-chroma guided filtering, retaining CPU estimation/calibration and
 OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
 failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
-See the [shared contract](../lutools/docs/color-contract.md#metal-denoising).
+See the [shared contract](../lutools/docs/color-contract.md#gpu-denoising).
 
 ## 验证 / Verification
 

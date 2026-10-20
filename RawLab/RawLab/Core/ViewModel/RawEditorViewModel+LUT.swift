@@ -9,27 +9,58 @@ struct LUTReference {
     let id: String
     let name: String
     let sourceURL: URL
+    let isCustom: Bool
+
+    init(id: String, name: String, sourceURL: URL, isCustom: Bool = false) {
+        self.id = id
+        self.name = name
+        self.sourceURL = sourceURL
+        self.isCustom = isCustom
+    }
 }
 
 extension RawEditorViewModel {
     func loadLUTsIfNeeded() {
-        guard !isLoadingLUTs, availableLUTs.isEmpty else {
-            return
-        }
-
-        guard let resourceURL = Bundle.main.resourceURL else {
-            return
-        }
-
+        guard !didStartLUTLoad, !isLoadingLUTs else { return }
+        didStartLUTLoad = true
         isLoadingLUTs = true
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let result = self.loadBundledLUTs(from: resourceURL)
-            DispatchQueue.main.async {
-                self.availableLUTs = result.options
-                self.lutMap = result.map
-                self.isLoadingLUTs = false
+            let bundled = Bundle.main.resourceURL.map(self.loadBundledLUTs)
+                ?? (options: [], map: [:])
+            self.lookImportCoordinator.load { result in
+                self.resultDelivery {
+                    switch result {
+                    case .success(let managedLooks):
+                        let custom = self.customLUTs(from: managedLooks)
+                        self.availableLUTs = bundled.options + custom.options
+                        self.lutMap = bundled.map.merging(custom.map) { _, custom in custom }
+                    case .failure(let reason):
+                        self.availableLUTs = bundled.options
+                        self.lutMap = bundled.map
+                        self.statusMessage = reason.localizedDescription
+                    }
+                    self.isLoadingLUTs = false
+                }
+            }
+        }
+    }
+
+    func importLooks(from sources: [URL], completion: @escaping (LookImportBatchResult) -> Void) {
+        guard !sources.isEmpty else {
+            completion(LookImportBatchResult(imported: [], failures: []))
+            return
+        }
+        isImportingLooks = true
+        lookImportCoordinator.importLooks(from: sources) { [weak self] result in
+            guard let self else { return }
+            self.resultDelivery {
+                let custom = self.customLUTs(from: result.imported)
+                self.availableLUTs.append(contentsOf: custom.options)
+                self.lutMap.merge(custom.map) { _, custom in custom }
+                self.isImportingLooks = false
+                completion(result)
             }
         }
     }
@@ -77,6 +108,18 @@ extension RawEditorViewModel {
             map[fileName] = LUTReference(id: fileName, name: displayName, sourceURL: url)
         }
 
+        return (options, map)
+    }
+
+    private func customLUTs(from looks: [ManagedLook]) -> (options: [LUTOption], map: [String: LUTReference]) {
+        var options: [LUTOption] = []
+        var map: [String: LUTReference] = [:]
+        for managed in looks {
+            let id = managed.record.id
+            let name = managed.record.name
+            options.append(LUTOption(id: id, name: name))
+            map[id] = LUTReference(id: id, name: name, sourceURL: managed.url, isCustom: true)
+        }
         return (options, map)
     }
 

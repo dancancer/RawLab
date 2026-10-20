@@ -469,8 +469,8 @@ void previewTests() {
             "straightening and crop introduce no black border");
         checkStatus(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK,
             "enable interactive preview");
-        checkStatus(sony2fuji_session_set_viewport_preview(session.value, 1), SONY2FUJI_STATUS_OK,
-            "enable viewport preview");
+        checkStatus(sony2fuji_session_set_viewport_preview(session.value, 0), SONY2FUJI_STATUS_OK,
+            "exact geometry preview opts out of viewport approximation");
         request.intent = SONY2FUJI_INTENT_PREVIEW;
         equal(render(session.value, request, "native geometric preview"), native,
             "active geometry preview keeps exact source canvas");
@@ -608,7 +608,10 @@ void rawTests(const char* path) {
     check(preview.width == std::max(1u, static_cast<uint32_t>(std::round(expected.width * scale))) &&
         preview.height == std::max(1u, static_cast<uint32_t>(std::round(expected.height * scale))),
         "RAW preview dimensions follow oriented crop");
-    resizedFromNative(preview, expected, "RAW exact geometry before preview resize");
+    checkStatus(sony2fuji_session_set_viewport_preview(session.value, 0), SONY2FUJI_STATUS_OK,
+        "RAW exact preview opts out of viewport approximation");
+    resizedFromNative(render(session.value, request, "RAW exact geometric preview"), expected,
+        "RAW exact geometry before preview resize");
     request.intent = SONY2FUJI_INTENT_FINAL;
     equal(render(session.value, request, "RAW final after preview"), expected,
         "RAW final retains full geometry after preview");

@@ -72,7 +72,7 @@ extension RawEditorViewModel {
         let existingDraftPreview = draftPreviewBuffer
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
-        let sourceURL = self.sourceURL
+        let sourceFile = self.sourceFile
         let comparisonChanged = basePreviewGeometry != settings.geometry
 
         let workItem = DispatchWorkItem { [weak self] in
@@ -89,53 +89,55 @@ extension RawEditorViewModel {
             }
 
             if usesRaw {
-                guard let sourceURL else {
+                guard let sourceFile else {
                     return
                 }
 
-                do {
-                    let comparison = comparisonChanged ? try self.renderComparison(
-                        url: sourceURL, buffer: nil, geometry: settings.geometry) : nil
-                    let result = try self.processor.processRaw(
-                        url: sourceURL,
-                        settings: settings,
-                        previewLongEdge: CGFloat(maxDimension),
-                        lutURL: lutURL,
-                        interactive: quality == .interactive,
-                        viewportPreview: true
-                    )
-                    let previewImage = self.processor.makeUIImage(
-                        from: result.buffer,
-                        orientation: result.orientation ?? existingOrientation
-                    )
-
-                    self.resultDelivery {
-                        guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
-                            return
-                        }
-                        self.previewImage = previewImage
-                        self.nativeImageSize = result.buffer.nativeSize
-                        if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
-                        self.lensInfo = result.lensInfo
-                        if self.sourceOrientation == nil {
-                            self.sourceOrientation = result.orientation
-                        }
-                    }
-
-                    if includeHistogram {
-                        self.scheduleHistogramUpdate(
-                            for: result.buffer,
-                            renderID: renderID,
-                            sourceRevision: sourceRevision,
-                            delay: finalHistogramDelay
+                sourceFile.withReadAccess { sourceURL in
+                    do {
+                        let comparison = comparisonChanged ? try self.renderComparison(
+                            url: sourceURL, buffer: nil, geometry: settings.geometry) : nil
+                        let result = try self.processor.processRaw(
+                            url: sourceURL,
+                            settings: settings,
+                            previewLongEdge: CGFloat(maxDimension),
+                            lutURL: lutURL,
+                            interactive: quality == .interactive,
+                            viewportPreview: true
                         )
-                    }
-                } catch {
-                    self.resultDelivery {
-                        guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
-                            return
+                        let previewImage = self.processor.makeUIImage(
+                            from: result.buffer,
+                            orientation: result.orientation ?? existingOrientation
+                        )
+
+                        self.resultDelivery {
+                            guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
+                                return
+                            }
+                            self.previewImage = previewImage
+                            self.nativeImageSize = result.buffer.nativeSize
+                            if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
+                            self.lensInfo = result.lensInfo
+                            if self.sourceOrientation == nil {
+                                self.sourceOrientation = result.orientation
+                            }
                         }
-                        self.statusMessage = error.localizedDescription
+
+                        if includeHistogram {
+                            self.scheduleHistogramUpdate(
+                                for: result.buffer,
+                                renderID: renderID,
+                                sourceRevision: sourceRevision,
+                                delay: finalHistogramDelay
+                            )
+                        }
+                    } catch {
+                        self.resultDelivery {
+                            guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
+                                return
+                            }
+                            self.statusMessage = error.localizedDescription
+                        }
                     }
                 }
                 return

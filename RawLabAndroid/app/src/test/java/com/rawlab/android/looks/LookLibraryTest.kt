@@ -4,6 +4,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -27,6 +28,48 @@ class LookLibraryTest {
         if (bytes.toString(Charsets.UTF_8) != "valid") throw IllegalArgumentException("invalid look")
         LookValidation(if (file.extension == "rlook") LookFormat.RLOOK else LookFormat.CUBE,
             if (file.extension == "rlook") 2 else 0)
+    }
+
+    @Test
+    fun dcpIsCompiledToManagedRlookAndValidated() {
+        val root = Files.createTempDirectory("rawlab-look-dcp").toFile()
+        val compiler = DcpCompiler { source, sourceName ->
+            assertArrayEquals("synthetic dcp".toByteArray(), source)
+            assertEquals("profile.dcp", sourceName)
+            "RLOOKDCP".toByteArray()
+        }
+        try {
+            val imported = LookLibrary(root, validator, compiler).importLook(
+                "synthetic dcp".byteInputStream(), "profile.dcp")
+
+            assertEquals(LookFormat.RLOOK, imported.format)
+            assertEquals(2, imported.version)
+            assertEquals("profile.dcp", imported.originalName)
+            assertTrue(imported.file(root).name.endsWith(".rlook"))
+            assertArrayEquals("RLOOKDCP".toByteArray(), imported.file(root).readBytes())
+            assertEquals(listOf(imported.id), LookLibrary(root, validator, compiler).list().map { it.id })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun dcpCompilerFailureIsTypedAndLeavesNoManagedFiles() {
+        val root = Files.createTempDirectory("rawlab-look-dcp-failure").toFile()
+        val failure = DcpCompilationException(DcpFailureReason.MISSING_TONE_CURVE)
+        try {
+            val error = assertThrows(DcpCompilationException::class.java) {
+                LookLibrary(root, validator, DcpCompiler { _, _ -> throw failure })
+                    .importLook("synthetic dcp".byteInputStream(), "profile.dcp")
+            }
+            assertSame(failure, error)
+            assertEquals(DcpFailureReason.MISSING_TONE_CURVE, error.reason)
+            assertTrue(LookLibrary(root, validator, DcpCompiler { _, _ -> error("not reached") })
+                .list().isEmpty())
+            assertTrue(root.listFiles().orEmpty().all { it.name == ".lock" })
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test

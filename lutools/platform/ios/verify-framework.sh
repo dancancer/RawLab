@@ -28,11 +28,18 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
         exit 1
     fi
     for notice in LibRaw-COPYRIGHT LibRaw-LICENSE.CDDL LibRaw-LICENSE.LGPL \
-        rawspeed-camera-calibration.inc Adobe-DNG-SDK-LICENSE.txt stb-MIT-LICENSE.txt libtiff-LICENSE.md ThirdPartyNotices.md \
-        RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensing.md; do
+        rawspeed-camera-calibration.inc Adobe-DNG-SDK-LICENSE.txt stb-MIT-LICENSE.txt nlohmann-JSON-MIT.txt libtiff-LICENSE.md ThirdPartyNotices.md \
+        RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensing.md \
+        LibRaw-X3F-BSD.txt libjpeg-turbo/LICENSE.md libjpeg-turbo/README.ijg; do
         test -f "$(dirname "$binary")/Licenses/$notice"
     done
     cmp "$ROOT/../LICENSE-ALIYUN-RUM-EXCEPTION" "$(dirname "$binary")/Licenses/RawLab-Aliyun-RUM-Exception.txt"
+    cmp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$(dirname "$binary")/Licenses/nlohmann-JSON-MIT.txt"
+    for name in README.md LICENSE.LGPL-2.1; do
+        cmp "$ROOT/third_party/nikon_he/$name" "$(dirname "$binary")/Licenses/nikon-he/$name"
+    done
+    nm -gU "$binary" | grep -F '_sony2fuji_compile_dcp' >/dev/null
+    nm -gU "$binary" | grep -F '_sony2fuji_release_blob' >/dev/null
     dng_licenses="$(dirname "$binary")/Licenses/dng-sdk"
     test -d "$dng_licenses"
     for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \

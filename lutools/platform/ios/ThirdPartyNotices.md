@@ -1,5 +1,8 @@
 # RawLab iOS Native Framework
 
+The shared DCP compiler uses JSON for Modern C++ (Niels Lohmann), under MIT.
+Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
+
 OpenCV 4.12.0 (core/imgproc) and wavelib are statically linked for linear-light
 wavelet denoising. OpenCV uses Apache 2.0; wavelib uses BSD 3-Clause. See the
 included `OpenCV-LICENSE` and `wavelib-COPYRIGHT`.
@@ -14,9 +17,15 @@ writer stores baked display-sRGB output as float32 LinearRaw and does not embed
 original sensor data or claim reversible RAW edits. See `libtiff-LICENSE.md`.
 Source: https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz
 
-LibRaw 0.22.2 is statically linked into sony2fuji.framework under its CDDL 1.0
+LibRaw 0.22.2 is statically linked into sony2fuji.framework under its LGPL 2.1
 option. Copyright and both upstream license texts accompany the framework.
 Base source: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+
+The Nikon HE decoder is a local C++ adaptation of Nicolai Buchwitz's dnglab
+commit 0f044c2c30d78c4ed5fcede6ab4e8db893d566f6 and Dmitri Sotnikov's LibRaw
+PR 826, with RdWing's reconstruction/transfer corrections. It is LGPL 2.1, not
+CDDL. See nikon-he/README.md for source links and changes, and
+nikon-he/LICENSE.LGPL-2.1 for the full license.
 
 The corresponding local modifications and build instructions are in the RawLab
 source repository: https://github.com/dancancer/RawLab
@@ -57,5 +66,12 @@ This product includes DNG technology under license by Adobe.
 The white-balance temperature model includes Adobe DNG SDK-derived code;
 see Adobe-DNG-SDK-LICENSE.txt. Embedded stb image decoding/encoding uses its
 MIT license option; see stb-MIT-LICENSE.txt. System zlib,
-Metal and Foundation are supplied by iOS. No OpenMP, LCMS, JPEG/JasPer or
+Metal and Foundation are supplied by iOS. No OpenMP, LCMS, JasPer or
 commercial Nikon/TicoRAW SDK is linked into LibRaw in this build.
+
+JPEG-compressed DNG uses static libjpeg-turbo 3.1.3 (JPEG8 ABI); IJG/BSD/zlib
+notices are in Licenses/libjpeg-turbo/LICENSE.md and README.ijg. Sigma X3F tools
+are enabled; see LibRaw-X3F-BSD.txt. Sony ARW6 decoding and A7 V metadata are
+backported from LibRaw e419de0; A1 II, R50 V and PowerShot V1 metadata come
+from upstream PRs 775/846, 784 and 856. These backports retain LibRaw LGPL/CDDL
+terms. Source pins and boundaries: docs/reference/raw-format-support.md.

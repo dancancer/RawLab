@@ -1,5 +1,5 @@
 # RawLab Windows
-镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/lens-correction-platforms.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
+镜头校正与共享核心一致，支持畸变、横向色差、自动/手动匹配及自动裁边，配置接入逐照片记忆和批量任务。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。`build-remote.py --workspace C:/RawLabBuild/<feature>` 可隔离远程构建目录。
 
 
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
@@ -13,13 +13,13 @@ Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
 Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
 
-v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](../docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.8.1 Windows 包
+## 下载 v0.8.2 Windows 包
 
-[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Windows-0.8.1-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
+[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Windows-0.8.2-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.2/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.1/build13，self-contained .NET8，正式包带阿里云 RUM SDK、默认开启使用统计（可在关于页关闭）；原生处理核心与 0.8.0 同源，拼装方式见随包 BUILD-PROVENANCE；包含 Visual C++ 运行库、LUT、Lens DB 与 ExifTool，程序未签名。桌面 Agent、几何、JPEG/PNG/TIFF 普通图像和混合批量复用现有处理核心；默认单图预览，按需启用对比。实际候选包、GPU/UI 覆盖和已知限制见[发布验收](../docs/releases/v0.8.0-preparation.md)及随包 BUILD-PROVENANCE。
+解压后运行 `RawLab.exe`，保留完整目录。版本0.8.2/build14，self-contained .NET8，包含重新构建的原生核心、Visual C++ 运行库、LUT、Lens DB、ExifTool 和许可文件，程序未签名。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。本次新增 DCP 直接导入、扩展 RAW 兼容性，并修复部分 JPEG 导入和首帧颜色；详见[发布说明](../docs/releases/v0.8/v0.8.2.md)。原生、WPF 和实际 Direct3D 11 检查结果及设备覆盖边界见发布附件 `BUILD-PROVENANCE.json`。
 
 ## 构建
 
@@ -72,7 +72,7 @@ python3 RawLabWindows/build-remote.py \
 ./RawLabWindows/scripts/provision-build-tools.ps1 -InstallerDirectory 'D:\'
 ```
 
-平台实测范围见 [RAW 兼容性验证记录](../docs/archive/verification/verification-raw-compatibility-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
+平台实测范围见 [RAW 兼容性验证记录](../docs/archive/compatibility/raw-2026-10-09.md)；虚拟机编译结果不替代真机 GPU 和交互性能验收。
 
 ## 功能与 Mac 对齐
 
@@ -80,7 +80,7 @@ python3 RawLabWindows/build-remote.py \
 |---|---|
 | 照片打开、拖放、多目录文件树 | RAW、JPEG/PNG/经典 TIFF；原生对话框；文件夹可直接拖入左侧空白处或目录行并记住，重复路径去重，不移动源文件；目录按需展开；拖动右侧边界调整宽度；缩略图自动单/双列，文件名在下方，超长省略、悬停显示全名 |
 | 缩略图 | RAW 只提取内嵌预览，不解包/显影；普通图像复用严格 WIC 解码/方向/色彩入口后缩小；最多两个后台读取任务 |
-| 胶片 | 独立“胶片”类别，选中后显示胶片列表；同一套十种 LUT 与包装图；支持中性、多选导入兼容 CUBE/RLOOK；导入项使用会话内的外部文件引用 |
+| 胶片 | 独立“胶片”类别，选中后显示胶片列表；同一套十种 LUT 与包装图；支持中性、多选导入兼容 CUBE/RLOOK/DCP；DCP 由共享核心转换为托管 RLOOK 并在重启后恢复，CUBE/RLOOK 仍使用本次会话的外部文件引用 |
 | 调整 | 胶片强度 0–200%（默认 100%）、曝光、色温、色调、对比度、高光、阴影、S 曲线、饱和度、锐化 |
 | 几何 | 八手柄/移动裁切、比例预设、百分比精调、左右 90° 旋转、翻转、±45° 拉直及水平/垂直透视；独立草稿预览，应用后才保存并可冻结到批量任务 |
 | 效果 | 独立暗角和颗粒工具；暗角强度/中点/圆度/羽化/高光保护，颗粒强度/大小/粗糙度；辅助参数可单项或分组重置，强度为零时保留编辑值 |
@@ -114,7 +114,7 @@ JPEG 和 PNG 导出自动保留可读取的相机、镜头、拍摄时间、快�
 目录（含 Perl、源码和许可证）；无需用户另行安装。请保留完整安装包目录。
 
 不支持任意输入色彩空间的 CUBE；需声明兼容的 Fuji F-Log/F-Log2/F-Log2C
-输入和 BT.709 显示或受支持的 Log 输出。RLOOK 使用 CPU 回退，不是 Direct3D 原生 DCP 加速；导入时逐文件验证并报告失败、保留成功项，仍引用原路径，没有新增 Mac/Android 的托管库同步。细节与色彩约定见 [处理契约](../lutools/docs/color-contract.md)。
+输入和 BT.709 显示或受支持的 Log 输出。RLOOK 使用 CPU 回退，不是 Direct3D 原生 DCP 加速；CUBE/RLOOK 导入仍逐文件验证并引用外部路径；DCP 由共享核心转换为托管 RLOOK、逐文件原生校验并报告失败，失败时保留共享编译器提供的具体原因。细节与色彩约定见 [处理契约](../lutools/docs/color-contract.md)。
 显示 Kelvin 是相机校准估计，不等同于 Lightroom 私有配置值。
 
 ## 打开、缩放与性能
@@ -150,7 +150,7 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 较多显存，显存不足时自动模式仍能导出。诊断环境变量 `RAWLAB_DISABLE_D3D11=1`
 用于验证自动回退及强制失败；正常运行不要设置。
 
-跨平台接入的构建与运行范围见 [本轮验证记录](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+跨平台接入的构建与运行范围见 [本轮验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 Windows 托管层交叉编译通过不代表新的 D3D11 着色器或硬件路径已运行。
 
 ## 验证
@@ -178,6 +178,18 @@ dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --
 不写用户语言偏好。测试账户须没有待恢复的批量任务，否则测试会停止以保留原任务。
 `build.ps1 -Test` 也包含此回归。
 
+相机白平衡中点舍入的纯托管回归不需要 RAW、native DLL 或窗口：
+
+```powershell
+dotnet RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --white-balance
+```
+
+该入口在用户目录检查和 WPF 初始化前运行，只在系统临时目录创建并清理自己的编辑和批量记录。
+它覆盖生产相机取整、配方强度、冻结导出请求及旧记录兼容；默认完整套件也会运行这些检查。
+旧 Windows 记录中的相机取整值和显式白平衡不做迁移；重新渲染时，相机元数据按新规则刷新，
+显式白平衡仍保留原值，相机模式仍使用原始增益，配方色调则使用重新解析的目标 RAW 相机 tint，
+配方的显式色温仍保留原值。
+
 当前 Windows 回归还覆盖内嵌预览尺寸与方向、精确缓存上限及失效、预览不能启用导出、原尺寸几何和不重绘图像的平移。
 几何处理复用共享核心，依次执行旋转、翻转、居中内接拉直、归一化裁切，最后调整输出尺寸。
 裁切百分比以旋转和拉直后的画布为基准；超出边界的数值收回画布内。中性对比图使用同一套几何参数，原 RAW 保持不变。
@@ -195,7 +207,7 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 工作，不依赖机器速度或物理文件选择器，也不向产品代码增加测试控制入口。
 边界裁框旋转的模型回归在 editing 中，水平/垂直翻转的真实控件回归在 transform-ui 中。
 
-主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
+除上述纯托管 `--white-balance` 外，主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
 存在即拒绝运行；默认套件完成 native 检查后、WPF 初始化前再检查一次。使用没有产品任务并发运行的独立测试账号，
 不要为运行测试删除或移动已有 journal。默认窗口的 EditStore 仍使用每次运行独立的目录。
 `run-v08.ps1` 的 `default-isolation` 回归也可直接运行
@@ -284,7 +296,7 @@ python lutools/tests/make_denoise_fixture.py build/windows-fixtures/denoise.dng
 dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll --interactions $PWD.Path 'C:/samples/photo.ARW'
 ```
 
-历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](../docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
+历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
 本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。
 

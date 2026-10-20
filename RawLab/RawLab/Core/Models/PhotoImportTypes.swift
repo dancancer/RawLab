@@ -68,11 +68,16 @@ struct ImagePhotoFile: Transferable {
 
 enum PhotoImportFile {
     static var directory: URL { FileManager.default.temporaryDirectory.appendingPathComponent("RawLabImports", isDirectory: true) }
+    static let sigmaRaw = UTType(importedAs: "com.rawlab.x3f", conformingTo: .rawImage)
     static let supportedContentTypes: [UTType] = [
-        .rawImage, .jpeg, .png, .tiff, .heif, .heic
+        .rawImage, sigmaRaw, .jpeg, .png, .tiff, .heif, .heic
     ]
+    static let supportedLookContentTypes: [UTType] = ["cube", "rlook", "dcp"].compactMap {
+        UTType(filenameExtension: $0)
+    }
 
     static func sourceKind(for url: URL) -> PhotoImportSource? {
+        if url.pathExtension.lowercased() == "x3f" { return .raw(url) }
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return nil }
         if type.conforms(to: .rawImage) { return .raw(url) }
         if type.conforms(to: .image) { return .raster(url) }

@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 
@@ -9,6 +10,44 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BuildEnvironmentTests(unittest.TestCase):
+    def test_libraw_stamp_tracks_patch_contents_not_timestamps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("RawLabMac/build-env.sh", "RawLabMac/build-dependencies.sh",
+                         "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                         "lutools/cmake/libraw-cameras.cmake", "lutools/cmake/libraw-sony-arw6.cmake",
+                         "lutools/third_party/rawspeed-camera-calibration.inc",
+                         "lutools/third_party/nikon_he/entropy.cpp",
+                         "lutools/third_party/libraw/sony_arw6.cpp"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("original")
+            prefix = root / "prefix"
+            stamp = prefix / "share/rawlab/libraw-patch.sha256"
+
+            def invoke(function):
+                return subprocess.run(
+                    ["/bin/bash", "-euc", 'ROOT="$1"; source "$2"; ' + function,
+                     "test", str(root), str(ROOT / "RawLabMac/build-env.sh")],
+                    env={**os.environ, "RAWLAB_ARCH": "arm64", "RAWLAB_DEPENDENCY_PREFIX": str(prefix)},
+                    capture_output=True, text=True)
+
+            self.assertNotEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+            fingerprint = invoke("rawlab_libraw_patch_fingerprint")
+            self.assertEqual(fingerprint.returncode, 0, fingerprint.stderr)
+            stamp.parent.mkdir(parents=True)
+            stamp.write_text(fingerprint.stdout)
+            self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+            for name in ("lutools/third_party/nikon_he/entropy.cpp",
+                         "lutools/third_party/libraw/sony_arw6.cpp", "lutools/cmake/libraw-cameras.cmake"):
+                with self.subTest(source=name):
+                    source = root / name
+                    source.touch()
+                    self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+                    source.write_text("changed")
+                    self.assertNotEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
+                    stamp.write_text(invoke("rawlab_libraw_patch_fingerprint").stdout)
+
     def environment(self, **overrides):
         env = {key: value for key, value in os.environ.items()
                if not key.startswith("RAWLAB_") and key != "MACOSX_DEPLOYMENT_TARGET"}
@@ -54,6 +93,14 @@ class BuildEnvironmentTests(unittest.TestCase):
         expected = f"{values[3]}/lib/pkgconfig:{values[2]}/lib/pkgconfig"
         self.assertEqual(values[5], expected)
         self.assertEqual(values[6], expected)
+
+    def test_full_source_swift_builds_use_bounded_whole_module_compilation(self):
+        for relative in ('RawLabMac/build.sh', 'RawLabMac/tests/mac-straighten-preview.sh'):
+            with self.subTest(script=relative):
+                source = (ROOT / relative).read_text()
+                self.assertIn('-whole-module-optimization', source)
+                self.assertIn('-num-threads "${JOBS:-$(sysctl -n hw.ncpu)}"', source)
+                self.assertNotIn('-Ounchecked', source)
 
 
 if __name__ == "__main__":

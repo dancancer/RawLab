@@ -29,6 +29,46 @@
       "formats": [],
       "source": "4:3"
     },
+    "DCP 文件损坏，或使用了不支持的 TIFF 结构。": {
+      "formats": [],
+      "source": "DCP 文件损坏，或使用了不支持的 TIFF 结构。"
+    },
+    "DCP 文件或外观数据超过安全大小限制。": {
+      "formats": [],
+      "source": "DCP 文件或外观数据超过安全大小限制。"
+    },
+    "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。": {
+      "formats": [],
+      "source": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"
+    },
+    "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。": {
+      "formats": [],
+      "source": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"
+    },
+    "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。": {
+      "formats": [],
+      "source": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"
+    },
+    "DCP 使用三光源 HueSatMap，暂不支持转换。": {
+      "formats": [],
+      "source": "DCP 使用三光源 HueSatMap，暂不支持转换。"
+    },
+    "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。": {
+      "formats": [],
+      "source": "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。"
+    },
+    "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。": {
+      "formats": [],
+      "source": "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。"
+    },
+    "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。": {
+      "formats": [],
+      "source": "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。"
+    },
+    "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。": {
+      "formats": [],
+      "source": "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。"
+    },
     "DNG · 渲染型": {
       "formats": [],
       "source": "DNG · 渲染型"
@@ -59,12 +99,6 @@
       "formats": [],
       "source": "HSL"
     },
-    "Histogram failed: %@": {
-      "formats": [
-        "%@"
-      ],
-      "source": "Histogram failed: {0}"
-    },
     "Image metadata has invalid dimensions.": {
       "formats": [],
       "source": "Image metadata has invalid dimensions."
@@ -83,35 +117,11 @@
       ],
       "source": "Invalid GPU configuration: {0}"
     },
-    "Invalid HSL parameters.": {
-      "formats": [],
-      "source": "Invalid HSL parameters."
-    },
-    "Invalid denoise strengths.": {
-      "formats": [],
-      "source": "Invalid denoise strengths."
-    },
     "Invalid display chroma denoise mode: %@": {
       "formats": [
         "%@"
       ],
       "source": "Invalid display chroma denoise mode: {0}"
-    },
-    "Invalid exposure mode or HSL parameters.": {
-      "formats": [],
-      "source": "Invalid exposure mode or HSL parameters."
-    },
-    "Invalid exposure mode.": {
-      "formats": [],
-      "source": "Invalid exposure mode."
-    },
-    "Invalid geometry parameters.": {
-      "formats": [],
-      "source": "Invalid geometry parameters."
-    },
-    "Invalid photo effects.": {
-      "formats": [],
-      "source": "Invalid photo effects."
     },
     "Invalid photo effects: %@": {
       "formats": [
@@ -122,10 +132,6 @@
     "No image loaded.": {
       "formats": [],
       "source": "No image loaded."
-    },
-    "Preview render failed.": {
-      "formats": [],
-      "source": "Preview render failed."
     },
     "RAW 照片": {
       "formats": [],
@@ -155,25 +161,23 @@
       "formats": [],
       "source": "Sony2Fuji output copy failed."
     },
-    "Sony2Fuji process failed: %@": {
-      "formats": [
-        "%@"
-      ],
-      "source": "Sony2Fuji process failed: {0}"
-    },
     "Sony2Fuji session create failed: %@": {
       "formats": [
         "%@"
       ],
       "source": "Sony2Fuji session create failed: {0}"
     },
-    "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。": {
+    "上次使用的外观不可用，请重新选择或导入外观。": {
       "formats": [],
-      "source": "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。"
+      "source": "上次使用的外观不可用，请重新选择或导入外观。"
     },
-    "不是 RAW 照片。": {
+    "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": {
       "formats": [],
-      "source": "不是 RAW 照片。"
+      "source": "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"
+    },
+    "不能覆盖原始文件。": {
+      "formats": [],
+      "source": "不能覆盖原始文件。"
     },
     "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": {
       "formats": [],
@@ -182,6 +186,14 @@
     "中性": {
       "formats": [],
       "source": "中性"
+    },
+    "中性显影": {
+      "formats": [],
+      "source": "中性显影"
+    },
+    "中性显影与调整后对比": {
+      "formats": [],
+      "source": "中性显影与调整后对比"
     },
     "中性直出": {
       "formats": [],
@@ -215,6 +227,10 @@
       "formats": [],
       "source": "亮度降噪"
     },
+    "仅在暗角强度为负值时可用。": {
+      "formats": [],
+      "source": "仅在暗角强度为负值时可用。"
+    },
     "仅用于本次导出，保留各照片原有调整": {
       "formats": [],
       "source": "仅用于本次导出，保留各照片原有调整"
@@ -227,23 +243,19 @@
       "formats": [],
       "source": "从照片图库导入"
     },
-    "任务外观不可用。": {
+    "任务使用的外观文件不可用，请重新创建任务。": {
       "formats": [],
-      "source": "任务外观不可用。"
-    },
-    "任务外观不可用，请放弃此任务并重新创建。": {
-      "formats": [],
-      "source": "任务外观不可用，请放弃此任务并重新创建。"
+      "source": "任务使用的外观文件不可用，请重新创建任务。"
     },
     "任务操作": {
       "formats": [],
       "source": "任务操作"
     },
-    "任务记录未保存：%@": {
+    "任务未保存：%@": {
       "formats": [
         "%@"
       ],
-      "source": "任务记录未保存：{0}"
+      "source": "任务未保存：{0}"
     },
     "传感器基准": {
       "formats": [],
@@ -287,6 +299,10 @@
       "formats": [],
       "source": "保存结果待确认"
     },
+    "保留这次几何或镜头修改？": {
+      "formats": [],
+      "source": "保留这次几何或镜头修改？"
+    },
     "停用": {
       "formats": [],
       "source": "停用"
@@ -307,21 +323,13 @@
       "formats": [],
       "source": "关闭"
     },
+    "内存不足，无法解码普通图片。": {
+      "formats": [],
+      "source": "内存不足，无法解码普通图片。"
+    },
     "几何": {
       "formats": [],
       "source": "几何"
-    },
-    "切换照片信息": {
-      "formats": [],
-      "source": "切换照片信息"
-    },
-    "切换调整前后": {
-      "formats": [],
-      "source": "切换调整前后"
-    },
-    "前后对比": {
-      "formats": [],
-      "source": "前后对比"
     },
     "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感": {
       "formats": [],
@@ -335,9 +343,9 @@
       "formats": [],
       "source": "匹配照片"
     },
-    "原始分辨率": {
+    "原始尺寸": {
       "formats": [],
-      "source": "原始分辨率"
+      "source": "原始尺寸"
     },
     "原始比例": {
       "formats": [],
@@ -346,6 +354,10 @@
     "去噪优先": {
       "formats": [],
       "source": "去噪优先"
+    },
+    "参数或输出路径无效。": {
+      "formats": [],
+      "source": "参数或输出路径无效。"
     },
     "取消": {
       "formats": [],
@@ -359,13 +371,13 @@
       "formats": [],
       "source": "史诗自然 · 雾气冷青"
     },
-    "右上角": {
+    "向右旋转 90°": {
       "formats": [],
-      "source": "右上角"
+      "source": "向右旋转 90°"
     },
-    "右下角": {
+    "向左旋转 90°": {
       "formats": [],
-      "source": "右下角"
+      "source": "向左旋转 90°"
     },
     "四分之一灵敏度": {
       "formats": [],
@@ -383,6 +395,12 @@
       "formats": [],
       "source": "垂直透视"
     },
+    "处理失败：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "处理失败：{0}"
+    },
     "外观不可用": {
       "formats": [],
       "source": "外观不可用"
@@ -398,6 +416,10 @@
     "完成": {
       "formats": [],
       "source": "完成"
+    },
+    "对比": {
+      "formats": [],
+      "source": "对比"
     },
     "对比度": {
       "formats": [],
@@ -416,10 +438,6 @@
         "%@"
       ],
       "source": "导出 {0} 张"
-    },
-    "导出 0 张": {
-      "formats": [],
-      "source": "导出 0 张"
     },
     "导出到文件…": {
       "formats": [],
@@ -461,17 +479,13 @@
       "formats": [],
       "source": "导出渲染型 DNG…"
     },
-    "导出照片": {
+    "导出长边像素": {
       "formats": [],
-      "source": "导出照片"
+      "source": "导出长边像素"
     },
-    "导出长边必须在 1 到 65535 像素之间。": {
+    "导出长边必须为 1-65535 像素。": {
       "formats": [],
-      "source": "导出长边必须在 1 到 65535 像素之间。"
-    },
-    "小波降噪": {
-      "formats": [],
-      "source": "小波降噪"
+      "source": "导出长边必须为 1-65535 像素。"
     },
     "尚未保存，允许重新导出": {
       "formats": [],
@@ -488,14 +502,6 @@
     "展开调整栏": {
       "formats": [],
       "source": "展开调整栏"
-    },
-    "左上角": {
-      "formats": [],
-      "source": "左上角"
-    },
-    "左下角": {
-      "formats": [],
-      "source": "左下角"
     },
     "已保存": {
       "formats": [],
@@ -586,17 +592,11 @@
       "formats": [],
       "source": "已调整"
     },
-    "已选 %@ 张 RAW": {
+    "已选 %@ 张": {
       "formats": [
         "%@"
       ],
-      "source": "已选 {0} 张 RAW"
-    },
-    "已选 %@ 张照片": {
-      "formats": [
-        "%@"
-      ],
-      "source": "已选 {0} 张照片"
+      "source": "已选 {0} 张"
     },
     "应用": {
       "formats": [],
@@ -638,12 +638,6 @@
       ],
       "source": "成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张"
     },
-    "所选 RAW：%@": {
-      "formats": [
-        "%@"
-      ],
-      "source": "所选 RAW：{0}"
-    },
     "所选外观不可用，请重新选择外观。": {
       "formats": [],
       "source": "所选外观不可用，请重新选择外观。"
@@ -666,10 +660,6 @@
       "formats": [],
       "source": "批量导出"
     },
-    "批量导出目前仅支持 RAW 照片。": {
-      "formats": [],
-      "source": "批量导出目前仅支持 RAW 照片。"
-    },
     "拉直": {
       "formats": [],
       "source": "拉直"
@@ -677,10 +667,6 @@
     "拍摄参数": {
       "formats": [],
       "source": "拍摄参数"
-    },
-    "拍摄时": {
-      "formats": [],
-      "source": "拍摄时"
     },
     "拍摄时设置": {
       "formats": [],
@@ -696,6 +682,10 @@
     "拖动边角裁切，拖动画面内移动选区。": {
       "formats": [],
       "source": "拖动边角裁切，拖动画面内移动选区。"
+    },
+    "指定长边": {
+      "formats": [],
+      "source": "指定长边"
     },
     "按每张照片": {
       "formats": [],
@@ -717,13 +707,13 @@
       "formats": [],
       "source": "放弃任务"
     },
+    "放弃修改": {
+      "formats": [],
+      "source": "放弃修改"
+    },
     "放弃此任务？已保存的照片会保留。": {
       "formats": [],
       "source": "放弃此任务？已保存的照片会保留。"
-    },
-    "放弃调整": {
-      "formats": [],
-      "source": "放弃调整"
     },
     "数据与提供方": {
       "formats": [],
@@ -737,15 +727,29 @@
       "formats": [],
       "source": "无效或不可用的镜头校正设置"
     },
+    "无效或不可用的降噪参数": {
+      "formats": [],
+      "source": "无效或不可用的降噪参数"
+    },
+    "无效的 HSL 参数": {
+      "formats": [],
+      "source": "无效的 HSL 参数"
+    },
+    "无效的几何参数": {
+      "formats": [],
+      "source": "无效的几何参数"
+    },
+    "无效的暗角或颗粒参数": {
+      "formats": [],
+      "source": "无效的暗角或颗粒参数"
+    },
+    "无效的曝光基准": {
+      "formats": [],
+      "source": "无效的曝光基准"
+    },
     "无效的视口预览模式": {
       "formats": [],
       "source": "无效的视口预览模式"
-    },
-    "无法保存批量任务：%@": {
-      "formats": [
-        "%@"
-      ],
-      "source": "无法保存批量任务：{0}"
     },
     "无法保存照片，请在系统设置中允许 RawLab 添加照片。": {
       "formats": [],
@@ -755,10 +759,6 @@
       "formats": [],
       "source": "无法保存照片，请在系统设置中允许添加照片。"
     },
-    "无法保存语言设置。": {
-      "formats": [],
-      "source": "无法保存语言设置。"
-    },
     "无法写入成片，请检查输出位置和剩余空间。": {
       "formats": [],
       "source": "无法写入成片，请检查输出位置和剩余空间。"
@@ -767,15 +767,13 @@
       "formats": [],
       "source": "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。"
     },
-    "无法恢复批量任务：%@": {
-      "formats": [
-        "%@"
-      ],
-      "source": "无法恢复批量任务：{0}"
-    },
-    "无法显示预览。": {
+    "无法显示处理结果": {
       "formats": [],
-      "source": "无法显示预览。"
+      "source": "无法显示处理结果"
+    },
+    "无法生成预览": {
+      "formats": [],
+      "source": "无法生成预览"
     },
     "无法自动调整曝光：%@": {
       "formats": [
@@ -783,13 +781,33 @@
       ],
       "source": "无法自动调整曝光：{0}"
     },
+    "无法解码普通图片：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法解码普通图片：{0}"
+    },
     "无法识别原始照片，调整尚未保存。": {
       "formats": [],
       "source": "无法识别原始照片，调整尚未保存。"
     },
+    "无法读取上次批量任务：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法读取上次批量任务：{0}"
+    },
     "无法读取已保存的调整，原有记录未被覆盖。": {
       "formats": [],
       "source": "无法读取已保存的调整，原有记录未被覆盖。"
+    },
+    "无法读取或写入文件，请检查路径和访问权限。": {
+      "formats": [],
+      "source": "无法读取或写入文件，请检查路径和访问权限。"
+    },
+    "无法读取照片，请检查文件和访问权限。": {
+      "formats": [],
+      "source": "无法读取照片，请检查文件和访问权限。"
     },
     "无法读取统计设置，已保持关闭。": {
       "formats": [],
@@ -819,13 +837,9 @@
       "formats": [],
       "source": "明度"
     },
-    "显示或收起调整栏": {
+    "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。": {
       "formats": [],
-      "source": "显示或收起调整栏"
-    },
-    "普通图片未加入，请选择 RAW。": {
-      "formats": [],
-      "source": "普通图片未加入，请选择 RAW。"
+      "source": "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"
     },
     "暖调日系 · 漫射金光": {
       "formats": [],
@@ -871,10 +885,6 @@
       "formats": [],
       "source": "曝光基准"
     },
-    "曝光补偿": {
-      "formats": [],
-      "source": "曝光补偿"
-    },
     "更多": {
       "formats": [],
       "source": "更多"
@@ -894,10 +904,6 @@
     "未处理": {
       "formats": [],
       "source": "未处理"
-    },
-    "未应用的调整": {
-      "formats": [],
-      "source": "未应用的调整"
     },
     "未找到机身或传感器尺寸信息": {
       "formats": [],
@@ -931,15 +937,15 @@
       "formats": [],
       "source": "极简禅意 · 日系街拍"
     },
-    "查看批量任务": {
-      "formats": [],
-      "source": "查看批量任务"
-    },
     "查看批量任务 · %@ 张": {
       "formats": [
         "%@"
       ],
       "source": "查看批量任务 · {0} 张"
+    },
+    "查看批量任务…": {
+      "formats": [],
+      "source": "查看批量任务…"
     },
     "标准显影": {
       "formats": [],
@@ -990,10 +996,6 @@
     "正在停止…": {
       "formats": [],
       "source": "正在停止…"
-    },
-    "正在准备 RAW…": {
-      "formats": [],
-      "source": "正在准备 RAW…"
     },
     "正在准备照片…": {
       "formats": [],
@@ -1095,10 +1097,6 @@
       "formats": [],
       "source": "照片缺少有效焦距，未应用校正"
     },
-    "版本": {
-      "formats": [],
-      "source": "版本"
-    },
     "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光": {
       "formats": [],
       "source": "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光"
@@ -1107,9 +1105,9 @@
       "formats": [],
       "source": "电影夜景胶片色调，红色灯光与深邃冷青绿暗部"
     },
-    "画幅比例": {
+    "画面比例": {
       "formats": [],
-      "source": "画幅比例"
+      "source": "画面比例"
     },
     "畸变": {
       "formats": [],
@@ -1123,17 +1121,9 @@
       "formats": [],
       "source": "白平衡"
     },
-    "白平衡模式": {
-      "formats": [],
-      "source": "白平衡模式"
-    },
     "目标照片": {
       "formats": [],
       "source": "目标照片"
-    },
-    "移动裁切": {
-      "formats": [],
-      "source": "移动裁切"
     },
     "移除 %@": {
       "formats": [
@@ -1164,10 +1154,6 @@
     "粗色斑抑制": {
       "formats": [],
       "source": "粗色斑抑制"
-    },
-    "粗颗粒降噪": {
-      "formats": [],
-      "source": "粗颗粒降噪"
     },
     "精细": {
       "formats": [],
@@ -1201,9 +1187,11 @@
       "formats": [],
       "source": "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。"
     },
-    "继续未完成项": {
-      "formats": [],
-      "source": "继续未完成项"
+    "继续未完成的 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "继续未完成的 {0} 张"
     },
     "继续编辑": {
       "formats": [],
@@ -1240,14 +1228,6 @@
     "自定义": {
       "formats": [],
       "source": "自定义"
-    },
-    "自定义…": {
-      "formats": [],
-      "source": "自定义…"
-    },
-    "自定义白平衡": {
-      "formats": [],
-      "source": "自定义白平衡"
     },
     "自由": {
       "formats": [],
@@ -1293,29 +1273,45 @@
       "formats": [],
       "source": "蓝"
     },
+    "裁切上边": {
+      "formats": [],
+      "source": "裁切上边"
+    },
     "裁切与旋转": {
       "formats": [],
       "source": "裁切与旋转"
+    },
+    "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。": {
+      "formats": [],
+      "source": "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。"
+    },
+    "裁切右上角": {
+      "formats": [],
+      "source": "裁切右上角"
+    },
+    "裁切右下角": {
+      "formats": [],
+      "source": "裁切右下角"
     },
     "裁切宽度": {
       "formats": [],
       "source": "裁切宽度"
     },
-    "裁切左侧": {
+    "裁切左上角": {
       "formats": [],
-      "source": "裁切左侧"
+      "source": "裁切左上角"
     },
-    "裁切百分比基于旋转、翻转和拉直后的画面。": {
+    "裁切左下角": {
       "formats": [],
-      "source": "裁切百分比基于旋转、翻转和拉直后的画面。"
+      "source": "裁切左下角"
+    },
+    "裁切左边": {
+      "formats": [],
+      "source": "裁切左边"
     },
     "裁切选区": {
       "formats": [],
       "source": "裁切选区"
-    },
-    "裁切顶部": {
-      "formats": [],
-      "source": "裁切顶部"
     },
     "裁切高度": {
       "formats": [],
@@ -1330,10 +1326,6 @@
     "语言": {
       "formats": [],
       "source": "语言"
-    },
-    "请先导入一张 RAW 照片。": {
-      "formats": [],
-      "source": "请先导入一张 RAW 照片。"
     },
     "请先导入一张照片。": {
       "formats": [],
@@ -1355,29 +1347,17 @@
       "formats": [],
       "source": "调整"
     },
-    "调整前": {
-      "formats": [],
-      "source": "调整前"
-    },
-    "调整前的照片": {
-      "formats": [],
-      "source": "调整前的照片"
-    },
     "调整后": {
       "formats": [],
       "source": "调整后"
-    },
-    "调整后的照片": {
-      "formats": [],
-      "source": "调整后的照片"
     },
     "调整已保存": {
       "formats": [],
       "source": "调整已保存"
     },
-    "调整未保存，点击重试": {
+    "调整未保存 · 重试": {
       "formats": [],
-      "source": "调整未保存，点击重试"
+      "source": "调整未保存 · 重试"
     },
     "调整来源": {
       "formats": [],
@@ -1411,13 +1391,9 @@
       "formats": [],
       "source": "返回"
     },
-    "适应画面": {
+    "适合窗口": {
       "formats": [],
-      "source": "适应画面"
-    },
-    "逆时针 90°": {
-      "formats": [],
-      "source": "逆时针 90°"
+      "source": "适合窗口"
     },
     "选择": {
       "formats": [],
@@ -1461,10 +1437,6 @@
       "formats": [],
       "source": "重置全部调整"
     },
-    "重置几何调整": {
-      "formats": [],
-      "source": "重置几何调整"
-    },
     "重置当前颜色": {
       "formats": [],
       "source": "重置当前颜色"
@@ -1472,6 +1444,10 @@
     "重置所有调整并返回中性": {
       "formats": [],
       "source": "重置所有调整并返回中性"
+    },
+    "重置本工具": {
+      "formats": [],
+      "source": "重置本工具"
     },
     "重置调整": {
       "formats": [],
@@ -1535,15 +1511,15 @@
       "formats": [],
       "source": "镜头配置"
     },
+    "长边": {
+      "formats": [],
+      "source": "长边"
+    },
     "长边 %@ px": {
       "formats": [
         "%@"
       ],
       "source": "长边 {0} px"
-    },
-    "长边（1–65535 px）": {
-      "formats": [],
-      "source": "长边（1–65535 px）"
     },
     "阴影": {
       "formats": [],
@@ -1572,10 +1548,6 @@
     "青": {
       "formats": [],
       "source": "青"
-    },
-    "顺时针 90°": {
-      "formats": [],
-      "source": "顺时针 90°"
     },
     "预设": {
       "formats": [],
@@ -1613,10 +1585,6 @@
       "formats": [],
       "source": "高光保护"
     },
-    "高光保护仅在暗角强度为负时可用。": {
-      "formats": [],
-      "source": "高光保护仅在暗角强度为负时可用。"
-    },
     "高级参数": {
       "formats": [],
       "source": "高级参数"
@@ -1640,6 +1608,69 @@
     "默认": {
       "formats": [],
       "source": "默认"
+    },
+    "外观名称不能为空或包含控制字符。": {
+      "formats": [],
+      "source": "外观名称不能为空或包含控制字符。"
+    },
+    "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。": {
+      "formats": [],
+      "source": "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。"
+    },
+    "导入外观": {
+      "formats": [],
+      "source": "导入外观"
+    },
+    "导入外观…": {
+      "formats": [],
+      "source": "导入外观…"
+    },
+    "导入结果": {
+      "formats": [],
+      "source": "导入结果"
+    },
+    "已导入 %@ 个外观，%@ 个文件导入失败：\n": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已导入 {0} 个外观，{1} 个文件导入失败：\n"
+    },
+    "将移除 RawLab 保存的外观副本，原始文件不会被删除。": {
+      "formats": [],
+      "source": "将移除 RawLab 保存的外观副本，原始文件不会被删除。"
+    },
+    "无法读取外观文件。": {
+      "formats": [],
+      "source": "无法读取外观文件。"
+    },
+    "无法读取已保存的外观库，原有记录未被覆盖。": {
+      "formats": [],
+      "source": "无法读取已保存的外观库，原有记录未被覆盖。"
+    },
+    "此外观已不在外观库中。": {
+      "formats": [],
+      "source": "此外观已不在外观库中。"
+    },
+    "用户外观 · %@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "用户外观 · {0}"
+    },
+    "移除“%@”？": {
+      "formats": [
+        "%@"
+      ],
+      "source": "移除“{0}”？"
+    },
+    "移除外观…": {
+      "formats": [],
+      "source": "移除外观…"
+    },
+    "重命名外观": {
+      "formats": [],
+      "source": "重命名外观"
     }
   },
   "overrides": {},
@@ -1659,14 +1690,6 @@
       "fr": "Adapter {0}",
       "ja": "画面に合わせる {0}",
       "zh-Hans": "适应 {0}"
-    },
-    "Histogram failed: {0}": {
-      "de": "Histogramm fehlgeschlagen: {0}",
-      "en": "Histogram Failed: {0}",
-      "es": "Error del histograma: {0}",
-      "fr": "Échec de l’histogramme : {0}",
-      "ja": "ヒストグラムに失敗しました：{0}",
-      "zh-Hans": "直方图计算失败：{0}"
     },
     "Image metadata has invalid dimensions.": {
       "de": "Die Bildmetadaten enthalten ungültige Abmessungen.",
@@ -1700,22 +1723,6 @@
       "ja": "GPU 構成が無効です: {0}",
       "zh-Hans": "GPU 配置无效：{0}"
     },
-    "Invalid HSL parameters.": {
-      "de": "Ungültige HSL-Parameter.",
-      "en": "Invalid HSL parameters.",
-      "es": "Parámetros HSL no válidos.",
-      "fr": "Paramètres HSL invalides.",
-      "ja": "HSL パラメータが無効です。",
-      "zh-Hans": "HSL 参数无效。"
-    },
-    "Invalid denoise strengths.": {
-      "de": "Ungültige Rauschreduzierungsstärken.",
-      "en": "Invalid denoise strengths.",
-      "es": "Intensidades de reducción de ruido no válidas.",
-      "fr": "Intensités de réduction du bruit invalides.",
-      "ja": "ノイズ除去の強度が無効です。",
-      "zh-Hans": "降噪强度无效。"
-    },
     "Invalid display chroma denoise mode: {0}": {
       "de": "Ungültiger Anzeigemodus für Chroma-Rauschreduzierung: {0}",
       "en": "Invalid display chroma denoise mode: {0}",
@@ -1723,38 +1730,6 @@
       "fr": "Mode de réduction du bruit chromatique de l’affichage invalide : {0}",
       "ja": "表示用クロマノイズ低減モードが無効です: {0}",
       "zh-Hans": "显示色度降噪模式无效：{0}"
-    },
-    "Invalid exposure mode or HSL parameters.": {
-      "de": "Ungültiger Belichtungsmodus oder ungültige HSL-Parameter.",
-      "en": "Invalid exposure mode or HSL parameters.",
-      "es": "Modo de exposición o parámetros HSL no válidos.",
-      "fr": "Mode d’exposition ou paramètres HSL invalides.",
-      "ja": "露出モードまたは HSL パラメータが無効です。",
-      "zh-Hans": "曝光模式或 HSL 参数无效。"
-    },
-    "Invalid exposure mode.": {
-      "de": "Ungültiger Belichtungsmodus.",
-      "en": "Invalid exposure mode.",
-      "es": "Modo de exposición no válido.",
-      "fr": "Mode d’exposition invalide.",
-      "ja": "露出モードが無効です。",
-      "zh-Hans": "曝光模式无效。"
-    },
-    "Invalid geometry parameters.": {
-      "de": "Ungültige Geometrieparameter.",
-      "en": "Invalid geometry parameters.",
-      "es": "Parámetros de geometría no válidos.",
-      "fr": "Paramètres géométriques non valides.",
-      "ja": "ジオメトリのパラメータが無効です。",
-      "zh-Hans": "无效的几何参数。"
-    },
-    "Invalid photo effects.": {
-      "de": "Ungültige Fotoeffekte.",
-      "en": "Invalid photo effects.",
-      "es": "Efectos fotográficos no válidos.",
-      "fr": "Effets photo invalides.",
-      "ja": "写真エフェクトが無効です。",
-      "zh-Hans": "照片效果无效。"
     },
     "Invalid photo effects: {0}": {
       "de": "Ungültige Fotoeffekte: {0}",
@@ -1771,14 +1746,6 @@
       "fr": "Aucune image chargée.",
       "ja": "画像が読み込まれていません。",
       "zh-Hans": "尚未载入图片。"
-    },
-    "Preview render failed.": {
-      "de": "Vorschau-Darstellung fehlgeschlagen.",
-      "en": "Preview Rendering Failed.",
-      "es": "Error al renderizar la vista previa.",
-      "fr": "Échec du rendu de l’aperçu.",
-      "ja": "プレビューの描画に失敗しました。",
-      "zh-Hans": "预览渲染失败。"
     },
     "Raster decode failed.": {
       "de": "Rasterdekodierung fehlgeschlagen.",
@@ -1812,14 +1779,6 @@
       "ja": "Sony2Fuji出力のコピーに失敗しました。",
       "zh-Hans": "无法复制处理结果。"
     },
-    "Sony2Fuji process failed: {0}": {
-      "de": "Sony2Fuji-Verarbeitung fehlgeschlagen: {0}",
-      "en": "Sony2Fuji Processing Failed: {0}",
-      "es": "Error al procesar con Sony2Fuji: {0}",
-      "fr": "Échec du traitement Sony2Fuji : {0}",
-      "ja": "Sony2Fujiの処理に失敗しました：{0}",
-      "zh-Hans": "Sony2Fuji 处理失败：{0}"
-    },
     "Sony2Fuji session create failed: {0}": {
       "de": "Sony2Fuji-Sitzung konnte nicht erstellt werden: {0}",
       "en": "Sony2Fuji Session Creation Failed: {0}",
@@ -1827,30 +1786,6 @@
       "fr": "Échec de la création de la session Sony2Fuji : {0}",
       "ja": "Sony2Fujiセッションの作成に失敗しました：{0}",
       "zh-Hans": "无法创建 Sony2Fuji 会话：{0}"
-    },
-    "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。": {
-      "de": "Der zuvor verwendete Look ist nicht verfügbar. Wählen Sie im Filmwerkzeug einen anderen Look; vorhandene Anpassungen wurden beibehalten.",
-      "en": "The Previously Used Look Is Unavailable. Choose Another Look in the Film Tool; Existing Adjustments Were Preserved.",
-      "es": "El aspecto usado anteriormente no está disponible. Elige otro en la herramienta Película; se conservaron los ajustes existentes.",
-      "fr": "Le look utilisé précédemment est indisponible. Choisissez-en un autre dans l’outil Film ; les réglages existants ont été conservés.",
-      "ja": "前回使用したルックを利用できません。フィルムツールで別のルックを選択してください。既存の調整は保持されています。",
-      "zh-Hans": "上次使用的外观不可用，请在胶片工具中重新选择；原有调整已保留。"
-    },
-    "不是 RAW 照片。": {
-      "de": "Keine RAW-Fotoaufnahme.",
-      "en": "Not a RAW Photo.",
-      "es": "No es una foto RAW.",
-      "fr": "Ce n’est pas une photo RAW.",
-      "ja": "RAW写真ではありません。",
-      "zh-Hans": "不是 RAW 照片。"
-    },
-    "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。": {
-      "de": "Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.",
-      "en": "Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.",
-      "es": "No se recopilan fotos, vistas previas, nombres de archivo, rutas, EXIF ni contenido de IA. Al desactivarse, se detiene la nueva recopilación; las solicitudes ya enviadas no pueden retirarse.",
-      "fr": "Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.",
-      "ja": "写真、プレビュー、ファイル名、パス、EXIF、AI コンテンツは収集しません。無効にすると新たな収集は停止しますが、送信済みのリクエストは取り消せません。",
-      "zh-Hans": "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"
     },
     "中断发生在写入照片图库时，请核对后选择，避免重复生成。": {
       "de": "Beim Schreiben in Fotos ist eine Unterbrechung aufgetreten. Prüfen Sie das Ergebnis, bevor Sie fortfahren, um doppelte Exporte zu vermeiden.",
@@ -1884,14 +1819,6 @@
       "ja": "写真から読み込む",
       "zh-Hans": "从照片图库导入"
     },
-    "任务外观不可用，请放弃此任务并重新创建。": {
-      "de": "Der Look des Auftrags ist nicht verfügbar. Verwerfen Sie den Auftrag und erstellen Sie einen neuen.",
-      "en": "The Task’s Look Is Unavailable. Discard This Task and Create a New One.",
-      "es": "El aspecto de la tarea no está disponible. Descarta la tarea y créala de nuevo.",
-      "fr": "Le look de la tâche est indisponible. Abandonnez cette tâche et recréez-la.",
-      "ja": "タスクのルックを利用できません。このタスクを破棄して作り直してください。",
-      "zh-Hans": "任务外观不可用，请放弃此任务并重新创建。"
-    },
     "任务操作": {
       "de": "Aufgabenaktionen",
       "en": "Task Actions",
@@ -1899,14 +1826,6 @@
       "fr": "Actions de la tâche",
       "ja": "タスク操作",
       "zh-Hans": "任务操作"
-    },
-    "任务记录未保存：{0}": {
-      "de": "Auftragsdatensatz nicht gespeichert: {0}",
-      "en": "Task Record Not Saved: {0}",
-      "es": "No se guardó el registro de la tarea: {0}",
-      "fr": "Enregistrement de la tâche non sauvegardé : {0}",
-      "ja": "タスク記録を保存できませんでした：{0}",
-      "zh-Hans": "任务记录未保存：{0}"
     },
     "保存 {0} 失败。": {
       "de": "{0} konnte nicht gespeichert werden.",
@@ -1948,54 +1867,6 @@
       "ja": "保存結果の確認待ち",
       "zh-Hans": "保存结果待确认"
     },
-    "切换照片信息": {
-      "de": "Fotoinformationen umschalten",
-      "en": "Toggle Photo Information",
-      "es": "Alternar información de la foto",
-      "fr": "Basculer les informations de la photo",
-      "ja": "写真情報を切り替え",
-      "zh-Hans": "切换照片信息"
-    },
-    "切换调整前后": {
-      "de": "Zwischen Vorher und Nachher wechseln",
-      "en": "Toggle Before/After",
-      "es": "Alternar antes/después",
-      "fr": "Basculer entre avant et après",
-      "ja": "補正前後を切り替え",
-      "zh-Hans": "切换调整前后"
-    },
-    "前后对比": {
-      "de": "Vorher/Nachher-Vergleich",
-      "en": "Before/After Comparison",
-      "es": "Comparación antes/después",
-      "fr": "Comparaison avant/après",
-      "ja": "前後比較",
-      "zh-Hans": "前后对比"
-    },
-    "原始分辨率": {
-      "de": "Originalauflösung",
-      "en": "Original Resolution",
-      "es": "Resolución original",
-      "fr": "Résolution originale",
-      "ja": "元の解像度",
-      "zh-Hans": "原始分辨率"
-    },
-    "右上角": {
-      "de": "Obere rechte Ecke",
-      "en": "Top Right Corner",
-      "es": "Esquina superior derecha",
-      "fr": "Coin supérieur droit",
-      "ja": "右上隅",
-      "zh-Hans": "右上角"
-    },
-    "右下角": {
-      "de": "Untere rechte Ecke",
-      "en": "Bottom Right Corner",
-      "es": "Esquina inferior derecha",
-      "fr": "Coin inférieur droit",
-      "ja": "右下隅",
-      "zh-Hans": "右下角"
-    },
     "四分之一灵敏度": {
       "de": "Empfindlichkeit: ¼",
       "en": "Quarter Sensitivity",
@@ -2036,14 +1907,6 @@
       "ja": "書き出しを停止しました",
       "zh-Hans": "导出已停止"
     },
-    "小波降噪": {
-      "de": "Wavelet-Rauschunterdrückung",
-      "en": "Wavelet Noise Reduction",
-      "es": "Reducción de ruido por wavelets",
-      "fr": "Réduction du bruit par ondelettes",
-      "ja": "ウェーブレットノイズ低減",
-      "zh-Hans": "小波降噪"
-    },
     "尚未保存，允许重新导出": {
       "de": "Noch nicht gespeichert; erneuten Export erlauben",
       "en": "Not Saved Yet; Allow Re-Export",
@@ -2052,21 +1915,13 @@
       "ja": "未保存です。再書き出しを許可",
       "zh-Hans": "尚未保存，允许重新导出"
     },
-    "左上角": {
-      "de": "Obere linke Ecke",
-      "en": "Top Left Corner",
-      "es": "Esquina superior izquierda",
-      "fr": "Coin supérieur gauche",
-      "ja": "左上隅",
-      "zh-Hans": "左上角"
-    },
-    "左下角": {
-      "de": "Untere linke Ecke",
-      "en": "Bottom Left Corner",
-      "es": "Esquina inferior izquierda",
-      "fr": "Coin inférieur gauche",
-      "ja": "左下隅",
-      "zh-Hans": "左下角"
+    "已保存": {
+      "de": "Gespeichert",
+      "en": "Saved",
+      "es": "Guardado",
+      "fr": "Enregistré",
+      "ja": "保存済み",
+      "zh-Hans": "已保存"
     },
     "已保存 {0} 张到照片图库": {
       "de": "In Fotos gespeichert: {0}",
@@ -2116,30 +1971,6 @@
       "ja": "処理済み {0} / {1}",
       "zh-Hans": "已处理 {0} / {1}"
     },
-    "已选 {0} 张 RAW": {
-      "de": "Ausgewählte RAW-Fotos: {0}",
-      "en": "RAW Photos Selected: {0}",
-      "es": "Fotos RAW seleccionadas: {0}",
-      "fr": "Photos RAW sélectionnées : {0}",
-      "ja": "{0}枚のRAWを選択",
-      "zh-Hans": "已选 {0} 张 RAW"
-    },
-    "已选 {0} 张照片": {
-      "de": "Ausgewählte Fotos: {0}",
-      "en": "Photos Selected: {0}",
-      "es": "Fotos seleccionadas: {0}",
-      "fr": "Photos sélectionnées : {0}",
-      "ja": "{0}枚の写真を選択",
-      "zh-Hans": "已选 {0} 张照片"
-    },
-    "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。": {
-      "de": "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.",
-      "en": "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.",
-      "es": "Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión.",
-      "fr": "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions.",
-      "ja": "有効にすると、Aliyun が機能の利用回数を処理し、中国本土にデータを保存します。SDK は端末識別子、端末とシステムの情報、ネットワーク/IP、地域、セッションデータを収集する場合があります。",
-      "zh-Hans": "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。"
-    },
     "当前预览的亮度分布": {
       "de": "Aktuelle Luminanzverteilung der Vorschau",
       "en": "Current Preview Luminance Distribution",
@@ -2155,14 +1986,6 @@
       "fr": "Rétablir la valeur par défaut",
       "ja": "デフォルトに戻す",
       "zh-Hans": "恢复默认"
-    },
-    "所选 RAW：{0}": {
-      "de": "Ausgewählte RAW-Datei: {0}",
-      "en": "Selected RAW: {0}",
-      "es": "RAW seleccionado: {0}",
-      "fr": "RAW sélectionné : {0}",
-      "ja": "選択したRAW：{0}",
-      "zh-Hans": "所选 RAW：{0}"
     },
     "所选外观不可用，请重新选择外观。": {
       "de": "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.",
@@ -2188,22 +2011,6 @@
       "ja": "システム設定を開く",
       "zh-Hans": "打开系统设置"
     },
-    "批量导出目前仅支持 RAW 照片。": {
-      "de": "Der Stapel-Export unterstützt derzeit nur RAW-Fotos.",
-      "en": "Batch Export Currently Supports RAW Photos Only.",
-      "es": "La exportación por lotes solo admite fotos RAW.",
-      "fr": "L’exportation par lots prend actuellement en charge uniquement les photos RAW.",
-      "ja": "一括書き出しは現在RAW写真のみ対応しています。",
-      "zh-Hans": "批量导出目前仅支持 RAW 照片。"
-    },
-    "拍摄时": {
-      "de": "Wie aufgenommen",
-      "en": "As Shot",
-      "es": "Según la toma",
-      "fr": "Selon la prise",
-      "ja": "撮影時",
-      "zh-Hans": "拍摄时"
-    },
     "拍摄时：{0} K · 色调 {1}": {
       "de": "Wie aufgenommen: {0} K · Tönung {1}",
       "en": "As Shot: {0} K · Tint {1}",
@@ -2228,14 +2035,6 @@
       "ja": "このタスクを破棄しますか？保存済みの写真は残ります。",
       "zh-Hans": "放弃此任务？已保存的照片会保留。"
     },
-    "放弃调整": {
-      "de": "Anpassungen verwerfen",
-      "en": "Discard Adjustments",
-      "es": "Descartar ajustes",
-      "fr": "Abandonner les réglages",
-      "ja": "調整を破棄",
-      "zh-Hans": "放弃调整"
-    },
     "数据与提供方": {
       "de": "Daten und Anbieter",
       "en": "Data and provider",
@@ -2243,14 +2042,6 @@
       "fr": "Données et fournisseur",
       "ja": "データと提供元",
       "zh-Hans": "数据与提供方"
-    },
-    "无法保存批量任务：{0}": {
-      "de": "Stapelauftrag konnte nicht gespeichert werden: {0}",
-      "en": "Unable to Save Batch Task: {0}",
-      "es": "No se puede guardar la tarea por lotes: {0}",
-      "fr": "Impossible d’enregistrer la tâche par lots : {0}",
-      "ja": "一括タスクを保存できません：{0}",
-      "zh-Hans": "无法保存批量任务：{0}"
     },
     "无法保存照片，请在系统设置中允许 RawLab 添加照片。": {
       "de": "Fotos können nicht gespeichert werden. Erlauben Sie RawLab in den Systemeinstellungen, Fotos hinzuzufügen.",
@@ -2276,22 +2067,6 @@
       "ja": "元のRAWを取得できません。この写真へのアクセスをシステム設定で許可してから、もう一度お試しください。",
       "zh-Hans": "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。"
     },
-    "无法恢复批量任务：{0}": {
-      "de": "Stapelauftrag konnte nicht wiederhergestellt werden: {0}",
-      "en": "Unable to Restore Batch Task: {0}",
-      "es": "No se puede restaurar la tarea por lotes: {0}",
-      "fr": "Impossible de restaurer la tâche par lots : {0}",
-      "ja": "一括タスクを復元できません：{0}",
-      "zh-Hans": "无法恢复批量任务：{0}"
-    },
-    "无法显示预览。": {
-      "de": "Vorschau kann nicht angezeigt werden.",
-      "en": "Unable to Display Preview.",
-      "es": "No se puede mostrar la vista previa.",
-      "fr": "Impossible d’afficher l’aperçu.",
-      "ja": "プレビューを表示できません。",
-      "zh-Hans": "无法显示预览。"
-    },
     "无法识别原始照片，调整尚未保存。": {
       "de": "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.",
       "en": "Unable to Identify the Original Photo; Adjustments Were Not Saved.",
@@ -2307,30 +2082,6 @@
       "fr": "Impossible de lire les réglages enregistrés ; l’enregistrement existant n’a pas été remplacé.",
       "ja": "保存済みの調整を読み取れないため、既存の記録は上書きされませんでした。",
       "zh-Hans": "无法读取已保存的调整，原有记录未被覆盖。"
-    },
-    "显示或收起调整栏": {
-      "de": "Anpassungsbereich ein- oder ausblenden",
-      "en": "Show or Hide Adjustments",
-      "es": "Mostrar u ocultar ajustes",
-      "fr": "Afficher ou masquer les réglages",
-      "ja": "調整パネルを表示または非表示",
-      "zh-Hans": "显示或收起调整栏"
-    },
-    "普通图片未加入，请选择 RAW。": {
-      "de": "Normale Bilder wurden nicht hinzugefügt; wählen Sie RAW aus.",
-      "en": "Standard Images Were Not Added; Select RAW.",
-      "es": "No se añadieron imágenes normales; selecciona RAW.",
-      "fr": "Les images ordinaires n’ont pas été ajoutées ; sélectionnez des fichiers RAW.",
-      "ja": "通常の画像は追加されませんでした。RAWを選択してください。",
-      "zh-Hans": "普通图片未加入，请选择 RAW。"
-    },
-    "曝光补偿": {
-      "de": "Belichtungskorrektur",
-      "en": "Exposure Compensation",
-      "es": "Compensación de exposición",
-      "fr": "Compensation d’exposition",
-      "ja": "露出補正",
-      "zh-Hans": "曝光补偿"
     },
     "未处理": {
       "de": "Nicht verarbeitet",
@@ -2364,14 +2115,6 @@
       "ja": "今回の一括書き出しの効果",
       "zh-Hans": "本次批量导出效果"
     },
-    "查看批量任务": {
-      "de": "Stapelauftrag anzeigen",
-      "en": "View Batch Task",
-      "es": "Ver tarea por lotes",
-      "fr": "Afficher la tâche par lots",
-      "ja": "一括タスクを表示",
-      "zh-Hans": "查看批量任务"
-    },
     "查看批量任务 · {0} 张": {
       "de": "Stapelauftrag anzeigen · {0}",
       "en": "View Batch Task · {0}",
@@ -2396,14 +2139,6 @@
       "ja": "保存結果を確認",
       "zh-Hans": "核对保存结果"
     },
-    "正在准备 RAW…": {
-      "de": "RAW wird vorbereitet…",
-      "en": "Preparing RAW…",
-      "es": "Preparando RAW…",
-      "fr": "Préparation du RAW…",
-      "ja": "RAWを準備中…",
-      "zh-Hans": "正在准备 RAW…"
-    },
     "正在准备照片…": {
       "de": "Fotos werden vorbereitet…",
       "en": "Preparing Photos…",
@@ -2420,6 +2155,14 @@
       "ja": "フィルムを読み込み中",
       "zh-Hans": "正在加载胶片"
     },
+    "正在处理": {
+      "de": "Wird verarbeitet",
+      "en": "Processing",
+      "es": "Procesando",
+      "fr": "Traitement",
+      "ja": "処理中",
+      "zh-Hans": "正在处理"
+    },
     "正在导入": {
       "de": "Wird importiert",
       "en": "Importing",
@@ -2427,6 +2170,14 @@
       "fr": "Importation",
       "ja": "読み込み中",
       "zh-Hans": "正在导入"
+    },
+    "正在显影": {
+      "de": "Wird entwickelt",
+      "en": "Developing",
+      "es": "Revelando",
+      "fr": "Développement",
+      "ja": "現像中",
+      "zh-Hans": "正在显影"
     },
     "正在生成效果预览…": {
       "de": "Vorschau wird erstellt…",
@@ -2460,22 +2211,6 @@
       "ja": "写真は書き込まれましたが、タスク記録が更新されていません。先に保存結果を確認してください。",
       "zh-Hans": "照片已写入，但任务记录未更新，请先核对保存结果。"
     },
-    "画幅比例": {
-      "de": "Seitenverhältnis",
-      "en": "Aspect Ratio",
-      "es": "Relación de aspecto",
-      "fr": "Format",
-      "ja": "アスペクト比",
-      "zh-Hans": "画幅比例"
-    },
-    "白平衡模式": {
-      "de": "Weißabgleichmodus",
-      "en": "White Balance Mode",
-      "es": "Modo de balance de blancos",
-      "fr": "Mode de balance des blancs",
-      "ja": "ホワイトバランスモード",
-      "zh-Hans": "白平衡模式"
-    },
     "目标照片": {
       "de": "Zielfotos",
       "en": "Target Photos",
@@ -2484,14 +2219,6 @@
       "ja": "対象の写真",
       "zh-Hans": "目标照片"
     },
-    "移动裁切": {
-      "de": "Zuschnitt verschieben",
-      "en": "Move Crop",
-      "es": "Mover el recorte",
-      "fr": "Déplacer le recadrage",
-      "ja": "切り抜きを移動",
-      "zh-Hans": "移动裁切"
-    },
     "缺少有效相机校准，保留拍摄时白平衡": {
       "de": "Kein gültiges Kameraprofil; Weißabgleich wie aufgenommen bleibt erhalten",
       "en": "No Valid Camera Calibration; Preserving As-Shot White Balance",
@@ -2499,14 +2226,6 @@
       "fr": "Étalonnage de l’appareil photo invalide ; conservation de la balance des blancs de la prise de vue",
       "ja": "有効なカメラキャリブレーションがないため、撮影時のホワイトバランスを使用します",
       "zh-Hans": "缺少有效相机校准，保留拍摄时白平衡"
-    },
-    "自定义白平衡": {
-      "de": "Benutzerdefinierter Weißabgleich",
-      "en": "Custom White Balance",
-      "es": "Balance de blancos personalizado",
-      "fr": "Balance des blancs personnalisée",
-      "ja": "カスタムホワイトバランス",
-      "zh-Hans": "自定义白平衡"
     },
     "色调偏移": {
       "de": "Tönungsversatz",
@@ -2524,37 +2243,13 @@
       "ja": "範囲",
       "zh-Hans": "范围"
     },
-    "裁切左侧": {
-      "de": "Zuschnitt links",
-      "en": "Crop Left",
-      "es": "Recorte izquierdo",
-      "fr": "Recadrage gauche",
-      "ja": "切り抜き左端",
-      "zh-Hans": "裁切左侧"
-    },
-    "裁切百分比基于旋转、翻转和拉直后的画面。": {
-      "de": "Die Zuschnittprozente beziehen sich auf das Bild nach Drehen, Spiegeln und Begradigen.",
-      "en": "Crop percentages use the canvas after rotation, flipping and straightening.",
-      "es": "Los porcentajes se basan en la imagen después de girar, voltear y enderezar.",
-      "fr": "Les pourcentages se réfèrent à l’image après rotation, retournement et redressement.",
-      "ja": "切り抜きの割合は、回転・反転・傾き補正後の画像を基準にします。",
-      "zh-Hans": "裁切百分比基于旋转、翻转和拉直后的画面。"
-    },
-    "裁切顶部": {
-      "de": "Zuschnitt oben",
-      "en": "Crop Top",
-      "es": "Recorte superior",
-      "fr": "Recadrage haut",
-      "ja": "切り抜き上端",
-      "zh-Hans": "裁切顶部"
-    },
-    "请先导入一张 RAW 照片。": {
-      "de": "Importieren Sie zuerst ein RAW-Foto.",
-      "en": "Import a RAW Photo First.",
-      "es": "Importa primero una foto RAW.",
-      "fr": "Importez d’abord une photo RAW.",
-      "ja": "RAW写真を先に読み込んでください。",
-      "zh-Hans": "请先导入一张 RAW 照片。"
+    "裁切与旋转": {
+      "de": "Zuschneiden und Drehen",
+      "en": "Crop and Rotate",
+      "es": "Recortar y girar",
+      "fr": "Recadrer et pivoter",
+      "ja": "切り抜きと回転",
+      "zh-Hans": "裁切与旋转"
     },
     "请先导入一张照片。": {
       "de": "Importieren Sie zuerst ein Foto.",
@@ -2572,6 +2267,14 @@
       "ja": "現在のタスクが完了するまでお待ちください。",
       "zh-Hans": "请等待当前任务完成。"
     },
+    "请输入 1–65535 之间的像素数": {
+      "de": "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein",
+      "en": "Enter a pixel count from 1 to 65,535",
+      "es": "Introduce un número de píxeles entre 1 y 65.535",
+      "fr": "Entrez un nombre de pixels compris entre 1 et 65 535",
+      "ja": "1～65,535ピクセルの範囲で入力してください",
+      "zh-Hans": "请输入 1–65535 之间的像素数"
+    },
     "调整": {
       "de": "Anpassungen",
       "en": "Adjustments",
@@ -2580,30 +2283,6 @@
       "ja": "調整",
       "zh-Hans": "调整"
     },
-    "调整前": {
-      "de": "Vorher",
-      "en": "Before",
-      "es": "Antes",
-      "fr": "Avant",
-      "ja": "補正前",
-      "zh-Hans": "调整前"
-    },
-    "调整前的照片": {
-      "de": "Foto vorher",
-      "en": "Before Photo",
-      "es": "Foto anterior",
-      "fr": "Photo avant",
-      "ja": "補正前の写真",
-      "zh-Hans": "调整前的照片"
-    },
-    "调整后的照片": {
-      "de": "Foto nachher",
-      "en": "After Photo",
-      "es": "Foto posterior",
-      "fr": "Photo après",
-      "ja": "補正後の写真",
-      "zh-Hans": "调整后的照片"
-    },
     "调整记录已恢复，请重新选择照片载入。": {
       "de": "Anpassungsdatensatz wiederhergestellt. Wählen Sie das Foto erneut aus, um es zu laden.",
       "en": "Adjustment Record Restored. Select the Photo Again to Load It.",
@@ -2611,14 +2290,6 @@
       "fr": "Enregistrement des réglages restauré. Sélectionnez à nouveau la photo pour la charger.",
       "ja": "調整記録を復元しました。写真をもう一度選択して読み込んでください。",
       "zh-Hans": "调整记录已恢复，请重新选择照片载入。"
-    },
-    "逆时针 90°": {
-      "de": "90° gegen Uhrzeigersinn",
-      "en": "90° Counterclockwise",
-      "es": "90° a la izquierda",
-      "fr": "90° vers la gauche",
-      "ja": "反時計回りに90°",
-      "zh-Hans": "逆时针 90°"
     },
     "选择": {
       "de": "Auswählen",
@@ -2644,14 +2315,6 @@
       "ja": "レシピは複数のパラメータを調整します。",
       "zh-Hans": "配方会调整多个参数。"
     },
-    "重置几何调整": {
-      "de": "Geometrie zurücksetzen",
-      "en": "Reset Geometry",
-      "es": "Restablecer geometría",
-      "fr": "Réinitialiser la géométrie",
-      "ja": "ジオメトリをリセット",
-      "zh-Hans": "重置几何调整"
-    },
     "重置所有调整并返回中性": {
       "de": "Alle Anpassungen zurücksetzen und zum neutralen Zustand zurückkehren",
       "en": "Reset All Adjustments and Return to Neutral",
@@ -2660,14 +2323,6 @@
       "ja": "すべての調整をリセットしてニュートラルに戻す",
       "zh-Hans": "重置所有调整并返回中性"
     },
-    "长边（1–65535 px）": {
-      "de": "Lange Kante (1–65535 px)",
-      "en": "Long Edge (1–65535 px)",
-      "es": "Borde largo (1–65535 px)",
-      "fr": "Bord long (1–65535 px)",
-      "ja": "長辺（1–65535 px）",
-      "zh-Hans": "长边（1–65535 px）"
-    },
     "隐私设置": {
       "de": "Datenschutzeinstellungen",
       "en": "Privacy settings",
@@ -2675,22 +2330,6 @@
       "fr": "Paramètres de confidentialité",
       "ja": "プライバシー設定",
       "zh-Hans": "隐私设置"
-    },
-    "顺时针 90°": {
-      "de": "90° im Uhrzeigersinn",
-      "en": "90° Clockwise",
-      "es": "90° a la derecha",
-      "fr": "90° vers la droite",
-      "ja": "時計回りに90°",
-      "zh-Hans": "顺时针 90°"
-    },
-    "高光保护仅在暗角强度为负时可用。": {
-      "de": "„Lichter schützen“ ist nur bei negativer Vignettenstärke verfügbar.",
-      "en": "Highlight protection is available only when vignette intensity is negative.",
-      "es": "La protección de altas luces solo está disponible cuando la intensidad de viñeta es negativa.",
-      "fr": "La protection des hautes lumières est disponible uniquement lorsque l’intensité du vignettage est négative.",
-      "ja": "ハイライト保護は、周辺減光の強さが負の値の場合のみ使用できます。",
-      "zh-Hans": "高光保护仅在暗角强度为负时可用。"
     },
     "高级参数": {
       "de": "Erweiterte Parameter",

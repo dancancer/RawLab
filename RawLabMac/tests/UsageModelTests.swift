@@ -59,6 +59,7 @@ import UniformTypeIdentifiers
         let invalid = root.appendingPathComponent("bad.ARW")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("not a raw photo".utf8).write(to: invalid)
+        fputs("[EXPECTED RAW FAILURE] UsageModelTests.failedImport: \(invalid.path) contains text, not a RAW photo. The next import must fail without emitting a success event.\n", stderr)
         model.open(invalid)
         waitForRender(model, success: false)
         check(events == filmEvents, "failed photo import does not count success")
@@ -95,6 +96,7 @@ import UniformTypeIdentifiers
               "Agent serialization neither publishes a file nor emits usage")
         print("PASS: JPEG/PNG import, rerender, corrupt input, history and Agent serialization usage boundaries")
         if CommandLine.arguments.count > 1 {
+            fputs("[RAW SUCCESS REQUIRED] UsageModelTests.realRAW: \(CommandLine.arguments[1]) must render successfully; decoder failures for this input are not expected.\n", stderr)
             model.open(URL(fileURLWithPath: CommandLine.arguments[1]))
             waitForRender(model, success: true)
             importCount += 1
@@ -116,10 +118,12 @@ import UniformTypeIdentifiers
                 while batch.running && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
                 check(!batch.running, "batch terminates")
             }
+            fputs("[EXPECTED RAW FAILURE] UsageModelTests.mixedBatch: only \(invalid.path) is intentionally invalid; the real RAW and PNG must export successfully.\n", stderr)
             batch.start(); waitForBatch()
             check(batchEvents == [.batchExportCompleted(succeeded: 2, failed: 1, outcome: .partial)], "mixed RAW/raster batch reports published successes and actual failed attempts once")
             batch.start(.failed); batch.cancel(); waitForBatch()
             check(batchEvents.last == .batchExportCompleted(succeeded: 0, failed: 0, outcome: .cancelled), "cancelled retry does not recount old successes or failures")
+            fputs("[EXPECTED RAW FAILURE] UsageModelTests.failedRetry: retrying the same invalid bad.ARW must report one failed item and no successful exports.\n", stderr)
             batch.start(.failed); waitForBatch()
             check(batchEvents.count == 3 && batchEvents.last == .batchExportCompleted(succeeded: 0, failed: 1, outcome: .partial), "failed retry counts only this run")
             print("PASS: batch success, partial failure, cancellation and retry deltas")

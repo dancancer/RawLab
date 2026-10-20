@@ -55,7 +55,8 @@ public partial class MainWindow
     private static readonly string[] ResetGroups=["输入","明暗","色彩","细节","效果","胶片"];
     private MenuItem ResetGroupItem(string group)
     {
-        var item=new MenuItem{Header=Loc.Format("重置{0}",Loc.Text(group)),Tag=group};
+        var title=group==ResetGroups[0] ? Loc.Text("输入调整") : Loc.Text(group);
+        var item=new MenuItem{Header=Loc.Format("重置{0}",title),Tag=group};
         item.Click+=ResetNamedGroupClicked;return item;
     }
     private void BuildResetMenu()
@@ -68,10 +69,10 @@ public partial class MainWindow
     {
         var menu=new ContextMenu{PlacementTarget=ResetAllButton,Placement=PlacementMode.Top};
         void Add(string title,RoutedEventHandler action){var item=new MenuItem{Header=Loc.Text(title)};item.Click+=action;menu.Items.Add(item);}
-        Add("重置当前工具",ResetCurrentToolClicked);
+        Add("重置本工具",ResetCurrentToolClicked);
         menu.Items.Add(new Separator());
         foreach(var group in ResetGroups)menu.Items.Add(ResetGroupItem(group));
-        menu.Items.Add(new Separator());Add("全部重置",ResetAllClicked);
+        menu.Items.Add(new Separator());Add("重置全部调整",ResetAllClicked);
         ResetAllButton.ContextMenu=menu;menu.IsOpen=true;
     }
 }

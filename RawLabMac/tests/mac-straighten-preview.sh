@@ -12,15 +12,18 @@ test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash R
 mkdir -p "$OUT"
 
 SOURCES=()
-for source in "$ROOT"/RawLabMac/Sources/*.swift; do
+while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
-done
+done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 
-swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+swiftc -parse-as-library -swift-version 5 -O -whole-module-optimization \
+    -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
+    -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/MacStraightenPreviewTests.swift" \
+    "$ROOT/RawLabMac/tests/StraightenPreviewFixtures.swift" \
     "$BUILD/libsony2fuji_core.a" $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
     -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" \
     -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

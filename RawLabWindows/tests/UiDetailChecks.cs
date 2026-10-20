@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Automation;
@@ -39,10 +40,12 @@ internal static class UiDetailChecks
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         try
         {
+            NoRawImport(output,check);
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-                var window=new MainWindow();TestWindowState.Isolate(window,output);window.Show();window.UpdateLayout();
+                var lookRoot=Path.Combine(Path.GetTempPath(),"rawlab-ui-looks-"+Guid.NewGuid().ToString("N"));
+                var window=new MainWindow(lookRoot);TestWindowState.Isolate(window,output);window.Show();window.UpdateLayout();
                 try
                 {
                     Icons(window,language,check);
@@ -50,8 +53,10 @@ internal static class UiDetailChecks
                     ActiveLook(window,language,check);
                     TypeNames(window,output,language,check);
                     IdleStatus(window,check);
+                    ImportEntry(window,language,check);
                     Selection(window,language,check);
                     MenuPlacement(window,check);
+                    CopyCompletionChecks.Run(window,language,check);
                     ResetMenus(window,language,check);
                     LibraryHint(window,output,language,check);
                     FailedOpen(window,output,language,check);
@@ -59,7 +64,11 @@ internal static class UiDetailChecks
                     ToolCaptions(window,language,check);
                     WholeText(window,language,check);
                 }
-                finally { window.Close(); }
+                finally
+                {
+                    window.Close();
+                    try { Directory.Delete(lookRoot,recursive:true); } catch { }
+                }
                 UiPanelChecks.Run(output,language,check);
             }
         }
@@ -126,6 +135,50 @@ internal static class UiDetailChecks
         }
         window.GpuMode.SelectedIndex=0;
     }
+    // The film strip lives inside the collapsed adjustment dock before a photo opens;
+    // the File menu must remain the reachable import entry in that state.
+    private static void ImportEntry(MainWindow window,string language,Action<bool,string> check)
+    {
+        check(window.MenuImportLook.IsEnabled && window.AdjustmentPanel.Visibility==Visibility.Collapsed &&
+              window.FilmPanel.Visibility==Visibility.Collapsed,
+            $"File menu exposes look import before a RAW photo is opened: {language}");
+        var foreground=typeof(MainWindow).GetField("foregroundBusy",PrivateInstance)!;
+        foreground.SetValue(window,true);Refresh(window);
+        check(!window.MenuImportLook.IsEnabled,$"File menu disables look import during foreground work: {language}");
+        foreground.SetValue(window,false);Refresh(window);
+        check(window.MenuImportLook.IsEnabled,$"File menu re-enables look import after foreground work: {language}");
+    }
+    private static void NoRawImport(string output,Action<bool,string> check)
+    {
+        var root=Path.Combine(Path.GetTempPath(),"rawlab-ui-dcp-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var lookRoot=Path.Combine(root,"looks");
+        var appWindow=new MainWindow(lookRoot);
+        TestWindowState.Isolate(appWindow,output);appWindow.Show();appWindow.UpdateLayout();
+        var source=Path.Combine(root,"without-photo.dcp");File.WriteAllBytes(source,[1,2,3]);
+        var library=new LookLibrary(lookRoot,
+            compileDcp:_=>Encoding.ASCII.GetBytes("RLOOKDCP synthetic"),
+            validateLook:_=>new LookValidation(LookFormat.Rlook,1));
+        typeof(MainWindow).GetField("lookLibrary",PrivateInstance)!.SetValue(appWindow,library);
+        try
+        {
+            var import=appWindow.ImportLookFiles([source]);
+            Pump(()=>import.IsCompleted,TimeSpan.FromSeconds(20));
+            check(import.IsCompleted,"DCP import completes without a RAW photo");
+            if(!import.IsCompleted)return;
+            var errors=import.GetAwaiter().GetResult();
+            var selected=(string?)typeof(MainWindow).GetField("lut",PrivateInstance)!.GetValue(appWindow);
+            check(errors.Count==0 && selected!=null && File.Exists(selected),
+                "DCP import selects a durable look without opening a RAW photo");
+            check(typeof(MainWindow).GetField("engine",PrivateInstance)!.GetValue(appWindow)==null,
+                "DCP import does not create a renderer when no RAW photo is open");
+        }
+        finally
+        {
+            appWindow.Close();
+            try { Directory.Delete(root,recursive:true); } catch { }
+        }
+    }
     private static void Selection(MainWindow window,string language,Action<bool,string> check)
     {
         Click(window.MasterRecipeCategory);
@@ -150,7 +203,7 @@ internal static class UiDetailChecks
     {
         var edit=(MenuItem)window.MainMenu.Items[1];
         var editLabels=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(Group:(string)item.Tag,Header:(string)item.Header)).ToList();
-        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group))).Select(item=>"\n  "+item.Header).ToList();
+        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group=="输入" ? "输入调整" : item.Group))).Select(item=>"\n  "+item.Header).ToList();
         check(editLabels.Count==6 && unnamed.Count==0,"Edit menu names each group reset as a reset action: "+language+string.Concat(unnamed));
         Click(window.ResetAllButton);
         var reset=window.ResetAllButton.ContextMenu;
@@ -175,6 +228,8 @@ internal static class UiDetailChecks
         Pump(()=>(bool)failed.GetValue(window)!,TimeSpan.FromSeconds(20));
         check((bool)failed.GetValue(window)! && window.BackendLabel.Text!=Loc.Text("相机预览 · 正在显影"),$"Failed open does not keep reporting development: {window.BackendLabel.Text}");
         check(window.HistogramSurface.Visibility!=Visibility.Visible,"Failed open leaves no empty histogram box: "+language);
+        check(!string.IsNullOrWhiteSpace(window.Status.Text) && window.ExportButton.ToolTip as string==window.Status.Text,"Failed render export hint reports the actual failure, not waiting: "+language);
+        check(!window.ExportPng.IsEnabled && window.RetryButton.Visibility==Visibility.Visible,"Failed render keeps export disabled and retry visible: "+language);
     }
     // 关于窗口变矮时，“关闭”按钮仍完整可见，不随内容一起被截掉
     private static void AboutFooter(MainWindow window,string output,Action<bool,string> check)

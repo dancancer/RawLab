@@ -2,7 +2,7 @@
 
 Mode: Operate.
 
-Target: `RawLab/RawLab/UI/ContentView.swift`.
+Target: `RawLab/RawLab/UI/Editor/ContentView.swift`.
 Native SwiftUI/UIKit for iPhone and iPad. Preserve the shared RAW processing contract.
 Root `DESIGN.md` records the scoped iOS system without changing desktop guidance.
 
@@ -48,7 +48,7 @@ Root `DESIGN.md` records the scoped iOS system without changing desktop guidance
   edit-save feedback. The master-recipe family is `square.stack.3d.up`.
 - Preview feedback follows `previewRendering` / `previewResizePending` at the
   photo edge. Single JPEG and rendered DNG export support RAW and raster input;
-  batch remains RAW-only. Preserve size controls, destinations and actual output
+  batch supports compatible RAW and raster photos, resolving camera-only settings for each target. Preserve size controls, destinations and actual output
   results without implying original-RAW or edit-history preservation by DNG.
 - The app icon retains the desktop yellow/cyan dual-frame identity on a
   full-bleed opaque charcoal square. The operating system supplies the mask.

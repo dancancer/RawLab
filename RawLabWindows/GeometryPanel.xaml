@@ -4,16 +4,16 @@
  xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="720">
  <StackPanel Margin="4">
   <WrapPanel Margin="0,0,0,6">
-   <Button Click="RotateLeftClicked" ToolTip="{DynamicResource '向左旋转'}" AutomationProperties.Name="{DynamicResource '向左旋转'}"><local:EditorIcon Kind="RotateLeft" Width="18" Height="18"/></Button>
-   <Button Click="RotateRightClicked" ToolTip="{DynamicResource '向右旋转'}" AutomationProperties.Name="{DynamicResource '向右旋转'}"><local:EditorIcon Kind="RotateRight" Width="18" Height="18"/></Button>
+   <Button Click="RotateLeftClicked" ToolTip="{DynamicResource '向左旋转 90°'}" AutomationProperties.Name="{DynamicResource '向左旋转 90°'}"><local:EditorIcon Kind="RotateLeft" Width="18" Height="18"/></Button>
+   <Button Click="RotateRightClicked" ToolTip="{DynamicResource '向右旋转 90°'}" AutomationProperties.Name="{DynamicResource '向右旋转 90°'}"><local:EditorIcon Kind="RotateRight" Width="18" Height="18"/></Button>
    <CheckBox x:Name="HorizontalFlip" Content="{DynamicResource '水平翻转'}" Checked="FlipChanged" Unchecked="FlipChanged" Margin="8,4" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '水平翻转'}"/>
    <CheckBox x:Name="VerticalFlip" Content="{DynamicResource '垂直翻转'}" Checked="FlipChanged" Unchecked="FlipChanged" Margin="8,4" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '垂直翻转'}"/>
-   <Button x:Name="ResetGeometry" Click="ResetClicked" ToolTip="{DynamicResource '重置几何'}" AutomationProperties.Name="{DynamicResource '重置几何'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
+   <Button x:Name="ResetGeometry" Click="ResetClicked" ToolTip="{DynamicResource '重置几何编辑'}" AutomationProperties.Name="{DynamicResource '重置几何编辑'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
   </WrapPanel>
   <WrapPanel Margin="0,0,0,6">
-   <ComboBox x:Name="AspectBox" MinWidth="140" SelectionChanged="AspectChanged" AutomationProperties.Name="{DynamicResource '比例'}"/>
-   <Button Click="SwapClicked" ToolTip="{DynamicResource '交换宽高'}" AutomationProperties.Name="{DynamicResource '交换宽高'}"><local:EditorIcon Kind="Swap" Width="18" Height="18"/></Button>
-   <CheckBox x:Name="GridBox" Content="{DynamicResource '网格'}" IsChecked="True" Checked="GridChanged" Unchecked="GridChanged" Margin="8,4" VerticalAlignment="Center"/>
+   <ComboBox x:Name="AspectBox" MinWidth="140" SelectionChanged="AspectChanged" AutomationProperties.Name="{DynamicResource '画面比例'}"/>
+   <Button Click="SwapClicked" ToolTip="{DynamicResource '交换横纵比例'}" AutomationProperties.Name="{DynamicResource '交换横纵比例'}"><local:EditorIcon Kind="Swap" Width="18" Height="18"/></Button>
+   <CheckBox x:Name="GridBox" Content="{DynamicResource '三分网格'}" IsChecked="True" Checked="GridChanged" Unchecked="GridChanged" Margin="8,4" VerticalAlignment="Center"/>
   </WrapPanel>
   <local:StraightenRuler x:Name="Ruler" Height="32" Margin="130,0,132,0" AutomationProperties.Name="{DynamicResource '拉直'}"/>
   <StackPanel x:Name="TransformRows"/>

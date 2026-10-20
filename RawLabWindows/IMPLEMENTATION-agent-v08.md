@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++17 / C ABI / MSVC / WIC / .NET 8 WPF / System.Text.Json。
 
-**Spec:** 用户本轮交接指令，以及冻结源 `82946eb4d3c99b0e6edffdc868c3c393539fc2e2` 的 `docs/verification-agent-v08.md`、`lutools/docs/edit-json.md` 与 `lutools/docs/color-contract.md`。
+**Spec:** 用户本轮交接指令，以及冻结源 `82946eb4d3c99b0e6edffdc868c3c393539fc2e2` 的 `https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/verification-agent-v08.md`、`lutools/docs/edit-json.md` 与 `lutools/docs/color-contract.md`。
 
 ## Global Constraints
 

@@ -52,3 +52,15 @@ are generated data, not lens calibration photographs.
 
 Regenerate with `python3 lutools/tests/make_jxl_fixture.py lutools/tests/fixtures`
 using `cjxl` 0.11.1. No encoder is needed to run the native regression tests.
+
+## JPEG-compressed DNG
+
+`jpeg-lossy.dng` is a generated 32×32 RGB gradient, not a camera photo. Its TIFF
+container uses DNG 1.4, Compression/PhotometricInterpretation 34892, an identity
+color matrix and neutral white balance. The JPEG payload was encoded by stb at
+quality 95. It was generated with `jpegDng()` in `raw_format_tests.cpp`; the
+in-memory desktop regression independently recreates the same fixture.
+
+Android uses this 3 KiB file to prove that its target-built LibRaw actually
+decodes JPEG-compressed DNG, without optional external photos or a large test
+asset. It is original RawLab test data under the repository license.

@@ -21,6 +21,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var baseHistogram: [CGFloat] = []
     @Published var availableLUTs: [LUTOption] = []
     @Published var isLoadingLUTs = false
+    @Published var isImportingLooks = false
     @Published var rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
     @Published var lensInfo: LensInfo?
     @Published var editSaveState: EditSaveState = .idle
@@ -42,7 +43,7 @@ final class RawEditorViewModel: ObservableObject {
     let processor = Sony2FujiProcessor()
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
-    @Published var sourceURL: URL?
+    @Published var sourceFile: PhotoSourceFile?
     @Published var sourceRevision = UUID()
     var sourceKind: ImageSourceKind?
     var sourceIdentity: PhotoIdentity?
@@ -58,6 +59,9 @@ final class RawEditorViewModel: ObservableObject {
     var latestRenderID = UUID()
     var activeImportRevision: UUID?
     let resultDelivery: (@escaping () -> Void) -> Void
+    let exportQueue: DispatchQueue
+    let importQueue: DispatchQueue
+    let lookImportCoordinator: LookImportCoordinator
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
@@ -72,14 +76,21 @@ final class RawEditorViewModel: ObservableObject {
     let histogramDelay: TimeInterval = 0.25
     let histogramBins = 128
     var lutMap: [String: LUTReference] = [:]
+    var didStartLUTLoad = false
     var rawLUTID: String?
     var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
 
     init(editPersistence: EditPersistence? = nil,
+         lookImportCoordinator: LookImportCoordinator = LookImportCoordinator(),
+         exportQueue: DispatchQueue = .global(qos: .userInitiated),
+         importQueue: DispatchQueue = .global(qos: .userInitiated),
          resultDelivery: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.lookImportCoordinator = lookImportCoordinator
         self.resultDelivery = resultDelivery
+        self.exportQueue = exportQueue
+        self.importQueue = importQueue
         do { self.editPersistence = try editPersistence ?? EditPersistence.appStore() }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }

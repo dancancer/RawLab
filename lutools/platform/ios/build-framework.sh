@@ -45,7 +45,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
         -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2"
         -DLIBRAW_CMAKE_SOURCE_DIR="$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3"
         -DBUILD_SHARED_LIBS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=OFF
-        -DENABLE_LCMS=OFF -DENABLE_JASPER=OFF -DCMAKE_DISABLE_FIND_PACKAGE_JPEG=ON
+        -DENABLE_LCMS=OFF -DENABLE_JASPER=OFF
         -DSONY2FUJI_ENABLE_DNGSDK=ON
         -DSONY2FUJI_LIBRAW_TARGET=raw
         -DSONY2FUJI_DNGSDK_TARGET=rawlab_dng_sdk)
@@ -70,14 +70,19 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     mkdir -p "$framework/Licenses"
     cp "$ROOT/../LICENSE" "$framework/Licenses/RawLab-GPL-3.0.txt"
     cp "$ROOT/../LICENSE-ALIYUN-RUM-EXCEPTION" "$framework/Licenses/RawLab-Aliyun-RUM-Exception.txt"
-    cp "$ROOT/../docs/licensing.md" "$framework/Licenses/RawLab-Licensing.md"
+    cp "$ROOT/../docs/reference/licensing.md" "$framework/Licenses/RawLab-Licensing.md"
     for name in COPYRIGHT LICENSE.CDDL LICENSE.LGPL; do
         cp "$SOURCES/LibRaw-0.22.2/$name" "$framework/Licenses/LibRaw-$name"
     done
     cp "$ROOT/third_party/rawspeed-camera-calibration.inc" "$framework/Licenses/"
     cp "$ROOT/third_party/Adobe-DNG-SDK-LICENSE.txt" "$framework/Licenses/"
+    cp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$framework/Licenses/nlohmann-JSON-MIT.txt"
     cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
+    cp "$ROOT/../RawLabMac/Resources/Licenses/LibRaw-X3F-BSD.txt" "$framework/Licenses/"
+    cp -R "$core/licenses/libjpeg-turbo" "$framework/Licenses/"
     cp "$ROOT/platform/ios/ThirdPartyNotices.md" "$framework/Licenses/"
+    mkdir -p "$framework/Licenses/nikon-he"
+    cp "$ROOT/third_party/nikon_he/README.md" "$ROOT/third_party/nikon_he/LICENSE.LGPL-2.1" "$framework/Licenses/nikon-he/"
     cp "$core/licenses/OpenCV-LICENSE" "$core/licenses/wavelib-COPYRIGHT" "$framework/Licenses/"
     cp -R "$core/licenses/lensfun" "$framework/Licenses/"
     rm -rf "$framework/Lensfun"

@@ -70,7 +70,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
 
 @Composable
 internal fun EditorSaveNotice(state: EditorState, onRetry: () -> Unit, modifier: Modifier) {
-    if (state.photo == null || state.draft != null || state.saveState == EditSaveState.NONE) return
+    if (state.draft != null || state.saveState == EditSaveState.NONE) return
     val failed = state.saveState == EditSaveState.FAILED
     val text = stringResource(when (state.saveState) {
         EditSaveState.SAVED -> R.string.edit_saved
@@ -83,7 +83,7 @@ internal fun EditorSaveNotice(state: EditorState, onRetry: () -> Unit, modifier:
         color = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant) {
         if (failed) TextButton(onClick = onRetry, modifier = Modifier.testTag("edit-save-retry").semantics { liveRegion = LiveRegionMode.Polite }) {
-            Text(text, color = MaterialTheme.colorScheme.onErrorContainer,
+            Text(state.saveError ?: text, Modifier.heightIn(max = 72.dp).verticalScroll(rememberScrollState()), color = MaterialTheme.colorScheme.onErrorContainer,
                 style = MaterialTheme.typography.labelSmall)
         } else Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }, maxLines = 3,
             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)

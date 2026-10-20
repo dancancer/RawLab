@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SOURCES = sorted((ROOT / "Sources").glob("*.swift"))
+SOURCES = sorted((ROOT / "Sources").rglob("*.swift"))
 # 字符串字面量或行注释，谁先出现取谁：注释里的引号不算字面量
 TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
 CJK_PUNCTUATION = re.compile(r"[：，。、；！？（）「」]")
@@ -116,7 +116,7 @@ class InterfaceCopy(unittest.TestCase):
     #  批量任务的外观名随任务保存：中性存的是翻译键"中性"，显示时再按当前语言翻译
     # ------------------------------------------------------------------------
     def test_batch_look_name_is_translated_when_shown(self):
-        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        view = (ROOT / "Sources/Export/BatchExportView.swift").read_text()
         shown = view.count("model.job.lookName")
         self.assertGreater(shown, 0)
         self.assertEqual(view.count("L10n.text(model.job.lookName)"), shown)
@@ -135,8 +135,8 @@ class InterfaceCopy(unittest.TestCase):
     #  写死宽度时德文"An eingebettete Vorschau anpassen""Einstellung wie aufgenommen"被截断
     # ------------------------------------------------------------------------
     def test_localized_pickers_and_look_label_are_not_capped(self):
-        editor = (ROOT / "Sources/EditorView.swift").read_text()
-        dock = (ROOT / "Sources/AdjustmentDock.swift").read_text()
+        editor = (ROOT / "Sources/Editor/View/EditorView.swift").read_text()
+        dock = (ROOT / "Sources/Editor/View/AdjustmentDock.swift").read_text()
         exposure = editor[editor.index('Picker(L10n.text("曝光基准")'):editor.index('.help(L10n.text("曝光基准"))')]
         balance = dock[dock.index('Picker(L10n.text("白平衡")'):dock.index("parameterRow(.temperature)")]
         look = editor[editor.index('"%@ · 大师配方"'):editor.index("Spacer(minLength: 8)")]
@@ -150,7 +150,7 @@ class InterfaceCopy(unittest.TestCase):
     #  "已开启/已关闭"曾被译成 "Already turned on/Closed"、"閉店"
     # ------------------------------------------------------------------------
     def test_on_off_states_use_state_words(self):
-        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        view = (ROOT / "Sources/Export/BatchExportView.swift").read_text()
         self.assertEqual(view.count('L10n.text("开启") : L10n.text("关闭")'), 0)
         for language in ("en", "de", "fr", "es", "ja"):
             strings = catalog(language)
@@ -169,7 +169,7 @@ class InterfaceCopy(unittest.TestCase):
     #  调整栏三个开关打开后外观毫无变化；改为开启时把图标染成黄色
     # ------------------------------------------------------------------------
     def test_toolbar_toggles_show_their_state(self):
-        editor = (ROOT / "Sources/EditorView.swift").read_text()
+        editor = (ROOT / "Sources/Editor/View/EditorView.swift").read_text()
         toolbar = editor[editor.index("private var editorToolbar"):editor.index("private func reset(")]
         self.assertNotIn(".tint(", toolbar)
         for state in ("compare", "infoMode != .hidden", "!adjustmentPanel.collapsed"):
@@ -179,7 +179,7 @@ class InterfaceCopy(unittest.TestCase):
     #  "窗口"菜单里的"批量导出"随时可点：还没有任务时不能打开一个空白窗口
     # ------------------------------------------------------------------------
     def test_batch_window_has_an_empty_state(self):
-        app = (ROOT / "Sources/RawLabMacApp.swift").read_text()
+        app = (ROOT / "Sources/System/RawLabMacApp.swift").read_text()
         scene = app[app.index('Window(L10n.text("批量导出"), id: "batch-export")'):]
         self.assertRegex(scene[:400], r"if let batch = model\.batch \{.*\} else \{\s*BatchExportEmptyView\(\)")
 
@@ -188,7 +188,7 @@ class InterfaceCopy(unittest.TestCase):
     #  曾是"JPEG… / PNG · 16 位… / 导出渲染型 DNG…"，对面是"JPEG / 16 位 PNG / DNG · 渲染型"
     # ------------------------------------------------------------------------
     def test_export_menu_uses_the_format_names(self):
-        editor = (ROOT / "Sources/EditorView.swift").read_text()
+        editor = (ROOT / "Sources/Editor/View/EditorView.swift").read_text()
         menu = editor[editor.index("Menu {", editor.index('.keyboardShortcut("a"')):editor.index('L10n.text("使用当前调整批量导出…")')]
         self.assertIn("ForEach(ExportFormat.allCases)", menu)
         self.assertIn('format.title + "…"', menu)
@@ -200,7 +200,7 @@ class InterfaceCopy(unittest.TestCase):
     #  与上方摘要、编辑框都不一样
     # ------------------------------------------------------------------------
     def test_adjustment_values_share_one_format(self):
-        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        view = (ROOT / "Sources/Export/BatchExportView.swift").read_text()
         self.assertNotIn("spec.text(model.job.settings[keyPath: spec.keyPath]) + spec.unit", view)
         self.assertNotIn('String(format: "%+.2f EV"', view)
         self.assertIn("spec.display(model.job.settings[keyPath: spec.keyPath])", view)
@@ -209,7 +209,7 @@ class InterfaceCopy(unittest.TestCase):
     #  同一面板不重复显示同一个数值：批量导出摘要已列出曝光，"全部调整"展开后不再列一次
     # ------------------------------------------------------------------------
     def test_batch_summary_does_not_repeat_exposure(self):
-        view = (ROOT / "Sources/BatchExportView.swift").read_text()
+        view = (ROOT / "Sources/Export/BatchExportView.swift").read_text()
         summary = view[view.index('Text(L10n.text("调整来源"))'):view.index('DisclosureGroup(L10n.text("全部调整"))')]
         full = view[view.index('DisclosureGroup(L10n.text("全部调整"))'):view.index('Text(L10n.text("输出"))')]
         self.assertIn("AdjustmentParameter.exposure", summary)

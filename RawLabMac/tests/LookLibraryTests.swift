@@ -142,6 +142,43 @@ struct LookLibraryTests {
         check(afterCommit.looks.isEmpty && !manager.fileExists(atPath: stagedRemoval.path), "restart finishes a removal whose registry commit already succeeded")
         check(manager.fileExists(atPath: unrelated.path), "removal recovery ignores files without a managed UUID")
 
+        let dcpSource = root.appendingPathComponent("My camera look.DCP")
+        let dcpBytes = DCPTestFixtures.make()
+        try dcpBytes.write(to: dcpSource)
+        let dcpDirectory = root.appendingPathComponent("dcp-library")
+        try manager.createDirectory(at: dcpDirectory, withIntermediateDirectories: true)
+        let dcpLibrary = try LookLibrary(directory: dcpDirectory)
+        do {
+            let converted = try dcpLibrary.importLook(from: dcpSource)
+            let duplicate = try dcpLibrary.importLook(from: dcpSource)
+            check(converted.name == "My camera look" && converted.sourceName == "My camera look.DCP", "DCP import preserves the original name and provenance")
+            check(converted.format == "rlook" && converted.formatVersion == 1 && converted.fileName == "\(converted.id).rlook", "DCP is stored as validated RLOOK, not renamed DCP bytes")
+            check(converted.id != duplicate.id, "same-name DCP imports have independent managed files")
+            let compiled = try Data(contentsOf: dcpLibrary.url(for: converted))
+            check(compiled.starts(with: Data("RLOOKDCP".utf8)), "DCP managed copy contains native RLOOK stages")
+            check(try Data(contentsOf: dcpSource) == dcpBytes, "conversion never rewrites the original DCP")
+            try manager.removeItem(at: dcpSource)
+            let dcpRestored = try LookLibrary(directory: dcpDirectory)
+            check(dcpRestored.looks == dcpLibrary.looks && manager.fileExists(atPath: dcpRestored.url(for: converted).path), "converted looks survive restart and source deletion")
+            let noLook = root.appendingPathComponent("No table.dcp")
+            try DCPTestFixtures.make(missing: [50981, 50982]).write(to: noLook)
+            check(try dcpRestored.importLook(from: noLook).formatVersion == 2, "DCP without LookTable is installed as RLOOK v2")
+        } catch { check(false, "supported DCP imports automatically: \(error.localizedDescription)") }
+
+        let unsupported = root.appendingPathComponent("Missing tone.dcp")
+        try DCPTestFixtures.make(missing: [50940]).write(to: unsupported)
+        let saved = dcpLibrary.looks
+        let beforeFailure = try manager.contentsOfDirectory(atPath: dcpDirectory.path).sorted()
+        do { _ = try dcpLibrary.importLook(from: unsupported); check(false, "unsupported DCP is rejected") }
+        catch let error as DCPCompilerError { check(error == .missingToneCurve, "unsupported DCP exposes its specific missing-curve reason") }
+        catch { check(false, "unsupported DCP must not be flattened into generic invalid-look error") }
+        let afterFailure = try manager.contentsOfDirectory(atPath: dcpDirectory.path).sorted()
+        check(dcpLibrary.looks == saved && afterFailure == beforeFailure,
+              "failed DCP conversion leaves no staging files or registry changes")
+        try DCPTestFixtures.make().write(to: dcpSource)
+        rejects("failed DCP index installation rolls back converted bytes") { _ = try rollback.importLook(from: dcpSource) }
+        check(try manager.contentsOfDirectory(atPath: rollbackDirectory.path) == ["registry.json"], "DCP index failure leaves no converted file behind")
+
         if failures != 0 { exit(1) }
     }
 }

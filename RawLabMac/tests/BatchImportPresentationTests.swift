@@ -32,13 +32,18 @@ struct BatchImportPresentationTests {
             try "invalid".write(to: path, atomically: true, encoding: .utf8)
             return path
         }
-        model.importLooks(files)
+        let unsupportedDCP = root.appendingPathComponent("Camera look without tone.dcp")
+        try DCPTestFixtures.make(missing: [50940]).write(to: unsupportedDCP)
+        model.importLooks([unsupportedDCP] + files)
         for _ in 0..<100 {
             if !model.lookLibraryBusy && window.attachedSheet != nil { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         guard model.lookImportReport?.contains(files.last!.lastPathComponent) == true else {
             throw RenderError.failed("Batch report lost a failed filename")
+        }
+        guard model.lookImportReport?.contains(DCPCompilerError.missingToneCurve.localizedDescription) == true else {
+            throw RenderError.failed("DCP failure reason was lost before presenting the result sheet")
         }
         let report = model.lookImportReport
         for (name, size) in [("compact", NSSize(width: 950, height: 620)), ("wide", NSSize(width: 1320, height: 850))] {

@@ -99,7 +99,7 @@ target WB, not a source-camera WB value to copy or discard.
 Mobile Agent interfaces remain out
 of scope. Desktop evidence and remaining ICC/physical-device limits are recorded
 in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
-`../../docs/verification-raster-input-all-platforms-2026-10-16.md`.
+the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 
 ## Rendering Order
 
@@ -109,11 +109,13 @@ in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, optional geometry, and final resizing.
 
-Geometry uses the oriented, lens-processed full source: clockwise quarter turns,
+Geometry uses the oriented, lens-processed source: clockwise quarter turns,
 flips in that canvas, centered horizontal/vertical perspective, centered inscribed
 straightening, then normalized crop. Perspective and straightening share one
 bilinear sampling pass; zero perspective preserves basic geometry exactly.
-It bypasses interactive proxies and early resizing while active. Integer geometry
+It bypasses interactive half-size proxies and the default early resize while active;
+PREVIEW+BUFFER viewport opt-in may instead use a reduced source as described below.
+FINAL and file output retain the full source. Integer geometry
 copies pixels; straightening samples once with bilinear edge extension, without
 clipping linear values. Identity preserves existing rendering. The common CPU
 geometry stage also finishes GPU Auto output; Force with active geometry returns
@@ -444,6 +446,23 @@ curve, not an inferred identity/Adobe curve. New HSM/external-tone profiles that
 default to Auto black require an explicit omission policy. Triple-illuminant HSM,
 HDR/spatial/RGB stages and full Adobe rendering remain unsupported.
 
+Application DCP import uses one portable C++ compiler through
+`sony2fuji_compile_dcp`, separate from rendering. The additive C ABI accepts
+bounded input bytes and a source filename and returns an owned RLOOK blob plus
+a stable, localized-by-client rejection reason. Release blobs with
+`sony2fuji_release_blob`; existing request and image-buffer layouts are unchanged.
+All four clients use the same D65 adapter, parser limits and serialization.
+The blob and reason pointers are required; initialize the blob to zero or reuse
+a previous returned blob. Failure clears both output fields. DCP content
+rejection returns `UNSUPPORTED` with a typed reason; invalid API arguments and
+allocation failures use `INVALID_ARGUMENT` and `OUT_OF_MEMORY`. `source_name` is
+a UTF-8 filename for metadata, not a path used to read or write files. Input
+bytes are read-only and limited to 128 MiB; output is limited to 64 MiB.
+Automatic import is deliberately stricter than the legacy preparation CLI:
+it requires an embedded tone curve and explicit `DefaultBlackRender=None`.
+Import never substitutes the donor profile for the target RAW calibration/WB,
+and it does not enable a new GPU backend or change rendering results.
+
 Native DCP now has a dedicated Metal kernel on macOS 15+/iOS 18+, using the same
 immutable decoded stages and float32 arithmetic. CPU double evaluation remains
 the reference. Stage nonfiniteness or Metal failure returns to CPU in Auto and
@@ -471,9 +490,14 @@ uses viewport-sized proxies during dragging and always submits a settled pass on
 No post-demosaic RGB tint approximation replaces camera-space white balance.
 
 `sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
-for PREVIEW+BUFFER only, without changing request v2. It reduces linear input to
-the requested dimensions before wavelet, tone/LUT, chroma, sharpening and photo
-effects on CPU/Metal. The immutable RAW cache is sampled directly without first
+for PREVIEW+BUFFER only, without changing request v2. It reduces linear input before
+wavelet, tone/LUT, chroma, sharpening and photo effects on CPU/GPU, including active
+geometry. Requested output dimensions are computed from the full-resolution
+geometry canvas; the reduced source is the smallest proportional integer canvas
+whose geometry covers both requested dimensions, capped at the source size.
+Final geometry resizing never enlarges a reduced result. Output dimensions and
+reported geometry dimensions retain their full-source meaning; requests at or
+above the native geometry size remain exact. The immutable RAW cache is sampled directly without first
 copying the entire image. Wavelet cache keys include the viewport dimensions and
 quality mode; reduced results cannot serve exact requests. GPU Auto fallback
 preserves the reduced source, while Force still requires GPU success.
@@ -513,6 +537,7 @@ AnalogBalance with reciprocal-temperature dual-illuminant interpolation.
 
 `sony2fuji_session_get_raw_white_balance` reports the last decoded file's estimated
 as-shot Kelvin/tint. It is not an EXIF Kelvin reader or Adobe profile emulation.
+Clients convert continuous camera Kelvin/tint to integers using half-away-from-zero rounding, with macOS as the behavioral baseline.
 Missing, singular, four-channel, or out-of-range calibrations return UNSUPPORTED;
 camera white balance still works. The Mac client disables absolute controls in that
 case. As-shot reset uses the original camera gains, not a rounded Kelvin round trip.

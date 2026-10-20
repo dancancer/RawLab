@@ -77,8 +77,10 @@ import Darwin
             try writePreview(preview.image, to: output.appendingPathComponent("\(name)-preview.png"))
             let proxy = try cpu.render(raw, settings: settings, lut: nil, edge: edge,
                                        interactive: true, viewportPreview: true)!
-            try check(bytes(proxy.image) == bytes(preview.image),
-                      "\(name) perspective uses the exact RAW source even with proxy flags requested")
+            try check(bytes(proxy.image) != bytes(preview.image) &&
+                      proxy.image.width == preview.image.width && proxy.image.height == preview.image.height &&
+                      proxy.nativeWidth == preview.nativeWidth && proxy.nativeHeight == preview.nativeHeight,
+                      "\(name) perspective uses the reduced viewport with unchanged output and native dimensions")
             let destination = output.appendingPathComponent("\(name)-final.png")
             _ = try cpu.render(raw, settings: settings, lut: nil, edge: nil, output: destination, exportLongEdge: edge)
             let source = CGImageSourceCreateWithURL(destination as CFURL, nil)!

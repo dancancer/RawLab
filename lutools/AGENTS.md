@@ -35,7 +35,3 @@ Commands below run from the repository root. Local tests use sample inputs and t
 - Mac integration: `bash RawLabMac/build.sh`, then the affected checks under `RawLabMac/tests/`. Rendering changes can use `bash RawLabMac/tests/adjustments.sh`; packaging changes use `bash RawLabMac/tests/bundle.sh`.
 - Documentation-only changes: check links, examples and formatting; do not rebuild the image pipeline merely for prose.
 - After passing checks, repeat only for new changes, failures or a concrete uncovered risk. State when platform tooling or fixtures prevent validation.
-
-## Guidance Basis
-
-Reviewed against OpenAI's [GPT-6 prompting guidance](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices), [instruction simplification guidance](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra), and [AGENTS.md scope rules](https://learn.chatgpt.com/docs/agent-configuration/agents-md). Model selection and reasoning effort belong in the agent configuration, not in repository role-play or repeated “think harder” prompts.

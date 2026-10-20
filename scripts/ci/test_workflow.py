@@ -1,5 +1,7 @@
 """Regression guards for the hosted verification boundary, not a YAML linter."""
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -20,11 +22,17 @@ class WorkflowContractTests(unittest.TestCase):
         events = self.workflow["on"]
         self.assertEqual(set(events), {"pull_request", "push"})
         self.assertEqual(events["pull_request"]["branches"], ["development", "release/**", "main"])
-        self.assertEqual(events["push"]["branches"], ["development", "release/**", "main"])
+        self.assertEqual(events["push"]["branches"], ["development", "main"])
         self.assertNotIn("tags", events["push"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
         self.assertNotIn("secrets.", self.text)
-        self.assertNotRegex(self.text, r"(?m)^\s*(?:environment|continue-on-error):")
+        self.assertNotRegex(self.text, r"(?m)^\s*environment:")
+        for job in self.workflow["jobs"].values():
+            self.assertNotIn("continue-on-error", job)
+            for step in job["steps"]:
+                if "continue-on-error" in step:
+                    self.assertEqual(step.get("id"), "native-cache")
+                    self.assertTrue(step.get("uses", "").startswith("actions/cache/restore@"))
 
     def test_all_platforms_are_required_and_bounded(self):
         jobs = self.workflow["jobs"]
@@ -34,16 +42,17 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("if", job)
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
                 self.assertNotIn("permissions", job)
-                self.assertNotIn("self-hosted", job["runs-on"])
+                if name == "contracts":
+                    self.assertNotIn("self-hosted", job["runs-on"])
         mac = jobs["macos"]
         self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
         self.assertEqual(mac["env"]["MACOSX_DEPLOYMENT_TARGET"], "14.0")
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], [
-            {"runner": "macos-26", "arch": "arm64"},
-            {"runner": "macos-26-intel", "arch": "x86_64"},
+            {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"},
         ])
-        self.assertEqual(jobs["ios"]["runs-on"], "macos-26")
+        self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
     def test_actions_and_artifact_paths_are_constrained(self):
         for name, job in self.workflow["jobs"].items():
@@ -51,7 +60,7 @@ class WorkflowContractTests(unittest.TestCase):
             for step in job["steps"]:
                 if "uses" not in step:
                     continue
-                self.assertRegex(step["uses"], r"^actions/[a-z-]+@[0-9a-f]{40}$")
+                self.assertRegex(step["uses"], r"^actions/(?:[a-z-]+|cache/(?:restore|save))@[0-9a-f]{40}$")
                 if step["uses"].startswith("actions/checkout@"):
                     self.assertEqual(step["with"]["persist-credentials"], "false")
                 if step["uses"].startswith("actions/upload-artifact@"):
@@ -61,6 +70,75 @@ class WorkflowContractTests(unittest.TestCase):
                     for path in step["with"]["path"].splitlines():
                         self.assertRegex(path, r"^build/ci/\*\.(?:log|json|xml)$")
             self.assertEqual(len(uploads), 1, name)
+
+    def test_android_uses_a_dedicated_linux_runner_with_bounded_parallelism(self):
+        android = self.workflow["jobs"]["android"]
+        self.assertEqual(android["runs-on"], ["self-hosted", "linux", "x64", "rawlab-android"])
+        self.assertEqual(android["env"]["JOBS"], "8")
+        self.assertEqual(android["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
+        self.assertEqual(android["env"]["ANDROID_HOME"], "/opt/android-sdk")
+        self.assertEqual(android["env"]["RAWLAB_LENS_SOURCE_CACHE"], "/var/cache/rawlab-ci/lens-sources")
+        commands = "\n".join(step.get("run", "") for step in android["steps"])
+        self.assertIn("--max-workers=8", commands)
+        self.assertIn("RAWLAB_TEST_ANDROID_CACHE=1", commands)
+
+    def test_actionlint_recognizes_only_the_declared_local_runner_label(self):
+        configuration = ROOT / ".github/actionlint.yaml"
+        self.assertTrue(configuration.is_file(), "Declare custom labels for actionlint")
+        policy = yaml.load(configuration.read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(policy["self-hosted-runner"]["labels"],
+                         ["rawlab-android", "rawlab-windows", "rawlab-apple"])
+
+    def test_local_apple_jobs_use_prepared_tools_and_preserve_selected_xcode(self):
+        jobs = self.workflow['jobs']
+        self.assertEqual(jobs['macos']['env']['JOBS'], '${{ matrix.jobs }}')
+        self.assertEqual(jobs['ios']['env']['JOBS'], '6')
+        for name in ('macos', 'ios'):
+            steps = jobs[name]['steps']
+            python_setup = [step for step in steps if step.get('uses', '').startswith('actions/setup-python@')]
+            if name == 'macos':
+                self.assertEqual(python_setup[0]['if'], "matrix.arch == 'x86_64'")
+            else:
+                self.assertEqual(python_setup, [])
+            key_step = next(step for step in steps if step.get('id') == 'native-key')
+            self.assertIn('pip install -r scripts/ci/requirements.txt', key_step['run'])
+            commands = '\n'.join(step.get('run', '') for step in steps)
+            self.assertIn('DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"', commands)
+
+    def test_macos_uses_available_intel_cpus_and_bounded_test_parallelism(self):
+        macos = self.workflow['jobs']['macos']
+        intel = next(row for row in macos['strategy']['matrix']['include']
+                     if row['arch'] == 'x86_64')
+        self.assertEqual(intel['jobs'], '4')
+        self.assertEqual(macos['env']['CMAKE_BUILD_PARALLEL_LEVEL'], '${{ matrix.jobs }}')
+        run = '\n'.join(step.get('run', '') for step in macos['steps'])
+        self.assertIn('ctest --test-dir lutools/build-macos --parallel 2', run)
+        self.assertIn("-E '^(native_dcp_metal|gpu_photo|metal_denoise)$'", run)
+
+    def test_macos_timing_records_success_without_masking_command_failure(self):
+        build = next(step for step in self.workflow['jobs']['macos']['steps']
+                     if 'bash RawLabMac/build.sh' in step.get('run', ''))
+        run = build['run']
+        self.assertIn('ci_timed() {', run)
+        function = 'ci_timed() {' + run.split('ci_timed() {', 1)[1].split('\n}', 1)[0] + '\n}'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'build/ci').mkdir(parents=True)
+            probe = ("\nPROBE_ENV=expected ci_timed passed bash -c 'test \"$PROBE_ENV\" = expected'"
+                     "\nci_timed failed bash -c 'exit 7'\ntouch should-not-exist")
+            result = subprocess.run(['bash', '-euc', function + probe], cwd=root,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+            self.assertFalse((root / 'should-not-exist').exists())
+            self.assertRegex((root / 'build/ci/macos-timings.log').read_text(),
+                             r'^passed\t\d+\t0\nfailed\t\d+\t7\n$')
+
+    def test_windows_uses_a_dedicated_runner_and_data_volume(self):
+        windows = self.workflow["jobs"]["windows"]
+        self.assertEqual(windows["runs-on"], ["self-hosted", "windows", "x64", "rawlab-windows"])
+        self.assertEqual(windows["env"]["DOTNET_INSTALL_DIR"], "E:\\RawLabCI\\dotnet")
+        self.assertEqual(windows["env"]["RAWLAB_LENS_SOURCE_CACHE"], "E:\\RawLabCI\\cache\\lens-sources")
+        self.assertEqual(windows["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
 
     def test_existing_default_builds_are_not_feature_reduced(self):
         for command in ("RawLabMac/build.sh", "RawLabWindows/build.ps1", "testDebugUnitTest",
@@ -88,7 +166,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("test_tool_group_ui.py", commands["contracts"])
         self.assertIn("RawLabMac/tests/presentation.sh", commands["macos"])
         self.assertIn("RawLabMac/tests/control-groups.sh", commands["macos"])
-        self.assertIn("comparison-default,tool-groups,looks", commands["windows"])
+        self.assertIn("comparison-default,tool-groups,ui-details,looks", commands["windows"])
 
     def test_lut_contracts_include_the_adapter_dependencies(self):
         contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
@@ -99,6 +177,80 @@ class WorkflowContractTests(unittest.TestCase):
     def test_mixed_batch_source_isolation_runs_on_macos(self):
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
         self.assertIn("RawLabMac/tests/batch-export.sh", mac)
+
+    def test_macos_straighten_regression_runs_after_build_with_bundled_raw(self):
+        steps = self.workflow["jobs"]["macos"]["steps"]
+        build = next(step for step in steps if "bash RawLabMac/build.sh" in step.get("run", ""))
+        run = build["run"]
+        command = 'bash RawLabMac/tests/mac-straighten-preview.sh "$raw"'
+        self.assertNotIn("if", build)
+        self.assertIn(command, run)
+        self.assertLess(run.index("bash RawLabMac/build.sh"), run.index(command))
+        self.assertLess(run.index('raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"'), run.index(command))
+        self.assertNotIn("RAWLAB_TEST_RAW", run)
+
+    def test_macos_dcp_regressions_require_synthetic_python_parity(self):
+        steps = self.workflow["jobs"]["macos"]["steps"]
+        build = next(step for step in steps if "bash RawLabMac/build.sh" in step.get("run", ""))
+        run = build["run"]
+        self.assertNotIn("if", build, "Both Mac architectures must execute the DCP suites")
+        dependency = "python -m pip install -r lutools/requirements-lutprep.txt"
+        self.assertIn(dependency, run, "Synthetic parity needs the existing NumPy/OCIO requirements")
+        discovery = 'lutprep_python="$(command -v python)"'
+        parity = 'RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh'
+        self.assertIn(discovery, run, "Resolve the setup-python interpreter without masking discovery errors")
+        self.assertIn(parity, run, "The compiler script must not silently skip Python parity")
+        self.assertLess(run.index(dependency), run.index(parity))
+        self.assertLess(run.index(discovery), run.index(parity))
+        for script in ("dcp-compiler.sh", "look-library.sh", "look-import-model.sh"):
+            command = "bash RawLabMac/tests/" + script
+            self.assertIn(command, run)
+            self.assertLess(run.index("bash RawLabMac/build.sh"), run.index(command))
+        self.assertNotIn("RAWLAB_TEST_DCP", run, "Hosted DCP coverage must not require private profiles")
+        self.assertNotIn("RAWLAB_TEST_CANON_DCP", run)
+
+    def test_only_prs_restore_exact_native_caches_and_cold_pushes_seed_them(self):
+        for name in ("macos", "windows", "android", "ios"):
+            with self.subTest(job=name):
+                steps = self.workflow["jobs"][name]["steps"]
+                restores = [step for step in steps if step.get("uses", "").startswith("actions/cache/restore@")]
+                saves = [step for step in steps if step.get("uses", "").startswith("actions/cache/save@")]
+                self.assertEqual(len(restores), 1)
+                self.assertEqual(len(saves), 1)
+                restore, save = restores[0], saves[0]
+                self.assertNotIn("if", restore)
+                self.assertEqual(restore["continue-on-error"], "true")
+                self.assertEqual(restore["with"]["lookup-only"], "${{ github.event_name == 'push' }}")
+                self.assertNotIn("restore-keys", restore["with"])
+                self.assertEqual(restore["with"]["key"], "${{ steps.native-key.outputs.key }}")
+                self.assertEqual(save["with"], {key: restore["with"][key] for key in ("key", "path")})
+                self.assertEqual(save["if"], "success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'")
+                self.assertLess(steps.index(restore), steps.index(save))
+                builds = [step for step in steps if "run" in step and
+                          any(command in step["run"] for command in
+                              ("bash RawLabMac/build.sh", "./RawLabWindows/build.ps1", "./gradlew", "bash lutools/platform/ios/build-framework.sh"))]
+                self.assertEqual(len(builds), 1)
+                self.assertNotIn("if", builds[0], "Cache hits must still build and test the product")
+                self.assertEqual(builds[0]["env"]["RAWLAB_CI_CACHE_HIT"],
+                                 "${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}")
+                self.assertLess(steps.index(restore), steps.index(builds[0]))
+                self.assertLess(steps.index(builds[0]), steps.index(save))
+
+    def test_windows_shared_dcp_compiler_and_python_parity_are_required(self):
+        run = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["windows"]["steps"])
+        self.assertIn("dcp_compiler", run, "Windows must execute the shared compiler CTest")
+        self.assertIn("lutools/requirements-lutprep.txt", run)
+        self.assertIn("lutools/tests/test_dcp_compiler.py", run)
+        self.assertIn("build/windows-native/bin/Release/dcp_compiler_tests.exe", run)
+        self.assertIn("RAWLAB_TEST_DCP_NATIVE_LIB", run)
+        self.assertIn("RAWLAB_TEST_DCP_FIXTURE_DIR", run)
+        self.assertIn("'--fixtures'", run)
+
+    def test_ios_shared_look_import_runs_after_framework_build(self):
+        run = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["ios"]["steps"])
+        self.assertIn("bash RawLab/tests/look-import.sh", run)
+        self.assertLess(run.index("bash lutools/platform/ios/build-framework.sh"),
+                        run.index("bash RawLab/tests/look-import.sh"))
 
 
 if __name__ == "__main__":

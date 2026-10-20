@@ -119,7 +119,7 @@ internal static class Program
                 lensPanel.Refresh(adjustments.Lens, lensInfo);
                 geometryPanel.Refresh(adjustments.Geometry);
                 Check(Loc.Language == language, $"Resolved language {language}");
-                foreach(var (name,key) in new[]{("AddDirectoryButton","添加目录"),("ExportRevealButton","在资源管理器中查看"),("BatchNotice","继续上次批量任务"),("RetrySave","重试保存"),("RetryButton","重新显影")})
+                foreach(var (name,key) in new[]{("AddDirectoryButton","添加目录"),("ExportRevealButton","在资源管理器中查看"),("BatchNotice","继续上次批量任务"),("RetrySave","重试保存"),("RetryButton","重试")})
                 {
                     var button=(Button)window.FindName(name);
                     Check(UIElementAutomationPeer.CreatePeerForElement(button)?.GetName()==Loc.Text(key),$"Sidebar/status action has a localized automation name: {name}/{language}");
@@ -146,7 +146,7 @@ internal static class Program
                 Check(adjustments.Geometry is { CropX: .1, QuarterTurns: 1, FlipHorizontal: true, StraightenDegrees: 3.5 },
                     $"Geometry survives language changes {language}");
                 Check(AutomationProperties.GetName((CheckBox)geometryPanel.FindName("HorizontalFlip")!) == Loc.Text("水平翻转") &&
-                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("宽度 (%)") &&
+                      AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("裁切宽度") &&
                       AutomationProperties.GetName((Slider)geometryPanel.FindName("StraightenSlider")!) == Loc.Text("拉直"),
                     $"Geometry controls have localized automation names {language}");
                 Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");

@@ -1,5 +1,6 @@
 package com.rawlab.android.looks
 
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -22,6 +23,8 @@ object NativeLookValidator : LookValidator {
     override fun validate(file: File): LookValidation = NativeProcessor.validateLook(file)
 }
 
+class InvalidLookException(message: String, cause: Throwable? = null) : IllegalArgumentException(message, cause)
+
 data class ManagedLook(
     val id: String,
     val name: String,
@@ -37,6 +40,7 @@ data class ManagedLook(
 class LookLibrary(
     private val root: File,
     private val validator: LookValidator = NativeLookValidator,
+    private val dcpCompiler: DcpCompiler = NativeDcpCompiler,
 ) {
     private val registry = File(root, REGISTRY_NAME)
     private val monitor = monitors.computeIfAbsent(root.canonicalPath) { Any() }
@@ -66,16 +70,28 @@ class LookLibrary(
         val namedFormat = LookFormat.fromExtension(originalName.substringAfterLast('.', ""))
         val rawStage = File(root, ".${id}.stage")
         try {
-            rawStage.outputStream().use { output -> input.copyTo(output) }
-            val format = namedFormat.takeUnless { it == LookFormat.UNKNOWN } ?: detectContainer(rawStage)
+            val dcp = originalName.substringAfterLast('.').equals("dcp", ignoreCase = true)
+            val format = if (dcp) {
+                val compiled = dcpCompiler.compile(readBoundedDcp(input), sourceName(originalName))
+                if (compiled.isEmpty()) throw DcpCompilationException(DcpFailureReason.MALFORMED)
+                if (compiled.size > MAX_DCP_OUTPUT_BYTES)
+                    throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
+                rawStage.outputStream().use { output -> output.write(compiled) }
+                LookFormat.RLOOK
+            } else {
+                rawStage.outputStream().use { output -> input.copyTo(output) }
+                namedFormat.takeUnless { it == LookFormat.UNKNOWN } ?: detectContainer(rawStage)
+            }
             val staged = File(root, ".${id}.stage.${format.extension}")
             move(rawStage, staged)
             val relativePath = "${id}.${format.extension}"
             val destination = File(root, relativePath)
             val name = originalName.trim().ifEmpty { "Look.${format.extension}" }
-            val validation = validator.validate(staged)
-            require(validation.format == format) { "Look format does not match its extension" }
-            require(validVersion(format, validation.version)) { "Invalid look version" }
+            val validation = try { validator.validate(staged) }
+            catch (error: IllegalArgumentException) { throw InvalidLookException(error.message ?: "Invalid look", error) }
+            catch (error: UnsupportedOperationException) { throw InvalidLookException(error.message ?: "Invalid look", error) }
+            if (validation.format != format) throw InvalidLookException("Look format does not match its extension")
+            if (!validVersion(format, validation.version)) throw InvalidLookException("Invalid look version")
             move(staged, destination)
             val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath)
             writeRegistry(readRegistry() + imported)
@@ -192,6 +208,26 @@ class LookLibrary(
         return if (read == magic.size && magic.contentEquals(RLOOK_MAGIC)) LookFormat.RLOOK else LookFormat.CUBE
     }
 
+    private fun readBoundedDcp(input: InputStream): ByteArray {
+        val data = ByteArrayOutputStream()
+        val buffer = ByteArray(DCP_READ_BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            val remaining = MAX_DCP_SOURCE_BYTES - total
+            val request = minOf(buffer.size.toLong(), remaining + 1).toInt()
+            val count = input.read(buffer, 0, request)
+            if (count < 0) break
+            if (count == 0) continue
+            total += count
+            if (total > MAX_DCP_SOURCE_BYTES) throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
+            data.write(buffer, 0, count)
+        }
+        return data.toByteArray()
+    }
+
+    private fun sourceName(originalName: String): String =
+        originalName.substringAfterLast('/').ifEmpty { "look.dcp" }
+
     private fun writeRegistry(looks: List<ManagedLook>) {
         val temporary = File(root, ".${REGISTRY_NAME}.${UUID.randomUUID()}.tmp")
         try {
@@ -239,6 +275,9 @@ class LookLibrary(
         private val monitors = ConcurrentHashMap<String, Any>()
         private const val REGISTRY_NAME = "registry.properties"
         private const val REGISTRY_VERSION = 1
+        private const val DCP_READ_BUFFER_BYTES = 64 * 1024
+        private const val MAX_DCP_SOURCE_BYTES = 128 * 1024 * 1024L
+        private const val MAX_DCP_OUTPUT_BYTES = 64 * 1024 * 1024
         private val RLOOK_MAGIC = "RLOOKDCP".toByteArray()
     }
 }

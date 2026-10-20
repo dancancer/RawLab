@@ -4,6 +4,9 @@ if(NOT DEFINED LIBRAW_SOURCE_DIR)
 endif()
 
 function(replace_libraw relative before after)
+    if("${before}" STREQUAL "")
+        message(FATAL_ERROR "Empty LibRaw patch anchor: ${relative}")
+    endif()
     set(path "${LIBRAW_SOURCE_DIR}/${relative}")
     file(READ "${path}" source)
     string(FIND "${source}" "${after}" patched)
@@ -17,6 +20,35 @@ function(replace_libraw relative before after)
     string(REPLACE "${before}" "${after}" source "${source}")
     file(WRITE "${path}" "${source}")
 endfunction()
+
+include("${CMAKE_CURRENT_LIST_DIR}/libraw-sony-arw6.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/libraw-cameras.cmake")
+
+# 只替换 Nikon HE 像素解码，保留 LibRaw 的元数据、白平衡与显影流程。
+set(nikon_he_source "${CMAKE_CURRENT_LIST_DIR}/../third_party/nikon_he")
+file(MAKE_DIRECTORY "${LIBRAW_SOURCE_DIR}/src/decoders/rawlab_nikon_he")
+foreach(name codec.h internal.h parser.cpp entropy.cpp dwt.cpp output.cpp libraw_adapter.inc README.md LICENSE.LGPL-2.1)
+    configure_file("${nikon_he_source}/${name}"
+        "${LIBRAW_SOURCE_DIR}/src/decoders/rawlab_nikon_he/${name}" COPYONLY)
+endforeach()
+replace_libraw(src/decoders/decoders_libraw_dcrdefs.cpp
+    "#include \"../../internal/dcraw_defs.h\""
+    "#include \"../../internal/dcraw_defs.h\"\n#include \"rawlab_nikon_he/codec.h\"")
+set(nikon_he_placeholder "void LibRaw::nikon_he_load_raw()\n{\n    if(dng_version)\n    \tthrow LIBRAW_EXCEPTION_UNSUPPORTED_FORMAT; // Never reached\n    throw LIBRAW_EXCEPTION_UNSUPPORTED_FORMAT;\n}\n")
+replace_libraw(src/decoders/decoders_libraw_dcrdefs.cpp "${nikon_he_placeholder}"
+    "#include \"rawlab_nikon_he/libraw_adapter.inc\"\n")
+replace_libraw(src/utils/decoder_info.cpp [=[
+    d_info->decoder_name = "nikon_he_load_raw()";
+    d_info->decoder_flags = LIBRAW_DECODER_UNSUPPORTED_FORMAT;
+]=] [=[
+    d_info->decoder_name = "nikon_he_load_raw()";
+    d_info->decoder_flags = 0;
+]=])
+foreach(model "Z 6 III" "Z 8" "Z 9" "Z f")
+    replace_libraw(src/tables/cameralist.cpp
+        "\"Nikon ${model} (HE/HE* formats are not supported yet)\""
+        "\"Nikon ${model}\"")
+endforeach()
 
 # SDK 的平台和类布局开关必须与调用方一致，不能把 iOS 强制当成 macOS。
 replace_libraw(libraw/libraw_datastream.h [=[
@@ -114,21 +146,29 @@ replace_libraw(src/tables/colordata.cpp
     "  } table[] = {\n#include \"rawlab_camera_calibration.inc\"")
 
 # These new Nikon model strings must reach the existing JPEG-XS marker check,
-# not the legacy lossless decoder, even while HE/HE* decoding is unsupported.
+# not the legacy lossless decoder; HE/HE* decoding has its own validated path.
 replace_libraw(src/metadata/tiff.cpp
     "|| !strcmp(model, \"NIKON Z6_3\")) &&"
     "|| !strcmp(model, \"NIKON Z6_3\") || !strcmp(model, \"NIKON Z5_2\") || !strcmp(model, \"NIKON Z50_2\")) &&")
 
-# R6 III ColorData subversion 66 uses the existing v12 offsets, not v11.
+# PowerShot V1 subversion 65 and R6 III subversion 66 use the existing v12 offsets.
 # Layout and Adobe-derived matrix: https://github.com/LibRaw/LibRaw/issues/821
 # This is a sample-verified local fix, not a claim of upstream camera support.
+# 兼容已缓存的 R6 III 补丁；V1 与 R6 III 共享 V12 布局。
+file(READ "${LIBRAW_SOURCE_DIR}/src/metadata/canon.cpp" canon_source)
+string(FIND "${canon_source}" "if (len == 3778 && imCanon.ColorDataSubVer == 66)" old_canon_layout)
+if(NOT old_canon_layout EQUAL -1)
+    replace_libraw(src/metadata/canon.cpp
+        "if (len == 3778 && imCanon.ColorDataSubVer == 66)"
+        "if (len == 3778 && (imCanon.ColorDataSubVer == 65 || imCanon.ColorDataSubVer == 66))")
+endif()
 replace_libraw(src/metadata/canon.cpp [=[
       imCanon.ColorDataVer = 11;
       AsShot_Auto_MeasuredWB(0x0069);
 ]=] [=[
       imCanon.ColorDataVer = 11;
       AsShot_Auto_MeasuredWB(0x0069);
-      if (len == 3778 && imCanon.ColorDataSubVer == 66)
+      if (len == 3778 && (imCanon.ColorDataSubVer == 65 || imCanon.ColorDataSubVer == 66))
       {
         imCanon.ColorDataVer = 12;
         fseek(ifp, save1 + ((0x006d+0x0001) << 1), SEEK_SET);

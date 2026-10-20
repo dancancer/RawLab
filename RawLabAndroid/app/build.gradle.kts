@@ -57,10 +57,15 @@ fun AndroidSourceSet.usageTransport(withSdk: Boolean) {
 }
 
 val testRaw = providers.gradleProperty("rawlabTestRaw").orElse(providers.environmentVariable("RAWLAB_TEST_RAW"))
+val testRaster = providers.gradleProperty("rawlabTestRaster").orElse(providers.environmentVariable("RAWLAB_TEST_RASTER"))
+val testSonyArw6 = providers.gradleProperty("rawlabTestSonyArw6").orElse(providers.environmentVariable("RAWLAB_TEST_SONY_ARW6"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
+    from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
+    if (testRaster.isPresent) from(testRaster.get()) { rename { "sample.jpg" } }
+    if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }
 }
 val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
 val prepareAssets by tasks.registering(Sync::class) {
@@ -83,18 +88,25 @@ val prepareAssets by tasks.registering(Sync::class) {
     from(repo.resolve("lutools/third_party/lensfun")) { into("licenses/lensfun"); include("*.txt", "*.md") }
     from(repo.resolve("lutools/third_party/lensfun/dependency-licenses")) { into("licenses/lensfun"); include("*.txt") }
     from(repo.resolve("lutools/third_party")) { into("licenses"); include("*LICENSE*") }
+    from(repo.resolve("lutools/third_party/nikon_he")) {
+        into("licenses/nikon-he"); include("README.md", "LICENSE.LGPL-2.1")
+    }
+    from(repo.resolve("lutools/third_party/nlohmann/LICENSE.MIT")) {
+        into("licenses"); rename { "nlohmann-JSON-MIT.txt" }
+    }
     from(repo.resolve("lutools/third_party/dng-sdk")) {
         into("licenses")
         include("*.txt")
         rename { if (it == "Adobe-DNG-SDK-LICENSE.txt") "Adobe-DNG-SDK-1.7.1-LICENSE.txt" else it }
     }
     from(repo.resolve("RawLabMac/Resources/Licenses")) {
-        into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "stb-MIT-LICENSE.txt")
+        into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "LibRaw-X3F-BSD.txt",
+            "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "stb-MIT-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
     from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }
     from(repo.resolve("LICENSE-ALIYUN-RUM-EXCEPTION")) { into("licenses"); rename { "RawLab-Aliyun-RUM-Exception.txt" } }
-    from(repo.resolve("docs/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
+    from(repo.resolve("docs/reference/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }
     from(androidComponents.sdkComponents.ndkDirectory) {
         include("toolchains/llvm/prebuilt/*/sysroot/NOTICE")
         eachFile { path = "licenses/NDK-libcxx-NOTICE" }
@@ -109,8 +121,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.8.1"
+        versionCode = 14
+        versionName = "0.8.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }

@@ -147,6 +147,7 @@ set(CORE_SOURCES
     src/core/lut_parser.cpp
     src/core/lut_applicator.cpp
     src/core/dcp_look.cpp
+    src/core/dcp_compiler.cpp
     src/core/color_converter.cpp
     src/core/raw_processor.cpp
     src/core/lens_correction.cpp
@@ -159,6 +160,7 @@ set(CORE_SOURCES
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/dcp_compiler_c.cpp
     src/gpu/lut_gpu.cpp
     src/gpu/image_stats.cpp
     src/gpu/denoise.cpp
@@ -189,6 +191,7 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+target_include_directories(sony2fuji_core PRIVATE third_party)
 if(WIN32)
     target_link_libraries(sony2fuji_core windowscodecs ole32)
 endif()
@@ -232,6 +235,7 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    target_include_directories(sony2fuji PRIVATE third_party)
     if(WIN32)
         target_link_libraries(sony2fuji windowscodecs ole32)
     endif()
@@ -315,7 +319,78 @@ if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY
     target_compile_options(gpu_filter_tests PRIVATE -UNDEBUG)
 endif()
 
+if(BUILD_TESTING AND NOT IOS)
+    foreach(contract default off fast)
+        set(look_test look_exactness)
+        if(NOT contract STREQUAL default)
+            if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+                continue()
+            endif()
+            set(look_test "look_exactness_${contract}")
+        endif()
+        add_executable(${look_test}_tests tests/look_exactness_tests.cpp
+            tests/look_lut_oracle.cpp tests/look_gamma_oracle.cpp
+            src/core/lut_applicator.cpp src/core/lut_parser.cpp src/core/color_converter.cpp)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(${look_test}_tests PRIVATE -O3)
+            if(NOT contract STREQUAL default)
+                target_compile_options(${look_test}_tests PRIVATE "-ffp-contract=${contract}")
+            endif()
+        endif()
+        add_test(NAME ${look_test} COMMAND ${look_test}_tests)
+    endforeach()
+endif()
+
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    add_executable(raw_format_tests tests/raw_format_tests.cpp)
+    target_include_directories(raw_format_tests PRIVATE ${LIBRAW_INCLUDE_DIRS} src)
+    target_link_libraries(raw_format_tests PRIVATE ${LIBRAW_LIBRARY})
+    add_test(NAME raw_formats COMMAND raw_format_tests)
+    set(SONY2FUJI_TEST_FORMAT_DIRECTORY "" CACHE PATH "External CC0 RAW format fixtures (never bundled)")
+    if(SONY2FUJI_TEST_FORMAT_DIRECTORY)
+        add_test(NAME raw_format_photos COMMAND raw_format_tests "${SONY2FUJI_TEST_FORMAT_DIRECTORY}")
+    endif()
+    # ARW6 是 RawLab 对 LibRaw 的回移植：本树构建的 LibRaw，或带补丁指纹的依赖前缀才具备；
+    # 未打补丁的系统 LibRaw 只跳过这些测试，其余验证照常进行。
+    if((SONY2FUJI_LIBRAW_TARGET AND TARGET ${SONY2FUJI_LIBRAW_TARGET})
+        OR EXISTS "${LIBRAW_PREFIX}/share/rawlab/libraw-patch.sha256")
+        set(SONY2FUJI_LIBRAW_RAWLAB_PATCHES ON)
+    else()
+        set(SONY2FUJI_LIBRAW_RAWLAB_PATCHES OFF)
+        message(STATUS "LibRaw at ${LIBRAW_LIBRARY} lacks RawLab patches; skipping Sony ARW6 decoder tests")
+    endif()
+    if(SONY2FUJI_LIBRAW_RAWLAB_PATCHES)
+        add_executable(sony_arw6_tests tests/sony_arw6_tests.cpp)
+        target_include_directories(sony_arw6_tests PRIVATE ${LIBRAW_INCLUDE_DIRS})
+        target_link_libraries(sony_arw6_tests PRIVATE ${LIBRAW_LIBRARY})
+        add_test(NAME sony_arw6 COMMAND sony_arw6_tests)
+        set(SONY2FUJI_TEST_LIBRAW_SOURCE "${LIBRAW_SOURCE_DIR}" CACHE PATH "Patched LibRaw source for decoder boundary tests")
+        if(EXISTS "${SONY2FUJI_TEST_LIBRAW_SOURCE}/src/decoders/sony_arw6.cpp")
+            # 编译仓库内的解码器源码；LibRaw 源码树只提供内部头文件，避免测到过期副本。
+            add_executable(sony_arw6_bounds_tests tests/sony_arw6_bounds_tests.cpp)
+            target_include_directories(sony_arw6_bounds_tests PRIVATE "${SONY2FUJI_TEST_LIBRAW_SOURCE}"
+                "${SONY2FUJI_TEST_LIBRAW_SOURCE}/src/decoders")
+            target_compile_definitions(sony_arw6_bounds_tests PRIVATE LIBRAW_NODLL
+                RAWLAB_ARW6_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/third_party/libraw/sony_arw6.cpp")
+            target_link_libraries(sony_arw6_bounds_tests PRIVATE ${LIBRAW_LIBRARY})
+            if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+                target_compile_options(sony_arw6_bounds_tests PRIVATE -fsanitize=undefined -fno-sanitize-recover=undefined)
+                target_link_options(sony_arw6_bounds_tests PRIVATE -fsanitize=undefined)
+            endif()
+            add_test(NAME sony_arw6_bounds COMMAND sony_arw6_bounds_tests)
+        endif()
+        set(SONY2FUJI_TEST_SONY_ARW6 "$ENV{RAWLAB_TEST_SONY_ARW6}" CACHE FILEPATH "External DSC06333.ARW regression photo (never bundled)")
+        if(SONY2FUJI_TEST_SONY_ARW6)
+            add_test(NAME sony_arw6_photo COMMAND sony_arw6_tests "${SONY2FUJI_TEST_SONY_ARW6}")
+        endif()
+    endif()
+    add_executable(nikon_he_codec_tests tests/nikon_he_tests.cpp
+        third_party/nikon_he/parser.cpp third_party/nikon_he/entropy.cpp
+        third_party/nikon_he/dwt.cpp third_party/nikon_he/output.cpp)
+    target_include_directories(nikon_he_codec_tests PRIVATE third_party/nikon_he)
+    add_test(NAME nikon_he_codec COMMAND nikon_he_codec_tests)
+    add_executable(nikon_he_reference_tests tests/nikon_he_reference_tests.cpp)
+    target_link_libraries(nikon_he_reference_tests sony2fuji_core)
     set(SONY2FUJI_TEST_RAW "" CACHE FILEPATH "External RAW fixture (never bundled)")
     file(TO_CMAKE_PATH "${SONY2FUJI_TEST_RAW}" SONY2FUJI_TEST_RAW)
     set(SONY2FUJI_TEST_LENS_WAVELET_RAW "" CACHE FILEPATH "External RAW with calibrated Lens and applied wavelet NR")
@@ -331,6 +406,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     add_executable(photo_geometry_tests tests/photo_geometry_tests.cpp src/core/photo_geometry.cpp)
     add_test(NAME photo_geometry COMMAND photo_geometry_tests)
+    add_executable(photo_geometry_exactness_tests tests/photo_geometry_exactness_tests.cpp
+        tests/photo_geometry_oracle.cpp src/core/photo_geometry.cpp)
+    add_test(NAME photo_geometry_exactness COMMAND photo_geometry_exactness_tests)
+    add_executable(geometry_benchmark EXCLUDE_FROM_ALL
+        tests/geometry_benchmark.cpp src/core/photo_geometry.cpp)
     add_executable(perspective_tests tests/perspective_tests.cpp src/core/photo_geometry.cpp)
     add_test(NAME perspective COMMAND perspective_tests)
     add_executable(perspective_api_tests tests/perspective_api_tests.cpp)
@@ -342,6 +422,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(geometry_api_tests tests/geometry_api_tests.cpp)
     target_link_libraries(geometry_api_tests sony2fuji_core)
     add_test(NAME geometry_api COMMAND geometry_api_tests)
+    add_executable(geometry_viewport_tests tests/geometry_viewport_tests.cpp)
+    target_link_libraries(geometry_viewport_tests sony2fuji_core)
+    add_test(NAME geometry_viewport COMMAND geometry_viewport_tests)
+    add_executable(geometry_size_tests tests/geometry_size_tests.cpp src/core/photo_geometry.cpp)
+    add_test(NAME geometry_size COMMAND geometry_size_tests)
+    add_executable(geometry_viewport_probe EXCLUDE_FROM_ALL tests/geometry_viewport_probe.cpp)
+    target_link_libraries(geometry_viewport_probe sony2fuji_core)
     if(EXISTS "${SONY2FUJI_TEST_RAW}")
         add_test(NAME geometry_raw COMMAND geometry_api_tests "${SONY2FUJI_TEST_RAW}")
     endif()
@@ -412,6 +499,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(dcp_look_tests tests/dcp_look_tests.cpp)
     target_link_libraries(dcp_look_tests sony2fuji_core)
     add_test(NAME native_dcp_look COMMAND dcp_look_tests)
+    add_executable(dcp_compiler_tests tests/dcp_compiler_tests.cpp)
+    target_link_libraries(dcp_compiler_tests sony2fuji_core)
+    add_test(NAME dcp_compiler COMMAND dcp_compiler_tests)
     if(SONY2FUJI_ENABLE_GPU AND APPLE)
         add_test(NAME native_dcp_metal COMMAND dcp_look_tests --metal)
     endif()
@@ -619,6 +709,7 @@ endif()
 install(TARGETS sony2fuji_core
     ARCHIVE DESTINATION lib
 )
+install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION share/licenses/sony2fuji)
 
 if(BUILD_SHARED_LIB)
     install(TARGETS sony2fuji

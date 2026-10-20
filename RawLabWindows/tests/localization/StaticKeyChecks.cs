@@ -22,11 +22,14 @@ internal static class StaticKeyChecks
     }
 
     internal static IEnumerable<KeyArgument> Arguments(string directory) =>
-        Directory.GetFiles(directory, "*.cs").Order(StringComparer.Ordinal).SelectMany(file =>
+        Directory.GetFiles(directory, "*.cs", SearchOption.AllDirectories)
+        .Where(file => !Path.GetRelativePath(directory, file).Split(Path.DirectorySeparatorChar)
+            .Any(part => part is "tests" or "bin" or "obj"))
+        .Order(StringComparer.Ordinal).SelectMany(file =>
         {
             var source = File.ReadAllText(file);
             return Call.Matches(source).Select(call => new KeyArgument(
-                $"{Path.GetFileName(file)}:{Line(source, call.Index)}",
+                $"{Path.GetRelativePath(directory, file)}:{Line(source, call.Index)}",
                 FirstArgument(source, call.Index + call.Length)));
         });
 

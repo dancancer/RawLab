@@ -115,41 +115,6 @@ struct Sony2FujiProcessor {
         let isCalibrated: Bool
     }
 
-    enum ProcessorError: LocalizedError {
-        case metadataUnavailable
-        case invalidDimensions
-        case sessionCreateFailed(String)
-        case processFailed(String)
-        case outputIO
-        case bufferCopyFailed
-        case rasterDecodeFailed
-        case histogramFailed(String)
-        case invalidExportSize
-
-        var errorDescription: String? {
-            switch self {
-            case .metadataUnavailable:
-                return L10n.text("Image metadata unavailable.")
-            case .invalidDimensions:
-                return L10n.text("Image metadata has invalid dimensions.")
-            case .sessionCreateFailed(let message):
-                return L10n.format("Sony2Fuji session create failed: %@", String(describing: message))
-            case .processFailed(let message):
-                return L10n.format("Sony2Fuji process failed: %@", String(describing: message))
-            case .outputIO:
-                return L10n.text("无法写入成片，请检查输出位置和剩余空间。")
-            case .bufferCopyFailed:
-                return L10n.text("Sony2Fuji output copy failed.")
-            case .rasterDecodeFailed:
-                return L10n.text("Raster decode failed.")
-            case .histogramFailed(let message):
-                return L10n.format("Histogram failed: %@", String(describing: message))
-            case .invalidExportSize:
-                return L10n.text("导出长边必须在 1 到 65535 像素之间。")
-            }
-        }
-    }
-
     // =========================================================================
     // Public API
     // =========================================================================
@@ -165,12 +130,12 @@ struct Sony2FujiProcessor {
         }
         let session = try createSession()
         defer { destroySession(session) }
-        try loadLensDatabase(session)
+        try loadLensDatabase(session, inputType: inputType)
         let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
         try configureLens(session, settings: settings.lensSettings)
         let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
         guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("Invalid exposure mode."))
+            throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
         }
         var request = makeBaseRequest(settings: settings, inputType: inputType)
         request.input_type = inputType
@@ -243,7 +208,7 @@ struct Sony2FujiProcessor {
                 outBuffer: &buffer
             )
             guard status == SONY2FUJI_STATUS_OK else {
-                throw ProcessorError.processFailed(statusMessage(status))
+                throw processingFailure(status)
             }
 
             var output = try copyBuffer(buffer, semantic: .legacy)
@@ -265,15 +230,15 @@ struct Sony2FujiProcessor {
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
+        let inputType = semanticInputType(for: buffer)
         let session = try createSession()
         defer { destroySession(session) }
-        try loadLensDatabase(session)
-        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: semanticInputType(for: buffer))
+        try loadLensDatabase(session, inputType: inputType)
+        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
         try configureSession(session, settings: settings,
                              interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
                              viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
 
-        let inputType = semanticInputType(for: buffer)
         var request = makeBaseRequest(settings: settings, inputType: inputType)
         request.input_type = inputType
         request.input_width = UInt32(buffer.width)
@@ -296,7 +261,7 @@ struct Sony2FujiProcessor {
             outBuffer: &outBuffer
         )
         guard status == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(status))
+            throw processingFailure(status)
         }
 
         var output = try copyBuffer(outBuffer, semantic: buffer.semantic)
@@ -333,7 +298,7 @@ struct Sony2FujiProcessor {
                                       inputPath: url.path, lutPath: lutURL?.path, outputPath: outputURL.path)
         if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
         guard status == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(status))
+            throw processingFailure(status, input: url, look: lutURL, output: outputURL)
         }
     }
 
@@ -349,8 +314,8 @@ struct Sony2FujiProcessor {
         }
         let session = try createSession()
         defer { destroySession(session) }
-        try loadLensDatabase(session)
         let inputType = semanticInputType(for: buffer)
+        try loadLensDatabase(session, inputType: inputType)
         let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
         try configureSession(session, settings: settings, interactive: false)
 
@@ -369,7 +334,7 @@ struct Sony2FujiProcessor {
                                          lutPath: lutURL?.path, outputPath: outputURL.path)
         if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
         guard status == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(status))
+            throw processingFailure(status, look: lutURL, output: outputURL)
         }
     }
 
@@ -380,7 +345,7 @@ struct Sony2FujiProcessor {
             sony2fuji_load_display_image(path, &native)
         }
         guard status == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.rasterDecodeFailed
+            throw displayImageFailure(status)
         }
         // The shared adapter has already validated color/alpha/depth and applied
         // EXIF orientation. Keep the parameter for source compatibility, but do

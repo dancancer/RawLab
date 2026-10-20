@@ -265,8 +265,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     }
     deleteLookId?.let { id ->
         val look = state.looks.firstOrNull { it.id == id }
-        AlertDialog(onDismissRequest = { deleteLookId = null }, title = { Text(stringResource(R.string.delete_look)) },
-            text = { Text("${look?.name.orEmpty()}\n${stringResource(R.string.look_remove_body)}") },
+        AlertDialog(onDismissRequest = { deleteLookId = null }, title = { Text(stringResource(R.string.remove_look_confirmation, look?.name.orEmpty())) },
+            text = { Text(stringResource(R.string.look_remove_body)) },
             confirmButton = { TextButton(onClick = { onDeleteLook(id); deleteLookId = null }) { Text(stringResource(R.string.confirm)) } },
             dismissButton = { TextButton(onClick = { deleteLookId = null }) { Text(stringResource(R.string.cancel)) } })
     }

@@ -34,7 +34,7 @@ internal static class ExportMetadata
     {
         input=Path.GetFullPath(input); output=Path.GetFullPath(output);
         if (input.Equals(output,StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(Loc.Text("不能覆盖原始 RAW。"));
+            throw new InvalidOperationException(Loc.Text("不能覆盖原始文件。"));
         int width,height;
         using (var stream=File.OpenRead(output))
         {

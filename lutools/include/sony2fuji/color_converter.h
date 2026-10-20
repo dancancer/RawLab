@@ -130,7 +130,7 @@ public:
         // Retained for source compatibility; encoding no longer rescales exposure.
         bool normalizeToRange = false;
         bool clampOnly = false;
-        bool enableDiagnostics = false;
+        bool enableDiagnostics = false; /* 关闭时返回默认统计值，不扫描输入范围。 */
     };
 
     /**

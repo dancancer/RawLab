@@ -99,10 +99,10 @@ extension ContentView {
                 let data: Data = try await withCheckedThrowingContinuation { continuation in
                     viewModel.exportJPEG(settings: settings) { continuation.resume(with: $0) }
                 }
-                let raster = try viewModel.processor.loadRasterBuffer(url: viewModel.sourceURL!, applyingOrientation: true)
+                let raster = try viewModel.processor.loadRasterBuffer(url: viewModel.sourceFile!.withReadAccess({ $0 }), applyingOrientation: true)
                 let buffer = try viewModel.processor.processBuffer(buffer: raster.buffer, settings: committed,
                                                                   previewLongEdge: nil, lutURL: nil)
-                let reference = try viewModel.processor.makeJPEGData(from: buffer, sourceURL: viewModel.sourceURL!,
+                let reference = try viewModel.processor.makeJPEGData(from: buffer, sourceURL: viewModel.sourceFile!.withReadAccess({ $0 }),
                                                                    orientation: raster.orientation, quality: 0.92)
                 guard let exportedPixels = UIImage(data: data)?.pngData(),
                       let referencePixels = UIImage(data: reference)?.pngData() else { throw EditorError.renderFailed }

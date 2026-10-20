@@ -15,7 +15,7 @@ foreach ($pair in @(
     @('LICENSE', 'LICENSE'),
     @('LICENSE', 'Licenses/RawLab-GPL-3.0.txt'),
     @('LICENSE-ALIYUN-RUM-EXCEPTION', 'Licenses/RawLab-Aliyun-RUM-Exception.txt'),
-    @('docs/licensing.md', 'Licenses/RawLab-Licensing.md'),
+    @('docs/reference/licensing.md', 'Licenses/RawLab-Licensing.md'),
     @('RawLabWindows/ThirdPartyNotices.md', 'ThirdPartyNotices.md')
 )) {
     $source = Join-Path $RepositoryRoot $pair[0]
