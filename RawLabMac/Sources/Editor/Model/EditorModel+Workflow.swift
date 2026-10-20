@@ -149,7 +149,7 @@ extension EditorModel {
         if let masterRecipeID = restored?.masterRecipeID {
             settings.masterRecipeID = masterRecipeID
         }
-        let filmID = restored?.filmID ?? films.first(where: { $0.name == "PROVIA" })?.id ?? ""
+        let filmID = restored?.filmID ?? ""
         if settings.masterRecipeID != nil {
             selectedFilmID = ""
         } else {

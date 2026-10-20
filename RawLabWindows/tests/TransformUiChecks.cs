@@ -37,6 +37,14 @@ internal static class TransformUiChecks
             var import=window.ImportLookFiles([invalidLook,goodLook]);InteractionChecks.PumpUntil(()=>import.IsCompleted);
             check(import.GetAwaiter().GetResult().Count==1 && Get<string>(window,"lut")==goodLook,"Partial look import retains validated success and reports the invalid file");
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            var savedLook=window.CurrentLookIdentity();
+            window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            check(window.CurrentLookIdentity()==null && Get<Adjustments>(window,"settings")[Parameter.Exposure]==0,
+                "A new RAW does not inherit the previous photo's look or exposure");
+            window.OpenFile(photo);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            check(window.CurrentLookIdentity()==savedLook && Get<string>(window,"lut")==goodLook &&
+                Math.Abs(Get<Adjustments>(window,"settings")[Parameter.Exposure]-.13)<1e-6,
+                "Reopening an edited RAW restores its saved look and exposure");
             // 用不同校准值证明草稿显影回调不会回写 committed WB。
             Get<Adjustments>(window,"settings").ResolveWhiteBalance((9000,-30));Invoke(window,"MarkEdited");
             Invoke(window,"SaveEdits");var original=Get<Adjustments>(window,"settings").Capture();

@@ -64,6 +64,10 @@ internal static class ComparisonDefaultChecks
 
             WaitBusyThenReady(window, () => window.OpenFile(raw));
             check(IsMode(window, "off"), "Opening RAW keeps the default single mode");
+            var initialSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
+            check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null && initialSettings.MasterRecipeID == null &&
+                  initialSettings[Parameter.Exposure] == 0,
+                "An unseen RAW opens with neutral settings and no film or master recipe");
 
             window.SetComparisonMode(true, false);
             window.UpdateLayout();
@@ -92,6 +96,10 @@ internal static class ComparisonDefaultChecks
                   window.LensCategory.IsEnabled == false && window.ExposureMode.IsEnabled == false &&
                   window.AsShotButton.IsEnabled == false,
                 "Raster switch resets comparison and disables RAW-only controls");
+            var rasterSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
+            check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null &&
+                  rasterSettings.MasterRecipeID == null && rasterSettings[Parameter.Exposure] == 0,
+                "An unseen raster opens without inheriting another photo's film or adjustments");
             check(window.GpuMode.SelectedIndex==1 && !window.GpuMode.IsEnabled,
                 "Opening raster from RAW Force GPU visibly selects CPU rather than failing or pretending Force succeeded");
             WaitBusyThenReady(window, () => window.OpenFile(fixtures.Jpeg));

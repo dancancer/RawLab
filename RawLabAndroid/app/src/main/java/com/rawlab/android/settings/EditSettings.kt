@@ -60,9 +60,10 @@ data class EditSettings(
     val renderHsl get() = hsl.scaled(recipeScale)
     fun selectFilm(id: String, cameraTint: Float? = null): EditSettings {
         if (recipeID == null) return copy(film = id)
-        val independent = if (!customWb && (tint == 0f || cameraTint == null))
-            copy(recipeID = null, tint = cameraTint ?: 0f)
-        else copy(recipeID = null, customWb = true, tint = ((cameraTint ?: 0f) + tint).coerceIn(-150f, 150f))
+        val baseTint = cameraTint?.takeIf { it.isFinite() }
+        val independent = if (!customWb && (tint == 0f || baseTint == null))
+            copy(recipeID = null, tint = baseTint ?: 0f)
+        else copy(recipeID = null, customWb = true, tint = ((baseTint ?: 0f) + tint).coerceIn(-150f, 150f))
         return independent.copy(film = id)
     }
 }
