@@ -20,7 +20,8 @@ internal sealed partial class RenderEngine
         var format=ExportFormatExtensions.FromPath(output) switch{ExportFormat.Jpeg=>"jpeg",ExportFormat.Png=>"png",ExportFormat.RenderedDng=>"dng",_=>throw new ArgumentOutOfRangeException(nameof(output))};
         object size=longEdge is {} edge ? new{mode="limit_long_edge",long_edge=edge} : new{mode="native"};
         var document=new{
-            schema_version=4,
+            schema_version=5,
+            processing=ProcessingIdentity.Require(state.Processing),
             input=new{path=Path.GetFullPath(path),type=raster ? "raster" : "raw"},
             edits=new{
                 exposure=new{mode=exposure,ev=request.ExposureEv,brightness=request.Brightness},

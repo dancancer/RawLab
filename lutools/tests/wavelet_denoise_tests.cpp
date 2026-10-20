@@ -290,7 +290,7 @@ void checkAnalysisReuse() {
         WaveletDenoiseDiagnostics info;
         assert(applyWaveletDenoise(cached,options,&info,GpuMode::Off,&cache,"source-a")==ErrorCode::Success);
         assert(info.applied && info.analysisReused==(index>0));
-        assert(info.coarseAnalysisReused==(index==4));
+        assert(info.coarseAnalysisReused==(index==1 || index==2 || index==4));
         assert(applyWaveletDenoise(independent,options)==ErrorCode::Success);
         for (size_t i=0;i<cached.pixels.size();++i) {
             const auto& a=cached.pixels[i]; const auto& b=independent.pixels[i];
@@ -299,6 +299,16 @@ void checkAnalysisReuse() {
         ++index;
     }
     WaveletDenoiseDiagnostics info;
+    cache.clear();
+    index=0;
+    for (const auto& options : {WaveletDenoiseOptions{true,0,72,100}, {true,10,0,0}, {true,10,72,100}}) {
+        auto cached=source,independent=source;
+        assert(applyWaveletDenoise(cached,options,&info,GpuMode::Off,&cache,"chroma-then-luma")==ErrorCode::Success);
+        assert(info.applied && info.analysisReused==(index>0) && info.coarseAnalysisReused==(index==2));
+        assert(applyWaveletDenoise(independent,options)==ErrorCode::Success);
+        assert(std::memcmp(cached.pixels.data(),independent.pixels.data(),cached.pixels.size()*sizeof(RGB))==0);
+        ++index;
+    }
     auto image=source;
     assert(applyWaveletDenoise(image,{true,70,75,95},&info,GpuMode::Off,&cache,"source-b")==ErrorCode::Success);
     assert(!info.analysisReused && !info.coarseAnalysisReused);

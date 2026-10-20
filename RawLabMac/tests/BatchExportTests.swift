@@ -33,6 +33,24 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Velvia")
         job.longEdge = 2048
         let encodedJob = try JSONEncoder().encode(job)
+        let protectedJournal = BatchJournal(directory: root.appendingPathComponent("future-journal"))
+        try FileManager.default.createDirectory(at: protectedJournal.directory, withIntermediateDirectories: true)
+        var futureJob = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
+        var futureSettings = futureJob["settings"] as! [String: Any]
+        futureSettings["processing"] = ["family": "rawlab", "version": 99, "quality": "standard"]
+        futureJob["settings"] = futureSettings
+        let protectedBytes = try JSONSerialization.data(withJSONObject: futureJob)
+        let protectedURL = protectedJournal.directory.appendingPathComponent("job.json")
+        try protectedBytes.write(to: protectedURL)
+        do {
+            _ = try protectedJournal.load()
+            throw Failure(message: "unknown processing cannot resume")
+        } catch is DecodingError { }
+        do {
+            try protectedJournal.save(job)
+            throw Failure(message: "new batch must not overwrite an unsupported journal")
+        } catch is DecodingError { }
+        try check(try Data(contentsOf: protectedURL) == protectedBytes, "unsupported batch journal remains intact")
         try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).settings.geometrySettings == frozenGeometry,
                   "batch journal round-trip preserves geometry")
         var dngRecord = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]

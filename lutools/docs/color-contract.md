@@ -14,6 +14,25 @@ The scene-mode 0 EV baseline described below applies when that mode is selected.
 
 LibRaw performs black subtraction, active-area crop, white balance, demosaic and highlight blending in camera channels. WB must precede demosaic: the earlier no-auto-scale path produced a measurable difference from LibRaw's normal WB-before-demosaic processing. Histogram auto-bright, content-dependent maximum adjustment and integer output-color conversion remain disabled. `highlight=2` retains maximum-normalized WB before 16-bit demosaic and blends clipped highlight chroma after demosaic, before our camera matrix and LUT. The former `highlight=1` unclip mode preserved false magenta in saturated DSC06251 car-body highlights. Blending is not darktable's opposed-chroma reconstruction and cannot recover lost sensor detail; bright colors can become less saturated. We recover green-normalized camera RGB as `image16 / (65535 * post_scale_pre_mul[1])`, then apply the camera-to-sRGB matrix in float. Matrix negatives and values above 1 survive; we do not globally clamp scene RGB to 1. This is not an all-float demosaic: quantization and LibRaw's treatment of sensor-overrange values remain. The raw source is never written.
 
+Processing version 1 preserves LibRaw's released default interpolation choice
+(AHD for ordinary three-color Bayer); version 2 selects VNG. New C sessions and
+public `RAWProcessOptions` retain version-1 behavior. Mac and Windows new edits
+explicitly select version 2, while records missing processing identity select
+version 1. The additive `sony2fuji_session_set_processing_version` selects the
+whole RAW/SWT profile without changing request v2. C++ callers may also select
+`RAWProcessOptions::bayerDemosaic = BayerDemosaicMethod::DHT` as an explicit
+alternative; this is not an automatic fallback or an extra denoise stage.
+Desktop clients expose a processing-version choice, not a separate demosaic selector.
+Non-Bayer inputs, including X-Trans and LinearRaw, retain LibRaw's original
+path; the quality parameter is reset on every process call, including decoder
+reuse and white-balance reload. With FBDD off, interactive half-size processing
+still bypasses full demosaic; enabling FBDD still forces full-size processing.
+VNG reduces directional color structure in the evaluated high-ISO Bayer scene but
+can increase false color on fine patterns; it is not a universal quality claim.
+Ordinary edits and resets do not upgrade old records. The
+[processing-version compatibility contract](processing-version.md) defines the
+released baseline, strict rejection and explicit conversion semantics.
+
 Default 0 EV is a declared scene-development baseline: **+0.7 EV plus valid DNG BaselineExposure**. The +0.7 is a workflow starting point, inspired by darktable's scene defaults, NOT sensor calibration or a claim that every camera needs this exact offset. DNG metadata is applied once (DJI fixture: +0.35, total +1.05 EV; Sony without that tag: +0.7 EV). Missing/sentinel/non-finite/out-of-range metadata falls back to zero metadata offset. User +1 EV still doubles the linear input. The default never decodes or meters the embedded JPEG. We deliberately do not undo a photographer's EXIF ExposureBiasValue, and do not invent undocumented camera-specific dynamic-range compensation.
 
 Optional `preview` mode retains the earlier median matching approximation: it samples 128x128 luminance values and applies `preview_median / raw_median` instead of the scene baseline, not on top of it. Preview styles, profiles, cropping and black borders can bias it. Untagged previews assume sRGB; known non-sRGB DNG previews are skipped, gray gamma 2.2 is handled explicitly. Missing/invalid references fall back to the scene baseline. Sensor mode applies neither metadata nor the workflow boost. In C++, disable both `applyBaselineExposure` and `matchEmbeddedPreviewExposure` for sensor mode. The C ABI exposes `sony2fuji_session_set_raw_exposure_mode` without changing the v2 request layout; the mode is part of the RAW cache key. Mac exposes all three modes and the actual base offset. Sensor saturation is not recoverable, and film LUTs may deliberately change apparent brightness.
@@ -265,8 +284,39 @@ Wavelet denoising stays in linear sRGB before user exposure and LUT evaluation.
 CPU retains flat-sample selection, noise-model fitting, normalization, opponent
 conversion, band calibration and variance-aware restoration. The GPU executes db2
 SWT analysis, box-energy thresholds and the transpose inverse per tile/channel.
-The original 4/6 levels, periodic SWT indices, REFLECT_101 energy boundaries and
-512/1024 tile centers with 96/256 halos are preserved. Bounded GPU tile jobs are
+The scale/window and restoration rules below describe processing version 2.
+Version 1 preserves the released first-pass sample selection, four-level luma,
+seven-pixel fine energy windows, soft thresholds, old inverse formula and
+chroma-only coarse tiling on both CPU and GPU. Processing identity isolates RAW,
+embedded-preview exposure, wavelet analysis and output caches.
+Luminance uses six levels with relative threshold strengths of 1/1/2/2/1/1 and
+dilation-aware energy windows of 7/15/29/57/113/113 pixels. The stronger middle
+levels target clumped residual grain without raising the relative threshold
+strengths of the finest or coarsest levels; this is not lossless detail retention.
+The two additional luminance
+bands are calibrated from real neighborhoods and capped by fine-band noise
+evidence so that slowly varying lightness is not treated as unlimited noise.
+Chroma retains four levels, or six when coarse color reduction is enabled;
+the coarse control changes only chroma. Its energy windows are
+7/15/29/57/17/33 pixels. Chroma levels 2-4 use
+[firm thresholding](https://pywavelets.readthedocs.io/en/stable/ref/thresholding-functions.html)
+between T and 2T: coefficients below T vanish, those above 2T remain unchanged,
+and those between are scaled continuously. This limits soft-threshold bias on
+colored details while wider middle-scale windows reduce noise self-protection.
+The finest and two coarsest chroma levels retain soft thresholding; no luminance
+threshold, preset strength or calibration model is changed by this refinement.
+This does not guarantee lossless weak-color or hue recovery.
+Restoration averages the piecewise inverse at `n - sqrt(v)` and `n + sqrt(v)`,
+where `n` is the filtered normalized value and `v` is the local residual
+variance. Outside `abs(n) < sqrt(v)` this uses the original positive/negative
+expressions; inside it joins them continuously with a continuous first
+derivative. Small CPU/GPU rounding differences around zero therefore cannot
+switch a finite variance correction on or off. This is a symmetric two-point
+approximation, not an exact Gaussian unbiased inverse, and does not clip
+negative or over-white linear RGB.
+Periodic SWT indices, REFLECT_101 energy
+boundaries and 512/1024 tile centers with 96/256 halos are preserved. Any active
+six-level channel uses the larger center and halo. Bounded GPU tile jobs are
 serialized to avoid allocating full-image wavelet coefficients. Float GPU results
 are tested against the existing double wavelib implementation, not substituted
 with a different denoising algorithm.
@@ -280,7 +330,9 @@ the complete denoise options and execution mode. CPU/Auto/Force cannot reuse
 each other's filtered results. The small source-analysis cache retains flat
 samples, the fitted noise model and calibrated bands across strength changes;
 it does not retain full-image coefficients or replace filtering. Coarse-band
-analysis is prepared lazily when needed. Source/quality/size changes invalidate
+analysis is prepared lazily and independently for luminance and chroma when needed.
+The coarse-analysis reuse diagnostic is true only when every requested coarse
+channel model was already available. Source/quality/size changes invalidate
 that entry's analysis. Interactive wavelet previews may remain approximations;
 final/file requests never reuse viewport results.
 Active chroma or photo effects require the exact source-resolution path unless

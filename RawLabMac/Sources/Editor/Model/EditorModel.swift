@@ -113,8 +113,8 @@ final class EditorModel: ObservableObject {
     var viewportResizeWork: DispatchWorkItem?
     var workerActive = false
     var engine: RenderEngine?
-    var originalCache: (file: URL, frame: RenderedImage)?
-    var geometryReferenceCache: (file: URL, geometry: GeometrySettings, lens: LensCorrectionSettings, frame: RenderedImage)?
+    var originalCache: (file: URL, processing: ProcessingIdentity, frame: RenderedImage)?
+    var geometryReferenceCache: (file: URL, processing: ProcessingIdentity, geometry: GeometrySettings, lens: LensCorrectionSettings, frame: RenderedImage)?
     var editStore: EditPersistence?
     let editDirectory: URL
     let batchJournal: BatchJournal

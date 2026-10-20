@@ -11,10 +11,11 @@
 #include <random>
 #include <vector>
 
-int main() {
+static void checkVersion(sony2fuji_processing_version version) {
     const bool nativeGpu = rawlabtest::nativeGpuAvailable();
     sony2fuji_session* session=nullptr;
     assert(sony2fuji_session_create(&session)==SONY2FUJI_STATUS_OK);
+    assert(sony2fuji_session_set_processing_version(session,version)==SONY2FUJI_STATUS_OK);
     sony2fuji_wavelet_denoise_config options{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,sizeof(options),0,40,46,50};
     assert(sony2fuji_session_set_wavelet_denoise(nullptr,&options)==SONY2FUJI_STATUS_INVALID_ARGUMENT);
     assert(sony2fuji_session_set_wavelet_denoise(session,nullptr)==SONY2FUJI_STATUS_INVALID_ARGUMENT);
@@ -92,7 +93,8 @@ int main() {
     sony2fuji::ImageData reference(256,256);
     for (size_t i=0;i<reference.pixels.size();++i)
         reference.pixels[i]={input[i*3]/255.f,input[i*3+1]/255.f,input[i*3+2]/255.f};
-    assert(sony2fuji::applyWaveletDenoise(reference,{true,40,46,50})==sony2fuji::ErrorCode::Success);
+    assert(sony2fuji::applyWaveletDenoise(reference,{true,40,46,50,
+        static_cast<sony2fuji::ProcessingVersion>(version)})==sony2fuji::ErrorCode::Success);
     auto lut=sony2fuji::LUTParser::loadLUTCached(path);
     assert(lut);
     sony2fuji::encodePhotoLUTInput(reference,lut->inputTransfer());
@@ -105,4 +107,8 @@ int main() {
     }
     sony2fuji_session_destroy(session);
     std::cout << "PASS: wavelet API, exact/interactive/final contracts, zero/off restoration, GPU policy, pre-LUT placement\n";
+}
+
+int main() {
+    for (auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_SWT_V2}) checkVersion(version);
 }

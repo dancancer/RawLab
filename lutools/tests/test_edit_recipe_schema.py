@@ -1,4 +1,4 @@
-"""Recipe v4 schema and CLI normalization contract tests."""
+"""Recipe v4/v5 schema and CLI normalization contract tests."""
 import argparse
 import copy
 import json
@@ -57,6 +57,46 @@ class EditRecipeSchema(unittest.TestCase):
         self.assertEqual(envelope["error"]["code"], "invalid_recipe")
         self.assertIsNone(envelope["error"]["status"])
         self.assertIn(field, envelope["error"]["message"])
+
+    def test_processing_identity(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document["schema_version"] = 5
+        for version in (1, 2):
+            document["processing"] = {"family": "rawlab", "version": version, "quality": "standard"}
+            normalized = self.normalize(document)
+            self.assertEqual(normalized["processing"], document["processing"])
+            self.assertEqual(normalized["schema_version"], 5)
+            if jsonschema:
+                jsonschema.Draft202012Validator(schema).validate(normalized)
+        output = self.root / "protected.png"
+        output.write_bytes(b"existing output")
+        document["output"]["path"] = str(output)
+        for identity in (
+            None, {}, {"family": "other", "version": 1, "quality": "standard"},
+            {"family": "rawlab", "version": 99, "quality": "standard"},
+            {"family": "rawlab", "version": True, "quality": "standard"},
+            {"family": "rawlab", "version": 1, "quality": "fast"},
+            {"family": "rawlab", "version": 1},
+            {"family": "rawlab", "version": 1, "quality": "standard", "extra": 0},
+        ):
+            document["processing"] = identity
+            self.reject(document, "processing")
+            if jsonschema:
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(document))
+            process = subprocess.run([str(CLI), "--recipe", str(self.recipe), "--json"],
+                                     capture_output=True, text=True, timeout=120)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertEqual(json.loads(process.stdout)["error"]["code"], "invalid_recipe")
+            self.assertEqual(output.read_bytes(), b"existing output")
+        del document["processing"]
+        self.reject(document, "processing")
+        for version in range(1, 5):
+            old = self.base()
+            old["schema_version"] = version
+            self.assertNotIn("processing", self.normalize(old))
+            old["processing"] = {"family": "rawlab", "version": 1, "quality": "standard"}
+            self.reject(old, "processing")
 
     @staticmethod
     def base():

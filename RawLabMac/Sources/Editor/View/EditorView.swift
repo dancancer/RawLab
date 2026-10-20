@@ -139,6 +139,12 @@ struct EditorView: View {
                 Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性")).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
+                Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
+                    Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
+                    Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
+                }.labelsHidden().fixedSize().id(localizationLocale.identifier)
+                    .help(L10n.text("处理版本")).accessibilityLabel(L10n.text("处理版本"))
+                    .accessibilityIdentifier("processing.version")
                 Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().fixedSize()

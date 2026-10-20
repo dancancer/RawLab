@@ -1,0 +1,582 @@
+{
+  "version": 1,
+  "description": "Existing local RAW cache, unpaired. Original source/license not fully recovered: local evaluation only; no redistribution or clean-reference claims. All DPReview studio cameras share content_group and are tune data, not independent scene holdouts. The separate Sony/DJI scenes are unpaired holdout inputs only. CFA labels are inventory declarations, camera/ISO are read from the actual asset. ROI content needs visual classification.",
+  "cases": [
+    {
+      "id": "sony-a7iv-200",
+      "split": "tune",
+      "capture_group": "sony-a7iv",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 3,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "04d24d552349bac3131d57ed2846e8e7af93323b9300f5091d392213d9aaa08f.arw",
+        "sha256": "04d24d552349bac3131d57ed2846e8e7af93323b9300f5091d392213d9aaa08f"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7iv-12800",
+      "split": "tune",
+      "capture_group": "sony-a7iv",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "7bdcad12ef7a166149393ce9e7e04443cbee9d78d360557e6308756e20172e57.arw",
+        "sha256": "7bdcad12ef7a166149393ce9e7e04443cbee9d78d360557e6308756e20172e57"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7iv-51200",
+      "split": "tune",
+      "capture_group": "sony-a7iv",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "aaaf5c75d34108b0956d1c1571330b49e619a596c6f734e78d76748618385b06.arw",
+        "sha256": "aaaf5c75d34108b0956d1c1571330b49e619a596c6f734e78d76748618385b06"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fuji-xt5-125",
+      "split": "tune",
+      "capture_group": "fuji-xt5",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 3,
+      "declared_cfa": "X-Trans",
+      "input": {
+        "kind": "raw",
+        "path": "e7fad1162b013d9e73ce659ef0aefd7c02563164028e2707f4a72ae5516a3a53.raf",
+        "sha256": "e7fad1162b013d9e73ce659ef0aefd7c02563164028e2707f4a72ae5516a3a53"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fuji-xt5-12800",
+      "split": "tune",
+      "capture_group": "fuji-xt5",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "X-Trans",
+      "input": {
+        "kind": "raw",
+        "path": "1f80490c1d2e8a18289ff9303017452dd6a33793c7912314efc8c866920ae379.raf",
+        "sha256": "1f80490c1d2e8a18289ff9303017452dd6a33793c7912314efc8c866920ae379"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fuji-xt5-51200",
+      "split": "tune",
+      "capture_group": "fuji-xt5",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "X-Trans",
+      "input": {
+        "kind": "raw",
+        "path": "4c2ece48dce581363e1b36cba0ab125e27a36b71a35b0f6645ace48473c5f027.raf",
+        "sha256": "4c2ece48dce581363e1b36cba0ab125e27a36b71a35b0f6645ace48473c5f027"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "panasonic-s5ii-100",
+      "split": "tune",
+      "capture_group": "panasonic-s5ii",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 3,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "bf2f33175b63fc4ebfae59bd3f53bb1483eb7770196bbeed73764ade0ad12a1e.rw2",
+        "sha256": "bf2f33175b63fc4ebfae59bd3f53bb1483eb7770196bbeed73764ade0ad12a1e"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "panasonic-s5ii-12800",
+      "split": "tune",
+      "capture_group": "panasonic-s5ii",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "75782dd8e8122fdacb38c52d0224be46323242d28ced93bf344c7691470fc85a.rw2",
+        "sha256": "75782dd8e8122fdacb38c52d0224be46323242d28ced93bf344c7691470fc85a"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "panasonic-s5ii-51200",
+      "split": "tune",
+      "capture_group": "panasonic-s5ii",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "35bb7a8439c7b6e654d5c39c60a118971a6e1c32d7569fcb637a66bc901e10e7.rw2",
+        "sha256": "35bb7a8439c7b6e654d5c39c60a118971a6e1c32d7569fcb637a66bc901e10e7"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "om1-200",
+      "split": "tune",
+      "capture_group": "om1",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 3,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "99d17eed070bb13b938ec46eb12f761ea4d3d60a40c1a0cf3c5bfefb3875540d.orf",
+        "sha256": "99d17eed070bb13b938ec46eb12f761ea4d3d60a40c1a0cf3c5bfefb3875540d"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "om1-12800",
+      "split": "tune",
+      "capture_group": "om1",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "da029fa6bf40629cda669ae7f2e51d3570ab3db70a39f43e78be460fae0bae6c.orf",
+        "sha256": "da029fa6bf40629cda669ae7f2e51d3570ab3db70a39f43e78be460fae0bae6c"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "om1-51200",
+      "split": "tune",
+      "capture_group": "om1",
+      "content_group": "dpreview-studio-519596",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "5db0148632e6771c93d3784a8c06686ec11034c8410951fe877f43708c8d69a8.orf",
+        "sha256": "5db0148632e6771c93d3784a8c06686ec11034c8410951fe877f43708c8d69a8"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "unclassified-fixed-region",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dsc06251",
+      "split": "holdout",
+      "capture_group": "sony-dsc06251",
+      "content_group": "sony-dsc06251-scene",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "dc280884db9e0d2e1e7389dca1370958ea8fde749cef8169702f64237d98763f.arw",
+        "sha256": "dc280884db9e0d2e1e7389dca1370958ea8fde749cef8169702f64237d98763f"
+      },
+      "regions": [
+        {"id": "center", "kind": "unclassified-fixed-region", "rect": [0.45, 0.45, 0.1, 0.1]},
+        {"id": "edge", "kind": "unclassified-fixed-region", "rect": [0.8, 0.45, 0.1, 0.1]},
+        {"id": "corner", "kind": "unclassified-fixed-region", "rect": [0.05, 0.05, 0.1, 0.1]}
+      ]
+    },
+    {
+      "id": "dji-pp101-iso60",
+      "split": "holdout",
+      "capture_group": "dji-20250602-0444",
+      "content_group": "dji-20250602-0444-scene",
+      "view_ev": 0,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "denoise-fixtures/0ecdc8087d566c5ba39f9bd40eef4dfc5f3884ccb016f311a606508751c79eaf.dng",
+        "sha256": "0ecdc8087d566c5ba39f9bd40eef4dfc5f3884ccb016f311a606508751c79eaf"
+      },
+      "regions": [
+        {"id": "center", "kind": "unclassified-fixed-region", "rect": [0.45, 0.45, 0.1, 0.1]},
+        {"id": "edge", "kind": "unclassified-fixed-region", "rect": [0.8, 0.45, 0.1, 0.1]},
+        {"id": "corner", "kind": "unclassified-fixed-region", "rect": [0.05, 0.05, 0.1, 0.1]}
+      ]
+    }
+  ]
+}

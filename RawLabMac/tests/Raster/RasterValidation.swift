@@ -117,12 +117,15 @@ func inspectRasterRecipe(_ data: Data, input: URL, label: String) throws -> [Str
     guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         throw fail("\(label): agent recipe is not an object")
     }
-    try check((root["schema_version"] as? NSNumber)?.intValue == 4,
-              "\(label): agent emits schema_version 4")
+    try check((root["schema_version"] as? NSNumber)?.intValue == 5,
+              "\(label): agent emits schema_version 5")
+    let processing = try dictionary(root["processing"], "processing")
+    try check(processing["family"] as? String == "rawlab" && processing["quality"] as? String == "standard" &&
+              (processing["version"] as? NSNumber)?.intValue == 2, "\(label): raster also preserves processing identity")
     let inputObject = try dictionary(root["input"], "input")
     try check(inputObject["type"] as? String == "raster" &&
               inputObject["path"] as? String == input.standardizedFileURL.path,
-              "\(label): v4 declares the raster input type and absolute path")
+              "\(label): v5 declares the raster input type and absolute path")
     let edits = try dictionary(root["edits"], "edits")
     let exposure = try dictionary(edits["exposure"], "edits.exposure")
     let wb = try dictionary(edits["white_balance"], "edits.white_balance")

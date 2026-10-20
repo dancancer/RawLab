@@ -41,12 +41,18 @@ final class EditPersistence {
 
     init(directory: URL = EditPersistence.defaultDirectory) throws {
         self.directory = directory
-        guard FileManager.default.fileExists(atPath: file.path) else { return }
-        registry = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: file))
-        guard registry.version == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        registry = try readRegistry()
+    }
+
+    private func readRegistry() throws -> Registry {
+        guard FileManager.default.fileExists(atPath: file.path) else { return Registry() }
+        let stored = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: file))
+        guard stored.version == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        return stored
     }
 
     func state(for url: URL) throws -> PhotoEditState? {
+        registry = try readRegistry()
         let identity = try OriginalFileIdentity(url)
         guard let record = registry.records[identity.path], record.identity == identity else { return nil }
         return record.state
@@ -57,7 +63,7 @@ final class EditPersistence {
     }
 
     func save(_ urls: [URL], state: PhotoEditState) throws {
-        var updated = registry
+        var updated = try readRegistry()
         for url in urls {
             let identity = try OriginalFileIdentity(url)
             updated.records[identity.path] = Record(identity: identity, state: state)

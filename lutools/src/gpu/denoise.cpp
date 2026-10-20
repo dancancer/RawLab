@@ -60,6 +60,7 @@ bool compute(Operation operation) {
 }
 } // namespace
 bool gpuWaveletFilter(const float* input, int width, int height, const WaveletFilterSettings& settings, float* output) {
+    if (!validProcessingVersion(settings.processingVersion)) return false;
 #if defined(SONY2FUJI_ENABLE_METAL)
     return metalWaveletFilter(input, width, height, settings, output);
 #else

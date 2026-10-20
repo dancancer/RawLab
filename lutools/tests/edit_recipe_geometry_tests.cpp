@@ -91,7 +91,7 @@ void defaultsAndVersions() {
     identity(parse(document(2, "{}")), "empty v2 geometry");
     identity(parse(document(2, R"({"crop":{"x":0,"y":0,"width":1,"height":1}})")), "explicit v2 crop identity");
     reject(document(1, "{}"), "geometry in v1");
-    reject(document(5), "unsupported schema version");
+    reject(document(6), "unsupported schema version");
 }
 
 void validGeometry() {

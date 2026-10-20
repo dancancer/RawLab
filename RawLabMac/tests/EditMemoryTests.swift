@@ -6,7 +6,76 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
 }
 
 @main struct EditMemoryTests {
+    static func protectedStoreChecks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let input = root.appendingPathComponent("photo.ARW")
+        try Data("fixture".utf8).write(to: input)
+        let store = try EditPersistence(directory: root)
+        let state = PhotoEditState(settings: Adjustments(), filmID: "")
+        try store.save(input, state: state)
+        let file = root.appendingPathComponent("edits.json")
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        var records = object["records"] as! [String: Any]
+        let key = records.keys.first!
+        var record = records[key] as! [String: Any]
+        var savedState = record["state"] as! [String: Any]
+        var settings = savedState["settings"] as! [String: Any]
+        settings["processing"] = ["family": "rawlab", "version": 99, "quality": "standard"]
+        savedState["settings"] = settings; record["state"] = savedState; records[key] = record; object["records"] = records
+        let protectedBytes = try JSONSerialization.data(withJSONObject: object)
+        try protectedBytes.write(to: file)
+        do {
+            _ = try EditPersistence(directory: root)
+            throw Failure(message: "unknown processing must reject the registry")
+        } catch is DecodingError { }
+        do {
+            try store.save(input, state: state)
+            throw Failure(message: "an already-open store must not replace unknown processing records")
+        } catch is DecodingError { }
+        try check(try Data(contentsOf: file) == protectedBytes, "unsupported records stay byte-identical")
+    }
+
+    static func processingIdentityChecks() throws {
+        func identity(_ settings: Adjustments) throws -> NSDictionary? {
+            let data = try JSONEncoder().encode(settings)
+            let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            return object["processing"] as? NSDictionary
+        }
+        let legacy: NSDictionary = ["family": "rawlab", "version": 1, "quality": "standard"]
+        let current: NSDictionary = ["family": "rawlab", "version": 2, "quality": "standard"]
+        try check(try identity(Adjustments()) == current, "new desktop edits explicitly store processing v2")
+        var restored = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        try check(try identity(restored) == legacy, "missing processing identity restores legacy, not the new default")
+        restored.exposure = 0.7
+        restored.applyDenoisePreset(.clean)
+        try check(try identity(restored) == legacy, "ordinary edits and denoise presets cannot upgrade processing")
+        restored.resetAll()
+        try check(try identity(restored) == legacy, "reset keeps the restored processing identity")
+        try check(try identity(restored.neutralGeometrySettings) == legacy, "neutral geometry keeps processing identity")
+        for invalid: Any in [
+            NSNull(),
+            ["family": "other", "version": 1, "quality": "standard"],
+            ["family": "rawlab", "version": 3, "quality": "standard"],
+            ["family": "rawlab", "version": 0, "quality": "standard"],
+            ["family": "rawlab", "version": true, "quality": "standard"],
+            ["family": "rawlab", "version": 1, "quality": "fast"],
+            ["family": "rawlab", "version": 1],
+            ["family": "rawlab", "version": 2, "quality": "standard", "future": true],
+        ] {
+            let data = try JSONSerialization.data(withJSONObject: ["processing": invalid])
+            do {
+                _ = try JSONDecoder().decode(Adjustments.self, from: data)
+                throw Failure(message: "unknown or malformed processing identity must not become default settings")
+            } catch is DecodingError { }
+        }
+        print("PASS: explicit processing identity, legacy decode, reset preservation and unknown-version rejection")
+    }
+
     static func main() throws {
+        try processingIdentityChecks()
+        try protectedStoreChecks()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let a = root.appendingPathComponent("a/same.ARW")

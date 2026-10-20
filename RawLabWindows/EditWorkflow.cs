@@ -74,7 +74,8 @@ public partial class MainWindow
 
     private void RestoreEdits(string input)
     {
-        var saved = editStore?.Find(input);
+        editStore ??= new EditStore(EditStore.DefaultDirectory);
+        var saved = editStore.Find(input);
         settings = saved?.Settings.Restore() ?? new Adjustments();
         lut = saved == null ? null : lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
         if (settings.Recipe is {} recipe) lut = recipe.LutPath;

@@ -57,6 +57,7 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
 public sealed class Adjustments
 {
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
+    public ProcessingIdentity Processing { get; set; } = ProcessingIdentity.Current;
     public int ExposureMode { get; set; } = 1;
     public HslSettings Hsl { get; set; } = new();
     public DenoiseSettings Denoise { get; set; } = new();
@@ -101,7 +102,9 @@ public sealed class Adjustments
     public double this[Parameter id] => values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
     public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
-        Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry);
+        Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
+        Processing = ProcessingIdentity.Require(Processing)
+    };
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
         if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
@@ -116,6 +119,7 @@ public sealed class Adjustments
         if (snapshot.DisplayChromaDenoise is < 0 or > 2)
             throw new System.IO.InvalidDataException("调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。");
         return new Adjustments {
+            Processing = ProcessingIdentity.Require(snapshot.Processing),
             Denoise = denoise,
             Effects = effects,
             Hsl = snapshot.Hsl ?? new HslSettings(),

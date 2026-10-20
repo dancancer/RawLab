@@ -38,6 +38,7 @@
 "三分网格" = "Drittelraster";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
 "上次批量任务尚未完成" = "Der letzte Stapel-Export ist noch nicht abgeschlossen";
+"不支持此处理版本，原有记录未被覆盖。" = "Diese Verarbeitungsversion wird nicht unterstützt. Die gespeicherten Bearbeitungen wurden nicht überschrieben.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不是支持的 RAW 文件" = "Keine unterstützte RAW-Datei";
 "不是支持的图像文件" = "Nicht unterstützte Bilddatei";
@@ -119,7 +120,10 @@
 "垂直翻转" = "Vertikal spiegeln";
 "垂直透视" = "Vertikale Perspektive";
 "基础曝光偏移" = "Basisbelichtungsversatz";
+"处理 v1（旧版）" = "Verarbeitung v1 (alt)";
+"处理 v2" = "Verarbeitung v2";
 "处理失败：%@" = "Verarbeitung fehlgeschlagen: %@";
+"处理版本" = "Verarbeitungsversion";
 "处理结果为空" = "Das Verarbeitungsergebnis ist leer";
 "外观名称不能为空或包含控制字符。" = "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.";

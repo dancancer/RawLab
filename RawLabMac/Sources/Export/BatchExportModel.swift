@@ -80,12 +80,13 @@ final class BatchExportModel: ObservableObject {
         guard !added.isEmpty else { return }
         validating = true
         let candidates = added
+        let validationSettings = job.settings.neutralSettings
         queue.async { [self] in
             for item in candidates {
                 var failure: String?
                 do {
                     if engine == nil { engine = try RenderEngine() }
-                    _ = try engine!.render(item.input, settings: Adjustments(), lut: nil, edge: 180, interactive: true)
+                    _ = try engine!.render(item.input, settings: validationSettings, lut: nil, edge: 180, interactive: true)
                 } catch { failure = error.localizedDescription }
                 let message = failure
                 DispatchQueue.main.async {

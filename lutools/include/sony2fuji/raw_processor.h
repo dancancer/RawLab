@@ -7,6 +7,12 @@
 
 namespace sony2fuji {
 
+enum class BayerDemosaicMethod {
+    Legacy,
+    VNG,
+    DHT
+};
+
 /**
  * @brief RAW 处理选项
  */
@@ -25,6 +31,7 @@ struct RAWProcessOptions {
     int outputBitsPerSample;    // 8/16 display precision; linear working data stays float
     bool halfSize;              // LibRaw half-resolution demosaic for interactive previews
     int rawNoiseReduction;      // FBDD: 0 off, 1 light, 2 full; requires Bayer RAW
+    BayerDemosaicMethod bayerDemosaic; // 非 Bayer 保留 LibRaw 原有插值路径
     bool matchEmbeddedPreviewExposure; // Optional JPEG-based approximation, not the default
     bool applyBaselineExposure; // Scene default + DNG BaselineExposure; ignored by preview match
     std::shared_ptr<const LensCorrectionDatabase> lensDatabase;
@@ -45,6 +52,7 @@ struct RAWProcessOptions {
         , outputBitsPerSample(16)
         , halfSize(false)
         , rawNoiseReduction(0)
+        , bayerDemosaic(BayerDemosaicMethod::Legacy)
         , matchEmbeddedPreviewExposure(false)
         , applyBaselineExposure(true)
     {}

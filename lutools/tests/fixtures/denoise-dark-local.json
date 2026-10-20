@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "description": "User-provided fully occluded Sony A7C II RAW noise controls, ISO100/12800, 1/13 second, four captures per ISO. Local evaluation only; original RAW is never bundled. These are not natural-scene holdouts or noise-free decoded RGB references.",
+  "cases": [
+    {
+      "id": "sony-a7cii-dark-3792",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso100",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "9fe103364eb23244ab4a3073a8051ad7dbffd93d40ef7d6010f90c13ae6395ac.arw",
+        "sha256": "9fe103364eb23244ab4a3073a8051ad7dbffd93d40ef7d6010f90c13ae6395ac"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3793",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso100",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "916223278fc5623b16af6407428e633df932c1f2e7e2053ba29e40395d12ee01.arw",
+        "sha256": "916223278fc5623b16af6407428e633df932c1f2e7e2053ba29e40395d12ee01"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3794",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso100",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "071398b87e4e9886df7ffcc935f71a0162565c1c4c2db4ba9aa9ea1a9802cfe8.arw",
+        "sha256": "071398b87e4e9886df7ffcc935f71a0162565c1c4c2db4ba9aa9ea1a9802cfe8"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3795",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso100",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "1b7bb39af80e0cc6402b864fec0b9857cd465366362ca914a63a7453d0f9e9f1.arw",
+        "sha256": "1b7bb39af80e0cc6402b864fec0b9857cd465366362ca914a63a7453d0f9e9f1"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3796",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso12800",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "1ed00cf6a0d3661dd7ebe3006c2424af3b255a9ed51a103448d9f31355b988f0.arw",
+        "sha256": "1ed00cf6a0d3661dd7ebe3006c2424af3b255a9ed51a103448d9f31355b988f0"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3797",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso12800",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "1b884716dd41d66d2d7ca29f0c1ce9005bac231a2cd3839705fb729ad455c9bd.arw",
+        "sha256": "1b884716dd41d66d2d7ca29f0c1ce9005bac231a2cd3839705fb729ad455c9bd"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3798",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso12800",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "2c35404d87fe7b7e7ca681a22beb4cc383cf437859e72d8b3066ab67e129cb5e.arw",
+        "sha256": "2c35404d87fe7b7e7ca681a22beb4cc383cf437859e72d8b3066ab67e129cb5e"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sony-a7cii-dark-3799",
+      "split": "holdout",
+      "capture_group": "a7cii-dark-iso12800",
+      "content_group": "a7cii-occluded-noise-controls",
+      "view_ev": 6,
+      "declared_cfa": "Bayer",
+      "input": {
+        "kind": "raw",
+        "path": "39ffbf40156dec8b40fb3061aa3c5a0e95c832ca856ea62ced09aaaafb890375.arw",
+        "sha256": "39ffbf40156dec8b40fb3061aa3c5a0e95c832ca856ea62ced09aaaafb890375"
+      },
+      "regions": [
+        {
+          "id": "center",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.45,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "edge",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.8,
+            0.45,
+            0.1,
+            0.1
+          ]
+        },
+        {
+          "id": "corner",
+          "kind": "dark-noise-control",
+          "rect": [
+            0.05,
+            0.05,
+            0.1,
+            0.1
+          ]
+        }
+      ]
+    }
+  ]
+}

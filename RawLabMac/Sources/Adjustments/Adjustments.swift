@@ -1,6 +1,7 @@
 import Foundation
 
 struct Adjustments: Equatable, Codable {
+    var processing = ProcessingIdentity.current
     var exposureMode = ExposureMode.preview
     var exposure = 0.0
     var temperature = 6500.0
@@ -63,10 +64,16 @@ struct Adjustments: Equatable, Codable {
         geometry = state.isIdentity ? nil : state
     }
 
+    var neutralSettings: Adjustments {
+        var neutral = Adjustments()
+        neutral.processing = processing
+        return neutral
+    }
+
     // Compare the color edit on the same geometric canvas without changing the
     // immutable original cached by EditorModel.
     var neutralGeometrySettings: Adjustments {
-        var neutral = Adjustments()
+        var neutral = neutralSettings
         neutral.geometry = geometry
         neutral.lensCorrection = lensCorrection
         return neutral
@@ -276,9 +283,11 @@ struct Adjustments: Equatable, Codable {
     }
 
     mutating func resetAll() {
+        let identity = processing
         let camera = asShotWhiteBalance
         let noiseReductionSupport = supportsRawNoiseReduction
         self = Adjustments()
+        processing = identity
         resolveWhiteBalance(camera)
         resolveRawNoiseReductionSupport(noiseReductionSupport)
     }
@@ -290,6 +299,8 @@ extension Adjustments {
     init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        processing = values.contains(.processing) ?
+            try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         exposureMode = try values.decodeIfPresent(ExposureMode.self, forKey: .exposureMode) ?? .scene
         exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
         temperature = try values.decodeIfPresent(Double.self, forKey: .temperature) ?? 6500

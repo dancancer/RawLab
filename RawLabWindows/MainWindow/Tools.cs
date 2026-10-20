@@ -193,6 +193,8 @@ public partial class MainWindow
                 controls.Ring.InvalidateVisual();
             }
             ExposureMode.SelectedIndex=settings.ExposureMode;
+            ProcessingVersion.SelectedIndex=settings.Processing.Version-1;
+            ProcessingVersion.IsEnabled=file!=null && !exporting && !transform.Active;
             ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
             ExposureMode.IsEnabled=ExposureMode.IsEnabled && !raster && !transform.Active;
             ResetParameterButton.IsEnabled=ResetGroupButton.IsEnabled=canAdjust;

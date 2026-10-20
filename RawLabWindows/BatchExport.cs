@@ -69,7 +69,12 @@ public sealed class BatchJournal
     public string DirectoryPath { get; }
     private string PathName => Path.Combine(DirectoryPath, "job.json");
     public BatchJournal(string directory) => DirectoryPath = directory;
-    public void Save(BatchJob job) => AtomicJson.Write(PathName, job);
+    public void Save(BatchJob job)
+    {
+        _ = ReadJob();
+        Validate(job);
+        AtomicJson.Write(PathName, job);
+    }
 
     public void FreezeLook(BatchJob job)
     {
@@ -80,13 +85,25 @@ public sealed class BatchJournal
         job.Look = copy;
     }
 
-    public BatchJob? Load()
+    private static void Validate(BatchJob job)
+    {
+        if (job.Version is < 1 or > 2) throw new InvalidDataException(Loc.Text("无法读取此版本的批量任务。"));
+        _ = job.Settings.Restore();
+    }
+
+    private BatchJob? ReadJob()
     {
         if (!File.Exists(PathName)) return null;
         var job = AtomicJson.Read<BatchJob>(PathName);
-        if (job.Version is < 1 or > 2) throw new InvalidDataException(Loc.Text("无法读取此版本的批量任务。"));
+        Validate(job);
+        return job;
+    }
+
+    public BatchJob? Load()
+    {
+        var job = ReadJob();
+        if (job == null) return null;
         if (job.LongEdge is { } edge && !ExportSize.IsValid(edge)) job.LongEdge = null;
-        _ = job.Settings.Restore();
         for (var i = 0; i < job.Items.Count; i++)
         {
             var item = job.Items[i];

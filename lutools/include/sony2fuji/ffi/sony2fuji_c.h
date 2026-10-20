@@ -127,6 +127,11 @@ typedef enum sony2fuji_raw_exposure_mode {
     SONY2FUJI_EXPOSURE_SENSOR = 2
 } sony2fuji_raw_exposure_mode;
 
+typedef enum sony2fuji_processing_version {
+    SONY2FUJI_PROCESSING_LEGACY = 1,
+    SONY2FUJI_PROCESSING_SWT_V2 = 2
+} sony2fuji_processing_version;
+
 // ============================================================================
 // Request/Buffer
 // ============================================================================
@@ -310,6 +315,11 @@ typedef enum sony2fuji_render_backend {
 // ============================================================================
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
+
+// New sessions use LEGACY. Unsupported versions leave the session unchanged.
+sony2fuji_status sony2fuji_session_set_processing_version(
+    sony2fuji_session* session, sony2fuji_processing_version version
+);
 
 // File adapters: single-frame opaque 8-bit SDR RGB.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.

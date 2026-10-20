@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
@@ -52,9 +53,10 @@ Context& context() {
 }
 
 struct Buffer { id<MTLBuffer> value; size_t offset = 0; };
-struct WaveletParams { uint32_t width, height, step, depth, level, window; float sigma, strength; };
+struct WaveletParams { uint32_t width, height, step, depth, level, window; float sigma, strength; uint32_t firmThreshold; };
 struct GuidedParams { uint32_t width, height, channels, radius; float epsilon; };
-static_assert(sizeof(WaveletParams) == 32 && sizeof(GuidedParams) == 20, "Metal denoise parameter layout");
+static_assert(sizeof(WaveletParams) == 36 && offsetof(WaveletParams, firmThreshold) == 32 &&
+              sizeof(GuidedParams) == 20, "Metal denoise parameter layout");
 
 id<MTLBuffer> allocate(Context& context, size_t bytes, const void* source = nullptr) {
     if (!bytes || bytes > context.device.maxBufferLength) return nil;
@@ -110,7 +112,7 @@ bool wavelet(const float* input, int width, int height, const sony2fuji::Wavelet
     if (!source || !low || !high || !energy || !bands) return false;
     id<MTLCommandBuffer> command = [ctx.queue commandBuffer];
     if (!command) return false;
-    WaveletParams p{uint32_t(width), uint32_t(height), 0, uint32_t(settings.depth), 0, 0, 0, 0};
+    WaveletParams p{uint32_t(width), uint32_t(height), 0, uint32_t(settings.depth), 0, 0, 0, 0, 0};
     for (int level = 1; level <= settings.depth; ++level) {
         p.level = level; p.step = 1u << (level - 1);
         if (!encode(ctx, command, SwtRows, p, count, {{level == 1 ? source : bands}, {low}, {high}}) ||
@@ -118,7 +120,8 @@ bool wavelet(const float* input, int width, int height, const sony2fuji::Wavelet
     }
     for (int scale = 0; scale < settings.depth; ++scale) {
         p.level = settings.depth - scale;
-        p.window = p.level > 4 ? (1u << (p.level - 1)) + 1 : 7;
+        p.window = sony2fuji::waveletEnergyWindow(p.level, settings.luminance, settings.processingVersion);
+        p.firmThreshold = sony2fuji::waveletUsesFirmThreshold(p.level, settings.luminance, settings.processingVersion);
         p.strength = settings.thresholdScale[scale];
         for (int direction = 0; direction < 3; ++direction) {
             p.sigma = settings.sigma[scale * 3 + direction];

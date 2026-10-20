@@ -76,7 +76,8 @@ bool computeWaveletFilter(FilterDevice& device, const float* input, int width, i
     }
     for (int scale = 0; scale < settings.depth; ++scale) {
         p.level = settings.depth - scale;
-        p.radius = (p.level > 4 ? (1u << (p.level - 1)) + 1 : 7) / 2;
+        p.radius = waveletEnergyWindow(p.level, settings.luminance, settings.processingVersion) / 2;
+        p.firmThreshold = waveletUsesFirmThreshold(p.level, settings.luminance, settings.processingVersion);
         p.strength = settings.thresholdScale[scale];
         for (int direction = 0; direction < 3; ++direction) {
             auto& band = bands[1 + scale * 3 + direction];

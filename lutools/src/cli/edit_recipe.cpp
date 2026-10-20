@@ -169,13 +169,24 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             return true;
         };
         const auto root = Json::parse(document, checkKeys);
-        fields(root, "recipe", {"schema_version", "input", "edits", "output"});
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (version < 1 || version > 4) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version < 1 || version > 5) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
+        else fields(root, "recipe", {"schema_version", "input", "edits", "output"});
 
         EditRecipe parsed;
         parsed.schemaVersion = version;
+        if (version >= 5) {
+            const auto& processing = required(root, "processing", "recipe");
+            fields(processing, "processing", {"family", "version", "quality"});
+            if (text(required(processing, "family", "processing"), "processing.family") != "rawlab")
+                throw std::invalid_argument("Unsupported processing.family");
+            if (text(required(processing, "quality", "processing"), "processing.quality") != "standard")
+                throw std::invalid_argument("Unsupported processing.quality");
+            parsed.processingVersion = static_cast<sony2fuji_processing_version>(
+                integer(required(processing, "version", "processing"), 1, 2, "processing.version"));
+        }
         const auto& input = required(root, "input", "recipe");
         if (version >= 4) fields(input, "input", {"path", "type"});
         else fields(input, "input", {"path"});
@@ -301,8 +312,12 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
-    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 4)
+    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 5)
         throw std::invalid_argument("Unsupported schema_version");
+    if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_SWT_V2)
+        throw std::invalid_argument("Unsupported processing.version");
+    if (recipe.schemaVersion < 5 && recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY)
+        throw std::invalid_argument("processing.version requires schema_version 5");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
         case SONY2FUJI_WB_CAMERA: wbMode = "camera"; break;
@@ -326,6 +341,9 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
                              {"strength", recipe.lookStrength}}}}},
         {"output", {{"path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)},
                     {"jpeg_quality", recipe.jpegQuality}, {"size", size}}}};
+    if (recipe.schemaVersion >= 5)
+        document["processing"] = {{"family", "rawlab"}, {"version", static_cast<int>(recipe.processingVersion)},
+            {"quality", "standard"}};
     if (recipe.schemaVersion >= 2) {
         const auto& geo = recipe.geometry;
         document["edits"]["geometry"] = {{"crop", {{"x", geo.crop_x}, {"y", geo.crop_y},

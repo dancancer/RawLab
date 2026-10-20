@@ -1,5 +1,18 @@
 # Synthetic DNG Fixtures
 
+`bayer-demosaic.dng` is a generated 128 x 96 RGGB mosaic with a slanted color
+edge, fine texture and deterministic noise (seed 50918). It has BlackLevel 64,
+WhiteLevel 4095, orientation 1 and non-neutral AsShotNeutral. It is not a photo
+or a camera-noise calibration. Native tests compare production output with
+independent, explicitly configured LibRaw VNG/DHT processing, including WB
+reload, method switching, half-size and FBDD behavior.
+
+Regenerate it with
+`python3 lutools/tests/make_demosaic_fixture.py lutools/tests/fixtures/bayer-demosaic.dng`
+using NumPy and tifffile (generated with tifffile 2026.10.15). Neither Python
+package is required to run the native tests. SHA-256:
+`aea0ca151072ed6194f90affb855cd4a2bb45135e3869fb8ef90968619d213cb`.
+
 `linear-jxl.dng` and `linear-uncompressed.dng` contain the same generated
 32 x 24 RGB ramp, stored as three-channel 16-bit LinearRaw with orientation 6.
 They are not photographs and contain no private metadata. The JPEG XL stream
@@ -64,3 +77,38 @@ in-memory desktop regression independently recreates the same fixture.
 Android uses this 3 KiB file to prove that its target-built LibRaw actually
 decodes JPEG-compressed DNG, without optional external photos or a large test
 asset. It is original RawLab test data under the repository license.
+
+## Local Denoise Evaluation
+
+`denoise-holdout-local.json` declares four independently sourced RAW scenes.
+The files remain outside Git under the main workspace's `.cache/shared/`;
+the manifest records their SHA-256, download and license URLs, content groups,
+and fixed regions. They cover two low-ISO Bayer scenes, a high-ISO X-Trans
+interior and a high-ISO Bayer still life. None has a clean reference, so their
+variation measurements must not be presented as reconstruction accuracy.
+
+The holdout designation refers to selection after freezing the first candidate,
+not perpetual blindness. Once a scene has informed a later algorithm or parameter
+change, treat it as regression data and acquire new holdouts for that candidate.
+The frequently inspected studio scenes in `denoise-raw-local.json` are tuning
+or regression inputs, not independent holdouts. See
+[`denoise-quality.md`](../../docs/denoise-quality.md) for the runner and reference
+registration contract.
+
+## Processing Version References
+
+`processing-wavelet-reference.json` records CPU output from the released
+`v0.8.2` binary and the frozen version-2 candidate for the deterministic
+`processing_reference_fixture.h` input. Its four intensity bands include
+negative, near-black, midtone and over-one values; five strength combinations
+cover luma, fine/coarse chroma and mixed filtering. Pixel samples, whole-image
+mean/RMS, input/output hashes and binary/source provenance are recorded in the
+fixture, rather than generated from the implementation being tested.
+
+`processing_version_tests` checks both profiles and same-input cache isolation.
+`processing_session_tests` checks default/invalid setters and profile switches.
+`processing_export_probe` is an optional full-resolution RAW export helper;
+compile it with `RAWLAB_LEGACY_REFERENCE` against v0.8.2 to compare released
+CPU/forced-native-GPU output with the current legacy path. External camera
+files and generated full-image exports remain outside Git. These compatibility
+checks do not establish image quality or untested GPU-platform parity.
