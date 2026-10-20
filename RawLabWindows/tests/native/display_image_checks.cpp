@@ -67,6 +67,48 @@ void addExifColorSpace(const fs::path& source, const fs::path& target,
     bytes.insert(bytes.begin() + 2, exif.begin(), exif.end());
     write(target, bytes);
 }
+
+void addMpfThumbnail(const fs::path& source, const fs::path& target,
+                     uint32_t thumbnailType = 0x010002, bool littleEndian = true,
+                     const fs::path& thumbnailSource = {}, uint32_t secondThumbnailType = 0) {
+    auto primary = read(source);
+    const auto thumbnail = thumbnailSource.empty() ? primary : read(thumbnailSource);
+    std::vector<uint8_t> payload(secondThumbnailType == 0 ? 86 : 102);
+    std::copy_n("MPF", 3, payload.begin());
+    payload[4] = payload[5] = littleEndian ? 'I' : 'M';
+    const auto word = [&](size_t offset, uint16_t value) {
+        payload[offset] = static_cast<uint8_t>(value >> (littleEndian ? 0 : 8));
+        payload[offset + 1] = static_cast<uint8_t>(value >> (littleEndian ? 8 : 0));
+    };
+    const auto number = [&](size_t offset, uint32_t value) {
+        for (unsigned index = 0; index < 4; ++index)
+            payload[offset + index] = static_cast<uint8_t>(value >> (littleEndian ? index * 8 : (3 - index) * 8));
+    };
+    word(6, 42); number(8, 8); word(12, 3);
+    word(14, 0xb000); word(16, 7); number(18, 4);
+    std::copy_n("0100", 4, payload.begin() + 22);
+    word(26, 0xb001); word(28, 4); number(30, 1); number(34, secondThumbnailType == 0 ? 2 : 3);
+    word(38, 0xb002); word(40, 7); number(42, secondThumbnailType == 0 ? 32 : 48); number(46, 50);
+    const auto primarySize = static_cast<uint32_t>(primary.size() + payload.size() + 4);
+    number(54, 0xa0030000); number(58, primarySize); word(66, 2);
+    number(70, 0x40000000 | thumbnailType); number(74, static_cast<uint32_t>(thumbnail.size()));
+    number(78, primarySize + 16 - 10);
+    if (secondThumbnailType != 0) {
+        word(68, 3);
+        number(86, 0x40000000 | secondThumbnailType); number(90, static_cast<uint32_t>(thumbnail.size()));
+        number(94, primarySize + 32 + static_cast<uint32_t>(thumbnail.size()) - 10);
+    }
+    const auto length = static_cast<uint16_t>(payload.size() + 2);
+    payload.insert(payload.begin(), {255, 226, static_cast<uint8_t>(length >> 8), static_cast<uint8_t>(length)});
+    primary.insert(primary.begin() + 2, payload.begin(), payload.end());
+    primary.insert(primary.end(), 16, 0);
+    primary.insert(primary.end(), thumbnail.begin(), thumbnail.end());
+    if (secondThumbnailType != 0) {
+        primary.insert(primary.end(), 16, 0);
+        primary.insert(primary.end(), thumbnail.begin(), thumbnail.end());
+    }
+    write(target, primary);
+}
 void encodeFloatTiff(const fs::path& path) {
     // A separate encoder supplies real IEEE-float data, not a silently
     // converted WIC fixture or an optional test skip.
@@ -93,7 +135,7 @@ void encodeFloatTiff(const fs::path& path) {
 void encode(IWICImagingFactory* factory, const fs::path& path, REFGUID container,
             WICPixelFormatGUID format, unsigned bits, bool transparent = false,
             unsigned frames = 1, unsigned orientation = 1, unsigned transparentAlpha = 0,
-            const fs::path* profile = nullptr) {
+            const fs::path* profile = nullptr, unsigned pixelOffset = 0) {
     ComPtr<IWICStream> stream; ok(factory->CreateStream(&stream));
     ok(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE));
     ComPtr<IWICBitmapEncoder> encoder; ok(factory->CreateEncoder(container, nullptr, &encoder));
@@ -120,7 +162,7 @@ void encode(IWICImagingFactory* factory, const fs::path& path, REFGUID container
         std::vector<uint8_t> pixels(stride * 8, 0);
         for (unsigned y = 0; y < 8; ++y) for (unsigned x = 0; x < 12; ++x) {
             const auto offset = y * stride + x * bits / 8;
-            pixels[offset] = static_cast<uint8_t>(31 + x * 11);
+            pixels[offset] = static_cast<uint8_t>(31 + x * 11 + pixelOffset);
             if (bits >= 24) {
                 pixels[offset + 1] = static_cast<uint8_t>(29 + y * 17);
                 pixels[offset + 2] = static_cast<uint8_t>(33 + x * 7 + y * 3);
@@ -447,6 +489,66 @@ int main(int argc, char** argv) {
         encode(factory.Get(), jpeg, GUID_ContainerFormatJpeg, GUID_WICPixelFormat24bppBGR, 24);
         const auto upright = decode(jpeg, 12, 8);
         checkPreview(jpeg, 6, 12, 8, 6, 4);
+        const auto thumbnail = root / "different-thumbnail.jpg";
+        encode(factory.Get(), thumbnail, GUID_ContainerFormatJpeg, GUID_WICPixelFormat24bppBGR,
+            24, false, 1, 1, 0, nullptr, 30);
+        for (const auto littleEndian : {true, false}) {
+            const auto mpf = root / (littleEndian ? "camera-mpf.jpg" : "camera-mpf-big-endian.jpg");
+            addMpfThumbnail(jpeg, mpf, 0x010002, littleEndian, thumbnail);
+            check(decode(mpf, 12, 8) == upright,
+                "A JPEG primary image with an MPF large thumbnail decodes without applying the thumbnail");
+            checkPreview(mpf, 6, 12, 8, 6, 4);
+        }
+        addMpfThumbnail(jpeg, root / "camera-mpf-vga.jpg", 0x010001);
+        check(decode(root / "camera-mpf-vga.jpg", 12, 8) == upright,
+            "An MPF VGA thumbnail also leaves the primary JPEG unchanged");
+        for (const auto& trailing : {std::vector<uint8_t>{0}, read(jpeg)}) {
+            auto unindexed = read(root / "camera-mpf.jpg");
+            unindexed.insert(unindexed.end(), trailing.begin(), trailing.end());
+            write(root / "mpf-unindexed-trailer.jpg", unindexed);
+            reject(root / "mpf-unindexed-trailer.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+                "MPF rejects bytes and JPEG images beyond its indexed ranges");
+        }
+        addMpfThumbnail(jpeg, root / "camera-mpf-two-thumbnails.jpg", 0x010002, true, thumbnail, 0x010001);
+        check(decode(root / "camera-mpf-two-thumbnails.jpg", 12, 8) == upright,
+            "An MPF primary can have one thumbnail of each supported class");
+        addMpfThumbnail(jpeg, root / "mpf-duplicate-class.jpg", 0x010002, true, thumbnail, 0x010002);
+        reject(root / "mpf-duplicate-class.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "Duplicate MPF thumbnail classes remain unsupported");
+        addMpfThumbnail(jpeg, root / "mpf-unknown-image.jpg", 0);
+        reject(root / "mpf-unknown-image.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "Unknown MPF auxiliary images are not silently treated as SDR thumbnails");
+        addMpfThumbnail(jpeg, root / "mpf-stereo.jpg", 0x020002);
+        reject(root / "mpf-stereo.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "MPF stereo images remain unsupported");
+        addMpfThumbnail(jpeg, root / "mpf-gain-map.jpg", 0x050000);
+        reject(root / "mpf-gain-map.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "MPF gain maps remain unsupported instead of losing HDR interpretation");
+        auto invalidMpf = read(root / "camera-mpf.jpg");
+        std::fill(invalidMpf.begin() + 84, invalidMpf.begin() + 88, 0xff);
+        write(root / "mpf-out-of-bounds.jpg", invalidMpf);
+        reject(root / "mpf-out-of-bounds.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "An MPF thumbnail outside the source file is rejected");
+        for (const auto& field : {std::pair<size_t, uint32_t>{56, 50}, {60, 0x20030000}, {76, 0x00010002}, {72, 1}}) {
+            auto invalid = read(root / "camera-mpf.jpg");
+            for (unsigned byte = 0; byte < 4; ++byte) invalid[field.first + byte] = static_cast<uint8_t>(field.second >> (byte * 8));
+            write(root / "invalid-mpf-index.jpg", invalid);
+            reject(root / "invalid-mpf-index.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+                "MPF extra attribute IFDs or invalid dependency flags are rejected");
+        }
+        auto oversizedThumbnail = read(root / "camera-mpf.jpg");
+        const auto thumbnailStart = read(jpeg).size() + 90 + 16;
+        bool enlarged = false;
+        for (size_t index = thumbnailStart; index + 8 < oversizedThumbnail.size(); ++index) {
+            if (oversizedThumbnail[index] == 0xff && (oversizedThumbnail[index + 1] == 0xc0 || oversizedThumbnail[index + 1] == 0xc2)) {
+                oversizedThumbnail[index + 7] = 8; oversizedThumbnail[index + 8] = 0;
+                enlarged = true; break;
+            }
+        }
+        check(enlarged, "Oversized thumbnail fixture has a real JPEG frame header");
+        write(root / "mpf-oversized-thumbnail.jpg", oversizedThumbnail);
+        reject(root / "mpf-oversized-thumbnail.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "MPF thumbnail dimensions must fit their declared class");
         write(root / "cmyk-header.jpg", {255,216,255,192,0,20,8,0,8,0,12,4,
             1,17,0,2,17,0,3,17,0,4,17,0,255,217});
         reject(root / "cmyk-header.jpg",SONY2FUJI_STATUS_UNSUPPORTED,"JPEG CMYK/YCCK components are refused before codec conversion");
@@ -468,6 +570,16 @@ int main(int argc, char** argv) {
         encode(factory.Get(), tiff, GUID_ContainerFormatTiff, GUID_WICPixelFormat24bppBGR, 24);
         check(decode(tiff, 12, 8) == expected, "Single-page TIFF preserves RGB8");
         checkPreview(tiff, 6, 12, 8, 6, 4);
+        for (const auto& source : {png, jpeg, tiff}) {
+            const auto original = decode(source, 12, 8);
+            for (const auto* extension : {".JPG", ".png", ".tiff"}) {
+                const auto renamed = root / (source.filename().string() + extension);
+                fs::copy_file(source, renamed, fs::copy_options::overwrite_existing);
+                check(decode(renamed, 12, 8) == original,
+                    "Image content determines the decoder when a supported suffix is misleading");
+                checkPreview(renamed, 6, 12, 8, 6, 4);
+            }
+        }
         for (unsigned orientation = 1; orientation <= 8; ++orientation) {
             const auto orientedTiff = orientation == 1 ? tiff :
                 root / ("orientation-" + std::to_string(orientation) + ".tiff");
@@ -492,6 +604,9 @@ int main(int argc, char** argv) {
             }
         }
         rejectPreview(root / "alpha-254.png");
+        fs::copy_file(root / "alpha-254.png", root / "alpha-254.jpg", fs::copy_options::overwrite_existing);
+        reject(root / "alpha-254.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "Misleading suffixes do not bypass the actual container's transparency checks");
         encode(factory.Get(), root / "opaque-rgba.png", GUID_ContainerFormatPng, GUID_WICPixelFormat32bppBGRA, 32);
         check(decode(root / "opaque-rgba.png", 12, 8) == expected, "RGBA is accepted only when every source alpha is opaque");
         checkPreview(root / "opaque-rgba.png", 4, 12, 8, 4, 3);
@@ -514,8 +629,7 @@ int main(int argc, char** argv) {
         encode(factory.Get(), unicode, GUID_ContainerFormatPng, GUID_WICPixelFormat24bppBGR, 24);
         check(decode(unicode, 12, 8) == expected, "UTF-8 Unicode image paths round-trip through WIC");
 
-        // acTL and MPF below are conservative refusal markers, not complete
-        // APNG/gain-map fixtures or acceptance tests for those formats.
+        // acTL is a refusal marker, not a complete APNG decode fixture.
         chunk(png, root / "animated.png", {'a','c','T','L'}, {0,0,0,2,0,0,0,0});
         reject(root / "animated.png", SONY2FUJI_STATUS_UNSUPPORTED);
         // cICP {9,16,0,1} is a valid BT.2020/PQ/full-range marker. This is a
@@ -529,7 +643,7 @@ int main(int argc, char** argv) {
         chunk(png, root / "malformed-icc.png", {'i','C','C','P'}, {'b','a','d',0,0});
         rejectEither(root / "malformed-icc.png", SONY2FUJI_STATUS_UNSUPPORTED,
             SONY2FUJI_STATUS_PROCESSING_ERROR, "Malformed ICC metadata is never accepted");
-        // MPF is likewise only a conservative gain-map refusal marker here.
+        // A bare MPF marker without its required index remains invalid.
         auto gain = read(jpeg); gain.insert(gain.begin() + 2, {255,226,0,6,'M','P','F',0});
         write(root / "gain-map.jpg", gain); reject(root / "gain-map.jpg", SONY2FUJI_STATUS_UNSUPPORTED);
 

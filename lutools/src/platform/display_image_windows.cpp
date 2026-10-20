@@ -29,6 +29,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -172,6 +173,17 @@ public:
         }
     }
 
+    uint64_t position() {
+        const auto offset = file_.tellg();
+        if (offset < 0) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        return static_cast<uint64_t>(offset);
+    }
+
+    void seek(uint64_t offset) {
+        file_.seekg(static_cast<std::streamoff>(offset));
+        if (!file_) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+    }
+
 private:
     std::ifstream file_;
 };
@@ -253,6 +265,7 @@ struct MetadataInfo {
     bool orientationSpecified = false;
     bool colorProfileMarker = false;
     bool explicitSrgb = false;
+    uint32_t jpegImageCount = 1;
 };
 
 void mergeOrientation(MetadataInfo& info, const std::optional<uint32_t>& value) {
@@ -356,6 +369,121 @@ void scanPng(const std::wstring& path, MetadataInfo& info) {
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
 }
 
+void validateMpfThumbnailHeader(const std::wstring& path, uint64_t start, uint64_t end, uint32_t type) {
+    BinaryReader reader(path);
+    reader.seek(start + 2);
+    while (reader.position() + 4 <= end - 2) {
+        if (reader.readByte() != 0xff) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        auto marker = reader.readByte();
+        while (marker == 0xff && reader.position() < end - 2) marker = reader.readByte();
+        if (marker == 0xda || marker == 0xd9 || marker == 0xd8 || marker == 0)
+            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+        if (reader.position() + 2 > end - 2) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        const auto length = reader.readU16BE();
+        if (length < 2 || length - 2u > end - 2 - reader.position()) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        if (marker >= 0xc0 && marker <= 0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc) {
+            if ((marker != 0xc0 && marker != 0xc1 && marker != 0xc2) || length != 17 || reader.readByte() != 8)
+                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            const auto height = reader.readU16BE(), width = reader.readU16BE();
+            const auto longEdge = type == 0x010001 ? 640u : 1920u;
+            const auto shortEdge = type == 0x010001 ? 480u : 1080u;
+            if (reader.readByte() != 3 || width == 0 || height == 0 ||
+                std::max(width, height) > longEdge || std::min(width, height) > shortEdge)
+                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            return;
+        }
+        reader.skip(length - 2);
+    }
+    fail(SONY2FUJI_STATUS_UNSUPPORTED);
+}
+
+uint32_t validateMpfThumbnails(const std::wstring& path, const std::vector<uint8_t>& payload,
+                               uint64_t tiffBase) {
+    const auto unsupported = [] { fail(SONY2FUJI_STATUS_UNSUPPORTED); };
+    if (payload.size() < 12 || std::memcmp(payload.data(), "MPF\0", 4) != 0) unsupported();
+    const auto* data = payload.data() + 4;
+    const auto size = payload.size() - 4;
+    const bool littleEndian = data[0] == 'I' && data[1] == 'I';
+    if (!littleEndian && !(data[0] == 'M' && data[1] == 'M')) unsupported();
+    if (readEndian16(data + 2, littleEndian) != 42) unsupported();
+    const auto ifd = static_cast<uint64_t>(readEndian32(data + 4, littleEndian));
+    if (ifd < 8 || ifd > size - 2) unsupported();
+    const auto count = readEndian16(data + ifd, littleEndian);
+    const auto directoryEnd = ifd + 2u + static_cast<uint64_t>(count) * 12u + 4u;
+    if (directoryEnd > size) unsupported();
+    if (readEndian32(data + directoryEnd - 4, littleEndian) != 0) unsupported();
+    bool version = false;
+    uint32_t images = 0, entriesOffset = 0, entriesSize = 0;
+    for (uint16_t index = 0; index < count; ++index) {
+        const auto* entry = data + ifd + 2u + static_cast<uint64_t>(index) * 12u;
+        const auto tag = readEndian16(entry, littleEndian);
+        const auto type = readEndian16(entry + 2, littleEndian);
+        const auto values = readEndian32(entry + 4, littleEndian);
+        const auto value = readEndian32(entry + 8, littleEndian);
+        if (tag == 0xb000) {
+            if (version || type != 7 || values != 4 || std::memcmp(entry + 8, "0100", 4) != 0) unsupported();
+            version = true;
+        } else if (tag == 0xb001) {
+            if (images != 0 || type != 4 || values != 1 || value < 2 || value > 3) unsupported();
+            images = value;
+        } else if (tag == 0xb002) {
+            if (entriesSize != 0 || type != 7 || values == 0) unsupported();
+            entriesSize = values;
+            entriesOffset = value;
+        }
+    }
+    if (!version || images == 0 || entriesSize != images * 16u ||
+        entriesOffset < directoryEnd || entriesOffset > size || entriesSize > size - entriesOffset)
+        unsupported();
+    std::error_code error;
+    const auto fileSize = fs::file_size(path, error);
+    if (error) fail(SONY2FUJI_STATUS_IO_ERROR);
+    std::ifstream file(path, std::ios::binary);
+    if (!file) fail(SONY2FUJI_STATUS_IO_ERROR);
+    std::array<std::pair<uint64_t, uint64_t>, 3> ranges{};
+    uint64_t indexedEnd = 0;
+    uint32_t thumbnailClasses = 0;
+    for (uint32_t index = 0; index < images; ++index) {
+        const auto* entry = data + entriesOffset + index * 16u;
+        const auto attributes = readEndian32(entry, littleEndian);
+        const auto type = attributes & 0x00ffffffu;
+        const auto length = static_cast<uint64_t>(readEndian32(entry + 4, littleEndian));
+        const auto relativeOffset = readEndian32(entry + 8, littleEndian);
+        const uint64_t start = index == 0 ? 0 : tiffBase + relativeOffset;
+        // 只接受主图和大缩略图；不能把未知辅助图、HDR gain map 或立体图当作 SDR。
+        if ((index == 0 ? (attributes != 0xa0030000u || relativeOffset != 0) :
+                ((type != 0x010001 && type != 0x010002) || attributes != (0x40000000u | type))) ||
+            readEndian16(entry + 12, littleEndian) > images || readEndian16(entry + 14, littleEndian) > images ||
+            length < 4 || start > fileSize || length > fileSize - start ||
+            (index == 0 && length < tiffBase + size)) unsupported();
+        const auto dependency1 = readEndian16(entry + 12, littleEndian);
+        const auto dependency2 = readEndian16(entry + 14, littleEndian);
+        if (index == 0 ? (images == 2 ? dependency1 != 2 || dependency2 != 0 :
+                !((dependency1 == 2 && dependency2 == 3) || (dependency1 == 3 && dependency2 == 2))) :
+                dependency1 != 0 || dependency2 != 0) unsupported();
+        if (index != 0) {
+            const auto flag = type == 0x010001 ? 1u : 2u;
+            if ((thumbnailClasses & flag) != 0) unsupported();
+            thumbnailClasses |= flag;
+        }
+        for (uint32_t previous = 0; previous < index; ++previous)
+            if (start < ranges[previous].second && ranges[previous].first < start + length) unsupported();
+        ranges[index] = {start, start + length};
+        indexedEnd = std::max(indexedEnd, start + length);
+        std::array<uint8_t, 2> marker{};
+        file.seekg(static_cast<std::streamoff>(start));
+        file.read(reinterpret_cast<char*>(marker.data()), marker.size());
+        if (!file || marker[0] != 0xff || marker[1] != 0xd8) unsupported();
+        file.seekg(static_cast<std::streamoff>(start + length - 2));
+        file.read(reinterpret_cast<char*>(marker.data()), marker.size());
+        if (!file || marker[0] != 0xff || marker[1] != 0xd9) unsupported();
+        if (index != 0) validateMpfThumbnailHeader(path, start, start + length, type);
+    }
+    if (indexedEnd != fileSize) unsupported();
+    return images;
+}
+
 void scanJpeg(const std::wstring& path, MetadataInfo& info) {
     BinaryReader reader(path);
     if (reader.readByte() != 0xff || reader.readByte() != 0xd8)
@@ -399,8 +527,10 @@ void scanJpeg(const std::wstring& path, MetadataInfo& info) {
             metadataBytes += payloadLength;
             std::vector<uint8_t> payload(payloadLength);
             reader.readExact(payload.data(), payload.size());
-            if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "MPF\0"))
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "MPF\0")) {
+                if (info.jpegImageCount != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                info.jpegImageCount = validateMpfThumbnails(path, payload, reader.position() - payloadLength + 4);
+            }
             if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "ICC_PROFILE\0"))
                 info.colorProfileMarker = true;
             if (marker == 0xe1 && equalBytes(payload.data(), payload.size(), "Exif\0\0"))
@@ -631,6 +761,19 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
 }
 
 enum class ContainerKind { Jpeg, Png, Tiff };
+
+ContainerKind containerKind(const std::wstring& path) {
+    BinaryReader reader(path);
+    std::array<uint8_t, 8> header{};
+    reader.readExact(header.data(), header.size());
+    static constexpr uint8_t png[] = {137, 80, 78, 71, 13, 10, 26, 10};
+    if (std::memcmp(header.data(), png, sizeof(png)) == 0) return ContainerKind::Png;
+    if (header[0] == 0xff && header[1] == 0xd8) return ContainerKind::Jpeg;
+    if ((header[0] == 'I' && header[1] == 'I' && (header[2] == 42 || header[2] == 43) && header[3] == 0) ||
+        (header[0] == 'M' && header[1] == 'M' && header[2] == 0 && (header[3] == 42 || header[3] == 43)))
+        return ContainerKind::Tiff;
+    fail(SONY2FUJI_STATUS_UNSUPPORTED);
+}
 
 ContainerKind containerKind(const GUID& container) {
     if (IsEqualGUID(container, GUID_ContainerFormatJpeg)) return ContainerKind::Jpeg;
@@ -951,32 +1094,21 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
     if (knownUnsupportedExtension(extension))
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
 
+    const auto kind = containerKind(path);
     MetadataInfo metadata;
-    bool metadataScanned = false;
-    if (extension == "png") {
-        scanPng(path, metadata);
-        metadataScanned = true;
-    } else if (extension == "jpg" || extension == "jpeg") {
-        scanJpeg(path, metadata);
-        metadataScanned = true;
-    } else if (extension == "tif" || extension == "tiff") {
-        scanTiff(path, metadata);
-        metadataScanned = true;
-    }
+    if (kind == ContainerKind::Png) scanPng(path, metadata);
+    if (kind == ContainerKind::Jpeg) scanJpeg(path, metadata);
+    if (kind == ContainerKind::Tiff) scanTiff(path, metadata);
 
     ComPtr<IWICBitmapDecoder> decoder;
     checkHr(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ,
         WICDecodeMetadataCacheOnDemand, &decoder));
     GUID container{};
     checkHr(decoder->GetContainerFormat(&container));
-    const auto kind = containerKind(container);
+    if (containerKind(container) != kind) fail(SONY2FUJI_STATUS_UNSUPPORTED);
     UINT frameCount = 0;
     checkHr(decoder->GetFrameCount(&frameCount));
-    if (frameCount != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-
-    if (!metadataScanned && kind == ContainerKind::Png) scanPng(path, metadata);
-    if (!metadataScanned && kind == ContainerKind::Jpeg) scanJpeg(path, metadata);
-    if (!metadataScanned && kind == ContainerKind::Tiff) scanTiff(path, metadata);
+    if (frameCount != 1 && frameCount != metadata.jpegImageCount) fail(SONY2FUJI_STATUS_UNSUPPORTED);
 
     ComPtr<IWICBitmapFrameDecode> frame;
     checkHr(decoder->GetFrame(0, &frame));

@@ -76,7 +76,7 @@ public partial class MainWindow
     {
         var saved = editStore?.Find(input);
         settings = saved?.Settings.Restore() ?? new Adjustments();
-        lut = saved == null ? films.FirstOrDefault(f => f.Name == "PROVIA")?.Path : lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
+        lut = saved == null ? null : lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
         if (settings.Recipe is {} recipe) lut = recipe.LutPath;
         if (lut?.StartsWith("builtin:", StringComparison.Ordinal) == true)
             lut = Path.Combine(AppContext.BaseDirectory, "LUTs", Path.GetFileName(lut[8..]));

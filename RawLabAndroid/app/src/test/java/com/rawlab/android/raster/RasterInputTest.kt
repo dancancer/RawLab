@@ -78,7 +78,7 @@ class RasterInputTest {
     }
 
     @Test
-    fun rasterContainerValidationRejectsMpfJpegAndUnresolvedPngColorMetadata() {
+    fun rasterContainerValidationRejectsMalformedMpfJpegAndUnresolvedPngColorMetadata() {
         assertFalse(RasterContainerValidator.inspect(jpegWithMpf()).isValid)
         assertFalse(RasterContainerValidator.inspect(pngWithChunk("gAMA")).isValid)
         assertFalse(RasterContainerValidator.inspect(pngWithChunk("cICP")).isValid)

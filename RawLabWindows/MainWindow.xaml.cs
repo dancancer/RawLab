@@ -133,7 +133,6 @@ public partial class MainWindow : Window
         }
         foreach(var look in lookLibrary?.Looks ?? [])
             films.Add(new(look.Name,look.Path,null));
-        lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
         BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;

@@ -29,7 +29,7 @@ internal object RasterContainerValidator {
     fun inspect(bytes: ByteArray): RasterValidation = inspect(bytes.inputStream())
 
     fun inspect(input: InputStream): RasterValidation {
-        val stream = BufferedInputStream(input)
+        val stream = RasterStream(BufferedInputStream(input))
         return try {
             val prefix = ByteArray(2)
             if (!readFully(stream, prefix, 0, prefix.size)) return invalid("Truncated image")
@@ -124,15 +124,17 @@ internal object RasterContainerValidator {
         return RasterValidation(RasterContainerInfo("PNG", width, height, colorType == 6, hasIccProfile))
     }
 
-    private fun inspectJpeg(stream: InputStream): RasterValidation {
+    private fun inspectJpeg(stream: RasterStream): RasterValidation {
         var marker = nextJpegMarker(stream)
         var frame: RasterContainerInfo? = null
         var iccTotal: Int? = null
         val iccChunks = mutableMapOf<Int, ByteArray>()
         var sawScan = false
+        var mpf: List<JpegRange>? = null
         while (marker != null) {
             if (marker == 0xD9) {
-                if (!sawScan || stream.read() >= 0) return invalid("Invalid JPEG frame")
+                if (!sawScan || (mpf?.let { !MpfThumbnails.validateTail(stream, it) } ?: (stream.read() >= 0)))
+                    return invalid("Invalid JPEG frame")
                 if (iccTotal != null && !IccProfiles.validateJpegChunks(iccChunks, iccTotal))
                     return invalid("Invalid JPEG ICC profile")
                 return frame?.copy(hasColorProfile = iccTotal != null)?.let(::RasterValidation)
@@ -161,8 +163,11 @@ internal object RasterContainerValidator {
             if (body != null && !readFully(stream, body, 0, bodyLength)) return invalid("Truncated JPEG")
             else if (body == null && !skipFully(stream, bodyLength)) return invalid("Truncated JPEG")
             if (body != null && containsGainMapMarker(body)) return invalid("HDR gain maps are not supported")
-            if (marker == 0xE2 && body != null && body.size >= 4 && body.copyOfRange(0, 4).contentEquals("MPF\u0000".toByteArray()))
-                return invalid("Multi-picture JPEG is not supported")
+            if (marker == 0xE2 && body != null && body.size >= 4 && body.copyOfRange(0, 4).contentEquals("MPF\u0000".toByteArray())) {
+                if (mpf != null) return invalid("Multiple MPF indexes are not supported")
+                mpf = MpfThumbnails.parse(body, stream.position - body.size + 4)
+                    ?: return invalid("Unsupported or invalid MPF images")
+            }
             if (marker == 0xE2 && body != null && IccProfiles.isJpegPrefix(body)) {
                 if (body.size < 14 || body[11] != 0.toByte()) return invalid("Invalid JPEG ICC profile")
                 val sequence = body[12].toInt() and 0xFF

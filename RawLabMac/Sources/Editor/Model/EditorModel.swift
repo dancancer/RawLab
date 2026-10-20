@@ -147,7 +147,7 @@ final class EditorModel: ObservableObject {
         } catch {
             self.error = error.localizedDescription
         }
-        selectedFilmID = films.first(where: { $0.name == "PROVIA" })?.id ?? films.first?.id ?? ""
+        selectedFilmID = ""
         do { editStore = try EditPersistence(directory: editDirectory) }
         catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
         do {
