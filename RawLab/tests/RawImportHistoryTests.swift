@@ -81,6 +81,7 @@ struct RawImportHistoryTests {
         let originalHash = try hash(Data(contentsOf: raw))
         let a = PhotoIdentity(resourceIdentifier: "raw-history-a-\(UUID().uuidString)")
         let b = PhotoIdentity(resourceIdentifier: "raw-history-b-\(UUID().uuidString)")
+        let c = PhotoIdentity(resourceIdentifier: "raw-history-unseen-\(UUID().uuidString)")
         var aSettings = RawSettings.default
         aSettings.exposure = 0.2
         var bSettings = RawSettings.default
@@ -124,6 +125,23 @@ struct RawImportHistoryTests {
         try check(aCallbacks.isEmpty && bCallbacks == [bSettings], "late RAW A cannot invoke its restore callback")
         try check(aImported == 0 && bImported == 1,
                   "only accepted RAW B invokes the import success callback used by analytics")
+
+        var cCallbacks: [RawSettings] = []
+        model.importImage(from: .raw(raw), identity: c,
+                          onSettingsRestored: { cCallbacks.append($0) })
+        let currentC = try deliveries.take()
+        currentC.forEach { $0() }
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { ownedCacheURLs.insert(url) }
+        let neutralProcessor = Sony2FujiProcessor()
+        let neutralReference = try neutralProcessor.processRaw(
+            url: raw, settings: .default, previewLongEdge: 1280, lutURL: nil, viewportPreview: true)
+        let neutralReferenceImage = neutralProcessor.makeUIImage(
+            from: neutralReference.buffer, orientation: neutralReference.orientation)
+        try check(model.sourceIdentity == c && cCallbacks == [.default] &&
+                  model.restoredSettings == .default && model.editSaveState == .idle &&
+                  model.rawLUTID == nil && !model.rawLUTApplied &&
+                  neutralReferenceImage?.pngData() == model.previewImage?.pngData(),
+                  "unseen RAW import renders the neutral default without a film or recipe")
 
         model.importImage(from: .raw(raw), identity: a)
         try deliveries.take().forEach { $0() }

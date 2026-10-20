@@ -7,6 +7,9 @@ photo settings in all four native clients instead select `preview` (embedded
 preview matching); a full/input-group reset also selects `preview`. Restoring a
 saved exposure mode never replaces it with the new default. Older saved records
 without an exposure-mode field retain `scene`, preserving their previous pixels.
+Previously unedited photos open with neutral adjustments and no film or master
+recipe selected in all four clients. Reopening an edited photo restores its saved
+adjustments and look.
 The scene-mode 0 EV baseline described below applies when that mode is selected.
 
 LibRaw performs black subtraction, active-area crop, white balance, demosaic and highlight blending in camera channels. WB must precede demosaic: the earlier no-auto-scale path produced a measurable difference from LibRaw's normal WB-before-demosaic processing. Histogram auto-bright, content-dependent maximum adjustment and integer output-color conversion remain disabled. `highlight=2` retains maximum-normalized WB before 16-bit demosaic and blends clipped highlight chroma after demosaic, before our camera matrix and LUT. The former `highlight=1` unclip mode preserved false magenta in saturated DSC06251 car-body highlights. Blending is not darktable's opposed-chroma reconstruction and cannot recover lost sensor detail; bright colors can become less saturated. We recover green-normalized camera RGB as `image16 / (65535 * post_scale_pre_mul[1])`, then apply the camera-to-sRGB matrix in float. Matrix negatives and values above 1 survive; we do not globally clamp scene RGB to 1. This is not an all-float demosaic: quantization and LibRaw's treatment of sensor-overrange values remain. The raw source is never written.
@@ -84,7 +87,14 @@ shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
 The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
 and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
-Mac results; HEIF and BigTIFF are not enabled. Unknown non-sRGB PNG color metadata
+Mac results; HEIF and BigTIFF are not enabled.
+Windows chooses JPEG/PNG/TIFF validation from the file signature, so a misleading
+supported extension does not select the wrong metadata parser. Windows and
+Android accept a validated MPF baseline primary image with only VGA/Full HD large
+thumbnails, decoding the primary image at full resolution. Both continue to reject
+MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
+image ranges; this does not enable general multi-frame input.
+Unknown non-sRGB PNG color metadata
 without a supported ICC profile is rejected instead of guessed. Android uses a
 separate API-26-compatible platform decoder for validated JPEG/PNG files and
 passes their oriented opaque display-sRGB pixels through the same explicit

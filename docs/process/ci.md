@@ -1,8 +1,10 @@
 # Continuous Verification
 
 The [workflow](../../.github/workflows/ci.yml) verifies pull requests targeting
-`development`, `release/**` or `main`, and pushes to `development` or `main`.
-Release branches are verified through PRs rather than duplicate push runs. It does not
+`development`, `release/**` or `main`, pushes to `development`, a nightly cold build
+of `development` and manual runs. `main` only receives release and hotfix PRs, which
+already run every platform from source, so it has no separate push run. Release
+branches are verified through PRs rather than duplicate push runs. It does not
 run on tags, publish packages, create releases, deploy, notarize or use signing
 credentials. A workflow run is not release authorization.
 
@@ -10,21 +12,58 @@ credentials. A workflow run is not release authorization.
 
 | Check | Runner | Coverage |
 | --- | --- | --- |
-| Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, single-preview source contracts, whitespace |
-| macOS build and parity (arm64 / x86_64) | Dedicated Apple Silicon Mac and hosted macOS 26 Intel; deployment target 14.0 | Default app/bundle and full-feature native build for each architecture; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
+| Select affected platforms | Ubuntu 24.04 | Chooses the platform checks and cold/warm dependency mode for this event |
+| Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, platform selection rules, single-preview source contracts, whitespace |
+| macOS build and parity (arm64, all) | Dedicated Apple Silicon Mac; deployment target 14.0 | Default app/bundle and full-feature native build; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
+| macOS build and parity (x86_64, core / render) | Two parallel hosted macOS 26 Intel jobs; deployment target 14.0 | Each builds the default app/bundle. `core`: build/photo-copy/picker checks, DCP suites and CPU-safe CTest. `render`: straighten, Agent recipe and raster render parity |
 | Windows build and parity | Dedicated Windows 11 x64 KVM / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
 | Android build and JVM tests | Dedicated Ubuntu 24.04 KVM / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
 | iOS framework and unsigned app | Apple Silicon runner pool / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
+| CI result | Ubuntu 24.04 | Fails unless every selected check succeeded and every unselected check was skipped |
 
-All six checks (five job groups, including both Mac architectures) must
-**succeed on the current PR head/test merge**. A missing,
-skipped, cancelled or stale-head run is not a pass. After merge, also inspect the
+Architecture-independent Swift model suites (batch export, edit model,
+presentation, control groups, usage/RUM and localization) run on arm64 only.
+Native rendering, DCP, CTest, picker bridge and bundle checks run on both
+architectures.
+
+**CI result** must **succeed on the current PR head/test merge**, together with
+every platform check it selected. A missing, cancelled or stale-head run is not a
+pass; a platform check skipped by selection is accepted only through CI result.
+Draft PRs run selection and contracts only and leave CI result skipped; marking
+the PR ready for review starts the full selected run. After merge, also inspect the
 push run for the exact `development` merge SHA. Logs print the checked-out SHA;
 PR checks may test GitHub's synthetic merge commit rather than the source head.
 Use the run's event, source head, checkout SHA and base together when recording
 evidence. A later source/base change invalidates the earlier integration result.
 This is the merge acceptance policy; this task does not change repository branch
 protection settings or grant permission to bypass them.
+
+## Platform Selection
+
+[`affected_platforms.py`](../../scripts/ci/affected_platforms.py) owns the path
+rules and its tests run in contracts. Preview a branch locally with
+`git diff --name-only origin/development... | python3 scripts/ci/affected_platforms.py classify`.
+
+- `RawLab/`, `RawLabMac/`, `RawLabWindows/` and `RawLabAndroid/` select only their
+  own client. `RawLabMac/Resources/` (artwork, recipes, licenses) selects every
+  client because all of them package it; `RawLabMac/tests/DCPTestFixtures.swift`
+  also selects iOS. A contracts test fails when another client starts reading a
+  Mac file without such a rule.
+- `docs/` (except the packaged `docs/reference/licensing.md`), `reviews/`,
+  `.impeccable/`, `AGENTS.md`/`CLAUDE.md` anywhere and the root README, CHANGELOG,
+  DESIGN, PRODUCT and `.gitignore` select no platform.
+- Everything else, including `lutools/`, `Shared/`, `scripts/`, `.github/`,
+  `LICENSE*`, `experiments/` and any new path, selects every platform.
+
+A PR compares its test merge with the base it merges into. A push compares with
+the commit of the last successful `development` push run, not the previous commit:
+a cancelled run never verified its changes, and an unchanged platform remains
+covered by the run that last verified the same files. If that history is
+unavailable, every platform runs. Release and hotfix PRs (base `main` or
+`release/**`, or head `release/*` or `hotfix/*`), the nightly run and manual runs
+always select every platform. The nightly run is skipped when `development` already
+passed a nightly cold build at the same commit. Selection does not detect runner or
+toolchain drift; the nightly cold build does.
 
 ## Boundaries
 
@@ -55,9 +94,17 @@ protection settings or grant permission to bypass them.
 
 ## Safety and Results
 
-Actions are pinned to full commit SHAs. Workflow permission is `contents: read`,
-checkout credentials are not persisted, and no `pull_request_target` is used.
-The workflow has bounded jobs and cancels obsolete runs for the same PR/ref.
+Actions are pinned to full commit SHAs. Workflow permission is `contents: read`;
+only the selection job adds `actions: read` to look up earlier runs. Checkout
+credentials are not persisted, and no `pull_request_target` is used. The workflow
+has bounded jobs and cancels obsolete runs for the same PR/ref; nightly and manual
+runs use their own concurrency groups so a push neither cancels nor is cancelled
+by a cold build.
+
+The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
+workflow runs when a same-repository PR closes. With `actions: write` and no
+checkout, it deletes only the caches stored under that PR's merge ref, which no
+other PR or branch can use.
 
 ## Local Android Runner
 
@@ -142,6 +189,12 @@ Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
 directory. The cache action selects Git's GNU tar, which must also find `gzip`;
 a missing compressor can leave the job green while silently losing its cache.
 
+The Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
+which otherwise leaves each project's sources compiling one at a time. A single
+cross-project cap of 24 `cl.exe` processes (`CL_MPCount` with
+`EnforceProcessCountAcrossBuilds`) keeps memory within the guest's 32 GiB. These
+are CI environment settings; `build.ps1` and local builds are unchanged.
+
 Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
 exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
 requires physical GPU/external-RAW evidence. Service-session results do not
@@ -160,7 +213,7 @@ Their initial build parallelism is six. The Intel matrix
 entry remains on `macos-26-intel` with four workers; neither cross-compilation
 nor Rosetta substitutes for its native x86_64 runtime checks.
 
-Both Mac architectures run the existing CPU-safe CTest selection with at most
+Both Mac architectures (the Intel `core` shard) run the existing CPU-safe CTest selection with at most
 two test processes. This limit is separate from build parallelism because RAW
 rendering tests may also use internal worker threads. The default Swift app and
 full-source straighten harness use whole-module optimization with compiler
@@ -175,13 +228,26 @@ account. An owner-approved personal account may opt in by appending
 `--allow-current-user` to the provisioning command; this is not isolation and
 CI inherits that user's access to personal files and credentials. Root is
 always refused, and CI jobs must not use sudo. Prepare full Xcode and Homebrew
-`cmake`, `pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
-administrator. Keep Xcode on a local disk with sufficient capacity and use
-`DEVELOPER_DIR` rather than changing another user's selected developer tools.
-Keep the CI root, runner startup files, credentials and Python venv inside the
-CI user's home on the internal disk. A LaunchAgent can be denied access to an
-external volume even when SSH under the same user works. Configure the runner's
-`--work` separately for a large external build volume; allow only the necessary
+`pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
+administrator. Use `DEVELOPER_DIR` rather than changing another user's selected
+developer tools.
+
+Native dependency outputs embed the workspace, Xcode SDK and Python paths, so the
+cache key includes them. Both pool Macs therefore use one identical layout on a
+case-sensitive APFS volume named `RawLabCI`, mounted at `/Volumes/RawLabCI`
+(an administrator adds it with `diskutil apfs addVolume <container> APFSX RawLabCI`;
+it shares the container's free space): the runner workspace `_work`, a CI-only
+Xcode copy at `tools/Xcode.app` and the Python venv `venv`, which pins CMake via
+[`requirements-apple-runner.txt`](../../scripts/ci/requirements-apple-runner.txt).
+A key computed on one Mac then matches the other, and either Mac reuses the
+other's dependencies. The pool Macs must also keep the same macOS build, Xcode
+build, Homebrew `pkgconf`/autotools and Python 3.12 patch release. A mismatch does
+not break builds; it only gives each Mac separate cache keys again. Compare
+`build/ci/native-cache.json` from each Mac's artifacts to find the differing field.
+
+Keep the CI root with runner startup files and credentials inside the CI user's
+home on the internal disk. A LaunchAgent can be denied access to an external
+volume even when SSH under the same user works; allow only the necessary
 external-storage access when macOS prompts in the CI desktop session. Do not
 grant system-wide shells Full Disk Access to work around this restriction.
 After installing or updating Xcode, an administrator must accept that version's
@@ -194,9 +260,10 @@ Xcode's `xcodebuild -downloadPlatform iOS -architectureVariant arm64`, or export
 and import an official runtime using `-exportPath` and `-importPlatform`.
 Provisioning checks `xcrun simctl list runtimes available -j` as the runner user
 before creating runner files; it never installs system components from a CI job.
-`provision-macos-runner.sh <ci-root> <Xcode.app> <runner-archive>` checks the
-account and SDKs, verifies the pinned official arm64 runner archive, and creates
-an isolated Python 3.12 venv and dedicated build/cache/temp directories. Do not
+`provision-macos-runner.sh <ci-root> /Volumes/RawLabCI/tools/Xcode.app <runner-archive>`
+checks the account, pool volume and SDKs, verifies the pinned official arm64
+runner archive, creates the shared-path Python 3.12 venv with pinned CMake and
+dedicated cache/temp directories, and names the `--work` directory to register. Do not
 copy private SSH keys, personal Keychains or signing credentials into this account.
 
 Local Apple jobs use that prepared Python instead of setup-python's macOS
@@ -215,19 +282,20 @@ workspaces per machine and keep persistent source/download caches separate from
 the exact dependency-output cache. Logs record the actual macOS/Xcode versions;
 moving hosts is not evidence for minimum-OS, physical GPU or device acceptance.
 To roll back, restore hosted `macos-26` for the relevant job and its Python setup
-step, parallelism, policy tests and actionlint declarations. Keep all six checks.
+step, parallelism, policy tests and actionlint declarations. Keep every platform check.
 
 ## Native Dependency Caches
 
-PR checks restore third-party native dependencies using an exact cache key.
-Push checks on **both `development` and `main` never restore native caches**:
-they still build all dependencies from source, then save successful results for
-later PRs. PR misses also build from source and save only after the full job
-succeeds. Push jobs look up the exact key without downloading its contents, and
-skip saving when that accessible cache already exists. Only a PR restore hit
-enables dependency reuse; a push lookup hit still runs the full cold build.
+Ordinary PR and `development` push checks restore third-party native dependencies
+using an exact cache key. **Cold builds never restore native caches**: the nightly
+run, manual runs and release/hotfix PRs build all dependencies from source. They
+look up the exact key without downloading its contents and skip saving when that
+accessible cache already exists. Any miss builds from source and saves only after
+the full job succeeds; of the two Intel shards, only `core` saves their shared key.
 Cache lookup/restore failures leave builds enabled and suppress the cache save.
-A cache miss or cache-service outage is not permission to skip a build.
+A cache miss or cache-service outage is not permission to skip a build. Keys hash
+every dependency input and toolchain, so a push restore is as exact as a PR
+restore; the nightly cold build still proves that `development` builds from source.
 
 This deliberately uses separate restore/save actions. GitHub makes base/default
 branch caches available to PRs, while a cache created under a PR merge ref cannot
@@ -304,6 +372,7 @@ reported in the PR, not mixed into this same-source comparison.
 ## Results
 
 Only `build/ci/*.log`, `*.json` and `*.xml` are uploaded, retained for seven days.
+Mac artifacts are named `macos-<arch>-<suite>-results`.
 Do not widen this allowlist to photos, RAW inputs, screenshots, user profiles,
 app bundles, native binaries, APKs or entire build directories. Build packages
 are ephemeral verification outputs, not versioned release candidates.

@@ -93,6 +93,9 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let first = makeRasterModel(root: fixtureRoot, lut: lut)
         first.open(jpeg)
         try waitForRender(first, "JPEG open")
+        try check(first.selectedFilmID.isEmpty && first.settings.masterRecipeID == nil,
+                  "JPEG unseen photo opens with no film or master recipe")
+        first.selectFilm(lut.path)
         try checkRasterMetadata(first, "JPEG open")
         let originalPixels = pixels(first.result!.image)
 
@@ -115,13 +118,16 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(second.settings.contrast == 0 && second.settings.saturation == 0 &&
                   second.settings.hslSettings.isIdentity && second.settings.effectSettings == PhotoEffectsSettings(),
                   "PNG open does not inherit another raster's edit history")
+        try check(second.selectedFilmID.isEmpty && second.settings.masterRecipeID == nil,
+                  "PNG unseen photo opens with no film or master recipe")
         try checkRasterMetadata(second, "PNG open")
         second.open(jpeg)
         try waitForRender(second, "JPEG history restore")
         try check(second.settings.exposure == saved.exposure && second.settings.contrast == saved.contrast &&
                   second.settings.saturation == saved.saturation && second.settings.hslSettings == saved.hslSettings &&
-                  second.settings.effectSettings == saved.effectSettings,
-                  "JPEG history restores tone/HSL/effects in a new EditorModel")
+                  second.settings.effectSettings == saved.effectSettings && second.selectedFilmID == lut.path &&
+                  second.settings.masterRecipeID == nil,
+                  "JPEG history restores tone/HSL/effects and the saved film in a new EditorModel")
         try checkRasterMetadata(second, "JPEG history restore")
 
         let broken = fixtureRoot.appendingPathComponent("broken.png")
@@ -235,7 +241,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(restoredPreset.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id &&
                   restoredPreset.settings.exposure == 0.6 && restoredPreset.settings.shadows == 20 &&
                   restoredPreset.settings.tint == 5 && restoredPreset.settings.hslSettings.value(.hue, channel: 0) == 37 &&
-                  restoredPreset.settings.renderHSLSettings.value(.hue, channel: 0) == 18.5,
+                  restoredPreset.settings.renderHSLSettings.value(.hue, channel: 0) == 18.5 &&
+                  restoredPreset.selectedFilmID.isEmpty,
                   "restoring a preset keeps later manual edits instead of reapplying preset defaults")
         let blocked = root.appendingPathComponent("blocked")
         for recipe in MasterRecipe.allRecipes {
