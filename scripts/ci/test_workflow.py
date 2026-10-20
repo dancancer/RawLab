@@ -9,6 +9,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
+CLEANUP = ROOT / ".github/workflows/pr-cache-cleanup.yml"
+PLATFORM_JOBS = ("macos", "windows", "android", "ios")
 
 
 class WorkflowContractTests(unittest.TestCase):
@@ -20,10 +22,18 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_events_do_not_publish(self):
         events = self.workflow["on"]
-        self.assertEqual(set(events), {"pull_request", "push"})
+        self.assertEqual(set(events), {"pull_request", "push", "schedule", "workflow_dispatch"})
         self.assertEqual(events["pull_request"]["branches"], ["development", "release/**", "main"])
-        self.assertEqual(events["push"]["branches"], ["development", "main"])
+        self.assertEqual(events["pull_request"]["types"],
+                         ["opened", "synchronize", "reopened", "ready_for_review"])
+        # main only receives release/hotfix PRs, which already run the full cold build.
+        self.assertEqual(events["push"]["branches"], ["development"])
         self.assertNotIn("tags", events["push"])
+        self.assertEqual(events["schedule"], [{"cron": "0 18 * * *"}])
+        self.assertEqual(events["workflow_dispatch"], "")
+        self.assertEqual(self.workflow["concurrency"]["group"],
+                         "ci-${{ github.workflow }}-${{ github.event_name }}-"
+                         "${{ github.event.pull_request.number || github.ref }}")
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
         self.assertNotIn("secrets.", self.text)
         self.assertNotRegex(self.text, r"(?m)^\s*environment:")
@@ -34,28 +44,51 @@ class WorkflowContractTests(unittest.TestCase):
                     self.assertEqual(step.get("id"), "native-cache")
                     self.assertTrue(step.get("uses", "").startswith("actions/cache/restore@"))
 
-    def test_all_platforms_are_required_and_bounded(self):
+    def test_all_platforms_are_selected_bounded_and_gated(self):
         jobs = self.workflow["jobs"]
-        self.assertEqual(set(jobs), {"contracts", "macos", "windows", "android", "ios"})
+        self.assertEqual(set(jobs), {"changes", "contracts", *PLATFORM_JOBS, "result"})
         for name, job in jobs.items():
             with self.subTest(job=name):
-                self.assertNotIn("if", job)
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
-                self.assertNotIn("permissions", job)
-                if name == "contracts":
+                if name == "changes":
+                    self.assertEqual(job["permissions"], {"contents": "read", "actions": "read"})
+                else:
+                    self.assertNotIn("permissions", job)
+                if name in PLATFORM_JOBS:
+                    self.assertEqual(job["needs"], "changes")
+                    self.assertEqual(job["if"], f"needs.changes.outputs.{name} == 'true'")
+                else:
                     self.assertNotIn("self-hosted", job["runs-on"])
+        self.assertNotIn("if", jobs["contracts"])
+        self.assertNotIn("needs", jobs["contracts"])
+        selection = jobs["changes"]
+        self.assertEqual(set(selection["outputs"]), {*PLATFORM_JOBS, "cold", "draft"})
+        self.assertIn("python3 scripts/ci/affected_platforms.py select",
+                      "\n".join(step.get("run", "") for step in selection["steps"]))
+        result = jobs["result"]
+        self.assertEqual(result["name"], "CI result")
+        self.assertEqual(result["needs"], ["changes", "contracts", *PLATFORM_JOBS])
+        self.assertEqual(result["if"], "${{ !cancelled() && needs.changes.outputs.draft != 'true' }}")
+        gate = next(step for step in result["steps"] if "run" in step)
+        self.assertEqual(gate["env"]["NEEDS"], "${{ toJSON(needs) }}")
+        self.assertEqual(gate["run"], "python3 scripts/ci/affected_platforms.py verify")
         mac = jobs["macos"]
         self.assertEqual(mac["runs-on"], "${{ matrix.runner }}")
         self.assertEqual(mac["env"]["MACOSX_DEPLOYMENT_TARGET"], "14.0")
+        self.assertEqual(mac["env"]["RAWLAB_MAC_SUITE"], "${{ matrix.suite }}")
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], [
-            {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6"},
-            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"},
+            {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6", "suite": "all"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "core"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "render"},
         ])
         self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
     def test_actions_and_artifact_paths_are_constrained(self):
         for name, job in self.workflow["jobs"].items():
+            if name in ("changes", "result"):
+                self.assertFalse([step for step in job["steps"]
+                                  if step.get("uses", "").startswith("actions/upload-artifact@")])
             uploads = []
             for step in job["steps"]:
                 if "uses" not in step:
@@ -69,7 +102,7 @@ class WorkflowContractTests(unittest.TestCase):
                     self.assertEqual(step["with"]["retention-days"], "7")
                     for path in step["with"]["path"].splitlines():
                         self.assertRegex(path, r"^build/ci/\*\.(?:log|json|xml)$")
-            self.assertEqual(len(uploads), 1, name)
+            self.assertEqual(len(uploads), 0 if name in ("changes", "result") else 1, name)
 
     def test_android_uses_a_dedicated_linux_runner_with_bounded_parallelism(self):
         android = self.workflow["jobs"]["android"]
@@ -209,8 +242,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("RAWLAB_TEST_DCP", run, "Hosted DCP coverage must not require private profiles")
         self.assertNotIn("RAWLAB_TEST_CANON_DCP", run)
 
-    def test_only_prs_restore_exact_native_caches_and_cold_pushes_seed_them(self):
-        for name in ("macos", "windows", "android", "ios"):
+    def test_exact_native_caches_are_reused_except_by_cold_builds(self):
+        for name in PLATFORM_JOBS:
             with self.subTest(job=name):
                 steps = self.workflow["jobs"][name]["steps"]
                 restores = [step for step in steps if step.get("uses", "").startswith("actions/cache/restore@")]
@@ -220,11 +253,13 @@ class WorkflowContractTests(unittest.TestCase):
                 restore, save = restores[0], saves[0]
                 self.assertNotIn("if", restore)
                 self.assertEqual(restore["continue-on-error"], "true")
-                self.assertEqual(restore["with"]["lookup-only"], "${{ github.event_name == 'push' }}")
+                self.assertEqual(restore["with"]["lookup-only"], "${{ needs.changes.outputs.cold == 'true' }}")
                 self.assertNotIn("restore-keys", restore["with"])
                 self.assertEqual(restore["with"]["key"], "${{ steps.native-key.outputs.key }}")
                 self.assertEqual(save["with"], {key: restore["with"][key] for key in ("key", "path")})
-                self.assertEqual(save["if"], "success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'")
+                shard = "matrix.suite != 'render' && " if name == "macos" else ""
+                self.assertEqual(save["if"], f"success() && {shard}steps.native-cache.outcome == 'success' && "
+                                             "steps.native-cache.outputs.cache-hit != 'true'")
                 self.assertLess(steps.index(restore), steps.index(save))
                 builds = [step for step in steps if "run" in step and
                           any(command in step["run"] for command in
@@ -232,9 +267,58 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertEqual(len(builds), 1)
                 self.assertNotIn("if", builds[0], "Cache hits must still build and test the product")
                 self.assertEqual(builds[0]["env"]["RAWLAB_CI_CACHE_HIT"],
-                                 "${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}")
+                                 "${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}")
                 self.assertLess(steps.index(restore), steps.index(builds[0]))
                 self.assertLess(steps.index(builds[0]), steps.index(save))
+
+    def test_intel_shards_cover_every_native_suite_and_model_suites_run_on_arm64(self):
+        build = next(step for step in self.workflow["jobs"]["macos"]["steps"]
+                     if "bash RawLabMac/build.sh" in step.get("run", ""))
+        groups, current = {None: []}, None
+        for line in build["run"].splitlines():
+            line = line.strip()
+            if line.startswith("if in_suite "):
+                self.assertIsNone(current, "Suite groups must not nest")
+                current = line.split()[2].rstrip(";")
+                groups.setdefault(current, [])
+            elif line == "fi" and current:
+                current = None
+            else:
+                groups[current].append(line)
+        self.assertEqual(set(groups), {None, "core", "render", "model"})
+        always = "\n".join(groups[None])
+        for command in ("ci_timed app-build bash RawLabMac/build.sh", "native_cache.py inventory"):
+            self.assertIn(command, always, "Every shard builds the app and records its cache inventory")
+        expected = {
+            "core": ("test_photo_copy.py", "horizontal-picker-native.sh", "dcp-compiler.sh",
+                     "look-library.sh", "look-import-model.sh", "ctest --test-dir lutools/build-macos"),
+            "render": ("mac-straighten-preview.sh", "agent-recipe-render.sh", "raster-render.sh"),
+            "model": ("batch-export.sh", "edit-model.sh", "presentation.sh", "control-groups.sh",
+                      "usage-analytics.sh", "usage-transport.sh", "usage-model.sh", "usage-termination.sh",
+                      "rum-configuration.sh", "localization.sh"),
+        }
+        for group, commands in expected.items():
+            text = "\n".join(groups[group])
+            for command in commands:
+                with self.subTest(group=group, command=command):
+                    self.assertIn(command, text)
+        self.assertIn('in_suite() { [[ "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" ]]; }', always)
+        suites = {row["arch"]: [] for row in self.workflow["jobs"]["macos"]["strategy"]["matrix"]["include"]}
+        for row in self.workflow["jobs"]["macos"]["strategy"]["matrix"]["include"]:
+            suites[row["arch"]].append(row["suite"])
+        self.assertEqual(suites, {"arm64": ["all"], "x86_64": ["core", "render"]})
+
+    def test_pr_cache_cleanup_only_deletes_its_own_merge_ref(self):
+        cleanup = yaml.load(CLEANUP.read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(cleanup["on"], {"pull_request": {"types": ["closed"]}})
+        self.assertEqual(cleanup["permissions"], {"actions": "write"})
+        job = cleanup["jobs"]["cleanup"]
+        self.assertEqual(job["if"], "github.event.pull_request.head.repo.full_name == github.repository")
+        self.assertEqual([step for step in job["steps"] if "uses" in step], [], "Do not run repository code")
+        step = job["steps"][0]
+        self.assertEqual(step["env"]["CACHE_REF"], "refs/pull/${{ github.event.pull_request.number }}/merge")
+        self.assertIn('actions/caches?ref=$CACHE_REF', step["run"])
+        self.assertEqual(step["run"].count("--method DELETE"), 1)
 
     def test_windows_shared_dcp_compiler_and_python_parity_are_required(self):
         run = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["windows"]["steps"])
