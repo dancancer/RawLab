@@ -61,6 +61,20 @@ extension ProcessorExportTests {
         return zip(first, second).map { abs(Int($0) - Int($1)) }.max() ?? 0
     }
 
+    static func visibleRGBA(_ image: CGImage) -> Data {
+        var pixels = Data(count: image.width * image.height * 4)
+        pixels.withUnsafeMutableBytes { bytes in
+            let context = CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+                                    bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
+                                        CGBitmapInfo.byteOrder32Big.rawValue)!
+            context.setBlendMode(.copy)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return pixels
+    }
+
     static func writeOrientedRaster(to url: URL) throws {
         let width = 2
         let height = 3

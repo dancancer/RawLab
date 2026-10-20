@@ -188,6 +188,9 @@ struct ProcessorExportTests {
                                                          previewLongEdge: nil, lutURL: nil)
         check(displayNeutral.data == displayBuffer.data,
               "iOS display-sRGB neutral rendering round-trips RGB8 pixels")
+        let firstImage = processor.makeUIImage(from: displayNeutral, orientation: .up)!
+        check(visibleRGBA(firstImage.cgImage!) == bytes,
+              "iOS first UIImage interprets asymmetric RGB anchors without swapping channels")
         var displaySettings = RawSettings.default
         displaySettings.exposure = 0.35
         displaySettings.contrast = 1.12

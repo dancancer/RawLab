@@ -813,7 +813,7 @@ ColorSource getColorSource(IWICImagingFactory* factory, IWICBitmapFrameDecode* f
         if (profileMarker) fail(SONY2FUJI_STATUS_UNSUPPORTED);
         return {};
     }
-    if (count != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (count > 16) fail(SONY2FUJI_STATUS_UNSUPPORTED);
     ColorSource result;
     std::vector<ComPtr<IWICColorContext>> contexts(count);
     std::vector<IWICColorContext*> rawContexts(count, nullptr);
@@ -825,17 +825,28 @@ ColorSource getColorSource(IWICImagingFactory* factory, IWICBitmapFrameDecode* f
     checkHr(frame->GetColorContexts(count, rawContexts.data(), &actualCount),
         SONY2FUJI_STATUS_UNSUPPORTED);
     if (actualCount != count) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-    result.context = contexts[0];
-    WICColorContextType type = WICColorContextUninitialized;
-    checkHr(result.context->GetType(&type), SONY2FUJI_STATUS_UNSUPPORTED);
-    if (type == WICColorContextExifColorSpace) {
-        if (profileMarker) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-        UINT exifColorSpace = 0;
-        checkHr(result.context->GetExifColorSpace(&exifColorSpace), SONY2FUJI_STATUS_UNSUPPORTED);
-        if (exifColorSpace != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-        return result;
+    bool exifSrgb = false;
+    bool unsupportedExif = false;
+    for (const auto& context : contexts) {
+        WICColorContextType type = WICColorContextUninitialized;
+        checkHr(context->GetType(&type), SONY2FUJI_STATUS_UNSUPPORTED);
+        if (type == WICColorContextProfile) {
+            if (result.context) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            result.context = context;
+        } else if (type == WICColorContextExifColorSpace) {
+            UINT exifColorSpace = 0;
+            checkHr(context->GetExifColorSpace(&exifColorSpace), SONY2FUJI_STATUS_UNSUPPORTED);
+            exifSrgb |= exifColorSpace == 1;
+            unsupportedExif |= exifColorSpace != 1;
+        } else {
+            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        }
     }
-    if (type != WICColorContextProfile) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    // WIC 会同时返回 ICC 和 EXIF 色彩标记；有效 ICC 是实际色彩转换的依据。
+    if (!result.context) {
+        if (profileMarker || !exifSrgb || unsupportedExif) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        return {};
+    }
     UINT profileSize = 0;
     const auto profileSizeResult = result.context->GetProfileBytes(0, nullptr, &profileSize);
     if (FAILED(profileSizeResult) && profileSizeResult != WINCODEC_ERR_INSUFFICIENTBUFFER)
@@ -1039,7 +1050,12 @@ void copyOutput(IWICImagingFactory* factory, const PreparedImage& image, uint32_
         checkHr(factory->CreateBitmapScaler(&scaler));
         checkHr(scaler->Initialize(image.oriented.Get(), width, height,
             WICBitmapInterpolationModeFant));
-        checkHr(scaler.As(&source));
+        // WIC 缩放可能改为 BGRA；输出字节必须符合 C ABI 的 RGBA 约定。
+        ComPtr<IWICFormatConverter> converter;
+        checkHr(factory->CreateFormatConverter(&converter));
+        checkHr(converter->Initialize(scaler.Get(), GUID_WICPixelFormat32bppRGBA,
+            WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom));
+        checkHr(converter.As(&source));
     }
     if (width == 0 || height == 0 || width > UINT32_MAX / 4u ||
         static_cast<uint64_t>(width) > kMaxDisplayPixels / height)

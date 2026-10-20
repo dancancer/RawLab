@@ -4,7 +4,7 @@ namespace RawLab.Windows;
 
 internal static class PhotoInput
 {
-    internal static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos".Split(' '),StringComparer.OrdinalIgnoreCase);
+    internal static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos x3f".Split(' '),StringComparer.OrdinalIgnoreCase);
     internal static readonly HashSet<string> RasterExtensions = new("jpg jpeg png tif tiff".Split(' '),StringComparer.OrdinalIgnoreCase);
     internal static bool IsRaw(string path) => RawExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
     internal static bool IsRaster(string path) => RasterExtensions.Contains(Path.GetExtension(path).TrimStart('.'));

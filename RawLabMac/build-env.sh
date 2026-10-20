@@ -27,7 +27,9 @@ rawlab_libraw_patch_fingerprint() {
         cd "$ROOT"
         shasum -a 256 RawLabMac/build-env.sh RawLabMac/build-dependencies.sh \
             lutools/cmake/libraw/CMakeLists.txt lutools/cmake/patch-libraw.cmake \
+            lutools/cmake/libraw-*.cmake \
             lutools/third_party/rawspeed-camera-calibration.inc \
+            lutools/third_party/libraw/* \
             lutools/third_party/nikon_he/* | shasum -a 256 | awk '{print $1}'
     )
 }

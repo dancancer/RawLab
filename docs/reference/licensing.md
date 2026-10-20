@@ -72,6 +72,12 @@ The notice and full license accompany all native clients and patched LibRaw
 source packages. Adobe DNG Converter is a development reference only, not a
 distributed component or runtime dependency.
 
+Sony ARW6 decoding is backported from pinned LibRaw source under its original
+LGPL/CDDL terms. Sigma X3F tools retain Roland Karlsson's BSD-style notice.
+JPEG-compressed DNG uses libjpeg-turbo 3.1.3 with its IJG/BSD/zlib notices.
+Source revisions and format boundaries are recorded in
+[RAW format support](raw-format-support.md). Their notices accompany all native clients.
+
 Profile-based lens correction uses unmodified Lensfun 0.3.4 (LGPL-3.0).
 The vendored DB1 snapshot is separately licensed under CC BY-SA 3.0, with its
 provenance, attribution and original license retained in

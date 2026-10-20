@@ -20,6 +20,22 @@
 	<string>Allows saving edited photos to your photo library.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.rawlab.x3f</string>
+			<key>UTTypeDescription</key>
+			<string>Sigma X3F RAW image</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.camera-raw-image</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>x3f</string></array>
+			</dict>
+		</dict>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

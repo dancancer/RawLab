@@ -179,6 +179,7 @@ struct PresentationTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         try Data().write(to: folder.appendingPathComponent("photo.ARW"))
+        try Data().write(to: folder.appendingPathComponent("sigma.X3F"))
         try Data().write(to: folder.appendingPathComponent("photo.dng"))
         try Data().write(to: folder.appendingPathComponent("photo.ARQ"))
         try Data().write(to: folder.appendingPathComponent("photo.JPG"))
@@ -188,8 +189,9 @@ struct PresentationTests {
         try Data().write(to: folder.appendingPathComponent(".hidden.ARW"))
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("nested"), withIntermediateDirectories: true)
         let listing = try DirectoryContents.read(folder)
-        check(listing.photos.count == 5 && listing.folders.count == 1,
-              "Directory browsing exposes RAW/JPEG/PNG, not hidden files, GIF or LUTs")
+        check(listing.photos.count == 6 && listing.folders.count == 1 &&
+              DirectoryContents.rawExtensions.contains("x3f"),
+              "Directory browsing exposes RAW/X3F/JPEG/PNG, not hidden files, GIF or LUTs")
         check(listing.folders[0].lastPathComponent == "nested", "Subfolders remain lazy tree nodes")
         let artworkFolder = URL(fileURLWithPath: CommandLine.arguments[1])
         check(FilmArtwork.resourceNames.count == 39, "Every bundled film has packaging artwork")

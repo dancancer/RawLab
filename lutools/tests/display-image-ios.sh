@@ -15,9 +15,6 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 \
     -F "$(dirname "$FRAMEWORK")" -framework sony2fuji \
     -framework CoreFoundation -framework CoreGraphics -framework ImageIO \
     -Wl,-rpath,"$(dirname "$FRAMEWORK")" -o "$OUT/display-image-tests"
-if [[ -n "${RAWLAB_TEST_GAIN_MAP:-}" ]]; then
-    SIMCTL_CHILD_RAWLAB_TEST_GAIN_MAP="$RAWLAB_TEST_GAIN_MAP" \
-        xcrun simctl spawn "$DEVICE" "$OUT/display-image-tests"
-else
+SIMCTL_CHILD_RAWLAB_TEST_GAIN_MAP="${RAWLAB_TEST_GAIN_MAP:-}" \
+    SIMCTL_CHILD_RAWLAB_TEST_RASTER="${RAWLAB_TEST_RASTER:-}" \
     xcrun simctl spawn "$DEVICE" "$OUT/display-image-tests"
-fi

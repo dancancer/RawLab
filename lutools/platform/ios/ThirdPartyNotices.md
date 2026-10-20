@@ -66,5 +66,12 @@ This product includes DNG technology under license by Adobe.
 The white-balance temperature model includes Adobe DNG SDK-derived code;
 see Adobe-DNG-SDK-LICENSE.txt. Embedded stb image decoding/encoding uses its
 MIT license option; see stb-MIT-LICENSE.txt. System zlib,
-Metal and Foundation are supplied by iOS. No OpenMP, LCMS, JPEG/JasPer or
+Metal and Foundation are supplied by iOS. No OpenMP, LCMS, JasPer or
 commercial Nikon/TicoRAW SDK is linked into LibRaw in this build.
+
+JPEG-compressed DNG uses static libjpeg-turbo 3.1.3 (JPEG8 ABI); IJG/BSD/zlib
+notices are in Licenses/libjpeg-turbo/LICENSE.md and README.ijg. Sigma X3F tools
+are enabled; see LibRaw-X3F-BSD.txt. Sony ARW6 decoding and A7 V metadata are
+backported from LibRaw e419de0; A1 II, R50 V and PowerShot V1 metadata come
+from upstream PRs 775/846, 784 and 856. These backports retain LibRaw LGPL/CDDL
+terms. Source pins and boundaries: docs/reference/raw-format-support.md.
