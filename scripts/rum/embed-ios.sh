@@ -18,6 +18,17 @@ destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
 mkdir -p "$destination"
 rm -rf "$destination/AlibabaCloudRUMSDK.framework"
 cp -R "$framework" "$destination/"
+# 供应商 2.4.2 的 plist 错写为 iOS 100.0；只修正嵌入副本，不改共享缓存。
+# 模拟器的两个架构最低版本不同，取二进制中要求的较高版本。
+embedded="$destination/AlibabaCloudRUMSDK.framework"
+minimum_os="$(xcrun vtool -show-build "$embedded/AlibabaCloudRUMSDK" \
+    | awk '$1 == "minos" {print $2}' \
+    | sort -t . -k1,1n -k2,2n -k3,3n | tail -n 1)"
+if [[ ! "$minimum_os" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+    echo "error: Cannot determine AlibabaCloudRUMSDK minimum iOS version" >&2
+    exit 1
+fi
+/usr/bin/plutil -replace MinimumOSVersion -string "$minimum_os" "$embedded/Info.plist"
 if [[ "${CODE_SIGNING_ALLOWED:-YES}" == YES && -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]]; then
     codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none \
         "$destination/AlibabaCloudRUMSDK.framework"

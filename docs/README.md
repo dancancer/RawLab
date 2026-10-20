@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-The current source targets [v0.8.1, build 13](releases/v0.8/v0.8.1.md).
+The current release is [v0.8.2, build 14](releases/v0.8/v0.8.2.md).
 The [GitHub release record](https://github.com/dancancer/RawLab/releases) owns
 published packages, checksums and package provenance.
 
@@ -45,7 +45,7 @@ deliverables.
 
 | Release line | Notes and source instructions |
 | --- | --- |
-| 0.8 | [0.8.1](releases/v0.8/v0.8.1.md), [source](releases/v0.8/v0.8.1-source.md); [0.8.0](releases/v0.8/v0.8.0.md), [source](releases/v0.8/v0.8.0-source.md) |
+| 0.8 | [0.8.2](releases/v0.8/v0.8.2.md), [source](releases/v0.8/v0.8.2-source.md), [Chinese announcement](releases/v0.8/v0.8.2-xiaohongshu.md); [0.8.1](releases/v0.8/v0.8.1.md), [source](releases/v0.8/v0.8.1-source.md); [0.8.0](releases/v0.8/v0.8.0.md), [source](releases/v0.8/v0.8.0-source.md) |
 | 0.7 | [0.7.0](releases/v0.7/v0.7.0.md), [source](releases/v0.7/v0.7.0-source.md) |
 | 0.6 | [0.6.0](releases/v0.6/v0.6.0.md), [source](releases/v0.6/v0.6.0-source.md), [Chinese update notes](releases/v0.6/master-recipes-update.md) |
 | 0.5 | [0.5.1](releases/v0.5/v0.5.1.md), [source](releases/v0.5/v0.5.1-source.md); [0.5.0](releases/v0.5/v0.5.0.md), [source](releases/v0.5/v0.5.0-source.md) |

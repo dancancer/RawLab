@@ -33,11 +33,11 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.8.1 构建13 默认开启使用统计（正式包带阿里云 RUM SDK，可在关于页关闭），四端文案改由同一份来源生成并以 Mac 为基准，并修正工具栏开关状态、系统菜单语言、文字截断等界面细节，见 [v0.8.1 发布说明](../docs/releases/v0.8/v0.8.1.md)。v0.8.0 构建12补齐桌面 Agent 编辑参数、几何编辑和四端普通图像输入，默认单图预览，并统一白平衡和暗角控件。保留既有 RAW、胶片外观、大师配方、HSL、降噪、镜头校正和渲染型 DNG 工作流。详见[发布说明](../docs/releases/v0.8/v0.8.0.md)和[验收范围](../docs/archive/releases/v0.8/preparation.md)。
+v0.8.2 构建14 新增 DCP 直接导入，扩展 RAW 格式兼容性，并优化胶片外观、裁剪、旋转和透视预览。既有使用统计设置和渲染工作流保留，详见 [v0.8.2 发布说明](../docs/releases/v0.8/v0.8.2.md)。
 
-预编译版本：[GitHub Release v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
+预编译版本：[GitHub Release v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
 
-Prebuilt apps: [v0.8.1](https://github.com/dancancer/RawLab/releases/tag/v0.8.1) for Apple Silicon and Intel, targeting macOS14 and ad-hoc signed without notarization. See [release acceptance](../docs/archive/releases/v0.8/preparation.md) for actual coverage and minimum-OS limits.
+Prebuilt apps: [v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2), build 14, for Apple Silicon and Intel. Both target macOS14 and are ad-hoc signed without notarization. See the [release notes](../docs/releases/v0.8/v0.8.2.md) and published build provenance for actual coverage and minimum-OS limits.
 
 构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
 

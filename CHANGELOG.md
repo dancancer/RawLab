@@ -3,6 +3,41 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.8.2] - 2026-10-20
+
+### Added
+
+- Direct import of supported DCP color profiles on macOS, iOS, Android and
+  Windows, without a separate conversion tool.
+- Nikon HE/HE* NEF decoding, Sony ARW6 / Compressed RAW 2 decoding, Sigma X3F
+  input and JPEG-compressed DNG decoding. Camera recognition also includes
+  Sony A7 V/A1 II, Canon R50 V and PowerShot V1.
+
+### Changed
+
+- Faster CPU look processing and geometry rendering, with viewport-sized
+  interactive geometry previews and full-resolution final exports.
+- Speed up iOS ordinary-image preview initialization and reuse decoded pixels
+  for single-image JPEG/DNG exports, reducing repeated decoding and peak memory.
+
+### Fixed
+
+- Windows accepts valid JPEGs carrying both ICC and EXIF color metadata and
+  displays correct colors in scaled first previews. White-balance rounding
+  now matches the other clients.
+- iOS imported-file lifetime across asynchronous import, editing, cancellation
+  and frozen batch exports.
+- Correct the embedded iOS statistics framework's minimum-system metadata
+  during packaging, without modifying the vendor binary or shared SDK cache.
+- Android batch progress, restart recovery and checkpoint-failure handling,
+  with incremental journal updates for larger jobs.
+- Remaining interface wording, translations, error messages and accessibility
+  labels.
+
+Version `0.8.2`, build `14`. See the
+[release notes](docs/releases/v0.8/v0.8.2.md) and
+[Chinese update announcement](docs/releases/v0.8/v0.8.2-xiaohongshu.md).
+
 ## [0.8.1] - 2026-10-18
 
 ### Changed

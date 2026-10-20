@@ -6,13 +6,13 @@ Get current packages and checksums from the [latest release](https://github.com/
 
 | Platform | Package | Requirements |
 | --- | --- | --- |
-| Windows | [v0.8.1 x64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Windows-0.8.1-win-x64.zip) | Windows10/11 x64 |
-| macOS Apple Silicon | [v0.8.1 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-arm64.zip) | macOS14 deployment target |
-| Android | [v0.8.1 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Android-0.8.1.apk) | Android8+, ARM64 or x86_64 |
-| macOS Intel | [v0.8.1 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.8.1/RawLab-Mac-0.8.1-macOS14-x86_64.zip) | macOS14 deployment target |
-| iOS | [Build and sign from source](../releases/v0.8/v0.8.1-source.md#ios) | iOS18+; unsigned IPA needs valid user signing/provisioning |
+| Windows | [v0.8.2 x64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Windows-0.8.2-win-x64.zip) | Windows10/11 x64 |
+| macOS Apple Silicon | [v0.8.2 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-arm64.zip) | macOS14 deployment target |
+| Android | [v0.8.2 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Android-0.8.2.apk) | Android8+, ARM64 or x86_64 |
+| macOS Intel | [v0.8.2 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-x86_64.zip) | macOS14 deployment target |
+| iOS | [v0.8.2 unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-iOS-0.8.2-unsigned.ipa) | iOS18+; unsigned IPA needs valid user signing/provisioning |
 
-[v0.8.1 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.8.1/SHA256SUMS.txt)
+[v0.8.2 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.8.2/SHA256SUMS.txt)
 cover this release's assets. No directly installable iOS package is published.
 
 ## Windows
@@ -58,6 +58,6 @@ memory and thermal validation remain outstanding. See the
 The release provides corresponding source, pinned dependency sources and build
 instructions alongside the binaries. Original project code is distributed
 under [GPLv3 only](../../LICENSE); dependencies and resources retain their own
-licenses. See [licensing](../reference/licensing.md) and the [release notes](../releases/v0.8/v0.8.1.md).
+licenses. See [licensing](../reference/licensing.md) and the [release notes](../releases/v0.8/v0.8.2.md).
 
 RAW files and private signing material are never included in source packages.
