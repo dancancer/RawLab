@@ -223,7 +223,11 @@ PR checks restore third-party native dependencies using an exact cache key.
 Push checks on **both `development` and `main` never restore native caches**:
 they still build all dependencies from source, then save successful results for
 later PRs. PR misses also build from source and save only after the full job
-succeeds. A cache miss or cache-service outage is not permission to skip a build.
+succeeds. Push jobs look up the exact key without downloading its contents, and
+skip saving when that accessible cache already exists. Only a PR restore hit
+enables dependency reuse; a push lookup hit still runs the full cold build.
+Cache lookup/restore failures leave builds enabled and suppress the cache save.
+A cache miss or cache-service outage is not permission to skip a build.
 
 This deliberately uses separate restore/save actions. GitHub makes base/default
 branch caches available to PRs, while a cache created under a PR merge ref cannot

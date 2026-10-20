@@ -12,6 +12,7 @@ CMakeFiles/
 cmake_install.cmake
 cmake-build-*/
 *.cmake
+!cmake/download-archive.cmake
 !cmake/tiff-dependencies.cmake
 !cmake/denoise-dependencies.cmake
 !CMakeLists.txt

@@ -26,7 +26,13 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("tags", events["push"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
         self.assertNotIn("secrets.", self.text)
-        self.assertNotRegex(self.text, r"(?m)^\s*(?:environment|continue-on-error):")
+        self.assertNotRegex(self.text, r"(?m)^\s*environment:")
+        for job in self.workflow["jobs"].values():
+            self.assertNotIn("continue-on-error", job)
+            for step in job["steps"]:
+                if "continue-on-error" in step:
+                    self.assertEqual(step.get("id"), "native-cache")
+                    self.assertTrue(step.get("uses", "").startswith("actions/cache/restore@"))
 
     def test_all_platforms_are_required_and_bounded(self):
         jobs = self.workflow["jobs"]
@@ -212,17 +218,21 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertEqual(len(restores), 1)
                 self.assertEqual(len(saves), 1)
                 restore, save = restores[0], saves[0]
-                self.assertEqual(restore["if"], "github.event_name == 'pull_request'")
+                self.assertNotIn("if", restore)
+                self.assertEqual(restore["continue-on-error"], "true")
+                self.assertEqual(restore["with"]["lookup-only"], "${{ github.event_name == 'push' }}")
                 self.assertNotIn("restore-keys", restore["with"])
                 self.assertEqual(restore["with"]["key"], "${{ steps.native-key.outputs.key }}")
-                self.assertEqual(save["with"], restore["with"])
-                self.assertEqual(save["if"], "success() && steps.native-cache.outputs.cache-hit != 'true'")
+                self.assertEqual(save["with"], {key: restore["with"][key] for key in ("key", "path")})
+                self.assertEqual(save["if"], "success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'")
                 self.assertLess(steps.index(restore), steps.index(save))
                 builds = [step for step in steps if "run" in step and
                           any(command in step["run"] for command in
                               ("bash RawLabMac/build.sh", "./RawLabWindows/build.ps1", "./gradlew", "bash lutools/platform/ios/build-framework.sh"))]
                 self.assertEqual(len(builds), 1)
                 self.assertNotIn("if", builds[0], "Cache hits must still build and test the product")
+                self.assertEqual(builds[0]["env"]["RAWLAB_CI_CACHE_HIT"],
+                                 "${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}")
                 self.assertLess(steps.index(restore), steps.index(builds[0]))
                 self.assertLess(steps.index(builds[0]), steps.index(save))
 
