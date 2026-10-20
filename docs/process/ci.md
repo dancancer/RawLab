@@ -189,6 +189,12 @@ Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
 directory. The cache action selects Git's GNU tar, which must also find `gzip`;
 a missing compressor can leave the job green while silently losing its cache.
 
+The Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
+which otherwise leaves each project's sources compiling one at a time. A single
+cross-project cap of 24 `cl.exe` processes (`CL_MPCount` with
+`EnforceProcessCountAcrossBuilds`) keeps memory within the guest's 32 GiB. These
+are CI environment settings; `build.ps1` and local builds are unchanged.
+
 Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
 exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
 requires physical GPU/external-RAW evidence. Service-session results do not
@@ -222,13 +228,26 @@ account. An owner-approved personal account may opt in by appending
 `--allow-current-user` to the provisioning command; this is not isolation and
 CI inherits that user's access to personal files and credentials. Root is
 always refused, and CI jobs must not use sudo. Prepare full Xcode and Homebrew
-`cmake`, `pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
-administrator. Keep Xcode on a local disk with sufficient capacity and use
-`DEVELOPER_DIR` rather than changing another user's selected developer tools.
-Keep the CI root, runner startup files, credentials and Python venv inside the
-CI user's home on the internal disk. A LaunchAgent can be denied access to an
-external volume even when SSH under the same user works. Configure the runner's
-`--work` separately for a large external build volume; allow only the necessary
+`pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
+administrator. Use `DEVELOPER_DIR` rather than changing another user's selected
+developer tools.
+
+Native dependency outputs embed the workspace, Xcode SDK and Python paths, so the
+cache key includes them. Both pool Macs therefore use one identical layout on a
+case-sensitive APFS volume named `RawLabCI`, mounted at `/Volumes/RawLabCI`
+(an administrator adds it with `diskutil apfs addVolume <container> APFSX RawLabCI`;
+it shares the container's free space): the runner workspace `_work`, a CI-only
+Xcode copy at `tools/Xcode.app` and the Python venv `venv`, which pins CMake via
+[`requirements-apple-runner.txt`](../../scripts/ci/requirements-apple-runner.txt).
+A key computed on one Mac then matches the other, and either Mac reuses the
+other's dependencies. The pool Macs must also keep the same macOS build, Xcode
+build, Homebrew `pkgconf`/autotools and Python 3.12 patch release. A mismatch does
+not break builds; it only gives each Mac separate cache keys again. Compare
+`build/ci/native-cache.json` from each Mac's artifacts to find the differing field.
+
+Keep the CI root with runner startup files and credentials inside the CI user's
+home on the internal disk. A LaunchAgent can be denied access to an external
+volume even when SSH under the same user works; allow only the necessary
 external-storage access when macOS prompts in the CI desktop session. Do not
 grant system-wide shells Full Disk Access to work around this restriction.
 After installing or updating Xcode, an administrator must accept that version's
@@ -241,9 +260,10 @@ Xcode's `xcodebuild -downloadPlatform iOS -architectureVariant arm64`, or export
 and import an official runtime using `-exportPath` and `-importPlatform`.
 Provisioning checks `xcrun simctl list runtimes available -j` as the runner user
 before creating runner files; it never installs system components from a CI job.
-`provision-macos-runner.sh <ci-root> <Xcode.app> <runner-archive>` checks the
-account and SDKs, verifies the pinned official arm64 runner archive, and creates
-an isolated Python 3.12 venv and dedicated build/cache/temp directories. Do not
+`provision-macos-runner.sh <ci-root> /Volumes/RawLabCI/tools/Xcode.app <runner-archive>`
+checks the account, pool volume and SDKs, verifies the pinned official arm64
+runner archive, creates the shared-path Python 3.12 venv with pinned CMake and
+dedicated cache/temp directories, and names the `--work` directory to register. Do not
 copy private SSH keys, personal Keychains or signing credentials into this account.
 
 Local Apple jobs use that prepared Python instead of setup-python's macOS

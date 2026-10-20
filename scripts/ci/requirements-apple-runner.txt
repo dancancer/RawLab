@@ -1,0 +1,2 @@
+# Installed into the shared Apple runner venv so every pool Mac reports the same CMake.
+cmake==4.3.2
