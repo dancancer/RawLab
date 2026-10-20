@@ -2,15 +2,21 @@ name: Hosted CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [development, 'release/**', main]
   push:
-    branches: [development, main]
+    branches: [development]
+  schedule:
+    # 02:00 Beijing time. Skipped when development already passed a cold build at this commit.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Nightly and manual cold builds must not cancel, or be cancelled by, development pushes.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -19,6 +25,32 @@ env:
   CMAKE_BUILD_PARALLEL_LEVEL: '2'
 
 jobs:
+  changes:
+    name: Select affected platforms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Pushes compare with the last successful push run; nightly runs skip a verified commit.
+      actions: read
+    outputs:
+      macos: ${{ steps.select.outputs.macos }}
+      windows: ${{ steps.select.outputs.windows }}
+      android: ${{ steps.select.outputs.android }}
+      ios: ${{ steps.select.outputs.ios }}
+      cold: ${{ steps.select.outputs.cold }}
+      draft: ${{ steps.select.outputs.draft }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Select platforms from the event and changed files
+        id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/affected_platforms.py select
+
   contracts:
     name: Contracts and CI policy
     runs-on: ubuntu-24.04
@@ -62,7 +94,9 @@ jobs:
           retention-days: 7
 
   macos:
-    name: macOS build and parity (${{ matrix.arch }})
+    name: macOS build and parity (${{ matrix.arch }}, ${{ matrix.suite }})
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -72,12 +106,21 @@ jobs:
           - runner: [self-hosted, macOS, ARM64, rawlab-apple]
             arch: arm64
             jobs: '6'
+            suite: all
+          # Both Intel shards build the full app; together they run every native x86_64 suite.
+          # Architecture-independent Swift model suites run on arm64 only.
           - runner: macos-26-intel
             arch: x86_64
             jobs: '4'
+            suite: core
+          - runner: macos-26-intel
+            arch: x86_64
+            jobs: '4'
+            suite: render
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
       RAWLAB_ARCH: ${{ matrix.arch }}
+      RAWLAB_MAC_SUITE: ${{ matrix.suite }}
       JOBS: ${{ matrix.jobs }}
       CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.jobs }}
     steps:
@@ -98,18 +141,18 @@ jobs:
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Build default app and exercise CPU-safe regression suites
         shell: bash
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/macos.log) 2>&1
@@ -129,40 +172,51 @@ jobs:
           export DEVELOPER_DIR
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
+          # "all" runs every group; Intel shards run core or render. Only "all" runs model.
+          in_suite() { [[ "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" ]]; }
           python -m pip install -r lutools/requirements-lutprep.txt
-          python RawLabMac/tests/test_photo_copy.py
-          python RawLabMac/tests/test_build_environment.py
-          python lutools/tests/test_lens_dependencies.py
-          python scripts/ci/test_native_cache_xcode.py
-          bash RawLabMac/tests/horizontal-picker.sh
-          bash RawLabMac/tests/horizontal-picker-native.sh
+          if in_suite core; then
+            python RawLabMac/tests/test_photo_copy.py
+            python RawLabMac/tests/test_build_environment.py
+            python lutools/tests/test_lens_dependencies.py
+            python scripts/ci/test_native_cache_xcode.py
+            bash RawLabMac/tests/horizontal-picker.sh
+            bash RawLabMac/tests/horizontal-picker-native.sh
+          fi
           ci_timed app-build bash RawLabMac/build.sh
           lutprep_python="$(command -v python)"
-          ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
-          ci_timed look-library bash RawLabMac/tests/look-library.sh
-          ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
-          ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
-            -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
-            --output-junit "$PWD/build/ci/macos-ctest.xml"
+          if in_suite core; then
+            ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
+            ci_timed look-library bash RawLabMac/tests/look-library.sh
+            ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
+            ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
+              -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
+              --output-junit "$PWD/build/ci/macos-ctest.xml"
+          fi
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
           cli="$PWD/lutools/build-macos/sony2fuji"
-          RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR="$RUNNER_TEMP/rawlab-straighten-preview" \
-            ci_timed straighten-preview bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
-          ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
-          ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
-          ci_timed batch-export bash RawLabMac/tests/batch-export.sh
-          ci_timed edit-model bash RawLabMac/tests/edit-model.sh
-          ci_timed presentation bash RawLabMac/tests/presentation.sh
-          ci_timed control-groups bash RawLabMac/tests/control-groups.sh
-          ci_timed usage-analytics bash Shared/tests/usage-analytics.sh
-          ci_timed usage-transport bash Shared/tests/usage-transport.sh
-          ci_timed usage-model bash RawLabMac/tests/usage-model.sh
-          ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
-          ci_timed rum-configuration bash RawLabMac/tests/rum-configuration.sh
-          ci_timed localization bash RawLabMac/tests/localization.sh
+          if in_suite render; then
+            RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR="$RUNNER_TEMP/rawlab-straighten-preview" \
+              ci_timed straighten-preview bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
+            ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
+            ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
+          fi
+          if in_suite model; then
+            ci_timed batch-export bash RawLabMac/tests/batch-export.sh
+            ci_timed edit-model bash RawLabMac/tests/edit-model.sh
+            ci_timed presentation bash RawLabMac/tests/presentation.sh
+            ci_timed control-groups bash RawLabMac/tests/control-groups.sh
+            ci_timed usage-analytics bash Shared/tests/usage-analytics.sh
+            ci_timed usage-transport bash Shared/tests/usage-transport.sh
+            ci_timed usage-model bash RawLabMac/tests/usage-model.sh
+            ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
+            ci_timed rum-configuration bash RawLabMac/tests/rum-configuration.sh
+            ci_timed localization bash RawLabMac/tests/localization.sh
+          fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        # Both Intel shards share one key; the core shard alone saves it.
+        if: success() && matrix.suite != 'render' && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
@@ -170,7 +224,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: macos-${{ matrix.arch }}-results
+          name: macos-${{ matrix.arch }}-${{ matrix.suite }}-results
           path: |
             build/ci/*.log
             build/ci/*.json
@@ -179,6 +233,8 @@ jobs:
 
   windows:
     name: Windows build and parity
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: [self-hosted, windows, x64, rawlab-windows]
     timeout-minutes: 120
     env:
@@ -204,18 +260,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Cannot install CI Python requirements' }
           python scripts/ci/native_cache.py key --platform windows --arch x86_64
           if ($LASTEXITCODE -ne 0) { throw 'Cannot identify native dependency cache' }
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Build default self-contained app and exercise CPU-safe suites
         shell: pwsh
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force build/ci | Out-Null
@@ -266,6 +322,8 @@ jobs:
 
   android:
     name: Android build and JVM tests
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: [self-hosted, linux, x64, rawlab-android]
     timeout-minutes: 120
     env:
@@ -291,18 +349,18 @@ jobs:
           python -m pip install -r scripts/ci/requirements.txt
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
           python scripts/ci/native_cache.py key --platform android --arch arm64-x86_64
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Build both ABIs, JVM tests, lint and instrumentation test APK
         shell: bash
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/android.log) 2>&1
@@ -333,6 +391,8 @@ jobs:
 
   ios:
     name: iOS framework and unsigned app
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: [self-hosted, macOS, ARM64, rawlab-apple]
     timeout-minutes: 180
     env:
@@ -349,18 +409,18 @@ jobs:
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform ios --arch arm64-x86_64
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Build all framework slices and compile simulator app and tests
         shell: bash
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/ios.log) 2>&1
@@ -391,3 +451,20 @@ jobs:
             build/ci/*.log
             build/ci/*.json
           retention-days: 7
+
+  result:
+    name: CI result
+    needs: [changes, contracts, macos, windows, android, ios]
+    # Drafts defer platform checks, so their result stays skipped instead of reporting a pass.
+    if: ${{ !cancelled() && needs.changes.outputs.draft != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - name: Require every selected check and no unselected one
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/affected_platforms.py verify

@@ -1,0 +1,30 @@
+name: PR cache cleanup
+
+# A pull request's caches serve only that pull request. Remove them once it closes so they do
+# not push development caches out of the repository's cache quota.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: Delete this pull request's caches
+    # Fork pull requests receive a read-only token.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Delete caches created for the merge ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$CACHE_REF&per_page=100" \
+            --jq '.actions_caches[].id' > "$RUNNER_TEMP/cache-ids"
+          while read -r id; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id"
+            echo "Deleted cache $id from $CACHE_REF"
+          done < "$RUNNER_TEMP/cache-ids"

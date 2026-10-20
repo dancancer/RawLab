@@ -59,10 +59,12 @@ def workflow_identity(root, platform, arch=None):
         raise ValueError(f"Native cache job is missing: {platform}")
     if platform == "macos" and arch is not None:
         matrix = job.get("strategy", {}).get("matrix", {})
-        selected = [row for row in matrix.get("include", []) if row.get("arch") == arch]
+        # Test shards of one architecture build the same dependencies and share one key.
+        selected = {json.dumps({name: value for name, value in row.items() if name != "suite"}, sort_keys=True)
+                    for row in matrix.get("include", []) if row.get("arch") == arch}
         if len(selected) != 1:
             raise ValueError(f"Native cache matrix row is missing or ambiguous: {platform}/{arch}")
-        matrix["include"] = selected
+        matrix["include"] = [json.loads(row) for row in selected]
     # Keep the complete consumer job and shared build defaults, not unrelated jobs.
     inputs = {"job": job, "env": workflow.get("env", {}), "defaults": workflow.get("defaults", {})}
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
