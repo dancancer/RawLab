@@ -224,7 +224,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
                 ratio = state.draft?.geometryRatio ?: GeometryRatio.FREE,
                 portrait = state.draft?.geometryPortrait ?: false,
-                ratioEnabled = state.canApplyDraft, onRatioChange = onGeometryRatio) { value, dragging ->
+                ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio) { value, dragging ->
                 onDraftEdit(edits.copy(geometry = value), dragging)
             }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->

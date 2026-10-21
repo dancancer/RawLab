@@ -48,7 +48,8 @@ data class EditorState(
         operation == Operation.NONE && draft == null && saveState != EditSaveState.FAILED
     val controlsEnabled get() = photo != null && operation == Operation.NONE
     val visibleEdits get() = draft?.project(edits) ?: edits
-    val canApplyDraft get() = draft != null && controlsEnabled && exact && !rendering && error == null
+    val draftReady get() = draft != null && controlsEnabled && exact && !rendering && !previewResizePending && error == null
+    val canApplyDraft get() = draftReady && draft?.changed == true
 }
 
 // 纯状态转换：渲染结束、外观加载/导入/改名/删除后的界面状态

@@ -19,10 +19,13 @@ data class AdjustmentDraft(
     val geometryPortrait: Boolean = false,
     val geometryOriginalAspect: Float = 1f,
     val geometryCanvasAspect: Float = 1f,
+    val includesPair: Boolean = false,
 ) {
     val geometryAspect: Float? get() = geometryRatio.ratio(geometryOriginalAspect, geometryPortrait)
     val changed: Boolean get() = project(original) != original
-    fun project(settings: EditSettings): EditSettings = when (group) {
+    fun project(settings: EditSettings): EditSettings = if (includesPair)
+        settings.copy(geometry = value.geometry, lens = value.lens)
+    else when (group) {
         AdjustmentGroup.GEOMETRY -> settings.copy(geometry = value.geometry)
         AdjustmentGroup.LENS -> settings.copy(lens = value.lens)
     }
@@ -38,6 +41,10 @@ data class AdjustmentDraft(
         return copy(value = next, geometryRatio = if (resized && breaksRatio) GeometryRatio.FREE else geometryRatio)
     }
     fun reset() = update(EditSettings()).copy(geometryRatio = GeometryRatio.FREE)
+
+    internal fun resetPair(settings: EditSettings) = copy(
+        value = value.copy(geometry = settings.geometry, lens = settings.lens),
+        includesPair = true, geometryRatio = GeometryRatio.FREE)
 
     fun selectGeometryRatio(ratio: GeometryRatio, portrait: Boolean): AdjustmentDraft {
         if (group != AdjustmentGroup.GEOMETRY) return this
