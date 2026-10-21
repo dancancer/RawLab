@@ -44,7 +44,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
             if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
-                enabled = state.canApplyDraft, physicalAspect = state.draft.geometryAspect) { value ->
+                enabled = state.draftReady, physicalAspect = state.draft.geometryAspect) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
@@ -63,14 +63,14 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
         }
         status?.let { Text(it, Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f)).padding(6.dp),
             color = Color.White, style = MaterialTheme.typography.labelSmall) }
-        if (state.preview == null) EditorSaveNotice(state, onSaveRetry, Modifier.align(Alignment.BottomCenter)
+        if (state.preview == null || (state.draft?.group == AdjustmentGroup.GEOMETRY && state.saveState == EditSaveState.FAILED)) EditorSaveNotice(state, onSaveRetry, Modifier.align(Alignment.BottomCenter)
             .padding(start = 12.dp, end = 12.dp, bottom = comparisonInset))
     }
 }
 
 @Composable
 internal fun EditorSaveNotice(state: EditorState, onRetry: () -> Unit, modifier: Modifier) {
-    if (state.draft != null || state.saveState == EditSaveState.NONE) return
+    if (state.saveState == EditSaveState.NONE || (state.draft != null && state.saveState != EditSaveState.FAILED)) return
     val failed = state.saveState == EditSaveState.FAILED
     val text = stringResource(when (state.saveState) {
         EditSaveState.SAVED -> R.string.edit_saved

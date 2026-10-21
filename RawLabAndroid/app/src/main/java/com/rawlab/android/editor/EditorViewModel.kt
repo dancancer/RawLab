@@ -35,6 +35,7 @@ import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.editor.storage.EditSaveResult
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.geometry.uncropped
+import com.rawlab.android.looks.MasterRecipe
 
 class EditorViewModel @JvmOverloads constructor(
     application: Application,
@@ -49,6 +50,11 @@ class EditorViewModel @JvmOverloads constructor(
     val batch = batches.active
     val pendingBatch = batches.pending
     private var currentRevision = 0L
+    private var sourceRevision = 0L
+    private var editRevision = 0L
+    private var draftRevision = 0L
+    private var durablePreview: EditorDurablePreview? = null
+    private var failedDraftSave = false
     private var previewLongEdge = 1600
     private var requestedPreviewLongEdge = 1600
     private var previewResizeJob: Job? = null
@@ -93,6 +99,7 @@ class EditorViewModel @JvmOverloads constructor(
                         val current = mutable.value
                         val draft = current.draft ?: return@fold
                         val refitted = draft.acceptGeometryCanvas(value.pair.comparisonWidth / value.pair.comparisonHeight)
+                        if (refitted != draft) draftRevision += 1
                         mutable.value = EditorStateReducer.renderFinished(current)
                             .copy(draft = refitted, preview = value.pair, exact = !request.interactive, error = null)
                         return@fold
@@ -106,7 +113,12 @@ class EditorViewModel @JvmOverloads constructor(
                         request.edits.copy(temperature = value.pair.temperature.coerceIn(2000f, 50000f),
                             tint = if (request.edits.recipeID == null) value.pair.tint.coerceIn(-150f, 150f) else request.edits.tint)
                     else request.edits
+                    val alreadyDurable = durablePreview?.matches(request.photo.identity,
+                        request.photo.file.absolutePath, sourceRevision, currentRevision, settings) == true
+                    durablePreview = null
+                    if (settings != mutable.value.edits) editRevision += 1
                     val saved = when {
+                        alreadyDurable -> EditSaveResult(EditSaveState.SAVED)
                         request.importing -> if (!editStore.available) editStore.initialResult else
                             EditSaveResult(if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE)
                         request.interactive -> null
@@ -182,6 +194,8 @@ class EditorViewModel @JvmOverloads constructor(
     private fun scheduleLookPreview(edits: EditSettings?) {
         val photo = mutable.value.photo ?: return
         if (edits == null) return
+        editRevision += 1
+        durablePreview = null
         currentRevision = queue.submit(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
     }
 
@@ -212,6 +226,8 @@ class EditorViewModel @JvmOverloads constructor(
                 return
             }
         }
+        sourceRevision += 1
+        durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
         mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null)
         previewResizeJob?.cancel()
@@ -259,6 +275,8 @@ class EditorViewModel @JvmOverloads constructor(
             previewResizeJob = null
             previewLongEdge = requestedPreviewLongEdge
         }
+        durablePreview = null
+        if (edits != current.edits) editRevision += 1
         val saved = if (interactive) null else persist(current.photo!!, edits)
         mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
             saveState = saved?.state ?: current.saveState, saveError = if (saved == null) current.saveError else saved.message,
@@ -298,6 +316,8 @@ class EditorViewModel @JvmOverloads constructor(
         previewResizeJob?.cancel()
         previewResizeJob = null
         val pair = current.preview ?: return
+        draftRevision += 1
+        failedDraftSave = false
         mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits, pair.originalAspect,
             pair.comparisonWidth / pair.comparisonHeight), previewResizePending = false, error = null)
         if (group == AdjustmentGroup.GEOMETRY && current.edits.geometry != current.edits.geometry.uncropped()) renderDraft(false)
@@ -308,6 +328,8 @@ class EditorViewModel @JvmOverloads constructor(
         val previous = current.draft ?: return
         if (!current.controlsEnabled) return
         val next = previous.update(edits)
+        if (next == previous) return
+        draftRevision += 1
         mutable.value = current.copy(draft = next)
         // Crop-only edits are an overlay on the full transformed preview, not a RAW render.
         if (previous.group == AdjustmentGroup.GEOMETRY &&
@@ -329,21 +351,41 @@ class EditorViewModel @JvmOverloads constructor(
     fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {
         val current = mutable.value
         val draft = current.draft ?: return
-        if (!current.controlsEnabled || (ratio != GeometryRatio.FREE && !current.canApplyDraft)) return
-        mutable.value = current.copy(draft = draft.selectGeometryRatio(ratio, portrait))
+        if (!current.controlsEnabled || (ratio != GeometryRatio.FREE && !current.draftReady)) return
+        val next = draft.selectGeometryRatio(ratio, portrait)
+        if (next == draft) return
+        draftRevision += 1
+        mutable.value = current.copy(draft = next)
     }
 
-    fun applyDraft() {
+    fun applyDraft(): Boolean {
         val current = mutable.value
-        if (!current.canApplyDraft) return
+        if (disposed || !current.canApplyDraft) return false
+        val photo = current.photo ?: return false
         val edits = current.draft!!.project(current.edits)
-        mutable.value = current.copy(draft = null)
-        edit(edits)
+        previewResizeJob?.cancel()
+        previewResizeJob = null
+        val saved = persist(photo, edits)
+        if (saved.state == EditSaveState.FAILED) {
+            failedDraftSave = true
+            mutable.value = current.copy(saveState = saved.state, saveError = saved.message)
+            return false
+        }
+        failedDraftSave = false
+        editRevision += 1
+        draftRevision += 1
+        mutable.value = current.copy(edits = edits, draft = null, rendering = true, exact = false,
+            previewResizePending = false, error = null, saveState = saved.state, saveError = saved.message)
+        currentRevision = queue.submit(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
+        durablePreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision, currentRevision, edits)
+        return true
     }
 
     fun discardDraft() {
         val current = mutable.value
         if (current.draft == null) return
+        failedDraftSave = false
+        draftRevision += 1
         mutable.value = current.copy(draft = null)
         edit(current.edits)
     }
@@ -356,11 +398,57 @@ class EditorViewModel @JvmOverloads constructor(
         currentRevision = queue.submit(Work.AutoExposure(current.photo!!, current.edits))
     }
     fun retrySave() {
+        if (failedDraftSave && mutable.value.draft != null) { applyDraft(); return }
         val photo = mutable.value.photo
         val saved = if (photo != null) persist(photo, mutable.value.edits) else editStore.reopen()
         mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
         fadeSaveNotice()
     }
+    fun prepareReset(scope: EditorResetScope): EditorResetPreparation {
+        val current = mutable.value
+        val session = resetSession()
+        if (disposed || session == null || !current.controlsEnabled || !current.exact ||
+            current.rendering || current.previewResizePending || current.error != null) {
+            return EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
+        }
+        return EditorResetTransaction.prepare(scope, session)
+    }
+
+    fun commitReset(prepared: PreparedEditorReset): Boolean {
+        val current = mutable.value
+        val session = resetSession() ?: return false
+        if (disposed || !current.controlsEnabled || !current.exact || current.rendering ||
+            current.previewResizePending || current.error != null || !prepared.matches(session)) return false
+        prepared.draftCandidate?.let { next ->
+            if (next == current.draft) return false
+            draftRevision += 1
+            mutable.value = current.copy(draft = next)
+            renderDraft(false)
+            return true
+        }
+        val previousRequest = currentRevision
+        edit(prepared.result.candidate)
+        if (currentRevision == previousRequest) return false
+        if (mutable.value.saveState == EditSaveState.SAVED) {
+            val photo = current.photo!!
+            durablePreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision,
+                currentRevision, prepared.result.candidate)
+        }
+        return true
+    }
+
+    private val resetRecipeIds by lazy { MasterRecipe.load(getApplication()).map { it.id }.toSet() }
+
+    private fun resetSession(): EditorResetSession? {
+        val current = mutable.value
+        val photo = current.photo ?: return null
+        val shot = current.preview?.takeIf { it.temperature.isFinite() && it.tint.isFinite() }
+            ?.let { AsShotWhiteBalance(it.temperature, it.tint) }
+        val context = EditorResetContext(photo.inputKind, EditSettings().effectiveFor(photo.inputKind), shot, resetRecipeIds)
+        return EditorResetSession(photo.identity, photo.file.absolutePath, sourceRevision, editRevision,
+            current.edits, current.draft, draftRevision, context)
+    }
+
     fun reset() { edit(mutable.value.edits.reset()) }
 
     private var saveNotice: kotlinx.coroutines.Job? = null
