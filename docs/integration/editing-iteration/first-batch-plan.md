@@ -18,7 +18,7 @@
 - 六组 ID 固定 `looks/light/color/effects/detail/geometry`；保留旧 `AdjustmentGroup`、旧 decoder 和已有 API，导航 ID 不进入存储格式。
 - reset 只产生候选，不保存、渲染或修改调用方快照；配方独立化前后非外观 core Float 值及最终 HSL Float 数组必须相等，无法表示则 blocked，不 clamp。
 - 精确保持 recipe settings version、旧缺字段默认、HSL 小数、legacy 降噪语义；原始照片只读。
-- 不重建设计资产、不写新像素算法、不改 ABI/Agent schema、本地化或公共 CI；真实平台未运行的检查写未验证。
+- 不重建设计资产、不写新像素算法、不改 ABI/Agent schema 或本地化；公共 CI 仅由协调者在 #108 接入 MCP 协议与当前 Mac CLI 对照，保留现有门槛；真实平台未运行的检查写未验证。
 
 ## Review Focus
 

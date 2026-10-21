@@ -56,7 +56,7 @@ flowchart TD
     Release[可信发行身份与 feed] --> Update[桌面更新 ITER-11]
 ```
 
-共享接口的合入先于消费它的功能。构建/依赖、共享六语资源由下表指定的单一 owner 接入；本首批没有公共构建或资源变更。后续任务若新增此类依赖，必须先在本表登记对应 PR 和消费方，再开始跨端接入。
+共享接口的合入先于消费它的功能。构建/依赖、共享六语资源由下表指定的单一 owner 接入；首批 #108 由协调者在既有 CI 门槛内接入 MCP 协议测试及当前 Mac CLI 对照，没有共享资源变更。后续任务若新增此类依赖，必须先在本表登记对应 PR 和消费方，再开始跨端接入。
 
 ## 共享文件与当前 owner
 
@@ -72,7 +72,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | 核心算法 / Metal / GLES / D3D11 | 协调者保留 | `lutools/src/core/`、对应后端 | CPU 合同与质量先准入，不能各后端并行猜常量 |
 | iOS / Android / Windows 平台入口 | 各平台 owner 尚未激活 | 各端 editor、snapshot、storage、bridge、batch | S1 规则和交接接口稳定后按端派发 |
 | 共享本地化与无障碍 keys | 协调者保留 | `Shared/strings/` 及生成入口 | 功能 owner 提交 key/参数需求，单一资源 owner 写入 |
-| 构建、CI、公共依赖与许可证 | 协调者保留 | 根构建、`lutools/CMakeLists.txt`、`.github/`、共享依赖 | 不由各功能分别改公共构建入口 |
+| 构建、CI、公共依赖与许可证 | 协调者；首批 CI 接线在 #108 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | 不由各功能分别改公共构建入口；#108 保留现有原生门槛并新增 MCP 验证 |
 
 第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从上述基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
 
