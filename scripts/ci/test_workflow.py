@@ -212,6 +212,15 @@ class WorkflowContractTests(unittest.TestCase):
         for suite in ("test_bundled_looks.py", "test_lut_source_audit.py", "test_prepare_bundled_looks.py"):
             self.assertIn("Shared/tests/" + suite, contracts)
 
+    def test_mcp_protocol_and_built_cli_parity_are_gated(self):
+        contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
+        self.assertIn("uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v", contracts)
+        mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
+        parity = "RAWLAB_MCP_CLI=\"$cli\" uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -p test_real_cli.py -v"
+        self.assertIn(parity, mac)
+        self.assertLess(mac.index("ci_timed app-build"), mac.index(parity))
+        self.assertLess(mac.index('cli="$PWD/lutools/build-macos/sony2fuji"'), mac.index(parity))
+
     def test_mixed_batch_source_isolation_runs_on_macos(self):
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
         self.assertIn("RawLabMac/tests/batch-export.sh", mac)

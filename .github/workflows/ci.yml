@@ -85,6 +85,8 @@ jobs:
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
           python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
+          python -m pip install uv==0.9.5
+          uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v
           git diff --check
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
@@ -200,6 +202,8 @@ jobs:
               ci_timed straighten-preview bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
             ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
             ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
+            python -m pip install uv==0.9.5
+            ci_timed mcp-cli-parity env RAWLAB_MCP_CLI="$cli" uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -p test_real_cli.py -v
           fi
           if in_suite model; then
             ci_timed batch-export bash RawLabMac/tests/batch-export.sh

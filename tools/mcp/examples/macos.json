@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rawlab": {
+      "command": "/absolute/repo/tools/mcp/.venv/bin/python",
+      "args": ["-m", "rawlab_mcp", "--cli", "/absolute/RawLab CLI/bin/sony2fuji", "--read-root", "/absolute/photos", "--write-root", "/absolute/exports"]
+    }
+  }
+}
