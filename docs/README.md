@@ -33,6 +33,9 @@ published packages, checksums and package provenance.
 ## Architecture And Design
 
 - [Product scope](../PRODUCT.md), [desktop design](../DESIGN.md) and [product roadmap](architecture/roadmap.md)
+- [Maintained design assets](design/README.md), including the [four-platform app prototype and coverage](design/editor-workspace/README.md)
+- [Iteration requirements](design/editing-iteration/requirements.md) and [technical design](design/editing-iteration/technical-design.md): phase-one remaining work, all of phase two and desktop updates
+- [Workspace sub-requirements](design/editor-workspace/requirements.md) and [native sub-design](design/editor-workspace/technical-design.md), ITER-02 based on the r4 four-platform prototype
 - [Active architecture and performance review, 2026-10-18](architecture/architecture-and-performance-review-2026-10-18.md), with separate historical measurements and current-code static recheck
 - [Active cross-camera preset roadmap](architecture/cross-camera-presets-roadmap.md), including outstanding quality gates
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)

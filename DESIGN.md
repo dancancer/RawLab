@@ -31,6 +31,8 @@ components:
 
 Native macOS RAW and raster photo verification and editing, with a Photos-inspired bottom adjustment dock. The actual photo leads; this is not a marketing page or a catalog database. Preserve source photos and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
 
+Editable proposals are maintained in the [design asset registry](docs/design/README.md). Check each asset's metadata before reusing it: a review prototype does not replace the confirmed native rules in this document or establish implementation evidence.
+
 <!-- BEGIN RAWLAB IOS IPADOS OVERVIEW -->
 ### iOS / iPadOS
 
