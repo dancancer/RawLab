@@ -72,6 +72,164 @@ async function reviewLifecycle(browser, base) {
       await page.locator('[data-flow-action="check-now"]').click();
     };
     try {
+      for (const finish of ["cancel", "submit"])
+        await check(`sync-${finish}-preserves-copied-payload`, async () => {
+          await goto("light");
+          await more("copy-scope");
+          await iter("capture");
+          const copied = (await inspect()).clipboard;
+          await iter("close");
+          await action("auto-exposure");
+          const changed = await snapshot();
+          assert.notEqual(
+            changed.values.exposure,
+            copied.snapshot.values.exposure,
+          );
+          await more("batch-sync");
+          await iter("batch:scope");
+          if (finish === "submit") {
+            await iter("sync-preflight");
+            await iter("target-draft:discard");
+            assert.equal(
+              edit(await inspect(), "photo-1").values.exposure,
+              changed.values.exposure,
+            );
+          }
+          await page.locator('[data-flow-action="back"]').click();
+          await close();
+          assert.deepEqual((await inspect()).clipboard, copied);
+          await more("paste-result");
+          await iter("paste:apply");
+          if (finish === "cancel") await iter("target-draft:discard");
+          await flow("paste-done");
+          assert.equal(
+            edit(await inspect(), "photo-1").values.exposure,
+            copied.snapshot.values.exposure,
+          );
+        });
+      await check("sync-without-copy-keeps-clipboard-empty", async () => {
+        await goto("groups");
+        await more("batch-sync");
+        await iter("batch:scope");
+        await iter("sync-preflight");
+        await iter("target-draft:discard");
+        await flow("batch-sync-success");
+        assert.equal((await inspect()).clipboard, null);
+        assert.equal(
+          await page.evaluate(() => RawLabIteration.canPaste()),
+          false,
+        );
+      });
+      await check(
+        "preset-in-single-edit-retains-collection-transaction",
+        async () => {
+          await goto("groups");
+          const before = await inspect();
+          await more("batch-sync");
+          await iter("batch:scope");
+          await iter("sync-preflight");
+          await iter("target-draft:discard");
+          const synced = await inspect();
+          await iter("edit:photo-1");
+          await more("user-presets");
+          await iter("preset:apply:p2");
+          await iter("paste:apply");
+          // 预设结果页仍定位本次单张操作；集合入口应定位原同步事务。
+          await iter("open:history-batch");
+          assert(
+            (await page.locator(".history-row").innerText()).includes(
+              "1 张成功目标",
+            ),
+          );
+          await iter("history:undo");
+          assert.equal(edit(await inspect(), "photo-1").values.vibrance, 0);
+          await iter("history:redo");
+          await close();
+          await iter("batch:save-return");
+          const tweaked = await inspect();
+          await iter("open:history-batch");
+          assert(
+            (await page.locator(".history-row").innerText()).includes(
+              "3 张成功目标",
+            ),
+          );
+          await iter("history:undo");
+          await flow("history-conflict");
+          await iter("history:skip");
+          await flow("history-recovered");
+          const undone = await inspect();
+          assert.deepEqual(edit(undone, "photo-1"), edit(tweaked, "photo-1"));
+          for (const id of ["photo-2", "photo-3"])
+            assert.deepEqual(edit(undone, id), edit(before, id));
+          await iter("history:redo");
+          const redone = await inspect();
+          assert.deepEqual(edit(redone, "photo-1"), edit(tweaked, "photo-1"));
+          for (const id of ["photo-2", "photo-3"])
+            assert.deepEqual(edit(redone, id), edit(synced, id));
+        },
+      );
+      await check("unchanged-preset-keeps-redo-enabled", async () => {
+        await goto("tool-film");
+        await more("user-presets");
+        await iter("open:preset-save");
+        await page.locator("[data-preset-name]").fill("未变化调整");
+        await iter("preset:save");
+        const preset = (await inspect()).presets.find(
+          (p) => p.name === "未变化调整",
+        );
+        await iter("close");
+        await page.locator('[data-film="VELVIA"]').click();
+        const changed = await snapshot();
+        await action("undo");
+        const before = await inspect();
+        await more("user-presets");
+        await iter(`preset:apply:${preset.id}`);
+        await iter("paste:apply");
+        assert.equal(
+          await page.locator('[data-iter="open:history-batch"]').count(),
+          0,
+        );
+        assert(
+          (await page.locator(".flow-body").innerText()).includes(
+            "目标调整未变化",
+          ),
+        );
+        await iter("close");
+        assert.deepEqual((await inspect()).history, before.history);
+        assert.equal(
+          await page.locator('[data-action="redo"]').last().isEnabled(),
+          true,
+        );
+        await action("redo");
+        assert.deepEqual(await snapshot(), changed);
+      });
+      await check("unchanged-sync-retains-last-transaction", async () => {
+        await goto("groups");
+        const before = await inspect();
+        await more("batch-sync");
+        await iter("batch:scope");
+        await iter("sync-preflight");
+        await iter("target-draft:discard");
+        const synced = await inspect();
+        await page.locator('[data-flow-action="back"]').click();
+        await iter("batch:scope");
+        await iter("sync-preflight");
+        assert.deepEqual((await inspect()).history, synced.history);
+        assert.equal(
+          await page.locator('[data-iter="open:history-batch"]').count(),
+          0,
+        );
+        assert(
+          (await page.locator(".flow-body").innerText()).includes(
+            "目标调整未变化",
+          ),
+        );
+        await page.locator('[data-flow-action="back"]').click();
+        await iter("open:history-batch");
+        await iter("history:undo");
+        for (const id of ["photo-1", "photo-2", "photo-3"])
+          assert.deepEqual(edit(await inspect(), id), edit(before, id));
+      });
       for (const exit of ["header", "escape"])
         await check(`preset-exit-${exit}-starts-fresh-paste`, async () => {
           await goto("copy-scope");
@@ -401,6 +559,27 @@ async function reviewLifecycle(browser, base) {
         assert((await inspect()).presets.some((p) => p.id === first.id));
       });
       if (["macos", "windows"].includes(platform)) {
+        for (const phase of ["downloading", "verifying"])
+          await check(`update-${phase}-survives-photo-import`, async () => {
+            await goto("update");
+            await action("download-update");
+            await page.waitForFunction(
+              (expected) => download === expected,
+              phase,
+            );
+            await action("close-update");
+            await action("import");
+            await page.locator('[data-flow="system-picker"]').click();
+            await page.locator('[data-flow-action="import-selected"]').click();
+            await page.waitForFunction(() => download === "ready", null, {
+              timeout: 6000,
+            });
+            await settings();
+            assert.equal(
+              await page.locator('[data-action="install-update"]').count(),
+              1,
+            );
+          });
         await check("restored-version-completes-failure-recovery", async () => {
           await goto("update-installing");
           await action("simulate-install-failed");

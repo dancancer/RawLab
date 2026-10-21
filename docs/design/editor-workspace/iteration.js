@@ -52,6 +52,14 @@ window.RawLabIteration = (() => {
     return histories.get(id);
   };
   const sourceIdentity = () => operation?.sourceId || collectionSourceId;
+  const activePayload = () =>
+    presetTarget
+      ? activePresetPayload
+      : operation?.mode === "sync"
+        ? operation.payload
+        : clipboard;
+  const hasHistory = (result) =>
+    result.status === "applied" && result.historyState !== "unchanged";
   function recordEdit(id, before, after, record = {}) {
     if (sameSnapshot(before, after))
       return Object.assign(record, {
@@ -154,7 +162,7 @@ window.RawLabIteration = (() => {
       open(mode === "sync" ? "batch-sync-scope" : "paste-result");
       return;
     }
-    const payload = presetTarget ? activePresetPayload : clipboard;
+    const payload = activePayload();
     if (
       !skipIncompatible &&
       currentTargets().some((p) => p.raster) &&
@@ -164,9 +172,12 @@ window.RawLabIteration = (() => {
       return;
     }
     applyTargets(false, retry, skipIncompatible);
-    lastOutcome = skipIncompatible
-      ? "已按确认跳过不兼容范围；其余调整已保存。"
-      : `${currentTargets().length} 张目标已保存；未选项保留。`;
+    const changed = [...results.values()].filter(hasHistory).length;
+    lastOutcome = !changed
+      ? "现有撤销和重做记录保留。"
+      : skipIncompatible
+        ? "已按确认跳过不兼容范围；其余调整已保存。"
+        : `${changed} 张目标已保存；未选项保留。`;
     open(mode === "sync" ? "batch-sync-success" : "paste-done");
   }
   const photos = [
@@ -182,8 +193,19 @@ window.RawLabIteration = (() => {
     },
   ];
   let selectedPhotos = new Set(["photo-1", "photo-2", "photo-3"]);
-  const edits = new Map(),
-    results = new Map();
+  const edits = new Map();
+  let results = new Map(),
+    syncResults = new Map(),
+    historyResults = results;
+  const historyConflicts = () =>
+    [...historyResults]
+      .filter(
+        ([photoId, result]) =>
+          result.status === "applied" &&
+          result.historyState === "applied" &&
+          !sameSnapshot(edits.get(photoId), result.after),
+      )
+      .map(([photoId]) => photoId);
   const presets = [
     {
       id: "p1",
@@ -416,8 +438,9 @@ window.RawLabIteration = (() => {
     retry = false,
     skipIncompatible = false,
   ) {
-    const payload = presetTarget ? activePresetPayload : clipboard || capture();
-    if (!retry) results.clear();
+    const payload = activePayload() || capture();
+    // 新操作使用新结果表；集合保留原同步表及照片历史中的同一记录引用。
+    if (!retry) results = new Map();
     for (const p of currentTargets()) {
       if (retry && results.get(p.id)?.status !== "failed") continue;
       if (partial && p.id === "photo-2") {
@@ -452,7 +475,6 @@ window.RawLabIteration = (() => {
         }),
       );
       if (p.id === currentIdentity()) {
-        ctx.setCanRedo(false);
         ctx.restore(after);
         T.restore(after.curve);
       }
@@ -462,7 +484,9 @@ window.RawLabIteration = (() => {
         status: "skipped",
         reason: "草稿未应用，已明确跳过本次操作",
       });
-    historyUndone = false;
+    if (operation?.mode === "sync" && [...results.values()].some(hasHistory))
+      syncResults = results;
+    syncHistory();
   }
   function scopePicker() {
     const checks = (fields) =>
@@ -639,31 +663,37 @@ window.RawLabIteration = (() => {
         button("paste:skip-incompatible", "跳过不兼容项后应用", "primary");
     } else if (["paste-partial", "paste-done"].includes(id)) {
       const partial = id === "paste-partial";
+      const changed = [...results.values()].some(hasHistory);
       body = partial
         ? error("部分照片未保存", "已成功的目标保持；失败照片仍保留原记录。")
         : success(
-            "调整已保存到目标",
+            changed ? "调整已保存到目标" : "目标调整未变化",
             lastOutcome || "复制内容不变，可继续粘贴或撤销本次操作。",
           );
       body += targetRows(partial ? "partial" : "done") + skippedSummary();
       footer =
-        button("open:history-batch", "查看/撤销本次操作", "quiet leading") +
+        (changed
+          ? button("open:history-batch", "查看/撤销本次操作", "quiet leading")
+          : "") +
         (partial
           ? button("paste:retry", "只重试失败照片", "primary")
           : button("close", "完成", "primary"));
     } else if (id.startsWith("history-")) {
-      const appliedCount = [...results.values()].filter(
+      const appliedCount = [...historyResults.values()].filter(
         (r) => r.status === "applied" && r.historyState === "applied",
       ).length;
-      const undoneCount = [...results.values()].filter(
+      const undoneCount = [...historyResults.values()].filter(
         (r) => r.status === "applied" && r.historyState === "undone",
       ).length;
       const conflict = id === "history-conflict",
         failure = id === "history-save-error";
+      const conflictedPhotos = photos.filter((p) =>
+        historyConflicts().includes(p.id),
+      );
       body = conflict
         ? error(
             "有照片在此后被单独修改",
-            "林间.ARW 的新编辑不会被覆盖。默认取消；可明确只撤销无冲突目标。",
+            `${conflictedPhotos.map((p) => esc(p.name)).join("、")} 的新编辑不会被覆盖。默认取消；可明确只撤销无冲突目标。`,
           )
         : failure
           ? error(
@@ -677,11 +707,11 @@ window.RawLabIteration = (() => {
               )
             : `<p class="flow-lead">${id === "history-single" ? "当前照片" : "本次批量操作"} · 当前会话</p>`;
       body +=
-        `<div class="history-row"><span>${id === "history-single" ? (historyUndone ? "已撤销" : "已应用") : "本次事务"}</span><strong>${id === "history-single" ? "当前照片的最近一次调整" : `粘贴调整 · ${[...results.values()].filter((r) => r.status === "applied").length} 张成功目标`}</strong><small>光线、颜色、效果 · ${historyUndone ? "可重做" : "可撤销"}</small></div>${conflict ? '<div class="flow-static"><span>林间.ARW</span><strong>保留后续单张编辑</strong></div>' : ""}` +
+        `<div class="history-row"><span>${id === "history-single" ? (historyUndone ? "已撤销" : "已应用") : "本次事务"}</span><strong>${id === "history-single" ? "当前照片的最近一次调整" : `${historyResults === syncResults ? "同步调整" : "粘贴调整"} · ${[...historyResults.values()].filter(hasHistory).length} 张成功目标`}</strong><small>光线、颜色、效果 · ${id === "history-single" ? (historyUndone ? "可重做" : "可撤销") : appliedCount ? "可撤销" : undoneCount ? "可重做" : "无可撤销或重做的调整"}</small></div>${conflict ? conflictedPhotos.map((p) => `<div class="flow-static"><span>${esc(p.name)}</span><strong>保留后续单张编辑</strong></div>`).join("") : ""}` +
         (id === "history-single"
           ? ""
-          : `<div class="iteration-targets">${[...results]
-              .filter(([, r]) => r.status === "applied")
+          : `<div class="iteration-targets">${[...historyResults]
+              .filter(([, r]) => hasHistory(r))
               .map(
                 ([photoId, r]) =>
                   `<div class="flow-static"><span>${photos.find((p) => p.id === photoId)?.name}</span><strong>${r.historyState === "undone" ? "已撤销 · 可重做" : r.historyState === "redo-invalidated" ? "重做已失效 · 保留新编辑" : !sameSnapshot(edits.get(photoId), r.after) ? "冲突 · 保留后续编辑" : "已应用 · 可撤销"}</strong></div>`,
@@ -855,7 +885,7 @@ window.RawLabIteration = (() => {
           !currentTargets().length,
         ) +
         button("batch:scope", "同步调整…", "primary", !currentTargets().length);
-      if ([...results.values()].some((r) => r.status === "applied"))
+      if ([...syncResults.values()].some(hasHistory))
         body += button("open:history-batch", "查看本次同步历史", "quiet");
       if (id === "batch-sync-return")
         body += `<div class="iteration-inline">${currentTargets()
@@ -863,12 +893,16 @@ window.RawLabIteration = (() => {
           .join("")}</div>`;
     } else if (["batch-sync-partial", "batch-sync-success"].includes(id)) {
       const partial = id === "batch-sync-partial";
+      const changed = [...results.values()].some(hasHistory);
       body = partial
         ? error(
             "部分目标未保存",
             "成功目标保留；林间.ARW 仍使用原编辑记录，可单独重试。",
           )
-        : success("调整已逐张保存", "现在可以单独微调，再返回同一集合。");
+        : success(
+            changed ? "调整已逐张保存" : "目标调整未变化",
+            "现在可以单独微调，再返回同一集合。",
+          );
       body +=
         (targetDraftOutcome
           ? note(
@@ -882,7 +916,9 @@ window.RawLabIteration = (() => {
           .map((p) => button("edit:" + p.id, "微调 " + p.name))
           .join("")}</div>`;
       footer =
-        button("open:history-batch", "撤销成功目标", "quiet leading") +
+        (changed
+          ? button("open:history-batch", "撤销成功目标", "quiet leading")
+          : "") +
         (partial
           ? button("batch:retry", "只重试失败目标", "primary")
           : button(
@@ -1490,14 +1526,7 @@ window.RawLabIteration = (() => {
         ctx.repaint();
         return true;
       }
-      const conflicts = [...results]
-        .filter(
-          ([photoId, result]) =>
-            result.status === "applied" &&
-            result.historyState === "applied" &&
-            !sameSnapshot(edits.get(photoId), result.after),
-        )
-        .map(([photoId]) => photoId);
+      const conflicts = historyConflicts();
       if (
         !redo &&
         conflicts.length &&
@@ -1507,7 +1536,7 @@ window.RawLabIteration = (() => {
         open("history-conflict");
         return true;
       }
-      for (const [photoId, result] of results) {
+      for (const [photoId, result] of historyResults) {
         if (result.status !== "applied" || conflicts.includes(photoId))
           continue;
         if (
@@ -1532,7 +1561,8 @@ window.RawLabIteration = (() => {
         }
         result.historyState = redo ? "applied" : "undone";
       }
-      historyUndone = [...results.values()]
+      syncHistory();
+      historyUndone = [...historyResults.values()]
         .filter((r) => r.status === "applied")
         .every((r) => r.historyState === "undone");
       if (id === "history:skip" || id === "history:retry")
@@ -1608,7 +1638,7 @@ window.RawLabIteration = (() => {
       presetTarget = false;
       beginOperation("sync");
       guardDraft(() => {
-        clipboard = capture();
+        operation.payload = capture();
         scopePurpose = "batch";
         open("batch-sync-scope");
       });
@@ -1616,7 +1646,7 @@ window.RawLabIteration = (() => {
     } else if (id === "sync-preflight") {
       targetIntent = "submit";
       guardDraft(() => {
-        clipboard = capture();
+        operation.payload = capture();
         continueTargets("sync");
       });
       return true;
@@ -1768,7 +1798,18 @@ window.RawLabIteration = (() => {
     )
       installKind = "legacy";
     if (id === "history-single") syncHistory();
+    if (id === "history-batch" && !options.previous?.startsWith("history-"))
+      historyResults = options.previous?.startsWith("batch-sync")
+        ? syncResults
+        : results;
     if (!options.seed) return;
+    if (
+      id.startsWith("batch-sync-") &&
+      !["batch-sync-empty", "batch-sync-return"].includes(id)
+    ) {
+      beginOperation("sync");
+      operation.payload = capture();
+    }
     if (
       [
         "paste-draft",
@@ -1815,8 +1856,10 @@ window.RawLabIteration = (() => {
     }
     if (
       ["history-batch", "history-conflict", "history-save-error"].includes(id)
-    )
+    ) {
       applyTargets(false);
+      historyResults = results;
+    }
     if (id === "history-conflict") {
       const changed = structuredClone(edits.get("photo-2"));
       changed.values.exposure = 1.7;

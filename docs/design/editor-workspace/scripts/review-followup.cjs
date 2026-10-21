@@ -105,8 +105,9 @@ async function reviewFollowup(browser, base) {
         await click("draft:apply");
         await flow("batch-sync-scope");
         assert.equal(await page.evaluate(() => draft), false);
+        assert.equal((await inspect()).clipboard, null);
         assert.equal(
-          (await inspect()).clipboard.snapshot.values.straighten,
+          (await inspect()).operation.payload.snapshot.values.straighten,
           1.2,
         );
       });

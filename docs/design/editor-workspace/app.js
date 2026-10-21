@@ -145,7 +145,6 @@ function isDraftChanged() {
   );
 }
 function setScene(s) {
-  invalidateUpdateAttempt();
   iteration.attach(prototypeContext());
   cancelBeforeHold();
   cropDrag = null;
@@ -1876,6 +1875,8 @@ window.addEventListener("message", (e) => {
   if (e.data?.type === "review-state") {
     large = !!e.data.largeText;
     document.body.classList.toggle("large-text", large);
+    // 设计板切换演示场景才重置更新任务；导入照片等普通导航继续后台更新。
+    invalidateUpdateAttempt();
     setScene(e.data.scene || "groups");
   }
 });
