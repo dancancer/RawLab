@@ -1,4 +1,5 @@
 #include "denoise_quality_metrics.h"
+#include "denoise_experiment_buffers.h"
 #include "core/wavelet_denoise.h"
 #include "cli/raw_info.h"
 #include "sony2fuji/raw_processor.h"
@@ -99,7 +100,7 @@ ImageData synthetic(const Json& spec, ImageData& truth) {
     return source;
 }
 
-ImageData decode(const std::string& path, Json& metadata,
+ImageData decodeQualityRaw(const std::string& path, Json& metadata,
                  BayerDemosaicMethod method = BayerDemosaicMethod::VNG, std::string* demosaic = nullptr) {
     const auto info = inspectRawInfo(path);
     if (info.status != SONY2FUJI_STATUS_OK) throw std::runtime_error("RAW identification failed: " + info.message);
@@ -242,10 +243,10 @@ int main(int argc, char** argv) {
             source = synthetic(spec.at("input"), reference);
             referenceKind = "synthetic_truth";
         } else {
-            source = decode(request.at("assets").at("input"), metadata, method, &demosaic);
+            source = decodeQualityRaw(request.at("assets").at("input"), metadata, method, &demosaic);
             if (request.at("assets").contains("reference")) {
                 Json unused;
-                reference = decode(request.at("assets").at("reference"), unused, method, &referenceDemosaic);
+                reference = decodeQualityRaw(request.at("assets").at("reference"), unused, method, &referenceDemosaic);
                 referenceKind = "declared_registered_low_noise_reference";
                 if (spec.at("reference").contains("registration")) {
                     registration = spec.at("reference").at("registration");
@@ -311,6 +312,13 @@ int main(int argc, char** argv) {
                 row["output_crop"] = crop(output, rect, prefix + "-output.png", spec.value("view_ev", 0.));
             }
             report["regions"].push_back(std::move(row));
+        }
+        if (request.contains("experiment_dir")) {
+            const auto exportStart = Clock::now();
+            report["experiment"] = denoise_experiment::exportBuffers(request.at("experiment_dir").get<std::string>(),
+                source, output, truth, isSynthetic ? "" : request.at("assets").at("input").get<std::string>(),
+                bayerDemosaic == "vng", request.value("experiment_display", false));
+            report["experiment"]["export_ms_including_io"] = milliseconds(exportStart);
         }
         report["peak_rss_bytes"] = peakRssBytes();
         report["total_ms"] = milliseconds(start);

@@ -281,6 +281,78 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
+def validate_experiment(result, directory, display_requested=False):
+    experiment = result.get("experiment")
+    if not isinstance(experiment, dict) or experiment.get("processing") != {
+            "family": "rawlab", "version": 2, "quality": "standard"}:
+        raise ValueError("missing frozen-v2 experiment buffers")
+    buffers = experiment.get("buffers", {})
+    shape = [result["height"], result["width"], 3]
+    if not all(name in buffers for name in ("source", "swt")):
+        raise ValueError("missing source/SWT buffer")
+    descriptors = list(buffers.values())
+    sensor = experiment.get("sensor", {})
+    if sensor.get("status") not in {"EXPORTED_BAYER", "NOT_APPLICABLE_SYNTHETIC",
+                                  "NOT_SUPPORTED_NON_BAYER", "NOT_SUPPORTED_NONUNIFORM_SPATIAL_BLACK_LEVEL"}:
+        raise ValueError("missing or unknown sensor status")
+    if sensor.get("status") == "EXPORTED_BAYER":
+        descriptor = sensor.get("buffer", {})
+        if descriptor.get("shape") != [sensor.get("height"), sensor.get("width")] or descriptor.get("dtype") != "<u2":
+            raise ValueError("invalid sensor buffer shape")
+        pattern, levels = sensor.get("pattern"), sensor.get("cblack")
+        valid_matrix = lambda value: (isinstance(value, list) and len(value) == 3 and
+                                     all(isinstance(row, list) and len(row) == 3 and all(number(x) for x in row) for row in value))
+        valid_pattern = (isinstance(pattern, list) and len(pattern) == 2 and all(
+            isinstance(row, list) and len(row) == 2 and all(type(x) is int and x in range(4) for x in row) for row in pattern))
+        flattened = sum(pattern, []) if valid_pattern else []
+        wb = sensor.get("post_scale_pre_mul")
+        if not (valid_pattern and flattened.count(0) == flattened.count(2) == 1 and
+                sum(x in (1, 3) for x in flattened) == 2 and
+                type(sensor.get("flip")) is int and 0 <= sensor["flip"] <= 7 and
+                number(sensor.get("black")) and sensor["black"] >= 0 and number(sensor.get("white")) and
+                isinstance(levels, list) and len(levels) == 6 and all(number(x) and x >= 0 for x in levels) and
+                levels[4:] == [0, 0] and all(sensor["black"] + x < sensor["white"] for x in levels[:4]) and
+                isinstance(wb, list) and len(wb) == 4 and all(number(x) and x > 0 for x in wb[:3]) and
+                number(wb[3]) and wb[3] >= 0 and valid_matrix(sensor.get("rgb_cam")) and
+                valid_matrix(sensor.get("native_working_matrix")) and sensor.get("independent_native_max_abs") == 0):
+            raise ValueError("invalid sensor calibration metadata")
+        if descriptor.get("stage") != "active_before_black_subtraction" or descriptor.get("space") != "sensor_CFA":
+            raise ValueError("invalid sensor buffer stage")
+        descriptors.append(descriptor)
+    display = experiment.get("display", {})
+    expected_display = {"display", "display_sharp_05", "display_sharp_1", "display_sharp_2"}
+    if display_requested:
+        if display.get("backend") != "Metal" or not expected_display.issubset(buffers):
+            raise ValueError("requested actual display stage was not reached")
+    elif display.get("status") != "NOT_REQUESTED" or expected_display.intersection(buffers):
+        raise ValueError("unrequested display experiment")
+    for name, descriptor in buffers.items():
+        if descriptor.get("shape") != shape or descriptor.get("dtype") != "<f4":
+            raise ValueError("invalid RGB experiment buffer shape")
+        expected_space = "display_RGB" if name.startswith("display") else "linear_sRGB"
+        if descriptor.get("space") != expected_space:
+            raise ValueError("invalid experiment buffer color space")
+        expected_stage = {"source": "native_decode", "swt": "frozen_swt_v2", "reference": "declared_reference",
+                          "display": "neutral_before_sharpen", "display_sharp_05": "native_ordinary_sharpen",
+                          "display_sharp_1": "native_ordinary_sharpen", "display_sharp_2": "native_ordinary_sharpen"}
+        if name not in expected_stage or descriptor.get("stage") != expected_stage[name]:
+            raise ValueError("invalid experiment buffer stage")
+    root = directory.resolve()
+    paths = set()
+    for descriptor in descriptors:
+        path = Path(descriptor["path"]).resolve(strict=True)
+        if not path.is_relative_to(root) or path in paths:
+            raise ValueError("experiment buffer escapes output or aliases another buffer")
+        paths.add(path)
+        expected = math.prod(descriptor["shape"]) * {"<f4": 4, "<u2": 2}[descriptor["dtype"]]
+        if path.stat().st_size != expected or descriptor.get("bytes") != expected:
+            raise ValueError("truncated experiment buffer")
+        digest = sha256(path)
+        if "sha256" in descriptor and descriptor["sha256"] != digest:
+            raise ValueError("experiment buffer hash mismatch")
+        descriptor["sha256"] = digest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
@@ -295,12 +367,18 @@ def main():
     parser.add_argument("--only", nargs="+")
     parser.add_argument("--cache-check", action="store_true")
     parser.add_argument("--crops", action="store_true")
+    parser.add_argument("--experiment-buffers", action="store_true",
+                        help="Export optional test-only linear and sensor buffers")
+    parser.add_argument("--experiment-display", action="store_true",
+                        help="Also export actual neutral Metal display and native sharpening buffers")
     args = parser.parse_args()
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         cases = validate_manifest(manifest)
         if not 1 <= args.repeat <= 20 or args.timeout <= 0:
             raise ValueError("invalid repeat or timeout")
+        if args.experiment_display and not args.experiment_buffers:
+            raise ValueError("--experiment-display requires --experiment-buffers")
         if args.only:
             if set(args.only) - {case["id"] for case in cases}:
                 raise ValueError("unknown case in --only")
@@ -339,6 +417,9 @@ def main():
                                "bayer_demosaic": args.bayer_demosaic,
                                "cache_check": args.cache_check, "crop_prefix": str(args.output.resolve() / name) if args.crops else None,
                                "assets": {key: value["absolute_path"] for key, value in verified.items()}}
+                    if args.experiment_buffers:
+                        request["experiment_dir"] = str(args.output.resolve() / f"{name}-buffers")
+                        request["experiment_display"] = args.experiment_display
                     request["request_id"] = hashlib.sha256(json.dumps(request, sort_keys=True, allow_nan=False).encode()).hexdigest()
                     request_path, result_path = args.output / f"{name}.request.json", args.output / f"{name}.json"
                     write_json(request_path, request)
@@ -354,6 +435,9 @@ def main():
                         else:
                             result = json.loads(result_path.read_text())
                             validate_result(result, request)
+                            if args.experiment_buffers:
+                                validate_experiment(result, Path(request["experiment_dir"]), args.experiment_display)
+                                write_json(result_path, result)
                             row.update(status="MEASURED", result=result)
                     except subprocess.TimeoutExpired:
                         row["status"] = "TIMEOUT"

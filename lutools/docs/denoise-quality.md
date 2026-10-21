@@ -118,6 +118,152 @@ runner 校验报告回写的请求摘要、case/split、参数、尺寸、执行
 语义仍须稳定。旧记录兼容见 [处理版本约定](processing-version.md)，不能由当前版本
 保存／重开通过来替代。
 
+## 独立 AI 与 P3 实验
+
+这些工具只在 `tests/` 中运行，不进入客户端、C ABI、编辑记录或正式缓存，也不改变
+SWT v2。实验结果不是新处理版本，更不能把成功生成报告解释为可以替换现有算法。
+
+在原命令中增加 `--experiment-buffers`，可导出完整的 source/SWT/reference 小端
+float32 RGB，以及支持的 Bayer 输入的 active CFA uint16 数据和校准元数据。负值、
+超白值不会因导出被裁切。独立 LibRaw 解码必须复现原生 source；有效裁切、方向、
+白平衡和颜色矩阵不一致时导出失败。非 Bayer 或非均匀空间黑电平会明确标为不支持
+该 Bayer 实验，不伪造传感器数据。Python 读取时检查布局、长度和 SHA-256。
+
+`--experiment-display` 必须同时使用 `--experiment-buffers`，显式调用实际 Metal
+中性成片路径，导出 SWT 后、锐化前的显示 RGB，以及普通锐化强度 0.5/1/2 的浮点
+输出。默认浮点导出不要求 GPU；显式显示实验失败时不以 CPU 冒充成功。目前这部分
+只支持 Metal，不代表 D3D/GLES 已验证。此阶段关闭 LUT、额外显示域降噪和外观效果，
+所以也不覆盖所有 LUT/色调设置。
+
+```sh
+python3 lutools/tests/run_denoise_quality.py \
+  --manifest /path/to/frozen-inputs.json --assets /path/to/shared-assets \
+  --probe /path/to/denoise_quality_probe --output /path/to/new-native-output \
+  --presets clean --backend force --experiment-buffers --experiment-display
+
+python3 lutools/tests/run_denoise_experiments.py \
+  --native /path/to/new-native-output/results.json --case CASE_ID \
+  --mode ai --model-dir /path/to/rawdenoise-nind --output /path/to/new-ai-output
+
+python3 lutools/tests/run_denoise_experiments.py \
+  --native /path/to/new-native-output/results.json --case CASE_ID \
+  --mode p3 --output /path/to/new-p3-output
+
+python3 lutools/tests/run_denoise_experiment_controls.py \
+  --model-dir /path/to/rawdenoise-nind --output /path/to/new-controls-output
+```
+
+实验 Python 环境需要 NumPy、OpenCV、Pillow；AI 另需 ONNX Runtime。工具不安装依赖、
+不下载权重，`denoise_ai_adapter.py` 固定并检查两个已选 RawNIND 权重的 SHA-256、
+静态张量形状及 CPU FP32 provider。`test_denoise_experiments.py` 验证归一化、CFA 相位、
+短尾分块、方向、矩阵、浮点读取、锐化及指标。原探针测试可显式加 `--display-gpu`
+检查实际 Metal 导出；默认测试不要求这项 GPU 实验。
+
+- AI 保持权重、512 输入 tile 和 64 halo 不变，只对比四平面均值、等权 camera RGB
+  均值，以及输入饱和掩码触发的 SWT 高光回退。后者是保留现有结果，不是模型重建了
+  高光。白平衡仍在模型之后，不能声称与原生的插值前白平衡及高光处理完全等价。
+- 均值匹配是对模型任意有符号尺度的归一化，不是物理曝光或相机增益标定。固定
+  linear 权重可能需要负的归一化系数；不把它误判为负曝光。所有锚点只来自输入，
+  禁止用低 ISO 参考或候选 ROI 拟合输出亮度。`--linear` 额外对比扩展浮点输入与
+  `[0,1]` 裁切/16-bit 量化输入，只隔离范围和量化，不冒充完整 rawpy 显影流程。
+- P3 只读取冻结 SWT v2 的实际显示 RGB，不读取 AI 输出。噪声估计使用当前显示域的
+  局部残差，不能复用 RAW 线性域的噪声参数。普通锐化 Python 参考先与实际 Metal
+  输出比较，再测原型。原型时间包含 Python/OpenCV 成本，不是原生 GPU 性能承诺。
+- 合成控制分别记录平坦噪声、细纹理、阶跃边缘和边缘外保护带的 profile 误差。
+  全局最大/最小值不够判断光晕，因为范围内也可能出现波纹。相同滑块数值不代表
+  相同锐化强度；查看 matched-edge 结果，不把不满足匹配容差的组合称为等强对照。
+- `measurement-crops.npz` 保留完整测量区域和全部方法；`selected-crops.npz` 与 PNG
+  只保留用于展示的中心裁剪。不能拿展示裁剪的统计值冒充完整 ROI 的测量结果。
+- 低 ISO 参考不是干净真值；新开发场景也不能自动称为训练集之外的盲测。若权重训练
+  文件清单不可得，记录训练重叠未知。原有场景、相机和 ROI 不因重命名而重新成为留出集。
+
+这些导出会写入大量浮点缓冲，并额外执行解码/显示步骤。因此完整进程时间和峰值内存
+不能用来代表普通编辑或单独滤波成本；性能重复实验应关闭这些导出，并区分完整导出、
+算法阶段和研究工具开销。保留必要裁剪、报告与来源记录后清理完整缓冲及构建产物。
+
+### P3 强度与色调/LUT 验证
+
+`denoise_p3.py` 是独立实验，不注册为处理版本，也不替换任何现有锐化入口。
+`amount=0` 保留全部浮点位；正强度先取 `[0,1]` SDR 基线，再估计当前显示域的残差噪声。
+共同亮度增量受三个通道的邻域允许区间交集约束，不通过逐通道限幅制造额外的 RGB
+通道差异。这是通道差分约束，不是完整的感知色相或色度不变承诺。
+
+候选身份为 `p3-bounded-edge-endpoint-v2`。先计算增益为 2 的受限端点，`0..2`
+再以 `amount / 2` 与 SDR 基线线性混合，不在每个强度重新改变限制器。
+端点使用 64 像素 tile 的残差 MAD、9x9 局部能量及方向一致性；强边缘可使用相邻
+增量留下的移动空间，弱梯度尾部最多移动 `1/255`，最后投影两次以限制新增反向梯度。
+含裁切通道的 3x3 邻域保持 SDR 基线，不尝试重建被裁掉的颜色。
+同一 `amount` 不表示任意照片上都与普通锐化等强。
+`equivalent_strength` 只反查给定场景实际测得的单调响应；超出范围明确
+返回 `UNREACHABLE`，不静默顶到最大值。非单调响应不能使用这张反查表。
+非线性色调会改变边缘最大梯度的位置，所以响应记录同时保留最大梯度、位置、
+固定中心梯度和 10%-90% 宽度；不能只凭固定中心处的变化判断整条边缘变软。
+
+Metal 构建可用 `denoise_display_probe` 从明确声明的线性 sRGB 浮点输入导出实际
+色调/LUT 后、锐化前和普通锐化后的浮点数据。此工具只用于测试，不走 RGB8 量化，
+不以 CPU 结果冒充 Metal。它不是 P3 的原生实现。
+
+```sh
+cmake --build /path/to/configured-build --target denoise_display_probe
+python3 lutools/tests/test_denoise_p3.py \
+  --display-probe /path/to/configured-build/bin/denoise_display_probe
+python3 lutools/tests/run_denoise_p3_scenarios.py \
+  --display-probe /path/to/configured-build/bin/denoise_display_probe \
+  --previous /path/to/previous-experiments --output /path/to/new-scenarios
+```
+
+场景包含中性、曝光/阴影/高光、对比度/饱和度、实际 F-Log2 PROVIA LUT、声明为
+display-sRGB 的受控创意 LUT、混合强度及 LUT+色调。生成候选前写出输入来源、
+LUT/程序校验值、场景和门限。`--previous` 可选；它仅加载此前保留的线性 SWT v2
+完整测量区域，不加载 AI 输出。区域滤波不等于全幅噪声上下文验收；真实区域相对
+未锐化结果的指标标为 `baseline_sharpen_off_no_gt`，不能解释成真实画质误差。
+
+结果分别检查零强度、范围、通道差分、平坦区域亮度/色度方差和均值、边缘响应与
+光晕。全局极值之外还检查逐位置保护带变化和反向梯度，避免漏掉原范围内的振铃。
+光晕门限比较锐化新增的越界：每个位置的允许区间由未锐化 profile 与合成真值的
+全局范围共同确定，不把输入已有的色调偏差算作锐化新生光晕。旧绝对光晕值和旧检查
+仍保留为对照；保护带、反向梯度、强度及其余数值门限不变。
+固定保护带也可能包含模糊边缘本身的尾部，因此失败要结合 profile 判断，不能将
+每个保护带失败直接称为可见光晕。`FAILED_GATES` 以非零退出码返回，不自动放宽
+门限，也不据此更改生产默认。测试程序通过与候选画质门通过是两回事。
+
+修改候选后可用 `--reuse-native /path/to/previous-scenarios` 重新测量已有显示缓冲；
+工具检查输入、渲染程序、LUT、场景与输出缓冲校验值，不重跑渲染。旧结果不覆盖，
+重新测量仍使用新的输出目录，并记录新的候选源码校验值。
+
+### 内部原生 P3
+
+`applyNoiseAwareSharpen` 是独立 C++ 实验入口；不连接现有锐化参数、C ABI、配方、
+处理版本或客户端默认链路。SWT v2 和 AI 实验的边界不变。它依赖现有 OpenCV
+降噪构建依赖；未启用这些依赖时，正强度明确返回错误，零强度仍精确旁路。
+
+CPU 与 Metal 共用整幅显示域亮度、残差 MAD 和噪声插值分析。空间滤波以 768 像素
+中心块和 8 像素 halo 执行，不能按块独立重估噪声。Metal 实际执行能量均值、梯度、
+局部边界、限制器、投影及输出，不是把 CPU 最终像素复制到 GPU。它使用独立上下文，
+不向已有 SWT Metal 库加入新内核。CPU 禁止浮点收缩；Metal 保留均值累加的舍入残差
+并匹配 Sobel 对称运算次序，避免微小误差在硬阈值处变成不同决策。
+
+`GpuMode::Off` 使用 CPU；`Auto` 可按失败 tile 回退 CPU，`gpuUsed` 表示至少一个
+tile 实际完成 Metal。`Force` 要求所有 tile 成功。任何失败均不提交部分结果。
+噪声分析仍在 CPU，因此不能把该路径称为全 GPU 算法；计时包含 CPU 分析与传输。
+
+```sh
+cmake --build /path/to/configured-build --target denoise_sharpen_probe
+python3 lutools/tests/test_denoise_p3_native.py \
+  --probe /path/to/configured-build/bin/denoise_sharpen_probe \
+  --matrix /path/to/retained-actual-display-matrix
+python3 lutools/tests/run_denoise_p3_native.py \
+  --probe /path/to/configured-build/bin/denoise_sharpen_probe \
+  --matrix /path/to/retained-actual-display-matrix \
+  --reference /path/to/frozen-denoise_p3.py --output /path/to/new-native-results
+```
+
+原生 runner 复用并校验实际显示缓冲，对 CPU 和 Metal 运行相同质量检查、17 点强度
+扫描和反查后的实际强度；另以 `2e-6` 最大绝对误差对照冻结 Python 结果，零强度
+要求精确旁路。运行后保留校验值和测量报告、删除本轮输出浮点缓冲。失败为非零退出。
+全幅 RAW 验收须另外导出完整 SWT/display 缓冲并核对 SWT fingerprint，不能把 ROI
+矩阵或合成跨 tile 测试解释为所有相机、全幅噪声上下文的验收。
+
 ## 内部诊断
 
 `WaveletDenoiseDiagnostics` 不进入公共 C ABI、配方或预设。`outcome` 区分关闭、零强度、

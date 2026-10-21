@@ -20,6 +20,7 @@ spec = importlib.util.spec_from_file_location("denoise_quality_runner", RUNNER)
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 PROBE = None
+DISPLAY_GPU = False
 
 
 def synthetic(case_id="flat", split="tune", group="flat-tune"):
@@ -380,6 +381,40 @@ class RunnerFailureTests(unittest.TestCase):
         self.assertEqual(report["quality_verdict"], "NOT_EVALUATED")
 
 
+class ExperimentReportTests(unittest.TestCase):
+    def fixture(self, root):
+        buffers = {}
+        for name, stage in (("source", "native_decode"), ("swt", "frozen_swt_v2")):
+            path = root / f"{name}.f32"
+            path.write_bytes(struct.pack("<27f", *([.2] * 27)))
+            buffers[name] = {"path": str(path), "shape": [3, 3, 3], "bytes": 108,
+                             "dtype": "<f4", "space": "linear_sRGB", "stage": stage}
+        return {"width": 3, "height": 3, "experiment": {
+            "processing": {"family": "rawlab", "version": 2, "quality": "standard"},
+            "buffers": buffers, "sensor": {"status": "NOT_APPLICABLE_SYNTHETIC"},
+            "display": {"status": "NOT_REQUESTED"}}}
+
+    def test_existing_incorrect_hash_is_not_silently_replaced(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = self.fixture(root)
+            report["experiment"]["buffers"]["source"]["sha256"] = "0" * 64
+            with self.assertRaisesRegex(ValueError, "hash"):
+                runner.validate_experiment(report, root)
+
+    def test_missing_sensor_and_wrong_stage_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = self.fixture(root)
+            del report["experiment"]["sensor"]
+            with self.assertRaisesRegex(ValueError, "sensor"):
+                runner.validate_experiment(report, root)
+            report = self.fixture(root)
+            report["experiment"]["buffers"]["swt"]["stage"] = "unknown"
+            with self.assertRaisesRegex(ValueError, "stage"):
+                runner.validate_experiment(report, root)
+
+
 class NativeRunnerTests(unittest.TestCase):
     def setUp(self):
         if PROBE is None:
@@ -413,6 +448,92 @@ class NativeRunnerTests(unittest.TestCase):
             self.assertEqual(first["pipeline"]["white_balance"], "not_applicable")
             self.assertEqual(first["regions"][0]["output_vs_reference"], first["regions"][0]["source_vs_reference"])
             self.assertEqual(report["quality_verdict"], "NOT_EVALUATED")
+            self.assertNotIn("experiment", first)
+            self.assertFalse(list(Path(temporary).rglob("*.f32")))
+
+    def test_experiment_buffers_preserve_extended_float_pixels(self):
+        case = synthetic()
+        case["input"].update(pattern="extended", shot=0, read=0, width=32, height=32)
+        with tempfile.TemporaryDirectory() as temporary:
+            completed, report = self.run_manifest(Path(temporary), [case], "--experiment-buffers")
+            self.assertEqual(completed.returncode, 0, completed.stderr + json.dumps(report))
+            result = report["runs"][0]["result"]
+            exported = result["experiment"]
+            self.assertEqual(exported["processing"], {"family": "rawlab", "version": 2, "quality": "standard"})
+            buffers = exported["buffers"]
+            source, output = buffers["source"], buffers["swt"]
+            self.assertEqual(source["shape"], [32, 32, 3])
+            self.assertEqual(source["dtype"], "<f4")
+            self.assertEqual(source["space"], "linear_sRGB")
+            data = Path(source["path"]).read_bytes()
+            self.assertEqual(len(data), 32 * 32 * 3 * 4)
+            self.assertEqual(source["sha256"], hashlib.sha256(data).hexdigest())
+            self.assertEqual(data, Path(output["path"]).read_bytes())
+            values = struct.unpack("<" + "f" * (32 * 32 * 3), data)
+            self.assertLess(min(values), 0)
+            self.assertGreater(max(values), 1)
+            self.assertEqual(result["source_fingerprint"], result["output_fingerprint"])
+            self.assertEqual(exported["sensor"]["status"], "NOT_APPLICABLE_SYNTHETIC")
+            self.assertEqual(exported["display"].get("status"), "NOT_REQUESTED")
+            self.assertEqual(report["quality_verdict"], "NOT_EVALUATED")
+
+    def test_experiment_sensor_export_uses_active_bayer_pixels(self):
+        fixture = Path(__file__).with_name("fixtures") / "bayer-demosaic.dng"
+        case = synthetic()
+        case["input"] = {"kind": "raw", "path": fixture.name, "sha256": hashlib.sha256(fixture.read_bytes()).hexdigest()}
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / fixture.name).write_bytes(fixture.read_bytes())
+            completed, report = self.run_manifest(directory, [case], "--experiment-buffers")
+            self.assertEqual(completed.returncode, 0, completed.stderr + json.dumps(report))
+            sensor = report["runs"][0]["result"]["experiment"]["sensor"]
+            self.assertEqual(sensor["status"], "EXPORTED_BAYER")
+            self.assertEqual(sensor["independent_native_max_abs"], 0)
+            self.assertEqual(sensor["buffer"]["dtype"], "<u2")
+            self.assertEqual(sensor["buffer"]["shape"], [sensor["height"], sensor["width"]])
+            self.assertEqual(len(sensor["pattern"]), 2)
+            self.assertEqual(sorted(sum(sensor["pattern"], [])), [0, 1, 2, 3])
+
+    def test_display_export_is_an_explicit_gpu_opt_in(self):
+        if not DISPLAY_GPU:
+            self.skipTest("actual display GPU experiment was not requested")
+        with tempfile.TemporaryDirectory() as temporary:
+            completed, report = self.run_manifest(Path(temporary), [synthetic()],
+                                                  "--experiment-buffers", "--experiment-display")
+            self.assertEqual(completed.returncode, 0, completed.stderr + json.dumps(report))
+            exported = report["runs"][0]["result"]["experiment"]
+            self.assertEqual(exported["display"]["backend"], "Metal")
+            self.assertEqual(exported["buffers"]["display"]["stage"], "neutral_before_sharpen")
+            self.assertEqual(exported["buffers"]["display_sharp_1"]["stage"], "native_ordinary_sharpen")
+
+    def test_experiment_sensor_export_matches_native_default_inset_crop(self):
+        data = bytearray((Path(__file__).with_name("fixtures") / "bayer-demosaic.dng").read_bytes())
+        self.assertEqual(data[:4], b"II*\0")
+        offset = struct.unpack_from("<I", data, 4)[0]
+        count = struct.unpack_from("<H", data, offset)[0]
+        entries = {struct.unpack_from("<H", data, offset + 2 + i * 12)[0]:
+                   bytes(data[offset + 2 + i * 12:offset + 14 + i * 12]) for i in range(count)}
+        width = struct.unpack_from("<I", entries[256], 8)[0]
+        height = struct.unpack_from("<I", entries[257], 8)[0]
+        new_ifd = len(data)
+        extra = new_ifd + 2 + len(set(entries) | {50719, 50720}) * 12 + 4
+        entries[50719] = struct.pack("<HHII", 50719, 4, 2, extra)
+        entries[50720] = struct.pack("<HHII", 50720, 4, 2, extra + 8)
+        struct.pack_into("<I", data, 4, new_ifd)
+        data.extend(struct.pack("<H", len(entries)) + b"".join(value for _, value in sorted(entries.items())) +
+                    b"\0" * 4 + struct.pack("<4I", 8, 6, width - 16, height - 12))
+        case = synthetic()
+        case["input"] = {"kind": "raw", "path": "inset.dng", "sha256": hashlib.sha256(data).hexdigest()}
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "inset.dng").write_bytes(data)
+            completed, report = self.run_manifest(directory, [case], "--experiment-buffers")
+            self.assertEqual(completed.returncode, 0, completed.stderr + json.dumps(report))
+            result = report["runs"][0]["result"]
+            sensor = result["experiment"]["sensor"]
+            self.assertEqual([result["width"], result["height"]], [width - 16, height - 12])
+            self.assertEqual([sensor["width"], sensor["height"]], [width - 16, height - 12])
+            self.assertEqual(sensor["independent_native_max_abs"], 0)
 
     def test_fine_structure_metric_does_not_invent_flat_reference_detail(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -630,6 +751,8 @@ class NativeRunnerTests(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", type=Path)
+    parser.add_argument("--display-gpu", action="store_true")
     options, remaining = parser.parse_known_args()
     PROBE = options.probe.resolve() if options.probe else None
+    DISPLAY_GPU = options.display_gpu
     unittest.main(argv=[sys.argv[0], *remaining])
