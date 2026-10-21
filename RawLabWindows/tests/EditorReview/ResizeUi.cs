@@ -128,7 +128,7 @@ internal static partial class EditorReviewChecks
             try
             {
                 Click(lens ? window.LensCategory : window.GeometryCategory);
-                InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
+                InteractionChecks.PumpUntil(()=>Get<bool>(window,"transformPreviewReady") && !Get<DispatcherTimer>(window,"previewResize").IsEnabled);
                 held.Capture(()=>{
                     if(lens)((CheckBox)window.LensEditor.FindName("Distortion")).IsChecked=true;
                     else ((Slider)window.GeometryEditor.FindName("StraightenSlider")).Value=.55;

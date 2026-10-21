@@ -304,7 +304,7 @@ jobs:
             $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
             $env:RAWLAB_TEST_DCP_FIXTURE_DIR = Join-Path $PWD 'build/ci/dcp-fixtures'
             Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
-            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,ui-details,looks'
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,ui-details,looks,transform-ui'
             Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }
           finally {

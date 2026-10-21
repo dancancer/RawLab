@@ -53,6 +53,48 @@ public partial class MainWindow
         catch (Exception error) { SetSaveNotice("调整未保存 · 重试", error.Message, true); return false; }
     }
 
+    private SavedEdit CaptureCurrentEdit() => new(OriginalIdentity.Read(file ?? throw new InvalidOperationException()),
+        settings.Capture(),CurrentLookIdentity());
+    private EditorResetContext CurrentResetContext() => new(lut,transformGeneration,
+        transform.Active ? new(transform.Tool,transform.Geometry,transform.Lens) : null,
+        transform.Active && transform.Tool==TransformTool.Geometry && GeometryEditor.HasInvalidInput);
+
+    internal EditorResetTransaction? PrepareReset(EditorResetScope scope)
+    {
+        if(!ready || syncing || file==null || closing || exporting)return null;
+        try { return EditorResetTransaction.Prepare(scope,file,openRevision,editRevision,CaptureCurrentEdit(),CurrentResetContext()); }
+        catch(IOException) { return null; }
+        catch(UnauthorizedAccessException) { return null; }
+    }
+
+    internal bool CommitReset(EditorResetTransaction prepared,long expectedRevision)
+    {
+        if(!ready || syncing || file==null || closing || exporting || editRevision!=expectedRevision)return false;
+        SavedEdit current;
+        try { current=CaptureCurrentEdit(); }
+        catch(IOException) { return false; }
+        catch(UnauthorizedAccessException) { return false; }
+        return prepared.TryCommit(file,openRevision,editRevision,current,CurrentResetContext(),candidate=>{
+            if(prepared.TargetsDraft)
+            {
+                transform.Update(candidate.Settings.Geometry ?? new(),candidate.Settings.Lens ?? new());
+                ++transformGeneration;transformPreviewReady=false;interacting=false;
+                if(transform.Tool==TransformTool.Geometry)GeometryEditor.Begin(transform.Geometry);
+                RefreshCropDraft();RefreshControls();Schedule();return;
+            }
+            settings=candidate.Settings.Restore();
+            // 身份未变时保留已解析的 LUT 路径及界面映射，避免把保存身份当成路径。
+            if(candidate.Look!=current.Look)
+            {
+                lut=candidate.Look==null ? null : lookLibrary?.ResolveIdentity(candidate.Look) ?? candidate.Look;
+                if(settings.Recipe is {} recipe)lut=recipe.LutPath;
+                if(lut?.StartsWith("builtin:",StringComparison.Ordinal)==true)
+                    lut=Path.Combine(AppContext.BaseDirectory,"LUTs",Path.GetFileName(lut[8..]));
+            }
+            MarkEdited();RefreshControls();Schedule();
+        });
+    }
+
     internal string? CurrentLookIdentity()
     {
         if (settings.Recipe is {} recipe) return "recipe:" + recipe.Id;
@@ -99,6 +141,7 @@ public partial class MainWindow
     }
     private void RetrySaveClicked(object sender, RoutedEventArgs e)
     {
+        if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
         if (editDirty) { SaveEdits(); return; }
         try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }

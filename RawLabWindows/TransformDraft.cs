@@ -18,10 +18,14 @@ public sealed class TransformDraft
     }
     public void Update(GeometrySettings geometry){if(!Active)throw new InvalidOperationException();_=geometry.NativeConfig();Geometry=geometry;}
     public void Update(LensSettings lens){if(!Active)throw new InvalidOperationException();Lens=lens;}
+    public void Update(GeometrySettings geometry,LensSettings lens)
+    {
+        if(!Active)throw new InvalidOperationException();_=geometry.NativeConfig();Geometry=geometry;Lens=lens;
+    }
     public void Reset(){if(Tool==TransformTool.Geometry)Update(new GeometrySettings());else Update(new LensSettings());}
     public (GeometrySettings Geometry,LensSettings Lens) Apply()
     {
-        if(!Active)throw new InvalidOperationException();Active=false;return(Geometry,Lens);
+        if(!Dirty)throw new InvalidOperationException();Active=false;return(Geometry,Lens);
     }
     public void Cancel(){Active=false;Geometry=originalGeometry;Lens=originalLens;}
 }
