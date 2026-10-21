@@ -1,6 +1,6 @@
 # 第四批：S2a 原生六组导航与生产重置入口
 
-第三批 #115–#118 已合入 `development@1031745c`，联合 CI [39617993292](https://github.com/dancancer/RawLab/actions/runs/39617993292) 全部通过。本批从更新后的 `development@0fd52624648f5473364b78e6cfb28cf7c471be17` 开始，保留随后合入的 #106 处理版本契约；该新基线 CI 独立跟踪，不把此前 CI 当作新基线的证据。
+第三批 #115–#118 已合入 `development@1031745c`，联合 CI [39617993292](https://github.com/dancancer/RawLab/actions/runs/39617993292) 全部通过。本批从更新后的 `development@0fd52624648f5473364b78e6cfb28cf7c471be17` 开始，保留随后合入的 #106 处理版本契约；该新基线的联合 CI [39629200983](https://github.com/dancancer/RawLab/actions/runs/39629200983) 也已全部通过。
 
 ## 交付范围
 
@@ -80,17 +80,18 @@
 
 ## 执行与验收状态
 
-- resource owner 已汇总 26 个新增共享来源、4 个复用来源，完整六语、原生 keys/formats/types 的生成预检通过；30 个输出均无既有译文删除或改写。基础分支正式落地及验证后再发固定提交给四端消费。
-- CI基线：#115–#118 联合 CI 全部通过。随后合入 #106 的 `0fd52624` 由 [39629200983](https://github.com/dancancer/RawLab/actions/runs/39629200983) 验证；各实现 PR 仍须最新源提交的独立评审和 CI。
+- resource owner 已落地 26 个新增共享来源、4 个复用来源，以及 Windows 当前工具状态的独立六语来源；30 个生成输出及本地化检查通过，无既有译文删除或改写。四端已显式消费同一基础提交，Windows 另消费其专属资源增量。
+- CI基线：#115–#118 联合 CI 全部通过；随后合入 #106 的 `0fd52624` 已通过 [39629200983](https://github.com/dancancer/RawLab/actions/runs/39629200983) 的全部门禁。第四批各实现 PR 仍须最新源提交的独立评审和 CI，基线通过不代替本批验证。
 - `impeccable context` 已在协调树执行一次，主线程已读PRODUCT/DESIGN和Mac/iOS surface briefs；`.impeccable/design.json` 被报告为旧sidecar，仅记录，不在本批顺手刷新。旧DESIGN/brief记录现有单行工具栏，新增六组采用本次需求/技术方案的明确变更，不从旧sidecar推导规则。UI编辑前各owner读craft-floor；现有需求已明确，无需重复设计访谈或另造visual world。
 
 ## 本批完成门槛
 
 - [x] Task 0：共享六语生成、CI运行入口、计划与集成总账完成本地验证和独立复核；hosted CI 随基础 PR 验证。
-- [ ] Task 1：Mac原生六组/current-tool/reset/固定面板及实际交互、六语截图通过。
-- [ ] Task 2：iOS原生接线、iPhone/iPad实际界面及草稿回归通过。
-- [ ] Task 3：Android原生接线、JVM/lint及实际Compose/VM/草稿回归通过。
-- [ ] Task 4：Windows原生接线、managed/crossbuild及CI实际WPF回归通过。
-- [ ] 四端独立复核、协调者关键调用链核验；获得远端操作授权后集成并核实联合CI。
+- [x] Task 1：Mac原生六组/current-tool/reset/固定面板及实际交互、六语截图通过；独立评审关闭已确认问题，本地提交就绪。
+- [x] Task 2：iOS原生接线、iPhone/iPad实际界面及草稿回归通过；大字号/短横窗的完整文字、末项与工具可达性及独立评审已闭合，本地提交就绪。
+- [x] Task 3：Android原生接线、JVM/lint及实际Compose/VM/草稿回归通过；六语短屏/大字完整控件与独立评审已闭合，本地提交就绪。
+- [ ] Task 4：Windows原生接线、managed/crossbuild与独立评审已完成，本地提交就绪；真实 Windows WPF 回归及截图须待最新源提交的 CI 验证。
+- [x] 四端独立复核及协调者关键调用链核验完成，本地源码没有未关闭的 P1/P2。
+- [ ] 获得远端操作授权后，按基础资源→四端消费者顺序提交 PR、核实最新源 CI（含 Windows 实际 WPF）并集成；最终联合 CI 另验。
 
 纯模型、编译、模拟器、真实硬件分别登记；本批完成也不代表整个S2或ITER-02验收通过。

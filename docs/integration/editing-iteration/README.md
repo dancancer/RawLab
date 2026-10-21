@@ -9,8 +9,8 @@
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
 - 第三批集成基线：`development@1031745c06968fa7d5ea7961f19f0eff002ad462`，已包含 #107～#118；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39617993292)已通过四端及汇总门禁，其范围限于工作流实际执行的套件。
-- 当前开发基线：`development@0fd52624648f5473364b78e6cfb28cf7c471be17`，新增已合入 #106 的处理版本兼容契约；第四批重置与导航保持该身份，不改核心算法或存储策略。
-- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)。三端提交/草稿事务已集成，第四批开始六组导航与生产重置入口，后续输入与查看能力继续单独验收。
+- 当前开发基线：`development@0fd52624648f5473364b78e6cfb28cf7c471be17`，新增已合入 #106 的处理版本兼容契约；该源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39629200983)已全部通过。第四批重置与导航保持该身份，不改核心算法或存储策略。
+- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)。三端提交/草稿事务已集成；第四批六组导航与生产重置入口已完成本地实现和独立复评，等待远端 CI 与集成，后续输入与查看能力继续单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
 
@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1、重置提交与草稿事务已集成；第四批六组导航与生产重置入口开发中；其余工作区 UI 分批接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1、重置提交与草稿事务已集成；第四批 S2a 本地实现及独立复评完成，Mac/iOS/Android 原生验证通过，Windows 实际 WPF 与远端 CI 待验；其余工作区 UI 分批接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -86,7 +86,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 
 第三批复用干净独立 worktree，从 `bff2b860` 创建四个分支，已按 **#115 → #116 → #117 → #118** 合入。iOS 真实 simulator、Android 标准素材 instrumentation、Windows 实际 WPF/native 回归已通过；对应源与最终集成源 CI 均已通过。验证细节留在各 PR，设备/GPU缺口继续保留。
 
-第四批从最新 `0fd52624` 创建基础资源分支及四端消费者分支，复用同一批干净 worktree。协调者独占共享六语/CI/总账，平台 worker 各自拥有第四批计划列出的UI和窄模型接线，默认代理独立评审。各消费者显式合入同一基础资源提交；远端先合入基础PR，再更新消费者并核验受影响组合。当前只授权本地实现，push/PR/merge待可检查交付物就绪后另行处理。
+第四批从最新 `0fd52624` 创建基础资源分支及四端消费者分支，复用同一批干净 worktree。协调者独占共享六语/CI/总账，平台 worker 各自拥有第四批计划列出的UI和窄模型接线，默认代理独立评审。各消费者显式合入同一基础资源提交；远端先合入基础PR，再更新消费者并核验受影响组合。四端本地实现与独立复评已完成，Mac/iOS/Android 的实际界面及事务验证通过；Windows managed/crossbuild 已通过，实际 WPF 与截图等待其 PR 的最新源 CI。当前只授权本地实现，五个分支及 PR 说明已准备，push/PR/merge 另行授权。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
@@ -123,7 +123,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 - 首批将 MCP v4 与 Mac S1 并行：两者不写同一源码文件，不依赖新算法；Mac S1 提供规则参照，并非宣布 Mac 独有语义为跨端合同。
 - I0 的版本/范围/单位需以真实 native 模型核对；已有 v4 仅作最终 core 语义参考，不直接成为剪贴板格式。
 - 新参数处理顺序、identity bypass 和质量准入遵守总技术方案 8.1～8.7；候选公式不是冻结结果。
-- Mac 的工具到六组映射仍随原生 UI 批次接入；第二批 Mac 只交付提交事务，不将现有旧八组视作新导航实现。
+- 第四批已将四端 17 个工具接入六组导航及范围重置；不将 S2a 本地完成扩大为 S2b 输入、S3 查看或 S4 RGB 验收。
 - 三端当前保存均同步执行；第三批保留该串行实现，以可返回成功/失败的候选保存边界满足草稿事务。普通重置沿原一次编辑入口，不能与草稿 save-first 混为同一策略。
 - Android 的裁切/比例 ready 与可应用 changed 分开；reset/draft 只去除完全相同的重复保存，预览实际补入的 WB metadata 仍保存。
 - Windows [目录复制路径](https://github.com/dancancer/RawLab/blob/bff2b8602b913a08676e04ab7f1109a148f68834/RawLabWindows/MainWindow/Library.cs#L259)在异步枚举前捕获快照，恢复后尚无 source/edit guard；可能覆盖等待期间更新的当前照片记录。此源码风险登记到 I2/ITER-08，需专门回归，不混入第三批重置事务。
