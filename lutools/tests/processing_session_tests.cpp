@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
             request.size_mode = SONY2FUJI_SIZE_NATIVE; request.preview_long_edge = 128;
             request.output_target = SONY2FUJI_TARGET_BUFFER; request.output_format = SONY2FUJI_OUTPUT_RGB8;
             const auto defaultPixels = render(session.get(), request);
-            for (const auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_SWT_V2,
+            for (const auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_C5_V2,
                                        SONY2FUJI_PROCESSING_LEGACY}) {
                 require(sony2fuji_session_set_processing_version(session.get(), version) == SONY2FUJI_STATUS_OK, "version");
                 auto fresh = makeSession(interactive, viewport, exposure, wavelet);

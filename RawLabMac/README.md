@@ -199,17 +199,26 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 强度、大小和粗糙度，相同参数重复渲染保持一致。两项默认关闭，支持单参数、整项及效果组
 重置；新参数跟随逐照片调整状态，缺少新字段的旧序列化记录按关闭处理。
 
-100% 视图和导出的暗角和颗粒在 Metal 上按原图分辨率执行；普通预览在缩小后的线性输入上处理。小波降噪的 SWT 分解、阈值和重建，
+100% 视图和导出的暗角和颗粒在 Metal 上按原图分辨率执行；普通预览在缩小后的线性输入上处理。旧处理版本的小波降噪 SWT 分解、阈值和重建，
 以及色度降噪的引导滤波也支持 Metal，可与暗角和颗粒同时启用。GPU 失败时 Auto 回退 CPU；
 Force 不隐藏失败。噪声估计/校准、OpenCV 色彩转换及部分辅助处理仍在 CPU，旧 FBDD、RAW
 解码和文件编码也仍在 CPU。结果不是 Lightroom 像素级复刻或实测胶片模型。
 
 The dock adds Vignette (Amount, Midpoint, Roundness, Feather, Highlights) and
 Grain (Amount, Size, Roughness), both defaulting off. Settled 100% views and exports
-run effects at source resolution on Metal; ordinary previews use reduced input. Metal also accelerates wavelet SWT filtering
+run effects at source resolution on Metal; ordinary previews use reduced input. Metal also accelerates legacy SWT filtering
 and display-chroma guided filtering, retaining CPU estimation/calibration and
 OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
 failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
+新处理版本 2 使用 C5，亮度、色度和粗色斑强度均可调。提高强度会减少噪声，也可能压低弱纹理；
+低强度更适合保留细节。C5 在 CPU 上分块滤波，Auto 可继续使用 Metal 显示渲染；Force 不支持需要执行 C5 的请求。
+旧记录保留版本 1，新编辑采用版本 2；重置调整不自动升级处理版本。
+
+Processing version 2 uses tiled CPU C5 with adjustable luma, chroma and coarse strengths.
+Lower strengths retain more detail; stronger denoising may suppress weak texture. Auto can
+continue Metal display rendering, while Force rejects an active C5 filter request.
+Existing records retain version 1; new edits use version 2.
+
 See the [shared contract](../lutools/docs/color-contract.md#gpu-denoising).
 
 ## 验证 / Verification

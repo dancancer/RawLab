@@ -70,7 +70,7 @@ static void checkVersion(sony2fuji_processing_version version) {
     gpu.mode=SONY2FUJI_GPU_FORCE;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     sony2fuji_buffer rejected{};
-    if (nativeGpu) {
+    if (nativeGpu && version == SONY2FUJI_PROCESSING_LEGACY) {
         assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_OK);
         assert(sony2fuji_session_get_last_backend(session)==rawlabtest::nativeBackend);
         sony2fuji_release_buffer(&rejected);
@@ -110,5 +110,5 @@ static void checkVersion(sony2fuji_processing_version version) {
 }
 
 int main() {
-    for (auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_SWT_V2}) checkVersion(version);
+    for (auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_C5_V2}) checkVersion(version);
 }

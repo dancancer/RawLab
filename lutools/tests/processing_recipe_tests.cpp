@@ -21,7 +21,7 @@ int main() {
         require(parseEditRecipe(document.dump(), recipe, error), "v5 processing recipe: " + error);
         require(Json::parse(serializeEditRecipe(recipe)).at("processing") == document.at("processing"),
                 "processing identity survives normalization");
-        require(recipe.processingVersion == SONY2FUJI_PROCESSING_SWT_V2, "v5 selects current core");
+        require(recipe.processingVersion == SONY2FUJI_PROCESSING_C5_V2, "v5 selects current core");
         const auto unchanged = serializeEditRecipe(recipe);
         for (const Json& invalid : std::vector<Json>{nullptr, Json::array(), 2,
                  {{"family", "other"}, {"version", 1}, {"quality", "standard"}},
@@ -48,7 +48,7 @@ int main() {
                     !Json::parse(serializeEditRecipe(recipe)).contains("processing"), "old schema remains legacy");
             old["processing"] = document.at("processing");
             require(!parseEditRecipe(old.dump(), recipe, error), "old schema rejects new field");
-            recipe.processingVersion = SONY2FUJI_PROCESSING_SWT_V2;
+            recipe.processingVersion = SONY2FUJI_PROCESSING_C5_V2;
             bool rejected = false;
             try { serializeEditRecipe(recipe); } catch (const std::invalid_argument&) { rejected = true; }
             require(rejected, "old schema cannot silently discard current processing");

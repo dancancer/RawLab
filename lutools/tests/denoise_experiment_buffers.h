@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/color_converter.h"
+#include "sony2fuji/processing_version.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #ifdef SONY2FUJI_ENABLE_METAL
 #include "gpu/photo_gpu.h"
@@ -139,14 +140,14 @@ inline Json exportSensor(const std::filesystem::path& directory, const std::stri
 
 inline Json exportBuffers(const std::filesystem::path& directory, const ImageData& source,
                           const ImageData& swt, const ImageData* reference,
-                          const std::string& rawPath, bool vng, bool displayRequested) {
+                          const std::string& rawPath, bool vng, bool displayRequested, sony2fuji::ProcessingVersion processingVersion) {
     if (!std::filesystem::create_directory(directory))
         throw std::runtime_error("experiment directory must not exist");
-    Json result = {{"processing", {{"family", "rawlab"}, {"version", 2}, {"quality", "standard"}}},
+    Json result = {{"processing", {{"family", "rawlab"}, {"version", static_cast<int>(processingVersion)}, {"quality", "standard"}}},
                    {"buffers", Json::object()}};
     auto& buffers = result["buffers"];
     buffers["source"] = writeImage(directory, "source", source, "linear_sRGB", "native_decode");
-    buffers["swt"] = writeImage(directory, "swt", swt, "linear_sRGB", "frozen_swt_v2");
+    buffers["swt"] = writeImage(directory, "swt", swt, "linear_sRGB", processingVersion == sony2fuji::ProcessingVersion::Legacy ? "frozen_swt_legacy" : "frozen_c5_v2");
     if (reference) buffers["reference"] = writeImage(directory, "reference", *reference, "linear_sRGB", "declared_reference");
     result["sensor"] = rawPath.empty() ? Json{{"status", "NOT_APPLICABLE_SYNTHETIC"}} :
         exportSensor(directory, rawPath, source, vng);

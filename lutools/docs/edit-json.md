@@ -340,7 +340,7 @@ groups, and requires one additional root object:
 ```
 
 The supported versions are `1` (released v0.8.2 RAW/SWT behavior) and `2`
-(Bayer VNG and the frozen SWT revision). Both use quality `standard`.
+(Bayer VNG and C5 EAW denoising). Both use quality `standard`.
 Unknown members, families, versions or quality values are rejected before
 rendering or creating output. The processing version is independent of
 `schema_version`, the result protocol and request v2.

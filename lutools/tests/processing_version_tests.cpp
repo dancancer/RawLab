@@ -17,10 +17,10 @@ static void require(bool condition, const std::string& message) {
 static void cacheChecks() {
     WaveletDenoiseAnalysisCache cache;
     WaveletDenoiseOptions options{true, 65, 72, 100};
-    ProcessingVersion previous = ProcessingVersion::SwtV2;
+    ProcessingVersion previous = ProcessingVersion::C5V2;
     bool first = true;
-    for (const auto version : {ProcessingVersion::Legacy, ProcessingVersion::Legacy, ProcessingVersion::SwtV2,
-                               ProcessingVersion::SwtV2, ProcessingVersion::Legacy}) {
+    for (const auto version : {ProcessingVersion::Legacy, ProcessingVersion::Legacy, ProcessingVersion::C5V2,
+                               ProcessingVersion::C5V2, ProcessingVersion::Legacy}) {
         options.processingVersion = version;
         auto cached = processingReferenceFixture();
         auto fresh = cached;

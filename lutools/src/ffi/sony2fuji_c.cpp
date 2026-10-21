@@ -1530,7 +1530,9 @@ static sony2fuji_status processImpl(
             }
             sony2fuji::ColorConverter converter;
             converter.convertImage(image, toCoreColorSpace(color_space), sony2fuji::ColorSpace::sRGB);
-            const auto mode = gpuPipeline ? sony2fuji::GpuMode::Force : sony2fuji::GpuMode::Off;
+            const bool cpuC5 = session->wavelet_denoise.processingVersion == sony2fuji::ProcessingVersion::C5V2 &&
+                session->gpu_config.mode != sony2fuji::GpuMode::Force;
+            const auto mode = gpuPipeline && !cpuC5 ? sony2fuji::GpuMode::Force : sony2fuji::GpuMode::Off;
             sony2fuji::WaveletDenoiseDiagnostics diagnostics;
             auto filter = [&](sony2fuji::GpuMode backend) {
                 ++session->wavelet_cache.diagnostics.filterRuns;

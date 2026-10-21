@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <memory>
 #include <vector>
+#include <stdexcept>
 
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
 #include "wavelet_tile.h"
@@ -83,7 +84,7 @@ bool periodic(const cv::Mat& residual) {
 }
 
 std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstimateDiagnostics& diagnostics,
-                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::SwtV2) {
+                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     std::vector<Sample> samples;
     for (int y:positions(rgb.rows)) for (int x:positions(rgb.cols)) {
         ++diagnostics.candidateTiles;
@@ -490,7 +491,7 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
 }
 
 void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
-             sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::SwtV2) {
+             sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     cv::Mat normalized;
     cv::transform(filtered,normalized,opponent().t());
     filtered.release();
@@ -521,18 +522,21 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
         }
     });
 }
+#include "eaw_denoise_impl.h"
 } // namespace
 #endif
 
 namespace sony2fuji {
 struct WaveletDenoiseAnalysisCache::Impl {
     std::string key;
-    ProcessingVersion processingVersion = ProcessingVersion::SwtV2;
+    ProcessingVersion processingVersion = ProcessingVersion::C5V2;
     int width = 0, height = 0;
     bool ready = false, coarseReady = false, lumaCoarseReady = false;
     WaveletNoiseEstimateDiagnostics estimate;
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
     NoiseModel model{};
+    eaw::Analysis eawAnalysis{};
+    bool eawReady = false;
     std::vector<Sample> samples;
 #endif
 };
@@ -586,106 +590,139 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     if (!options.active()) return finish(options.enabled ? WaveletDenoiseOutcome::ZeroStrength :
         WaveletDenoiseOutcome::Disabled, ErrorCode::Success);
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
-    const bool reloadable = immutableSource && immutableSource != &image;
-    if (reloadable && (immutableSource->width <= 0 || immutableSource->height <= 0 ||
-        immutableSource->pixels.size() != static_cast<size_t>(immutableSource->width) * immutableSource->height))
-        return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
-    auto reload = [&]() {
-        image = *immutableSource;
-        return ColorConverter().convertImage(image, sourceSpace, ColorSpace::sRGB);
-    };
-    // Auto 在 GPU 失败后重试时，工作副本可能已释放；原始输入仍由 session 持有。
-    if (reloadable && image.pixels.empty()) {
-        const auto result = reload();
-        if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
-    }
-    if (image.width<=0 || image.height<=0 || image.pixels.size()!=static_cast<size_t>(image.width)*image.height)
-        return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
-    if (reloadable && (immutableSource->width != image.width || immutableSource->height != image.height))
-        return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
-    static_assert(sizeof(RGB)==sizeof(float)*3);
-    cv::Mat rgb(image.height,image.width,CV_32FC3,image.pixels.data());
-    if (!cv::checkRange(rgb)) return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
-    WaveletDenoiseAnalysisCache::Impl local;
-    auto* state = &local;
-    bool reused = false;
-    // sourceKey 由调用方标识不可变输入；只保留小型分析模型，不缓存整图系数。
-    if (analysis && !sourceKey.empty()) {
-        reused = analysis->state && analysis->state->ready && analysis->state->key == sourceKey &&
-            analysis->state->processingVersion == options.processingVersion &&
-            analysis->state->width == image.width && analysis->state->height == image.height;
+    try {
+        const bool reloadable = immutableSource && immutableSource != &image;
+        if (reloadable && (immutableSource->width <= 0 || immutableSource->height <= 0 ||
+            immutableSource->pixels.size() != static_cast<size_t>(immutableSource->width) * immutableSource->height))
+            return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        auto reload = [&]() {
+            image = *immutableSource;
+            return ColorConverter().convertImage(image, sourceSpace, ColorSpace::sRGB);
+        };
+        // Auto 在 GPU 失败后重试时，工作副本可能已释放；原始输入仍由 session 持有。
+        if (reloadable && image.pixels.empty()) {
+            const auto result = reload();
+            if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
+        }
+        if (image.width<=0 || image.height<=0 || image.pixels.size()!=static_cast<size_t>(image.width)*image.height)
+            return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        if (reloadable && (immutableSource->width != image.width || immutableSource->height != image.height))
+            return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        static_assert(sizeof(RGB)==sizeof(float)*3);
+        cv::Mat rgb(image.height,image.width,CV_32FC3,image.pixels.data());
+        if (!cv::checkRange(rgb)) return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        WaveletDenoiseAnalysisCache::Impl local;
+        auto* state = &local;
+        bool reused = false;
+        // sourceKey 由调用方标识不可变输入；只保留小型分析模型，不缓存整图系数。
+        if (analysis && !sourceKey.empty()) {
+            reused = analysis->state && analysis->state->ready && analysis->state->key == sourceKey &&
+                analysis->state->processingVersion == options.processingVersion &&
+                analysis->state->width == image.width && analysis->state->height == image.height;
+            if (!reused) {
+                analysis->state = std::make_unique<WaveletDenoiseAnalysisCache::Impl>();
+                analysis->state->key = sourceKey;
+                analysis->state->processingVersion = options.processingVersion;
+                analysis->state->width = image.width; analysis->state->height = image.height;
+            }
+            state = analysis->state.get();
+        }
+        if (!reused) state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+        const auto& samples = state->samples;
+        if (diagnostics) {
+            diagnostics->flatTiles=static_cast<int>(samples.size());
+            diagnostics->analysisReused=reused;
+            diagnostics->estimate=state->estimate;
+        }
+        if (samples.size()<8) {
+            state->ready=true;
+            const auto& estimate=state->estimate;
+            const auto outcome=estimate.rejectedSmall==estimate.candidateTiles ? WaveletDenoiseOutcome::SmallImage :
+                estimate.rejectedLowNoise==estimate.candidateTiles ? WaveletDenoiseOutcome::LowNoise :
+                WaveletDenoiseOutcome::InsufficientSamples;
+            return finish(outcome, ErrorCode::Success);
+        }
         if (!reused) {
-            analysis->state = std::make_unique<WaveletDenoiseAnalysisCache::Impl>();
-            analysis->state->key = sourceKey;
-            analysis->state->processingVersion = options.processingVersion;
-            analysis->state->width = image.width; analysis->state->height = image.height;
+            state->model=fitNoise(samples);
+            describeFit(samples,state->model,state->estimate);
         }
-        state = analysis->state.get();
-    }
-    if (!reused) state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
-    const auto& samples = state->samples;
-    if (diagnostics) {
-        diagnostics->flatTiles=static_cast<int>(samples.size());
-        diagnostics->analysisReused=reused;
-        diagnostics->estimate=state->estimate;
-    }
-    if (samples.size()<8) {
+        auto& model = state->model;
+        if (diagnostics) {
+            diagnostics->estimate=state->estimate;
+            for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
+        }
+        if (options.processingVersion == ProcessingVersion::C5V2) {
+            // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
+            if (gpuMode == GpuMode::Force)
+                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            const float strengthScale=eaw::noiseScale(model);
+            if (strengthScale==0) {
+                state->ready=true;
+                return finish(WaveletDenoiseOutcome::LowNoise, ErrorCode::Success);
+            }
+            if (!state->eawReady) {
+                state->eawAnalysis=eaw::analyze(rgb,model,samples);
+                state->eawReady=true;
+            }
+            if (diagnostics) diagnostics->coarseAnalysisReused=reused;
+            state->ready=true;
+            const auto filtered=eaw::filter(rgb,model,state->eawAnalysis,options,strengthScale);
+            // 输出完整生成后才替换输入，失败不留下部分接缝或丢失工作副本。
+            filtered.copyTo(rgb);
+            if (diagnostics) diagnostics->applied=true;
+            return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
+        }
+        cv::Mat transformed;
+        {
+            const cv::Mat normalized=normalize(rgb,model);
+            cv::transform(normalized,transformed,opponent());
+        }
+        // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
+        if (reloadable) { rgb.release(); image = {}; }
+        if (!reused) calibrateBands(model,transformed,samples);
         state->ready=true;
-        const auto& estimate=state->estimate;
-        const auto outcome=estimate.rejectedSmall==estimate.candidateTiles ? WaveletDenoiseOutcome::SmallImage :
-            estimate.rejectedLowNoise==estimate.candidateTiles ? WaveletDenoiseOutcome::LowNoise :
-            WaveletDenoiseOutcome::InsufficientSamples;
-        return finish(outcome, ErrorCode::Success);
-    }
-    if (!reused) {
-        state->model=fitNoise(samples);
-        describeFit(samples,state->model,state->estimate);
-    }
-    auto& model = state->model;
-    if (diagnostics) {
-        diagnostics->estimate=state->estimate;
-        for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
-    }
-    cv::Mat transformed;
-    {
-        const cv::Mat normalized=normalize(rgb,model);
-        cv::transform(normalized,transformed,opponent());
-    }
-    // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
-    if (reloadable) { rgb.release(); image = {}; }
-    if (!reused) calibrateBands(model,transformed,samples);
-    state->ready=true;
-    const bool needLumaCoarse=options.processingVersion!=ProcessingVersion::Legacy && options.luma>0;
-    const bool needChromaCoarse=options.chroma>0 && options.coarse>0;
-    if (diagnostics && (needLumaCoarse || needChromaCoarse))
-        diagnostics->coarseAnalysisReused=(!needLumaCoarse || state->lumaCoarseReady) &&
-            (!needChromaCoarse || state->coarseReady);
-    if (needLumaCoarse && !state->lumaCoarseReady) {
-        calibrateLumaCoarseBands(model,transformed,samples);
-        state->lumaCoarseReady=true;
-    }
-    if (needChromaCoarse) {
-        if (!state->coarseReady) {
-            calibrateCoarseBands(model,transformed,samples);
-            state->coarseReady=true;
+        const bool needLumaCoarse=options.processingVersion!=ProcessingVersion::Legacy && options.luma>0;
+        const bool needChromaCoarse=options.chroma>0 && options.coarse>0;
+        if (diagnostics && (needLumaCoarse || needChromaCoarse))
+            diagnostics->coarseAnalysisReused=(!needLumaCoarse || state->lumaCoarseReady) &&
+                (!needChromaCoarse || state->coarseReady);
+        if (needLumaCoarse && !state->lumaCoarseReady) {
+            calibrateLumaCoarseBands(model,transformed,samples);
+            state->lumaCoarseReady=true;
         }
+        if (needChromaCoarse) {
+            if (!state->coarseReady) {
+                calibrateCoarseBands(model,transformed,samples);
+                state->coarseReady=true;
+            }
+        }
+        std::atomic<bool> gpuUsed{false};
+        cv::Mat filtered;
+        try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
+        catch (const WaveletGpuFailure&) { return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError); }
+        transformed.release();
+        if (reloadable) {
+            const auto result = reload();
+            if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
+            rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
+        }
+        restore(rgb,std::move(filtered),model,options.processingVersion);
+        if (diagnostics) {
+            diagnostics->applied=true;
+            diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
+        }
+        return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
+    } catch (const std::bad_alloc&) {
+        if (options.processingVersion==ProcessingVersion::Legacy) throw;
+        return finish(WaveletDenoiseOutcome::ProcessingFailure, ErrorCode::OutOfMemory);
+    } catch (const cv::Exception& error) {
+        if (options.processingVersion==ProcessingVersion::Legacy) throw;
+        return finish(WaveletDenoiseOutcome::ProcessingFailure,
+            error.code==cv::Error::StsNoMem ? ErrorCode::OutOfMemory : ErrorCode::ProcessingError);
+    } catch (const std::exception&) {
+        if (options.processingVersion==ProcessingVersion::Legacy) throw;
+        return finish(WaveletDenoiseOutcome::ProcessingFailure, ErrorCode::ProcessingError);
     }
-    std::atomic<bool> gpuUsed{false};
-    cv::Mat filtered;
-    try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
-    catch (const WaveletGpuFailure&) { return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError); }
-    transformed.release();
-    if (reloadable) {
-        const auto result = reload();
-        if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
-        rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
-    }
-    restore(rgb,std::move(filtered),model,options.processingVersion);
-    if (diagnostics) {
-        diagnostics->applied=true;
-        diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
-    }
-    return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
 #else
     (void)image;
     (void)gpuMode;

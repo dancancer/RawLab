@@ -18,12 +18,12 @@ internal object SettingsCodec {
         settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
     ).plus(settings.exposureMode).plus(settings.hsl.packed().toList()).plus(settings.recipeID ?: "")
         .plus(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(settings.lens.encode().toByteArray(Charsets.UTF_8)))
-        .plus(settings.geometry.encode())
+        .plus(settings.geometry.encode()).plus(settings.processing.encode())
         .joinToString("|")
 
     fun decode(value: String): EditSettings {
         val fields = value.split('|')
-        require(fields.size in listOf(12, 16, 25, 50, 51, 52, 53))
+        require(fields.size in listOf(12, 16, 25, 50, 51, 52, 53, 54))
         return EditSettings(film = fields[0], strength = fields[1].toFloat(), exposure = fields[2].toFloat(),
             highlights = fields[3].toFloat(), shadows = fields[4].toFloat(), contrast = fields[5].toFloat(),
             toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = fields[8].toBoolean(),
@@ -39,6 +39,7 @@ internal object SettingsCodec {
             recipeID = if (fields.size >= 51) fields[50].ifEmpty { null } else null,
             lens = if (fields.size >= 52) LensSettings.decode(String(java.util.Base64.getUrlDecoder().decode(fields[51]), Charsets.UTF_8)) else LensSettings(),
             geometry = GeometrySettings.decode(fields.getOrNull(52)),
+            processing = ProcessingIdentity.decode(fields.getOrNull(53)),
             effects = if (fields.size >= 25) PhotoEffectsSettings(
                 vignetteAmount = fields[17].toFloat(), vignetteMidpoint = fields[18].toFloat(),
                 vignetteRoundness = fields[19].toFloat(), vignetteFeather = fields[20].toFloat(),

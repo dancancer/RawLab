@@ -314,7 +314,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (recipe.schemaVersion < 1 || recipe.schemaVersion > 5)
         throw std::invalid_argument("Unsupported schema_version");
-    if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_SWT_V2)
+    if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2)
         throw std::invalid_argument("Unsupported processing.version");
     if (recipe.schemaVersion < 5 && recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY)
         throw std::invalid_argument("processing.version requires schema_version 5");

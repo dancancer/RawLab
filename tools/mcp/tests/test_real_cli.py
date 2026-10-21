@@ -17,6 +17,45 @@ ROOT = Path(__file__).resolve().parents[3]
 
 @unittest.skipUnless(CLI, "Set RAWLAB_MCP_CLI to run real CLI compatibility checks")
 class RealCliTests(unittest.IsolatedAsyncioTestCase):
+    async def test_v5_processing_versions_match_cli_pixels(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-v5-") as directory:
+            root = Path(directory).resolve()
+            source = root / "source.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            recipe = root / "recipe.json"
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI, "--read-root", str(root), "--write-root", str(root),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                for version in (1, 2):
+                    identity = {"family": "rawlab", "version": version, "quality": "standard"}
+                    document = {
+                        "schema_version": 5, "processing": identity, "input": {"path": source.name},
+                        "edits": {"exposure": {"mode": "scene", "ev": 0.25}},
+                        "output": {"path": f"mcp-{version}.png", "format": "png"},
+                    }
+                    recipe.write_text(json.dumps(document), encoding="utf-8")
+                    validated = await client.call_tool("validate_recipe", {"recipe_path": str(recipe)})
+                    self.assertFalse(validated.is_error)
+                    self.assertEqual(validated.structured_content["result"]["processing"], identity)
+                    preview = root / f"mcp-preview-{version}.png"
+                    rendered = await client.call_tool("render_preview", {
+                        "recipe_path": str(recipe), "output_path": str(preview), "long_edge": 1280,
+                    })
+                    self.assertFalse(rendered.is_error)
+                    direct_preview = root / f"cli-preview-{version}.png"
+                    direct = subprocess.run([CLI, "--recipe", str(recipe), "--preview", str(direct_preview),
+                                             "--long-edge", "1280", "--json"], capture_output=True, timeout=120)
+                    self.assertEqual(direct.returncode, 0, direct.stderr)
+                    self.assertEqual(preview.read_bytes(), direct_preview.read_bytes())
+                    exported = await client.call_tool("export_photo", {"recipe_path": str(recipe)})
+                    self.assertFalse(exported.is_error)
+                    document["output"]["path"] = f"cli-{version}.png"
+                    recipe.write_text(json.dumps(document), encoding="utf-8")
+                    direct = subprocess.run([CLI, "--recipe", str(recipe), "--json"], capture_output=True, timeout=120)
+                    self.assertEqual(direct.returncode, 0, direct.stderr)
+                    self.assertEqual((root / f"mcp-{version}.png").read_bytes(), (root / f"cli-{version}.png").read_bytes())
+
     async def test_five_tools_match_direct_cli_and_preserve_source(self):
         with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-") as directory:
             root = Path(directory).resolve()

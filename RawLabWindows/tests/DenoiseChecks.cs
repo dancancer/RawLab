@@ -20,7 +20,7 @@ internal static class DenoiseChecks
         ComparisonChecks.Run(Check);
         using(var controlled=new RenderEngine(0))
         {
-            var controlSettings=new Adjustments();
+            var controlSettings=new Adjustments { Processing=ProcessingIdentity.Legacy };
             var original=Pixels(controlled.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!.Image);
             controlSettings.Denoise=DenoiseSettings.Clean;
             var filtered=Pixels(controlled.Render(noiseRaw,controlSettings,null,1600,viewportPreview:true)!.Image);
@@ -76,20 +76,14 @@ internal static class DenoiseChecks
         var autoClean=gpuEngine.Render(raw,settings,null,appliedEdge,viewportPreview:true)!;
         if(nativeGpuAvailable)
         {
-            Check(autoClean.Backend==3,"Auto keeps active denoise on an available Direct3D 11 backend");
-            gpuEngine.SetGpuMode(2);
-            var forcedClean=gpuEngine.Render(raw,settings,null,appliedEdge,viewportPreview:true)!;
-            Check(forcedClean.Backend==3,"Force GPU executes active denoise on Direct3D 11");
-            Check(Pixels(forcedClean.Image).Zip(Pixels(clean.Result.Image),(a,b)=>Math.Abs(a-b)).Max()<=2,
-                "Direct3D 11 active denoise stays within CPU tolerance");
+            Check(autoClean.Backend==3,"Auto retains Direct3D 11 display processing with CPU C5");
+            Check(Pixels(autoClean.Image).Zip(Pixels(clean.Result.Image),(a,b)=>Math.Abs(a-b)).Max()<=2,
+                "Auto C5 and Direct3D 11 display stay within CPU tolerance");
         }
-        else
-        {
-            Console.WriteLine("SKIP Direct3D 11 active denoise parity: no hardware adapter available");
-            gpuEngine.SetGpuMode(2);
-            try { gpuEngine.Render(raw,settings,null,appliedEdge,viewportPreview:true);throw new Exception("Force GPU accepted active denoise without Direct3D 11"); }
-            catch(InvalidOperationException) { Console.WriteLine("PASS Force GPU rejects active denoise without hardware"); }
-        }
+        else Console.WriteLine("SKIP Direct3D 11 display parity: no hardware adapter available");
+        gpuEngine.SetGpuMode(2);
+        try { gpuEngine.Render(raw,settings,null,appliedEdge,viewportPreview:true);throw new Exception("Force GPU accepted active C5"); }
+        catch(InvalidOperationException) { Console.WriteLine("PASS Force GPU rejects active C5"); }
         var previousDisable=Environment.GetEnvironmentVariable("RAWLAB_DISABLE_D3D11");
         try
         {
@@ -114,12 +108,11 @@ internal static class DenoiseChecks
         if(nativeGpuAvailable)
         {
             Check(combinedAuto.Backend==3,"Combined Auto actually uses Direct3D 11");
+            Check(Pixels(combinedAuto.Image).SequenceEqual(Pixels(gpuEngine.Render(raw,combined,null,600)!.Image)),
+                "Direct3D 11 grain is deterministic with Auto C5");
             gpuEngine.SetGpuMode(2);
-            var forced=gpuEngine.Render(raw,combined,null,600)!;
-            Check(forced.Backend==3 && Pixels(forced.Image).Zip(Pixels(combinedCpu.Image),(a,b)=>Math.Abs(a-b)).Max()<=2,
-                "Combined Force uses Direct3D 11 within CPU tolerance");
-            Check(Pixels(forced.Image).SequenceEqual(Pixels(gpuEngine.Render(raw,combined,null,600)!.Image)),
-                "Direct3D 11 grain is deterministic");
+            try { gpuEngine.Render(raw,combined,null,600);throw new Exception("Combined Force accepted active C5"); }
+            catch(InvalidOperationException) { Console.WriteLine("PASS Combined Force rejects active C5"); }
         }
         engine.SetGpuMode(0);
         var directory=Path.Combine(repository,"build","denoise-verification");Directory.CreateDirectory(directory);

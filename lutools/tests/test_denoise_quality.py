@@ -217,6 +217,7 @@ class ReportTests(unittest.TestCase):
         result = {"version": 1, "request_id": "a" * 64, "case_id": "flat", "split": "tune",
                   "status": "MEASURED", "options": runner.PRESETS["off"], "backend_requested": "cpu",
                   "bayer_demosaic_requested": "vng",
+                  "processing": {"family": "rawlab", "version": 2, "quality": "standard", "denoiser": "c5_eaw"},
                   "pipeline": {"demosaic": "not_applicable", "reference_demosaic": "not_applicable"},
                   "source_fingerprint": "fnv1a64-f32le:0123456789abcdef", "output_fingerprint": "fnv1a64-f32le:0123456789abcdef",
                   "width": 256, "height": 256, "decode_ms": 1, "filter_ms": 0, "peak_rss_bytes": None,
@@ -236,6 +237,14 @@ class ReportTests(unittest.TestCase):
     def test_complete_matching_report(self):
         request, result = self.fixtures()
         runner.validate_result(result, request)
+
+    def test_missing_or_wrong_processing_identity_is_rejected(self):
+        for identity in (None, {"family": "rawlab", "version": 2, "quality": "standard", "denoiser": "swt_v2"},
+                         {"family": "rawlab", "version": 1, "quality": "standard", "denoiser": "swt_legacy"}):
+            request, result = self.fixtures()
+            result["processing"] = identity
+            with self.subTest(identity=identity), self.assertRaisesRegex(ValueError, "processing"):
+                runner.validate_result(result, request)
 
     def test_laplacian_fields_match_region_size_and_reference_energy(self):
         for rms, gain in ((None, None), (1, None), (0, 1)):
@@ -384,15 +393,29 @@ class RunnerFailureTests(unittest.TestCase):
 class ExperimentReportTests(unittest.TestCase):
     def fixture(self, root):
         buffers = {}
-        for name, stage in (("source", "native_decode"), ("swt", "frozen_swt_v2")):
+        for name, stage in (("source", "native_decode"), ("swt", "frozen_c5_v2")):
             path = root / f"{name}.f32"
             path.write_bytes(struct.pack("<27f", *([.2] * 27)))
             buffers[name] = {"path": str(path), "shape": [3, 3, 3], "bytes": 108,
                              "dtype": "<f4", "space": "linear_sRGB", "stage": stage}
-        return {"width": 3, "height": 3, "experiment": {
+        return {"width": 3, "height": 3,
+                "processing": {"family": "rawlab", "version": 2, "quality": "standard", "denoiser": "c5_eaw"},
+                "experiment": {
             "processing": {"family": "rawlab", "version": 2, "quality": "standard"},
             "buffers": buffers, "sensor": {"status": "NOT_APPLICABLE_SYNTHETIC"},
             "display": {"status": "NOT_REQUESTED"}}}
+
+    def test_stage_must_match_explicit_processing_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = self.fixture(root)
+            for stage in ("frozen_swt_v2", "frozen_swt_legacy"):
+                result["experiment"]["buffers"]["swt"]["stage"] = stage
+                with self.subTest(stage=stage), self.assertRaisesRegex(ValueError, "stage"):
+                    runner.validate_experiment(result, root)
+            result["processing"] = {"family": "rawlab", "version": 1, "quality": "standard", "denoiser": "swt_legacy"}
+            result["experiment"]["processing"]["version"] = 1
+            runner.validate_experiment(result, root)
 
     def test_existing_incorrect_hash_is_not_silently_replaced(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -462,6 +485,7 @@ class NativeRunnerTests(unittest.TestCase):
             self.assertEqual(exported["processing"], {"family": "rawlab", "version": 2, "quality": "standard"})
             buffers = exported["buffers"]
             source, output = buffers["source"], buffers["swt"]
+            self.assertEqual(output["stage"], "frozen_c5_v2")
             self.assertEqual(source["shape"], [32, 32, 3])
             self.assertEqual(source["dtype"], "<f4")
             self.assertEqual(source["space"], "linear_sRGB")

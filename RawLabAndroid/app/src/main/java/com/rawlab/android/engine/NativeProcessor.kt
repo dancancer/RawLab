@@ -87,7 +87,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null))
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version))
         val dimensions = nativeGeometrySize(handle)
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
@@ -116,7 +116,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, backend)
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, backend)
         check(backend[0] >= 0) { "Native export did not report a backend" }
         if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output)
         return backend[0]
@@ -132,7 +132,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureGeometry(settings.geometry)
         return nativeAutoExposure(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
-            effective.exposureMode, effective.recipeID != null, effective.strength)
+            effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version)
     }
 
     @Synchronized
@@ -186,7 +186,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeDestroy(handle: Long)
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: ByteArray?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
-        temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float): Float
+        temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int): Float
     private external fun nativeProcess(handle: Long, input: String, pixels: ByteArray?, width: Int, height: Int,
         pixelFormat: Int, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
@@ -195,7 +195,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, backend: IntArray? = null): NativeFrame?
+        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, backend: IntArray? = null): NativeFrame?
 
     companion object {
         const val CPU = 0

@@ -16,10 +16,10 @@ LibRaw performs black subtraction, active-area crop, white balance, demosaic and
 
 Processing version 1 preserves LibRaw's released default interpolation choice
 (AHD for ordinary three-color Bayer); version 2 selects VNG. New C sessions and
-public `RAWProcessOptions` retain version-1 behavior. Mac and Windows new edits
+public `RAWProcessOptions` retain version-1 behavior. Mac, Windows, iOS and Android new edits
 explicitly select version 2, while records missing processing identity select
 version 1. The additive `sony2fuji_session_set_processing_version` selects the
-whole RAW/SWT profile without changing request v2. C++ callers may also select
+whole RAW/denoise profile without changing request v2. C++ callers may also select
 `RAWProcessOptions::bayerDemosaic = BayerDemosaicMethod::DHT` as an explicit
 alternative; this is not an automatic fallback or an extra denoise stage.
 Desktop clients expose a processing-version choice, not a separate demosaic selector.
@@ -272,54 +272,52 @@ implementations is copied or embedded.
 
 ### GPU Denoising
 
-The existing denoise controls and saved parameters are unchanged. Optional
-`SONY2FUJI_ENABLE_WAVELET_DENOISE` and `SONY2FUJI_ENABLE_CHROMA_DENOISE` builds remain
-independent. Mac/iOS use Metal, Android uses GLES 3.1 compute, and Windows uses
-hardware D3D11 compute for heavy filtering; GPU failures in Auto fall back to CPU.
-Force requires successful platform filters and photo rendering, never a
-silent CPU replacement. A reliable-noise estimate is still required; off/zero
-strength and insufficient-evidence cases remain no-ops.
+The existing luma, chroma and coarse strengths remain independently adjustable from
+0 to 100. Presets are starting points: stronger noise removal can suppress weak
+texture, and lower strengths retain more detail. Turning denoising off or setting
+both luma and chroma to zero preserves the input exactly. Insufficient calibration
+evidence also leaves the input unchanged.
 
-Wavelet denoising stays in linear sRGB before user exposure and LUT evaluation.
-CPU retains flat-sample selection, noise-model fitting, normalization, opponent
-conversion, band calibration and variance-aware restoration. The GPU executes db2
-SWT analysis, box-energy thresholds and the transpose inverse per tile/channel.
-The scale/window and restoration rules below describe processing version 2.
-Version 1 preserves the released first-pass sample selection, four-level luma,
-seven-pixel fine energy windows, soft thresholds, old inverse formula and
-chroma-only coarse tiling on both CPU and GPU. Processing identity isolates RAW,
-embedded-preview exposure, wavelet analysis and output caches.
-Luminance uses six levels with relative threshold strengths of 1/1/2/2/1/1 and
-dilation-aware energy windows of 7/15/29/57/113/113 pixels. The stronger middle
-levels target clumped residual grain without raising the relative threshold
-strengths of the finest or coarsest levels; this is not lossless detail retention.
-The two additional luminance
-bands are calibrated from real neighborhoods and capped by fine-band noise
-evidence so that slowly varying lightness is not treated as unlimited noise.
-Chroma retains four levels, or six when coarse color reduction is enabled;
-the coarse control changes only chroma. Its energy windows are
-7/15/29/57/17/33 pixels. Chroma levels 2-4 use
-[firm thresholding](https://pywavelets.readthedocs.io/en/stable/ref/thresholding-functions.html)
-between T and 2T: coefficients below T vanish, those above 2T remain unchanged,
-and those between are scaled continuously. This limits soft-threshold bias on
-colored details while wider middle-scale windows reduce noise self-protection.
-The finest and two coarsest chroma levels retain soft thresholding; no luminance
-threshold, preset strength or calibration model is changed by this refinement.
-This does not guarantee lossless weak-color or hue recovery.
+Denoising runs in linear sRGB before user exposure and LUT evaluation. Version 1
+preserves the released SWT sample selection, four-level luma, seven-pixel fine
+energy windows, soft thresholds, inverse formula and chroma-only coarse tiling.
+Its CPU/Metal/GLES/D3D11 paths retain their existing fallback and Force semantics.
+
+Version 2 uses C5, a six-level edge-aware wavelet (EAW) with separable binomial taps
+`[1,4,6,4,1]` applied as a joint 5x5 neighborhood at dilations 1/2/4/8/16/32.
+Weights use the normalized opponent-channel distance and
+`exp2(-max(0, 0.02 * distance - 9))`. Guide MAD is measured on up to 24 selected
+64x64 flat samples. Band MAD and mean squared coefficient energy are global,
+independent of tile boundaries. Every band uses soft thresholding. Luma relative
+strengths are 1/1/2/2/1/1 with gain 3.5928893089294434; chroma gains are
+3.5928893089294434/1/1/1/3.5928893089294434/3.5928893089294434. The coarse control
+scales chroma levels 4–6 and does not alter luma.
+
+C5 first collects global statistics, then filters serial 512-pixel tile centers.
+Its scratch coefficients are bounded by a tile and sample patches; a complete
+output is retained until filtering finishes so failures cannot partially overwrite
+the input. The six-level source support is 126 pixels. Variance-aware restoration
+adds 12 pixels (the pinned OpenCV float Gaussian at sigma 3), giving a 138-pixel
+combined halo. Neighborhoods are clipped only at true image edges; intermediate
+levels clamp there rather than at tile seams. Different tile partitions agree
+with the independent full-frame C5 reference within floating-point tolerance.
+
 Restoration averages the piecewise inverse at `n - sqrt(v)` and `n + sqrt(v)`,
-where `n` is the filtered normalized value and `v` is the local residual
-variance. Outside `abs(n) < sqrt(v)` this uses the original positive/negative
-expressions; inside it joins them continuously with a continuous first
-derivative. Small CPU/GPU rounding differences around zero therefore cannot
-switch a finite variance correction on or off. This is a symmetric two-point
-approximation, not an exact Gaussian unbiased inverse, and does not clip
-negative or over-white linear RGB.
-Periodic SWT indices, REFLECT_101 energy
-boundaries and 512/1024 tile centers with 96/256 halos are preserved. Any active
-six-level channel uses the larger center and halo. Bounded GPU tile jobs are
-serialized to avoid allocating full-image wavelet coefficients. Float GPU results
-are tested against the existing double wavelib implementation, not substituted
-with a different denoising algorithm.
+where `n` is the filtered normalized value and `v` is local residual variance.
+This joins the positive and negative branches continuously without clipping
+negative or over-white linear RGB. It is a symmetric two-point approximation,
+not an exact Gaussian unbiased inverse.
+
+A simple low-noise guard uses the maximum fitted RGB standard deviation at linear
+0.18, divided by 0.18. Values at or below 0.02 bypass C5; 0.02–0.04 linearly scale
+all strengths; values at or above 0.04 use the selected strengths unchanged.
+This is an engineering guard, not camera/ISO calibration. Clipping and unreliable
+noise fits can also lead to bypass; it does not establish a universal noise floor.
+
+C5 currently filters on CPU. Auto can retain GPU photo rendering and filtered
+output caching after CPU denoise; Force rejects an active C5 filter request.
+A skipped filter does not claim GPU work. Legacy SWT and display-chroma GPU
+backends remain available; no approximate mobile algorithm shares the C5 identity.
 
 Filtered RAW results use one exact slot and two recent viewport slots, with a
 128 MiB retained preview-image budget. Source keys include file identity, RAW
@@ -329,10 +327,9 @@ anchor across camera-WB/FBDD transitions. Output matching also requires
 the complete denoise options and execution mode. CPU/Auto/Force cannot reuse
 each other's filtered results. The small source-analysis cache retains flat
 samples, the fitted noise model and calibrated bands across strength changes;
-it does not retain full-image coefficients or replace filtering. Coarse-band
-analysis is prepared lazily and independently for luminance and chroma when needed.
-The coarse-analysis reuse diagnostic is true only when every requested coarse
-channel model was already available. Source/quality/size changes invalidate
+it does not retain full-image coefficients or replace filtering. Legacy coarse-band
+analysis remains lazy. C5 caches all six global band statistics together;
+its coarse-analysis reuse diagnostic follows reuse of that complete analysis. Source/quality/size changes invalidate
 that entry's analysis. Interactive wavelet previews may remain approximations;
 final/file requests never reuse viewport results.
 Active chroma or photo effects require the exact source-resolution path unless

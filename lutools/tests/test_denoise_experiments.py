@@ -16,6 +16,13 @@ import run_denoise_experiments as experiments
 
 
 class AdapterTests(unittest.TestCase):
+    def test_frozen_native_stage_labels(self):
+        for stage, label in (("frozen_swt_v2", "SWT v2"), ("frozen_swt_legacy", "SWT v1"),
+                             ("frozen_c5_v2", "C5 v2")):
+            self.assertEqual(experiments.native_label({"experiment": {"buffers": {"swt": {"stage": stage}}}}), label)
+        with self.assertRaises(ValueError):
+            experiments.native_label({"experiment": {"buffers": {"swt": {"stage": "unknown"}}}})
+
     def test_black_white_normalization_and_distinct_greens(self):
         metadata = {"black": 100, "cblack": [1, 2, 3, 4, 0, 0], "white": 1100,
                     "pattern": [[0, 1], [3, 2]]}

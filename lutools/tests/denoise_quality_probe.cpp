@@ -258,6 +258,8 @@ int main(int argc, char** argv) {
         const ImageData* truth = reference.pixels.empty() ? nullptr : &reference;
         const auto& settings = request.at("options");
         WaveletDenoiseOptions options{settings.at("enabled"), settings.at("luma"), settings.at("chroma"), settings.at("coarse")};
+        options.processingVersion = static_cast<ProcessingVersion>(request.value("processing_version", 2));
+        if (!validProcessingVersion(options.processingVersion)) throw std::runtime_error("invalid processing version");
         const std::string backend = request.at("backend");
         if (backend != "cpu" && backend != "auto" && backend != "force") throw std::runtime_error("invalid backend");
         const GpuMode gpu = backend == "cpu" ? GpuMode::Off : backend == "auto" ? GpuMode::Auto : GpuMode::Force;
@@ -272,6 +274,8 @@ int main(int argc, char** argv) {
                   {"status", status == ErrorCode::Success ? "MEASURED" : "PROCESSING_FAILED"},
                   {"error_code", static_cast<int>(status)}, {"options", settings}, {"backend_requested", backend},
                   {"bayer_demosaic_requested", bayerDemosaic},
+                  {"processing", {{"family", "rawlab"}, {"version", static_cast<int>(options.processingVersion)},
+                                   {"quality", "standard"}, {"denoiser", options.processingVersion == ProcessingVersion::Legacy ? "swt_legacy" : "c5_eaw"}}},
                   {"diagnostics", diagnostics(details)}, {"wavelet_available", waveletDenoiseAvailable()},
                   {"metadata", metadata}, {"width", source.width}, {"height", source.height},
                   {"source_fingerprint", fingerprint(source)}, {"reference_kind", referenceKind},
@@ -317,7 +321,7 @@ int main(int argc, char** argv) {
             const auto exportStart = Clock::now();
             report["experiment"] = denoise_experiment::exportBuffers(request.at("experiment_dir").get<std::string>(),
                 source, output, truth, isSynthetic ? "" : request.at("assets").at("input").get<std::string>(),
-                bayerDemosaic == "vng", request.value("experiment_display", false));
+                bayerDemosaic == "vng", request.value("experiment_display", false), options.processingVersion);
             report["experiment"]["export_ms_including_io"] = milliseconds(exportStart);
         }
         report["peak_rss_bytes"] = peakRssBytes();

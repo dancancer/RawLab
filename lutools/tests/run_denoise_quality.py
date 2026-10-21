@@ -153,6 +153,8 @@ def validate_result(result, request):
     expected = {"version": 1, "status": "MEASURED", "request_id": request["request_id"],
                 "case_id": case["id"], "split": case["split"], "options": request["options"],
                 "backend_requested": request["backend"],
+                "processing": {"family": "rawlab", "version": request.get("processing_version", 2),
+                               "quality": "standard", "denoiser": "swt_legacy" if request.get("processing_version", 2) == 1 else "c5_eaw"},
                 "bayer_demosaic_requested": request.get("bayer_demosaic", "vng")}
     for key, value in expected.items():
         require(result.get(key) == value, f"mismatched {key}")
@@ -283,13 +285,19 @@ def write_json(path, value):
 
 def validate_experiment(result, directory, display_requested=False):
     experiment = result.get("experiment")
+    processing = result.get("processing", {})
+    version = processing.get("version")
+    denoisers = {1: ("swt_legacy", "frozen_swt_legacy"), 2: ("c5_eaw", "frozen_c5_v2")}
+    if type(version) is not int or version not in denoisers or processing != {
+            "family": "rawlab", "version": version, "quality": "standard", "denoiser": denoisers[version][0]}:
+        raise ValueError("missing or inconsistent native processing identity")
     if not isinstance(experiment, dict) or experiment.get("processing") != {
-            "family": "rawlab", "version": 2, "quality": "standard"}:
-        raise ValueError("missing frozen-v2 experiment buffers")
+            "family": "rawlab", "version": version, "quality": "standard"}:
+        raise ValueError("missing frozen experiment identity")
     buffers = experiment.get("buffers", {})
     shape = [result["height"], result["width"], 3]
     if not all(name in buffers for name in ("source", "swt")):
-        raise ValueError("missing source/SWT buffer")
+        raise ValueError("missing source/native-filtered buffer")
     descriptors = list(buffers.values())
     sensor = experiment.get("sensor", {})
     if sensor.get("status") not in {"EXPORTED_BAYER", "NOT_APPLICABLE_SYNTHETIC",
@@ -332,7 +340,7 @@ def validate_experiment(result, directory, display_requested=False):
         expected_space = "display_RGB" if name.startswith("display") else "linear_sRGB"
         if descriptor.get("space") != expected_space:
             raise ValueError("invalid experiment buffer color space")
-        expected_stage = {"source": "native_decode", "swt": "frozen_swt_v2", "reference": "declared_reference",
+        expected_stage = {"source": "native_decode", "swt": denoisers[version][1], "reference": "declared_reference",
                           "display": "neutral_before_sharpen", "display_sharp_05": "native_ordinary_sharpen",
                           "display_sharp_1": "native_ordinary_sharpen", "display_sharp_2": "native_ordinary_sharpen"}
         if name not in expected_stage or descriptor.get("stage") != expected_stage[name]:
@@ -414,6 +422,7 @@ def main():
                     row["status"] = unavailable["status"]
                 else:
                     request = {"case": case, "options": PRESETS[preset], "backend": args.backend,
+                               "processing_version": 2,
                                "bayer_demosaic": args.bayer_demosaic,
                                "cache_check": args.cache_check, "crop_prefix": str(args.output.resolve() / name) if args.crops else None,
                                "assets": {key: value["absolute_path"] for key, value in verified.items()}}

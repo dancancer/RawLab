@@ -75,7 +75,7 @@ static std::vector<float> waveletReference(const std::vector<float>& input, int 
 static void waveletTests() {
     std::mt19937 random(42);
     std::normal_distribution<float> noise(0, .7f);
-    for (auto version : {ProcessingVersion::Legacy, ProcessingVersion::SwtV2})
+    for (auto version : {ProcessingVersion::Legacy})
     for (int depth : {4, 6}) for (bool shrink : {false, true}) for (bool luminance : {false, true}) {
         const int width = depth == 6 ? 320 : 192, height = depth == 6 ? 256 : 128;
         std::vector<float> input(width * height), result(input.size(), -999);
@@ -140,7 +140,7 @@ static void denoiserTests() {
         const float level = x < 280 ? .18f : .4f;
         image.at(x, y) = {level + noise(random), level + noise(random), level + noise(random)};
     }
-    for (auto version : {ProcessingVersion::Legacy, ProcessingVersion::SwtV2})
+    for (auto version : {ProcessingVersion::Legacy})
     for (WaveletDenoiseOptions settings : {WaveletDenoiseOptions{true, 60, 0, 0},
          WaveletDenoiseOptions{true, 0, 70, 100}, WaveletDenoiseOptions{true, 100, 100, 0},
          WaveletDenoiseOptions{true, 10, 72, 100}, WaveletDenoiseOptions{true, 10, 0, 0}}) {
@@ -168,8 +168,9 @@ static void denoiserTests() {
         auto& pixel = colored.at(x, y);
         pixel.r += texture + edge; pixel.g -= .5f * texture; pixel.b -= .5f * texture + edge;
     }
-    for (const WaveletDenoiseOptions settings : {WaveletDenoiseOptions{true, 10, 72, 100},
+    for (WaveletDenoiseOptions settings : {WaveletDenoiseOptions{true, 10, 72, 100},
          WaveletDenoiseOptions{true, 0, 46, 50}, WaveletDenoiseOptions{true, 0, 72, 0}}) {
+        settings.processingVersion = ProcessingVersion::Legacy;
         auto cpu = colored, gpu = colored;
         WaveletDenoiseDiagnostics diagnostics;
         assert(applyWaveletDenoise(cpu, settings) == ErrorCode::Success);

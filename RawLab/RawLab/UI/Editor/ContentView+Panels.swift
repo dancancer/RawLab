@@ -209,7 +209,7 @@ extension ContentView {
                 editSaveStatus
                 Menu {
                     Button(L10n.text("重置所有调整并返回中性"), role: .destructive) {
-                        applySettingsChange(.default)
+                        applySettingsChange(settings.resettingAdjustments())
                     }
                     if let adjustment = selectedAdjustment {
                         Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetSelectedAdjustment() }

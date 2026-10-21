@@ -5,6 +5,21 @@ import kotlin.math.floor
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 
+data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 2, val quality: String = "standard") {
+    init { require(family == "rawlab" && version in 1..2 && quality == "standard") }
+    fun encode() = "$family,$version,$quality"
+    companion object {
+        val LEGACY = ProcessingIdentity(version = 1)
+        val CURRENT = ProcessingIdentity()
+        fun decode(value: String?): ProcessingIdentity {
+            if (value == null) return LEGACY
+            val fields = value.split(',')
+            require(fields.size == 3)
+            return ProcessingIdentity(fields[0], fields[1].toInt(), fields[2])
+        }
+    }
+}
+
 data class EditSettings(
     val film: String = "neutral",
     val strength: Float = 1f,
@@ -26,6 +41,7 @@ data class EditSettings(
     val recipeID: String? = null,
     val lens: LensSettings = LensSettings(),
     val geometry: GeometrySettings = GeometrySettings(),
+    val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
 ) {
     init {
         require(exposureMode in 0..2)
@@ -41,7 +57,7 @@ data class EditSettings(
         require(sharpening.isFinite() && sharpening in 0f..2f)
         require(displayChromaDenoise in 0..2)
     }
-    fun reset() = EditSettings(film = film)
+    fun reset() = EditSettings(film = film, processing = processing)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (input == PhotoInputKind.RASTER) copy(

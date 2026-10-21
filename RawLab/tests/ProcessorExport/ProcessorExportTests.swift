@@ -128,11 +128,16 @@ struct ProcessorExportTests {
         combined.sharpening = 0.5
         let combinedCPU = try cpuProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                            previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
-        let combinedGPU = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+        let combinedGPU = try processor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                               previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         check(Self.maximumDifference(combinedCPU.data, combinedGPU.data) <= 2,
-              "iOS forced Metal combined effects, wavelet, chroma and detail match CPU")
-        let combinedAgain = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+              "iOS Auto combined effects, C5, chroma and detail match CPU")
+        do {
+            _ = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+                                                   previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
+            check(false, "Force must reject active C5")
+        } catch { print("PASS: Force rejects active C5") }
+        let combinedAgain = try processor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                                 previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         check(combinedAgain.data == combinedGPU.data, "iOS GPU grain is deterministic")
         let scroll = PhotoScrollView()

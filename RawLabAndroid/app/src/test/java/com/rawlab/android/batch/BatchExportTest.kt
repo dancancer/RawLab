@@ -26,7 +26,7 @@ class BatchExportTest {
             effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f), lens = lens,
             geometry = GeometrySettings(.2f, .1f, .8f, .75f, 3, true, true, -8.5f, -.7f, .25f))
         val fields = SettingsCodec.encode(settings).split('|')
-        assertEquals(53, fields.size)
+        assertEquals(54, fields.size)
         assertEquals(settings, SettingsCodec.decode(fields.joinToString("|")))
         for (count in listOf(12, 16, 25, 50, 51, 52)) {
             val legacy = SettingsCodec.decode(fields.take(count).joinToString("|"))

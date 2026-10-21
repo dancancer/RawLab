@@ -25,7 +25,7 @@ import ImageIO
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: output) }
         let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
-        let gpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+        let gpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         var settings = Adjustments()
         let denoise = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "none"
         if denoise == "wavelet" { settings.applyDenoisePreset(.clean); settings.setDenoiseParameter(.luma, to: 50) }

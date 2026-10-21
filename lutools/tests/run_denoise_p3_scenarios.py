@@ -299,7 +299,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--display-probe", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--previous", type=Path, help="Previous frozen linear SWT measurement ROI directory")
+    parser.add_argument("--previous", type=Path, help="Previous frozen native-filtered linear RGB measurement ROI directory")
     parser.add_argument("--reuse-native", type=Path, help="Re-evaluate verified actual-display buffers without rendering again")
     args = parser.parse_args()
     cv2.setNumThreads(6)
@@ -324,7 +324,7 @@ def main():
             provenance.append({"path": str(path), "sha256": sha256(path)})
             with np.load(path) as saved:
                 for key in saved.files:
-                    if key.endswith("__SWT v2"):
+                    if key.endswith(("__SWT v2", "__SWT v1", "__C5 v2")):
                         name = path.parent.name + "-" + key.split("__")[0]
                         cases.append((name, "real_roi", saved[key].copy(), None))
     write_json(args.output / "frozen-plan.json", {"candidate": p3.CANDIDATE_ID, "gates": GATES,

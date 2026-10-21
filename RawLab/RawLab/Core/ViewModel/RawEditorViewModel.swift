@@ -53,6 +53,7 @@ final class RawEditorViewModel: ObservableObject {
     var editSaveWork: DispatchWorkItem?
     var editNoticeID = UUID()
     var basePreviewGeometry = GeometrySettings()
+    var basePreviewProcessing = ProcessingIdentity.current
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?

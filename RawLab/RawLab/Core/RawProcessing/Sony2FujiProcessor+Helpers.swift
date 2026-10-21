@@ -41,8 +41,17 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
+    func configureProcessing(_ session: OpaquePointer, identity: ProcessingIdentity) throws {
+        let processing = identity.version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
+        let processingStatus = sony2fuji_session_set_processing_version(session, processing)
+        guard processingStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(statusMessage(processingStatus))
+        }
+    }
+
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
+        try configureProcessing(session, identity: settings.processing)
         try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
@@ -138,8 +147,8 @@ extension Sony2FujiProcessor {
         if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
             return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
         }
-        let camera = try recipeWhiteBalance.resolve(url: url) {
-            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode)
+        let camera = try recipeWhiteBalance.resolve(url: url, processing: settings.processing) {
+            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode, processing: settings.processing)
         }
         return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
@@ -158,9 +167,10 @@ extension Sony2FujiProcessor {
     }
 
     func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
-                               exposureMode: RawExposureMode) throws -> RawWhiteBalance {
+                               exposureMode: RawExposureMode, processing: ProcessingIdentity) throws -> RawWhiteBalance {
         // Read the target RAW once; saved recipe values are not its as-shot WB.
         var neutral = RawSettings.default
+        neutral.processing = processing
         neutral.exposureMode = exposureMode
         try configureSession(session, settings: neutral, interactive: false)
         var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)

@@ -7,7 +7,7 @@ struct ProcessingIdentity: Equatable, Hashable, Codable {
     static let legacy = ProcessingIdentity(version: 1)
     static let current = ProcessingIdentity(version: 2)
     var core: sony2fuji_processing_version {
-        version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_SWT_V2
+        version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
     }
 
     private init(version: Int) {

@@ -10,7 +10,7 @@ namespace sony2fuji {
 struct WaveletDenoiseOptions {
     bool enabled = false;
     float luma = 40, chroma = 46, coarse = 50;
-    ProcessingVersion processingVersion = ProcessingVersion::SwtV2;
+    ProcessingVersion processingVersion = ProcessingVersion::C5V2;
     bool active() const { return enabled && (luma > 0 || chroma > 0); }
     bool operator==(const WaveletDenoiseOptions& other) const {
         return enabled == other.enabled && luma == other.luma && chroma == other.chroma && coarse == other.coarse &&

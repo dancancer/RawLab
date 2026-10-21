@@ -214,7 +214,7 @@ extension RawEditorViewModel {
         DispatchQueue.global(qos: .userInitiated).async {
             sourceFile.withReadAccess { url in
                 do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry)
+                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing)
                     let previewResult = try self.processor.processRaw(
                         url: url,
                         settings: settings,
@@ -253,6 +253,7 @@ extension RawEditorViewModel {
                         self.basePreviewImage = rawPreview.basePreviewImage
                         self.baseHistogram = rawPreview.baseHistogram
                         self.basePreviewGeometry = settings.geometry
+                        self.basePreviewProcessing = settings.processing
                         self.lensInfo = previewResult.lensInfo
                         self.rawLUTID = settings.lutID
                         self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0

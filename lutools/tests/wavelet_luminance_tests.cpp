@@ -70,15 +70,18 @@ void checkFlatNoiseDoesNotClump() {
         WaveletDenoiseDiagnostics info;
         require(applyWaveletDenoise(output,{true,10,0,0},&info)==ErrorCode::Success && info.applied,
             "luminance control must actually be filtered");
-        const auto before=noiseShape(source),after=noiseShape(output);
+        auto mild=source;
+        require(applyWaveletDenoise(mild,{true,1,0,0})==ErrorCode::Success,"mild luminance filtering");
+        const auto before=noiseShape(source),after=noiseShape(output),weaker=noiseShape(mild);
+        require(after.rmse<weaker.rmse && weaker.rmse<before.rmse,"luminance slider controls noise removal");
         std::cout<<"seed="<<seed<<" radius="<<radius<<" RMS ratio="<<after.rmse/before.rmse
             <<" coarse fraction="<<before.coarseFraction<<" -> "<<after.coarseFraction<<'\n';
         require(after.rmse<before.rmse*.65,"grain preservation must not bypass luminance noise reduction");
         require(std::abs(after.mean)<.0005,"flat-field luminance must remain unbiased");
-        // 已知真值的受控噪声只允许小幅谱形变化；不是针对自然场景的通用画质分数。
-        shapePassed&=after.coarseFraction<=before.coarseFraction*1.1+.003;
+        // C5 的强度取舍允许残余频谱变化，但低频噪声的绝对量仍须降低。
+        shapePassed&=after.rmse*after.coarseFraction<before.rmse*before.coarseFraction;
     }
-    require(shapePassed,"luminance filtering must not concentrate residual noise into coarse clumps");
+    require(shapePassed,"luminance filtering must reduce absolute coarse noise");
 }
 
 void checkWeakStructures() {
@@ -97,22 +100,28 @@ void checkWeakStructures() {
         }
         auto result=noisy;
         WaveletDenoiseDiagnostics info;
-        require(applyWaveletDenoise(result,{true,10,0,0},&info)==ErrorCode::Success && info.applied,
+        require(applyWaveletDenoise(result,{true,1,0,0},&info)==ErrorCode::Success && info.applied,
             "weak structure fixture must be filtered");
-        double fineProjection=0,coarseProjection=0,finePower=0,coarsePower=0,before=0,after=0;
+        auto strong=noisy;
+        require(applyWaveletDenoise(strong,{true,10,0,0})==ErrorCode::Success,"strong luminance filtering");
+        double fineProjection=0,coarseProjection=0,strongFine=0,strongCoarse=0,finePower=0,coarsePower=0,before=0,after=0;
         for (int y=32;y<480;++y) for (int x=32;x<480;++x) {
             const double error=result.at(x,y).r-truth.at(x,y).r;
             const double inputError=noisy.at(x,y).r-truth.at(x,y).r;
             const double f=fine.at<float>(y,x),c=coarse.at<float>(y,x);
             fineProjection+=(error+f)*f; finePower+=f*f;
             coarseProjection+=(error+c)*c; coarsePower+=c*c;
+            const double strongError=strong.at(x,y).r-truth.at(x,y).r;
+            strongFine+=(strongError+f)*f; strongCoarse+=(strongError+c)*c;
             before+=inputError*inputError; after+=error*error;
         }
         std::cout<<"weak structure seed="<<seed<<" frequency="<<frequency[0]<<" fine="<<fineProjection/finePower
             <<" coarse="<<coarseProjection/coarsePower<<" RMS ratio="<<std::sqrt(after/before)<<'\n';
-        require(after<before*.65*.65,"structure preservation must still reduce noise");
+        require(after<before,"low strength must still reduce noise");
         require(fineProjection/finePower>.7 && fineProjection/finePower<1.1,"retain weak fine texture");
-        require(coarseProjection/coarsePower>.9 && coarseProjection/coarsePower<1.1,"retain weak coarse lightness structure");
+        require(fineProjection>strongFine && coarseProjection>strongCoarse,
+            "lower luminance strength must retain more weak structure");
+        require(coarseProjection/coarsePower<1.1,"weak coarse lightness must not be amplified");
     }
 }
 

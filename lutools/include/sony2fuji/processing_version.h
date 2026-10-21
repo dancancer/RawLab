@@ -4,11 +4,11 @@ namespace sony2fuji {
 
 enum class ProcessingVersion {
     Legacy = 1,
-    SwtV2 = 2
+    C5V2 = 2
 };
 
 inline bool validProcessingVersion(ProcessingVersion version) {
-    return version == ProcessingVersion::Legacy || version == ProcessingVersion::SwtV2;
+    return version == ProcessingVersion::Legacy || version == ProcessingVersion::C5V2;
 }
 
 } // namespace sony2fuji

@@ -9,7 +9,7 @@ from .server import serve
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Local stdio MCP adapter for the RawLab v4 agent CLI")
+    parser = argparse.ArgumentParser(description="Local stdio MCP adapter for the RawLab agent CLI (recipe v1-v5)")
     parser.add_argument("--cli", required=True, type=Path, help="Path to the trusted sony2fuji executable")
     parser.add_argument("--read-root", required=True, action="append", type=Path, help="Allowed input directory (repeatable)")
     parser.add_argument("--write-root", required=True, action="append", type=Path, help="Allowed output directory (repeatable)")

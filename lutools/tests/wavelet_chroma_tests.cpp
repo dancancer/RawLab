@@ -60,10 +60,10 @@ Fixture makeFixture(unsigned seed,double radius,int scene,float fineAmplitude=.0
     return fixture;
 }
 
-ImageData filtered(const Fixture& fixture) {
+ImageData filtered(const Fixture& fixture, WaveletDenoiseOptions options = {true,10,72,100}) {
     auto output=fixture.noisy;
     WaveletDenoiseDiagnostics info;
-    require(applyWaveletDenoise(output,{true,10,72,100},&info)==ErrorCode::Success && info.applied,
+    require(applyWaveletDenoise(output,options,&info)==ErrorCode::Success && info.applied,
         "chroma fixture must actually be filtered");
     return output;
 }
@@ -135,6 +135,8 @@ void checkCorrelatedColorNoise() {
         const auto fixture=makeFixture(seed,radius,0);
         const auto output=filtered(fixture);
         const auto before=measure(fixture.noisy,fixture.truth),after=measure(output,fixture.truth);
+        const auto mild=measure(filtered(fixture,{true,0,3,5}),fixture.truth);
+        require(after.rmse<mild.rmse && mild.rmse<before.rmse,"chroma sliders control noise/detail tradeoff");
         // normal_distribution 的序列跨标准库不同，必须在同一输入上现算旧版参考。
         const auto previous=measure(previousChromaReference(fixture),fixture.truth);
         const double ratio=after.rmse/before.rmse;
@@ -149,18 +151,24 @@ void checkCorrelatedColorNoise() {
 void checkColorTexture() {
     for (unsigned seed:{7919u,20021u}) for (double radius:{1.2,3.}) for (float amplitude:{.025f,.08f}) {
         const auto fixture=makeFixture(seed,radius,1,amplitude);
-        const auto output=filtered(fixture);
+        // 低强度验证细节保留；强降噪预设的取舍另由已冻结 C5 参照和噪声测试约束。
+        const auto output=filtered(fixture,{true,0,3,5});
+        const auto strong=filtered(fixture);
+        double strongFine=0;
         double fine=0,cross=0,finePower=0,coarse=0,coarsePower=0,luma=0,lumaPower=0;
         for (int y=32;y<480;++y) for (int x=32;x<480;++x) {
             const auto error=colorError(output.at(x,y),fixture.truth.at(x,y));
             const double f=fixture.fine.at<float>(y,x),c=fixture.coarse.at<float>(y,x),l=fixture.luma.at<float>(y,x);
             fine+=(.6*error[0]+.8*error[1]+f)*f; finePower+=f*f;
+            const auto strongError=colorError(strong.at(x,y),fixture.truth.at(x,y));
+            strongFine+=(.6*strongError[0]+.8*strongError[1]+f)*f;
             cross+=(-.8*error[0]+.6*error[1])*f;
             coarse+=(-.8*error[0]+.6*error[1]+c)*c; coarsePower+=c*c;
             const auto& p=output.at(x,y); const auto& q=fixture.truth.at(x,y);
             luma+=((p.r-q.r+p.g-q.g+p.b-q.b)/3.+l)*l; lumaPower+=l*l;
         }
         const double fineGain=fine/finePower,coarseGain=coarse/coarsePower,lumaGain=luma/lumaPower;
+        require(fineGain>strongFine/finePower,"lower strength retains more of the same colored fine texture");
         const double hueError=std::atan2(std::abs(cross),fine);
         std::cout<<"color texture seed="<<seed<<" radius="<<radius<<" amplitude="<<amplitude
             <<" fine="<<fineGain<<" coarse="<<coarseGain<<" luma="<<lumaGain<<" hue radians="<<hueError<<'\n';
@@ -168,7 +176,7 @@ void checkColorTexture() {
         require(coarseGain>(radius<2 ? .6 : .39) && coarseGain<1.1,"retain slow color structure");
         require(lumaGain>.9 && lumaGain<1.1,"color denoise must preserve fine luminance texture");
         require(hueError<(amplitude<.04f ? .32 : .08),"retain the hue of colored texture");
-        require(measure(output,fixture.truth).rmse<measure(fixture.noisy,fixture.truth).rmse*.5,
+        require(measure(output,fixture.truth).rmse<measure(fixture.noisy,fixture.truth).rmse,
             "color detail preservation must not bypass noise reduction");
     }
 }

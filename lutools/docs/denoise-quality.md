@@ -1,8 +1,24 @@
 # 降噪质量基准
 
-此工具测量现有小波降噪，不自动判定“画质通过”。真实 RAW 不入库；原始文件放在主工作区
+此工具测量所选处理版本的降噪，不自动判定“画质通过”。真实 RAW 不入库；原始文件放在主工作区
 `.cache/shared/`，本次运行输出放在主工作区 `.cache/tmp/<task>/`。每次输出目录必须是新目录。
 执行基准不会下载素材、修改 RAW、调用 Lightroom 或修改其目录。
+
+## 当前 C5 与历史实验
+
+处理版本 2 现为 C5 EAW，版本 1 保留发布版 SWT。探针结果的 `processing.denoiser`
+标明实际算法；`processing_version` 请求缺省为 2。C5 没有 GPU 滤波后端，`force`
+会在需要滤波时失败，`auto` 使用 CPU。历史实验段落中的 SWT v2 指当时冻结的实验
+二进制和像素，不能用当前 C5 探针重新生成后继续称为 SWT。
+
+亮度、色度与粗色斑强度由用户选择。强降噪会降低弱彩色纹理和色相可靠性，剩余噪声的
+低频占比也可能提高；因此同时报告绝对噪声、纹理和偏色，不能只比较残余频谱比例。
+回归分别验证低强度的纹理保留、高强度的降噪，以及零强度的逐像素旁路；不要求每个
+强度同时达到旧 SWT 的全部门限。独立全帧 C5 参照约束分块实现的一致性。
+
+实验输出为兼容旧工具保留 `swt` buffer key/文件名；实际 `stage` 为 `frozen_c5_v2`
+或 `frozen_swt_legacy`。历史 `frozen_swt_v2` 只用于已有冻结数据；读取时必须核对 stage、
+处理身份与二进制来源，文件名不能作为算法证据。
 
 ## 构建与运行
 
@@ -121,16 +137,16 @@ runner 校验报告回写的请求摘要、case/split、参数、尺寸、执行
 ## 独立 AI 与 P3 实验
 
 这些工具只在 `tests/` 中运行，不进入客户端、C ABI、编辑记录或正式缓存，也不改变
-SWT v2。实验结果不是新处理版本，更不能把成功生成报告解释为可以替换现有算法。
+现有原生降噪。实验结果不是新处理版本，更不能把成功生成报告解释为可以替换现有算法。
 
-在原命令中增加 `--experiment-buffers`，可导出完整的 source/SWT/reference 小端
+在原命令中增加 `--experiment-buffers`，可导出完整的 source/native-filtered/reference 小端
 float32 RGB，以及支持的 Bayer 输入的 active CFA uint16 数据和校准元数据。负值、
 超白值不会因导出被裁切。独立 LibRaw 解码必须复现原生 source；有效裁切、方向、
 白平衡和颜色矩阵不一致时导出失败。非 Bayer 或非均匀空间黑电平会明确标为不支持
 该 Bayer 实验，不伪造传感器数据。Python 读取时检查布局、长度和 SHA-256。
 
 `--experiment-display` 必须同时使用 `--experiment-buffers`，显式调用实际 Metal
-中性成片路径，导出 SWT 后、锐化前的显示 RGB，以及普通锐化强度 0.5/1/2 的浮点
+中性成片路径，导出原生降噪后、锐化前的显示 RGB，以及普通锐化强度 0.5/1/2 的浮点
 输出。默认浮点导出不要求 GPU；显式显示实验失败时不以 CPU 冒充成功。目前这部分
 只支持 Metal，不代表 D3D/GLES 已验证。此阶段关闭 LUT、额外显示域降噪和外观效果，
 所以也不覆盖所有 LUT/色调设置。
@@ -139,7 +155,7 @@ float32 RGB，以及支持的 Bayer 输入的 active CFA uint16 数据和校准�
 python3 lutools/tests/run_denoise_quality.py \
   --manifest /path/to/frozen-inputs.json --assets /path/to/shared-assets \
   --probe /path/to/denoise_quality_probe --output /path/to/new-native-output \
-  --presets clean --backend force --experiment-buffers --experiment-display
+  --presets clean --backend cpu --experiment-buffers --experiment-display
 
 python3 lutools/tests/run_denoise_experiments.py \
   --native /path/to/new-native-output/results.json --case CASE_ID \
@@ -160,13 +176,13 @@ python3 lutools/tests/run_denoise_experiment_controls.py \
 检查实际 Metal 导出；默认测试不要求这项 GPU 实验。
 
 - AI 保持权重、512 输入 tile 和 64 halo 不变，只对比四平面均值、等权 camera RGB
-  均值，以及输入饱和掩码触发的 SWT 高光回退。后者是保留现有结果，不是模型重建了
+  均值，以及输入饱和掩码触发的原生结果高光回退。后者是保留现有结果，不是模型重建了
   高光。白平衡仍在模型之后，不能声称与原生的插值前白平衡及高光处理完全等价。
 - 均值匹配是对模型任意有符号尺度的归一化，不是物理曝光或相机增益标定。固定
   linear 权重可能需要负的归一化系数；不把它误判为负曝光。所有锚点只来自输入，
   禁止用低 ISO 参考或候选 ROI 拟合输出亮度。`--linear` 额外对比扩展浮点输入与
   `[0,1]` 裁切/16-bit 量化输入，只隔离范围和量化，不冒充完整 rawpy 显影流程。
-- P3 只读取冻结 SWT v2 的实际显示 RGB，不读取 AI 输出。噪声估计使用当前显示域的
+- P3 只读取冻结原生降噪的实际显示 RGB，不读取 AI 输出。噪声估计使用当前显示域的
   局部残差，不能复用 RAW 线性域的噪声参数。普通锐化 Python 参考先与实际 Metal
   输出比较，再测原型。原型时间包含 Python/OpenCV 成本，不是原生 GPU 性能承诺。
 - 合成控制分别记录平坦噪声、细纹理、阶跃边缘和边缘外保护带的 profile 误差。
@@ -214,8 +230,8 @@ python3 lutools/tests/run_denoise_p3_scenarios.py \
 
 场景包含中性、曝光/阴影/高光、对比度/饱和度、实际 F-Log2 PROVIA LUT、声明为
 display-sRGB 的受控创意 LUT、混合强度及 LUT+色调。生成候选前写出输入来源、
-LUT/程序校验值、场景和门限。`--previous` 可选；它仅加载此前保留的线性 SWT v2
-完整测量区域，不加载 AI 输出。区域滤波不等于全幅噪声上下文验收；真实区域相对
+LUT/程序校验值、场景和门限。`--previous` 可选；它仅加载此前保留的原生降噪线性 RGB
+完整测量区域（C5 v2、SWT v1 或历史 SWT v2，由来源标签区分），不加载 AI 输出。区域滤波不等于全幅噪声上下文验收；真实区域相对
 未锐化结果的指标标为 `baseline_sharpen_off_no_gt`，不能解释成真实画质误差。
 
 结果分别检查零强度、范围、通道差分、平坦区域亮度/色度方差和均值、边缘响应与
@@ -234,7 +250,7 @@ LUT/程序校验值、场景和门限。`--previous` 可选；它仅加载此前
 ### 内部原生 P3
 
 `applyNoiseAwareSharpen` 是独立 C++ 实验入口；不连接现有锐化参数、C ABI、配方、
-处理版本或客户端默认链路。SWT v2 和 AI 实验的边界不变。它依赖现有 OpenCV
+处理版本或客户端默认链路。原生降噪和 AI 实验的边界不变。它依赖现有 OpenCV
 降噪构建依赖；未启用这些依赖时，正强度明确返回错误，零强度仍精确旁路。
 
 CPU 与 Metal 共用整幅显示域亮度、残差 MAD 和噪声插值分析。空间滤波以 768 像素
@@ -271,7 +287,7 @@ python3 lutools/tests/run_denoise_p3_native.py \
 原生 runner 复用并校验实际显示缓冲，对 CPU 和 Metal 运行相同质量检查、17 点强度
 扫描和反查后的实际强度；另以 `2e-6` 最大绝对误差对照冻结 Python 结果，零强度
 要求精确旁路。运行后保留校验值和测量报告、删除本轮输出浮点缓冲。失败为非零退出。
-全幅 RAW 验收须另外导出完整 SWT/display 缓冲并核对 SWT fingerprint，不能把 ROI
+全幅 RAW 验收须另外导出完整 native-filtered/display 缓冲并核对原生滤波输出 fingerprint，不能把 ROI
 矩阵或合成跨 tile 测试解释为所有相机、全幅噪声上下文的验收。
 
 ## 内部诊断

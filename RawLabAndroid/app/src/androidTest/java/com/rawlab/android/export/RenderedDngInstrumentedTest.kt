@@ -63,14 +63,14 @@ class RenderedDngInstrumentedTest {
         return hash.digest()
     }
 
-    @Test fun nativeDngBakesAllAdjustmentsOnCpuAndForcedGles() {
+    @Test fun nativeDngBakesAllAdjustmentsOnCpuAndAutoGles() {
         val root = File(context.cacheDir, "dng-native-${UUID.randomUUID()}").apply { mkdirs() }
         val input = raw(root, "source.ARW")
         val before = digest(input)
         try {
             PhotoStorage(context).use { storage ->
                 val look = storage.filmPath("velvia")
-                for ((name, mode) in listOf("cpu" to NativeProcessor.CPU, "gles" to NativeProcessor.FORCE)) {
+                for ((name, mode) in listOf("cpu" to NativeProcessor.CPU, "gles" to NativeProcessor.AUTO)) {
                     NativeProcessor(mode).use { processor ->
                         val started = SystemClock.elapsedRealtime()
                         val preview = processor.preview(input, look, settings(), 128, false)

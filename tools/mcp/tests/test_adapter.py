@@ -146,11 +146,11 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         merged.update(env)
         return CliAdapter(self.config, environment=merged)
 
-    async def test_capabilities_negotiate_v4_and_hide_future_cli_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5")
+    async def test_capabilities_negotiate_v5_and_hide_future_cli_versions(self):
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4))
-        self.assertNotIn(5, capabilities.result["recipe_versions"])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5))
+        self.assertNotIn(6, capabilities.result["recipe_versions"])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
@@ -159,6 +159,21 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter(FAKE_VERSIONS="1,2,3")
         with self.assertRaisesRegex(AdapterError, "schema version 4"):
             await adapter.start()
+
+    async def test_v5_processing_identity_survives_private_staging(self):
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5")
+        await adapter.start()
+        for version in (1, 2):
+            document = json.loads(self.recipe_path.read_text(encoding="utf-8"))
+            document["schema_version"] = 5
+            document["processing"] = {"family": "rawlab", "version": version, "quality": "standard"}
+            document["output"]["path"] = str(self.write_root / f"version-{version}.png")
+            self.recipe_path.write_text(json.dumps(document), encoding="utf-8")
+            self.assertTrue((await adapter.validate_recipe(self.recipe_path)).ok)
+            self.assertTrue((await adapter.export_photo(self.recipe_path)).ok)
+            staged = json.loads(self.recipe_log.read_text(encoding="utf-8"))
+            self.assertEqual(staged["processing"], document["processing"])
+            self.assertEqual(staged["schema_version"], 5)
 
     async def test_capabilities_reject_unknown_protocol_and_missing_commands(self):
         for environment in ({"FAKE_PROTOCOL": "2"}, {"FAKE_COMMANDS": "capabilities,info"}):
@@ -347,7 +362,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         await adapter.start()
         self.argv_log.unlink()
-        for value in ("{bad json", "null", "[]", '{"schema_version":5}', '{"schema_version":true}'):
+        for value in ("{bad json", "null", "[]", '{"schema_version":6}', '{"schema_version":true}'):
             self.recipe_path.write_text(value, encoding="utf-8")
             self.assertFalse((await adapter.export_photo(self.recipe_path)).ok)
         self.assertIn("--print-recipe", json.loads(self.argv_log.read_text()))

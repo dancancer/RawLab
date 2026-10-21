@@ -150,17 +150,11 @@ internal static class RenderedDngChecks
             var backend = ExportPair(auto, source, settings, look, output, "auto");
             Check(backend is 0 or 3, "Auto DNG reports CPU fallback or actual Direct3D 11");
             auto.SetGpuMode(2);
-            if (backend == 3) Check(ExportPair(auto, source, settings, look, output, "force") == 3,
-                "Force DNG actually completes on Direct3D 11");
-            else
-            {
-                Console.WriteLine("SKIP actual Direct3D 11 DNG parity: Auto completed on CPU");
-                var rejected = false; var forced = Path.Combine(output, "force.dng");
-                try { auto.Render(source, settings, look, 0, output: forced, longEdge: 128); }
-                catch (InvalidOperationException error) when (error.Message == StatusMessage(2) || error.Message == StatusMessage(4))
-                { rejected = true; Console.WriteLine("FORCE rejection=" + error.Message); }
-                Check(rejected && !File.Exists(forced), "Unavailable Force DNG cannot silently publish CPU output");
-            }
+            var rejected = false; var forced = Path.Combine(output, "force.dng");
+            try { auto.Render(source, settings, look, 0, output: forced, longEdge: 128); }
+            catch (InvalidOperationException error) when (error.Message == StatusMessage(2) || error.Message == StatusMessage(4))
+            { rejected = true; Console.WriteLine("FORCE rejection=" + error.Message); }
+            Check(rejected && !File.Exists(forced), "Force cannot publish CPU C5 as GPU output");
         }
         Check(frozen.SameAs(settings.Capture()), "Native exports do not change the frozen adjustments");
         var sentinel = Path.Combine(output, "target-a-Velvia.dng"); File.WriteAllText(sentinel, "existing output");

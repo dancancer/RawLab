@@ -18,11 +18,19 @@ import denoise_p3 as p3
 from run_denoise_quality import sha256, validate_manifest, write_json
 
 
+def native_label(native):
+    stage = native["experiment"]["buffers"]["swt"]["stage"]
+    labels = {"frozen_swt_v2": "SWT v2", "frozen_swt_legacy": "SWT v1", "frozen_c5_v2": "C5 v2"}
+    if stage not in labels:
+        raise ValueError("unknown frozen native denoiser stage")
+    return labels[stage]
+
+
 def selected_figures(directory, case, images, reference=None, display=False, figure_labels=None):
     rows, measurements, crops, full_crops = [], [], {}, {}
     shown_labels = list(images) if figure_labels is None else list(figure_labels)
     for region in case["regions"]:
-        rectangle = metrics.pixel_rect(images["SWT v2" if not display else "Sharpen off"], region)
+        rectangle = metrics.pixel_rect(next(iter(images.values())), region)
         samples = {name: metrics.crop(image, rectangle) for name, image in images.items()}
         ref = metrics.crop(reference, rectangle) if reference is not None else None
         full_crops.update({f"{region['id']}__{name}": sample.copy() for name, sample in samples.items()})
@@ -88,11 +96,11 @@ def run_ai(directory, case, native, model_directory, linear=False):
     balanced = metrics.load_buffer(variants["AI RGB mean"])
     protected = ai.highlight_fallback(balanced, swt, mask)
     variants["AI + highlight"] = metrics.write_buffer(directory / "highlight.f32", protected, "linear_sRGB",
-                                                      "camera_rgb_mean_with_input_clip_SWT_fallback")
+                                                      "camera_rgb_mean_with_input_clip_native_fallback")
     del balanced, protected, unpacked, network, packed
     reference = metrics.load_buffer(buffers["reference"]) if "reference" in buffers else (
         source if case["id"] == "sony-a7iv-200" else None)
-    images = {"Native off": source, "SWT v2": swt}
+    images = {"Native off": source, native_label(native): swt}
     images.update({label: metrics.load_buffer(descriptor) for label, descriptor in variants.items()})
     result = {
         "model": model, "bayer_inference_seconds": inference_seconds,
@@ -105,7 +113,7 @@ def run_ai(directory, case, native, model_directory, linear=False):
         "limits": [
             "Input-anchored scalar gain is not calibrated camera exposure.",
             "The frozen Bayer model takes un-white-balanced CFA; native as-shot WB is applied after inference.",
-            "Native highlight fallback preserves SWT v2 in input-clipped regions; it is not learned highlight reconstruction.",
+            f"Native highlight fallback preserves {native_label(native)} in input-clipped regions; it is not learned highlight reconstruction.",
             "Low-ISO reference is approximate; new development holdouts have unknown model-training overlap.",
             "CPU FP32 prototype only; no neural GPU or production integration."
         ]}
@@ -127,7 +135,7 @@ def run_ai(directory, case, native, model_directory, linear=False):
             del output, scaled, candidate
         linear_directory = directory / "linear"
         linear_directory.mkdir()
-        images = {"Native off": source, "SWT v2": swt,
+        images = {"Native off": source, native_label(native): swt,
                   **{key: metrics.load_buffer(value) for key, value in linear_variants.items()}}
         result["linear"] = {"model": contract, "variants": linear_variants, "timings": timings,
                             "regions": selected_figures(linear_directory, case, images, reference),
@@ -163,7 +171,7 @@ def run_p3(directory, case, native):
     return {"variants": variants, "timings_and_parity": measurements,
             "regions": selected_figures(directory, case, images, display=True,
                                         figure_labels=["Sharpen off", "Native sharpen 1", "P3 1"]),
-            "limits": ["P3 consumes only frozen SWT v2, never AI output.",
+            "limits": [f"P3 consumes only frozen {native_label(native)} display RGB, never AI output.",
                        "Neutral actual display pipeline, not every LUT/tone configuration.",
                        "CPU Python prototype timings are not optimized GPU-product timings.",
                        "Unpaired real-image variation is not a noise or detail quality score."]}
@@ -185,10 +193,15 @@ def main():
         case = next(case for case in cases if case["id"] == args.case)
         runs = [run for run in document["runs"] if run["id"] == args.case and run["preset"] == "clean"]
         if len(runs) != 1 or runs[0]["status"] != "MEASURED":
-            raise ValueError("requires one successful frozen clean-v2 native export")
+            raise ValueError("requires one successful frozen clean native export")
         native = runs[0]["result"]
-        if native["experiment"]["processing"] != {"family": "rawlab", "version": 2, "quality": "standard"}:
+        identity = native["experiment"]["processing"]
+        if identity not in ({"family": "rawlab", "version": 1, "quality": "standard"},
+                            {"family": "rawlab", "version": 2, "quality": "standard"}):
             raise ValueError("unexpected processing baseline")
+        label = native_label(native)
+        if (identity["version"] == 1) != (label == "SWT v1"):
+            raise ValueError("frozen stage does not match processing identity")
         if args.mode == "ai" and not args.model_dir:
             raise ValueError("--model-dir is required for AI")
         args.output.mkdir(parents=True, exist_ok=False)
@@ -197,9 +210,10 @@ def main():
         report = {"status": "MEASURED_NOT_PROMOTED", "quality_verdict": "NOT_EVALUATED", "mode": args.mode,
                   "created_utc": datetime.now(timezone.utc).isoformat(), "case": case,
                   "native_report_sha256": sha256(args.native), "native_probe_sha256": document["probe_sha256"],
-                  "source_fingerprint": native["source_fingerprint"], "swt_fingerprint": native["output_fingerprint"],
+                  "source_fingerprint": native["source_fingerprint"], "native_filtered_fingerprint": native["output_fingerprint"],
+                  "processing": identity, "native_denoiser": label,
                   "source_sha256": native["experiment"]["buffers"]["source"]["sha256"],
-                  "swt_sha256": native["experiment"]["buffers"]["swt"]["sha256"],
+                  "native_filtered_sha256": native["experiment"]["buffers"]["swt"]["sha256"],
                   "elapsed_seconds": time.perf_counter() - start,
                   "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == "darwin" else 1024),
                   "result": result}

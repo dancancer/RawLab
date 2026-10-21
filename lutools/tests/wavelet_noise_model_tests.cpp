@@ -235,6 +235,12 @@ void nearBlackNoiseAndTexture() {
         auto output = source;
         sony2fuji::WaveletDenoiseDiagnostics info;
         assert(sony2fuji::applyWaveletDenoise(output, {true, 10, 72, 100}, &info) == sony2fuji::ErrorCode::Success);
+        std::cout << "Near-black mode " << mode << " outcome=" << sony2fuji::waveletDenoiseOutcomeName(info.outcome)
+                  << " flat=" << info.flatTiles << " a=" << info.a[0] << " b=" << info.b[0] << '\n';
+        if (info.outcome == sony2fuji::WaveletDenoiseOutcome::LowNoise) {
+            assert(std::memcmp(source.pixels.data(), output.pixels.data(), source.pixels.size()*sizeof(sony2fuji::RGB))==0);
+            continue;
+        }
         assert(info.applied);
         double outputError = 0, outputChroma = 0, projection = 0, texturePower = 0;
         cv::Vec3d outputMean{};
