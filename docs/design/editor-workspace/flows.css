@@ -331,9 +331,14 @@
   font-size: var(--text-base);
   border-bottom: 1px solid var(--line);
 }
-.flow-toggle input {
+.flow-toggle input:not(.switch) {
   width: 20px;
   height: 20px;
+}
+.switch-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .inspect-photo {
   height: 300px;
@@ -471,7 +476,7 @@
 .android.mobile .flow-row {
   min-height: 48px;
 }
-.mobile .flow-job-row .axis-reset {
+.mobile .flow-job-row .remove-target {
   min-width: 44px;
   min-height: 44px;
 }

@@ -22,7 +22,12 @@ window.RawLabDesignIcons = {
   crop: { path: "M6 2v16h16M2 6h16v16M9 6h9v9", label: "几何" },
   folder: { path: "M3 6h6l2 2h10v12H3V6", label: "文件夹" },
   photo: { path: "M3 4h18v16H3V4m1 12 5-5 4 4 3-3 4 4M16 8h.1", label: "照片" },
-  compare: { path: "M3 5h18v14H3zM12 5v14M4 6h7v12H4z", label: "前后对比" },
+  // 左右对称的分屏：外框加中线，两侧都不填充；中线不出框，避免在中文界面里像“中”字。
+  compare: { path: "M3 5h18v14H3zM12 5v14", label: "前后对比" },
+  none: {
+    path: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M6.4 6.4l11.2 11.2",
+    label: "无",
+  },
   "rotate-left": {
     path: "M4 11H14V21H4ZM19 14A8 8 0 0 0 11 6M14 3 11 6l3 3",
     label: "向左旋转",

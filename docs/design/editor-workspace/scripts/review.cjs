@@ -38,6 +38,10 @@ const shots = new Set([
   "compare-hold",
   "reset-menu",
   "update-settings",
+  "photo-info",
+  "edge-to-edge",
+  "immersive",
+  "tool-denoise",
   "export-options",
   "batch-confirm",
   "batch-running",
@@ -96,6 +100,9 @@ const shots = new Set([
             "draft-confirm",
             "update-ready",
             "reset-menu",
+            "photo-info",
+            "edge-to-edge",
+            "immersive",
           ].includes(id)
         )
           assert.equal(
@@ -219,12 +226,141 @@ const shots = new Set([
           ),
         true,
       );
+      // 输入框里只有数字，单位显示在框外。
+      for (const [scene, field, unit] of [
+        ["tool-exposure", "exposure", "EV"],
+        ["tool-wb", "temperature", "K"],
+        ["tool-highlights", "highlights", "%"],
+      ]) {
+        await goto(scene);
+        const row = page.locator(`[data-axis-row="${field}"]`);
+        const shown = await row
+          .locator(".number")
+          .evaluate((e) => (e.tagName === "INPUT" ? e.value : e.textContent));
+        assert(
+          !/EV|K|%|°/.test(shown),
+          current + " unit inside value box: " + shown,
+        );
+        assert.equal(await row.locator(".unit").innerText(), unit);
+      }
       await goto("tool-contrast");
       assert.equal(
         await page.locator(".axis .number.changed").count(),
         0,
         current + " unchanged value styled as changed",
       );
+      // 参数为单行：名称与数值在同一水平线上；不再有范围标注、每行重置和说明段落。
+      await goto("hsl");
+      for (const row of await page.locator(".axis").all()) {
+        const name = await row.locator(".axis-name").boundingBox();
+        const value = await row.locator(".number").boundingBox();
+        assert(
+          Math.abs(name.y + name.height / 2 - (value.y + value.height / 2)) < 4,
+          current + " axis is not a single row",
+        );
+      }
+      assert.equal(
+        await page.locator(".range-labels, .axis-reset, .channel-help").count(),
+        0,
+        current + " leftover notes",
+      );
+      // 切换分组和组内工具时，照片区与调整区大小保持不变。
+      const fixed = await rectangles();
+      for (const g of [
+        "light",
+        "color",
+        "effects",
+        "detail",
+        "geometry",
+        "looks",
+      ]) {
+        const groupButton = page.locator(`.group-nav [data-group="${g}"]`);
+        if ((await groupButton.getAttribute("aria-pressed")) !== "true")
+          await groupButton.click();
+        for (const t of await page.locator(".tool-tabs [data-tool]").all()) {
+          await t.click();
+          assert.deepEqual(
+            await rectangles(),
+            fixed,
+            current +
+              " panel height changed at " +
+              g +
+              "/" +
+              (await t.getAttribute("data-tool")),
+          );
+        }
+      }
+      // 直方图三个通道分开绘制。
+      assert.equal(
+        await page.locator(".rgb-histogram path").count(),
+        3,
+        current + " RGB histogram",
+      );
+      // 移动端混色器不重复显示当前颜色名称。
+      if (["ios", "android"].includes(platform)) {
+        await goto("hsl");
+        assert.equal(await page.locator(".channel-title").count(), 0);
+      }
+      // iOS 刻度尺在最小值时也铺满整条，不只剩半边。
+      if (platform === "ios") {
+        await goto("tool-grain");
+        const ticks = await page
+          .locator('[data-axis-row="grain"] .ruler-ticks path')
+          .evaluateAll((ps) =>
+            ps.map((p) => Number(p.getAttribute("d").match(/^M([\d.]+)/)[1])),
+          );
+        assert(
+          Math.min(...ticks) < 20 && Math.max(...ticks) > 320,
+          current + " ruler not full width",
+        );
+      }
+      // 照片信息在左上角：默认只有图标；点击依次显示文件信息、拍摄参数、收起。
+      await goto("groups");
+      assert.equal(
+        (await page.locator(".info-chip").innerText()).trim(),
+        "",
+        current + " info chip shows text by default",
+      );
+      await page.locator(".info-chip").click();
+      assert.equal(await page.locator(".info-layer").count(), 1);
+      await page.locator(".info-chip").click();
+      assert.equal(
+        await page.locator(".info-layer dt").first().innerText(),
+        "相机",
+      );
+      await page.locator(".info-chip").click();
+      assert.equal(
+        await page.locator(".info-layer").count(),
+        0,
+        current + " info layer cycle",
+      );
+      // 关闭四周留白后照片贴边，宽或高占满预览区。
+      await goto("edge-to-edge");
+      const area = await page.locator(".canvas").boundingBox();
+      const edge = await page.locator(".photo-frame").boundingBox();
+      assert(
+        Math.abs(edge.width - area.width) < 2 ||
+          Math.abs(edge.height - area.height) < 2,
+        current + " edge-to-edge",
+      );
+      // 移动端单击照片进入纯预览，再单击恢复。
+      if (["ios", "android"].includes(platform)) {
+        await goto("groups");
+        const photoBox = await page.locator("[data-photo-frame]").boundingBox();
+        const centre = [
+          photoBox.x + photoBox.width / 2,
+          photoBox.y + photoBox.height / 2,
+        ];
+        await page.mouse.click(...centre);
+        assert.equal(await page.locator(".native-app.immersive").count(), 1);
+        assert.equal(await page.locator(".toolbar").isVisible(), false);
+        await page.mouse.click(...centre);
+        assert.equal(
+          await page.locator(".native-app.immersive").count(),
+          0,
+          current + " immersive toggle",
+        );
+      }
       for (const id of ["tool-exposure", "hsl", "draft"]) {
         await goto(id);
         const r = await rectangles();
@@ -242,7 +378,7 @@ const shots = new Set([
       }
       await goto("draft");
       const footer = await page.locator(".draft-actions").boundingBox();
-      await page.locator(".editor > .panel").evaluate((e) => {
+      await page.locator(".editor .panel").evaluate((e) => {
         e.scrollTop = e.scrollHeight;
       });
       const lastAxis = await page
@@ -371,7 +507,7 @@ const shots = new Set([
       }
       checks.push(
         platform +
-          ": registered screens, comparison toggle/switch/menu, collapsible groups, changed markers, bipolar fill, no layout shift, crop drag, flow exits, batch selection/back, system handoff/back, reauthorization",
+          ": registered screens, comparison toggle/switch/menu, collapsible groups, changed markers, bipolar fill, single-row parameters, fixed panel height, info layer, edge-to-edge, immersive preview, no layout shift, crop drag, flow exits, batch selection/back, system handoff/back, reauthorization",
       );
       await page.close();
     }

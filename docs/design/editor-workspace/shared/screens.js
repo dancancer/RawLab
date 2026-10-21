@@ -46,6 +46,8 @@ window.RawLabDesignScreens = [
       "compare-wipe",
       "compare-hold",
       "zoom",
+      "edge-to-edge",
+      "immersive",
       "photo-info",
       "histogram",
       "processing",
@@ -55,6 +57,7 @@ window.RawLabDesignScreens = [
       "wb-unavailable",
       "more",
     ],
+    statePlatforms: { immersive: ["ios", "android"] },
     scope: "existing_and_proposed",
     source: "原生编辑器与本轮分组提案",
   },
@@ -200,6 +203,8 @@ window.RawLabDesign.flowTitles = {
   compare: "并排对比",
   "compare-wipe": "拖动分割线",
   "compare-hold": "按住看调整前",
+  "edge-to-edge": "照片顶满",
+  immersive: "纯预览",
   "reset-menu": "重置菜单",
   "update-settings": "软件更新设置",
   zoom: "缩放与显示",
@@ -282,13 +287,34 @@ RawLabDesign.descriptions["compare-hold"] = [
   "不打开对比时，按住照片（桌面按住反斜杠键）临时显示调整前，松开恢复。这是最快的前后对比方式。",
   ["短按不触发，避免与点按、缩放冲突", "顶部标签说明当前显示的是调整前"],
 ];
+RawLabDesign.descriptions["photo-info"] = [
+  "照片信息",
+  "照片信息放回左上角：平时只显示信息图标，点击依次显示文件信息、拍摄参数，再点收起（桌面也可按 I）。白平衡等细节放进信息层，不常驻在画面上。",
+  [
+    "信息文字不拦截照片上的缩放与拖动",
+    "工具栏和“更多”中的照片信息入口打开同一信息层",
+  ],
+];
+RawLabDesign.descriptions["edge-to-edge"] = [
+  "照片顶满",
+  "在“缩放与显示”（Windows 为“查看”菜单）关闭“照片四周留白”后，照片贴边显示，尽量占满预览区。",
+  ["默认保留四周留白", "只改变查看方式，不改变照片参数"],
+];
+RawLabDesign.descriptions.immersive = [
+  "纯预览",
+  "移动端单击照片区隐藏所有其他界面，只显示照片；再单击恢复。按住照片仍是查看调整前。",
+  [
+    "几何草稿编辑时不进入纯预览，避免与裁切操作冲突",
+    "单击与按住按时长和位移区分",
+  ],
+];
 RawLabDesign.descriptions["reset-menu"] = [
   "重置菜单",
   "重置统一收进调整区右上角的菜单，按作用范围从小到大排列；影响整组或全部的项需要确认。",
   [
     "HSL：当前颜色 → 全部 HSL → 颜色组 → 全部调整",
     "重置是次要操作，使用中性灰，不使用表示选中的黄色",
-    "每行参数旁的重置图标仍可直接恢复单个值",
+    "双击参数名称或滑杆可直接恢复单个值",
   ],
 ];
 RawLabDesign.descriptions.processing = [

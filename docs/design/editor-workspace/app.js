@@ -39,7 +39,9 @@ let compareMode = 0,
   comparePosition = 50,
   holdingBefore = false,
   zoomChoice = "适合窗口",
-  infoState = "file",
+  infoState = "hide",
+  photoMargin = true,
+  immersive = false,
   histogramVisible = true,
   sidebarVisible = true,
   dockVisible = true,
@@ -109,6 +111,9 @@ function setScene(s) {
   dockVisible = true;
   menu = null;
   holdingBefore = s === "compare-hold";
+  infoState = s === "photo-info" ? "file" : "hide";
+  photoMargin = s !== "edge-to-edge";
+  immersive = s === "immersive";
   compareMode = s === "compare" ? 1 : s === "compare-wipe" ? 2 : 0;
   if (compareMode) lastCompare = compareMode;
   if (s === "draft-confirm") s = "draft";
@@ -182,6 +187,9 @@ function setScene(s) {
       "draft-confirm",
       "update-ready",
       "reset-menu",
+      "photo-info",
+      "edge-to-edge",
+      "immersive",
     ].includes(scene)
   )
     RawLabDesignFlows.open(scene, { seed: true });
@@ -216,6 +224,7 @@ const winMenus = {
     ["toggle-dock", "调整栏"],
     ["histogram", "直方图"],
     ["photo-info", "照片信息"],
+    ["photo-margin", "照片四周留白"],
     ["-"],
     ["compare-set:0", "关闭对比"],
     ["compare-set:1", "并排对比"],
@@ -275,8 +284,23 @@ function filetree() {
     ? ""
     : `<aside class="filetree"><h3>照片文件夹 <button class="icon" data-flow="library" aria-label="浏览照片文件夹">${icon("folder")}</button></h3><div class="folder">${icon("chevron")}旅行照片</div><div class="thumbs">${["瀑布.ARW", "山谷.ARW", "林间.ARW", "溪流.ARW", "晨光.ARW", "岩石.ARW"].map((name, i) => `<button class="thumbnail ${i === 0 ? "selected" : ""}" data-action="photo">${photoMarkup("photo", "照片缩略图")}<span>${name}</span></button>`).join("")}</div></aside>`;
 }
+// 示例数据：森林照片绿色集中在中间调，天空让蓝色偏向高光，红色整体偏低。
+const histogramChannels = [
+  ["#ff3b30", [46, 40, 30, 22, 24, 31, 38, 41, 42, 43, 40, 37, 39, 44, 47]],
+  ["#34c759", [46, 43, 34, 18, 9, 12, 20, 27, 33, 35, 31, 30, 36, 43, 47]],
+  ["#0a84ff", [46, 44, 38, 30, 27, 31, 36, 34, 28, 22, 19, 24, 33, 41, 46]],
+];
+function histogramSVG() {
+  const step = 130 / (histogramChannels[0][1].length - 1);
+  return `<svg class="rgb-histogram" viewBox="0 0 130 48" aria-hidden="true">${histogramChannels
+    .map(
+      ([color, ys]) =>
+        `<path d="M0 48${ys.map((y, i) => `L${(i * step).toFixed(1)} ${y}`).join("")}L130 48Z" fill="${color}"/>`,
+    )
+    .join("")}</svg>`;
+}
 function histogram() {
-  return `<div class="histogram ${histogramVisible ? "" : "collapsed"}"><button data-action="histogram" aria-label="${histogramVisible ? "收起" : "展开"}直方图">直方图 ${icon("chevron")}</button>${histogramVisible ? '<svg viewBox="0 0 130 48" aria-hidden="true"><path d="M0 48V42L8 38 16 20 24 9 32 21 40 34 48 39 56 42 64 41 72 37 80 35 88 28 96 29 104 24 112 22 120 36 130 43V48Z" fill="#d7d7dc"/></svg>' : ""}</div>`;
+  return `<div class="histogram ${histogramVisible ? "" : "collapsed"}" role="img" aria-label="RGB 直方图（示例）"><button data-action="histogram" aria-label="${histogramVisible ? "收起" : "展开"}直方图">直方图 ${icon("chevron")}</button>${histogramVisible ? histogramSVG() : ""}</div>`;
 }
 function compareSwitch() {
   return `<div class="compare-switch" role="radiogroup" aria-label="对比方式">${[
@@ -312,13 +336,42 @@ function cropOverlay() {
   ];
   return `<div class="crop-shade" aria-hidden="true"><i style="${rect}"></i></div><div class="crop-frame ${cropGrid ? "grid" : ""}" style="${rect}">${handles.map(([h, n]) => `<span class="crop-handle ${h}" data-crop-handle="${h}" tabindex="0" role="slider" aria-label="裁切${n}，方向键调整" aria-valuetext="左 ${values.cropX}% 上 ${values.cropY}% 宽 ${values.cropW}% 高 ${values.cropH}%"></span>`).join("")}</div>`;
 }
+function photoInfo() {
+  const raster = scene === "raster";
+  const rows =
+    infoState === "file"
+      ? [
+          ["文件", fileName()],
+          ["类型", raster ? "JPEG · sRGB" : "RAW · Sony ARW"],
+          ["尺寸", "7952 × 5304"],
+          ["大小", raster ? "18.4 MB" : "61.2 MB"],
+          ["白平衡", raster ? "不适用" : "拍摄时设置"],
+        ]
+      : infoState === "capture"
+        ? [
+            ["相机", "Sony α7R IV"],
+            ["镜头", "FE 24-70mm F2.8 GM"],
+            ["曝光", "1/200 秒 · f/4 · ISO 200"],
+            ["焦距", "35 mm"],
+            ["拍摄", "2026-08-12 06:41"],
+          ]
+        : [];
+  const label =
+    infoState === "file"
+      ? "文件信息"
+      : infoState === "capture"
+        ? "拍摄参数"
+        : "";
+  // 只有标题可点击，信息文字不拦截照片上的缩放与拖动。
+  return `<div class="photo-info ${rows.length ? "open" : ""}"><button class="info-chip ${rows.length ? "" : "icon-only"}" data-action="photo-info" aria-label="照片信息${label ? "：" + label : ""}" aria-expanded="${!!rows.length}" title="照片信息：点击依次显示文件信息、拍摄参数，再点收起${mobile ? "" : "（I）"}">${icon("info")}${label ? `<span>${label}</span>` : ""}${rows.length ? `<small>${infoState === "file" ? "1" : "2"} / 2</small>` : ""}</button>${rows.length ? `<dl class="info-layer">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}<dt></dt><dd class="sample">示例数据</dd></dl>` : ""}</div>`;
+}
 function canvas() {
   if (scene === "empty")
-    return `<div class="canvas"><div class="empty-content"><div class="empty-icon">${icon("photo")}</div><h2>打开一张照片</h2><p>导入 RAW 或支持的普通图片，开始调整与比较。</p><button class="primary" data-action="import">打开照片</button></div></div>`;
+    return `<div class="canvas ${photoMargin ? "" : "edge"}"><div class="empty-content"><div class="empty-icon">${icon("photo")}</div><h2>打开一张照片</h2><p>导入 RAW 或支持的普通图片，开始调整与比较。</p><button class="primary" data-action="import">打开照片</button></div></div>`;
   const photo = compareMode
     ? comparisonMarkup()
     : `<div class="photo-frame ${holdingBefore ? "holding" : ""}" data-photo-frame title="按住照片查看调整前">${photoMarkup()}${holdingBefore ? '<span class="before-badge" role="status">调整前</span>' : ""}${cropOverlay()}</div>`;
-  return `<div class="canvas">${photo}${infoState !== "hide" ? `<div class="info">${infoState === "capture" ? "1/200 秒 · f/4 · ISO 200（示例）" : scene === "raster" ? "JPEG · sRGB" : "RAW · 拍摄时白平衡"}</div>` : ""}${histogram()}${!compareMode ? `<div class="photo-footer">${selectedFilm} · ${zoomChoice}</div>` : ""}<div class="preview-progress" role="progressbar" aria-label="正在更新预览" ${previewBusy ? "" : "hidden"}><i></i></div>${scene === "saving-error" ? `<div class="save-error">${icon("warning")}<span>调整未保存</span><button data-action="retry-save">重试</button></div>` : ""}</div>`;
+  return `<div class="canvas ${photoMargin ? "" : "edge"}">${photo}${photoInfo()}${histogram()}${!compareMode ? `<div class="photo-footer">${selectedFilm} · ${zoomChoice}</div>` : ""}<div class="preview-progress" role="progressbar" aria-label="正在更新预览" ${previewBusy ? "" : "hidden"}><i></i></div>${scene === "saving-error" ? `<div class="save-error">${icon("warning")}<span>调整未保存</span><button data-action="retry-save">重试</button></div>` : ""}</div>`;
 }
 function toolChanged(id) {
   if (id === "film") return selectedFilm !== "PROVIA";
@@ -363,16 +416,22 @@ function tabs() {
     })
     .join("")}${planned}</div>`;
 }
+// 输入框里只放数字；单位在框外单独显示，不参与编辑。
 function displayValue(value, field, min) {
-  if (field === "temperature") return value + " K";
-  if (field === "exposure") return fmt(Number(value).toFixed(2)) + " EV";
-  return (
-    (min < 0 ? fmt(value) : Number(value)) +
-    (field.startsWith("hsl-") ||
-    ["straighten", "perspective", "horizontal"].includes(field)
-      ? ""
-      : "%")
-  );
+  if (field === "temperature") return String(value);
+  if (field === "exposure") return fmt(Number(value).toFixed(2));
+  return min < 0 ? fmt(value) : String(Number(value));
+}
+function unitOf(field) {
+  if (field === "temperature") return "K";
+  if (field === "exposure") return "EV";
+  if (field === "straighten") return "°";
+  if (
+    field.startsWith("hsl-") ||
+    ["tint", "perspective", "horizontal"].includes(field)
+  )
+    return "";
+  return "%";
 }
 function axisDefault(field) {
   return field.startsWith("hsl-") ? 0 : (defaults[field] ?? 0);
@@ -407,23 +466,40 @@ function hslTrack(axisIndex) {
     return `linear-gradient(90deg,hsl(${h} 0% 55%),hsl(${h} 80% 55%))`;
   return `linear-gradient(90deg,hsl(${h} 55% 14%),hsl(${h} 55% 52%),hsl(${h} 55% 88%))`;
 }
-function rulerSVG(value, min, max) {
-  const interval = (max - min) / 40;
-  let marks = "";
-  for (let i = -12; i <= 12; i++) {
-    const v = (Math.round(value / interval) + i) * interval;
-    if (v < min || v > max) continue;
-    const x = 170 + ((v - value) / interval) * 15;
-    const major =
-      Math.abs(v / interval - Math.round(v / interval / 5) * 5) < 0.01;
-    marks += `<path d="M${x} ${major ? 12 : 19}V32" stroke="#929299" stroke-width="1"/>`;
-    // 两端留出字宽，避免刻度数字被裁成半个字符。
-    if (major && x > 18 && x < 322)
-      marks += `<text class="tick-label" x="${x}" y="9" text-anchor="middle" fill="#c4c4cb">${Number(v.toFixed(2))}</text>`;
+function ruler(value, min, max) {
+  const interval = (max - min) / 40,
+    px = 15,
+    span = (340 / px) * interval;
+  // 视窗以当前值居中，但不越过参数范围；靠近两端时指示线移向边缘，刻度始终铺满整条。
+  const start = Math.min(Math.max(value - span / 2, min), max - span);
+  const x = (v) => ((v - start) / interval) * px;
+  let marks = "",
+    labels = "";
+  for (
+    let k = Math.ceil(start / interval - 1e-6);
+    k * interval <= start + span + 1e-6;
+    k++
+  ) {
+    const v = k * interval;
+    if (v < min - 1e-6 || v > max + 1e-6) continue;
+    const major = Math.abs(k / 5 - Math.round(k / 5)) < 0.01;
+    marks += `<path d="M${x(v).toFixed(1)} ${major ? 4 : 10}V20" stroke="#929299" stroke-width="1"/>`;
+    // 数字按百分比定位，不随刻度尺宽度变形；两端留出字宽，避免被裁成半个字符。
+    if (major && x(v) > 24 && x(v) < 316)
+      labels += `<span class="tick-label" style="left:${((x(v) / 340) * 100).toFixed(2)}%">${Number(v.toFixed(2))}</span>`;
   }
-  return `<svg viewBox="0 0 340 33" preserveAspectRatio="none" aria-hidden="true">${marks}<path d="M170 4V33" stroke="#f2ce48" stroke-width="2"/></svg>`;
+  const at = x(value).toFixed(1);
+  return `<svg viewBox="0 0 340 20" preserveAspectRatio="none" aria-hidden="true">${marks}<path d="M${at} 0V20" stroke="#f2ce48" stroke-width="2"/></svg>${labels}`;
 }
-function axis(name, value, field, min = -100, max = 100, step = 0.1) {
+function axis(
+  name,
+  value,
+  field,
+  min = -100,
+  max = 100,
+  step = 0.1,
+  note = "",
+) {
   const text = displayValue(value, field, min);
   const changed = Number(value) !== axisDefault(field);
   const track = field.startsWith("hsl-")
@@ -432,24 +508,33 @@ function axis(name, value, field, min = -100, max = 100, step = 0.1) {
   const range = `<input class="slider ${track ? "gradient" : ""}" aria-label="${name}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-axis="${field}" style="${fillVars(value, field, min, max)}${track ? ";--track-image:" + track : ""}">`;
   const control =
     platform === "ios"
-      ? `<div class="ruler-control">${track ? `<i class="ruler-band" style="background:${track}"></i>` : ""}<div class="ruler-ticks">${rulerSVG(value, min, max)}</div>${range}</div>`
+      ? `<div class="ruler-control">${track ? `<i class="ruler-band" style="background:${track}"></i>` : ""}<div class="ruler-ticks">${ruler(value, min, max)}</div>${range}</div>`
       : range;
+  const unit = unitOf(field);
   const number = mobile
-    ? `<button class="number ${changed ? "changed" : ""}" data-number="${field}" data-min="${min}" data-max="${max}" data-step="${step}" aria-label="${name}精确数值：${text}">${text}</button>`
-    : `<input class="number inline-number ${changed ? "changed" : ""}" aria-label="${name}数值" data-inline-field="${field}" data-min="${min}" data-max="${max}" data-step="${step}" value="${text}">`;
-  return `<div class="axis"><label><span>${name}</span><span class="axis-controls">${number}<button class="axis-reset" data-reset-axis="${field}" aria-label="重置${name}" title="重置${name}" ${changed ? "" : "disabled"}>${icon("reset")}</button></span></label>${control}${mobile ? "" : `<div class="range-labels"><span>${min}</span><span>${min < 0 && max > 0 ? "0" : ""}</span><span>${max}</span></div>`}</div>`;
+    ? `<button class="number ${changed ? "changed" : ""}" data-number="${field}" data-min="${min}" data-max="${max}" data-step="${step}" aria-label="${name}精确数值：${text}${unit}">${text}</button>`
+    : `<input class="number inline-number ${changed ? "changed" : ""}" aria-label="${name}数值${unit ? "（" + unit + "）" : ""}" data-inline-field="${field}" data-min="${min}" data-max="${max}" data-step="${step}" value="${text}">`;
+  // 单位位置每行都保留，没有单位时留空，上下行的数值框保持对齐。
+  return `<div class="axis" data-axis-row="${field}" title="双击名称或滑杆恢复默认"><span class="axis-name">${name}</span>${control}<span class="axis-value">${number}<span class="unit" aria-hidden="true">${unit}</span></span>${note ? `<p class="axis-note">${note}</p>` : ""}</div>`;
+}
+// 开关统一用开关组件；保留原生复选框语义，便于读屏与键盘操作。
+function switchControl(label, attrs, checked) {
+  return `<label class="switch-row"><span>${label}</span><input type="checkbox" role="switch" class="switch" ${attrs} ${checked ? "checked" : ""}></label>`;
+}
+function segmented(label, items, attr) {
+  return `<div class="segmented" role="radiogroup" aria-label="${label}">${items.map(([value, text, checked, disabled]) => `<button role="radio" ${attr}="${value}" aria-checked="${!!checked}" ${disabled ? "disabled" : ""}>${text}</button>`).join("")}</div>`;
 }
 function hslPanel() {
   const name = palettes[channel][0];
   const bandChanged = (i) => hsl[i].some((v) => v !== 0);
-  return `<div class="hsl-layout"><div class="channel-block"><div class="channel-title"><strong>${name}色</strong>${bandChanged(channel) ? '<span class="changed-note">已调整</span>' : ""}</div><div class="swatches" role="radiogroup" aria-label="HSL 色域">${palettes.map(([n, color], i) => `<button class="swatch ${bandChanged(i) ? "changed" : ""}" role="radio" data-channel="${i}" aria-label="${n}色${bandChanged(i) ? "，已调整" : ""}" aria-checked="${channel === i}" aria-pressed="${channel === i}"><i style="background:${color}"></i></button>`).join("")}</div><p class="channel-help">调整照片中的${name}色。切换色域时保留各自设置；色块下的小点表示该色域已调整。</p></div><div class="axes">${["色相", "饱和度", "明度"].map((axisName, i) => axis(axisName, hsl[channel][i], "hsl-" + i, -100, 100, platform === "windows" ? 0.1 : 1)).join("")}</div></div>`;
+  return `<div class="hsl-layout"><div class="channel-block">${mobile ? "" : `<div class="channel-title"><strong>${name}色</strong></div>`}<div class="swatches" role="radiogroup" aria-label="HSL 色域">${palettes.map(([n, color], i) => `<button class="swatch ${bandChanged(i) ? "changed" : ""}" role="radio" data-channel="${i}" aria-label="${n}色${bandChanged(i) ? "，已调整" : ""}" aria-checked="${channel === i}" aria-pressed="${channel === i}"><i style="background:${color}"></i></button>`).join("")}</div></div><div class="axes">${["色相", "饱和度", "明度"].map((axisName, i) => axis(axisName, hsl[channel][i], "hsl-" + i, -100, 100, platform === "windows" ? 0.1 : 1)).join("")}</div></div>`;
 }
 function scalarPanel() {
   if (scene === "wb-unavailable" && tool === "wb")
     return '<div class="scalar-layout"><p class="notice-inline"><strong>无法取得有效的相机白平衡校准</strong><br>保留拍摄时模式，暂不可手动调整色温与色调。</p><div class="flow-static"><span>色温 / 色调</span><span>不可用</span></div></div>';
   if (["denoise", "grain", "vignette"].includes(tool)) return complexPanel();
   if (tool === "wb")
-    return `<div class="scalar-layout"><div class="scalar-meta"><span>白平衡</span><button class="menu-button" data-action="wb-mode" ${scene === "raster" ? "disabled" : ""}>${scene === "raster" ? "普通图片不提供相机白平衡" : wbMode + " " + icon("chevron")}</button></div>${scene === "raster" ? '<p class="notice-inline">RAW 专属：普通图片不提供拍摄时白平衡校准。</p>' : axis("色温", values.temperature, "temperature", 2000, 50000, 10) + axis("色调", values.tint, "tint", -150, 150, 0.1)}</div>`;
+    return `<div class="scalar-layout"><div class="option-row"><span class="field-inline">白平衡<button class="menu-button" data-action="wb-mode" ${scene === "raster" ? "disabled" : ""}>${scene === "raster" ? "不适用" : wbMode + " " + icon("chevron")}</button></span></div>${scene === "raster" ? '<p class="notice-inline">RAW 专属：普通图片不提供拍摄时白平衡校准。</p>' : axis("色温", values.temperature, "temperature", 2000, 50000, 10) + axis("色调", values.tint, "tint", -150, 150, 0.1)}</div>`;
   const specs = {
     exposure: ["曝光", -4, 4, platform === "ios" ? 0.05 : 0.01],
     highlights: ["高光", -100, 100, 0.1],
@@ -464,7 +549,7 @@ function scalarPanel() {
     sharpen: ["锐化", 0, 200, 0.1],
   };
   const [name, min, max, step] = specs[tool] || specs.exposure;
-  return `<div class="scalar-layout">${axis(name, values[tool] || 0, tool, min, max, step)}<div class="scalar-meta">${tool === "exposure" ? `<label>曝光基准 <select aria-label="曝光基准" ${scene === "raster" ? "disabled" : ""}><option>匹配内嵌预览</option><option>标准显影</option><option>传感器基准</option></select></label><button class="secondary small" data-action="auto-exposure">自动</button>` : `<span>默认值 ${tool === "strength" ? "100" : "0"} · 范围 ${min} – ${max}</span>`}</div></div>`;
+  return `<div class="scalar-layout">${axis(name, values[tool] || 0, tool, min, max, step)}${tool === "exposure" ? `<div class="option-row"><label class="field-inline">曝光基准<select aria-label="曝光基准" ${scene === "raster" ? "disabled" : ""}><option>匹配内嵌预览</option><option>标准显影</option><option>传感器基准</option></select></label><button class="secondary small" data-action="auto-exposure">自动曝光</button></div>` : ""}</div>`;
 }
 function complexPanel() {
   let fields = [];
@@ -481,24 +566,42 @@ function complexPanel() {
       ["中点", "vignetteMid", 0, 100],
       ["圆度", "vignetteRound", -100, 100],
       ["羽化", "vignetteFeather", 0, 100],
-      ["高光保护", "vignetteHigh", 0, 100],
+      ["高光保护", "vignetteHigh", 0, 100, "仅在压暗四角（强度为负）时可用"],
     ];
   if (tool === "denoise") {
-    extra = `${!mobile ? `<div class="parameter-options"><label>RAW 降噪<select aria-label="RAW 降噪" ${scene === "raster" ? "disabled" : ""}><option>停用</option><option>轻度</option><option>强度</option></select></label></div>` : ""}<div class="parameter-options"><label><input id="denoise-enabled" type="checkbox" ${denoiseEnabled ? "checked" : ""}>启用降噪</label><select aria-label="降噪预设" id="denoise-preset"><option>细节优先</option><option>去噪优先</option><option>自定义</option></select></div>`;
+    const presets = { detail: [0, 46, 50], clean: [10, 72, 100] };
+    const current = [
+      values.denoiseLuma,
+      values.denoiseChroma,
+      values.denoiseCoarse,
+    ];
+    const preset =
+      Object.keys(presets).find((k) => presets[k].join() === current.join()) ||
+      "custom";
+    // 与原生 Mac 一致：降噪开关加预设分段，自定义只在参数偏离预设时出现。
+    extra = `<div class="option-row">${switchControl("降噪", 'id="denoise-enabled"', denoiseEnabled)}${segmented(
+      "降噪预设",
+      [
+        ["detail", "细节优先", preset === "detail"],
+        ["clean", "去噪优先", preset === "clean"],
+        ...(preset === "custom" ? [["custom", "自定义", true, true]] : []),
+      ],
+      "data-denoise-preset",
+    )}</div>`;
     fields = [
       ["亮度降噪", "denoiseLuma", 0, 100],
       ["色彩降噪", "denoiseChroma", 0, 100],
-      ["粗色斑抑制", "denoiseCoarse", 0, 100],
+      ["粗色斑抑制", "denoiseCoarse", 0, 100, "抑制成片出现的彩色噪点"],
     ];
   }
-  return `<div class="multi-parameter">${extra}<div class="parameter-grid">${fields.map(([n, f, min, max]) => axis(n, values[f], f, min, max, 0.1)).join("")}</div>${tool === "denoise" ? '<p class="notice-inline">保留现有降噪参数。RAW 专属的 FBDD 在支持的照片上单独呈现。</p>' : ""}</div>`;
+  return `<div class="multi-parameter">${extra}<div class="parameter-grid">${fields.map(([n, f, min, max, note]) => axis(n, values[f], f, min, max, 0.1, note)).join("")}</div></div>`;
 }
 function geometryPanel() {
   if (tool === "lens" && scene === "raster")
     return `<div class="scalar-layout"><p class="notice-inline"><strong>镜头校正仅适用于 RAW 照片</strong><br>当前为普通图片，无法使用相机和镜头校准数据。其他颜色与效果调整仍可使用。</p><button class="secondary" data-action="goto-color" style="margin-top:15px">前往颜色调整</button></div>`;
   if (tool === "lens")
-    return `<div class="lens-panel"><div class="parameter-options"><label>匹配模式<select aria-label="镜头匹配模式"><option>自动匹配</option><option>手动选择</option></select></label><span class="muted">已匹配当前照片镜头</span></div><div class="parameter-options">${["畸变校正", "横向色差校正", "自动裁切"].map((n, i) => `<label><input type="checkbox" ${i === 2 ? "checked" : ""}>${n}</label>`).join("")}</div><button class="secondary" data-action="lens-profile">选择镜头配置</button><p class="draft-info">草稿预览，应用后保存到当前照片。</p></div>`;
-  return `<div class="geometry-panel"><p class="draft-info">在照片上拖动裁切框的角和边；下方数值用于精确调整。</p><div class="parameter-options"><div class="geometry-icons">${[
+    return `<div class="lens-panel"><div class="option-row">${switchControl("自动匹配镜头", "data-lens-auto", true)}<span class="muted">已匹配：FE 24-70mm F2.8 GM</span><button class="secondary small" data-action="lens-profile">选择镜头配置</button></div><div class="option-row">${["畸变校正", "横向色差校正", "自动裁切"].map((n, i) => switchControl(n, "data-lens-option", i === 2)).join("")}</div></div>`;
+  return `<div class="geometry-panel"><div class="option-row"><div class="geometry-icons">${[
     ["rotate-left", "向左旋转"],
     ["rotate-right", "向右旋转"],
     ["flip-horizontal", "水平翻转"],
@@ -507,7 +610,7 @@ function geometryPanel() {
     .map(([name, label]) => btn("geometry-operation", name, label))
     .join(
       "",
-    )}</div><label>比例<select aria-label="裁切比例"><option>原始比例</option><option>自由</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option></select></label><label><input type="checkbox" data-crop-grid ${cropGrid ? "checked" : ""}>三分网格</label></div><div class="parameter-grid">${axis("拉直", values.straighten, "straighten", -45, 45, 0.01)}${axis("水平透视", values.horizontal, "horizontal", platform === "windows" ? -1 : -100, platform === "windows" ? 1 : 100, platform === "windows" ? 0.001 : 0.1)}${axis("垂直透视", values.perspective, "perspective", platform === "windows" ? -1 : -100, platform === "windows" ? 1 : 100, platform === "windows" ? 0.001 : 0.1)}</div><details><summary>精确裁切</summary><div class="parameter-grid">${[
+    )}</div><label class="field-inline">比例<select aria-label="裁切比例"><option>原始比例</option><option>自由</option><option>1:1</option><option>4:3</option><option>3:2</option><option>16:9</option></select></label>${switchControl("三分网格", "data-crop-grid", cropGrid)}</div><div class="parameter-grid">${axis("拉直", values.straighten, "straighten", -45, 45, 0.01)}${axis("水平透视", values.horizontal, "horizontal", platform === "windows" ? -1 : -100, platform === "windows" ? 1 : 100, platform === "windows" ? 0.001 : 0.1)}${axis("垂直透视", values.perspective, "perspective", platform === "windows" ? -1 : -100, platform === "windows" ? 1 : 100, platform === "windows" ? 0.001 : 0.1)}</div><details><summary>精确裁切</summary><div class="parameter-grid">${[
     ["左边", "cropX"],
     ["上边", "cropY"],
     ["宽度", "cropW"],
@@ -528,8 +631,8 @@ function geometryPanel() {
 function looksPanel() {
   if (tool === "strength") return scalarPanel();
   if (tool === "recipe")
-    return `<div class="look-list recipe-list"><button class="look ${!selectedRecipe ? "active" : ""}" data-recipe=""><span>无配方</span></button>${recipes.map((r) => `<button class="look ${selectedRecipe === r.id ? "active" : ""}" data-recipe="${r.id}"><img src="${RawLabDesignManifest.media.recipeArtwork}${r.id}.png" alt=""><span>${r.name}</span><small>${r.subtitle}</small></button>`).join("")}</div>`;
-  return `<div class="look-list film-list"><button class="look ${selectedFilm === "中性" ? "active" : ""}" data-film="中性">${icon("photo")}<span>中性</span></button>${RawLabDesign.films.map((f) => `<button class="look ${selectedFilm === f.name ? "active" : ""}" data-film="${f.name}" title="${f.group} · ${f.name}"><img src="${f.artwork}" alt=""><span>${f.name}</span></button>`).join("")}<button class="look" data-flow="looks">${icon("folder")}<span>导入与管理外观</span></button></div>`;
+    return `<div class="look-list recipe-list"><button class="look ${!selectedRecipe ? "active" : ""}" data-recipe=""><span class="look-art">${icon("none")}</span><span>无配方</span><small>只使用所选胶片</small></button>${recipes.map((r) => `<button class="look ${selectedRecipe === r.id ? "active" : ""}" data-recipe="${r.id}"><img src="${RawLabDesignManifest.media.recipeArtwork}${r.id}.png" alt=""><span>${r.name}</span><small>${r.subtitle}</small></button>`).join("")}</div>`;
+  return `<div class="look-list film-list"><button class="look ${selectedFilm === "中性" ? "active" : ""}" data-film="中性"><span class="look-art">${icon("photo")}</span><span>中性</span></button>${RawLabDesign.films.map((f) => `<button class="look ${selectedFilm === f.name ? "active" : ""}" data-film="${f.name}" title="${f.group} · ${f.name}"><img src="${f.artwork}" alt=""><span>${f.name}</span></button>`).join("")}<button class="look" data-flow="looks"><span class="look-art">${icon("folder")}</span><span>导入与管理外观</span></button></div>`;
 }
 function panelContent() {
   return tool === "hsl"
@@ -554,23 +657,15 @@ function editor() {
     mobile && hasAxes()
       ? `<button class="fine-toggle" data-action="fine" aria-pressed="${fineMode}" aria-label="精细" title="精细：拖动灵敏度降为四分之一">${icon("scope")}<span>精细</span></button>`
       : "";
-  const tall = [
-    "hsl",
-    "geometry",
-    "lens",
-    "vignette",
-    "denoise",
-    "wb",
-  ].includes(tool);
-  const panel = group
-    ? `<div class="panel ${tall ? "tall" : ""}">${panelContent()}</div>`
-    : "";
+  const panel = group ? `<div class="panel">${panelContent()}</div>` : "";
   const draftBar = draft
     ? `<div class="draft-actions"><button class="secondary" data-action="discard-draft">取消</button><button class="primary" data-action="apply-draft" ${isDraftChanged() ? "" : "disabled"}>应用</button></div>`
     : "";
+  // 参数区高度固定，切换工具或出现草稿按钮都不改变照片区大小。
+  const area = group ? `<div class="panel-area">${panel}${draftBar}</div>` : "";
   if (!mobile)
-    return `<section class="editor ${group ? "has-group" : ""}"><div class="dock-bar">${groupNav()}<span class="space"></span>${save}${reset}</div>${group ? `<div class="tool-row">${tabs()}</div>` : ""}${panel}${draftBar}</section>`;
-  return `<section class="editor ${group ? "has-group" : ""}">${group ? `<div class="tool-row">${tabs()}<span class="tool-actions">${fine}${reset}</span></div>${panel}${draftBar}` : ""}${groupNav()}</section>`;
+    return `<section class="editor ${group ? "has-group" : ""}"><div class="dock-bar">${groupNav()}<span class="space"></span>${save}${reset}</div>${group ? `<div class="tool-row">${tabs()}</div>` : ""}${area}</section>`;
+  return `<section class="editor ${group ? "has-group" : ""}">${group ? `<div class="tool-row">${tabs()}<span class="tool-actions">${fine}${reset}</span></div>${area}` : ""}${groupNav()}</section>`;
 }
 function appIcon() {
   return `<svg class="app-icon" viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="14" fill="#2a2a2d"/><rect x="13" y="15" width="28" height="22" rx="2" fill="none" stroke="#f2ce48" stroke-width="4"/><rect x="23" y="27" width="28" height="22" rx="2" fill="none" stroke="#5fc9d2" stroke-width="4"/></svg>`;
@@ -595,7 +690,7 @@ function updateWindow() {
       copy: "RawLab 0.9.0（示例）已可用，当前版本为 0.8.2。安装前会先保存调整，并等待导出完成。",
       extra:
         notes +
-        `<label class="setting-row"><input id="autoinstall" type="checkbox" ${autoInstall ? "checked" : ""}><span>以后自动下载并安装更新<small>可随时在“设置 → 软件更新”中关闭。</small></span></label>`,
+        `<label class="setting-row"><span>以后自动下载并安装更新<small>可随时在“设置 → 软件更新”中关闭。</small></span><input id="autoinstall" type="checkbox" role="switch" class="switch" ${autoInstall ? "checked" : ""}></label>`,
       actions:
         act("skip-version", "跳过此版本", "quiet leading") +
         act("close-update", "稍后提醒") +
@@ -676,6 +771,8 @@ function modalHTML() {
     buttons = `<div class="choice-actions"><button class="primary" data-action="apply-leave">应用并离开</button><button class="secondary destructive" data-action="discard-leave">放弃修改</button><button class="secondary" data-action="cancel-modal">继续编辑</button></div>`;
   } else if (modal.kind === "number") {
     title = "调整" + modal.name;
+    const unit = unitOf(modal.field);
+    title = "调整" + modal.name + (unit ? "（" + unit + "）" : "");
     copy = "范围 " + modal.min + " 到 " + modal.max + "，步进 " + modal.step;
     buttons =
       '<button class="secondary" data-action="cancel-modal">取消</button><button class="primary" data-action="apply-number">应用</button>';
@@ -717,7 +814,9 @@ function menuItems() {
       id === "redo" ? !canRedo : disabled,
       id.startsWith("compare-set:")
         ? compareMode === Number(id.slice(12))
-        : undefined,
+        : id === "photo-margin"
+          ? photoMargin
+          : undefined,
       key,
     ]);
   return [];
@@ -765,12 +864,9 @@ function updateControlAvailability() {
     const off = unavailable.includes(input.dataset.axis);
     const row = input.closest(".axis");
     row.classList.toggle("unavailable", off);
-    row.querySelectorAll("input,button").forEach((control) => {
-      control.disabled =
-        off ||
-        (control.matches(".axis-reset") &&
-          !row.querySelector(".number").classList.contains("changed"));
-    });
+    row
+      .querySelectorAll("input,button")
+      .forEach((control) => (control.disabled = off));
   });
   const apply = document.querySelector('[data-action="apply-draft"]');
   if (apply) apply.disabled = previewBusy || !isDraftChanged();
@@ -809,7 +905,7 @@ function render() {
   const keep = focusKey(document.activeElement);
   const nav = document.querySelector(".group-nav");
   if (nav) groupScrollLeft = nav.scrollLeft;
-  app.innerHTML = `<div class="native-app">${desktopTitle()}${winMenubar()}${toolbar()}<div class="workspace">${filetree()}<div class="main-column">${canvas()}${dockVisible ? editor() : ""}</div></div>${mobile ? `<div class="mobilebar"><i></i>${platform === "android" ? "<i></i><i></i>" : ""}</div>` : `<div class="bottom-status"><span>${fileName()}</span><span>${zoomChoice} · sRGB</span></div>`}${updateWindow()}${modalHTML()}${RawLabDesignFlows.render(
+  app.innerHTML = `<div class="native-app ${immersive ? "immersive" : ""}">${desktopTitle()}${winMenubar()}${toolbar()}<div class="workspace">${filetree()}<div class="main-column">${canvas()}${dockVisible ? editor() : ""}</div></div>${mobile ? `<div class="mobilebar"><i></i>${platform === "android" ? "<i></i><i></i>" : ""}</div>` : `<div class="bottom-status"><span>${fileName()}</span><span>${zoomChoice} · sRGB</span></div>`}${updateWindow()}${modalHTML()}${RawLabDesignFlows.render(
     {
       platform,
       mobile,
@@ -824,6 +920,10 @@ function render() {
       },
       setInfo: (value) => {
         infoState = value;
+      },
+      photoMargin: () => photoMargin,
+      setMargin: (value) => {
+        photoMargin = value;
       },
       requestResetAll: () => {
         modal = { kind: "reset", scope: "all" };
@@ -1021,12 +1121,16 @@ app.addEventListener("click", (e) => {
     }
   }
   if (RawLabDesignFlows.handleClick(e)) return;
-  const reset = e.target.closest("[data-reset-axis]");
-  if (reset) {
-    const f = reset.dataset.resetAxis;
-    if (f.startsWith("hsl-")) hsl[channel][Number(f.split("-")[1])] = 0;
-    else values[f] = defaults[f];
-    render();
+  const preset = e.target.closest("[data-denoise-preset]");
+  if (preset) {
+    const v = { detail: [0, 46, 50], clean: [10, 72, 100] }[
+      preset.dataset.denoisePreset
+    ];
+    if (v) {
+      [values.denoiseLuma, values.denoiseChroma, values.denoiseCoarse] = v;
+      denoiseEnabled = true;
+      render();
+    }
     return;
   }
   const film = e.target.closest("[data-film]");
@@ -1079,8 +1183,7 @@ app.addEventListener("click", (e) => {
     modal = {
       kind: "number",
       field: f,
-      name: number.closest(".axis").querySelector("label").firstChild
-        .textContent,
+      name: number.closest(".axis").querySelector(".axis-name").textContent,
       value: f.startsWith("hsl-")
         ? hsl[channel][Number(f.split("-")[1])]
         : values[f],
@@ -1228,7 +1331,10 @@ function handleAction(a, b) {
     dockVisible = !dockVisible;
     render();
   } else if (a === "photo-info") {
-    RawLabDesignFlows.open("photo-info");
+    infoState = { hide: "file", file: "capture", capture: "hide" }[infoState];
+    render();
+  } else if (a === "photo-margin") {
+    photoMargin = !photoMargin;
     render();
   } else if (a === "histogram") {
     histogramVisible = !histogramVisible;
@@ -1259,7 +1365,7 @@ function syncAxis(input) {
         : ""),
   );
   const ticks = row.querySelector(".ruler-ticks");
-  if (ticks) ticks.innerHTML = rulerSVG(n, min, max);
+  if (ticks) ticks.innerHTML = ruler(n, min, max);
   const number = row.querySelector(".number");
   const text = displayValue(n, f, min);
   if (number.tagName === "INPUT") number.value = text;
@@ -1363,6 +1469,16 @@ document.addEventListener("keydown", (e) => {
       render();
     } else navigate(null);
   }
+  if (
+    !mobile &&
+    (e.key === "i" || e.key === "I") &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.target.matches("input,select,textarea") &&
+    !modal &&
+    !RawLabDesignFlows.active
+  )
+    handleAction("photo-info");
   // Lightroom 同款：按住反斜杠查看调整前，松开恢复。
   if (
     e.key === "\\" &&
@@ -1497,7 +1613,8 @@ function moveCrop(handle, dx, dy) {
   });
 }
 let cropDrag = null,
-  holdTimer = null;
+  holdTimer = null,
+  tapStart = null;
 app.addEventListener("pointerdown", (e) => {
   const handle = e.target.closest("[data-crop-handle]");
   if (handle) {
@@ -1517,6 +1634,13 @@ app.addEventListener("pointerdown", (e) => {
       holdingBefore = true;
       render();
     }, 180);
+  if (
+    mobile &&
+    !draft &&
+    e.target.closest(".canvas") &&
+    !e.target.closest("button,input,.histogram,.compare-switch,.save-error")
+  )
+    tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
 });
 document.addEventListener("pointermove", (e) => {
   if (!cropDrag) return;
@@ -1537,8 +1661,19 @@ document.addEventListener("pointermove", (e) => {
       Object.entries(rect).forEach(([k, v]) => (el.style[k] = v + "%")),
     );
 });
-document.addEventListener("pointerup", () => {
+document.addEventListener("pointerup", (e) => {
   clearTimeout(holdTimer);
+  const tap =
+    tapStart &&
+    !holdingBefore &&
+    Date.now() - tapStart.t < 300 &&
+    Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 8;
+  tapStart = null;
+  if (tap) {
+    immersive = !immersive;
+    render();
+    return;
+  }
   if (cropDrag) {
     cropDrag = null;
     draftTouched = true;
@@ -1548,4 +1683,19 @@ document.addEventListener("pointerup", () => {
     holdingBefore = false;
     render();
   }
+});
+
+// 双击（移动端双点）参数名称或滑杆恢复该项默认值，替代每行的重置按钮。
+app.addEventListener("dblclick", (e) => {
+  const row = e.target.closest(".axis");
+  if (
+    !row ||
+    e.target.closest(".number") ||
+    row.classList.contains("unavailable")
+  )
+    return;
+  const f = row.dataset.axisRow;
+  if (f.startsWith("hsl-")) hsl[channel][Number(f.split("-")[1])] = 0;
+  else values[f] = defaults[f];
+  render();
 });
