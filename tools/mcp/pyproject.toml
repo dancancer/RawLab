@@ -1,0 +1,20 @@
+[project]
+name = "rawlab-mcp"
+version = "0.1.0"
+description = "Local stdio MCP adapter for the RawLab v4 agent CLI"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp==2.2.0",
+    "anyio>=4.9,<5",
+    "pydantic>=2.12,<3",
+]
+
+[project.scripts]
+rawlab-mcp = "rawlab_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rawlab_mcp"]

@@ -255,6 +255,37 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
     }
 }
 
+// 新导航语义不进入存储格式；旧八组仍服务现有界面。
+enum EditorAdjustmentGroup: String, CaseIterable {
+    case looks, light, color, effects, detail, geometry
+}
+
+enum EditorResetScope: Equatable {
+    case group(EditorAdjustmentGroup)
+    case hslColor(Int)
+    case hslAll
+    case all
+}
+
+struct EditorAdjustmentContext {
+    let isRaw: Bool
+    let defaultExposureMode: ExposureMode
+    let neutralFilmID: String
+}
+
+enum EditorResetBlockedReason: Error, Equatable {
+    case invalidSnapshot(String)
+    case invalidHSLChannel
+    case missingAsShotWhiteBalance
+    case unrepresentableRecipe
+}
+
+enum EditorResetResult: Equatable {
+    case unchanged
+    case candidate(PhotoEditState)
+    case blocked(EditorResetBlockedReason)
+}
+
 enum GeometryParameter: String, CaseIterable, Identifiable {
     case cropX, cropY, cropWidth, cropHeight, straightenDegrees
     case perspectiveHorizontal, perspectiveVertical

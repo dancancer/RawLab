@@ -293,6 +293,187 @@ struct Adjustments: Equatable, Codable {
     }
 
     var isDefault: Bool { AdjustmentGroup.allCases.allSatisfy { isDefault($0) } }
+
+    // 与实际渲染共用普通图片的有效设置，避免 reset 校验把 RAW 元数据当成 RGB 白平衡。
+    var resolvedForRaster: Adjustments {
+        var state = self
+        state.exposureMode = .sensor
+        state.whiteBalanceMode = .asShot
+        state.resolveWhiteBalance(nil)
+        state.temperature = 6500
+        state.tint = 0
+        state.rawNoiseReduction = 0
+        state.lensCorrection = nil
+        return state
+    }
+
+    fileprivate func validateResetValues() throws {
+        for parameter in [AdjustmentParameter.strength, .exposure, .temperature, .tint, .contrast,
+                          .highlights, .shadows, .toneCurve, .saturation, .sharpening, .rawNoiseReduction] {
+            let value = self[keyPath: parameter.spec.keyPath]
+            guard value.isFinite, parameter.spec.range.contains(value) else {
+                throw EditorResetBlockedReason.invalidSnapshot(parameter.rawValue)
+            }
+        }
+        guard rawNoiseReduction.rounded() == rawNoiseReduction,
+              chromaNoiseReduction.map({ $0.isFinite && (0...2).contains($0) && $0.rounded() == $0 }) ?? true,
+              DenoiseParameter.allCases.allSatisfy({
+                  let value = waveletSettings[keyPath: $0.keyPath]
+                  return value.isFinite && (0...100).contains(value)
+              }) else { throw EditorResetBlockedReason.invalidSnapshot("denoise") }
+        guard PhotoEffectParameter.allCases.allSatisfy({
+            let value = effectSettings[keyPath: $0.keyPath]
+            return value.isFinite && $0.range.contains(value)
+        }), hslSettings.isValid, geometrySettings.isValid else {
+            throw EditorResetBlockedReason.invalidSnapshot("effects/hsl/geometry")
+        }
+        if let camera = asShotWhiteBalance {
+            guard camera.temperature.isFinite, camera.tint.isFinite,
+                  AdjustmentParameter.temperature.spec.range.contains(camera.temperature),
+                  AdjustmentParameter.tint.spec.range.contains(camera.tint) else {
+                throw EditorResetBlockedReason.invalidSnapshot("asShotWhiteBalance")
+            }
+        }
+        if masterRecipeID != nil {
+            guard masterRecipe != nil, [2, 3].contains(masterRecipeSettingsVersion ?? 2) else {
+                throw EditorResetBlockedReason.invalidSnapshot("masterRecipe")
+            }
+        }
+    }
+
+    private func resetCoreValues(context: EditorAdjustmentContext) -> [Float] {
+        let effective = context.isRaw ? self : resolvedForRaster
+        var request = sony2fuji_request()
+        effective.apply(to: &request)
+        return [Float(request.wb_mode.rawValue), request.exposure_ev, request.brightness, request.temperature,
+                request.tint, request.contrast, request.saturation, request.highlights, request.shadows,
+                request.tone_curve, request.sharpening] +
+            (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init)
+    }
+
+    fileprivate func detachingRecipeForReset(context: EditorAdjustmentContext) throws -> Adjustments {
+        try validateResetValues()
+        var result = self
+        let renderedHSL = renderHSLSettings
+        if masterRecipe != nil {
+            let scale = strength
+            result.exposure = exposure * scale
+            result.contrast = contrast * scale
+            result.highlights = highlights * scale
+            result.shadows = shadows * scale
+            result.saturation = saturation * scale
+            if context.isRaw {
+                if (tint * scale != 0 || !usesAsShotWhiteBalance) && asShotWhiteBalance == nil {
+                    throw EditorResetBlockedReason.missingAsShotWhiteBalance
+                }
+                var before = sony2fuji_request()
+                apply(to: &before)
+                result.masterRecipeID = nil
+                if before.wb_mode == SONY2FUJI_WB_CAMERA {
+                    result.resetWhiteBalance()
+                } else {
+                    result.whiteBalanceMode = .custom
+                    result.temperature = Double(before.temperature)
+                    result.tint = Double(before.tint)
+                }
+            } else {
+                result.masterRecipeID = nil
+                result.whiteBalanceMode = .asShot
+                result.temperature = 6500
+                result.tint = 0
+            }
+            // 捕获旧版本的实际 HSL，不调用会再次量化的用户输入 setter。
+            result.hsl = renderedHSL.isIdentity ? nil : renderedHSL
+        }
+        result.masterRecipeID = nil
+        result.masterRecipeSettingsVersion = 3
+        result.strength = 1
+        try result.validateResetValues()
+        guard result.resetCoreValues(context: context) == resetCoreValues(context: context) else {
+            throw EditorResetBlockedReason.unrepresentableRecipe
+        }
+        return result
+    }
+}
+
+enum EditorAdjustmentRules {
+    static func isModified(scope: EditorResetScope, snapshot: PhotoEditState, context: EditorAdjustmentContext) -> Bool {
+        let settings = snapshot.settings
+        switch scope {
+        case .all:
+            return EditorAdjustmentGroup.allCases.contains { isModified(scope: .group($0), snapshot: snapshot, context: context) }
+        case .hslAll: return !settings.hslSettings.isIdentity
+        case .hslColor(let channel):
+            guard (0..<8).contains(channel), settings.hslSettings.isValid else { return true }
+            return HSLAxis.allCases.contains { settings.hslSettings.value($0, channel: channel) != 0 }
+        case .group(.looks):
+            return snapshot.filmID != context.neutralFilmID || snapshot.masterRecipeID != nil ||
+                settings.masterRecipeID != nil || settings.strength != 1
+        case .group(.light):
+            return (context.isRaw && settings.exposureMode != context.defaultExposureMode) || settings.exposure != 0 ||
+                settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0
+        case .group(.color):
+            return settings.saturation != 0 || !settings.hslSettings.isIdentity ||
+                (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
+                (settings.masterRecipe != nil && settings.tint != 0)
+        case .group(.effects): return settings.effectSettings != PhotoEffectsSettings()
+        case .group(.detail):
+            return settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
+                (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+        case .group(.geometry):
+            return !settings.geometrySettings.isIdentity || settings.lensSettings != LensCorrectionSettings()
+        }
+    }
+
+    static func prepareReset(scope: EditorResetScope, snapshot: PhotoEditState, context: EditorAdjustmentContext) -> EditorResetResult {
+        var result = snapshot
+        do {
+            try snapshot.settings.validateResetValues()
+            if case .hslColor(let channel) = scope, !(0..<8).contains(channel) {
+                throw EditorResetBlockedReason.invalidHSLChannel
+            }
+            guard isModified(scope: scope, snapshot: snapshot, context: context) else { return .unchanged }
+            switch scope {
+            case .all:
+                result.settings.resetAll()
+                result.settings.exposureMode = context.defaultExposureMode
+                if !context.isRaw { result.settings = result.settings.resolvedForRaster }
+                result.filmID = context.neutralFilmID
+                result.masterRecipeID = nil
+            case .group(.looks):
+                guard snapshot.masterRecipeID == snapshot.settings.masterRecipeID else {
+                    throw EditorResetBlockedReason.invalidSnapshot("masterRecipeID")
+                }
+                result.settings = try result.settings.detachingRecipeForReset(context: context)
+                result.filmID = context.neutralFilmID
+                result.masterRecipeID = nil
+            case .group(.light):
+                result.settings.exposureMode = context.defaultExposureMode
+                result.settings.exposure = 0; result.settings.contrast = 0
+                result.settings.highlights = 0; result.settings.shadows = 0; result.settings.toneCurve = 0
+            case .group(.color):
+                result.settings.saturation = 0
+                result.settings.resetWhiteBalance()
+                result.settings.hsl = nil
+            case .group(.effects): result.settings.photoEffects = nil
+            case .group(.detail):
+                result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
+                result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
+            case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
+            case .hslAll: result.settings.hsl = nil
+            case .hslColor(let channel):
+                var hsl = result.settings.hslSettings
+                hsl.reset(channel: channel)
+                result.settings.hsl = hsl.isIdentity ? nil : hsl
+            }
+            try result.settings.validateResetValues()
+            return result == snapshot ? .unchanged : .candidate(result)
+        } catch let reason as EditorResetBlockedReason {
+            return .blocked(reason)
+        } catch {
+            return .blocked(.invalidSnapshot(String(describing: error)))
+        }
+    }
 }
 
 extension Adjustments {

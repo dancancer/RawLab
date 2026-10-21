@@ -1,0 +1,585 @@
+/* r6 使用同一主题、固定参数区和原生平台触点；新增流程不改变编辑区边界。 */
+.iteration-segments {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  width: fit-content;
+  max-width: 100%;
+  background: var(--raised);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  margin: 0 0 12px;
+}
+.iteration-segments button {
+  min-height: 32px;
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.iteration-segments button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--fg);
+}
+.iteration-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.iteration-inline .leading {
+  margin-right: auto;
+}
+.iteration-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 16px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.iteration-source > div {
+  flex: 1;
+  min-width: 0;
+}
+.iteration-source small,
+.iteration-target small,
+.preset-row small,
+.history-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.iteration-source .tag {
+  flex: none;
+}
+.scope-summary {
+  font-variant-numeric: tabular-nums;
+}
+.scope-groups {
+  border-top: 1px solid var(--line);
+}
+.scope-groups details {
+  border-bottom: 1px solid var(--line);
+}
+.scope-groups summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+  color: var(--fg);
+}
+.scope-groups summary label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+.scope-groups summary small {
+  color: var(--muted);
+  margin-left: 8px;
+}
+.scope-groups input,
+.scope-item input,
+.iteration-photo input {
+  accent-color: var(--accent);
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.scope-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 14px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.scope-channel {
+  margin-left: 16px;
+}
+.iteration-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+.iteration-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.iteration-target > div {
+  flex: 1;
+  min-width: 0;
+}
+.iteration-target > svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.iteration-result {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 10px 0 20px;
+}
+.iteration-result > svg {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--accent);
+}
+.iteration-result h3 {
+  margin: 0 0 6px;
+}
+.iteration-result p {
+  margin: 0;
+}
+.iteration-empty {
+  text-align: center;
+  padding: 32px 12px;
+}
+.preset-list {
+  margin-top: 12px;
+}
+.preset-row {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+  gap: 12px;
+}
+.preset-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  min-height: 72px;
+  padding: 12px 0;
+  border-radius: 0;
+}
+.preset-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.history-row {
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 6px 12px;
+}
+.history-row small {
+  grid-column: 2;
+}
+.iteration-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.iteration-photo {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+}
+.iteration-photo.selected {
+  border-color: var(--accent);
+}
+.iteration-photo > button {
+  padding: 0;
+  display: block;
+  background: none;
+  border-radius: 0;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.iteration-photo .flow-thumbnail {
+  width: 100%;
+  height: 100px;
+  margin-bottom: 10px;
+}
+.iteration-photo strong,
+.iteration-photo small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.iteration-photo small {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  margin: 4px 0;
+}
+.iteration-photo label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+}
+.photo-source {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 6px;
+}
+.iteration-steps,
+.iteration-checklist {
+  padding-left: 22px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.iteration-steps li,
+.iteration-checklist li {
+  margin: 10px 0;
+}
+.iteration-update-window {
+  max-height: calc(100% - 72px);
+  display: flex;
+  flex-direction: column;
+}
+.iteration-update-window .flow-body {
+  max-height: 60vh;
+}
+.iteration-update-window .update-actions {
+  flex-wrap: wrap;
+}
+.tool-status {
+  color: var(--muted);
+  padding: 8px 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+.tool-status.error {
+  border-bottom: 1px solid var(--line);
+}
+.tool-status strong {
+  color: var(--fg);
+}
+.tool-status p {
+  margin: 4px 0;
+}
+.tool-hint {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  margin: 12px 0 0;
+}
+.grading-zones {
+  margin-inline: auto;
+}
+.grading-zones button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.grading-layout {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 26px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.grading-wheel {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, white 0%, transparent 70%),
+    conic-gradient(from 90deg, #f44, #ff4, #4d4, #4ff, #44f, #f4f, #f44);
+  position: relative;
+  touch-action: none;
+  cursor: crosshair;
+  border: 1px solid var(--outline);
+}
+.grading-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px #0009;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.custom-curve-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 340px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+  margin: 0 24px;
+}
+.curve-plot {
+  height: 140px;
+  position: relative;
+  touch-action: none;
+  margin: 24px;
+}
+.curve-plot svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.curve-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  fill: none;
+}
+.curve-identity {
+  stroke: var(--muted);
+  opacity: 0.45;
+  stroke-dasharray: 4 5;
+  fill: none;
+}
+.curve-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: none;
+}
+.curve-point {
+  position: absolute;
+  width: var(--target);
+  height: var(--target);
+  transform: translate(-50%, -50%);
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+}
+.curve-point i {
+  width: 9px;
+  height: 9px;
+  background: var(--surface);
+  border: 1px solid var(--fg);
+  border-radius: 50%;
+}
+.curve-point.selected i {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.target-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.target-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.target-message {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.target-message button {
+  pointer-events: auto;
+}
+.target-reticle {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 48px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #72b771 25%, #406c51 70%);
+  box-shadow: 0 2px 5px #0008;
+}
+.target-reticle:before,
+.target-reticle:after {
+  content: "";
+  position: absolute;
+  background: white;
+}
+.target-reticle:before {
+  width: 1px;
+  top: 4px;
+  bottom: 4px;
+  left: 50%;
+}
+.target-reticle:after {
+  height: 1px;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+}
+.target-reticle span {
+  display: block;
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: white;
+  background: #000b;
+  padding: 3px 6px;
+}
+.batch-edit-return {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 4;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.batch-edit-return > span {
+  flex: 1;
+  min-width: 0;
+}
+.batch-edit-return small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+  font-size: var(--text-xs);
+}
+.canvas:has(.batch-edit-return) .photo-footer {
+  display: none;
+}
+.iteration-segments button:focus-visible,
+.grading-wheel:focus-visible,
+.curve-point:focus-visible,
+.scope-item:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mobile .iteration-segments {
+  overflow-x: auto;
+  width: 100%;
+}
+.mobile .iteration-segments button {
+  min-height: var(--target);
+  padding: 6px 10px;
+  flex: 1 0 auto;
+}
+.mobile .iteration-choice-list button,
+.mobile .iteration-inline button,
+.mobile .preset-row > button,
+.mobile .scope-groups summary,
+.mobile .scope-item,
+.mobile .iteration-photo label {
+  min-height: var(--target);
+}
+.mobile .iteration-photo-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.mobile .iteration-photo .flow-thumbnail {
+  height: 90px;
+}
+.mobile .iteration-source {
+  gap: 10px;
+}
+.mobile .iteration-source .tag {
+  max-width: 100px;
+  white-space: normal;
+}
+.mobile .grading-layout {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+}
+.mobile .grading-layout .axis {
+  --axis-name: 40px;
+  --axis-value: 66px;
+  column-gap: 5px;
+}
+.mobile .grading-wheel {
+  width: 88px;
+  height: 88px;
+  margin: 10px auto;
+}
+.mobile .custom-curve-layout {
+  display: block;
+  margin: 0;
+}
+.mobile .curve-plot {
+  height: 110px;
+  margin: 24px;
+}
+.mobile .curve-coordinates .iteration-inline button {
+  flex: 1 1 auto;
+}
+.mobile .batch-edit-return {
+  padding: 8px;
+  gap: 8px;
+}
+.mobile .batch-edit-return small {
+  display: none;
+}
+.mobile .batch-edit-return button {
+  min-height: var(--target);
+  padding: 6px 10px;
+}
+.large-text .grading-layout,
+.large-text .custom-curve-layout {
+  display: block;
+}
+.large-text .grading-wheel {
+  margin: 12px auto;
+}
+.large-text .iteration-source {
+  flex-wrap: wrap;
+}
+.large-text .iteration-photo-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 600px) {
+  .iteration-update-window {
+    max-width: calc(100% - 24px);
+  }
+}
+
+/* 新增工具里的次要动作也保留平台触控尺寸。 */
+.mobile .panel [data-iter],
+.mobile .target-message [data-iter] {
+  min-height: var(--target);
+  min-width: var(--target);
+}
+
+.target-tools > button {
+  flex: none;
+  white-space: nowrap;
+}
+.mobile .target-tools .iteration-segments {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.target-reticle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.iteration-freeze-list .flow-static small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  margin-top: 4px;
+}
