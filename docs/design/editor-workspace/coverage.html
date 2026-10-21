@@ -99,6 +99,7 @@
   </style>
   <nav>
     <a href="index.html">返回交互设计板</a><a href="README.md">维护说明</a
+    ><a href="iteration-design.md">本轮新增交互</a
     ><label
       >平台
       <select id="platform">
@@ -126,21 +127,27 @@
     </thead>
     <tbody id="drawn-screens"></tbody>
   </table>
-  <h2>本轮待补设计</h2>
+  <h2>本轮补充设计 · 待评审</h2>
   <p>
-    以下条目属于本次迭代，状态均为“待设计”，尚无完整可评审页面。页面 ID
-    是后续增量补稿的目标，不是空链接；正常、异常与恢复状态都需补齐后才能移入上方清单。它们不计入现有可直达界面或浏览器矩阵。
+    原待补条目在现有资产内增量补齐。每行按 ITER
+    关联正常、异常与恢复稿；链接会保留所选平台。页面可评审不代表需求已冻结、原生已实现或算法已验收。桌面安装与恢复仅适用于
+    macOS / Windows。
   </p>
-  <p id="pending-summary" class="summary"></p>
-  <table aria-label="本轮待补设计">
+  <p id="iteration-summary" class="summary"></p>
+  <table aria-label="本轮补充设计">
     <thead>
       <tr>
         <th>迭代 / 功能</th>
-        <th>目标页面 / 稳定 ID</th>
         <th>正常状态</th>
-        <th>异常与恢复状态</th>
+        <th>异常状态</th>
+        <th>恢复状态</th>
       </tr>
     </thead>
+    <tbody id="iteration-screens"></tbody>
+  </table>
+  <h2>仍待补设计</h2>
+  <p id="pending-summary" class="summary"></p>
+  <table aria-label="仍待补设计">
     <tbody id="pending-screens"></tbody>
   </table>
   <p>
@@ -156,13 +163,14 @@
   <footer>
     目录由 shared/screens.js
     生成；与设计板使用同一份界面清单。设计状态与版本只读取
-    manifest.js。待补设计来自同文件独立清单；整轮需求与验收以<a
-      href="../editing-iteration/requirements.md"
+    manifest.js。迭代状态目录来自 shared/iteration-model.js，按稳定 ID 与 ITER
+    关联；整轮需求与验收以<a href="../editing-iteration/requirements.md"
       >迭代总需求</a
     >为准，现有截图检查不能证明整轮设计覆盖完整。
   </footer>
   <script src="manifest.js"></script>
   <script src="shared/model.js"></script>
+  <script src="shared/iteration-model.js"></script>
   <script src="shared/screens.js"></script>
   <script>
     const m = RawLabDesignManifest;
@@ -186,15 +194,38 @@
         .join("");
       document.querySelector("#summary").textContent =
         `${screens.length} 个已有稿功能条目 · ${ids.size} 个可直达界面/状态`;
+      const designs = RawLabDesign.iterationDesigns.filter((s) =>
+        s.platforms.includes(p),
+      );
+      const stateLink = (id) =>
+        `<a href="index.html?platform=${p}&scene=${id}">${RawLabDesign.descriptions[id]?.[0] || id}</a>`;
+      const supported = (id) =>
+        screens.some(
+          (s) => s.states.includes(id) && RawLabDesign.supportsScreen(s, id, p),
+        );
+      const statesOf = (item, kind) =>
+        item.states.filter(
+          (id) =>
+            supported(id) && RawLabDesign.iterationStateKinds[id] === kind,
+        );
+      document.querySelector("#iteration-summary").textContent =
+        `${designs.length} 个 ITER 条目 · 正常 / 异常 / 恢复均可直达 · 待评审`;
+      document.querySelector("#iteration-screens").innerHTML = designs
+        .map(
+          (item) =>
+            `<tr data-iteration="${item.iteration}"><td><a href="../editing-iteration/requirements.md">${item.iteration}</a><br>${item.title}<br><strong>待评审</strong></td>${["normal", "error", "recovery"].map((kind) => `<td data-state-kind="${kind}"><div class="states">${statesOf(item, kind).map(stateLink).join("")}</div></td>`).join("")}</tr>`,
+        )
+        .join("");
       const pending = RawLabDesign.pendingIterationDesigns.filter((s) =>
         s.platforms.includes(p),
       );
-      document.querySelector("#pending-summary").textContent =
-        `${pending.length} 个本轮待补条目 · 当前选择平台；不计入已有稿数量`;
+      document.querySelector("#pending-summary").textContent = pending.length
+        ? `${pending.length} 个本轮待补条目`
+        : "当前平台原覆盖表所列待补条目均已有稿，等候本轮评审；评审发现的缺口继续在此登记。";
       document.querySelector("#pending-screens").innerHTML = pending
         .map(
           (s) =>
-            `<tr data-pending-iteration="${s.iteration}"><td><a href="../editing-iteration/requirements.md">${s.iteration}</a><br>${s.title}<br><strong>待设计</strong><br>${s.platforms.join(" / ")}</td><td>${s.pages.map(([id, name]) => `${name}<br><code>${id}</code>`).join("<br>")}</td><td>${s.normal}</td><td>异常：${s.error}<br>恢复：${s.recovery}</td></tr>`,
+            `<tr data-pending-iteration="${s.iteration}"><td>${s.iteration} · ${s.title}</td><td>${s.normal}</td><td>${s.error}</td><td>${s.recovery}</td></tr>`,
         )
         .join("");
       document.querySelector("#out-of-iteration").textContent =

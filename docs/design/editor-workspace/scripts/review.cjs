@@ -8,6 +8,7 @@ const fs = require("node:fs"),
 const { chromium } = require(
   process.env.RAWLAB_DESIGN_PLAYWRIGHT || "playwright",
 );
+const { reviewIteration } = require("./review-iteration.cjs");
 const { reviewRegressions } = require("./review-regressions.cjs");
 const root = path.resolve(__dirname, "..");
 const base = (
@@ -21,7 +22,12 @@ fs.mkdirSync(out, { recursive: true });
 const sandbox = {};
 sandbox.window = sandbox;
 vm.createContext(sandbox);
-for (const file of ["manifest.js", "shared/model.js", "shared/screens.js"])
+for (const file of [
+  "manifest.js",
+  "shared/model.js",
+  "shared/iteration-model.js",
+  "shared/screens.js",
+])
   vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), sandbox);
 const D = sandbox.RawLabDesign,
   S = sandbox.RawLabDesignScreens;
@@ -87,7 +93,11 @@ const shots = new Set([
         if (id.startsWith("tool-"))
           assert.equal(
             await page
-              .locator('[data-tool="' + id.slice(5) + '"][aria-pressed=true]')
+              .locator(
+                '[data-tool="' +
+                  (D.iterationWorkspace[id]?.tool || id.slice(5)) +
+                  '"][aria-pressed=true]',
+              )
               .count(),
             1,
             current,
@@ -591,6 +601,7 @@ const shots = new Set([
       await page.close();
     }
     const regressions = await reviewRegressions(browser, base);
+    const iteration = await reviewIteration(browser, base);
     const page = await browser.newPage({
       viewport: { width: 1440, height: 1000 },
     });
@@ -620,6 +631,7 @@ const shots = new Set([
       designVersion: sandbox.RawLabDesignManifest.designVersion,
       states,
       regressions,
+      iteration,
       failures,
       checks,
     };

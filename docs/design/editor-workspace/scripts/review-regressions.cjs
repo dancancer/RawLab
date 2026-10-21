@@ -379,34 +379,47 @@ async function reviewRegressions(browser, base) {
             1,
           );
         });
-      await check("pending-designs-are-not-drawn-scenes", async () => {
-        await page.goto(base + "coverage.html");
-        await page.selectOption("#platform", platform);
-        const iterations = await page
-          .locator("#pending-screens tr")
-          .evaluateAll((els) => els.map((e) => e.dataset.pendingIteration));
-        assert.deepEqual(
-          iterations,
-          Array.from(
-            { length: mobile ? 8 : 9 },
-            (_, i) => "ITER-" + String(i + 3).padStart(2, "0"),
-          ),
-        );
-        assert.equal(
-          await page.locator("#pending-screens a[href*='scene=']").count(),
-          0,
-        );
-        assert.equal(
-          (await page.locator("#out-of-iteration").innerText()).includes(
-            "复制",
-          ),
-          false,
-        );
-        assert.equal(
-          (await page.locator("#out-of-iteration").innerText()).includes("HDR"),
-          true,
-        );
-      });
+      await check(
+        "iteration-designs-have-normal-error-recovery-links",
+        async () => {
+          await page.goto(base + "coverage.html");
+          await page.selectOption("#platform", platform);
+          const iterations = await page
+            .locator("#iteration-screens tr")
+            .evaluateAll((els) => els.map((e) => e.dataset.iteration));
+          assert.deepEqual(
+            iterations,
+            Array.from(
+              { length: mobile ? 8 : 9 },
+              (_, i) => "ITER-" + String(i + 3).padStart(2, "0"),
+            ),
+          );
+          assert.equal(await page.locator("#pending-screens tr").count(), 0);
+          for (const kind of ["normal", "error", "recovery"]) {
+            assert.equal(
+              await page
+                .locator(
+                  `#iteration-screens td[data-state-kind="${kind}"]:not(:has(a))`,
+                )
+                .count(),
+              0,
+              kind + " missing design",
+            );
+          }
+          assert.equal(
+            (await page.locator("#out-of-iteration").innerText()).includes(
+              "复制",
+            ),
+            false,
+          );
+          assert.equal(
+            (await page.locator("#out-of-iteration").innerText()).includes(
+              "HDR",
+            ),
+            true,
+          );
+        },
+      );
       assert.deepEqual(errors, []);
     } finally {
       await page.close();
@@ -418,7 +431,7 @@ async function reviewRegressions(browser, base) {
     limitations: [
       "Chromium headless 的视口和合成 pointer/生命周期事件；不替代物理设备、原生手势/后台或读屏验证。",
       "旧小数以原型内存 fixture 注入；不证明真实照片记录保存与恢复。",
-      "待补设计清单只核对范围与状态登记，不计为已有稿或原生功能通过。",
+      "迭代覆盖检查只证明三类状态有深链，不证明整轮需求冻结或原生功能通过。",
     ],
   };
 }

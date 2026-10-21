@@ -4,6 +4,8 @@
 
 [总技术方案](technical-design.md) · [roadmap](../../architecture/roadmap.md) · [r4 四端设计资产](../editor-workspace/README.md) · [工作区详细子需求](../editor-workspace/requirements.md)
 
+四端待补界面现已在原资产增量绘制，按[覆盖表](../editor-workspace/coverage.html)和[新增交互说明](../editor-workspace/iteration-design.md)评审正常、异常与恢复状态；批准/实现状态仍以资产元信息为准。这不改变下列需求或算法冻结门槛。
+
 ## 1. 基线、已有能力与交付边界
 
 代码/设计基线为 `13efd9c342f15029c47e302c467423cb45fc4f60`。r4 是已经画出的界面的参考，不是完整功能范围；它没有画完的第二阶段能力也必须纳入本次需求、技术方案和后续设计补齐。实现、设计确认和验证状态分别维护。

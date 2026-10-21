@@ -33,9 +33,6 @@ window.RawLabDesignFlows = (() => {
   // 设置类的开 / 关统一使用开关组件；照片多选和“已核对”确认仍是勾选框。
   const toggle = (label, attrs, checked, hint = "") =>
     `<label class="flow-toggle"><span>${label}${hint ? `<small>${hint}</small>` : ""}</span><input type="checkbox" role="switch" class="switch" ${attrs} ${checked ? "checked" : ""}></label>`;
-  // 第二阶段入口先占位并明确不可用，避免下一轮再改导航。
-  const planned = (text) =>
-    `<div class="flow-row planned" aria-disabled="true"><span>${text}<small>第二阶段规划，当前不可用</small></span><span class="tag">规划中</span></div>`;
   const error = (title, text) =>
     `<div class="flow-error">${context.icon("warning")}<div><strong>${title}</strong><p>${text}</p></div></div>`;
   function open(id, options = {}) {
@@ -45,6 +42,7 @@ window.RawLabDesignFlows = (() => {
       batchSnapshot = { settings: context?.snapshot() || null };
     clearTimeout(timer);
     active = id;
+    RawLabIteration.onOpen(id, options);
     if (options.seed) {
       if (id === "batch-select") selected = new Set();
       else if (id.startsWith("batch-") && !selected.size)
@@ -119,6 +117,7 @@ window.RawLabDesignFlows = (() => {
     let body = "",
       footer = "",
       sub = "";
+    if (RawLabIteration.hasFlow(active)) return RawLabIteration.content(active);
     if (active === "more") {
       body =
         link("import", "打开照片") +
@@ -134,7 +133,7 @@ window.RawLabDesignFlows = (() => {
         (context.mobile
           ? `<button class="flow-row" data-flow-action="toggle-dock"><span>${context.dockVisible() ? "隐藏调整面板" : "显示调整面板"}</span></button><button class="flow-row" data-flow-action="reset-all"><span>重置全部调整…</span></button>`
           : "") +
-        `<h3>调整复用</h3>${planned("复制调整")}${planned("粘贴调整")}`;
+        `<h3>调整复用</h3>${link("copy-scope", "复制/选择调整")}${link(RawLabIteration.canPaste() ? "paste-result" : "paste-empty", "粘贴调整")}${link("user-presets", "我的调整预设")}${link("history-single", "当前照片历史")}${link("batch-sync", "批量同步与逐张微调")}`;
     } else if (active === "import") {
       body = `<p class="flow-lead">打开 RAW 或支持的普通图片</p>${p === "ios" ? link("system-picker", "从照片图库选择") + link("system-picker", "从文件选择") : p === "android" ? link("library", "从相册选择") + link("system-picker", "从文件选择") : link("system-picker", "选择照片文件") + link("destination", "添加照片文件夹")}${note("继续前保存当前照片的调整。原始文件保持只读。")}`;
     } else if (active === "system-picker") {
@@ -367,7 +366,7 @@ window.RawLabDesignFlows = (() => {
     } else if (active === "about") {
       body = `<div class="flow-result"><h3>RawLab</h3><p>版本 0.8.2（设计示例）</p></div>${link("project", "GitHub 项目")}${link("author", "作者")}${link("language", "语言", language)}${p === "android" ? link("mobile-update", "检查更新") : link("update-settings", "软件更新")}${link("privacy", "使用统计与隐私")}`;
     } else if (active === "update-settings") {
-      body = `<div class="flow-static"><span>当前版本</span><strong>0.8.2（示例）</strong></div>${toggle("自动检查更新", 'data-flow-field="auto-check"', autoCheck)}${toggle("自动下载并安装更新", 'data-flow-field="auto-install"', autoInstall, "先保存调整、等待导出结束，在退出或重启时安装")}${note("上次检查：今天 09:41（示例）。更新提示只询问本次是否安装，长期设置在这里修改。")}`;
+      body = `<div class="flow-static"><span>当前版本</span><strong>0.8.2（示例）</strong></div>${toggle("自动检查更新", 'data-flow-field="auto-check"', autoCheck)}${RawLabIteration.installSupport() ? toggle("自动下载并安装更新", 'data-flow-field="auto-install"', autoInstall, "先保存调整、等待导出结束，在退出或重启时安装") : note("当前安装方式仅支持手动更新；先迁移到可信种子版。")}${link("update-install-support", "安装方式与支持范围")}${link("update-seed-migration", "从旧版手动迁移")}${note("上次检查：今天 09:41（示例）。更新提示只询问本次是否安装，长期设置在这里修改。")}`;
       footer = action("check-now", "立即检查", "primary");
     } else if (active === "mobile-update") {
       body = `${toggle("自动检查更新", "", true)}<p>发现更新时前往官方发布页下载。</p>${note("Android 保持现有检查与手动下载方式，本轮不设计移动端自动安装。")}`;
@@ -417,7 +416,7 @@ window.RawLabDesignFlows = (() => {
         ["--text-lg", "标题"],
         ["--text-2xl", "空状态标题"],
       ];
-      body = `<h3>颜色令牌</h3>${note("黄色只表示选中、已改动和进度；重置、自动等次要操作使用中性灰。")}<div class="token-grid">${tokens.map(([v, t]) => `<div><i style="background:var(${v})"></i><strong>${t}</strong><code>${v}</code></div>`).join("")}</div><h3>字号阶梯</h3>${note("大字号模式整体替换这一组令牌，控件尺寸随之放大。")}<div class="type-scale">${sizes.map(([v, t]) => `<p style="font-size:var(${v})"><code>${v}</code>${t}</p>`).join("")}</div><h3>按钮</h3><div class="flow-form-inline">${action("component-demo", "主要", "primary")}${action("component-demo", "次要")}<button class="quiet" data-flow-action="component-demo">${context.icon("reset")}重置</button>${action("component-demo", "不可用", "secondary", true)}<button class="secondary destructive" data-flow-action="component-demo">放弃修改</button></div><h3>滑杆与数值</h3>${note("填充从默认值画到当前值：双向参数从中点向两侧；数值未改动时为中性色，改动后为黄色。HSL 轨道显示颜色变化方向。")}<div class="component-axes">${context.axis("双向 · 默认", 0, "contrast")}${context.axis("双向 · 负向已改动", -35, "highlights")}${context.axis("单向 · 已改动", 40, "sharpen", 0, 200)}${context.axis("单向 · 默认", 25, "grainSize", 0, 100)}</div><h3>分组与工具</h3><div class="component-row"><span class="group-sample"><span class="sample-dot"></span>已调整分组带小点，完整说明在可访问名称中</span><span class="tool-tabs"><button class="selected" aria-pressed="true">曝光<i class="tab-dot"></i></button><button>高光<i class="tab-dot"></i></button><button>对比度</button><button class="planned" disabled>我的预设<small>规划中</small></button></span></div><h3>语义图标</h3><div class="icon-catalog">${Object.entries(
+      body = `<h3>颜色令牌</h3>${note("黄色只表示选中、已改动和进度；重置、自动等次要操作使用中性灰。")}<div class="token-grid">${tokens.map(([v, t]) => `<div><i style="background:var(${v})"></i><strong>${t}</strong><code>${v}</code></div>`).join("")}</div><h3>字号阶梯</h3>${note("大字号模式整体替换这一组令牌，控件尺寸随之放大。")}<div class="type-scale">${sizes.map(([v, t]) => `<p style="font-size:var(${v})"><code>${v}</code>${t}</p>`).join("")}</div><h3>按钮</h3><div class="flow-form-inline">${action("component-demo", "主要", "primary")}${action("component-demo", "次要")}<button class="quiet" data-flow-action="component-demo">${context.icon("reset")}重置</button>${action("component-demo", "不可用", "secondary", true)}<button class="secondary destructive" data-flow-action="component-demo">放弃修改</button></div><h3>滑杆与数值</h3>${note("填充从默认值画到当前值：双向参数从中点向两侧；数值未改动时为中性色，改动后为黄色。HSL 轨道显示颜色变化方向。")}<div class="component-axes">${context.axis("双向 · 默认", 0, "contrast")}${context.axis("双向 · 负向已改动", -35, "highlights")}${context.axis("单向 · 已改动", 40, "sharpen", 0, 200)}${context.axis("单向 · 默认", 25, "grainSize", 0, 100)}</div><h3>分组与工具</h3><div class="component-row"><span class="group-sample"><span class="sample-dot"></span>已调整分组带小点，完整说明在可访问名称中</span><span class="tool-tabs"><button class="selected" aria-pressed="true">曝光<i class="tab-dot"></i></button><button>高光<i class="tab-dot"></i></button><button>对比度</button><button class="planned" disabled>AI 降噪<small>后续阶段</small></button></span></div><h3>语义图标</h3><div class="icon-catalog">${Object.entries(
         RawLabDesignIcons,
       )
         .map(
@@ -435,6 +434,7 @@ window.RawLabDesignFlows = (() => {
   }
   // 有上一级时只显示返回；顶层界面只显示关闭，两者不同时出现。
   function parentOf(id) {
+    if (RawLabIteration.hasFlow(id)) return RawLabIteration.parentOf(id);
     if (["system-picker", "destination"].includes(id)) return pickerReturn;
     if (id === "batch-confirm") return "batch-select";
     if (id === "batch-inspect") return "batch-confirm";
@@ -458,9 +458,14 @@ window.RawLabDesignFlows = (() => {
   function render(ctx) {
     context = ctx;
     if (!active) return "";
-    const busy = ["export-running", "batch-running", "batch-stopping"].includes(
-      active,
-    );
+    if (active.startsWith("update-") && RawLabIteration.hasFlow(active))
+      return RawLabIteration.updateFrame(active, ctx);
+    const busy = [
+      "export-running",
+      "batch-running",
+      "batch-stopping",
+      "batch-per-target-running",
+    ].includes(active);
     const result = content();
     const { body, sub } = result;
     let footer = result.footer;
@@ -558,7 +563,12 @@ window.RawLabDesignFlows = (() => {
     else if (a === "apply-complete-settings") {
       close();
       context.notify("完整设置已保存 · 设计示例");
-    } else if (a === "destination-selected")
+    } else if (
+      a === "destination-selected" &&
+      pickerReturn.startsWith("batch-per-target")
+    )
+      RawLabIteration.destinationSelected(pickerReturn);
+    else if (a === "destination-selected")
       open(
         pickerReturn === "batch-permission"
           ? "batch-running"
@@ -683,9 +693,12 @@ window.RawLabDesignFlows = (() => {
       return active;
     },
     get busy() {
-      return ["export-running", "batch-running", "batch-stopping"].includes(
-        active,
-      );
+      return [
+        "export-running",
+        "batch-running",
+        "batch-stopping",
+        "batch-per-target-running",
+      ].includes(active);
     },
   };
 })();

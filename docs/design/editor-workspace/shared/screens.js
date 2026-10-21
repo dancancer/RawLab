@@ -68,7 +68,11 @@ window.RawLabDesignScreens = [
       area: "编辑工具",
       platforms: ["ios", "android", "macos", "windows"],
       states: ["tool-" + id],
-      scope: "existing",
+      scope: RawLabDesign.iterationToolIds?.includes(id)
+        ? "proposed"
+        : id === "curve"
+          ? "existing_and_proposed"
+          : "existing",
       group,
       source: "各端现有调整面板",
     })),
@@ -192,8 +196,8 @@ window.RawLabDesignScreens = [
     source: "共用 SVG 语义图标与 Web 原型组件",
   },
 ];
-// 待补设计单独登记；不加入上面的可直达场景或浏览器矩阵。
-window.RawLabDesign.pendingIterationDesigns = [
+// 持续保留迭代追踪关系；只有实际有画面的状态才加入可直达目录。
+window.RawLabDesign.iterationDesigns = [
   {
     iteration: "ITER-03",
     title: "复制粘贴与会话历史",
@@ -501,3 +505,20 @@ RawLabDesign.descriptions["wb-unavailable"] = [
   "保留相机模式并说明不可用原因，不显示伪造的拍摄色温。",
   ["手动色温与色调不可用", "其他可用调整仍可进入"],
 ];
+
+// r6：上述待补项已有独立正常/异常/恢复稿，保持待评审状态。
+RawLabDesignScreens.push(...RawLabDesign.iterationScenes);
+Object.assign(RawLabDesign.flowTitles, RawLabDesign.iterationFlowTitles);
+for (const design of RawLabDesign.iterationDesigns) {
+  const screens = RawLabDesignScreens.filter(
+    (screen) =>
+      screen.iteration === design.iteration ||
+      (screen.scope === "proposed" &&
+        design.pages.some(([id]) => screen.states.includes(id))),
+  );
+  design.designStatus = "in_review";
+  design.states = [...new Set(screens.flatMap((screen) => screen.states))];
+}
+RawLabDesign.pendingIterationDesigns = RawLabDesign.iterationDesigns.filter(
+  (item) => item.designStatus === "pending",
+);

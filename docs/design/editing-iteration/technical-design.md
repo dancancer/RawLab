@@ -273,7 +273,7 @@ ITER-05/06/10 当前均为**未实施、数值合同待冻结**。上文选定�
 | Windows owner   | `Adjustments` nullable 扩展/AdjustmentSnapshot、EditWorkflow、AgentRecipe、主窗口/新工具面板、BatchExport、Velopack adapter/发行脚本                                                |
 | 设计/资源 owner | 在现有资产增加 scope dialog、paste result、history conflict、preset CRUD、selection session、grading、target HSL、curve、clarity/dehaze 等稳定 screen ID 和四端稿；六语与无障碍同步 |
 
-r4 没画出的新功能在原资产增量补齐，不能用空链接或 toast 算覆盖；不另复制四套静态图。资产元信息的实现状态按实际端登记，设计通过不等于功能通过。已画的更新状态也须关联真实 adapter 后才能验收。
+原覆盖表中的新功能已在原资产增量补稿，按[覆盖表](../editor-workspace/coverage.html)与[新增交互说明](../editor-workspace/iteration-design.md)等待评审；不能用空链接或 toast 算覆盖；不另复制四套静态图。资产元信息的实现状态按实际端登记，设计通过不等于功能通过。已画的更新状态也须关联真实 adapter 后才能验收。
 
 ## 12. 交付顺序、联合验证与退出条件
 
