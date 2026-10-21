@@ -16,6 +16,7 @@ from .config import ServerConfig
 COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
 RECIPE_VERSIONS = {1, 2, 3, 4}
 MAX_JSON_BYTES = 4 * 1024 * 1024
+IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
 
 
@@ -48,6 +49,12 @@ class Envelope:
 class Capabilities:
     recipe_versions: tuple[int, ...]
     result: dict
+
+
+@dataclass(frozen=True)
+class CheckedPath:
+    lexical: Path
+    canonical: Path
 
 
 def failure(command, error):
@@ -185,51 +192,76 @@ class CliAdapter:
     def _inside(path, roots):
         return any(path == root or root in path.parents for root in roots)
 
-    def _read_path(self, value, base=None, *, require_file=True):
+    @staticmethod
+    def _path_text(value, description):
         if not isinstance(value, (str, Path)) or not str(value):
-            raise AdapterError("Expected a nonempty file path")
-        path = Path(value)
+            raise AdapterError(f"Expected a nonempty {description}")
+        text = str(value)
+        try:
+            encoded = os.fsencode(text)
+        except (TypeError, UnicodeError, ValueError) as e:
+            raise AdapterError(f"{description.capitalize()} contains an invalid path") from e
+        if b"\x00" in encoded:
+            raise AdapterError(f"{description.capitalize()} contains an invalid path")
+        return text
+
+    def _lexical_path(self, value, base=None, *, description, normalize=True):
+        text = self._path_text(value, description)
+        path = Path(text)
         if not path.is_absolute():
             if base is None:
                 raise AdapterError("Tool paths must be absolute")
             path = base / path
+        return Path(os.path.normpath(path)) if normalize else path
+
+    def _read_path(self, value, base=None, *, require_file=True, normalize=True):
+        path = self._lexical_path(value, base, description="file path", normalize=normalize)
         try:
-            path = path.resolve(strict=require_file)
-        except (OSError, RuntimeError) as e:
-            raise AdapterError(f"Cannot resolve input file: {value}", "io_error") from e
-        if not self._inside(path, self.config.read_roots) or (require_file and not path.is_file()):
+            canonical = path.resolve(strict=False)
+        except OSError as e:
+            raise AdapterError(f"Cannot resolve input file: {value}", "io_error", IO_ERROR_STATUS) from e
+        except RuntimeError as e:
+            raise AdapterError(f"Cannot resolve input file: {value}") from e
+        if not self._inside(canonical, self.config.read_roots):
             raise AdapterError("Input is not a file within an allowed read root")
-        return path
+        if require_file:
+            try:
+                canonical = path.resolve(strict=True)
+            except OSError as e:
+                raise AdapterError(f"Cannot resolve input file: {value}", "io_error", IO_ERROR_STATUS) from e
+            except RuntimeError as e:
+                raise AdapterError(f"Cannot resolve input file: {value}") from e
+            if not self._inside(canonical, self.config.read_roots) or not path.is_file():
+                raise AdapterError("Input is not a file within an allowed read root")
+        return CheckedPath(path, canonical)
 
     def _output_path(self, value, base=None, *, require_parent=True):
-        if not isinstance(value, (str, Path)) or not str(value):
-            raise AdapterError("Expected a nonempty output path")
-        path = Path(value)
-        if not path.is_absolute():
-            if base is None:
-                raise AdapterError("Tool paths must be absolute")
-            path = base / path
+        path = self._lexical_path(value, base, description="output path")
         if require_parent and path.is_symlink():
             raise AdapterError("Output cannot be a symbolic link")
         try:
-            path = path.resolve()
-        except (OSError, RuntimeError) as e:
+            canonical = path.resolve()
+        except OSError as e:
+            raise AdapterError("Cannot resolve output path", "io_error", IO_ERROR_STATUS) from e
+        except RuntimeError as e:
             raise AdapterError("Cannot resolve output path") from e
-        if not self._inside(path, self.config.write_roots) or (require_parent and not path.parent.is_dir()):
+        if not self._inside(canonical, self.config.write_roots):
             raise AdapterError("Output parent must exist within an allowed write root")
-        return path
+        if require_parent and not path.parent.is_dir():
+            raise AdapterError("Output parent must exist within an allowed write root", "io_error", IO_ERROR_STATUS)
+        return CheckedPath(path, canonical)
 
     async def _recipe(self, recipe_path, preview_output=None, *, validating=False):
         if self.capabilities is None:
             raise AdapterError("CLI negotiation has not completed", "processing_error")
-        source = self._read_path(recipe_path)
+        source = self._read_path(recipe_path, normalize=False)
         # CLI 自己解析原文件，保留重复键、整数 token、深度等严格格式校验。
-        validated = await self._run("validate_recipe", ["--recipe", recipe_path, "--print-recipe", "--json"])
+        validated = await self._run("validate_recipe", ["--recipe", source.lexical, "--print-recipe", "--json"])
         if not validated.ok:
             raise AdapterError(validated.error.message, validated.error.code, validated.error.status)
         recipe = validated.result
         # 符号链接 recipe 的相对路径仍以调用方传入目录为准，和 CLI 一致。
-        base = Path(recipe_path).parent
+        base = source.lexical.parent
         try:
             version = recipe["schema_version"]
             if type(version) is not int or version not in self.capabilities.recipe_versions:
@@ -238,24 +270,24 @@ class CliAdapter:
                 if not isinstance(value, str) or not value:
                     raise AdapterError("Expected a nonempty recipe path", "invalid_recipe")
                 # CLI 先 lexically_normal，再交给文件系统解析符号链接。
-                return Path(os.path.normpath(base / value))
+                return self._lexical_path(value, base, description="recipe path")
 
             image = self._read_path(reference(recipe["input"]["path"]), require_file=not validating)
             if not validating:
-                recipe["input"]["path"] = str(image)
-            protected = {source, image}
+                recipe["input"]["path"] = str(image.lexical)
+            protected = {source.canonical, image.canonical}
             look = recipe.get("edits", {}).get("look")
             if look and look.get("path"):
                 look_path = self._read_path(reference(look["path"]), require_file=not validating)
-                protected.add(look_path)
+                protected.add(look_path.canonical)
                 if not validating:
-                    look["path"] = str(look_path)
+                    look["path"] = str(look_path.lexical)
             output = self._output_path(preview_output if preview_output is not None else reference(recipe["output"]["path"]),
                                        require_parent=not validating)
-            if not validating and output in protected:
+            if not validating and output.canonical in protected:
                 raise AdapterError("Output cannot overwrite the recipe, input or look")
             if not validating:
-                recipe["output"]["path"] = str(output)
+                recipe["output"]["path"] = str(output.lexical)
             return source, recipe, output
         except (KeyError, TypeError, AttributeError, ValueError) as e:
             raise AdapterError(f"Malformed recipe: {e}") from e
@@ -263,7 +295,7 @@ class CliAdapter:
     async def image_info(self, image_path):
         try:
             path = self._read_path(image_path)
-            return await self._run("info", ["--info", path, "--json"])
+            return await self._run("info", ["--info", path.lexical, "--json"])
         except AdapterError as e:
             return failure("info", e)
 
@@ -288,13 +320,16 @@ class CliAdapter:
     async def _render_task(self, command, recipe_path, preview_output, long_edge):
         folder = None
         try:
+            if command == "preview":
+                # Reject the public destination before asking the CLI to validate the recipe.
+                self._output_path(preview_output)
             _, recipe, output = await self._recipe(recipe_path, preview_output, validating=command == "validate_recipe")
             if command == "validate_recipe":
                 return Envelope(command, True, recipe)
-            if output.exists() or output.is_symlink():
+            if output.lexical.exists() or output.lexical.is_symlink():
                 raise AdapterError("Output already exists; overwriting is not allowed")
-            folder = Path(tempfile.mkdtemp(prefix=".rawlab-mcp-", dir=output.parent))
-            staged = folder / ("result" + output.suffix)
+            folder = Path(tempfile.mkdtemp(prefix=".rawlab-mcp-", dir=output.canonical.parent))
+            staged = folder / ("result" + output.lexical.suffix)
             recipe["output"]["path"] = str(staged)
             private_recipe = folder / "recipe.json"
             private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
@@ -306,15 +341,22 @@ class CliAdapter:
                 return result
             if not staged.is_file() or staged.is_symlink() or result.result.get("output_path") != str(staged):
                 raise AdapterError("CLI did not produce the expected output", "output_io_error")
-            if self._output_path(output) != output:
+            try:
+                current_output = self._output_path(output.lexical)
+            except AdapterError as e:
+                raise AdapterError("Output directory changed during rendering", "output_io_error") from e
+            if current_output.canonical != output.canonical:
                 raise AdapterError("Output directory changed during rendering", "output_io_error")
             # 同卷 hard link 是无覆盖的原子发布；目标已存在时不会替换任何文件。
-            os.link(staged, output)
-            return Envelope(command, True, {**result.result, "output_path": str(output)})
+            os.link(staged, output.lexical)
+            return Envelope(command, True, {**result.result, "output_path": str(output.lexical)})
         except AdapterError as e:
             return failure(command, e)
         except (OSError, ValueError) as e:
             return failure(command, AdapterError(str(e), "output_io_error"))
         finally:
             if folder is not None:
-                shutil.rmtree(folder)
+                try:
+                    shutil.rmtree(folder)
+                except OSError as error:
+                    logger.warning("Could not clean up private staging directory %s: %s", folder, error)

@@ -77,3 +77,101 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(failure.structured_content["error"]["code"], "invalid_recipe")
             self.assertEqual(source.read_bytes(), original)
             self.assertEqual(list(root.glob(".rawlab-mcp-*")), [])
+
+    async def test_symlink_input_and_output_parent_preserve_cli_fields_and_pixels(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-symlink-") as directory:
+            root = Path(directory).resolve()
+            source = root / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            input_link = root / "photo-link.dng"
+            input_link.symlink_to(source)
+            physical = root / "physical"
+            physical.mkdir()
+            output_alias = root / "output-alias"
+            output_alias.symlink_to(physical, target_is_directory=True)
+
+            direct_info = subprocess.run(
+                [CLI, "--info", str(input_link), "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(direct_info.returncode, 0, direct_info.stderr)
+            direct_info_result = json.loads(direct_info.stdout)["result"]
+
+            direct_recipe = root / "direct.json"
+            direct_recipe.write_text(json.dumps({
+                "schema_version": 4,
+                "input": {"path": input_link.name},
+                "edits": {"exposure": {"mode": "scene", "ev": 0.0}},
+                "output": {"path": str(output_alias / "direct.png"), "format": "png"},
+            }), encoding="utf-8")
+            direct_export = subprocess.run(
+                [CLI, "--recipe", str(direct_recipe), "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(direct_export.returncode, 0, direct_export.stderr)
+            direct_export_value = json.loads(direct_export.stdout)
+            self.assertTrue(direct_export_value["ok"])
+
+            mcp_recipe = root / "mcp.json"
+            mcp_recipe.write_text(json.dumps({
+                "schema_version": 4,
+                "input": {"path": input_link.name},
+                "edits": {"exposure": {"mode": "scene", "ev": 0.0}},
+                "output": {"path": str(output_alias / "mcp.png"), "format": "png"},
+            }), encoding="utf-8")
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                info = await client.call_tool("image_info", {"image_path": str(input_link)})
+                self.assertFalse(info.is_error, str(info))
+                self.assertEqual(info.structured_content["result"], direct_info_result)
+                exported = await client.call_tool("export_photo", {"recipe_path": str(mcp_recipe)})
+                self.assertFalse(exported.is_error, str(exported))
+                self.assertEqual(
+                    exported.structured_content["result"]["format"],
+                    direct_export_value["result"]["format"],
+                )
+                self.assertEqual(
+                    exported.structured_content["result"]["output_path"],
+                    str(output_alias / "mcp.png"),
+                )
+            self.assertEqual((physical / "mcp.png").read_bytes(), (physical / "direct.png").read_bytes())
+            self.assertEqual(list(root.glob(".rawlab-mcp-*")), [])
+
+    async def test_recipe_source_keeps_raw_lexical_path_for_native_open(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-recipe-path-") as directory:
+            root = Path(directory).resolve()
+            allowed = root / "allowed"
+            physical = allowed / "physical"
+            nested = physical / "nested"
+            allowed.mkdir()
+            nested.mkdir(parents=True)
+            alias = allowed / "alias"
+            alias.symlink_to(nested, target_is_directory=True)
+            source = allowed / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            (physical / "edit.json").write_text(json.dumps({
+                "schema_version": 4,
+                "input": {"path": source.name},
+                "edits": {"exposure": {"mode": "scene", "ev": 0.0}},
+                "output": {"path": "out.png", "format": "png"},
+            }), encoding="utf-8")
+            recipe = allowed / "alias" / ".." / "edit.json"
+
+            direct = subprocess.run(
+                [CLI, "--recipe", str(recipe), "--print-recipe", "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(direct.returncode, 0, direct.stderr)
+            direct_result = json.loads(direct.stdout)["result"]
+
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(allowed), "--write-root", str(allowed),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                result = await client.call_tool("validate_recipe", {"recipe_path": str(recipe)})
+                self.assertFalse(result.is_error, str(result))
+                self.assertEqual(result.structured_content["result"], direct_result)

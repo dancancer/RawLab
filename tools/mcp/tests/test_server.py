@@ -82,6 +82,27 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertTrue(result.is_error)
 
+    async def test_illegal_paths_remain_structured_invalid_arguments(self):
+        f = self.fixture
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "rawlab_mcp", "--cli", str(f.cli),
+                  "--read-root", str(f.read_root), "--write-root", str(f.write_root)],
+            env={**os.environ, "PYTHONPATH": str(test_adapter.SRC),
+                 "FAKE_ARGV_LOG": str(f.argv_log), "FAKE_RECIPE_LOG": str(f.recipe_log)},
+        )
+        async with Client(params) as client:
+            for name, arguments in [
+                ("image_info", {"image_path": str(f.input_path) + "\x00tail"}),
+                ("validate_recipe", {"recipe_path": str(f.recipe_path) + "\x00tail"}),
+                ("render_preview", {"recipe_path": str(f.recipe_path),
+                                     "output_path": str(f.write_root / "bad\x00.png")}),
+            ]:
+                result = await client.call_tool(name, arguments)
+                self.assertTrue(result.is_error)
+                self.assertEqual(result.structured_content["error"]["code"], "invalid_argument")
+                self.assertIsNone(result.structured_content["error"]["status"])
+
 
 if __name__ == "__main__":
     unittest.main()
