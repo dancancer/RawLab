@@ -259,6 +259,8 @@ async function reviewIteration(browser, base) {
         );
         await click("open:batch-per-target-export");
         await click("batch:freeze");
+        await click("target-draft:discard");
+        await click("batch:freeze");
         const frozen = (await inspect()).frozenItems;
         assert.equal(
           frozen.find((p) => p.photo.id === "photo-1").snapshot.values.exposure,

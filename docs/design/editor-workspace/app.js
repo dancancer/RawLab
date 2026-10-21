@@ -10,6 +10,10 @@ const UPDATE_SCENES = [
   "updating-wait",
   "update-error",
   "update-ready",
+  "update-verifying",
+  "update-installing",
+  "update-pending",
+  "update-complete",
 ];
 let scene = "groups",
   group = null,
@@ -172,14 +176,30 @@ function setScene(s) {
             ? "lens"
             : "geometry"
           : null;
-  download =
-    s === "updating-wait"
-      ? "waiting"
-      : s === "update-error"
-        ? "error"
-        : s === "update-ready"
-          ? "ready"
-          : "available";
+  if (
+    [
+      "update-verifying",
+      "update-installing",
+      "update-pending",
+      "update-complete",
+    ].includes(s)
+  )
+    download = s.slice(7);
+  else if (s === "updating-wait") download = "waiting";
+  else if (s === "update-error") download = "error";
+  else if (s === "update-ready") download = "ready";
+  else if (
+    s === "update" &&
+    ![
+      "downloading",
+      "verifying",
+      "waiting",
+      "pending",
+      "installing",
+      "ready",
+    ].includes(download)
+  )
+    download = "available";
   if (s.startsWith("tool-")) {
     tool = s.slice(5);
     group =
@@ -244,6 +264,7 @@ const winMenus = {
     ["iteration-paste", "粘贴调整…", "Ctrl+Shift+V"],
     ["iteration-batch", "批量同步与逐张微调…"],
     ["iteration-history", "操作历史…"],
+    ["iteration-presets", "我的调整预设…"],
     ["-"],
     ["reset-tool", "重置本工具"],
     ["reset-all", "重置全部调整…"],
@@ -762,17 +783,48 @@ function updateWindow() {
       extra: progress(62, "下载进度"),
       actions: act("cancel-download", "取消下载"),
     },
+    verifying: {
+      title: "正在校验更新",
+      copy: "核对发行身份、签名与包完整性。校验通过前不能安装。此处为状态演示。",
+      extra: progress(85, "校验进度"),
+      actions:
+        act("cancel-download", "取消") +
+        act("verify-failure", "模拟校验失败", "quiet"),
+    },
+    installing: {
+      title: "已通过安装前检查",
+      copy: "草稿和编辑已保存，任务已结束。以下仅演示安装结果，不替换应用或重启。",
+      extra: notes,
+      actions:
+        act("simulate-install-failed", "模拟安装中断") +
+        act("simulate-install-complete", "模拟安装完成", "primary"),
+    },
+    pending: {
+      title: "已安排下次退出时安装",
+      copy: "已通过安装前检查。继续编辑后，退出前将再次检查草稿、保存和任务。",
+      extra: notes,
+      actions:
+        act("cancel-install", "取消安排") +
+        act("simulate-exit", "模拟退出并检查", "primary"),
+    },
+    complete: {
+      title: "更新完成 · 设计示例",
+      copy: "已演示新版启动成功；实际应用版本和用户数据没有改变。",
+      extra: "",
+      actions: act("close-update", "完成", "primary"),
+    },
     waiting: {
       title: "等待当前任务完成",
       copy: "正在批量导出 3 / 12 张。任务结束并保存调整后再安装，不会强制结束导出。",
       extra: progress(25, "批量导出进度"),
       actions:
         act("close-update", "稍后提醒") +
-        act("wait-update", "任务结束后安装", "primary"),
+        act("wait-update", "任务结束后安装", "primary") +
+        '<button class="secondary" data-iter="update:task-complete">模拟任务结束并继续</button>',
     },
     ready: {
-      title: "更新已准备好",
-      copy: "当前调整已保存。重启 RawLab 后完成安装。",
+      title: "更新包已准备好",
+      copy: "更新包已完成校验。安装前还会检查所有草稿、保存状态和运行任务。",
       extra: notes,
       actions:
         act("install-later", "下次退出时安装") +
@@ -981,6 +1033,14 @@ function prototypeContext() {
     endEdit: () => iteration.afterEdit(),
     cancelEdit: () => iteration.cancelEdit(),
     startUpdateRetry: () => handleAction("retry-update"),
+    showUpdatePhase: (phase) => {
+      scene = "update";
+      download = phase;
+      render();
+    },
+    dismissUpdate: () => {
+      if (UPDATE_SCENES.includes(scene)) scene = "groups";
+    },
     getHsl: () => hsl,
     setHsl: (next) => {
       hsl = next;
@@ -1272,7 +1332,9 @@ function runAction(a, b) {
     setCompare(Number(a.slice(12)));
     render();
   } else if (a === "reset-color") {
+    iteration.beforeEdit();
     hsl[channel] = [0, 0, 0];
+    iteration.afterEdit();
     render();
   } else if (a === "settings" || a === "about") {
     RawLabDesignFlows.open(a);
@@ -1393,6 +1455,7 @@ function handleAction(a, b) {
           : "paste-empty",
         "iteration-batch": "batch-sync",
         "iteration-history": "history-single",
+        "iteration-presets": "user-presets",
       }[a],
     );
     render();
@@ -1513,18 +1576,38 @@ function handleAction(a, b) {
     render();
     setTimeout(() => {
       if (download !== "downloading") return;
-      download = "ready";
+      download = "verifying";
       render();
+      setTimeout(() => {
+        if (download !== "verifying") return;
+        download = "ready";
+        render();
+      }, 1600);
     }, 2200);
   } else if (a === "cancel-download") {
     download = "available";
     render();
   } else if (a === "wait-update") {
-    toast("已安排任务结束后安装 · 设计示例");
+    iteration.requestInstall("restart");
   } else if (a === "install-later") {
-    toast("将在下次退出 RawLab 时安装 · 设计示例");
-  } else if (a === "install-update") {
-    toast("重启与安装流程 · 设计示例，不执行安装");
+    iteration.requestInstall("exit");
+  } else if (a === "install-update" || a === "simulate-exit") {
+    iteration.requestInstall("restart");
+  } else if (a === "cancel-install") {
+    iteration.cancelInstall();
+    download = "ready";
+    render();
+  } else if (a === "verify-failure" || a === "simulate-install-failed") {
+    scene = "groups";
+    RawLabDesignFlows.open(
+      a === "verify-failure"
+        ? "update-signature-error"
+        : "update-install-recovery",
+    );
+    render();
+  } else if (a === "simulate-install-complete") {
+    download = "complete";
+    render();
   } else if (a === "manual-download") {
     toast("发布页入口 · 设计示例，不打开网络");
   } else if (a === "lens-profile") {
@@ -2024,7 +2107,9 @@ app.addEventListener("dblclick", (e) => {
   )
     return;
   const f = row.dataset.axisRow;
+  iteration.beforeEdit();
   if (f.startsWith("hsl-")) hsl[channel][Number(f.split("-")[1])] = 0;
   else values[f] = defaults[f];
+  iteration.afterEdit();
   render();
 });

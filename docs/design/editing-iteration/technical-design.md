@@ -121,7 +121,7 @@ capture 冻结选中字段，自动 WB/曝光/镜头保存模式，固定值保�
 
 ### 5.2 统一草稿预检
 
-复制、保存预设、粘贴、同步和提交逐张导出都先走本端同一个 draft preflight，复用 ITER-02 的“持久化成功后才算应用”规则。先结束当前滑杆手势；精确输入仍有本地草稿时，要求应用合法值或取消输入，不能悄悄读取半输入文本。几何/镜头草稿按下表处理，不通过后台 full apply 隐式提交。
+复制、保存/应用预设、粘贴、同步和提交逐张导出都先走本端同一个 draft preflight，复用 ITER-02 的“持久化成功后才算应用”规则。先结束当前滑杆手势；精确输入仍有本地草稿时，要求应用合法值或取消输入，不能悄悄读取半输入文本。几何/镜头草稿按下表处理，不通过后台 full apply 隐式提交。
 
 | 位置/操作                     | 用户选择与结果                                                                                                                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -144,7 +144,7 @@ undo/redo 使用 revision guard：目标当前状态仍匹配预期 after/before
 
 预设 registry 与照片记录分开，复用版本化/原子写入模式，首批放各端 app-support 私有目录：`id`、`name`、时间、payload/scope version、字段集合、逻辑值/模式、外观引用。名称不是 ID；重命名不改引用，删除不修改已应用照片。
 
-创建/覆盖先完整校验并原子替换；损坏 registry 保留原文件并给出恢复说明。应用完全调用第 5 节 prepare/commit/history，不另实现参数合并。原照片删除后仍能复用，外观缺失走统一 blocked/跳过流程，不自动替换成中性。新参数通过字段目录扩展；旧 preset 缺失新字段表示“未包含”，不是“将目标新字段归零”。
+创建/覆盖先完整校验并原子替换；损坏 registry 保留原文件并给出恢复说明。应用完全调用第 5 节 draft preflight/prepare/commit/history，不另实现参数合并。原照片删除后仍能复用，外观缺失走统一 blocked/跳过流程，不自动替换成中性。新参数通过字段目录扩展；旧 preset 缺失新字段表示“未包含”，不是“将目标新字段归零”。
 
 ## 7. ITER-08：批量编辑与逐张导出
 
@@ -154,7 +154,7 @@ undo/redo 使用 revision guard：目标当前状态仍匹配预期 after/before
 
 新增会话 `BatchSelectionSession`：稳定 identity 有序集合、选择集合、当前照片、返回位置及同步操作结果。进入单张复用同一 editor/保存/草稿守卫，不复制另一个参数面板。返回保留集合，源文件消失或授权丢失逐张标记，不按同名文件替代。
 
-同步操作另冻结 `sourceIdentity`；构造目标集合时按稳定身份去重并排除来源，确认页显示排除后的真实目标数量，不能按文件名比较。没有剩余目标时禁用提交并说明原因。写入前再次拒绝来源 identity，防止选择/导航变化把来源加回；IT-03/09 要覆盖来源也在多选集、同名异身份和重复目标。
+“跳过目标”独立于集合选择记录，仅影响本次操作，保留未应用草稿；返回集合仍保留事务历史入口。同步操作另冻结 `sourceIdentity`；构造目标集合时按稳定身份去重并排除来源，确认页显示排除后的真实目标数量，不能按文件名比较。没有剩余目标时禁用提交并说明原因。写入前再次拒绝来源 identity，防止选择/导航变化把来源加回；IT-03/09 要覆盖来源也在多选集、同名异身份和重复目标。
 
 同步走第 5 节事务并保存各目标；重新同步前显示范围，单张微调的未选项保留。同步失败与导出失败分别报告，不把一次成功导出视作已保存目标编辑。
 
@@ -243,13 +243,15 @@ ITER-05/06/10 当前均为**未实施、数值合同待冻结**。上文选定�
 - Windows 采用 Velopack，首批**仅支持 x64、当前用户 Setup 安装形态**自动更新；裸 ZIP 与 portable 不在自动安装支持矩阵，继续提供发布页手动下载。安装 App ID 拟为 `RawLab.Desktop`，安装目录与现有 `%LOCALAPPDATA%/RawLab` 数据目录分离，保持原数据路径。由现有发布目录生成正式 package/feed 与 Setup/Update；启动最早阶段在 WPF 初始化前接框架生命周期，Check/Download/Apply/restart 由平台 adapter 包装。[打包](https://docs.velopack.io/packaging/overview)、[集成](https://docs.velopack.io/integrating/overview)、[签名](https://docs.velopack.io/packaging/signing)。本方案要求 Authenticode 发行身份和经信任的更新元数据。
 - 当前 0.8.2 客户端没有 updater，不可能无修改自举为自动安装。第一版携带 updater 的“种子版”需通过现有发布页手动安装/迁移；之后才验收种子版→后续版自动升级。Windows 旧 ZIP 用户先退出旧进程，再手动运行可信 Setup，安装版读取原用户数据并核对记录/外观/任务，不自动删除旧目录；新安装版以更新/运行锁约束受管理实例，迁移与启动发现仍运行的旧 RawLab 时阻止写入并提示退出。旧客户端不遵循新锁，与安装版并行写同一数据不属于支持场景，不能声称新锁能约束旧程序。macOS 对当前 arm64/x86_64 各自提供签名种子 `.app`，保留 bundle ID/数据容器，由用户按安装引导替换旧应用；非可写位置先解决权限。种子版与后续包均在发布说明标明支持范围。
 
+安装支持说明页只读，不改变当前安装资格；只有受信任种子版迁移成功且数据核对完成才开放自动安装。
+
 该节是本技术方案选定、待评审的路线，不是 r4 视觉稿已经决定的框架，也不代表已实施。IT-13/14 固定验证“Windows 裸 ZIP 手动迁移到 Setup 种子版→Setup 新版”和“Mac 同架构旧 `.app` 手动迁移到签名种子版→新版”；不以另一个干净安装场景替代迁移验收。
 
 ### 10.2 元数据与状态
 
 更新 descriptor 至少包含 version/build、OS/arch/channel、最小可升级版本、asset URL、size、SHA-256、签名/发行身份与发布说明。Mac 按 Sparkle 的可信 appcast/EdDSA；Windows 由可信发行渠道提供签名描述并绑定 package hash，校验 package 和 Authenticode publisher，不能信任“任意 feed 的 hash 与它自己提供的文件一致”。私钥不入库，公钥和来源固定在正式应用配置。
 
-统一状态机：idle → checking → available → downloading → verifying → waiting_for_tasks/ready → installing → pending_restart/complete；各阶段可失败并带重试/手动下载。业务状态通用，安装行为由两端框架分别负责，不自写一个跨平台文件替换脚本。
+统一状态机：idle → checking → available → downloading → verifying → package_ready（等待本次选择）→ 安装准入 → waiting_for_tasks/ready_to_install → installing → pending_restart/complete；校验成功后才进入准入，阻挡解除且任务/journal 完成后重新准入，不能从下载或等待直接绕过检查安装；各阶段可失败并带重试/手动下载。业务状态通用，安装行为由两端框架分别负责，不自写一个跨平台文件替换脚本。
 
 保留 automatic-check 默认 true；新增 auto-install 默认 false、skippedVersion、remindAfter、channel 和 pendingUpdate 状态，存本端更新偏好，不进照片设置。只有用户开启 auto-install 且准入通过时，才允许自动下载/准备并在正常退出时安装。关闭时自动检查不启动下载或替换；仍可由本次“安装更新”操作明确选择下载和重启/下次退出安装。立即重启或“任务结束后安装”必须来自明确的本次选择，不能在编辑中突然重启。用户在准备后关闭 auto-install 时同时撤销自动排队安装，已验证缓存可保留。
 

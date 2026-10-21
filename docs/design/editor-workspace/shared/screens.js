@@ -181,6 +181,10 @@ window.RawLabDesignScreens = [
       "updating-wait",
       "update-error",
       "update-ready",
+      "update-verifying",
+      "update-installing",
+      "update-pending",
+      "update-complete",
       "update-settings",
     ],
     scope: "proposed",
@@ -363,6 +367,19 @@ window.RawLabDesign.flowTitles = {
   "update-ready": "更新已准备好",
   components: "组件与图标",
 };
+for (const [id, title, kind] of [
+  ["update-verifying", "更新 · 校验安装包", "normal"],
+  ["update-installing", "更新 · 已通过准入，模拟安装", "normal"],
+  ["update-pending", "更新 · 下次退出时安装", "normal"],
+  ["update-complete", "更新 · 模拟完成", "recovery"],
+]) {
+  RawLabDesign.descriptions[id] = [
+    title,
+    "仅演示更新阶段，不下载或替换应用。",
+    ["校验与准入不可跳过", "失败可恢复，取消保留当前版本"],
+  ];
+  RawLabDesign.iterationStateKinds[id] = kind;
+}
 // The review selector is generated from this inventory, so a screen cannot silently disappear.
 RawLabDesignScreens.forEach((screen) =>
   screen.states.forEach((id) => {

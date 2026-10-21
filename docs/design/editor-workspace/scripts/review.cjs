@@ -9,6 +9,8 @@ const { chromium } = require(
   process.env.RAWLAB_DESIGN_PLAYWRIGHT || "playwright",
 );
 const { reviewIteration } = require("./review-iteration.cjs");
+const { reviewFollowup } = require("./review-followup.cjs");
+const { reviewUpdate } = require("./review-update.cjs");
 const { reviewRegressions } = require("./review-regressions.cjs");
 const root = path.resolve(__dirname, "..");
 const base = (
@@ -73,6 +75,7 @@ const shots = new Set([
         await page.goto(
           base + "preview.html?platform=" + platform + "&scene=" + scene,
         );
+        await page.locator(".native-app").waitFor({ state: "attached" });
         assert.equal(await page.locator(".native-app").count(), 1, current);
       };
       const ids = [
@@ -602,6 +605,8 @@ const shots = new Set([
     }
     const regressions = await reviewRegressions(browser, base);
     const iteration = await reviewIteration(browser, base);
+    const followup = await reviewFollowup(browser, base);
+    const updates = await reviewUpdate(browser, base);
     const page = await browser.newPage({
       viewport: { width: 1440, height: 1000 },
     });
@@ -632,6 +637,8 @@ const shots = new Set([
       states,
       regressions,
       iteration,
+      followup,
+      updates,
       failures,
       checks,
     };

@@ -97,6 +97,7 @@
         ["batch-edit-photo", "批量集合 · 单张微调", "normal"],
         ["batch-edit-save-error", "单张微调 · 保存失败", "error"],
         ["batch-sync-return", "返回集合 · 保留逐张调整", "recovery"],
+        ["batch-export-preflight", "逐张导出前 · 处理目标草稿", "error"],
         ["batch-per-target-export", "逐张参数 · 导出确认", "normal"],
         ["batch-per-target-running", "逐张参数 · 正在导出", "normal"],
         [
