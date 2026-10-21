@@ -4,11 +4,12 @@
 用户已于 2026-10-21 要求启动开发，由本协调任务负责拆分、调度、复核和阶段集成。
 不预设发布版本或日期；签名、发布、部署和后续 PR 合并按各自授权执行。
 
-- 开发基线：`development@12cda1c67ddd1c58095831ff12a112fc1356da78`，已合入设计 PR [#105](https://github.com/dancancer/RawLab/pull/105)。
+- 初始开发基线：`development@12cda1c67ddd1c58095831ff12a112fc1356da78`，已合入设计 PR [#105](https://github.com/dancancer/RawLab/pull/105)。
 - 范围依据：[总需求](../../design/editing-iteration/requirements.md)、[总技术方案](../../design/editing-iteration/technical-design.md)。
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
-- 首批执行：[首批实现计划](first-batch-plan.md)。后续批次在其前置明确后再写精确实施计划，不提前虚构跨端接口。
+- 当前集成基线：`development@361c9949bac16c3883f9f6968f1c95b9937af0d1`，已包含 #107、#108、#109；各 PR 最新源提交均经独立评审和 CI 验证。
+- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)。第二批接 Mac 提交事务及 iOS/Android/Windows S1 纯规则，原生 UI 继续单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
 
@@ -23,8 +24,8 @@
 | 批次 | 迭代项与交付 | 前置 | 当前状态 | 验收 |
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
-| I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 本地实现与 Mac CLI 对照完成，待集成；Windows 待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | Mac S1 模型已实现并复核、待集成；事务/UI 和其他端排队 | AC-01～21、IT-02/16 |
+| I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | Mac S1 已集成；Mac 提交事务及 iOS/Android/Windows S1 开发中，UI 待接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -67,22 +68,26 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | 总账、批次计划、共享语义决定 | 协调者 | `docs/integration/editing-iteration/`；必要的规范勘误 | 决策关联需求/源码，修订后通知受影响执行者 |
 | I0 字段目录 | 协调者；`field_contract` 来源核验 | `docs/design/editing-iteration/field-catalog.md` | 不新增通用 native DTO，不宣称尚未验证的跨端映射已冻结 |
 | MCP v4 工具 | 协调者执行；`mcp_phase1` 接入核验 | `tools/mcp/` | CLI/C ABI 不改；协议缺口提交协调者另拆前置 |
-| Mac S1 纯规则与候选 | 协调者执行；`workspace_s1` 接入核验 | Mac Adjustments 类型/模型、ControlGroupTests 及其必要 runner；Engine 仅调用共用 raster resolver | 本阶段不改 View、EditorModel、持久化格式、核心或共享资源 |
+| Mac 提交事务 | `mac_reset_transactions` worker；默认代理独立核验 | `EditorModel.swift`、`EditorModel+Workflow.swift`、`EditorModel+Geometry.swift`、`EditModelTests.swift` | 消费已集成的 S1；完整源快照/revision 校验，草稿只改草稿，不改 View/持久化格式 |
 | 核心 C ABI / EditRecipe / CLI / schema | 协调者保留，按算法批次另派一个 owner | `lutools/include/sony2fuji/`、`src/ffi/`、`src/cli/`、对应核心/测试 | 新配置 additive；v5 真实贯通后才宣告支持 |
 | 核心算法 / Metal / GLES / D3D11 | 协调者保留 | `lutools/src/core/`、对应后端 | CPU 合同与质量先准入，不能各后端并行猜常量 |
-| iOS / Android / Windows 平台入口 | 各平台 owner 尚未激活 | 各端 editor、snapshot、storage、bridge、batch | S1 规则和交接接口稳定后按端派发 |
+| iOS S1 纯规则与候选 | `ios_reset_rules` worker；默认代理独立核验 | `EditorAdjustmentRules.swift`、`RawSettings.swift` 必要纯 helper、`PhotoEditState` 身份复制 helper、project source 注册、EditMemoryTests/runner | 不改 ViewModel/保存实现/codec；CI 由协调者接入 |
+| Android S1 纯规则与候选 | `android_reset_rules` worker；默认代理独立核验 | 本端 `EditorAdjustmentRules.kt`、`EditSettings.kt` 必要纯 helper、对应 JVM 测试 | 保留工具 ID、JNI Float/WB 及旧 codec 语义，不改 UI/JNI |
+| Windows S1 纯规则与候选 | `windows_reset_rules` worker；默认代理独立核验 | 本端 `EditorAdjustmentRules.cs`、`Adjustments.cs` 必要纯 helper、editing test 项目 | 完整 SavedEdit/数组隔离；不改 WPF/保存行为/JSON schema |
 | 共享本地化与无障碍 keys | 协调者保留 | `Shared/strings/` 及生成入口 | 功能 owner 提交 key/参数需求，单一资源 owner 写入 |
-| 构建、CI、公共依赖与许可证 | 协调者；首批 CI 接线在 #108 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | 不由各功能分别改公共构建入口；#108 保留现有原生门槛并新增 MCP 验证 |
+| 构建、CI、公共依赖与许可证 | 协调者；首批 #108，第二批 iOS 分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | 不由各功能分别改公共构建入口；#108 已加入 MCP 验证；第二批 iOS 分支接既有 presentation/edit-memory，其他平台保留已有入口 |
 
-第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从上述基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
+第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从初始开发基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
 
-首批由当前协调任务负责实施交付、冲突处理和目标更新，表中的代理名只标识独立核验任务。合入顺序为 **#107 → #108 → #109**；#108 与 #109 没有运行时依赖，按此顺序逐项核验 CI 与目标状态。#109 合入后，Mac 提交事务接新 `development`；四端新 owner 在派发前绑定独占路径与对应 PR。未激活的 owner 不拥有并发写入权。
+首批由协调线程实施，默认代理负责独立核验，已按 **#107 → #108 → #109** 合入；#108 与 #109 没有运行时依赖。第二批由 worker 分端实施，默认代理独立核验，协调线程处理共享文档、CI、冲突和最终验证。Mac 提交事务及其余三端均接合入后的 `development`，每个 owner 在派发前绑定独占路径。第二批 owner 和独占路径见上表及第二批计划，不拥有表外并发写入权。
+
+第二批分支：`feature/editing-native-models-coordination`、`feature/editing-mac-reset-transactions`、`feature/editing-ios-reset-rules`、`feature/editing-android-reset-rules`、`feature/editing-windows-reset-rules`。全部从当前集成基线创建；实现与独立核验分工不改变提交、push、PR 和合并授权边界。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
-| [#107](https://github.com/dancancer/RawLab/pull/107) | 本总账、字段目录与首批计划 | 待集成；payload 编码与逐端 adapter 另行冻结 |
-| [#108](https://github.com/dancancer/RawLab/pull/108) | MCP v4 五工具与本地兼容验证 | 待集成；Windows 实测仍待验收 |
-| [#109](https://github.com/dancancer/RawLab/pull/109) | Mac S1 规则、完整重置候选与配方独立化 | 待集成；提交事务和 UI 在后续批次接入 |
+| [#107](https://github.com/dancancer/RawLab/pull/107) | 本总账、字段目录与首批计划 | 已集成；payload 编码与逐端 adapter 另行冻结 |
+| [#108](https://github.com/dancancer/RawLab/pull/108) | MCP v4 五工具与本地兼容验证 | 已集成；Mac 当前源码 CLI 对照通过，Windows MCP 实测仍待验收 |
+| [#109](https://github.com/dancancer/RawLab/pull/109) | Mac S1 规则、完整重置候选与配方独立化 | 已集成；第二批接提交事务，UI 仍待接入 |
 
 
 ## 集成门槛
@@ -102,11 +107,11 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 - 不改 r9 的 `approval` 或将整体 `implementation` 提前标为完成；首批纯模型接入也不是四端 UI 已落地。
 - Mac 的既有 raster normalization 提取到 `Adjustments.resolvedForRaster`，`Engine` 和候选 core 校验共用；不复制第二套 WB/曝光规则，不改变持久化快照。
 - MCP `validate_recipe` 保留 CLI 原始校验语义：引用文件可尚未存在、返回路径保持原表示；允许根限制仍适用。render/export 才要求实际输入和输出父目录存在。
-- 本阶段不启用 updater、不签名、不生成发布标签、不上传安装包。
+- 本阶段不启用 updater、不做发行签名、不生成发布标签、不上传安装包。现有本地构建的 ad-hoc 签名不代表发布授权。
 
 ## 验收登记
 
-当前没有整项 ITER 的四端验收通过项。首批 MCP 已完成 macOS 本地验证，Mac S1 只完成纯模型与调用接线验证；完整命令证据由对应实现 PR 登记。下列验收缺口继续保留：
+当前没有整项 ITER 的四端验收通过项。首批 MCP 已完成 macOS 本地及 ARM/Intel Hosted CI 当前 CLI 验证，Mac S1 完成纯模型、调用接线及 Mac 构建/模型验证；完整命令证据由对应实现 PR 登记。下列验收缺口继续保留：
 
 - IT-01：五工具真实 stdio 调用、取消/超时、原子发布、路径边界、CLI/MCP 像素等价；Mac/Windows 分别记录。
 - IT-02：AC-01～21 四端分列；模型、UI、RGB/图像与设备证据不能混为一类。
