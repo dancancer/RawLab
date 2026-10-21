@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../GeometrySettings.cs" Link="GeometrySettings.cs" />
+    <Compile Include="../../EditorAdjustmentRules.cs" Link="EditorAdjustmentRules.cs" />
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
     <Compile Include="../../ParameterInteraction.cs" Link="ParameterInteraction.cs" />
     <Compile Include="../../TransformDraft.cs" Link="TransformDraft.cs" />

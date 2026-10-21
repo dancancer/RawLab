@@ -5,6 +5,193 @@ var root = Path.Combine(Path.GetTempPath(), "rawlab-edit-" + Guid.NewGuid());
 Directory.CreateDirectory(root);
 try
 {
+    // S1 regression: reset scope ownership, lossless detach, input validation and candidate isolation.
+    var resetIdentity = new OriginalIdentity("fixture.ARW", 12, 34, 56);
+    SavedEdit Edit(Adjustments state, string? look = "film.cube") => new(resetIdentity, state.Capture(), look);
+    EditorResetScope Group(EditorAdjustmentGroup group) => new(EditorResetKind.Group, group);
+    Check(EditorAdjustmentRules.Tools(EditorAdjustmentGroup.Light).SequenceEqual(new[] { EditorAdjustmentTool.Exposure,
+        EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
+        "light tool order follows native ownership");
+    foreach (var tool in Enum.GetValues<EditorAdjustmentTool>())
+        Check(EditorAdjustmentRules.Tools(EditorAdjustmentRules.GroupFor(tool)).Contains(tool), "every native tool belongs to one group");
+    var neutral = new Adjustments(); neutral.ResolveWhiteBalance((5200, 8));
+    Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.Id).SequenceEqual(
+        new[] { "looks", "light", "color", "effects", "detail", "geometry" }), "stable group identifiers");
+    foreach (var group in Enum.GetValues<EditorAdjustmentGroup>())
+        Check(!EditorAdjustmentRules.IsModified(Group(group), Edit(neutral, null)), "neutral group has no changed marker: " + group);
+    Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), Edit(neutral, null)).Status == EditorResetStatus.NoChange,
+        "neutral reset has no candidate and cannot produce an edit");
+    var mixedState = neutral.Clone(); mixedState.Set(Parameter.Exposure, .75); mixedState.ExposureMode = 0;
+    mixedState.Set(Parameter.Saturation, 23); mixedState.Set(Parameter.Sharpening, 42);
+    mixedState.Hsl = mixedState.Hsl.WithValue(0, 2, .5).WithValue(1, 6, -33).WithValue(2, 2, 24);
+    mixedState.Effects = new(0, 21, 11, 70, 33, 0, 66, 80);
+    mixedState.Denoise = new(false, 13, 40, 27); mixedState.DisplayChromaDenoise = 2;
+    mixedState.Geometry = new(PerspectiveHorizontal: .2); mixedState.Lens = new(true, true, false, true, "fixture");
+    var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
+    foreach (var group in Enum.GetValues<EditorAdjustmentGroup>()) {
+        Check(EditorAdjustmentRules.IsModified(Group(group), mixedEdit), "complete stored objects contribute to marker: " + group);
+        var prepared = EditorAdjustmentRules.PrepareReset(Group(group), mixedEdit);
+        Check(prepared.Status == EditorResetStatus.Ready && prepared.RequiresConfirmation && prepared.Candidate!.Identity == resetIdentity,
+            "group candidate retains identity and requests confirmation: " + group);
+        var candidate = prepared.Candidate!;
+        var expected = mixedFrozen.Copy();
+        if (group == EditorAdjustmentGroup.Light) {
+            foreach (var index in new[] { 1, 4, 5, 6, 7 }) expected.Values[index] = 0;
+            expected = expected with { ExposureMode = 1 };
+        }
+        if (group == EditorAdjustmentGroup.Color) {
+            expected.Values[2] = 5200; expected.Values[3] = 8; expected.Values[8] = 0;
+            expected = expected with { CameraWhiteBalance = true, Hsl = new() };
+        }
+        if (group == EditorAdjustmentGroup.Effects) expected = expected with { Effects = new() };
+        if (group == EditorAdjustmentGroup.Detail) { expected.Values[9] = 0; expected = expected with { Denoise = new(), DisplayChromaDenoise = 0 }; }
+        if (group == EditorAdjustmentGroup.Geometry) expected = expected with { Geometry = new(), Lens = new() };
+        Check(candidate.Settings.SameAs(expected), "group reset preserves every unowned stored field: " + group);
+        foreach (var other in Enum.GetValues<EditorAdjustmentGroup>().Where(other => other != group))
+            Check(EditorAdjustmentRules.IsModified(Group(other), candidate) == EditorAdjustmentRules.IsModified(Group(other), mixedEdit),
+                "unselected group marker survives reset: " + group + " / " + other);
+        Check(!EditorAdjustmentRules.IsModified(Group(group), candidate), "selected group restores complete defaults: " + group);
+        Check(candidate.Look == (group == EditorAdjustmentGroup.Looks ? null : "film.cube"), "look ownership is preserved");
+        candidate.Settings.Values[1] = -3;
+        Check(mixedEdit.Settings.SameAs(mixedFrozen), "candidate Values array cannot mutate original");
+    }
+    var channelReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.HslChannel, Channel: 2), mixedEdit);
+    Check(channelReset.Status == EditorResetStatus.Ready && !channelReset.RequiresConfirmation &&
+        channelReset.Candidate!.Settings.Hsl!.Value(0, 2) == 0 && channelReset.Candidate.Settings.Hsl.Value(2, 2) == 0 &&
+        channelReset.Candidate.Settings.Hsl.Value(1, 6) == -33 && channelReset.Candidate.Settings.Values[8] == 23,
+        "current HSL channel clears only its three axes");
+    var allHsl = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.AllHsl), mixedEdit);
+    Check(allHsl.Status == EditorResetStatus.Ready && allHsl.RequiresConfirmation && allHsl.Candidate!.Settings.Hsl!.IsIdentity &&
+        allHsl.Candidate.Settings.Values.SequenceEqual(mixedEdit.Settings.Values), "all HSL preserves other color controls");
+    var allReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), mixedEdit).Candidate!;
+    Check(allReset.Look == null && allReset.Settings.SameAs(neutral.Capture()), "all reset includes look and full effective defaults");
+    var oldSnapshot = new AdjustmentSnapshot((double[])neutral.Capture().Values.Clone(), 0, true, 5200, 8);
+    var oldReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Effects), new(resetIdentity, oldSnapshot, null));
+    Check(oldReset.Status == EditorResetStatus.NoChange && oldSnapshot.Restore().ExposureMode == 0,
+        "missing optional fields retain existing defaults and historical exposure mode");
+    foreach (var invalid in new[] {
+        mixedFrozen with { Effects = new(0, double.NaN) }, mixedFrozen with { Denoise = new(false, -1) },
+        mixedFrozen with { Geometry = new(CropWidth: 0) }, mixedFrozen with { AsShotTint = double.NaN },
+        mixedFrozen with { AsShotTemperature = null }, mixedFrozen with { DisplayChromaDenoise = 3 }
+    }) Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(resetIdentity, invalid, "film")).Status == EditorResetStatus.Invalid,
+        "all reset validates invalid dormant fields before replacing them");
+    Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.HslChannel, Channel: 8), mixedEdit).Status == EditorResetStatus.Invalid,
+        "invalid HSL scope is rejected");
+    var unknown = mixedFrozen with { MasterRecipeID = "unknown" };
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), new(resetIdentity, unknown, "film")).Status == EditorResetStatus.Blocked,
+        "unknown recipe cannot silently become ordinary adjustments");
+    foreach (var strength in new[] { 0.0, 50, 100, 200 }) {
+        var recipeState = neutral.Clone(); recipeState.ApplyMasterRecipe(MasterRecipe.All[0]);
+        recipeState.Set(Parameter.Strength, strength); recipeState.Set(Parameter.Exposure, .75);
+        recipeState.Set(Parameter.Contrast, 17.3); recipeState.Set(Parameter.Highlights, 13.7);
+        recipeState.Set(Parameter.Shadows, -21.1); recipeState.Set(Parameter.Saturation, 22.9);
+        recipeState.Set(Parameter.Tint, 10); recipeState.Hsl = new HslSettings().WithValue(0, 0, .5).WithValue(1, 7, -80);
+        var recipeEdit = Edit(recipeState); var recipeFrozen = recipeEdit.Settings.Copy();
+        var detached = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), recipeEdit);
+        Check(detached.Status == EditorResetStatus.Ready, "representable recipe detaches at strength " + strength + ": " + detached.Reason);
+        var detachedState = detached.Candidate!.Settings.Restore();
+        Check(detached.Candidate.Look == null && detachedState.MasterRecipeID == null && detachedState[Parameter.Strength] == 100,
+            "look and recipe identities are both cleared");
+        var before = recipeState.Request("fixture.ARW", null, 64, null); var after = detachedState.Request("fixture.ARW", null, 64, null);
+        Check(before.ExposureEv == after.ExposureEv && before.Contrast == after.Contrast && before.Highlights == after.Highlights &&
+            before.Shadows == after.Shadows && before.Saturation == after.Saturation && before.WbMode == after.WbMode &&
+            before.Temperature == after.Temperature && before.Tint == after.Tint &&
+            recipeState.RenderHsl.Values.Select(v => (float)v).SequenceEqual(detachedState.RenderHsl.Values.Select(v => (float)v)),
+            "detach preserves exact final core Float fields and HSL for strength " + strength);
+        if (strength == 0) Check(detachedState[Parameter.Tint] == 8 && detachedState.CameraWhiteBalance,
+            "zero recipe offset becomes stored absolute as-shot tint when identity is cleared");
+        Check(detachedState.Hsl.Value(1, 7) == (strength == 200 ? -100 : -80 * strength / 100), "detach retains existing HSL clamp");
+        Check(recipeEdit.Settings.SameAs(recipeFrozen), "preparing and discarding a recipe candidate is cancellation without mutation");
+        var colorReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Color), recipeEdit).Candidate!.Settings.Restore();
+        Check(colorReset.MasterRecipeID == recipeState.MasterRecipeID && colorReset[Parameter.Tint] == 0 &&
+            colorReset[Parameter.Exposure] == .75 && colorReset.Hsl.IsIdentity, "color reset clears recipe offsets without replaying recipe");
+        var json = System.Text.Json.JsonSerializer.Serialize(detached.Candidate);
+        var roundtrip = System.Text.Json.JsonSerializer.Deserialize<SavedEdit>(json)!;
+        Check(roundtrip.Identity == resetIdentity && roundtrip.Look == null && roundtrip.Settings.SameAs(detached.Candidate.Settings),
+            "candidate JSON retains SavedEdit identity and existing schema");
+    }
+    var unsafeRecipe = new Adjustments(); unsafeRecipe.ApplyMasterRecipe(MasterRecipe.All[0]); unsafeRecipe.Set(Parameter.Tint, 10);
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
+        "RAW relative tint cannot invent as-shot calibration");
+    unsafeRecipe.Set(Parameter.Tint, 0); unsafeRecipe.Set(Parameter.Temperature, 7000);
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
+        "RAW custom recipe WB also needs real calibration");
+    unsafeRecipe.Set(Parameter.Exposure, 4); unsafeRecipe.Set(Parameter.Strength, 200);
+    unsafeRecipe.ResolveWhiteBalance((5200, 8));
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
+        "out of range materialized exposure is blocked without clamping");
+    unsafeRecipe.Set(Parameter.Strength, 0);
+    Check(EditorAdjustmentRules.IsModified(Group(EditorAdjustmentGroup.Light), Edit(unsafeRecipe)), "zero recipe strength retains stored light marker");
+    var calibrationFree = new Adjustments(); calibrationFree.ApplyMasterRecipe(MasterRecipe.All[0]);
+    calibrationFree.Set(Parameter.Tint, 0);
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(calibrationFree)).Status == EditorResetStatus.Ready,
+        "as-shot recipe without relative tint does not require calibration");
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Effects), Edit(unsafeRecipe)).Status == EditorResetStatus.NoChange,
+        "unrelated scope does not require recipe calibration");
+    var clippedTint = neutral.Clone(); clippedTint.ApplyMasterRecipe(MasterRecipe.All[0]);
+    clippedTint.Set(Parameter.Tint, 150); clippedTint.Set(Parameter.Strength, 200);
+    var clippedDetach = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(clippedTint));
+    Check(clippedDetach.Status == EditorResetStatus.Ready && clippedDetach.Candidate!.Settings.Values[3] == 150,
+        "materialization retains original renderer tint clamp");
+    clippedTint.Set(Parameter.Contrast, 100);
+    Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(clippedTint)).Status == EditorResetStatus.Blocked,
+        "materialized contrast outside native range is blocked");
+    var rasterState = mixedState.Clone(); rasterState.ApplyMasterRecipe(MasterRecipe.All[0]); rasterState.Set(Parameter.Strength, 50);
+    var rasterEdit = new SavedEdit(resetIdentity with { Path = "fixture.jpg" }, rasterState.Capture(), "film");
+    var rasterDetached = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), rasterEdit);
+    Check(rasterDetached.Status == EditorResetStatus.Ready && rasterDetached.Candidate!.Settings.CameraWhiteBalance &&
+        rasterDetached.Candidate.Settings.Values[2] == 6500 && rasterDetached.Candidate.Settings.Values[3] == 0,
+        "raster detach follows input preparation and fixed display WB without camera calibration");
+    var rasterDefault = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), rasterEdit).Candidate!.Settings.Restore();
+    Check(rasterDefault.ExposureMode == 2 && rasterDefault.Lens == new LensSettings(false, false, false) && rasterDefault.AsShot == null,
+        "raster reset uses sensor exposure and unavailable camera-only defaults");
+    var rasterNeutralSnapshot = PhotoInput.PrepareInputSettings("fixture.jpg", new Adjustments()).Capture();
+    var rasterMetadataOnly = rasterNeutralSnapshot.Copy() with {
+        ExposureMode = 0, CameraWhiteBalance = false, AsShotTemperature = 5200, AsShotTint = 8
+    };
+    rasterMetadataOnly.Values[2] = 7300; rasterMetadataOnly.Values[3] = 17;
+    var rasterMetadataEdit = new SavedEdit(resetIdentity with { Path = "fixture.jpg" }, rasterMetadataOnly, null);
+    var rasterMetadataFrozen = rasterMetadataOnly.Copy();
+    foreach (var scope in new[] { Group(EditorAdjustmentGroup.Light), Group(EditorAdjustmentGroup.Color), new EditorResetScope(EditorResetKind.All) }) {
+        Check(!EditorAdjustmentRules.IsModified(scope, rasterMetadataEdit), "raster RAW-only metadata does not create a marker: " + scope.Kind + "/" + scope.Group);
+        Check(EditorAdjustmentRules.PrepareReset(scope, rasterMetadataEdit).Status == EditorResetStatus.NoChange,
+            "raster RAW-only metadata does not create a reset candidate: " + scope.Kind + "/" + scope.Group);
+    }
+    Check(rasterMetadataOnly.SameAs(rasterMetadataFrozen), "raster marker comparison preserves original metadata and Values array");
+    var rasterLightChanged = rasterMetadataOnly.Copy(); rasterLightChanged.Values[1] = .5;
+    var rasterLightReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Light), rasterMetadataEdit with { Settings = rasterLightChanged });
+    Check(rasterLightReset.Status == EditorResetStatus.Ready && rasterLightReset.Candidate!.Settings.ExposureMode == 2 &&
+        rasterLightReset.Candidate.Settings.Values[1] == 0 && rasterLightReset.Candidate.Settings.Values[2] == 7300,
+        "real raster light reset restores owned exposure defaults and preserves stored WB");
+    var rasterColorChanged = rasterMetadataOnly.Copy(); rasterColorChanged.Values[8] = 20;
+    var rasterColorReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Color), rasterMetadataEdit with { Settings = rasterColorChanged });
+    Check(rasterColorReset.Status == EditorResetStatus.Ready && rasterColorReset.Candidate!.Settings.CameraWhiteBalance &&
+        rasterColorReset.Candidate.Settings.Values[2] == 6500 && rasterColorReset.Candidate.Settings.Values[3] == 0 &&
+        rasterColorReset.Candidate.Settings.AsShotTemperature == null && rasterColorReset.Candidate.Settings.AsShotTint == null &&
+        rasterColorReset.Candidate.Settings.ExposureMode == 0, "real raster color reset restores complete owned WB defaults only");
+    var rasterRecipeTint = rasterMetadataOnly.Copy() with { MasterRecipeID = MasterRecipe.All[0].Id };
+    rasterRecipeTint.Values[0] = 0; rasterRecipeTint.Values[3] = 0;
+    Check(!EditorAdjustmentRules.IsModified(Group(EditorAdjustmentGroup.Color), rasterMetadataEdit with { Settings = rasterRecipeTint }),
+        "raster recipe color defaults compare tint with relative zero");
+    rasterRecipeTint.Values[3] = 17;
+    var rasterRecipeTintEdit = rasterMetadataEdit with { Settings = rasterRecipeTint };
+    Check(EditorAdjustmentRules.IsModified(Group(EditorAdjustmentGroup.Color), rasterRecipeTintEdit),
+        "raster recipe relative tint remains marked at zero strength");
+    var rasterRecipeTintReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Color), rasterRecipeTintEdit);
+    Check(rasterRecipeTintReset.Status == EditorResetStatus.Ready && rasterRecipeTintReset.Candidate!.Settings.Values[3] == 0 &&
+        rasterRecipeTintReset.Candidate.Settings.MasterRecipeID == rasterRecipeTint.MasterRecipeID,
+        "raster color reset clears stored recipe tint without losing recipe identity");
+    foreach (var dormant in new[] {
+        (EditorAdjustmentGroup.Effects, rasterMetadataOnly.Copy() with { Effects = new(0, 21) }),
+        (EditorAdjustmentGroup.Detail, rasterMetadataOnly.Copy() with { Denoise = new(false, 13) }),
+        (EditorAdjustmentGroup.Geometry, rasterMetadataOnly.Copy() with { Lens = new(false, false, true) })
+    }) {
+        var dormantEdit = rasterMetadataEdit with { Settings = dormant.Item2 };
+        Check(EditorAdjustmentRules.IsModified(Group(dormant.Item1), dormantEdit) &&
+            EditorAdjustmentRules.IsModified(new(EditorResetKind.All), dormantEdit), "raster dormant complete object remains marked: " + dormant.Item1);
+        Check(EditorAdjustmentRules.PrepareReset(Group(dormant.Item1), dormantEdit).Status == EditorResetStatus.Ready,
+            "raster dormant complete object remains resettable: " + dormant.Item1);
+    }
     var exposureSpec = ParameterSpec.All[(int)Parameter.Exposure];
     Check(exposureSpec.Value(exposureSpec.Position(.13)) == .13, "v08 exposure slider uses 0.01 fine grid");
     Check(Math.Abs(ParameterSpec.All[(int)Parameter.Tint].Value(ParameterSpec.All[(int)Parameter.Tint].Position(.3)) - .3) < 1e-10,
