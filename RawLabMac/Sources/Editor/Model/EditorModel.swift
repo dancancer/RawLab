@@ -3,6 +3,30 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 final class EditorModel: ObservableObject {
+    enum ResetBlockedReason: Equatable {
+        case sourceUnavailable
+        case geometryDraftActive
+        case geometryDraftRequired
+        case invalidDraftInputs
+        case adjustment(EditorResetBlockedReason)
+    }
+
+    enum ResetPreparation: Equatable {
+        case unchanged
+        case prepared(PreparedReset)
+        case blocked(ResetBlockedReason)
+    }
+
+    struct PreparedReset: Equatable {
+        let source: URL
+        let identity: OriginalFileIdentity
+        let revision: UUID
+        let original: PhotoEditState
+        let candidate: PhotoEditState
+        let selectedFilmID: String
+        let draft: MacGeometryDraft?
+    }
+
     struct RenderWork: Equatable {
         let file: URL
         let settings: Adjustments

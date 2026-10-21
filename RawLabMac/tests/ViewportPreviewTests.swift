@@ -146,10 +146,11 @@ struct ViewportPreviewTests {
         let model = EditorModel(lookDirectory: output.appendingPathComponent("looks"),
                                 editDirectory: output.appendingPathComponent("edits"),
                                 batchDirectory: output.appendingPathComponent("batch"))
-        model.films = [Film(name: "PROVIA", url: lut)]; model.selectedFilmID = lut.path
+        model.films = [Film(name: "PROVIA", url: lut)]
         model.updatePreviewLongEdge(832)
         model.open(raw)
         wait("initial viewport-sized model preview") { !model.busy && model.result?.image.width == 832 }
+        model.selectedFilmID = lut.path
         let original = model.neutral!.image
         model.settings.sharpening = 100
         model.settings.setEffect(.grainAmount, to: 45)

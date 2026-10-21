@@ -49,6 +49,7 @@ extension ProcessorExportTests {
     static func check(_ condition: Bool, _ message: String) {
         guard condition else { fputs("FAIL: \(message)\n", stderr); exit(1) }
         print("PASS: \(message)")
+        fflush(stdout)
     }
 
     static func properties(_ data: Data) -> [CFString: Any] {

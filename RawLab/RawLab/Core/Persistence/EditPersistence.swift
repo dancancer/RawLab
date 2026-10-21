@@ -53,6 +53,17 @@ struct PhotoEditState: Codable, Equatable {
         self.filmID = filmID ?? settings.lutID
         self.updatedAt = updatedAt
     }
+
+    // 显式 nil 身份不能触发普通初始化入口的 LUT 回退。
+    func replacing(settings: RawSettings, preservingFilmID filmID: String?) -> PhotoEditState {
+        PhotoEditState(settings: settings, exactFilmID: filmID, updatedAt: updatedAt)
+    }
+
+    private init(settings: RawSettings, exactFilmID: String?, updatedAt: Date) {
+        self.settings = settings
+        self.filmID = exactFilmID
+        self.updatedAt = updatedAt
+    }
 }
 
 enum EditPersistenceError: LocalizedError {

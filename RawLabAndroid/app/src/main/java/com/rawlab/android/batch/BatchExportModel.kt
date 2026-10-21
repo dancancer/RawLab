@@ -238,12 +238,13 @@ class BatchExportModel(
         val name = displayName(uri)
         val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
             ?: throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
-        val destination = inputFile(mutable.value.job.id, identity, name)
+        val snapshot = mutable.value.job
+        val destination = inputFile(snapshot.id, identity, name)
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
                 processorFactory(gpuMode, storage.lensDatabase()).use {
-                    it.preview(destination, null, EditSettings(), 256, false, inputKind)
+                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing), 256, false, inputKind)
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }

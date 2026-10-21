@@ -486,3 +486,19 @@ struct MasterRecipe: Codable, Identifiable, Hashable {
         FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
     }
 }
+
+extension RawSettings {
+    // 只用于候选的等价校验：先消费现有配方转换，再按 processor 的输入限制捕获 core Float。
+    func editorEffectiveValues(isRaw: Bool, cameraTemperature: Double, cameraTint: Double) -> [Float] {
+        var effective = renderedRecipe(cameraTemperature: cameraTemperature, cameraTint: cameraTint)
+        if !isRaw || effective.whiteBalanceMode == .camera {
+            effective.temperature = 6500; effective.tint = 0
+        }
+        let noise = !isRaw || effective.denoise.enabled ? 0 : effective.noiseReduction
+        return [effective.exposure, effective.contrast, effective.saturation, effective.temperature,
+                effective.tint, effective.highlights, effective.shadows, effective.toneCurve,
+                noise, effective.sharpening].map(Float.init) +
+            [Float(isRaw && effective.whiteBalanceMode == .custom ? 1 : 0)] +
+            (effective.hsl.hue + effective.hsl.saturation + effective.hsl.lightness).map(Float.init)
+    }
+}

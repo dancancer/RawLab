@@ -230,3 +230,60 @@ data class LookChoice(val id: String, val name: String, val managed: Boolean, va
         private fun Film.toChoice() = LookChoice(id, name, managed = false)
     }
 }
+
+internal data class ResetRenderValues(
+    val core: List<Float>, val temperature: Float, val tint: Float,
+)
+
+/**
+ * 重置外观前捕获 JNI 非外观 Float 值。
+ * 计算顺序对应 rawlab_jni.cpp 的 prepareRecipeWb/recipeActive 分支及 render_request.h；
+ * HSL 直接消费既有 renderHsl，避免把旧记录的小数再次送进输入控件量化。
+ */
+internal fun EditSettings.resetRenderValues(
+    input: PhotoInputKind, asShotTemperature: Float?, asShotTint: Float?,
+): ResetRenderValues? {
+    val effective = effectiveFor(input)
+    var custom = effective.customWb
+    var kelvin = effective.temperature
+    var wbTint = effective.tint
+    if (input == PhotoInputKind.RAW && recipeID != null && (custom || tint * strength != 0f)) {
+        if (asShotTemperature == null || asShotTint == null ||
+            !asShotTemperature.isFinite() || !asShotTint.isFinite()) return null
+        if (!custom) kelvin = nativeRound(asShotTemperature)
+        wbTint = (nativeRound(asShotTint) + tint * strength).coerceIn(-150f, 150f)
+        custom = true
+    }
+    return ResetRenderValues(listOf(exposure * recipeScale, -highlights * recipeScale, shadows * recipeScale,
+        1f + contrast * recipeScale, toneCurve, 1f + saturation * recipeScale, sharpening,
+        effective.exposureMode.toFloat(), if (custom) 1f else 0f,
+        if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList(), kelvin, wbTint)
+}
+
+// Float 上先加 0.5 会把 0.49999997 提前进位；转成 Double 后再取整才能对应 std::round(float)。
+private fun nativeRound(value: Float): Float =
+    (if (value >= 0f) floor(value.toDouble() + .5) else ceil(value.toDouble() - .5)).toFloat()
+
+/** 无法用现有字段精确表示时返回 null；不夹紧物化后的普通调整值。 */
+internal fun EditSettings.independentForReset(
+    input: PhotoInputKind, asShotTemperature: Float?, asShotTint: Float?,
+): EditSettings? {
+    val before = resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
+    val scaledExposure = exposure * recipeScale
+    val scaledHighlights = highlights * recipeScale
+    val scaledShadows = shadows * recipeScale
+    val scaledContrast = contrast * recipeScale
+    val scaledSaturation = saturation * recipeScale
+    val convertWb = input == PhotoInputKind.RAW && recipeID != null && (customWb || tint * strength != 0f)
+    if (scaledExposure !in -4f..4f ||
+        listOf(scaledHighlights, scaledShadows, scaledContrast, scaledSaturation).any { it !in -1f..1f } ||
+        (convertWb && (before.temperature !in 2000f..50000f || before.tint !in -150f..150f))) return null
+    val candidate = copy(film = "neutral", recipeID = null, strength = 1f,
+        exposure = scaledExposure, highlights = scaledHighlights, shadows = scaledShadows,
+        contrast = scaledContrast, saturation = scaledSaturation, hsl = renderHsl,
+        customWb = if (convertWb) true else customWb,
+        temperature = if (convertWb) before.temperature else temperature,
+        tint = if (convertWb) before.tint else if (input == PhotoInputKind.RAW && recipeID != null) 0f else tint)
+    val after = candidate.resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
+    return candidate.takeIf { before.core.size == after.core.size && before.core.zip(after.core).all { (a, b) -> a == b } }
+}

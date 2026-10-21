@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2200000000000000000002 /* EditorAdjustmentRules.swift */; };
         A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000002; };
         A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000004; };
         D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
@@ -172,6 +173,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AB2200000000000000000002 /* EditorAdjustmentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorAdjustmentRules.swift; sourceTree = "<group>"; };
         A8CACE000000000000000002 /* CachedPhotoFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/CachedPhotoFile.swift"; sourceTree = SOURCE_ROOT; };
         A8CACE000000000000000004 /* ContentView+AutoExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+AutoExposure.swift"; sourceTree = SOURCE_ROOT; };
         D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
@@ -702,6 +704,7 @@
 				AB1200000000000000000012 /* FilmPresentation.swift */,
 				75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */,
 				E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */,
+				AB2200000000000000000002 /* EditorAdjustmentRules.swift */,
 				99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */,
 				D00100000000000000000015 /* Core/Models/ExportSize.swift */,
 			);
@@ -1044,6 +1047,7 @@
 				C9A1B2C3D4E5F60718293A4B,
 				366A9A71BB194587A8AECB5A,
 				EDCB99B43F3C4149B2F7622B,
+				AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */,
 				2C5BFAB858B74B81AFAC16D0,
 				D883E2F5F205AC0EFBF9C319,
 				7A32C02543E94D8D8AD059DA,

@@ -8,6 +8,63 @@ extension EditorModel {
         return PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID)
     }
 
+    func prepareReset(scope: EditorResetScope) -> ResetPreparation {
+        guard let file, let identity = try? OriginalFileIdentity(file) else { return .blocked(.sourceUnavailable) }
+        let isGeometry = scope == .group(.geometry)
+        if geometryDraft != nil && !isGeometry { return .blocked(.geometryDraftActive) }
+        if isGeometry && geometryDraft == nil { return .blocked(.geometryDraftRequired) }
+        guard invalidGeometryDraftInputs.isEmpty else { return .blocked(.invalidDraftInputs) }
+        let context = EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
+                                              defaultExposureMode: Adjustments().exposureMode, neutralFilmID: "")
+        let original = editState(settings: settings)
+        var snapshot = original
+        if let draft = geometryDraft {
+            if case .blocked(let reason) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: original, context: context) {
+                return .blocked(.adjustment(reason))
+            }
+            snapshot.settings.geometry = draft.geometry.isIdentity ? nil : draft.geometry
+            snapshot.settings.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
+        }
+        switch EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+        case .unchanged: return .unchanged
+        case .blocked(let reason): return .blocked(.adjustment(reason))
+        case .candidate(let candidate):
+            return .prepared(PreparedReset(source: file, identity: identity, revision: editRevision,
+                                           original: original, candidate: candidate,
+                                           selectedFilmID: selectedFilmID, draft: geometryDraft))
+        }
+    }
+
+    @discardableResult func commitReset(_ prepared: PreparedReset) -> Bool {
+        guard file == prepared.source, editRevision == prepared.revision,
+              (try? OriginalFileIdentity(prepared.source)) == prepared.identity,
+              editState(settings: settings) == prepared.original,
+              selectedFilmID == prepared.selectedFilmID, geometryDraft == prepared.draft,
+              invalidGeometryDraftInputs.isEmpty else { return false }
+        if var draft = prepared.draft {
+            let previousPreview = draft.previewGeometry, previousLens = draft.lens
+            draft.geometry = prepared.candidate.settings.geometrySettings
+            draft.lens = prepared.candidate.settings.lensSettings
+            guard draft != geometryDraft else { return true }
+            geometryDraft = draft
+            cropAspectPreset = .free; cropAspectSwapped = false
+            geometryDraftRevision &+= 1
+            if previousPreview != draft.previewGeometry || previousLens != draft.lens {
+                geometryDraftPreviewReady = false
+                schedule()
+            }
+        } else {
+            guard prepared.candidate != prepared.original else { return true }
+            updatingMetadata = true
+            settings = prepared.candidate.settings
+            // 普通组保留 UI selection；存储 ID 可能是 builtin:<filename>。
+            if prepared.candidate.filmID != prepared.original.filmID { selectedFilmID = "" }
+            updatingMetadata = false
+            edited()
+        }
+        return true
+    }
+
     func selectMasterRecipe(_ recipe: MasterRecipe?) {
         guard geometryDraft == nil else { return }
         guard recipe != nil || settings.masterRecipeID != nil else { return }

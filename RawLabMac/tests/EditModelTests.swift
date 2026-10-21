@@ -221,6 +221,131 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         print("PASS: EditorModel raster open, oriented dimensions, metadata isolation, persistence and rejection")
     }
 
+    static func resetTransactionChecks(root: URL, source: URL, otherSource: URL) throws {
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("reset-looks"),
+                                editDirectory: root.appendingPathComponent("reset-edits"),
+                                batchDirectory: root.appendingPathComponent("reset-batch"))
+        model.file = source
+        // 禁用定时启动，检查真实 scheduler 入队和同步保存，不让占位 RAW 的解码干扰事务。
+        model.debounceTimer?.cancel(); model.debounceTimer = nil
+        func prepared(_ scope: EditorResetScope) throws -> EditorModel.PreparedReset {
+            guard case .prepared(let value) = model.prepareReset(scope: scope) else {
+                throw Failure(message: "reset must prepare: \(scope)")
+            }
+            return value
+        }
+        try check(model.prepareReset(scope: .group(.light)) == .unchanged &&
+                  model.scheduler.latest == nil && model.saveWork == nil && !model.dirty,
+                  "unchanged reset creates no render or save request")
+        model.updatingMetadata = true
+        var invalidEffects = PhotoEffectsSettings(); invalidEffects.grainSize = .nan
+        model.settings.photoEffects = invalidEffects
+        model.updatingMetadata = false
+        guard case .blocked(.adjustment(.invalidSnapshot)) = model.prepareReset(scope: .group(.light)) else {
+            throw Failure(message: "invalid disabled effect must block an unrelated reset")
+        }
+        try check(model.scheduler.latest == nil && model.saveWork == nil && !model.dirty,
+                  "invalid complete snapshot cannot enqueue partial reset")
+        model.updatingMetadata = true; model.settings.photoEffects = nil; model.updatingMetadata = false
+        model.settings.exposure = 1.25
+        let snapshot = model.editState(settings: model.settings), revision = model.editRevision
+        let request = model.scheduler.latest!.id, save = model.saveWork
+        let light = try prepared(.group(.light))
+        try check(model.editState(settings: model.settings) == snapshot && model.editRevision == revision &&
+                  model.scheduler.latest!.id == request && model.saveWork === save,
+                  "preparing a candidate is pure")
+        try check(model.commitReset(light) && model.settings.exposure == 0 &&
+                  model.scheduler.latest!.id == request + 1 && model.dirty,
+                  "reset commits once through the normal edit scheduler")
+        try check(!model.commitReset(light), "a consumed revision cannot overwrite a new edit")
+        model.settings.exposure = 2
+        let stale = try prepared(.group(.light))
+        model.settings.saturation = 11
+        try check(!model.commitReset(stale) && model.settings.exposure == 2,
+                  "old revision is rejected")
+        let switched = try prepared(.group(.light))
+        model.file = otherSource
+        try check(!model.commitReset(switched), "changed source is rejected")
+        model.file = source
+        let metadata = try prepared(.group(.light)), metadataRevision = model.editRevision
+        model.updatingMetadata = true
+        model.settings.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 7))
+        model.updatingMetadata = false
+        try check(model.editRevision == metadataRevision && !model.commitReset(metadata),
+                  "same-revision WB metadata change requires preparation again")
+        let identity = try prepared(.group(.light))
+        try Data("source changed".utf8).write(to: source)
+        try check(!model.commitReset(identity), "replaced source file identity is rejected")
+
+        let lut = root.appendingPathComponent("reset.cube")
+        try Data("fixture".utf8).write(to: lut)
+        model.films = [Film(name: "Reset fixture", url: lut)]
+        model.selectFilm(lut.path)
+        let keepFilm = try prepared(.group(.light))
+        try check(model.commitReset(keepFilm) && model.selectedFilmID == lut.path &&
+                  model.editState(settings: model.settings).filmID == "builtin:reset.cube",
+                  "ordinary reset preserves UI film ID while persistence keeps storage ID")
+        model.selectMasterRecipe(.hamadaDaylightV2)
+        let looks = try prepared(.group(.looks))
+        let beforeLooks = model.scheduler.latest!.id
+        try check(model.commitReset(looks) && model.selectedFilmID.isEmpty &&
+                  model.settings.masterRecipeID == nil && model.editState(settings: model.settings).masterRecipeID == nil &&
+                  model.scheduler.latest!.id == beforeLooks + 1,
+                  "looks reset clears recipe and film together with one request")
+        model.selectFilm(lut.path)
+        try check(model.commitReset(try prepared(.all)) && model.selectedFilmID.isEmpty &&
+                  model.settings.masterRecipeID == nil && model.settings.exposure == 0,
+                  "all reset clears every look identity")
+        try check(model.saveEdits(), "reset state persists")
+        model.settings.setHSL(.hue, channel: 2, value: 25)
+        model.settings.setHSL(.hue, channel: 3, value: 30)
+        try check(model.commitReset(try prepared(.hslColor(2))) &&
+                  model.settings.hslSettings.value(.hue, channel: 2) == 0 &&
+                  model.settings.hslSettings.value(.hue, channel: 3) == 30,
+                  "HSL color reset preserves other channels")
+        try check(model.commitReset(try prepared(.hslAll)) && model.settings.hslSettings.isIdentity,
+                  "all HSL reset uses the same transaction")
+
+        var geometry = GeometrySettings(); geometry.cropWidth = 0.75
+        var lens = LensCorrectionSettings(); lens.mode = .manual; lens.profileID = "saved-disabled-profile"
+        model.geometryDraft = MacGeometryDraft(geometry: geometry, lens: lens)
+        try check(model.prepareReset(scope: .all) == .blocked(.geometryDraftActive) &&
+                  model.prepareReset(scope: .group(.light)) == .blocked(.geometryDraftActive),
+                  "active geometry draft blocks committed and all resets")
+        let staleDraftReset = try prepared(.group(.geometry))
+        model.geometryDraft!.geometry.cropWidth = 0.5
+        try check(!model.commitReset(staleDraftReset) && model.geometryDraftSettings.cropWidth == 0.5,
+                  "changed draft requires preparation again even without a committed revision change")
+        let draftReset = try prepared(.group(.geometry))
+        let committed = model.settings, draftRequest = model.scheduler.latest!.id, oldSave = model.saveWork
+        try check(model.commitReset(draftReset) && model.settings == committed &&
+                  model.geometryDraftSettings.isIdentity && model.lensDraftSettings == LensCorrectionSettings() &&
+                  model.saveWork === oldSave && model.scheduler.latest!.id == draftRequest + 1,
+                  "geometry reset updates geometry and disabled lens metadata only in the draft")
+        let unchangedRequest = model.scheduler.latest!.id
+        try check(model.prepareReset(scope: .group(.geometry)) == .unchanged &&
+                  model.scheduler.latest!.id == unchangedRequest && model.saveWork === oldSave,
+                  "unchanged draft reset produces no request")
+        model.geometryDraft = nil
+        model.settings.exposure = 1
+        let failed = try prepared(.group(.light))
+        let oldSaveWork = model.saveWork
+        let directory = root.appendingPathComponent("reset-edits")
+        try FileManager.default.removeItem(at: directory)
+        try Data().write(to: directory)
+        try check(model.commitReset(failed) && !model.saveEdits() && model.dirty && model.saveError != nil &&
+                  model.settings.exposure == 0,
+                  "failed reset autosave retains candidate, dirty and visible error")
+        oldSaveWork?.perform()
+        try check(model.settings.exposure == 0 && model.dirty,
+                  "older queued save cannot restore pre-reset state")
+        try FileManager.default.removeItem(at: directory)
+        try check(model.saveEdits() && !model.dirty && model.saveError == nil &&
+                  EditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
+                  "failed reset save can retry the candidate")
+        print("PASS: EditorModel reset preparation, stale guards, single commit, draft boundary and retry")
+    }
+
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -233,6 +358,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                         editDirectory: root.appendingPathComponent("edits"),
                         batchDirectory: root.appendingPathComponent("batch"))
         }
+        try resetTransactionChecks(root: root, source: a, otherSource: b)
         let selection = model()
         selection.settings.exposure = 2
         selection.settings.shadows = -60
