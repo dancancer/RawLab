@@ -13,7 +13,7 @@ internal static partial class EditorReviewChecks
     private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     internal enum Part { All, BusyBatchFirst, BusyForegroundFirst, BusyExportBatchFirst, BusyExportFirst, BusyResumePreview,
         CloseJournalRetry, CloseJournalSync, CloseIdleNoop, CloseThumbnailQueue, CloseRunning, ResizeImportFirst,
-        ResizeBatchBeforeImport, ResizeExportFirst, ResizeBatchBeforeExport, LibraryDrop, DialogGeometry, DialogLens, UsageLifecycle, ClosePending }
+        ResizeBatchBeforeImport, ResizeExportFirst, ResizeBatchBeforeExport, LibraryDrop, DialogGeometry, DialogLens, UsageLifecycle, ClosePending, WorkspaceReset }
     internal static readonly IReadOnlyDictionary<string,Part> Parts=new Dictionary<string,Part>(StringComparer.OrdinalIgnoreCase){
         ["all"]=Part.All,["busy-batch-first"]=Part.BusyBatchFirst,["busy-foreground-first"]=Part.BusyForegroundFirst,
         ["busy-export-batch-first"]=Part.BusyExportBatchFirst,["busy-export-first"]=Part.BusyExportFirst,["busy-resume-preview"]=Part.BusyResumePreview,
@@ -22,7 +22,7 @@ internal static partial class EditorReviewChecks
         ["resize-batch-before-import"]=Part.ResizeBatchBeforeImport,["resize-export-first"]=Part.ResizeExportFirst,
         ["resize-batch-before-export"]=Part.ResizeBatchBeforeExport,["library-drop"]=Part.LibraryDrop,
         ["dialog-geometry"]=Part.DialogGeometry,["dialog-lens"]=Part.DialogLens,["usage-lifecycle"]=Part.UsageLifecycle,
-        ["close-pending"]=Part.ClosePending};
+        ["close-pending"]=Part.ClosePending,["workspace-reset"]=Part.WorkspaceReset};
     internal static Part ParsePart(string part)=>Parts.TryGetValue(part.Trim(),out var value) ? value :
         throw new ArgumentException("Unknown editor-review part: '"+part+"'. Available: "+string.Join(", ",Parts.Keys));
     internal static void Run(string repo,string raw,Action<bool,string> check,string part="all") =>
@@ -60,7 +60,7 @@ internal static partial class EditorReviewChecks
                 RunPart(Part.ResizeBatchBeforeExport,()=>ResizeOrder(false,true));RunPart(Part.LibraryDrop,LibraryDrop);
                 RunPart(Part.DialogGeometry,()=>DraftDialog(false));RunPart(Part.DialogLens,()=>DraftDialog(true));
                 RunPart(Part.UsageLifecycle,()=>UsageIntegrationChecks.Run(Path.Combine(output,"usage-lifecycle"),photo,check));
-                RunPart(Part.ClosePending,ClosePending);
+                RunPart(Part.ClosePending,ClosePending);RunPart(Part.WorkspaceReset,WorkspaceReset);
                 check(executed==(selected==Part.All ? Parts.Count-1 : 1),"Every selected editor scenario actually executes");
                 check(new[]{raw,photo,other}.All(path=>originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(path)))),
                     "Editor review regressions preserve the external RAW and both source copies");

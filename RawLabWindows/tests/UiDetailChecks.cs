@@ -181,10 +181,9 @@ internal static class UiDetailChecks
     }
     private static void Selection(MainWindow window,string language,Action<bool,string> check)
     {
-        Click(window.MasterRecipeCategory);
-        check(Equals(window.MasterRecipeCategory.Tag,"selected") && window.FilmCategory.Tag==null,"Master recipe tool shows the selected state: "+language);
-        Click(window.FilmCategory);
-        check(window.MasterRecipeCategory.Tag==null && Equals(window.FilmCategory.Tag,"selected"),"Leaving master recipes clears its selected state: "+language);
+        Click(window.MasterRecipeCategory);Click(window.FilmCategory);
+        check(window.AdjustmentPanel.Visibility==Visibility.Collapsed && window.MasterRecipeCategory.Tag==null && window.FilmCategory.Tag==null,
+            "No-photo tool actions keep the adjustment workspace hidden: "+language);
     }
     // 工具栏下拉菜单贴着按钮弹出；键盘打开时不跟着鼠标跑到别处
     private static void MenuPlacement(MainWindow window,Action<bool,string> check)
@@ -201,14 +200,17 @@ internal static class UiDetailChecks
     // 编辑菜单与调整栏重置菜单：分组重置写成“重置…”，两处叫法一致
     private static void ResetMenus(MainWindow window,string language,Action<bool,string> check)
     {
+        typeof(MainWindow).GetMethod("BuildResetMenu",PrivateInstance)!.Invoke(window,null);
         var edit=(MenuItem)window.MainMenu.Items[1];
-        var editLabels=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(Group:(string)item.Tag,Header:(string)item.Header)).ToList();
-        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group=="输入" ? "输入调整" : item.Group))).Select(item=>"\n  "+item.Header).ToList();
-        check(editLabels.Count==6 && unnamed.Count==0,"Edit menu names each group reset as a reset action: "+language+string.Concat(unnamed));
+        var editItems=edit.Items.OfType<MenuItem>().ToArray();
+        check(editItems.Select(item=>((EditorResetScope)item.Tag).Kind).SequenceEqual(new[]{EditorResetKind.Tool,EditorResetKind.Group,EditorResetKind.All}),
+            "Edit menu exposes current tool, current group and All scopes: "+language);
+        check(editItems[1].Header.ToString()==Loc.Format("重置{0}组…",Loc.Text("光线")) && editItems.All(item=>!item.IsEnabled),
+            "Empty editor names its current group and disables reset scopes: "+language);
         Click(window.ResetAllButton);
         var reset=window.ResetAllButton.ContextMenu;
-        var resetLabels=reset?.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(string)item.Header).ToList() ?? [];
-        check(resetLabels.SequenceEqual(editLabels.Select(item=>item.Header)),"Dock reset menu and Edit menu use the same group names: "+language);
+        check(reset!=null && reset.Items.OfType<MenuItem>().Select(item=>item.Header.ToString()).SequenceEqual(editItems.Select(item=>item.Header.ToString())),
+            "Dock and Edit menus use the same ordered reset labels: "+language);
         if(reset!=null)reset.IsOpen=false;
     }
     // 启动时从磁盘恢复的目录同样显示右键提示

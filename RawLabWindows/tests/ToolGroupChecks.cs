@@ -13,7 +13,7 @@ internal static class ToolGroupChecks
     {
         repo = Path.GetFullPath(repo);
         fixture = Path.GetFullPath(fixture);
-        var output = Path.Combine(repo, "build", "tool-groups-verification", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+        var output = Path.Combine(repo, "build", "windows-v08-results", "tool-groups-verification", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(output);
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
@@ -33,6 +33,7 @@ internal static class ToolGroupChecks
             window.OpenFile(fixture);
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
             RunAssertions(window, output, Check);
+            WorkspaceGroupChecks.Run(window,output,Check);
             Console.WriteLine($"PASS {checks} tool-group checks; artifacts: {output}");
         }
         finally { window.Close(); app.Shutdown(); }

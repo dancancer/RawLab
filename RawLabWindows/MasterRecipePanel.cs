@@ -43,11 +43,7 @@ public partial class MainWindow
             RecipeStrip.Children.Add(button); recipeButtons[recipe?.Id ?? ""] = button;
         }
     }
-    private void MasterRecipeCategoryClicked(object sender, RoutedEventArgs e)
-    {
-        if(!ResolveTransformDraft())return;
-        choosingRecipes = true; choosingFilm = choosingDenoise = choosingPhotoEffects = choosingHsl = choosingWhiteBalance = choosingLens = choosingGeometry = false; RefreshControls();
-    }
+    private void MasterRecipeCategoryClicked(object sender, RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.MasterRecipe);
     private void RecipeScrollLeftClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset - RecipeScroller.ViewportWidth * .8);
     private void RecipeScrollRightClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset + RecipeScroller.ViewportWidth * .8);
     private void RecipeScrollChanged(object sender, ScrollChangedEventArgs e) => UpdateScrollButtons(RecipeScroller, RecipeScrollLeft, RecipeScrollRight);

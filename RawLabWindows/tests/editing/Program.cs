@@ -95,6 +95,45 @@ Directory.CreateDirectory(root);
 try
 {
     ProtectedProcessingChecks(root);
+    // Tool scope must own the full logical tool, independently from its containing group.
+    Check(Enum.IsDefined(typeof(EditorResetKind), 4), "Current-tool reset is a first-class scope");
+    EditorResetScope Tool(EditorAdjustmentTool tool) {
+        var scope = new EditorResetScope((EditorResetKind)4);
+        typeof(EditorResetScope).GetProperty("Tool")!.SetValue(scope, tool);
+        return scope;
+    }
+    var toolState = new Adjustments { Processing = ProcessingIdentity.Legacy };
+    toolState.ResolveWhiteBalance((5200, 8));
+    toolState.Set(Parameter.Exposure, .7); toolState.Set(Parameter.Contrast, 23);
+    toolState.SetEffect(PhotoEffectParameter.VignetteMidpoint, 12);
+    toolState.SetEffect(PhotoEffectParameter.GrainSize, 45);
+    toolState.DisplayChromaDenoise = 1;
+    toolState.Geometry = new(StraightenDegrees: 4); toolState.Lens = new(true);
+    var toolEdit = new SavedEdit(new("tool.ARW", 12, 34, 56), toolState.Capture(), "film.cube");
+    var exposureOnly = EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.Exposure), toolEdit);
+    Check(exposureOnly.Status == EditorResetStatus.Ready && !exposureOnly.RequiresConfirmation &&
+        exposureOnly.Candidate!.Settings.Values[(int)Parameter.Exposure] == 0 &&
+        exposureOnly.Candidate.Settings.Values[(int)Parameter.Contrast] == 23 &&
+        exposureOnly.Candidate.Settings.Processing == ProcessingIdentity.Legacy,
+        "Exposure tool reset preserves contrast and processing identity");
+    var vignetteOnly = EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.Vignette), toolEdit).Candidate!;
+    Check(vignetteOnly.Settings.Effects!.VignetteMidpoint == new PhotoEffectsSettings().VignetteMidpoint &&
+        vignetteOnly.Settings.Effects.GrainSize == 45, "Vignette reset clears inactive auxiliary fields while retaining grain");
+    Check(EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.MasterRecipe), toolEdit).Status == EditorResetStatus.NoChange,
+        "No recipe means recipe tool reset is NoChange even with a selected film");
+    var filmOnly = EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.Film), toolEdit).Candidate!;
+    Check(filmOnly.Look == null && filmOnly.Settings.SameAs(toolEdit.Settings), "Film reset owns only selection without a recipe");
+    var draftContext = new EditorResetContext("lut", 10, new(TransformTool.Geometry, toolState.Geometry, toolState.Lens));
+    var geometryOnly = EditorResetTransaction.Prepare(Tool(EditorAdjustmentTool.Geometry), "tool.ARW", 1, 2, toolEdit, draftContext);
+    Check(geometryOnly.Status == EditorResetStatus.Ready && !geometryOnly.RequiresConfirmation &&
+        geometryOnly.Candidate!.Settings.Geometry!.IsIdentity && geometryOnly.Candidate.Settings.Lens == toolState.Lens,
+        "Geometry tool candidate changes only geometry in the active draft");
+    Check(EditorResetTransaction.Prepare(Tool(EditorAdjustmentTool.Lens), "tool.ARW", 1, 2, toolEdit, draftContext).Status == EditorResetStatus.Blocked,
+        "Lens tool reset cannot target a geometry draft");
+    Check(EditorResetTransaction.Prepare(Tool(EditorAdjustmentTool.Geometry), "tool.ARW", 1, 2, toolEdit, new("lut", 10)).Status == EditorResetStatus.Blocked,
+        "Geometry tool requires matching draft");
+    Check(!geometryOnly.Matches("tool.ARW", 1, 2, toolEdit with { Settings = toolEdit.Settings with { Processing = ProcessingIdentity.Current } }, draftContext),
+        "Prepared reset rejects processing identity changes");
     // S1 regression: reset scope ownership, lossless detach, input validation and candidate isolation.
     var resetIdentity = new OriginalIdentity("fixture.ARW", 12, 34, 56);
     SavedEdit Edit(Adjustments state, string? look = "film.cube") => new(resetIdentity, state.Capture(), look);
@@ -118,6 +157,37 @@ try
     mixedState.Denoise = new(false, 13, 40, 27); mixedState.DisplayChromaDenoise = 2;
     mixedState.Geometry = new(PerspectiveHorizontal: .2); mixedState.Lens = new(true, true, false, true, "fixture");
     var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
+    Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.DefaultTool).SequenceEqual(new[] {
+        EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Vignette,
+        EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry }), "Each group opens its frozen default tool");
+    foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
+        var ownedState=mixedState.Clone();
+        ownedState.Set(Parameter.Strength,37);ownedState.Set(Parameter.Highlights,11);ownedState.Set(Parameter.Shadows,-14);
+        ownedState.Set(Parameter.Contrast,23);ownedState.Set(Parameter.ToneCurve,-19);ownedState.Set(Parameter.Temperature,6000);ownedState.Set(Parameter.Tint,12);
+        var edit=Edit(ownedState);var frozen=edit.Settings.Copy();var expected=frozen.Copy();var ownedLook=edit.Look;
+        switch(tool) {
+            case EditorAdjustmentTool.Film: ownedLook=null;break;
+            case EditorAdjustmentTool.MasterRecipe:
+                Check(EditorAdjustmentRules.PrepareReset(Tool(tool),edit).Status==EditorResetStatus.NoChange,"Recipe reset without identity does not clear film or strength");continue;
+            case EditorAdjustmentTool.WhiteBalance:
+                expected.Values[2]=5200;expected.Values[3]=8;expected=expected with{CameraWhiteBalance=true};break;
+            case EditorAdjustmentTool.Hsl:expected=expected with{Hsl=new()};break;
+            case EditorAdjustmentTool.Vignette:expected=expected with{Effects=new(GrainAmount:0,GrainSize:66,GrainRoughness:80)};break;
+            case EditorAdjustmentTool.Grain:expected=expected with{Effects=new(0,21,11,70,33)};break;
+            case EditorAdjustmentTool.Denoise:expected=expected with{Denoise=new(),DisplayChromaDenoise=0};break;
+            case EditorAdjustmentTool.Geometry:expected=expected with{Geometry=new()};break;
+            case EditorAdjustmentTool.Lens:expected=expected with{Lens=new()};break;
+            default:
+                var parameter=EditorAdjustmentRules.ParameterFor(tool);expected.Values[(int)parameter]=parameter==Parameter.Strength ? 100 : 0;
+                if(tool==EditorAdjustmentTool.Exposure)expected=expected with{ExposureMode=1};break;
+        }
+        var prepared=EditorAdjustmentRules.PrepareReset(Tool(tool),edit);
+        Check(prepared.Status==EditorResetStatus.Ready && prepared.Candidate!.Look==ownedLook && prepared.Candidate.Settings.SameAs(expected),
+            "Current tool owns only its complete field set: "+tool);
+        Check(prepared.RequiresConfirmation==(tool==EditorAdjustmentTool.Hsl),"Only all-HSL tool requires ordinary confirmation: "+tool);
+        Check(edit.Settings.SameAs(frozen),"Preparing/cancelling tool reset never mutates source: "+tool);
+        Check(EditorAdjustmentRules.PrepareReset(Tool(tool),prepared.Candidate!).Status==EditorResetStatus.NoChange,"Repeated tool reset is NoChange: "+tool);
+    }
     var resetContext=new EditorResetContext("resolved-film.cube", 10);
     var resetToken=EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Light), resetIdentity.Path, 2, 3, mixedEdit, resetContext);
     var exposedCandidate=resetToken.Candidate!;
@@ -227,6 +297,12 @@ try
         var recipeEdit = Edit(recipeState); var recipeFrozen = recipeEdit.Settings.Copy();
         var detached = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), recipeEdit);
         Check(detached.Status == EditorResetStatus.Ready, "representable recipe detaches at strength " + strength + ": " + detached.Reason);
+        foreach(var tool in new[]{EditorAdjustmentTool.Film,EditorAdjustmentTool.MasterRecipe}) {
+            var toolDetached=EditorAdjustmentRules.PrepareReset(Tool(tool),recipeEdit);
+            Check(toolDetached.Status==detached.Status && toolDetached.Candidate!.Settings.SameAs(detached.Candidate!.Settings) && toolDetached.Candidate.Look==null && toolDetached.RequiresConfirmation,
+                "Film/recipe current-tool reset uses the same lossless materialization and confirmation: "+tool+"/"+strength);
+            Check(toolDetached.MaterializedFields!.Count>0,"Recipe confirmation carries actual converted fields: "+tool+"/"+strength);
+        }
         var detachedState = detached.Candidate!.Settings.Restore();
         Check(detached.Candidate.Look == null && detachedState.MasterRecipeID == null && detachedState[Parameter.Strength] == 100,
             "look and recipe identities are both cleared");
@@ -251,6 +327,8 @@ try
     var unsafeRecipe = new Adjustments(); unsafeRecipe.ApplyMasterRecipe(MasterRecipe.All[0]); unsafeRecipe.Set(Parameter.Tint, 10);
     Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
         "RAW relative tint cannot invent as-shot calibration");
+    Check(EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.MasterRecipe),Edit(unsafeRecipe)).Status==EditorResetStatus.Blocked,
+        "Current recipe cannot bypass missing-WB blocked result");
     unsafeRecipe.Set(Parameter.Tint, 0); unsafeRecipe.Set(Parameter.Temperature, 7000);
     Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
         "RAW custom recipe WB also needs real calibration");

@@ -14,6 +14,7 @@ public partial class GeometryPanel : UserControl
     public double? AspectRatio=>CropInteraction.Ratio(preset,originalAspect,1,swapped);
     public bool ShowCorrectionGrid=>GridBox.IsChecked==true;
     public bool HasInvalidInput=>new[]{angle,horizontal,vertical}.Concat(crops).Any(row=>row.HasInvalidInput);
+    public event Action? ResetRequested;
     public event Action<GeometrySettings,bool>? Changed;
     public event Action? OverlayChanged;
     public GeometryPanel()
@@ -96,7 +97,7 @@ public partial class GeometryPanel : UserControl
         Publish(value with{FlipHorizontal=x,FlipVertical=y,CropX=x!=value.FlipHorizontal ? Math.Max(0,1-value.CropX-value.CropWidth) : value.CropX,
             CropY=y!=value.FlipVertical ? Math.Max(0,1-value.CropY-value.CropHeight) : value.CropY});
     }
-    private void ResetClicked(object sender,RoutedEventArgs e)=>ResetDraft();
+    private void ResetClicked(object sender,RoutedEventArgs e){if(!syncing && IsEnabled)ResetRequested?.Invoke();}
     private void AspectChanged(object sender,SelectionChangedEventArgs e)
     {
         if(syncing || AspectBox.SelectedIndex<0)return;preset=(CropAspectPreset)AspectBox.SelectedIndex;

@@ -50,7 +50,7 @@ public partial class MainWindow : Window
     private PhotoInfoMode photoInfoMode;
     private long photoInfoRevision;
     private LibraryEntry? contextEntry;
-    private double dockHeight=288;
+    private double dockHeight=344;
     private double libraryWidth=244;
     private RenderedImage? result;
     private int renderedGpuMode;
@@ -148,12 +148,17 @@ public partial class MainWindow : Window
         };
         WhiteBalanceEditor.ResetRequested+=()=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.ResetWhiteBalance();RefreshControls();MarkEdited();Schedule();
+            RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.WhiteBalance));
         };
+        HslEditor.ResetRequested+=RequestReset;
+        PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Hsl=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
+        DenoiseEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Denoise));
+        GeometryEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Geometry));
+        LensEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Lens));
         LensEditor.Changed+=UpdateLensDraft;
         GeometryEditor.Changed+=UpdateGeometryDraft;
         GeometryEditor.OverlayChanged+=RefreshCropDraft;

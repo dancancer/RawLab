@@ -9,6 +9,7 @@ public partial class DenoisePanel : UserControl
     private bool syncing=true;
     private readonly ParameterRow[] rows=[new(),new(),new()];
     private static readonly string[] titles=["亮度降噪","色彩降噪","粗色斑抑制"];
+    public event Action? ResetRequested;
     public event Action<DenoiseSettings,bool>? Changed;
     public DenoisePanel()
     {
@@ -35,7 +36,7 @@ public partial class DenoisePanel : UserControl
     {
         if(!syncing && PresetBox.SelectedIndex is 0 or 1)Publish((PresetBox.SelectedIndex==0 ? DenoiseSettings.Detail : DenoiseSettings.Clean) with {Enabled=value.Enabled});
     }
-    private void ResetClicked(object sender,RoutedEventArgs e)=>Publish(new());
+    private void ResetClicked(object sender,RoutedEventArgs e){if(!syncing && IsEnabled)ResetRequested?.Invoke();}
     private void Set(int axis,double number,bool interactive)=>Publish(axis switch {
         0=>value with {Luma=number},1=>value with {Chroma=number},_=>value with {Coarse=number}},interactive);
 }

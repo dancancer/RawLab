@@ -48,7 +48,7 @@ public partial class MainWindow
             var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
             AutomationProperties.SetName(button,Loc.Text(spec.Title));
-            button.Click+=(_,_)=>{if(!ResolveTransformDraft())return;OrdinaryParameter.RestoreText();choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;selectedParameter=spec.Id;RefreshControls();};
+            button.Click+=(_,_)=>SelectTool(ToolFor(spec.Id));
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
         foreach(var (tool,title,icon) in new[] {
@@ -63,17 +63,111 @@ public partial class MainWindow
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=title};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
-            button.Click+=(_,_)=>{if(exporting || !ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=false;choosingDenoise=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;choosingPhotoEffects=true;selectedEffect=tool;RefreshControls();};
+            button.Click+=(_,_)=>SelectTool(tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain);
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
-        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);FitToolCaptions();
+        Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);BuildWorkspaceNavigation();FitToolCaptions();
     }
-    private void FilmCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingFilm=true;choosingDenoise=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=false;choosingDenoise=true;choosingFilm=false;choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void HslCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingHsl=true;choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingWhiteBalance=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void WhiteBalanceCategoryClicked(object sender,RoutedEventArgs e) { if(!ResolveTransformDraft())return;choosingRecipes=false;choosingWhiteBalance=true;choosingHsl=choosingDenoise=choosingFilm=choosingPhotoEffects=false;choosingLens=choosingGeometry=false;RefreshControls(); }
-    private void LensCategoryClicked(object sender,RoutedEventArgs e)=>BeginTransform(TransformTool.Lens);
-    private void GeometryCategoryClicked(object sender,RoutedEventArgs e)=>BeginTransform(TransformTool.Geometry);
+    private void FilmCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Film);
+    private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Denoise);
+    private void HslCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Hsl);
+    private void WhiteBalanceCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.WhiteBalance);
+    private void LensCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Lens);
+    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Geometry);
+
+    private EditorAdjustmentGroup? expandedGroup = EditorAdjustmentGroup.Light;
+    private readonly Dictionary<EditorAdjustmentGroup,Button> groupButtons = [];
+    private readonly Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)> workspaceTools = [];
+    private EditorAdjustmentTool CurrentTool => choosingFilm ? EditorAdjustmentTool.Film : choosingRecipes ? EditorAdjustmentTool.MasterRecipe :
+        choosingHsl ? EditorAdjustmentTool.Hsl : choosingWhiteBalance ? EditorAdjustmentTool.WhiteBalance : choosingDenoise ? EditorAdjustmentTool.Denoise :
+        choosingGeometry ? EditorAdjustmentTool.Geometry : choosingLens ? EditorAdjustmentTool.Lens :
+        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : ToolFor(selectedParameter);
+    private static EditorAdjustmentTool ToolFor(Parameter parameter) => parameter switch {
+        Parameter.Temperature or Parameter.Tint => EditorAdjustmentTool.WhiteBalance,
+        _ => Enum.GetValues<EditorAdjustmentTool>().First(tool => (tool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.Exposure or
+            EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or EditorAdjustmentTool.Contrast or EditorAdjustmentTool.ToneCurve or
+            EditorAdjustmentTool.Saturation or EditorAdjustmentTool.Sharpening) && EditorAdjustmentRules.ParameterFor(tool)==parameter)
+    };
+    private void BuildWorkspaceNavigation()
+    {
+        Groups.Children.Clear();groupButtons.Clear();workspaceTools.Clear();
+        foreach(var group in Enum.GetValues<EditorAdjustmentGroup>()) {
+            var button=new Button { Content=Loc.Text(EditorAdjustmentRules.Title(group)),MinHeight=36,MinWidth=80,Padding=new Thickness(12,5,12,5) };
+            AutomationProperties.SetAutomationId(button,"editor.group."+EditorAdjustmentRules.Id(group));
+            button.Click+=(_,_)=>SelectGroup(group);groupButtons[group]=button;Groups.Children.Add(button);
+        }
+        workspaceTools[EditorAdjustmentTool.Film]=(FilmCategory,FilmCategoryRing);
+        workspaceTools[EditorAdjustmentTool.MasterRecipe]=(MasterRecipeCategory,MasterRecipeCategoryRing);
+        workspaceTools[EditorAdjustmentTool.WhiteBalance]=(WhiteBalanceCategory,WhiteBalanceCategoryRing);
+        workspaceTools[EditorAdjustmentTool.Hsl]=(HslCategory,HslCategoryRing);
+        workspaceTools[EditorAdjustmentTool.Denoise]=(DenoiseCategory,DenoiseCategoryRing);
+        workspaceTools[EditorAdjustmentTool.Geometry]=(GeometryCategory,GeometryCategoryRing);
+        workspaceTools[EditorAdjustmentTool.Lens]=(LensCategory,LensCategoryRing);
+        foreach(var (parameter,controls) in toolButtons)workspaceTools[ToolFor(parameter)]=controls;
+        foreach(var (tool,controls) in effectToolButtons)workspaceTools[tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain]=controls;
+        foreach(var (tool,controls) in workspaceTools)AutomationProperties.SetAutomationId(controls.Button,tool.ToString());
+        // 同一描述表决定工具顺序、默认工具与重置范围。
+        Tools.Children.Clear();foreach(var group in Enum.GetValues<EditorAdjustmentGroup>())foreach(var tool in EditorAdjustmentRules.Tools(group))Tools.Children.Add(workspaceTools[tool].Button);
+    }
+    private void SelectGroup(EditorAdjustmentGroup group)
+    {
+        if(file==null || exporting || pendingAllReset!=null)return;
+        if(expandedGroup==group) {
+            if(!ResolveTransformDraft())return;
+            dockHeight=DockRow.ActualHeight;expandedGroup=null;RefreshWorkspaceNavigation();
+            DockRow.MinHeight=0;DockRow.Height=GridLength.Auto;AdjustmentSplitter.Visibility=Visibility.Collapsed;SplitterRow.Height=new(0);
+            return;
+        }
+        SelectTool(EditorAdjustmentRules.DefaultTool(group));
+    }
+    private void SelectTool(EditorAdjustmentTool tool)
+    {
+        if(file==null || exporting || pendingAllReset!=null)return;
+        OrdinaryParameter.RestoreText();
+        if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
+            BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
+            if(!transform.Active || (transform.Tool==TransformTool.Geometry)!=(tool==EditorAdjustmentTool.Geometry))return;
+        } else {
+            if(!ResolveTransformDraft())return;
+            choosingFilm=tool==EditorAdjustmentTool.Film;choosingRecipes=tool==EditorAdjustmentTool.MasterRecipe;
+            choosingHsl=tool==EditorAdjustmentTool.Hsl;choosingWhiteBalance=tool==EditorAdjustmentTool.WhiteBalance;
+            choosingDenoise=tool==EditorAdjustmentTool.Denoise;choosingPhotoEffects=tool is EditorAdjustmentTool.Vignette or EditorAdjustmentTool.Grain;
+            choosingGeometry=choosingLens=false;
+            if(choosingPhotoEffects)selectedEffect=tool==EditorAdjustmentTool.Vignette ? PhotoEffectTool.Vignette : PhotoEffectTool.Grain;
+            else if(!choosingFilm && !choosingRecipes && !choosingHsl && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
+        }
+        var wasCollapsed=expandedGroup==null;expandedGroup=EditorAdjustmentRules.GroupFor(tool);
+        if(wasCollapsed){DockRow.Height=new(dockHeight);DockRow.MinHeight=216;AdjustmentSplitter.Visibility=Visibility.Visible;SplitterRow.Height=new(6);UpdateDockMinimum();}
+        RefreshControls();
+    }
+    private SavedEdit? WorkspaceEdit()
+    {
+        if(file==null)return null;
+        try {
+            var edit=CaptureCurrentEdit();return transform.Active ? edit with { Settings=edit.Settings.Copy() with { Geometry=transform.Geometry,Lens=transform.Lens } } : edit;
+        } catch(Exception error) when(error is IOException or UnauthorizedAccessException) {return null;}
+    }
+    private void RefreshWorkspaceNavigation()
+    {
+        var edit=WorkspaceEdit();
+        bool Modified(EditorResetScope scope) {try{return edit!=null && EditorAdjustmentRules.IsModified(scope,edit);}catch(ArgumentException){return false;}catch(InvalidDataException){return false;}}
+        foreach(var (group,button) in groupButtons) {
+            var modified=Modified(new(EditorResetKind.Group,group));var selected=expandedGroup==group;
+            button.Content=Loc.Text(EditorAdjustmentRules.Title(group))+(modified ? " •" : "");button.Tag=selected ? "selected" : null;
+            AutomationProperties.SetName(button,Loc.Text(EditorAdjustmentRules.Title(group)));
+            AutomationProperties.SetItemStatus(button,string.Join(" · ",new[]{selected ? Loc.Format("收起{0}组",Loc.Text(EditorAdjustmentRules.Title(group))) : Loc.Format("展开{0}组",Loc.Text(EditorAdjustmentRules.Title(group))),modified ? Loc.Text("已调整") : ""}.Where(value=>value.Length>0)));
+            button.IsEnabled=file!=null && !exporting && pendingAllReset==null;
+        }
+        foreach(var (tool,controls) in workspaceTools) {
+            controls.Button.Visibility=expandedGroup==EditorAdjustmentRules.GroupFor(tool) ? Visibility.Visible : Visibility.Collapsed;
+            var modified=Modified(new(EditorResetKind.Tool,Tool:tool));
+            controls.Ring.Progress=modified ? (controls.Ring.Progress==0 ? 1 : controls.Ring.Progress) : 0;controls.Ring.InvalidateVisual();
+            AutomationProperties.SetItemStatus(controls.Button,string.Join(" · ",new[]{CurrentTool==tool ? Loc.Text("当前工具") : "",modified ? Loc.Text("已调整") : ""}.Where(value=>value.Length>0)));
+        }
+        var expanded=expandedGroup!=null;
+        DockHeader.Visibility=ToolsScroller.Visibility=expanded ? Visibility.Visible : Visibility.Collapsed;
+        if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
+    }
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=null;
@@ -194,7 +288,7 @@ public partial class MainWindow
             }
             ExposureMode.SelectedIndex=settings.ExposureMode;
             ProcessingVersion.SelectedIndex=settings.Processing.Version-1;
-            ProcessingVersion.IsEnabled=file!=null && !exporting && !transform.Active;
+            ProcessingVersion.IsEnabled=file!=null && !exporting && !transform.Active && pendingAllReset==null;
             ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
             ExposureMode.IsEnabled=ExposureMode.IsEnabled && !raster && !transform.Active;
             ResetParameterButton.IsEnabled=ResetGroupButton.IsEnabled=canAdjust;
@@ -222,12 +316,13 @@ public partial class MainWindow
             AdjustToggleButton.Tag=AdjustmentPanel.Visibility==Visibility.Visible ? "selected" : null;
             UpdateBusy();
             RefreshExportSizeMenu();
+            RefreshWorkspaceNavigation();
         }
         finally { syncing=false; }
     }
     private void UpdateBusy()
     {
-        ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable && !transform.Active;
+        ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=pendingAllReset==null && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable && !transform.Active;
         ViewBatchMenu.IsEnabled=CurrentBatch!=null;
         MenuViewBatch.IsEnabled=ViewBatchMenu.IsEnabled;
         AutoExposureButton.IsEnabled=MenuAutoExposure.IsEnabled=file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
@@ -235,11 +330,12 @@ public partial class MainWindow
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
         MenuExport.IsEnabled=ExportJpeg.IsEnabled;MenuBatch.IsEnabled=BatchExportMenu.IsEnabled;
         ApplyDraftButton.IsEnabled=CanApplyTransform;
+        QueuePendingReset();
         MenuImportLook.IsEnabled=!exporting;
         HistogramSurface.Visibility=result!=null ? Visibility.Visible : Visibility.Collapsed;
         RefreshStateToolTips();
         CompareButton.IsEnabled=ClippingButton.IsEnabled=InfoButton.IsEnabled=AdjustToggleButton.IsEnabled=file!=null && !exporting;
-        AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
+        AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
         ExportButton.ToolTip=file==null ? Loc.Text("载入照片后可用") : transform.Active ? Loc.Text("草稿未应用，无法导出或复制设置。") :

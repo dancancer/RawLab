@@ -28,7 +28,7 @@ foreach (var (argument, composed) in new[] {
     ("selected ? \"暗角\" : \"颗粒\"", false), ("(spec.IsVignette ? \"暗角\" : \"颗粒\")+titles[(int)spec.Id]", true),
     ("\"重置\"+name", true), ("(\"重置\" + name)", true), ("$\"重置{name}\"", true), ("string.Concat(a, b)", true) })
     Check(StaticKeyChecks.IsComposed(argument) == composed, "Composed-key scanner classifies " + argument);
-var keyArguments = StaticKeyChecks.Arguments(StaticKeyChecks.SourceDirectory()).ToList();
+var keyArguments = StaticKeyChecks.Arguments(args.Length>0 ? Path.GetFullPath(args[0]) : StaticKeyChecks.SourceDirectory()).ToList();
 var composedKeys = keyArguments.Where(argument => StaticKeyChecks.IsComposed(argument.Text))
     .Select(argument => "\n  " + argument.Location + ": " + argument.Text).ToList();
 Check(keyArguments.Count > 150 && composedKeys.Count == 0,
