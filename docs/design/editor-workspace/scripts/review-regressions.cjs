@@ -12,10 +12,12 @@ async function reviewRegressions(browser, base) {
     });
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    const goto = (scene, suffix = "") =>
-      page.goto(
+    const goto = async (scene, suffix = "") => {
+      await page.goto(
         `${base}preview.html?platform=${platform}&scene=${scene}${suffix}`,
       );
+      await page.locator(".native-app").waitFor({ state: "attached" });
+    };
     const check = async (id, run) => {
       try {
         await run();

@@ -5,6 +5,27 @@ const platform = params.get("platform") || "ios";
 const mobile = ["ios", "android"].includes(platform);
 const app = document.querySelector("#app");
 document.body.classList.add(platform, mobile ? "mobile" : "desktop");
+let updateTimer = null,
+  updateAttempt = 0;
+function invalidateUpdateAttempt() {
+  clearTimeout(updateTimer);
+  updateTimer = null;
+  return ++updateAttempt;
+}
+function openUpdate() {
+  RawLabDesignFlows.close();
+  menu = null;
+  // 更新窗口只切换显示层，不重建照片会话或草稿。
+  if (["verification-failed", "installation-failed"].includes(download)) {
+    scene = "groups";
+    RawLabDesignFlows.open(
+      download === "verification-failed"
+        ? "update-signature-error"
+        : "update-install-recovery",
+    );
+  } else scene = "update";
+  render();
+}
 const UPDATE_SCENES = [
   "update",
   "updating-wait",
@@ -124,6 +145,7 @@ function isDraftChanged() {
   );
 }
 function setScene(s) {
+  invalidateUpdateAttempt();
   iteration.attach(prototypeContext());
   cancelBeforeHold();
   cropDrag = null;
@@ -1029,6 +1051,11 @@ function prototypeContext() {
     windowTitlebar,
     repaint: render,
     gotoScene: setScene,
+    openUpdate,
+    finishUpdateRecovery: () => {
+      invalidateUpdateAttempt();
+      download = "available";
+    },
     beginEdit: () => iteration.beforeEdit(),
     endEdit: () => iteration.afterEdit(),
     cancelEdit: () => iteration.cancelEdit(),
@@ -1106,6 +1133,7 @@ function render() {
       photoMarkup,
       repaint: render,
       gotoScene: setScene,
+      openUpdate,
       notify: toast,
       setZoom: (value) => {
         zoomChoice = value;
@@ -1368,22 +1396,28 @@ app.addEventListener("click", (e) => {
       preset.dataset.denoisePreset
     ];
     if (v) {
+      iteration.beforeEdit();
       [values.denoiseLuma, values.denoiseChroma, values.denoiseCoarse] = v;
       denoiseEnabled = true;
+      iteration.afterEdit();
       render();
     }
     return;
   }
   const film = e.target.closest("[data-film]");
   if (film) {
+    iteration.beforeEdit();
     selectedFilm = film.dataset.film;
     selectedRecipe = "";
+    iteration.afterEdit();
     render();
     return;
   }
   const recipe = e.target.closest("[data-recipe]");
   if (recipe) {
+    iteration.beforeEdit();
     selectedRecipe = recipe.dataset.recipe;
+    iteration.afterEdit();
     render();
     return;
   }
@@ -1502,12 +1536,7 @@ function handleAction(a, b) {
       next = modal.nextTool,
       afterFlow = modal.afterFlow,
       afterReset = modal.afterReset;
-    if (a === "discard-leave") {
-      Object.assign(values, draftBefore);
-      lensRequest = structuredClone(draftLensBefore);
-    }
-    draft = false;
-    draftTouched = false;
+    iteration.resolveDraft(a === "apply-leave");
     if (afterReset) {
       modal = { kind: "reset", scope: afterReset, resumeDraft: true };
       render();
@@ -1525,12 +1554,7 @@ function handleAction(a, b) {
     if (afterFlow) RawLabDesignFlows.open(afterFlow);
     render();
   } else if (a === "apply-draft" || a === "discard-draft") {
-    if (a === "discard-draft") {
-      Object.assign(values, draftBefore);
-      lensRequest = structuredClone(draftLensBefore);
-    }
-    draft = false;
-    draftTouched = false;
+    iteration.resolveDraft(a === "apply-draft");
     group = "light";
     tool = "exposure";
     render();
@@ -1565,26 +1589,27 @@ function handleAction(a, b) {
     render();
   } else if (a === "close-update") {
     scene = "groups";
-    group = null;
-    tool = null;
     render();
   } else if (a === "skip-version") {
     scene = "groups";
     toast("已跳过 0.9.0（示例）；手动检查时仍可安装");
   } else if (a === "download-update" || a === "retry-update") {
+    const attempt = invalidateUpdateAttempt();
     download = "downloading";
+    scene = "update";
     render();
-    setTimeout(() => {
-      if (download !== "downloading") return;
+    updateTimer = setTimeout(() => {
+      if (attempt !== updateAttempt || download !== "downloading") return;
       download = "verifying";
       render();
-      setTimeout(() => {
-        if (download !== "verifying") return;
+      updateTimer = setTimeout(() => {
+        if (attempt !== updateAttempt || download !== "verifying") return;
         download = "ready";
         render();
       }, 1600);
     }, 2200);
   } else if (a === "cancel-download") {
+    invalidateUpdateAttempt();
     download = "available";
     render();
   } else if (a === "wait-update") {
@@ -1598,6 +1623,10 @@ function handleAction(a, b) {
     download = "ready";
     render();
   } else if (a === "verify-failure" || a === "simulate-install-failed") {
+    invalidateUpdateAttempt();
+    download =
+      a === "verify-failure" ? "verification-failed" : "installation-failed";
+    iteration.cancelInstall();
     scene = "groups";
     RawLabDesignFlows.open(
       a === "verify-failure"
@@ -1635,14 +1664,18 @@ function handleAction(a, b) {
     histogramVisible = !histogramVisible;
     render();
   } else if (a === "auto-exposure") {
+    iteration.beforeEdit();
     values.exposure = 0.45;
+    iteration.afterEdit();
     render();
   } else if (a === "wb-mode") {
+    iteration.beforeEdit();
     wbMode = wbMode === "拍摄时设置" ? "自定义" : "拍摄时设置";
     if (wbMode === "拍摄时设置") {
       values.temperature = defaults.temperature;
       values.tint = defaults.tint;
     }
+    iteration.afterEdit();
     render();
   } else render();
 }
@@ -1748,7 +1781,9 @@ app.addEventListener("change", (e) => {
     updateControlAvailability();
   }
   if (e.target.id === "denoise-enabled") {
+    iteration.beforeEdit();
     denoiseEnabled = e.target.checked;
+    iteration.afterEdit();
     render();
   }
 });

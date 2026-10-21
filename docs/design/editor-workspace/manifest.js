@@ -3,7 +3,7 @@ window.RawLabDesignManifest = {
   schemaVersion: 1,
   id: "rawlab-editor-workspace",
   title: "RawLab 四端应用设计",
-  designVersion: "r7",
+  designVersion: "r8",
   status: "in_review",
   updatedAt: "2026-10-21",
   approval: null,

@@ -8,8 +8,13 @@ async function reviewUpdate(browser, base) {
       }),
       errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    const goto = (scene) =>
-      page.goto(`${base}preview.html?platform=${platform}&scene=${scene}`);
+    const goto = async (scene) => {
+      await page.goto(
+        `${base}preview.html?platform=${platform}&scene=${scene}`,
+      );
+      // 初始化完成后再读全局模型；load 返回不替代可操作画面的就绪条件。
+      await page.locator(".native-app").waitFor({ state: "attached" });
+    };
     const action = (id) => page.locator(`[data-action="${id}"]`).last().click();
     const iter = (id) => page.locator(`[data-iter="${id}"]`).click();
     const phase = () => page.evaluate(() => download);

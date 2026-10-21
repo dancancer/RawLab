@@ -5,7 +5,11 @@ window.RawLabIteration = (() => {
     scopeMode = "custom",
     scopePurpose = "copy",
     clipboard = null;
-  let renameDraft = null;
+  let renameDraft = null,
+    presetSequence = 0;
+  let operation = null,
+    collectionSourceId = "source",
+    targetIntent = "inspect";
   let presetName = "森林柔光",
     presetError = "",
     selectedPreset = "p1";
@@ -47,8 +51,15 @@ window.RawLabIteration = (() => {
     if (!histories.has(id)) histories.set(id, { undo: [], redo: [] });
     return histories.get(id);
   };
-  const sourceIdentity = () => clipboard?.sourceInfo?.id || currentIdentity();
+  const sourceIdentity = () => operation?.sourceId || collectionSourceId;
   function recordEdit(id, before, after, record = {}) {
+    if (sameSnapshot(before, after))
+      return Object.assign(record, {
+        before: structuredClone(before),
+        after: structuredClone(after),
+        historyState: "unchanged",
+        identity: id,
+      });
     const history = historyFor(id);
     for (const old of history.redo) old.historyState = "redo-invalidated";
     history.redo = [];
@@ -68,10 +79,28 @@ window.RawLabIteration = (() => {
       history.redo.some((r) => r.historyState === "undone");
     ctx.setCanRedo(history.redo.some((r) => r.historyState === "undone"));
   }
-  function beginOperation(mode) {
-    preflightMode = mode;
+  function endOperation() {
+    operation = null;
+    presetTarget = false;
+    activePresetPayload = null;
+    activePresetName = "";
     skippedTargets.clear();
     targetDraftOutcome = "";
+    draftContinuation = null;
+    targetIntent = "inspect";
+  }
+  function beginOperation(mode) {
+    endOperation();
+    preflightMode = mode;
+    operation = {
+      mode,
+      sourceId:
+        mode === "paste"
+          ? clipboard?.sourceInfo?.id || currentIdentity()
+          : mode === "export"
+            ? collectionSourceId
+            : currentIdentity(),
+    };
   }
   function guardDraft(continuation) {
     if (!ctx.hasDraft()) {
@@ -87,18 +116,26 @@ window.RawLabIteration = (() => {
     if (apply) {
       const after = snapshot();
       edits.set(currentIdentity(), after);
-      if (JSON.stringify(before) !== JSON.stringify(after))
+      if (!sameSnapshot(before, after))
         recordEdit(currentIdentity(), before, after);
     }
+    pendingBefore = null;
+    syncHistory();
   }
+  const hasTargetDraft = (id) =>
+    (id === currentIdentity() && ctx.hasDraft()) || targetDrafts.has(id);
   const pendingTarget = () =>
-    currentTargets().find((p) => targetDrafts.has(p.id));
+    currentTargets().find((p) => hasTargetDraft(p.id));
   function continueTargets(
     mode = preflightMode,
     skipIncompatible = false,
     retry = false,
   ) {
     preflightMode = mode;
+    if (!currentTargets().length) {
+      open("paste-no-targets");
+      return;
+    }
     if (pendingTarget()) {
       open(
         mode === "export"
@@ -111,6 +148,10 @@ window.RawLabIteration = (() => {
     }
     if (mode === "export") {
       open("batch-per-target-export");
+      return;
+    }
+    if (targetIntent !== "submit") {
+      open(mode === "sync" ? "batch-sync-scope" : "paste-result");
       return;
     }
     const payload = presetTarget ? activePresetPayload : clipboard;
@@ -288,11 +329,10 @@ window.RawLabIteration = (() => {
     `<div class="iteration-result">${ctx.icon("check")}<div><h3>${title}</h3><p>${copy}</p></div></div>`;
   const close = () => {
     RawLabDesignFlows.close();
-    presetTarget = false;
     ctx.repaint();
   };
   const open = (id) => {
-    RawLabDesignFlows.open(id);
+    RawLabDesignFlows.open(id, { continuation: true });
     ctx.repaint();
   };
   const currentTargets = () =>
@@ -324,7 +364,7 @@ window.RawLabIteration = (() => {
     ].includes(RawLabDesignFlows.active);
     return frozen && clipboard?.sourceInfo
       ? clipboard.sourceInfo
-      : photos.find((p) => p.id === (batchEditing ? editPhotoId : "source"));
+      : photos.find((p) => p.id === sourceIdentity());
   };
   const sourceSummary = () =>
     `<div class="iteration-source">${ctx.photoMarkup("job-thumbnail", "来源照片")}<div><strong>${presetTarget ? esc(activePresetName) : esc(sourcePhoto().name)}</strong><small>${presetTarget ? "来源：我的调整预设" : "来源 · " + esc(sourcePhoto().location)}</small></div><span class="tag">${presetTarget ? activePresetPayload?.fields.length || 0 : RawLabDesignFlows.active?.startsWith("paste-") || RawLabDesignFlows.active === "copy-ready" ? clipboard?.fields.length || scope.size : scope.size} 项调整</span></div>`;
@@ -411,7 +451,7 @@ window.RawLabIteration = (() => {
             : "",
         }),
       );
-      if (presetTarget) {
+      if (p.id === currentIdentity()) {
         ctx.setCanRedo(false);
         ctx.restore(after);
         T.restore(after.curve);
@@ -448,21 +488,23 @@ window.RawLabIteration = (() => {
   function targetRows(mode = "preview") {
     return `<div class="iteration-targets">${currentTargets()
       .map((p) => {
-        const r = results.get(p.id),
+        const r = mode === "preview" ? null : results.get(p.id),
           failed =
             mode === "partial" && p.id === "photo-2" && r?.status !== "applied";
         const status = failed
           ? "保存失败 · 原记录保留"
-          : mode === "done" || r?.status === "applied"
-            ? "调整已保存"
-            : "待应用";
+          : r?.historyState === "unchanged"
+            ? "调整未变化"
+            : mode === "done" || r?.status === "applied"
+              ? "调整已保存"
+              : "待应用";
         return `<div class="iteration-target">${ctx.photoMarkup("job-thumbnail", p.name)}<div><strong>${p.name}</strong><small>${p.location}</small><span class="${failed ? "error-text" : "muted"}">${status}${r?.skipped ? " · " + r.skipped : ""}</span></div>${failed ? ctx.icon("warning") : status === "调整已保存" ? ctx.icon("check") : ""}</div>`;
       })
       .join("")}</div>`;
   }
   function draftChoices(source = true) {
     const target = pendingTarget() || photos.find((p) => p.id === "photo-2");
-    return `${sourceSummary()}${error(source ? "当前照片有未应用草稿" : "目标仍有未应用草稿", source ? "先处理几何或镜头草稿，再继续当前操作。" : `${target.name} 正在另一个编辑会话中修改；不能直接覆盖。`)}${source ? button("draft:apply", "应用草稿并继续", "primary") + button("draft:discard", "放弃草稿并继续") + button("draft:cancel", "继续编辑") : `<div class="iteration-choice-list">${button("target-draft:apply", "应用并保存目标草稿")}${button("target-draft:discard", "放弃目标草稿")}${button("target-draft:skip", "跳过这张照片")}${button("close", "取消整次操作")}</div>`}`;
+    return `${sourceSummary()}${error(source ? "当前照片有未应用草稿" : "目标仍有未应用草稿", source ? "先处理几何或镜头草稿，再继续当前操作。" : `${target.name}${target.id === currentIdentity() ? " 是当前编辑器中的照片" : " 正在另一个编辑会话中修改"}；不能直接覆盖。`)}${source ? button("draft:apply", "应用草稿并继续", "primary") + button("draft:discard", "放弃草稿并继续") + button("draft:cancel", "继续编辑") : `<div class="iteration-choice-list">${button("target-draft:apply", "应用并保存目标草稿")}${button("target-draft:discard", "放弃目标草稿")}${button("target-draft:skip", "跳过这张照片")}${button("close", "取消整次操作")}</div>`}`;
   }
   function presetList(empty = false, inPanel = false) {
     return `${inPanel ? "" : note("调整预设独立于照片保存；删除源照片后仍可复用。")}${button("open:preset-save", "保存当前调整", "primary")}${!presets.length || empty ? '<div class="iteration-empty"><h3>还没有调整预设</h3><p>把常用调整保存起来，在其他照片上复用。</p></div>' : `<div class="preset-list">${presets.map((p) => `<div class="preset-row"><button data-iter="preset:apply:${p.id}"><strong>${esc(p.name)}</strong><small>${p.summary}</small></button><button class="icon" data-iter="preset:manage:${p.id}" aria-label="管理${esc(p.name)}">${ctx.icon("more")}</button></div>`).join("")}</div>`}${inPanel ? button("open:user-presets", "管理全部预设", "quiet") : ""}`;
@@ -533,7 +575,25 @@ window.RawLabIteration = (() => {
         "先从一张照片复制已提交的调整，再粘贴到其他照片。未修改任何目标。",
       );
       footer = button("open:copy-scope", "选择要复制的调整", "primary");
-    } else if (id === "paste-targets") {
+    } else if (id === "paste-no-targets") {
+      body =
+        error(
+          "没有可处理的目标",
+          "尚未选择目标，或目标已全部跳过。没有应用调整或创建导出任务。",
+        ) + skippedSummary();
+      footer =
+        button("close", "结束本次操作") +
+        button(
+          "open:" +
+            (preflightMode === "export"
+              ? "batch-export-targets"
+              : preflightMode === "paste"
+                ? "paste-targets"
+                : "batch-sync"),
+          "重新选择照片",
+          "primary",
+        );
+    } else if (["paste-targets", "batch-export-targets"].includes(id)) {
       body = sourceSummary() + collection();
       footer = button(
         "paste:targets-done",
@@ -854,6 +914,10 @@ window.RawLabIteration = (() => {
     } else if (id === "batch-per-target-export") {
       body =
         `<p class="flow-lead">使用每张照片自己的最终调整</p>` +
+        (!currentTargets().length
+          ? error("没有可导出的目标", "目标已全部跳过，请重新选择照片。") +
+            link("batch-export-targets", "重新选择照片")
+          : "") +
         `<div class="iteration-freeze-list">${currentTargets()
           .map((p) => {
             const edit = edits.get(p.id) || snapshot();
@@ -1146,6 +1210,7 @@ window.RawLabIteration = (() => {
     "copy-ready": "copy-scope",
     "paste-result": "copy-ready",
     "paste-targets": "paste-result",
+    "paste-no-targets": "paste-result",
     "paste-draft": "paste-result",
     "paste-incompatible": "paste-result",
     "paste-partial": "paste-result",
@@ -1222,8 +1287,13 @@ window.RawLabIteration = (() => {
       open("preset-duplicate");
       return;
     }
+    let newId = duplicate?.id;
+    if (!newId)
+      do {
+        newId = "preset-" + ++presetSequence;
+      } while (presets.some((p) => p.id === newId));
     const item = {
-      id: duplicate?.id || "preset-" + (presets.length + 1),
+      id: newId,
       name,
       summary: `${scope.size} 项调整 · 不依赖原照片`,
       payload: capture(),
@@ -1315,9 +1385,12 @@ window.RawLabIteration = (() => {
     if (T.action(id)) return true;
     if (id.startsWith("open:")) {
       const next = id.slice(5);
-      if (next === "copy-scope") {
-        scopePurpose = "copy";
-        presetTarget = false;
+      if (next === "copy-scope") scopePurpose = "copy";
+      if (next === "paste-result") beginOperation("paste");
+      if (next === "paste-draft") {
+        targetIntent = "inspect";
+        continueTargets();
+        return true;
       }
       if (next === "batch-per-target-export") {
         presetTarget = false;
@@ -1343,10 +1416,11 @@ window.RawLabIteration = (() => {
             ),
         );
     } else if (id === "capture") {
-      beginOperation("paste");
+      beginOperation("copy");
       scopePurpose = "copy";
       guardDraft(() => {
         clipboard = capture();
+        beginOperation("paste");
         open("copy-ready");
       });
       return true;
@@ -1367,7 +1441,9 @@ window.RawLabIteration = (() => {
       }
       return true;
     } else if (id === "paste:targets-done") {
-      open("paste-result");
+      open(
+        preflightMode === "export" ? "batch-per-target-export" : "paste-result",
+      );
       return true;
     } else if (id.startsWith("target-draft:")) {
       const photo = pendingTarget();
@@ -1379,11 +1455,13 @@ window.RawLabIteration = (() => {
         skippedTargets.add(photo.id);
         targetDraftOutcome = `${photo.name} 已明确跳过`;
       } else {
-        if (id.endsWith("apply")) {
+        if (photo.id === currentIdentity() && ctx.hasDraft()) {
+          resolveCurrentDraft(id.endsWith("apply"));
+        } else if (id.endsWith("apply")) {
           const before = structuredClone(edits.get(photo.id));
           const saved = structuredClone(targetDrafts.get(photo.id));
           edits.set(photo.id, saved);
-          recordEdit(photo.id, before, saved);
+          if (!sameSnapshot(before, saved)) recordEdit(photo.id, before, saved);
         }
         targetDrafts.delete(photo.id);
         targetDraftOutcome = id.endsWith("apply")
@@ -1395,13 +1473,15 @@ window.RawLabIteration = (() => {
     } else if (
       ["paste:apply", "paste:retry", "paste:skip-incompatible"].includes(id)
     ) {
-      guardDraft(() =>
+      targetIntent = "submit";
+      const proceed = () =>
         continueTargets(
           preflightMode,
           id === "paste:skip-incompatible",
           id === "paste:retry",
-        ),
-      );
+        );
+      if (currentTargets().some((p) => p.id === currentIdentity())) proceed();
+      else guardDraft(proceed);
       return true;
     } else if (id.startsWith("history:")) {
       const redo = id === "history:redo";
@@ -1534,12 +1614,14 @@ window.RawLabIteration = (() => {
       });
       return true;
     } else if (id === "sync-preflight") {
+      targetIntent = "submit";
       guardDraft(() => {
         clipboard = capture();
         continueTargets("sync");
       });
       return true;
     } else if (id === "batch:retry") {
+      targetIntent = "submit";
       continueTargets("sync", false, true);
       return true;
     } else if (id === "batch:reauthorize") {
@@ -1564,7 +1646,8 @@ window.RawLabIteration = (() => {
       ctx.repaint();
       return true;
     } else if (id === "batch:freeze") {
-      if (pendingTarget()) continueTargets("export");
+      if (!currentTargets().length || pendingTarget())
+        continueTargets("export");
       else {
         freezeTask();
         runTask();
@@ -1626,7 +1709,8 @@ window.RawLabIteration = (() => {
       return true;
     } else if (id === "update:retry") {
       RawLabDesignFlows.close();
-      ctx.gotoScene("update");
+      ctx.openUpdate();
+      RawLabDesignFlows.close();
       ctx.startUpdateRetry();
       return true;
     } else return false;
@@ -1649,17 +1733,34 @@ window.RawLabIteration = (() => {
       updateGate.taskRunning ||
       frozenItems.some((item) => ["waiting", "running"].includes(item.status))
     )
-      ctx.gotoScene("updating-wait");
+      ctx.showUpdatePhase("waiting");
     else ctx.showUpdatePhase(intent === "exit" ? "pending" : "installing");
   }
   function onOpen(id, options = {}) {
-    if (id === "paste-result") preflightMode = "paste";
-    if (id === "copy-scope") {
-      scopePurpose = "copy";
-      presetTarget = false;
+    if (id === "update-restored") {
+      ctx.finishUpdateRecovery();
+      installIntent = null;
     }
-    if (id.startsWith("batch-sync")) presetTarget = false;
-    if (id === "batch-per-target-export" && preflightMode !== "export")
+    if (id === "copy-ready") beginOperation("paste");
+    if (id === "preset-save") beginOperation("preset-save");
+    if (id === "copy-scope") {
+      beginOperation("copy");
+      scopePurpose = "copy";
+    } else if (id === "user-presets" || id === "presets-empty") endOperation();
+    else if (
+      ["batch-sync", "batch-sync-empty", "batch-sync-return"].includes(id)
+    ) {
+      endOperation();
+      if (!batchEditing) collectionSourceId = currentIdentity();
+    } else if (
+      id === "paste-result" &&
+      (!options.continuation || options.previous === "paste-done")
+    )
+      beginOperation("paste");
+    if (
+      ["batch-per-target-export", "batch-export-targets"].includes(id) &&
+      operation?.mode !== "export"
+    )
       beginOperation("export");
     if (
       options.seed &&
@@ -1679,6 +1780,7 @@ window.RawLabIteration = (() => {
       const saved = structuredClone(edits.get("photo-2"));
       saved.values.grain = 15;
       targetDrafts.set("photo-2", saved);
+      targetIntent = "submit";
       preflightMode = id.startsWith("batch-sync")
         ? "sync"
         : id === "batch-export-preflight"
@@ -1726,7 +1828,8 @@ window.RawLabIteration = (() => {
           edits.set(photoId, structuredClone(result.before));
           result.historyState = "undone";
         }
-    if (id === "batch-sync-empty") selectedPhotos.clear();
+    if (["batch-sync-empty", "paste-no-targets"].includes(id))
+      selectedPhotos.clear();
     if (id.startsWith("batch-per-target")) {
       if (id === "batch-per-target-save-files") outputFormat = "DNG";
       freezeTask();
@@ -1891,9 +1994,10 @@ window.RawLabIteration = (() => {
       return true;
     }
     if (e.target.dataset.iterPhoto) {
-      e.target.checked
-        ? selectedPhotos.add(e.target.dataset.iterPhoto)
-        : selectedPhotos.delete(e.target.dataset.iterPhoto);
+      if (e.target.checked) {
+        selectedPhotos.add(e.target.dataset.iterPhoto);
+        skippedTargets.delete(e.target.dataset.iterPhoto);
+      } else selectedPhotos.delete(e.target.dataset.iterPhoto);
       ctx.repaint();
       return true;
     }
@@ -1912,6 +2016,8 @@ window.RawLabIteration = (() => {
     attach,
     content,
     onOpen,
+    onClose: endOperation,
+    resolveDraft: resolveCurrentDraft,
     updateFrame,
     destinationSelected(returnId) {
       if (returnId === "batch-per-target-save-files") {
@@ -1931,9 +2037,17 @@ window.RawLabIteration = (() => {
     },
     hasFlow: (id) => !!D.iterationFlowTitles[id],
     parentOf: (id) =>
-      id === "paste-result" && presetTarget
+      ["paste-result", "paste-done"].includes(id) && presetTarget
         ? "user-presets"
-        : parents[id] || null,
+        : id === "paste-no-targets"
+          ? preflightMode === "export"
+            ? "batch-per-target-export"
+            : preflightMode === "sync"
+              ? "batch-sync-scope"
+              : "paste-result"
+          : id === "batch-export-targets"
+            ? "batch-per-target-export"
+            : parents[id] || null,
     handleClick(e) {
       const button = e.target.closest("[data-iter]");
       return button ? action(button.dataset.iter) : false;
@@ -1991,6 +2105,9 @@ window.RawLabIteration = (() => {
       batchEditing,
       currentIdentity: currentIdentity(),
       skipped: [...skippedTargets],
+      operation: structuredClone(operation),
+      collectionSourceId,
+      targetIntent,
       targetDrafts: [...targetDrafts],
       history: [...histories],
       update: {

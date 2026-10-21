@@ -41,8 +41,9 @@ window.RawLabDesignFlows = (() => {
     if (id === "batch-select" && !active?.startsWith("batch-"))
       batchSnapshot = { settings: context?.snapshot() || null };
     clearTimeout(timer);
+    const previous = active;
     active = id;
-    RawLabIteration.onOpen(id, options);
+    RawLabIteration.onOpen(id, { ...options, previous });
     if (options.seed) {
       if (id === "batch-select") selected = new Set();
       else if (id.startsWith("batch-") && !selected.size)
@@ -62,6 +63,7 @@ window.RawLabDesignFlows = (() => {
   function close() {
     clearTimeout(timer);
     active = null;
+    RawLabIteration.onClose();
   }
   function selectionGrid(checks = true) {
     return `<div class="flow-photo-grid">${photos.map((name, i) => `<div class="flow-photo-item ${selected.has(i) ? "is-selected" : ""}"><button data-flow-photo="${i}" aria-label="${checks ? "选择" : "查看"}${name}">${context.photoMarkup("flow-thumbnail", name)}<span>${name}</span></button>${checks ? `<input type="checkbox" data-flow-select="${i}" aria-label="选择${name}" ${selected.has(i) ? "checked" : ""}>` : ""}</div>`).join("")}</div>`;
@@ -487,7 +489,7 @@ window.RawLabDesignFlows = (() => {
       const id = to.dataset.flow;
       if (id === "update") {
         close();
-        context.gotoScene("update");
+        context.openUpdate();
       } else if (id === "photo-info") {
         close();
         context.setInfo("file");
@@ -542,7 +544,7 @@ window.RawLabDesignFlows = (() => {
     else if (a === "close") close();
     else if (a === "back") {
       const parent = parentOf(active);
-      parent ? open(parent) : close();
+      parent ? open(parent, { continuation: true }) : close();
     } else if (a === "import-selected") {
       if (active === "system-picker" && pickerReturn === "look-import") {
         imported = true;
@@ -626,7 +628,7 @@ window.RawLabDesignFlows = (() => {
     else if (a === "component-demo") context.notify("按钮已触发 · 组件演示");
     else if (a === "check-now") {
       close();
-      context.gotoScene("update");
+      context.openUpdate();
       return true;
     } else if (a === "toggle-dock") {
       context.toggleDock();

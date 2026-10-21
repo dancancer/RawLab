@@ -12,8 +12,13 @@ async function reviewIteration(browser, base) {
     });
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    const goto = (scene) =>
-      page.goto(`${base}preview.html?platform=${platform}&scene=${scene}`);
+    const goto = async (scene) => {
+      await page.goto(
+        `${base}preview.html?platform=${platform}&scene=${scene}`,
+      );
+      // 初始化完成后再读全局模型；load 返回不替代可操作画面的就绪条件。
+      await page.locator(".native-app").waitFor({ state: "attached" });
+    };
     const click = (id) => page.locator(`[data-iter="${id}"]`).click();
     const inspect = () => page.evaluate(() => RawLabIteration.inspect());
     const check = async (id, run) => {
@@ -320,12 +325,9 @@ async function reviewIteration(browser, base) {
       await check(
         "batch-undo-keeps-transaction-and-conflict-boundaries",
         async () => {
-          await goto("paste-done");
-          await click("close");
-          await page.evaluate(() => {
-            RawLabDesignFlows.open("paste-targets");
-            render();
-          });
+          // 使用会改变目标的首次粘贴；重复应用相同值不再生成空历史。
+          await goto("paste-result");
+          await click("open:paste-targets");
           await page.locator('[data-iter-photo="photo-2"]').uncheck();
           await page.locator('[data-iter-photo="photo-3"]').uncheck();
           const preserved = (await inspect()).edits.find(

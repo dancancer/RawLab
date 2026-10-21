@@ -11,6 +11,7 @@ const { chromium } = require(
 const { reviewIteration } = require("./review-iteration.cjs");
 const { reviewFollowup } = require("./review-followup.cjs");
 const { reviewUpdate } = require("./review-update.cjs");
+const { reviewLifecycle } = require("./review-lifecycle.cjs");
 const { reviewRegressions } = require("./review-regressions.cjs");
 const root = path.resolve(__dirname, "..");
 const base = (
@@ -603,10 +604,16 @@ const shots = new Set([
         }
       await page.close();
     }
+    current = "regressions";
     const regressions = await reviewRegressions(browser, base);
+    current = "iteration";
     const iteration = await reviewIteration(browser, base);
+    current = "followup";
     const followup = await reviewFollowup(browser, base);
+    current = "updates";
     const updates = await reviewUpdate(browser, base);
+    current = "lifecycle";
+    const lifecycle = await reviewLifecycle(browser, base);
     const page = await browser.newPage({
       viewport: { width: 1440, height: 1000 },
     });
@@ -639,6 +646,15 @@ const shots = new Set([
       iteration,
       followup,
       updates,
+      lifecycle,
+      counts: {
+        states,
+        regressions: regressions.count,
+        iteration: iteration.count,
+        followup: followup.length,
+        updates: updates.length,
+        lifecycle: lifecycle.length,
+      },
       failures,
       checks,
     };

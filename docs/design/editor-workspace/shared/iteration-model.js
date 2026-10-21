@@ -48,6 +48,7 @@
         ["copy-source-save-error", "来源调整保存失败", "error"],
         ["copy-ready", "调整已复制", "recovery"],
         ["paste-empty", "粘贴 · 尚未复制调整", "error"],
+        ["paste-no-targets", "操作预检 · 没有可处理目标", "error"],
         ["paste-result", "粘贴调整 · 预检", "normal"],
         ["paste-targets", "粘贴调整 · 选择目标", "normal"],
         ["paste-draft", "粘贴前 · 目标草稿", "error"],
@@ -98,6 +99,7 @@
         ["batch-edit-save-error", "单张微调 · 保存失败", "error"],
         ["batch-sync-return", "返回集合 · 保留逐张调整", "recovery"],
         ["batch-export-preflight", "逐张导出前 · 处理目标草稿", "error"],
+        ["batch-export-targets", "逐张导出 · 重新选择目标", "recovery"],
         ["batch-per-target-export", "逐张参数 · 导出确认", "normal"],
         ["batch-per-target-running", "逐张参数 · 正在导出", "normal"],
         [

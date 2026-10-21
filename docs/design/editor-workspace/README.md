@@ -44,6 +44,7 @@ ITER-02 的编辑导航重新组织现有工具：外观、光线、颜色、效
 | `coverage.html`                                             | 可点击的界面覆盖表，显示各平台功能、状态入口与原生来源                                                                                                   |
 | `scripts/review.cjs`                                        | 可重复的浏览器检查与截图导出；验证分组布局与收起、已调整标记、双向滑杆填充、对比开关与方式选择、裁切框拖动、处理状态不移动布局、流程返回与平台适配       |
 | `scripts/review-regressions.cjs`                            | 由 review 调用的独立行为回归：重置草稿/导航、完整数值与旧小数、HSL 触点横滑、临时查看取消/重试、更新提示与设置分离、迭代三类状态深链；不加入画面矩阵计数 |
+| `scripts/review-lifecycle.cjs`                              | 操作隔离、草稿检查/提交、当前编辑器导出预检、普通编辑历史、预设身份及更新关闭重开/迟到回调恢复；仅验证原型                                               |
 | `scripts/review-followup.cjs` / `scripts/review-update.cjs` | 按照片身份、统一草稿预检、集合与共享历史、重置，以及更新校验/准入/等待/恢复的连续操作检查；不代表原生验收                                                |
 | `scripts/review-iteration.cjs`                              | 本轮关键路径：冻结复制、逐目标重试、预设校验/身份、色轮/曲线、手势取消、逐张微调与冻结任务，以及更新恢复守卫                                             |
 | `requirements.md` / `technical-design.md`                   | roadmap 第一步的范围、需求与验收 ID、四端原生接入和兼容规则；跨 PR 持续维护，不记录单次验证日志                                                          |
@@ -89,7 +90,7 @@ node docs/design/editor-workspace/scripts/review.cjs
 
 脚本默认连接上述本地预览服务，截图和检查结果写入系统临时目录。可通过 `RAWLAB_DESIGN_URL`、`RAWLAB_DESIGN_OUTPUT` 和 `RAWLAB_DESIGN_PLAYWRIGHT` 分别指定预览地址、导出位置及现有 Playwright 包路径，不向应用增加依赖。生成物不是设计源文件；建议导出到被忽略的 `screenshots/` 或外部评审目录。
 
-报告将可直达画面组合 `states`、既有行为回归 `regressions` 和本轮关键路径 `iteration` 分开。触点使用 Chromium 视口测量，取消/失焦/后台事件包含合成输入，不能替代真实设备、原生手势、后台/安装或无障碍验收；也不证明整轮需求已经冻结或原生交付完成。
+报告将可直达画面组合 `states`、既有行为回归 `regressions`、本轮关键路径 `iteration`、持续操作 `followup`、桌面更新 `updates` 与操作生命周期 `lifecycle` 分开。汇总读取 `regressions.count` / `iteration.count`，其余路径数组读取 `.length`，不能将对象键数量当作验证条数。触点使用 Chromium 视口测量，取消/失焦/后台事件包含合成输入，不能替代真实设备、原生手势、后台/安装或无障碍验收；也不证明整轮需求已经冻结或原生交付完成。
 
 后续修改流程：
 
