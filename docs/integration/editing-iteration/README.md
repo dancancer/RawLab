@@ -8,8 +8,8 @@
 - 范围依据：[总需求](../../design/editing-iteration/requirements.md)、[总技术方案](../../design/editing-iteration/technical-design.md)。
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
-- 当前集成基线：`development@361c9949bac16c3883f9f6968f1c95b9937af0d1`，已包含 #107、#108、#109；各 PR 最新源提交均经独立评审和 CI 验证。
-- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)。第二批接 Mac 提交事务及 iOS/Android/Windows S1 纯规则，原生 UI 继续单独验收。
+- 当前集成基线：`development@bff2b8602b913a08676e04ab7f1109a148f68834`，已包含 #107～#114；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。该合入源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39604481132)已通过四端及汇总门禁；其范围仍限于工作流实际执行的套件。
+- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)。第二批已集成 Mac 提交事务及 iOS/Android/Windows S1 纯规则；第三批接三端提交与草稿保存事务，原生六组 UI 继续单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
 
@@ -25,7 +25,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | Mac S1 已集成；Mac 提交事务及三端 S1 本地实现/独立复核完成，待远端 CI 与集成；UI 待接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1 与 Mac 提交事务已集成；第三批三端提交/草稿事务已完成本地验证与独立复核、待集成；六组 UI 待接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -68,20 +68,22 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | 总账、批次计划、共享语义决定 | 协调者 | `docs/integration/editing-iteration/`；必要的规范勘误 | 决策关联需求/源码，修订后通知受影响执行者 |
 | I0 字段目录 | 协调者；`field_contract` 来源核验 | `docs/design/editing-iteration/field-catalog.md` | 不新增通用 native DTO，不宣称尚未验证的跨端映射已冻结 |
 | MCP v4 工具 | 协调者执行；`mcp_phase1` 接入核验 | `tools/mcp/` | CLI/C ABI 不改；协议缺口提交协调者另拆前置 |
-| Mac 提交事务 | `mac_reset_transactions` worker；默认代理独立核验 | `EditorModel.swift`、`EditorModel+Workflow.swift`、`EditorModel+Geometry.swift`、`EditModelTests.swift` | 消费已集成的 S1；完整源快照/revision 校验，草稿只改草稿，不改 View/持久化格式 |
+| Mac S1 与提交事务 | 已集成；协调者维护，原实现 `mac_reset_transactions` | `EditorModel.swift`、`EditorModel+Workflow.swift`、`EditorModel+Geometry.swift`、`EditModelTests.swift` | 后续 UI owner 另行交接；不把模型完成当 UI 验收 |
 | 核心 C ABI / EditRecipe / CLI / schema | 协调者保留，按算法批次另派一个 owner | `lutools/include/sony2fuji/`、`src/ffi/`、`src/cli/`、对应核心/测试 | 新配置 additive；v5 真实贯通后才宣告支持 |
 | 核心算法 / Metal / GLES / D3D11 | 协调者保留 | `lutools/src/core/`、对应后端 | CPU 合同与质量先准入，不能各后端并行猜常量 |
-| iOS S1 纯规则与候选 | `ios_reset_rules` worker；默认代理独立核验 | `EditorAdjustmentRules.swift`、`RawSettings.swift` 必要纯 helper、`PhotoEditState` 身份复制 helper、project source 注册、EditMemoryTests/runner；EditorDrafts 仅搬移纯工具 enum | 不改 ViewModel/保存实现/codec；CI 由协调者接入 |
-| Android S1 纯规则与候选 | `android_reset_rules` worker；默认代理独立核验 | 本端 `EditorAdjustmentRules.kt`、`EditSettings.kt` 必要纯 helper、对应 JVM 测试 | 保留工具 ID、JNI Float/WB 及旧 codec 语义，不改 UI/JNI |
-| Windows S1 纯规则与候选 | `windows_reset_rules` worker；默认代理独立核验 | 本端 `EditorAdjustmentRules.cs`、`Adjustments.cs` 必要纯 helper、editing test 项目 | 完整 SavedEdit/数组隔离；不改 WPF/保存行为/JSON schema |
+| iOS 提交与草稿保存 | `ios_reset_transactions` worker；默认代理独立核验 | 第三批 Task 1 的 VM/IO、ContentView/EditorDrafts 窄适配、project 注册及现有模型/真实 UI harness | ContentView 保持 settings owner；保存成功后才提交草稿，精确保留记录 metadata，不改 codec |
+| Android 提交与草稿保存 | `android_reset_transactions` worker；默认代理独立核验 | 第三批 Task 2 的 editor state/VM/draft、现有 UI 回调及 JVM/instrumentation | 保留工具 ID/JNI/codec；分开 draft-ready 与 changed Apply，真实 WB metadata 不因去重丢失 |
+| Windows 提交与草稿保存 | `windows_reset_transactions` worker；默认代理独立核验 | 第三批 Task 3 的 EditWorkflow/Transform、纯事务与 managed/WPF 回归 | 先保存候选再清草稿；不改旧 reset UI/JSON/Library 批量复制 |
 | 共享本地化与无障碍 keys | 协调者保留 | `Shared/strings/` 及生成入口 | 功能 owner 提交 key/参数需求，单一资源 owner 写入 |
-| 构建、CI、公共依赖与许可证 | 协调者；首批 #108，第二批 iOS 分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | 不由各功能分别改公共构建入口；#108 已加入 MCP 验证；第二批 iOS 分支接既有 presentation/edit-memory，其他平台保留已有入口 |
+| 构建、CI、公共依赖与许可证 | 协调者；第三批 CI 绑定 Windows 分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | #108 的 MCP、#112 的 iOS 模型检查已集成；第三批将现有 Windows transform-ui 加入门禁，不降低既有检查 |
 
 第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从初始开发基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
 
 首批由协调线程实施，默认代理负责独立核验，已按 **#107 → #108 → #109** 合入；#108 与 #109 没有运行时依赖。第二批由 worker 分端实施，默认代理独立核验，协调线程处理共享文档、CI、冲突和最终验证。Mac 提交事务及其余三端均接合入后的 `development`，每个 owner 在派发前绑定独占路径。第二批 owner 和独占路径见上表及第二批计划，不拥有表外并发写入权。
 
-第二批分支：`feature/editing-native-models-coordination`、`feature/editing-mac-reset-transactions`、`feature/editing-ios-reset-rules`、`feature/editing-android-reset-rules`、`feature/editing-windows-reset-rules`。全部从当前集成基线创建；实现与独立核验分工不改变提交、push、PR 和合并授权边界。第二批本地实现和独立复核已完成；新 PR 的远端 CI 与集成尚未执行。Mac 已覆盖本端构建与草稿运行，其他三端本批只完成模型/JVM/托管检查，不能替代设备及原生渲染验收。
+第二批分支：`feature/editing-native-models-coordination`、`feature/editing-mac-reset-transactions`、`feature/editing-ios-reset-rules`、`feature/editing-android-reset-rules`、`feature/editing-windows-reset-rules`，创建基线为 `361c9949`。已按 **#110 → #111 → #112 → #113 → #114** 合入；每个源提交均经独立复核和 CI 验证。Mac 已覆盖本端构建与真实 DNG 草稿运行；iOS CI 编译 app/tests 并执行模型检查，Android CI 构建/JVM/lint/测试 APK，Windows CI 构建并运行选定 native/WPF/managed 套件。上述证据不等于三端新增事务、四端六组 UI 或设备/GPU 验收。
+
+第三批复用本任务已合入且干净的独立 worktree，从 `bff2b860` 新建 `feature/editing-native-transactions-coordination`、`feature/editing-ios-reset-transactions`、`feature/editing-android-reset-transactions`、`feature/editing-windows-reset-transactions`。平台 worker 实施、默认代理独立核验均已完成，协调者已复核关键调用链和最终源码对应的本地结果。iOS 真实 simulator 和 Android 约定素材的实际 instrumentation 已通过；Windows 目前为 managed 运行及 WPF 交叉编译，真实 WPF/native 仍待 CI。各提交与缺口见第三批计划。第二批的远端授权不自动扩展到第三批；第三批尚未 push/新建 PR，远端授权另行处理。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
@@ -89,6 +91,13 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | [#108](https://github.com/dancancer/RawLab/pull/108) | MCP v4 五工具与本地兼容验证 | 已集成；Mac 当前源码 CLI 对照通过，Windows MCP 实测仍待验收 |
 | [#109](https://github.com/dancancer/RawLab/pull/109) | Mac S1 规则、完整重置候选与配方独立化 | 已集成；第二批接提交事务，UI 仍待接入 |
 
+| 第二批 PR | 交付范围 | 集成状态 |
+| --- | --- | --- |
+| [#110](https://github.com/dancancer/RawLab/pull/110) | 第二批协调与字段来源固定 | 已集成，merge `df07d068` |
+| [#111](https://github.com/dancancer/RawLab/pull/111) | Mac prepared reset 提交与 stale-state 守卫 | 已集成，merge `ef8c657b`；新 model 回归在 arm64/all，Intel 编译及 core/render 通过 |
+| [#112](https://github.com/dancancer/RawLab/pull/112) | iOS S1 与现有模型 runner 接 CI | 已集成，merge `01889c77`；提交事务/真实 UI 回归由第三批补齐 |
+| [#113](https://github.com/dancancer/RawLab/pull/113) | Android S1 规则与候选 | 已集成，merge `2c3a2d90`；提交事务/真实 instrumentation 由第三批补齐 |
+| [#114](https://github.com/dancancer/RawLab/pull/114) | Windows S1 规则与候选 | 已集成，merge `bff2b860`；草稿保存失败 WPF 回归由第三批补齐 |
 
 ## 集成门槛
 
@@ -105,6 +114,9 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 - I0 的版本/范围/单位需以真实 native 模型核对；已有 v4 仅作最终 core 语义参考，不直接成为剪贴板格式。
 - 新参数处理顺序、identity bypass 和质量准入遵守总技术方案 8.1～8.7；候选公式不是冻结结果。
 - Mac 的工具到六组映射仍随原生 UI 批次接入；第二批 Mac 只交付提交事务，不将现有旧八组视作新导航实现。
+- 三端当前保存均同步执行；第三批保留该串行实现，以可返回成功/失败的候选保存边界满足草稿事务。普通重置沿原一次编辑入口，不能与草稿 save-first 混为同一策略。
+- Android 的裁切/比例 ready 与可应用 changed 分开；reset/draft 只去除完全相同的重复保存，预览实际补入的 WB metadata 仍保存。
+- Windows [目录复制路径](https://github.com/dancancer/RawLab/blob/bff2b8602b913a08676e04ab7f1109a148f68834/RawLabWindows/MainWindow/Library.cs#L259)在异步枚举前捕获快照，恢复后尚无 source/edit guard；可能覆盖等待期间更新的当前照片记录。此源码风险登记到 I2/ITER-08，需专门回归，不混入第三批重置事务。
 - 不改 r9 的 `approval` 或将整体 `implementation` 提前标为完成；首批纯模型接入也不是四端 UI 已落地。
 - Mac 的既有 raster normalization 提取到 `Adjustments.resolvedForRaster`，`Engine` 和候选 core 校验共用；不复制第二套 WB/曝光规则，不改变持久化快照。
 - MCP `validate_recipe` 保留 CLI 原始校验语义：引用文件可尚未存在、返回路径保持原表示；允许根限制仍适用。render/export 才要求实际输入和输出父目录存在。
