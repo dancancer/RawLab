@@ -279,6 +279,13 @@ class CliAdapter:
         return await self._render("export", recipe_path)
 
     async def _render(self, command, recipe_path, preview_output=None, long_edge=1280):
+        try:
+            async with asyncio.timeout(self.config.timeout):
+                return await self._render_task(command, recipe_path, preview_output, long_edge)
+        except TimeoutError:
+            return failure(command, AdapterError("CLI task timed out", "processing_error"))
+
+    async def _render_task(self, command, recipe_path, preview_output, long_edge):
         folder = None
         try:
             _, recipe, output = await self._recipe(recipe_path, preview_output, validating=command == "validate_recipe")

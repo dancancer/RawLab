@@ -69,7 +69,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             pathlib.Path(os.environ["FAKE_ARGV_LOG"]).write_text(json.dumps(args), encoding="utf-8")
 
             def envelope(command, result=None, error=None):
-                return {"protocol_version": 1, "command": command,
+                return {"protocol_version": int(os.environ.get("FAKE_PROTOCOL", "1")), "command": command,
                         "ok": error is None, "result": result, "error": error}
 
             def emit(value, code=0):
@@ -80,7 +80,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 versions = [int(value) for value in os.environ.get("FAKE_VERSIONS", "1,2,3,4").split(",")]
                 emit(envelope("capabilities", {
                     "recipe_versions": versions,
-                    "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
+                    "commands": os.environ.get("FAKE_COMMANDS", "capabilities,validate_recipe,info,preview,export").split(","),
                     "input_types": ["raw"],
                     "output_formats": ["jpeg", "png", "dng"],
                 }))
@@ -115,6 +115,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 pathlib.Path(os.environ["FAKE_RECIPE_LOG"]).write_text(
                     json.dumps(recipe, ensure_ascii=False), encoding="utf-8")
                 if "--print-recipe" in args:
+                    time.sleep(float(os.environ.get("FAKE_VALIDATE_SLEEP", "0")))
                     emit(envelope("validate_recipe", recipe))
 
             if os.environ.get("FAKE_SLEEP"):
@@ -158,6 +159,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter(FAKE_VERSIONS="1,2,3")
         with self.assertRaisesRegex(AdapterError, "schema version 4"):
             await adapter.start()
+
+    async def test_capabilities_reject_unknown_protocol_and_missing_commands(self):
+        for environment in ({"FAKE_PROTOCOL": "2"}, {"FAKE_COMMANDS": "capabilities,info"}):
+            with self.subTest(environment=environment):
+                with self.assertRaises(AdapterError):
+                    await self.adapter(**environment).start()
 
     async def test_export_resolves_original_recipe_paths_and_publishes_without_overwrite(self):
         adapter = self.adapter()
@@ -210,6 +217,16 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         envelope = await adapter.export_photo(self.recipe_path)
         self.assertFalse(envelope.ok)
         self.assertEqual(envelope.error.code, "processing_error")
+        self.assertFalse((self.write_root / "export.jpg").exists())
+        self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
+
+    async def test_timeout_covers_validation_and_render_together(self):
+        adapter = self.adapter(FAKE_VALIDATE_SLEEP="0.2", FAKE_SLEEP="0.2")
+        await adapter.start()
+        adapter.config = ServerConfig(self.cli, (self.read_root,), (self.write_root,), timeout=0.3)
+        result = await adapter.export_photo(self.recipe_path)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error.code, "processing_error")
         self.assertFalse((self.write_root / "export.jpg").exists())
         self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
 

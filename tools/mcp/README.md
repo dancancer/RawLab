@@ -23,7 +23,7 @@ uv sync --project tools/mcp --frozen
   --timeout 120
 ```
 
-`--cli` 和所有根目录必须是绝对路径；根目录必须已存在。`--read-root` 与 `--write-root` 可重复。CLI 必须是自己信任的本地程序。默认每次 CLI 调用超时 120 秒，`--timeout` 接受有限正数。
+`--cli` 和所有根目录必须是绝对路径；根目录必须已存在。`--read-root` 与 `--write-root` 可重复。CLI 必须是自己信任的本地程序。默认单次工具调用超时 120 秒，包含配方校验与渲染；`--timeout` 接受有限正数，启动时的能力协商也使用该限制。终止进程的清理宽限可能额外占用最多 2 秒。
 
 配置格式示例见 [macOS](examples/macos.json) 和 [Windows](examples/windows.json)，请替换占位路径后手动加入支持 `mcpServers` 的客户端。其他客户端按其配置格式填写相同 command/args。Windows 的 Python 位于 `.venv\Scripts\python.exe`，CLI 通常为 `sony2fuji.exe`。
 
