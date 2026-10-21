@@ -445,6 +445,8 @@ jobs:
             -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
           bash RawLab/tests/look-import.sh
+          bash RawLab/tests/presentation.sh
+          bash RawLab/tests/edit-memory.sh
           python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
       - name: Save successful native dependencies
         if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'

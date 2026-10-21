@@ -212,6 +212,14 @@ class WorkflowContractTests(unittest.TestCase):
         for suite in ("test_bundled_looks.py", "test_lut_source_audit.py", "test_prepare_bundled_looks.py"):
             self.assertIn("Shared/tests/" + suite, contracts)
 
+    def test_ios_editing_models_run_in_the_gated_platform_job(self):
+        steps = self.workflow["jobs"]["ios"]["steps"]
+        build = next(step for step in steps if "build-for-testing" in step.get("run", ""))
+        self.assertNotIn("if", build)
+        for command in ("bash RawLab/tests/presentation.sh", "bash RawLab/tests/edit-memory.sh"):
+            self.assertIn(command, build["run"])
+            self.assertLess(build["run"].index("build-for-testing"), build["run"].index(command))
+
     def test_mcp_protocol_and_built_cli_parity_are_gated(self):
         contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
         self.assertIn("uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v", contracts)

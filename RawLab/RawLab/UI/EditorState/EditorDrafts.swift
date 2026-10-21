@@ -1,11 +1,6 @@
 import SwiftUI
 import UIKit
 
-enum EditorToolSelection: Hashable {
-    case adjustment(AdjustmentKind)
-    case film, recipe, lens, geometry
-}
-
 enum RulerFocusPhase: Equatable {
     case idle, dragging, holding, restoring
 }
