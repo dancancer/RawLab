@@ -192,6 +192,9 @@ extension RawEditorViewModel {
                                 self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
+                                self.retainEditMetadata(record ?? PhotoEditState(settings: restoredSettings))
+                                self.persistedEditorSettings = nil
+                                self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
                                 if self.hasImage && adjustedImage != nil { onImported?() }
@@ -244,6 +247,9 @@ extension RawEditorViewModel {
                                 self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
+                                self.retainEditMetadata(record ?? PhotoEditState(settings: restoredSettings))
+                                self.persistedEditorSettings = nil
+                                self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
                                 if self.hasImage && adjustedImage != nil { onImported?() }
@@ -269,6 +275,9 @@ extension RawEditorViewModel {
                         self.sourceFile = nil
                         self.sourceKind = nil
                         self.sourceIdentity = nil
+                        self.editRecordMetadata = nil
+                        self.persistedEditorSettings = nil
+                        self.failedDraftSource = nil
                         self.sourceDisplayName = nil
                         self.sourceOrientation = nil
                         self.rawLUTID = nil

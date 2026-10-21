@@ -125,18 +125,8 @@ struct ContentView: View {
         .onChange(of: settings) { _, newValue in
             settingsRevision = UUID()
             if viewModel.consumeRestoredSettings(newValue) { return }
-            showingBefore = false
-            viewModel.queueSettingsSave(newValue)
-            if isAdjustingSlider {
-                viewModel.schedulePreviewUpdate(
-                    settings: draftPreviewSettings,
-                    delay: 0.08,
-                    includeHistogram: false,
-                    quality: .interactive
-                )
-            } else {
-                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-            }
+            if viewModel.consumePersistedEditorSettings(newValue) { return }
+            queueEditorSettingsChange(newValue)
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
@@ -159,11 +149,9 @@ struct ContentView: View {
 
     private func applyEditorDraftObservers<Content: View>(to content: Content) -> some View {
         content
-        .onChange(of: geometryDraft) { _, draft in
-            if draft != nil { previewEditorDraft() }
-        }
-        .onChange(of: lensDraft) { _, draft in
-            if draft != nil { previewEditorDraft() }
+        .onChange(of: editorDraftSnapshot) { old, draft in
+            if (old.geometry != draft.geometry || old.lens != draft.lens),
+               draft.geometry != nil || draft.lens != nil { previewEditorDraft() }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
             geometryDraft = nil

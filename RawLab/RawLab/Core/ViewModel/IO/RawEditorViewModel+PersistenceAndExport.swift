@@ -10,20 +10,40 @@ extension RawEditorViewModel {
     }
 
     func queueSettingsSave(_ settings: RawSettings) {
-        guard sourceIdentity != nil else { return }
+        guard let source = editorEditSource else { return }
+        retainEditMetadata(currentEditState(settings: settings))
         pendingSettings = settings
-        editSaveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in _ = self?.saveCurrentSettings(settings) }
+        cancelQueuedSettingsSave()
+        let revision = settingsSaveRevision
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.editorEditSource == source, self.settingsSaveRevision == revision else { return }
+            _ = self.saveCurrentSettings(settings)
+        }
         editSaveWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     @discardableResult func saveCurrentSettings(_ settings: RawSettings) -> Bool {
+        cancelQueuedSettingsSave()
+        guard !hasFailedDraftSave else { return false }
+        guard let source = editorEditSource, pendingSettings != nil else { return true }
+        return persistEditCandidate(currentEditState(settings: settings), source: source)
+    }
+
+    func cancelQueuedSettingsSave() {
         editSaveWork?.cancel()
-        guard let sourceIdentity, pendingSettings != nil else { return true }
+        editSaveWork = nil
+        settingsSaveRevision = UUID()
+    }
+
+    func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
+        guard editorEditSource == source else { return false }
         do {
             if editPersistence == nil { editPersistence = try EditPersistence.appStore() }
-            try editPersistence!.save(sourceIdentity, state: PhotoEditState(settings: settings))
+            let saved = PhotoEditState(settings: candidate.settings)
+                .replacing(settings: candidate.settings, preservingFilmID: candidate.filmID)
+            try editPersistence!.save(source.identity, state: saved)
+            retainEditMetadata(saved)
             pendingSettings = nil
             setEditNotice(.saved)
             return true

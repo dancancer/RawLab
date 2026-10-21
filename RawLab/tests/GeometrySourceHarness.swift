@@ -9,6 +9,8 @@ final class GeometrySourceProbe {
     static let shared = GeometrySourceProbe()
     var started = false
     var viewportEdges: [Int] = []
+    var previewRequests: [RawSettings] = []
+    var saveAttempts: [PhotoEditState] = []
     var checks: [String: Bool] = [:]
     var details: [String: String] = [:]
     var done = false
@@ -91,10 +93,15 @@ extension ContentView {
                     probe.check("editApply.DraftKeepsUncroppedPreview", viewModel.previewImage?.pngData() == (try geometryReviewPreview()))
                     committed.geometry = edited
                 }
-                if action == "cancel" { cancelEditorDraft() } else { applyEditorDraft() }
+                if action == "cancel" { cancelEditorDraft() }
+                else if action == "apply" {
+                    let saves = probe.saveAttempts.count
+                    applyEditorDraft()
+                    probe.check("unchangedApply.NoSave", probe.saveAttempts.count == saves && geometrySelected)
+                    cancelEditorDraft()
+                } else { applyEditorDraft() }
                 try await geometryReviewSettled()
                 probe.check("\(action).CommittedCropCorrect", settings == committed && !isEditorDraftActive)
-                _ = viewModel.saveCurrentSettings(settings)
                 probe.check("\(action).PersistedCropCorrect", persistence.state(for: bID)?.settings == committed)
                 let data: Data = try await withCheckedThrowingContinuation { continuation in
                     viewModel.exportJPEG(settings: settings) { continuation.resume(with: $0) }
@@ -110,6 +117,162 @@ extension ContentView {
                 // Restore the fixture for the following independent transition.
                 try persistence.save(bID, state: PhotoEditState(settings: bSettings))
             }
+
+            if isEditorDraftActive { cancelEditorDraft() }
+            try await geometryReviewImport(bURL, identity: bID)
+            selectEditorTool(.geometry)
+            try await geometryReviewSettled()
+            var pairedLens = settings
+            pairedLens.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false)
+            lensDraft = pairedLens
+            try await geometryReviewSettled()
+            probe.check("pairedDraft.LensChangeDetectedWithUnchangedGeometry", isEditorDraftChanged)
+            probe.check("pairedDraft.ProjectsBothObjects", effectivePreviewSettings.geometry == bSettings.geometry &&
+                        effectivePreviewSettings.lensCorrection == pairedLens.lensCorrection)
+            let pairSaves = probe.saveAttempts.count
+            guard case .prepared(let geometryReset) = prepareEditorReset(.group(.geometry)) else {
+                throw NSError(domain: "GeometrySourceHarness", code: 2)
+            }
+            probe.check("pairedReset.Accepted", commitEditorReset(geometryReset))
+            probe.check("pairedReset.KeepsCommitted", settings == bSettings)
+            probe.check("pairedReset.ResetsBothDraftObjects", geometryDraft == GeometrySettings() &&
+                        lensDraft?.lensSettings == LensCorrectionSettings())
+            try await geometryReviewSettled()
+            probe.check("pairedReset.DoesNotPersist", probe.saveAttempts.count == pairSaves)
+            if case .blocked = prepareEditorReset(.all) { probe.check("pairedReset.FullResetBlocked", true) }
+            else { probe.check("pairedReset.FullResetBlocked", false) }
+            cancelEditorDraft()
+            try await geometryReviewSettled()
+            probe.check("pairedDraft.CancelKeepsCommitted", settings == bSettings && geometryDraft == nil && lensDraft == nil)
+
+            let resetSaves = probe.saveAttempts.count
+            let resetPreviews = probe.previewRequests.count
+            guard case .prepared(let ordinaryReset) = prepareEditorReset(.group(.light)) else {
+                throw NSError(domain: "GeometrySourceHarness", code: 3)
+            }
+            probe.check("ordinaryReset.Accepted", commitEditorReset(ordinaryReset))
+            probe.check("ordinaryReset.UsesObserverSave", probe.saveAttempts.count == resetSaves)
+            try await geometryReviewSettled()
+            probe.check("ordinaryReset.OneSaveOnePreview", probe.saveAttempts.count == resetSaves + 1 &&
+                        probe.previewRequests.count == resetPreviews + 1)
+            probe.check("ordinaryReset.KeepsUnrelatedCrop", settings.exposure == 0 && settings.geometry == bSettings.geometry)
+            let idleSaves = probe.saveAttempts.count
+            let idlePreviews = probe.previewRequests.count
+            if case .unchanged = prepareEditorReset(.group(.light)) { probe.check("ordinaryReset.Unchanged", true) }
+            else { probe.check("ordinaryReset.Unchanged", false) }
+            guard case .prepared(let cancelledReset) = prepareEditorReset(.all) else {
+                throw NSError(domain: "GeometrySourceHarness", code: 4)
+            }
+            let originalWB = viewModel.rawWhiteBalance
+            viewModel.rawWhiteBalance = .init(temperature: 5100, tint: 7, isCalibrated: true)
+            probe.check("ordinaryReset.StaleContextRejected", !commitEditorReset(cancelledReset))
+            viewModel.rawWhiteBalance = originalWB
+            try await geometryReviewSettled()
+            probe.check("ordinaryReset.UnchangedStaleCancelledHaveNoEffects", probe.saveAttempts.count == idleSaves &&
+                        probe.previewRequests.count == idlePreviews)
+
+            // Film metadata can change while every RawSettings field stays equal.
+            let metadataOnlySettings = settings
+            try persistence.save(bID, state: PhotoEditState(settings: metadataOnlySettings, filmID: "legacy-film"))
+            try await geometryReviewImport(bURL, identity: bID)
+            let metadataSaves = probe.saveAttempts.count
+            guard case .prepared(let metadataReset) = prepareEditorReset(.group(.looks)) else {
+                throw NSError(domain: "GeometrySourceHarness", code: 5)
+            }
+            probe.check("metadataOnlyReset.Accepted", commitEditorReset(metadataReset))
+            try await geometryReviewSettled()
+            probe.check("metadataOnlyReset.PersistedOnce", persistence.state(for: bID)?.filmID == nil &&
+                        probe.saveAttempts.count == metadataSaves + 1 && settings == metadataOnlySettings)
+
+            // A failed write must leave the real ContentView draft and navigation untouched.
+            for navigation in [false, true] {
+                if isEditorDraftActive { cancelEditorDraft() }
+                try persistence.save(bID, state: PhotoEditState(settings: bSettings))
+                try await geometryReviewImport(bURL, identity: bID)
+                selectEditorTool(.geometry)
+                var failedDraft = geometryDraftBinding.wrappedValue
+                failedDraft.cropX = 0.125
+                geometryDraftBinding.wrappedValue = failedDraft
+                try await geometryReviewSettled()
+                let prefix = navigation ? "failedNavigation" : "failedApply"
+                let beforeApply = settings
+                let beforeRecord = persistence.state(for: bID)
+                let beforePreviews = probe.previewRequests.count
+                let beforeSaves = probe.saveAttempts.count
+                viewModel.queueSettingsSave(beforeApply)
+                let blockedDirectory = persistence.directory
+                let retainedDirectory = directory.appendingPathComponent("retained-edits")
+                let beforeBytes = try Data(contentsOf: blockedDirectory.appendingPathComponent("edits.json"))
+                try FileManager.default.moveItem(at: blockedDirectory, to: retainedDirectory)
+                try Data("blocked".utf8).write(to: blockedDirectory)
+                if navigation {
+                    selectEditorTool(.lens)
+                    finishDraftNavigation(apply: true)
+                } else {
+                    applyEditorDraft()
+                }
+                probe.check("\(prefix).KeepsCommitted", settings == beforeApply)
+                probe.check("\(prefix).KeepsDraft", geometryDraft == failedDraft && geometrySelected)
+                probe.check("\(prefix).KeepsRecord", persistence.state(for: bID) == beforeRecord)
+                probe.check("\(prefix).KeepsDiskBytes", try Data(contentsOf: retainedDirectory.appendingPathComponent("edits.json")) == beforeBytes)
+                probe.check("\(prefix).NoPreview", probe.previewRequests.count == beforePreviews)
+                probe.check("\(prefix).TriedCandidate", probe.saveAttempts.count == beforeSaves + 1)
+                probe.check("\(prefix).KeepsDestination", pendingToolSelection == (navigation ? .lens : nil))
+                if case .failed = viewModel.editSaveState { probe.check("\(prefix).ErrorVisible", true) }
+                else { probe.check("\(prefix).ErrorVisible", false) }
+                try FileManager.default.removeItem(at: blockedDirectory)
+                try FileManager.default.moveItem(at: retainedDirectory, to: blockedDirectory)
+                if isEditorDraftChanged {
+                    retryEditorSave()
+                    try await geometryReviewSettled()
+                    probe.check("\(prefix).RetryPersistsCandidate", persistence.state(for: bID)?.settings.geometry == failedDraft)
+                    probe.check("\(prefix).RetryPreviewOnce", probe.previewRequests.count == beforePreviews + 1)
+                    probe.check("\(prefix).RetrySavesOnce", probe.saveAttempts.count == beforeSaves + 2 && viewModel.pendingSettings == nil)
+                    probe.check("\(prefix).RetryLeavesOnce", navigation ? lensSelected : (!isEditorDraftActive && selectedAdjustment == .exposure))
+                    probe.check("\(prefix).ClearsDestination", pendingToolSelection == nil)
+                    probe.check("\(prefix).ObserverConsumedCandidate", !viewModel.consumePersistedEditorSettings(settings))
+                    if !navigation {
+                        let followSaves = probe.saveAttempts.count
+                        let followPreviews = probe.previewRequests.count
+                        var following = settings
+                        following.exposure += 0.1
+                        applySettingsChange(following)
+                        try await geometryReviewSettled()
+                        probe.check("savedObserver.FollowingOrdinaryEditPersists", persistence.state(for: bID)?.settings == following &&
+                                    probe.saveAttempts.count == followSaves + 1 && probe.previewRequests.count == followPreviews + 1)
+                    }
+                }
+                viewModel.editSaveWork?.cancel()
+                viewModel.pendingSettings = nil
+            }
+
+            for resolve in ["cancel", "revert"] {
+                if isEditorDraftActive { cancelEditorDraft() }
+                selectEditorTool(.geometry)
+                var edited = settings.geometry
+                edited.cropX = 0.2
+                geometryDraftBinding.wrappedValue = edited
+                try await geometryReviewSettled()
+                let blocked = persistence.directory
+                let retained = directory.appendingPathComponent("resolve-retained")
+                try FileManager.default.moveItem(at: blocked, to: retained)
+                try Data("blocked".utf8).write(to: blocked)
+                selectEditorTool(.film)
+                finishDraftNavigation(apply: true)
+                probe.check("\(resolve)FailedDraft.HasFailure", viewModel.hasFailedDraftSave && pendingToolSelection == .film)
+                try FileManager.default.removeItem(at: blocked)
+                try FileManager.default.moveItem(at: retained, to: blocked)
+                if resolve == "cancel" { cancelEditorDraft() }
+                else {
+                    geometryDraftBinding.wrappedValue = settings.geometry
+                    try await geometryReviewSettled()
+                    selectEditorTool(.adjustment(.exposure))
+                }
+                try await geometryReviewSettled()
+                probe.check("\(resolve)FailedDraft.ClearsFailureAndDestination", !viewModel.hasFailedDraftSave &&
+                            pendingToolSelection == nil && !isEditorDraftActive && selectedAdjustment == .exposure)
+                probe.check("\(resolve)FailedDraft.AllowsNormalSaveGate", viewModel.saveCurrentSettings(settings))
+            }
         } catch {
             probe.details["error"] = String(describing: error)
             probe.check("completedWithoutError", false)
@@ -121,7 +284,7 @@ extension ContentView {
     private func geometryReviewImport(_ url: URL, identity: PhotoIdentity) async throws {
         _ = viewModel.saveCurrentSettings(settings)
         isImporting = true
-        viewModel.importImage(from: .raster(url), identity: identity) { settings = $0 }
+        viewModel.importImage(from: .raster(url), identity: identity, onSettingsRestored: { settings = $0 })
         try await geometryReviewWait { !viewModel.isBusy && viewModel.sourceIdentity == identity }
         try await geometryReviewSettled()
     }
