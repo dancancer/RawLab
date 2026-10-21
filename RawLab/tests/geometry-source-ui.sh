@@ -28,13 +28,16 @@ python3 - "$ROOT" "$OUT" "$ORIGINAL_XCTESTRUN" <<'PY'
 import difflib, json, pathlib, plistlib, subprocess, sys
 root, out, original = map(pathlib.Path, sys.argv[1:])
 transforms = {
+    "RawLab/RawLab/UI/EditorState/EditorLayout.swift": (
+        '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))',
+        '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))\n                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["panel"] = [frame.minX, frame.minY, frame.width, frame.height]; GeometrySourceProbe.shared.layoutPolicy = ["width": size.width, "height": size.height, "accessibility": accessibility, "buttonWidth": groupNavigationButtonWidth, "buttonHeight": groupNavigationButtonHeight, "scrollTools": scrollTools, "requiredWidth": requiredWidth, "sideWidth": sideWidth, "side": side, "contentSizeCategory": UIApplication.shared.preferredContentSizeCategory.rawValue] }'),
     "RawLab/RawLab/UI/Editor/ContentView.swift": ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
                           "        .onAppear {\n            Task { await self.runGeometrySourceReview() }\n            viewModel.loadLUTsIfNeeded()"),
     "RawLab/RawLab/UI/Editor/ContentView+Panels.swift": ("onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }",
                                 "onPreviewSizeChange: { GeometrySourceProbe.shared.viewportEdges.append($0); viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }"),
     "RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift": (
         "        lastPreviewRequest = request",
-        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.previewRequests.append(settings) }\n        lastPreviewRequest = request"),
+        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.recordPreview(settings, request: request, source: self.sourceRevision) }\n        lastPreviewRequest = request"),
     "RawLab/RawLab/Core/Persistence/EditPersistence.swift": (
         "        updated[identity.key] = state",
         "        MainActor.assumeIsolated { GeometrySourceProbe.shared.saveAttempts.append(state) }\n        updated[identity.key] = state")
@@ -46,6 +49,16 @@ for name, (before, after) in transforms.items():
     if text.count(before) != 1:
         raise SystemExit(f"Expected exactly one marker in {source}")
     changed = text.replace(before, after)
+    if name.endswith("ContentView+Panels.swift"):
+        text_marker = "Text(group.title).font(.caption).lineLimit(2)"
+        rect_marker = ".contentShape(Rectangle())"
+        assert changed.count(text_marker) == 1 and changed.count(rect_marker) == 1
+        changed = changed.replace(text_marker, text_marker + '\n                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupTextRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
+        changed = changed.replace(rect_marker, rect_marker + '\n            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
+    if name.endswith("RawEditorViewModel+Rendering.swift"):
+        resize_call = "            self.updatePreview(settings: self.currentPreviewSettings)"
+        assert changed.count(resize_call) == 1
+        changed = changed.replace(resize_call, "            MainActor.assumeIsolated { GeometrySourceProbe.shared.isViewportResizeRequest = true }\n" + resize_call + "\n            MainActor.assumeIsolated { GeometrySourceProbe.shared.isViewportResizeRequest = false }")
     target = out / "source" / source.name
     target.write_text(changed)
     diffs.extend(difflib.unified_diff(text.splitlines(True), changed.splitlines(True), fromfile=str(source), tofile=str(target)))
@@ -61,6 +74,9 @@ config = relocate(plistlib.loads(original.read_bytes()))
 target = config["RawLabUITests"]
 for key in ("EnvironmentVariables", "TestingEnvironmentVariables"):
     target.setdefault(key, {})["RAWLAB_GEOMETRY_SOURCE_HARNESS"] = "1"
+    import os
+    for option in ("RAWLAB_WORKSPACE_LANGUAGE", "RAWLAB_WORKSPACE_LARGE_TEXT"):
+        if option in os.environ: target[key][option] = os.environ[option]
 (out / "geometry-source.xctestrun").write_bytes(plistlib.dumps(config))
 PY
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
@@ -70,7 +86,7 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK
 SOURCES=()
 while IFS= read -r file; do
     case "$file" in
-        */ContentView.swift|*/ContentView+Panels.swift|*/RawEditorViewModel+Rendering.swift|*/EditPersistence.swift) ;;
+        */ContentView.swift|*/ContentView+Panels.swift|*/RawEditorViewModel+Rendering.swift|*/EditPersistence.swift|*/EditorLayout.swift) ;;
         *) SOURCES+=("$file") ;;
     esac
 done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort)
@@ -80,7 +96,7 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name GeometrySourceH
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$OUT/source/ContentView.swift" "$OUT/source/ContentView+Panels.swift" \
     "$OUT/source/GeometrySourceHarness.swift" "$OUT/source/RawEditorViewModel+Rendering.swift" \
-    "$OUT/source/EditPersistence.swift" "$OUT/bridge.o" \
+    "$OUT/source/EditPersistence.swift" "$OUT/source/EditorLayout.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/geometry-source"
 codesign --force --deep --sign - "$HARNESS" >/dev/null

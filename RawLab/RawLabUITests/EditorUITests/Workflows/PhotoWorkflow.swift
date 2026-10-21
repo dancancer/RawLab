@@ -45,8 +45,10 @@ extension EditorUITests {
         XCUIDevice.shared.orientation = .landscapeLeft
         revealRuler(ruler, in: app)
         XCTAssertTrue(ruler.isHittable)
-        XCTAssertGreaterThan(ruler.frame.minX, app.frame.width * 0.5,
-                             "Landscape adjustments leave room for the photo")
+        let panel = app.scrollViews["editor.panel"]
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        XCTAssertTrue(app.frame.contains(panel.frame), "Landscape parameters remain inside the window")
+        XCTAssertFalse(photo.frame.intersects(panel.frame), "Landscape parameters leave the photo area unobscured")
         capture("photo-adjustment-landscape")
         XCUIDevice.shared.orientation = .portrait
         app.buttons["editor.export"].tap()

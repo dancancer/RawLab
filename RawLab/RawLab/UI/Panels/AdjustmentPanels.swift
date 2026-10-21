@@ -17,19 +17,25 @@ extension ContentView {
             masterRecipePanel
         } else if selectedAdjustment == .hsl {
             IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
-                        onEditingChanged: setSliderEditing)
+                        onEditingChanged: setSliderEditing, channel: $hslChannel,
+                        onResetChannel: { requestEditorReset(.hslChannel(hslChannel)) },
+                        onResetAll: { requestEditorReset(.allHSL) })
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, settings: Binding(
                 get: { settings.photoEffects }, set: { settings.photoEffects = $0 }
-            ), onEditingChanged: setSliderEditing)
+            ), onEditingChanged: setSliderEditing,
+                onReset: { requestEditorReset(.tool(currentEditorTool)) },
+                resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .noiseReduction {
             IOSDenoiseControls(settings: Binding(
                 get: { settings.denoise },
                 set: { settings.denoise = $0; settings.noiseReduction = 0 }
-            ), onEditingChanged: setSliderEditing)
+            ), onEditingChanged: setSliderEditing,
+                onReset: { requestEditorReset(.tool(currentEditorTool)) },
+                resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if let adjustment = selectedAdjustment {

@@ -152,24 +152,15 @@ extension ContentView {
     }
 
     func resetTool(_ adjustment: AdjustmentKind) {
-        if adjustment == .temperature || adjustment == .tint {
-            resetWhiteBalance()
-        } else {
-            reset(adjustment)
-        }
+        requestEditorReset(.tool(.adjustment(adjustment)))
     }
 
     func resetSelectedAdjustment() {
-        guard let selectedAdjustment else { return }
-        resetTool(selectedAdjustment)
+        requestEditorReset(.tool(currentEditorTool))
     }
 
     func resetWhiteBalance() {
-        var updated = settings
-        AdjustmentKind.resetWhiteBalance(in: &updated,
-                                          cameraTemperature: viewModel.rawWhiteBalance?.temperature,
-                                          cameraTint: viewModel.rawWhiteBalance?.tint)
-        applySettingsChange(updated)
+        requestEditorReset(.tool(.adjustment(.temperature)))
     }
 
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {

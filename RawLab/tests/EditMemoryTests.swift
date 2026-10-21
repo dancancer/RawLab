@@ -201,6 +201,8 @@ extension EditMemoryTests {
                 check(true, "raster default reset is an effective no-op")
             } else { fatalError("raster default reset unexpectedly produced a candidate") }
         }
+        check(!EditorAdjustmentRules.isModified(.tool(.adjustment(.exposure)), snapshot: rasterDefault, context: raster),
+              "raster exposure tool ignores disabled stored RAW baseline")
         var rasterWB = RawSettings.default
         rasterWB.whiteBalanceMode = .custom; rasterWB.temperature = 4250; rasterWB.tint = 12
         let rasterCustom = PhotoEditState(settings: rasterWB)
@@ -256,6 +258,50 @@ extension EditMemoryTests {
         for group in EditorAdjustmentGroup.allCases {
             check(EditorAdjustmentRules.isModified(.group(group), snapshot: original, context: context), "stored changes mark \(group)")
         }
+        let toolExpectations: [(EditorToolSelection, (inout RawSettings) -> Void)] = [
+            (.adjustment(.exposure), { $0.exposure = 0; $0.exposureMode = .preview }),
+            (.adjustment(.highlights), { $0.highlights = 0 }),
+            (.adjustment(.shadows), { $0.shadows = 0 }),
+            (.adjustment(.contrast), { $0.contrast = 1 }),
+            (.adjustment(.toneCurve), { $0.toneCurve = 0 }),
+            (.adjustment(.temperature), { $0.whiteBalanceMode = .camera; $0.temperature = 5200; $0.tint = 8 }),
+            (.adjustment(.tint), { $0.whiteBalanceMode = .camera; $0.temperature = 5200; $0.tint = 8 }),
+            (.adjustment(.saturation), { $0.saturation = 1 }),
+            (.adjustment(.hsl), { $0.hsl = HSLSettings() }),
+            (.adjustment(.vignette), { $0.photoEffects.resetVignette() }),
+            (.adjustment(.grain), { $0.photoEffects.resetGrain() }),
+            (.adjustment(.noiseReduction), { $0.noiseReduction = 0; $0.denoise = RawDenoiseSettings(); $0.displayChromaDenoise = 0 }),
+            (.adjustment(.sharpening), { $0.sharpening = 0 }),
+            (.geometry, { $0.geometry = GeometrySettings() }),
+            (.lens, { $0.lensCorrection = nil })
+        ]
+        for (tool, resetOwnedFields) in toolExpectations {
+            var expected = settings; resetOwnedFields(&expected)
+            let reset = candidate(.tool(tool), original)
+            check(reset.settings == expected && reset.filmID == original.filmID,
+                  "current tool \(tool) resets complete owned fields and preserves every unrelated field")
+        }
+        for identity in [RawSettings.default.processing, try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8)).processing] {
+            var versioned = settings; versioned.processing = identity
+            for tool in toolExpectations.map({ $0.0 }) {
+                check(candidate(.tool(tool), state(versioned)).settings.processing == identity,
+                      "tool reset preserves processing identity")
+            }
+        }
+        check(blocked(settings, .tool(.adjustment(.temperature)), noCamera),
+              "WB reset requires actual calibration instead of inventing a camera default")
+        var filmOnly = settings; filmOnly.lutID = "provia"; filmOnly.lutStrength = 0.5
+        let clearedFilm = candidate(.tool(.film), state(filmOnly))
+        var expectedFilm = filmOnly; expectedFilm.lutID = nil
+        check(clearedFilm.settings == expectedFilm && clearedFilm.filmID == nil,
+              "film-only reset preserves strength and every adjustment")
+        let strengthOnly = candidate(.tool(.adjustment(.strength)), state(filmOnly))
+        expectedFilm = filmOnly; expectedFilm.lutStrength = 1
+        check(strengthOnly.settings == expectedFilm && strengthOnly.filmID == "external",
+              "strength-only reset keeps film identity and edits")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.tool(.recipe), snapshot: original, context: context) {
+            check(true, "unselected recipe reset is NoChange even when other appearance fields differ")
+        } else { fatalError("recipe reset without recipe changed unrelated identity") }
         let light = candidate(.group(.light), original)
         check(light.settings.exposure == 0 && light.settings.exposureMode == .preview && light.settings.contrast == 1 && light.settings.toneCurve == 0 && light.settings.highlights == 0 && light.settings.shadows == 0,
               "light reset restores every owned value and effective exposure default")
@@ -303,6 +349,15 @@ extension EditMemoryTests {
                   "recipe removal clears all look identities and retains other groups")
             check(EditorAdjustmentRules.isModified(.group(.light), snapshot: state(recipeSettings), context: context), "recipe storage remains modified at strength \(strength)")
         }
+        var activeRecipe = settings
+        activeRecipe.masterRecipeID = recipe.id; activeRecipe.lutStrength = 0.5
+        for scope in [EditorAdjustmentScope.tool(.film), .tool(.recipe)] {
+            guard case .candidate(let detached, let confirmation) = EditorAdjustmentRules.prepareReset(scope, snapshot: state(activeRecipe), context: context) else {
+                fatalError("current look tool must use recipe detach")
+            }
+            check(confirmation && detached.settings.masterRecipeID == nil && detached.settings.lutID == nil && detached.filmID == nil,
+                  "current film and recipe share lossless detach and conversion confirmation")
+        }
         var recipeSettings = settings; recipeSettings.masterRecipeID = recipe.id
         check(blocked(recipeSettings), "RAW custom recipe requires real calibration")
         recipeSettings.whiteBalanceMode = .camera; recipeSettings.tint = 1
@@ -327,6 +382,16 @@ extension EditMemoryTests {
         check(original.settings == settings && original.filmID == "external" && original.updatedAt == timestamp,
               "preparing, discarding and blocking candidates never mutate original snapshot")
         let legacy = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
+        var legacyNeutral = RawSettings.default
+        legacyNeutral.processing = legacy.processing
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: state(legacyNeutral, film: nil), context: context) {
+            check(true, "legacy neutral all reset is unchanged")
+        } else { fatalError("legacy neutral all reset must preserve identity and avoid save/preview") }
+        check(EditorAdjustmentRules.isModified(.group(.light), snapshot: state(legacy, film: nil), context: context),
+              "legacy scene differs from the caller's explicit preview default")
+        let legacyExposureReset = candidate(.all, state(legacy, film: nil))
+        check(legacyExposureReset.settings.exposureMode == .preview && legacyExposureReset.settings.processing == .legacy,
+              "all restores explicit preview default while preserving legacy processing")
         var legacyChanged = legacy; legacyChanged.hsl.set(.hue, channel: 1, value: 5)
         check(candidate(.allHSL, state(legacyChanged), noCamera).settings.exposureMode == .scene,
               "legacy missing exposure mode stays scene for unrelated reset")

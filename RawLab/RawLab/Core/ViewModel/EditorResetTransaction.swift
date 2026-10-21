@@ -124,7 +124,16 @@ extension RawEditorViewModel {
                       draft: EditorDraftSnapshot) -> EditorResetPreparation {
         guard let original = editSnapshot(settings: settings, revision: revision, draft: draft) else { return .blocked(nil) }
         let geometryScope: Bool
-        if case .group(.geometry) = scope { geometryScope = true } else { geometryScope = false }
+        switch scope {
+        case .group(.geometry): geometryScope = true
+        case .tool(.geometry):
+            guard draft.tool == .geometry else { return .blocked(nil) }
+            geometryScope = true
+        case .tool(.lens):
+            guard draft.tool == .lens else { return .blocked(nil) }
+            geometryScope = true
+        default: geometryScope = false
+        }
         guard geometryScope == draft.isActive else { return .blocked(nil) }
         let snapshot = geometryScope
             ? original.committed.replacing(settings: draft.projecting(on: settings), preservingFilmID: original.committed.filmID)

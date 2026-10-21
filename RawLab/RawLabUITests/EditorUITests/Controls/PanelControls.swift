@@ -20,20 +20,7 @@ extension EditorUITests {
         waitForExpectations(timeout: 120)
         XCTAssertEqual(app.buttons["tool.exposure"].value as? String, first, "Auto assigns an absolute EV")
         capture("auto-exposure-portrait")
-        let strips = app.scrollViews.containing(.button, identifier: "tool.hsl").allElementsBoundByIndex
-        let strip = strips.min { $0.frame.height < $1.frame.height }!
-        for _ in 0..<8 {
-            let frame = app.buttons["tool.hsl"].frame
-            if frame.width > 0 && strip.frame.insetBy(dx: 8, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) { break }
-            let left = frame.midX > strip.frame.midX
-            let start = strip.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.8 : 0.2, dy: 0.5))
-            let end = strip.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.4 : 0.6, dy: 0.5))
-            start.press(forDuration: 0.1, thenDragTo: end)
-        }
-        let hslFrame = app.buttons["tool.hsl"].frame
-        XCTAssertTrue(strip.frame.contains(CGPoint(x: hslFrame.midX, y: hslFrame.midY)), app.debugDescription)
-        // SwiftUI's clipped tool strip can omit an AX activation point for a visible button.
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: hslFrame.midX, dy: hslFrame.midY)).tap()
+        tapTool("hsl", in: app)
         let saturation = app.descendants(matching: .any)["hsl.saturation.ruler"]
         XCTAssertTrue(saturation.waitForExistence(timeout: 10))
         let panel = app.scrollViews["editor.panel"]

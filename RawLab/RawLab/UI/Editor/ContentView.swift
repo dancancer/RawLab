@@ -16,7 +16,7 @@ struct ContentView: View {
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
     @State var showingBefore = false
-    @State var selectedAdjustment: AdjustmentKind? = .exposure
+    @State var selectedAdjustment: AdjustmentKind? = nil
     @State var lensSelected = false
     @State var geometrySelected = false
     @State var choosingMasterRecipe = false
@@ -32,6 +32,18 @@ struct ContentView: View {
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
+    @State var selectedGroup = EditorAdjustmentGroup.looks
+    @State var hslChannel = 0
+    @State var pendingAdjustmentExpansion: Bool?
+    @State var collapsedEditorTool: EditorToolSelection?
+    @State var preparedReset: PreparedEditorReset?
+    @State var preparedResetScope: EditorAdjustmentScope?
+    @State var resetConfirmationPresented = false
+    @State var resetRestoreTool: EditorToolSelection?
+    @State var resetIntentSource: EditorEditSource?
+    @State var resetDraftSuspended = false
+    @State var resetWaitingForReady = false
+    @State var suppressNextDraftPreview = false
     @State var autoExposing = false
     @State var settingsRevision = UUID()
     @State var selectedPhotoItem: PhotosPickerItem?
@@ -151,12 +163,24 @@ struct ContentView: View {
         content
         .onChange(of: editorDraftSnapshot) { old, draft in
             if (old.geometry != draft.geometry || old.lens != draft.lens),
-               draft.geometry != nil || draft.lens != nil { previewEditorDraft() }
+               draft.geometry != nil || draft.lens != nil {
+                if suppressNextDraftPreview { suppressNextDraftPreview = false }
+                else { previewEditorDraft() }
+            }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
             geometryDraft = nil
             lensDraft = nil
             pendingToolSelection = nil
+            pendingAdjustmentExpansion = nil
+            preparedReset = nil
+            preparedResetScope = nil
+            resetConfirmationPresented = false
+            resetRestoreTool = nil
+            resetIntentSource = nil
+            resetDraftSuspended = false
+            resetWaitingForReady = false
+            suppressNextDraftPreview = false
             draftExitPresented = false
             cancelRulerFocus()
             // Import renders the committed crop; the retained geometry tool needs the full image.
@@ -169,7 +193,10 @@ struct ContentView: View {
                 isImporting = false
                 photoImportRequestID = nil
             }
+            continuePendingAllReset()
         }
+        .onChange(of: viewModel.previewRendering) { _, _ in continuePendingAllReset() }
+        .onChange(of: viewModel.previewResizePending) { _, _ in continuePendingAllReset() }
         .onChange(of: viewModel.hasImage) { _, hasImage in
             if hasImage { adjustmentsExpanded = true }
         }
@@ -179,6 +206,7 @@ struct ContentView: View {
         content
         .onChange(of: adjustmentsExpanded) { _, expanded in
             if !expanded && isAdjustingSlider { setSliderEditing(false) }
+            if expanded, let tool = collapsedEditorTool { activateEditorTool(tool) }
         }
         .onChange(of: geometrySelected) { _, _ in
             if isAdjustingSlider { setSliderEditing(false) }
@@ -223,9 +251,14 @@ struct ContentView: View {
         }
         .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
+                .disabled(editorBusy || viewModel.previewRendering || viewModel.previewResizePending || isAdjustingSlider)
             Button(L10n.text("放弃修改"), role: .destructive) { finishDraftNavigation(apply: false) }
-            Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }
+            Button(L10n.text("继续编辑"), role: .cancel) { cancelDraftNavigation() }
         }
+        .alert(resetConfirmationTitle, isPresented: $resetConfirmationPresented) {
+            Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
+            Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
+        } message: { Text(resetConfirmationMessage) }
         .onDisappear { cancelRulerFocus(); cancelPhotoImport() }
     }
 

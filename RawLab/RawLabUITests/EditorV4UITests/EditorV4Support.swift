@@ -139,10 +139,27 @@ extension EditorV4UITests {
         }
         XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["tool.exposure"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["tool.film"].waitForExistence(timeout: 10))
+        try selectTool("exposure", in: app)
     }
 
     func selectTool(_ name: String, in app: XCUIApplication) throws {
+        let group: String
+        switch name {
+        case "film", "masterRecipe", "strength": group = "looks"
+        case "exposure", "highlights", "shadows", "contrast", "toneCurve": group = "light"
+        case "temperature", "tint", "saturation", "hsl": group = "color"
+        case "vignette", "grain": group = "effects"
+        case "noiseReduction", "sharpening": group = "detail"
+        default: group = "geometry"
+        }
+        let groupButton = app.buttons["editor.group." + group]
+        waitUntil(timeout: 30) { groupButton.exists && groupButton.isEnabled }
+        if groupButton.exists && (!groupButton.isSelected || !app.buttons["tool." + name].exists) {
+            let groups = app.scrollViews["editor.groups"]
+            try revealHorizontally(groupButton, in: groups, app: app)
+            groupButton.tap()
+        }
         let tool = app.buttons["tool." + name]
         let strips = app.scrollViews.containing(.button, identifier: "tool." + name).allElementsBoundByIndex
         let strip = try XCTUnwrap(strips.min { $0.frame.height < $1.frame.height }, "Editor tool strip missing")
@@ -167,17 +184,21 @@ extension EditorV4UITests {
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
     }
 
-    func revealInPanel(_ element: XCUIElement, in app: XCUIApplication) throws {
+    func revealInPanel(_ element: XCUIElement, in app: XCUIApplication, fully: Bool = false) throws {
         XCTAssertTrue(element.waitForExistence(timeout: 5), app.debugDescription)
         let panel = app.scrollViews["editor.panel"]
         for _ in 0..<12 {
             let frame = element.frame
             let panelFrame = panel.frame
             let visible = panelFrame.insetBy(dx: 0, dy: min(40, panelFrame.height * 0.2))
-            if element.isHittable && visible.contains(CGPoint(x: frame.midX, y: frame.midY)) { return }
+            if element.isHittable && (fully ? panelFrame.insetBy(dx: -1, dy: -1).contains(frame) : visible.contains(CGPoint(x: frame.midX, y: frame.midY))) { return }
             let up = frame.isEmpty || frame.midY > visible.midY
             let distance = frame.isEmpty ? panelFrame.height * 0.6 : abs(frame.midY - panelFrame.midY)
-            let amount = min(0.6, max(0.12, distance / max(1, panelFrame.height)))
+            if panelFrame.height < 120 && distance > panelFrame.height * 2 {
+                if up { panel.swipeUp(velocity: .fast) } else { panel.swipeDown(velocity: .fast) }
+                continue
+            }
+            let amount = min(0.6, max(0.08, distance / max(1, panelFrame.height)))
             let startY: CGFloat = up ? 0.82 : 0.18
             let endY = startY + (up ? -amount : amount)
             panel.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: startY))

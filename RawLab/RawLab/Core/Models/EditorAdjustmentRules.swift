@@ -9,7 +9,8 @@ enum EditorAdjustmentGroup: String, CaseIterable {
     case looks, light, color, effects, detail, geometry
 }
 
-enum EditorAdjustmentScope {
+enum EditorAdjustmentScope: Equatable {
+    case tool(EditorToolSelection)
     case group(EditorAdjustmentGroup)
     case hslChannel(Int)
     case allHSL
@@ -48,6 +49,10 @@ enum EditorAdjustmentRules {
         toolGroups.first { $0.group == group }?.tools ?? []
     }
 
+    static func defaultTool(_ group: EditorAdjustmentGroup) -> EditorToolSelection {
+        tools(group)[0]
+    }
+
     static func groupFor(_ tool: EditorToolSelection) -> EditorAdjustmentGroup {
         if tool == .adjustment(.tint) { return .color }
         guard let group = toolGroups.first(where: { $0.tools.contains(tool) })?.group else {
@@ -58,6 +63,19 @@ enum EditorAdjustmentRules {
 
     static func isModified(_ scope: EditorAdjustmentScope, snapshot: PhotoEditState,
                            context: EditorAdjustmentContext) -> Bool {
+        if case .tool(let tool) = scope {
+            switch tool {
+            case .film: return snapshot.filmID != nil || snapshot.settings.hasLook
+            case .recipe: return snapshot.settings.masterRecipeID != nil
+            case .adjustment(.exposure):
+                return snapshot.settings.exposure != 0 ||
+                    (context.isRaw && snapshot.settings.exposureMode != context.defaultExposureMode)
+            case .adjustment(.temperature), .adjustment(.tint):
+                return context.isRaw && (snapshot.settings.whiteBalanceMode != .camera ||
+                    (snapshot.settings.masterRecipeID != nil && snapshot.settings.tint != 0))
+            default: return resetting(scope, settings: snapshot.settings, context: context) != snapshot.settings
+            }
+        }
         if case .group(.looks) = scope {
             return snapshot.filmID != nil || snapshot.settings.hasLook || snapshot.settings.lutStrength != 1
         }
@@ -99,9 +117,24 @@ enum EditorAdjustmentRules {
            !tint.isFinite || !RawSettings.tintRange.contains(tint) { return .blocked(.invalidInput) }
 
         guard isModified(scope, snapshot: snapshot, context: context) else { return .unchanged }
+        let resetsWhiteBalance: Bool
+        switch scope {
+        case .group(.color), .tool(.adjustment(.temperature)), .tool(.adjustment(.tint)): resetsWhiteBalance = true
+        default: resetsWhiteBalance = false
+        }
+        if resetsWhiteBalance && context.isRaw &&
+            (context.cameraTemperature == nil || context.cameraTint == nil) {
+            return .blocked(.missingCameraWhiteBalance)
+        }
         var settings = snapshot.settings
         var filmID = snapshot.filmID
-        if case .group(.looks) = scope {
+        let removesLook: Bool
+        switch scope {
+        case .group(.looks): removesLook = true
+        case .tool(.film), .tool(.recipe): removesLook = settings.masterRecipeID != nil
+        default: removesLook = false
+        }
+        if removesLook {
             if settings.masterRecipeID != nil {
                 let needsCamera = settings.whiteBalanceMode == .custom || settings.tint * settings.recipeScale != 0
                 if context.isRaw && needsCamera && (context.cameraTemperature == nil || context.cameraTint == nil) {
@@ -129,6 +162,7 @@ enum EditorAdjustmentRules {
         } else {
             settings = resetting(scope, settings: settings, context: context)
             if isAll(scope) { filmID = nil }
+            if case .tool(.film) = scope { settings.lutID = nil; filmID = nil }
         }
         guard valid(settings) else { return .blocked(.unrepresentable) }
         let candidate = snapshot.replacing(settings: settings, preservingFilmID: filmID)
@@ -137,8 +171,26 @@ enum EditorAdjustmentRules {
         switch scope {
         case .group, .allHSL, .all: confirmation = true
         case .hslChannel: confirmation = false
+        case .tool(.adjustment(.hsl)): confirmation = true
+        case .tool:
+            confirmation = removesLook && !materializedFields(before: snapshot.settings, after: settings).isEmpty
         }
         return .candidate(candidate, requiresConfirmation: confirmation)
+    }
+
+    static func materializedFields(before: RawSettings, after: RawSettings) -> [String] {
+        var fields = [String]()
+        if before.exposure != after.exposure { fields.append("曝光") }
+        if before.highlights != after.highlights { fields.append("高光") }
+        if before.shadows != after.shadows { fields.append("阴影") }
+        if before.contrast != after.contrast { fields.append("对比度") }
+        if before.saturation != after.saturation { fields.append("饱和度") }
+        if before.toneCurve != after.toneCurve { fields.append("S 曲线") }
+        if before.whiteBalanceMode != after.whiteBalanceMode || before.temperature != after.temperature || before.tint != after.tint {
+            fields.append("白平衡")
+        }
+        if before.hsl != after.hsl { fields.append("HSL") }
+        return fields
     }
 
     private static func isAll(_ scope: EditorAdjustmentScope) -> Bool {
@@ -165,6 +217,24 @@ enum EditorAdjustmentRules {
             var neutral = self.defaults(context)
             neutral.processing = settings.processing
             return neutral
+        case .tool(let tool):
+            switch tool {
+            case .film: result.lutID = nil
+            case .recipe: break // 无配方时为 NoChange；有配方时走同一无损独立化。
+            case .geometry: result.geometry = defaults.geometry
+            case .lens: result.lensCorrection = defaults.lensCorrection
+            case .adjustment(let kind):
+                switch kind {
+                case .exposure: result.exposure = defaults.exposure; result.exposureMode = defaults.exposureMode
+                case .temperature, .tint:
+                    result.whiteBalanceMode = defaults.whiteBalanceMode
+                    result.temperature = defaults.temperature; result.tint = defaults.tint
+                case .noiseReduction:
+                    result.noiseReduction = defaults.noiseReduction; result.denoise = defaults.denoise
+                    result.displayChromaDenoise = defaults.displayChromaDenoise
+                default: kind.reset(in: &result)
+                }
+            }
         case .allHSL: result.hsl = HSLSettings()
         case .hslChannel(let channel):
             if (0..<8).contains(channel) { result.hsl.reset(channel: channel) }
