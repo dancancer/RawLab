@@ -12,13 +12,13 @@
 
 ## 当前交付状态
 
-三端源码与对应本地验证、独立评审均已完成，尚未 push 或创建第三批 PR。此处的本地结果不代表 hosted CI 或整体 ITER-02 已验收。
+三端源码、对应本地验证和独立评审均已完成，已通过 #115–#118 合入。各 PR 源提交及最终 `1031745c` 的联合 CI 均已通过；这不代表整体 ITER-02 已验收。
 
 | 分支 | 本地提交 | 当前证据与缺口 |
 | --- | --- | --- |
-| `feature/editing-ios-reset-transactions` | `5e422ea6` | 真实 simulator ContentView、VM 及模型回归通过；真机与 hosted CI 待验证 |
-| `feature/editing-android-reset-transactions` | `b8d8e00b` | JVM、lint、ARM64 app/test 编译及约定 RAW 的实际 instrumentation 通过；物理设备、强制 GLES 与 hosted CI 待验证 |
-| `feature/editing-windows-reset-transactions` | `f46a4f37` | managed 运行及完整 WPF 交叉编译通过；真实 Windows WPF/native 运行由已接入的 CI 门禁验收 |
+| `feature/editing-ios-reset-transactions` | `5e422ea6` | 真实 simulator ContentView、VM、模型及 hosted CI 通过；真机未验证 |
+| `feature/editing-android-reset-transactions` | `b8d8e00b` | JVM、lint、ARM64 app/test 编译、约定 RAW 实际 instrumentation 及 hosted CI 通过；物理设备与强制 GLES 未验证 |
+| `feature/editing-windows-reset-transactions` | `f46a4f37` | managed 与 WPF 编译通过；真实 Windows transform-ui/native CI 已通过，硬件 GPU 未验证 |
 
 ## 公共约束与评审重点
 
@@ -79,12 +79,12 @@ Owner：Windows worker。
 接口职责：准备从完整 SavedEdit 捕获 file/openRevision/editRevision/OriginalIdentity、settings/Look、draft generation/context。普通 accepted reset 一次恢复设置和外观并 `MarkEdited()`/Schedule；未修改 Look 时保留原 lut/UI identity 映射。草稿从 committed + transform 的 geometry/lens 构造 candidate，先用现有 EditStore 保存，成功后才 `transform.Apply()`/EndTransform/一次 Schedule；失败 return false 保持 draft 与 committed。
 
 - [x] managed 失败回归：完整快照/Values 隔离、source/edit revision/identity/context stale 拒绝、pair reset 只改 draft、unchanged 零请求。
-- [ ] WPF 失败回归：exact draft 就绪后让 editStore 目录不可写，Apply/导航均失败且 committed/draft/旧记录不变；恢复 store 后 retry Apply 成功。继续保留普通编辑保存失败阻止切照片回归。
+- [x] WPF 失败回归：exact draft 就绪后让 editStore 目录不可写，Apply/导航均失败且 committed/draft/旧记录不变；恢复 store 后 retry Apply 成功。继续保留普通编辑保存失败阻止切照片回归。
 - [x] 同步“应用并离开”在 dialog 内先保存应用，成功才关闭并继续原 caller 的目的地；失败保留同一 dialog 与可见错误，允许重试，或明确继续编辑/放弃。回归覆盖同 dialog 失败→修复→成功导航一次；返回后不能再次 Apply，不新增通用导航总线。
 - [x] Apply 增加 Dirty 门控时，现有 TransformUiChecks / EditorReview.ResizeUi 对未修改草稿的等待改为实际 preview-ready；有变化时继续断言 Apply 启用，不放宽原 exact/render/error 门槛。
 - [x] 实现保存候选而不提前 mutation；取消旧 timer，失败保留重试状态，成功不再排一次旧 committed autosave。现有 RetrySave 若针对 draft 失败应重试 draft Apply；普通保存重试语义不变。
-- [ ] 运行 managed build + DLL（本机 .NET 共享缓存）；WPF/native build 和 `transform-ui` 必须用真实 Windows CI 结果验收，不能把 Mac managed 通过外推。
+- [x] 运行 managed build + DLL（本机 .NET 共享缓存）；WPF/native build 和 `transform-ui` 必须用真实 Windows CI 结果验收，不能把 Mac managed 通过外推。
 
 ## 集成条件
 
-各任务本地提交前完成 targeted RED/GREEN 和源码自查；交给默认代理独立评审，协调者复核实际测试与平台缺口。任务失败或未运行明确保留状态。第三批 push/新建 PR/合入按已有授权边界另行处理：当前第二批五个 PR 的远端授权不自动扩展到第三批。无版本发布、安装包上传或生产部署。
+各任务本地提交前完成 targeted RED/GREEN 和源码自查；交给默认代理独立评审，协调者复核实际测试与平台缺口。任务失败或未运行明确保留状态。第三批已获单独授权并通过 #115–#118 集成，最终 `development@1031745c` 的联合 CI [39617993292](https://github.com/dancancer/RawLab/actions/runs/39617993292) 已全部通过。无版本发布、安装包上传或生产部署。

@@ -8,8 +8,9 @@
 - 范围依据：[总需求](../../design/editing-iteration/requirements.md)、[总技术方案](../../design/editing-iteration/technical-design.md)。
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
-- 当前集成基线：`development@bff2b8602b913a08676e04ab7f1109a148f68834`，已包含 #107～#114；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。该合入源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39604481132)已通过四端及汇总门禁；其范围仍限于工作流实际执行的套件。
-- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)。第二批已集成 Mac 提交事务及 iOS/Android/Windows S1 纯规则；第三批接三端提交与草稿保存事务，原生六组 UI 继续单独验收。
+- 第三批集成基线：`development@1031745c06968fa7d5ea7961f19f0eff002ad462`，已包含 #107～#118；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39617993292)已通过四端及汇总门禁，其范围限于工作流实际执行的套件。
+- 当前开发基线：`development@0fd52624648f5473364b78e6cfb28cf7c471be17`，新增已合入 #106 的处理版本兼容契约；第四批重置与导航保持该身份，不改核心算法或存储策略。
+- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)。三端提交/草稿事务已集成，第四批开始六组导航与生产重置入口，后续输入与查看能力继续单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
 
@@ -25,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1 与 Mac 提交事务已集成；第三批三端提交/草稿事务已完成本地验证与独立复核、待集成；六组 UI 待接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1、重置提交与草稿事务已集成；第四批六组导航与生产重置入口开发中；其余工作区 UI 分批接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -68,14 +69,14 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | 总账、批次计划、共享语义决定 | 协调者 | `docs/integration/editing-iteration/`；必要的规范勘误 | 决策关联需求/源码，修订后通知受影响执行者 |
 | I0 字段目录 | 协调者；`field_contract` 来源核验 | `docs/design/editing-iteration/field-catalog.md` | 不新增通用 native DTO，不宣称尚未验证的跨端映射已冻结 |
 | MCP v4 工具 | 协调者执行；`mcp_phase1` 接入核验 | `tools/mcp/` | CLI/C ABI 不改；协议缺口提交协调者另拆前置 |
-| Mac S1 与提交事务 | 已集成；协调者维护，原实现 `mac_reset_transactions` | `EditorModel.swift`、`EditorModel+Workflow.swift`、`EditorModel+Geometry.swift`、`EditModelTests.swift` | 后续 UI owner 另行交接；不把模型完成当 UI 验收 |
-| 核心 C ABI / EditRecipe / CLI / schema | 协调者保留，按算法批次另派一个 owner | `lutools/include/sony2fuji/`、`src/ffi/`、`src/cli/`、对应核心/测试 | 新配置 additive；v5 真实贯通后才宣告支持 |
+| Mac S1、事务与本批 UI | Mac workspace worker；默认代理独立核验 | 第四批 Task 1：Adjustments/Model、EditorView/Dock/Layout 与受影响 controls/tests | 保留既有事务与 processing identity；不把模型完成当 UI 验收 |
+| 核心 C ABI / EditRecipe / CLI / schema | 协调者保留，按算法批次另派一个 owner | `lutools/include/sony2fuji/`、`src/ffi/`、`src/cli/`、对应核心/测试 | 新配置 additive；#106 已接入含 processing 的 v5，后续新字段另按真实链路声明支持 |
 | 核心算法 / Metal / GLES / D3D11 | 协调者保留 | `lutools/src/core/`、对应后端 | CPU 合同与质量先准入，不能各后端并行猜常量 |
-| iOS 提交与草稿保存 | `ios_reset_transactions` worker；默认代理独立核验 | 第三批 Task 1 的 VM/IO、ContentView/EditorDrafts 窄适配、project 注册及现有模型/真实 UI harness | ContentView 保持 settings owner；保存成功后才提交草稿，精确保留记录 metadata，不改 codec |
-| Android 提交与草稿保存 | `android_reset_transactions` worker；默认代理独立核验 | 第三批 Task 2 的 editor state/VM/draft、现有 UI 回调及 JVM/instrumentation | 保留工具 ID/JNI/codec；分开 draft-ready 与 changed Apply，真实 WB metadata 不因去重丢失 |
-| Windows 提交与草稿保存 | `windows_reset_transactions` worker；默认代理独立核验 | 第三批 Task 3 的 EditWorkflow/Transform、纯事务与 managed/WPF 回归 | 先保存候选再清草稿；不改旧 reset UI/JSON/Library 批量复制 |
+| iOS 事务与本批 UI | iOS workspace worker；默认代理独立核验 | 第四批 Task 2：rules/transaction、ContentView/Panels/Layout、HSL channel 与 tests/project 注册 | ContentView 保持 settings owner；保存成功后才提交草稿，精确保留记录 metadata，不改 codec |
+| Android 事务与本批 UI | Android workspace worker；默认代理独立核验 | 第四批 Task 3：rules/state/VM、EditorScreen/Tools/Dock/HSL 与 JVM/instrumentation | 保留工具 ID/JNI/codec；分开 draft-ready 与 changed Apply，真实 WB metadata 不因去重丢失 |
+| Windows 事务与本批 UI | Windows workspace worker；默认代理独立核验 | 第四批 Task 4：rules/transaction/workflow、MainWindow 与 HslPanel、managed/WPF 回归 | 保留 save-first 和同 dialog retry；不改 JSON/Library 批量复制 |
 | 共享本地化与无障碍 keys | 协调者保留 | `Shared/strings/` 及生成入口 | 功能 owner 提交 key/参数需求，单一资源 owner 写入 |
-| 构建、CI、公共依赖与许可证 | 协调者；第三批 CI 绑定 Windows 分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | #108 的 MCP、#112 的 iOS 模型检查已集成；第三批将现有 Windows transform-ui 加入门禁，不降低既有检查 |
+| 构建、CI、公共依赖与许可证 | 协调者；第四批 CI 绑定基础分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | #108 的 MCP、#112 的 iOS 模型检查已集成；第三批已将 Windows transform-ui 加入门禁；第四批增加现有工作区及本地化 UI 入口和截图产物，不降低既有检查 |
 
 第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从初始开发基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
 
@@ -83,7 +84,9 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 
 第二批分支：`feature/editing-native-models-coordination`、`feature/editing-mac-reset-transactions`、`feature/editing-ios-reset-rules`、`feature/editing-android-reset-rules`、`feature/editing-windows-reset-rules`，创建基线为 `361c9949`。已按 **#110 → #111 → #112 → #113 → #114** 合入；每个源提交均经独立复核和 CI 验证。Mac 已覆盖本端构建与真实 DNG 草稿运行；iOS CI 编译 app/tests 并执行模型检查，Android CI 构建/JVM/lint/测试 APK，Windows CI 构建并运行选定 native/WPF/managed 套件。上述证据不等于三端新增事务、四端六组 UI 或设备/GPU 验收。
 
-第三批复用本任务已合入且干净的独立 worktree，从 `bff2b860` 新建 `feature/editing-native-transactions-coordination`、`feature/editing-ios-reset-transactions`、`feature/editing-android-reset-transactions`、`feature/editing-windows-reset-transactions`。平台 worker 实施、默认代理独立核验均已完成，协调者已复核关键调用链和最终源码对应的本地结果。iOS 真实 simulator 和 Android 约定素材的实际 instrumentation 已通过；Windows 目前为 managed 运行及 WPF 交叉编译，真实 WPF/native 仍待 CI。各提交与缺口见第三批计划。第二批的远端授权不自动扩展到第三批；第三批尚未 push/新建 PR，远端授权另行处理。
+第三批复用干净独立 worktree，从 `bff2b860` 创建四个分支，已按 **#115 → #116 → #117 → #118** 合入。iOS 真实 simulator、Android 标准素材 instrumentation、Windows 实际 WPF/native 回归已通过；对应源与最终集成源 CI 均已通过。验证细节留在各 PR，设备/GPU缺口继续保留。
+
+第四批从最新 `0fd52624` 创建基础资源分支及四端消费者分支，复用同一批干净 worktree。协调者独占共享六语/CI/总账，平台 worker 各自拥有第四批计划列出的UI和窄模型接线，默认代理独立评审。各消费者显式合入同一基础资源提交；远端先合入基础PR，再更新消费者并核验受影响组合。当前只授权本地实现，push/PR/merge待可检查交付物就绪后另行处理。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
@@ -98,6 +101,13 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | [#112](https://github.com/dancancer/RawLab/pull/112) | iOS S1 与现有模型 runner 接 CI | 已集成，merge `01889c77`；提交事务/真实 UI 回归由第三批补齐 |
 | [#113](https://github.com/dancancer/RawLab/pull/113) | Android S1 规则与候选 | 已集成，merge `2c3a2d90`；提交事务/真实 instrumentation 由第三批补齐 |
 | [#114](https://github.com/dancancer/RawLab/pull/114) | Windows S1 规则与候选 | 已集成，merge `bff2b860`；草稿保存失败 WPF 回归由第三批补齐 |
+
+| 第三批 PR | 交付范围 | 集成状态 |
+| --- | --- | --- |
+| [#115](https://github.com/dancancer/RawLab/pull/115) | 三端事务协调与边界 | 已集成，merge `5c673dfc` |
+| [#116](https://github.com/dancancer/RawLab/pull/116) | iOS reset/draft/source 事务 | 已集成，merge `d81ee6db` |
+| [#117](https://github.com/dancancer/RawLab/pull/117) | Android reset/draft/receipt 事务 | 已集成，merge `9ec25efd` |
+| [#118](https://github.com/dancancer/RawLab/pull/118) | Windows reset/draft 事务与实际 WPF 门禁 | 已集成，merge `1031745c` |
 
 ## 集成门槛
 

@@ -3414,5 +3414,213 @@
     "fr": "Look de film haut de gamme à l'heure dorée, sujet lumineux en fort contraste, ombres profondes et contour doré des cheveux",
     "ja": "ゴールデンアワーの映画的な質感、高コントラストでも柔らかく透明な人物、深い影と金色の髪の輪郭光",
     "zh-Hans": "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓"
+  },
+  "光线": {
+    "de": "Licht",
+    "en": "Light",
+    "es": "Luz",
+    "fr": "Lumière",
+    "ja": "ライト",
+    "zh-Hans": "光线"
+  },
+  "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。": {
+    "de": "Farbton, Sättigung und Helligkeit aller acht Farbbereiche werden auf 0 zurückgesetzt. Andere Anpassungen bleiben unverändert.",
+    "en": "Hue, saturation and lightness will return to 0 for all eight colors. Other adjustments will stay unchanged.",
+    "es": "El tono, la saturación y la luminosidad de los ocho colores volverán a 0. Los demás ajustes no cambiarán.",
+    "fr": "La teinte, la saturation et la luminosité des huit couleurs reviendront à 0. Les autres réglages resteront inchangés.",
+    "ja": "8色すべての色相・彩度・明度を0に戻します。他の調整は変更されません。",
+    "zh-Hans": "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。"
+  },
+  "几何与镜头": {
+    "de": "Geometrie und Objektiv",
+    "en": "Geometry & Lens",
+    "es": "Geometría y objetivo",
+    "fr": "Géométrie et objectif",
+    "ja": "ジオメトリとレンズ",
+    "zh-Hans": "几何与镜头"
+  },
+  "外观": {
+    "de": "Looks",
+    "en": "Looks",
+    "es": "Aspectos",
+    "fr": "Rendus",
+    "ja": "ルック",
+    "zh-Hans": "外观"
+  },
+  "将以下项目转为独立调整，以保留其他分组的当前效果：{0}": {
+    "de": "Die folgenden Werte werden in unabhängige Anpassungen umgewandelt, damit die aktuelle Wirkung anderer Gruppen erhalten bleibt: {0}",
+    "en": "The following will become independent adjustments to preserve the current appearance of other groups: {0}",
+    "es": "Los siguientes valores se convertirán en ajustes independientes para conservar el aspecto actual de los demás grupos: {0}",
+    "fr": "Les éléments suivants seront convertis en réglages indépendants pour préserver le rendu actuel des autres groupes : {0}",
+    "ja": "他のグループの現在の効果を保つため、次の項目を独立した調整に変換します：{0}",
+    "zh-Hans": "将以下项目转为独立调整，以保留其他分组的当前效果：{0}"
+  },
+  "展开{0}组": {
+    "de": "Gruppe „{0}“ aufklappen",
+    "en": "Expand {0} group",
+    "es": "Expandir el grupo {0}",
+    "fr": "Développer le groupe {0}",
+    "ja": "「{0}」グループを展開",
+    "zh-Hans": "展开{0}组"
+  },
+  "当前照片或调整记录无效，无法安全重置。": {
+    "de": "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.",
+    "en": "The current photo or edit record is invalid and cannot be reset safely.",
+    "es": "La foto actual o su registro de ajustes no son válidos y no se pueden restablecer de forma segura.",
+    "fr": "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.",
+    "ja": "現在の写真または調整記録が無効なため、安全にリセットできません。",
+    "zh-Hans": "当前照片或调整记录无效，无法安全重置。"
+  },
+  "当前配方不可用，无法安全重置外观。": {
+    "de": "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.",
+    "en": "The current recipe is unavailable, so its look cannot be reset safely.",
+    "es": "La receta actual no está disponible, por lo que su aspecto no se puede restablecer de forma segura.",
+    "fr": "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.",
+    "ja": "現在のレシピが利用できないため、ルックを安全にリセットできません。",
+    "zh-Hans": "当前配方不可用，无法安全重置外观。"
+  },
+  "恢复当前照片的全部调整，不改写原始照片。": {
+    "de": "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.",
+    "en": "Reset all adjustments for the current photo. The original photo will not be modified.",
+    "es": "Restablece todos los ajustes de la foto actual. La foto original no se modificará.",
+    "fr": "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.",
+    "ja": "現在の写真のすべての調整をリセットします。元の写真は変更されません。",
+    "zh-Hans": "恢复当前照片的全部调整，不改写原始照片。"
+  },
+  "收起{0}组": {
+    "de": "Gruppe „{0}“ zuklappen",
+    "en": "Collapse {0} group",
+    "es": "Contraer el grupo {0}",
+    "fr": "Réduire le groupe {0}",
+    "ja": "「{0}」グループを折りたたむ",
+    "zh-Hans": "收起{0}组"
+  },
+  "无法重置调整": {
+    "de": "Anpassungen können nicht zurückgesetzt werden",
+    "en": "Cannot reset adjustments",
+    "es": "No se pueden restablecer los ajustes",
+    "fr": "Impossible de réinitialiser les réglages",
+    "ja": "調整をリセットできません",
+    "zh-Hans": "无法重置调整"
+  },
+  "此操作只恢复{0}组内的调整，其他分组保持不变。": {
+    "de": "Nur Anpassungen in der Gruppe „{0}“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.",
+    "en": "Only adjustments in the {0} group will be reset. Other groups will stay unchanged.",
+    "es": "Solo se restablecerán los ajustes del grupo {0}. Los demás grupos no cambiarán.",
+    "fr": "Seuls les réglages du groupe {0} seront réinitialisés. Les autres groupes resteront inchangés.",
+    "ja": "「{0}」グループ内の調整のみをリセットします。他のグループは変更されません。",
+    "zh-Hans": "此操作只恢复{0}组内的调整，其他分组保持不变。"
+  },
+  "照片或调整已变化，请重新确认重置。": {
+    "de": "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.",
+    "en": "The photo or its adjustments have changed. Confirm the reset again.",
+    "es": "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.",
+    "fr": "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.",
+    "ja": "写真または調整が変更されました。リセットを再度確認してください。",
+    "zh-Hans": "照片或调整已变化，请重新确认重置。"
+  },
+  "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。": {
+    "de": "Die verfügbaren Parameterbereiche können die Wirkung des Rezepts nicht vollständig erhalten. Brechen Sie ab oder bestätigen Sie separat das Zurücksetzen aller Anpassungen.",
+    "en": "The available parameter ranges cannot preserve the recipe's full appearance. Cancel, or separately confirm resetting all adjustments.",
+    "es": "Los rangos disponibles de los parámetros no permiten conservar todo el aspecto de la receta. Cancela o confirma por separado el restablecimiento de todos los ajustes.",
+    "fr": "Les plages de paramètres disponibles ne permettent pas de préserver entièrement le rendu de la recette. Annulez ou confirmez séparément la réinitialisation de tous les réglages.",
+    "ja": "現在のパラメーター範囲ではレシピの効果を完全に保持できません。キャンセルするか、別途確認してすべての調整をリセットしてください。",
+    "zh-Hans": "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。"
+  },
+  "缺少拍摄时白平衡数据，无法保留配方效果。": {
+    "de": "Die Weißabgleichsdaten der Aufnahme fehlen. Die Wirkung des Rezepts kann daher nicht beibehalten werden.",
+    "en": "As-shot white balance data is missing, so the recipe's appearance cannot be preserved.",
+    "es": "Faltan los datos del balance de blancos de la toma, por lo que no se puede conservar el aspecto de la receta.",
+    "fr": "Les données de balance des blancs à la prise de vue sont manquantes ; le rendu de la recette ne peut donc pas être préservé.",
+    "ja": "撮影時のホワイトバランスデータがないため、レシピの効果を保持できません。",
+    "zh-Hans": "缺少拍摄时白平衡数据，无法保留配方效果。"
+  },
+  "重置": {
+    "de": "Zurücksetzen",
+    "en": "Reset",
+    "es": "Restablecer",
+    "fr": "Réinitialiser",
+    "ja": "リセット",
+    "zh-Hans": "重置"
+  },
+  "重置{0}组…": {
+    "de": "Gruppe „{0}“ zurücksetzen…",
+    "en": "Reset {0} group…",
+    "es": "Restablecer el grupo {0}…",
+    "fr": "Réinitialiser le groupe {0}…",
+    "ja": "「{0}」グループをリセット…",
+    "zh-Hans": "重置{0}组…"
+  },
+  "重置{0}组？": {
+    "de": "Gruppe „{0}“ zurücksetzen?",
+    "en": "Reset the {0} group?",
+    "es": "¿Restablecer el grupo {0}?",
+    "fr": "Réinitialiser le groupe {0} ?",
+    "ja": "「{0}」グループをリセットしますか？",
+    "zh-Hans": "重置{0}组？"
+  },
+  "重置{0}？": {
+    "de": "{0} zurücksetzen?",
+    "en": "Reset {0}?",
+    "es": "¿Restablecer {0}?",
+    "fr": "Réinitialiser {0} ?",
+    "ja": "{0}をリセットしますか？",
+    "zh-Hans": "重置{0}？"
+  },
+  "重置全部 HSL…": {
+    "de": "Alle HSL-Werte zurücksetzen…",
+    "en": "Reset all HSL…",
+    "es": "Restablecer todos los valores HSL…",
+    "fr": "Réinitialiser tous les réglages HSL…",
+    "ja": "すべてのHSLをリセット…",
+    "zh-Hans": "重置全部 HSL…"
+  },
+  "重置全部 HSL？": {
+    "de": "Alle HSL-Werte zurücksetzen?",
+    "en": "Reset all HSL?",
+    "es": "¿Restablecer todos los valores HSL?",
+    "fr": "Réinitialiser tous les réglages HSL ?",
+    "ja": "すべてのHSLをリセットしますか？",
+    "zh-Hans": "重置全部 HSL？"
+  },
+  "重置全部调整…": {
+    "de": "Alle Anpassungen zurücksetzen…",
+    "en": "Reset all adjustments…",
+    "es": "Restablecer todos los ajustes…",
+    "fr": "Réinitialiser tous les réglages…",
+    "ja": "すべての調整をリセット…",
+    "zh-Hans": "重置全部调整…"
+  },
+  "重置全部调整？": {
+    "de": "Alle Anpassungen zurücksetzen?",
+    "en": "Reset all adjustments?",
+    "es": "¿Restablecer todos los ajustes?",
+    "fr": "Réinitialiser tous les réglages ?",
+    "ja": "すべての調整をリセットしますか？",
+    "zh-Hans": "重置全部调整？"
+  },
+  "重置当前颜色（{0}）": {
+    "de": "Aktuelle Farbe ({0}) zurücksetzen",
+    "en": "Reset current color ({0})",
+    "es": "Restablecer el color actual ({0})",
+    "fr": "Réinitialiser la couleur actuelle ({0})",
+    "ja": "現在の色（{0}）をリセット",
+    "zh-Hans": "重置当前颜色（{0}）"
+  },
+  "预览尚未就绪，请稍后重试。": {
+    "de": "Die Vorschau ist noch nicht bereit. Versuchen Sie es gleich erneut.",
+    "en": "The preview is not ready yet. Try again shortly.",
+    "es": "La vista previa aún no está lista. Vuelve a intentarlo en breve.",
+    "fr": "L’aperçu n’est pas encore prêt. Réessayez dans un instant.",
+    "ja": "プレビューの準備ができていません。しばらくしてから再試行してください。",
+    "zh-Hans": "预览尚未就绪，请稍后重试。"
+  },
+  "颜色": {
+    "de": "Farbe",
+    "en": "Color",
+    "es": "Color",
+    "fr": "Couleur",
+    "ja": "カラー",
+    "zh-Hans": "颜色"
   }
 }
