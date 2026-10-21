@@ -124,12 +124,42 @@
         <th>当前原生依据</th>
       </tr>
     </thead>
-    <tbody></tbody>
+    <tbody id="drawn-screens"></tbody>
   </table>
+  <h2>本轮待补设计</h2>
+  <p>
+    以下条目属于本次迭代，状态均为“待设计”，尚无完整可评审页面。页面 ID
+    是后续增量补稿的目标，不是空链接；正常、异常与恢复状态都需补齐后才能移入上方清单。它们不计入现有可直达界面或浏览器矩阵。
+  </p>
+  <p id="pending-summary" class="summary"></p>
+  <table aria-label="本轮待补设计">
+    <thead>
+      <tr>
+        <th>迭代 / 功能</th>
+        <th>目标页面 / 稳定 ID</th>
+        <th>正常状态</th>
+        <th>异常与恢复状态</th>
+      </tr>
+    </thead>
+    <tbody id="pending-screens"></tbody>
+  </table>
+  <p>
+    ITER-01 MCP 是 macOS/Windows 本地工具交付，按<a
+      href="../editing-iteration/requirements.md#3-第一阶段收尾iter-01"
+      >总需求</a
+    >跟踪配置、协议与 smoke test，不要求四端编辑页面。ITER-02
+    已有稿的交互修正与验收按<a href="requirements.md">工作区子需求</a
+    >跟踪；“已有稿”仍不等于原生功能已完成。
+  </p>
+  <h2>本轮范围外</h2>
+  <p id="out-of-iteration"></p>
   <footer>
     目录由 shared/screens.js
     生成；与设计板使用同一份界面清单。设计状态与版本只读取
-    manifest.js。未来复制粘贴、用户预设、颜色分级、AI、HDR 等未进入本轮覆盖。
+    manifest.js。待补设计来自同文件独立清单；整轮需求与验收以<a
+      href="../editing-iteration/requirements.md"
+      >迭代总需求</a
+    >为准，现有截图检查不能证明整轮设计覆盖完整。
   </footer>
   <script src="manifest.js"></script>
   <script src="shared/model.js"></script>
@@ -144,7 +174,7 @@
         s.platforms.includes(p),
       );
       const ids = new Set();
-      document.querySelector("tbody").innerHTML = screens
+      document.querySelector("#drawn-screens").innerHTML = screens
         .map((s) => {
           const states = s.states.filter((id) =>
             RawLabDesign.supportsScreen(s, id, p),
@@ -155,7 +185,21 @@
         })
         .join("");
       document.querySelector("#summary").textContent =
-        `${screens.length} 个功能条目 · ${ids.size} 个可直达界面/状态`;
+        `${screens.length} 个已有稿功能条目 · ${ids.size} 个可直达界面/状态`;
+      const pending = RawLabDesign.pendingIterationDesigns.filter((s) =>
+        s.platforms.includes(p),
+      );
+      document.querySelector("#pending-summary").textContent =
+        `${pending.length} 个本轮待补条目 · 当前选择平台；不计入已有稿数量`;
+      document.querySelector("#pending-screens").innerHTML = pending
+        .map(
+          (s) =>
+            `<tr data-pending-iteration="${s.iteration}"><td><a href="../editing-iteration/requirements.md">${s.iteration}</a><br>${s.title}<br><strong>待设计</strong><br>${s.platforms.join(" / ")}</td><td>${s.pages.map(([id, name]) => `${name}<br><code>${id}</code>`).join("<br>")}</td><td>${s.normal}</td><td>异常：${s.error}<br>恢复：${s.recovery}</td></tr>`,
+        )
+        .join("");
+      document.querySelector("#out-of-iteration").textContent =
+        RawLabDesign.outOfIteration.join("、") +
+        "：保留在后续阶段，本轮不要求补齐这些功能稿。";
     }
     document.querySelector("#platform").onchange = render;
     render();

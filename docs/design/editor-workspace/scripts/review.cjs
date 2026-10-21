@@ -8,6 +8,7 @@ const fs = require("node:fs"),
 const { chromium } = require(
   process.env.RAWLAB_DESIGN_PLAYWRIGHT || "playwright",
 );
+const { reviewRegressions } = require("./review-regressions.cjs");
 const root = path.resolve(__dirname, "..");
 const base = (
   process.env.RAWLAB_DESIGN_URL ||
@@ -589,6 +590,7 @@ const shots = new Set([
         }
       await page.close();
     }
+    const regressions = await reviewRegressions(browser, base);
     const page = await browser.newPage({
       viewport: { width: 1440, height: 1000 },
     });
@@ -617,6 +619,7 @@ const shots = new Set([
     const report = {
       designVersion: sandbox.RawLabDesignManifest.designVersion,
       states,
+      regressions,
       failures,
       checks,
     };

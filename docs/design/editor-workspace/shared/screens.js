@@ -192,6 +192,118 @@ window.RawLabDesignScreens = [
     source: "共用 SVG 语义图标与 Web 原型组件",
   },
 ];
+// 待补设计单独登记；不加入上面的可直达场景或浏览器矩阵。
+window.RawLabDesign.pendingIterationDesigns = [
+  {
+    iteration: "ITER-03",
+    title: "复制粘贴与会话历史",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [
+      ["copy-scope", "更多→复制范围"],
+      ["paste-result", "粘贴预检与逐张结果"],
+      ["history-conflict", "单张/整批撤销冲突"],
+    ],
+    normal: "全部/仅已修改/自定义、单张与多张粘贴、撤销/重做",
+    error: "来源/目标草稿、缺外观、未来版本、不兼容项、逐张保存失败",
+    recovery: "应用/放弃/继续编辑、明确跳过、失败重试、冲突后处理成功子集",
+  },
+  {
+    iteration: "ITER-04",
+    title: "我的调整预设",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [
+      ["user-presets", "外观→我的调整预设"],
+      ["preset-save", "保存范围与命名"],
+      ["preset-manage", "重命名/覆盖/删除"],
+    ],
+    normal: "保存、应用、重启恢复；不依赖源照片",
+    error: "空名称、重名、缺外观、损坏/未来版本、写入失败",
+    recovery: "另存/覆盖确认、取消删除、保留原文件、重试",
+  },
+  {
+    iteration: "ITER-05",
+    title: "黑场、白场、鲜艳度",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [
+      ["tool-black-white", "光线→黑场/白场"],
+      ["tool-vibrance", "颜色→鲜艳度"],
+    ],
+    normal: "三个独立控制、精确值、默认/正负极值、范围重置",
+    error: "非法输入、预览失败、调整未保存；数值合同尚未冻结",
+    recovery: "取消输入、预览/保存重试、恢复默认；沿用工作区失败状态",
+  },
+  {
+    iteration: "ITER-06",
+    title: "三分区颜色分级",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [["tool-color-grading", "颜色→阴影/中间调/高光色轮"]],
+    normal: "分区切换、色相/饱和度精确值、单区/全工具重置",
+    error: "非法数值、预览/保存失败；混合权重尚未冻结",
+    recovery: "取消输入、保留分区参数、重试与重置",
+  },
+  {
+    iteration: "ITER-07",
+    title: "HSL 取色与目标调整",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [["hsl-target", "混色器→图片取色/目标拖动"]],
+    normal: "真实取样、三轴目标调整、相邻色域与放大取样提示",
+    error: "近灰色、黑边/越界、过期帧、不可取样",
+    recovery: "取消/切图/后台/缩放时恢复手势前值，重新取样",
+  },
+  {
+    iteration: "ITER-08",
+    title: "批量同步与逐张微调闭环",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [
+      ["batch-sync", "多选→同步范围/结果"],
+      ["batch-edit-photo", "单张微调→返回原集合"],
+      ["batch-per-target-export", "逐张快照导出/恢复"],
+    ],
+    normal: "来源排除、多选同步、单张微调、返回集合、逐张冻结输出",
+    error: "源消失、授权丢失、脏草稿、部分保存/导出失败、中断",
+    recovery: "保留集合与差异、重新授权、重试失败项、取消/恢复不重复成功项",
+  },
+  {
+    iteration: "ITER-09",
+    title: "多点平滑曲线",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [["tool-custom-curve", "光线→legacy/custom 曲线"]],
+    normal: "增删/移动点、精确坐标、identity、模式切换确认",
+    error: "越界/重复/非单调点、模式冲突、预览/保存失败",
+    recovery: "拒绝非法点、取消切换保留旧 S 曲线、重置/重试",
+  },
+  {
+    iteration: "ITER-10",
+    title: "清晰度与去朦胧",
+    platforms: ["ios", "android", "macos", "windows"],
+    pages: [
+      ["tool-clarity", "效果→清晰度"],
+      ["tool-dehaze", "效果→去朦胧"],
+    ],
+    normal: "两个独立控制、正负/零、精确值和质量说明",
+    error: "Force 后端不支持、预览/保存失败；空间算法尚未冻结",
+    recovery: "Auto 的真实 CPU 回退、Force 错误提示、重试与重置",
+  },
+  {
+    iteration: "ITER-11",
+    title: "桌面更新剩余设计",
+    platforms: ["macos", "windows"],
+    pages: [
+      ["update-install-support", "软件更新→安装形态限制"],
+      ["update-seed-migration", "旧 ZIP→可信种子版引导"],
+      ["update-install-recovery", "安装/重启失败恢复"],
+    ],
+    normal: "Mac 同架构种子 .app、Windows x64 当前用户 Setup 支持矩阵",
+    error: "ZIP/portable 不支持自动安装、错误架构/权限、安装/重启失败",
+    recovery: "手动迁移/下载、恢复可信旧版与对应数据、保留新格式副本",
+  },
+];
+window.RawLabDesign.outOfIteration = [
+  "AI 降噪/放大",
+  "HDR",
+  "视频",
+  "Live Photo",
+];
 window.RawLabDesign.flowTitles = {
   more: "更多",
   import: "导入照片",

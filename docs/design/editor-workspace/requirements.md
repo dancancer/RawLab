@@ -1,6 +1,6 @@
 # ITER-02 子需求：调整分组、HSL 与编辑工作区
 
-状态：待评审，未实现。需求基线：2026-10-21；设计依据为 [r4 资产](README.md)（`13efd9c342f15029c47e302c467423cb45fc4f60`）。本文件只负责本次迭代的 ITER-02 工作区子项，不是整轮迭代范围。[迭代总需求](../editing-iteration/requirements.md)包含第一阶段未完成项、第二阶段全部内容和桌面更新，相关功能不能因本子项未实现而排除。
+状态：待评审，未实现。需求基线：2026-10-21；设计依据为[当前资产](README.md)：r4（`13efd9c342f15029c47e302c467423cb45fc4f60`）建立布局，r5 修正重置、输入与取消等契约冲突。本文件只负责本次迭代的 ITER-02 工作区子项，不是整轮迭代范围。[迭代总需求](../editing-iteration/requirements.md)包含第一阶段未完成项、第二阶段全部内容和桌面更新，相关功能不能因本子项未实现而排除。
 
 [技术方案](technical-design.md) · [交互稿](index.html) · [界面覆盖表](coverage.html) · [roadmap](../../architecture/roadmap.md)
 

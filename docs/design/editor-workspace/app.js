@@ -19,12 +19,11 @@ let scene = "groups",
   menu = null,
   toastText = "",
   download = "available",
-  autoInstall = false,
   large = false;
 let hsl = palettes.map(() => [0, 0, 0]);
 hsl[3] = [-12, 18, 8];
 let draftTouched = false;
-let selectedFilm = "PROVIA",
+let selectedFilm = "中性",
   selectedRecipe = "",
   wbMode = "拍摄时设置",
   denoiseEnabled = false;
@@ -32,6 +31,7 @@ const recipes = RawLabDesign.recipes;
 const values = { ...RawLabDesign.fixture };
 let fineMode = false;
 let groupScrollLeft = 0;
+let swatchScrollLeft = 0;
 let previewBusy = false;
 // compareMode: 0 关闭，1 并排，2 分割线；lastCompare 让点按开关回到上次使用的方式。
 let compareMode = 0,
@@ -49,7 +49,13 @@ let compareMode = 0,
   canRedo = false;
 const compareNames = ["关闭对比", "并排对比", "拖动分割线"];
 const defaults = { ...RawLabDesign.defaults };
+const neutralFilm = "中性";
 let draftBefore = { ...values };
+let cropDrag = null,
+  holdTimer = null,
+  holdPointer = null,
+  tapStart = null;
+const activePointers = new Set();
 const toolFields = {
   exposure: ["exposure"],
   highlights: ["highlights"],
@@ -105,6 +111,9 @@ function isDraftChanged() {
   );
 }
 function setScene(s) {
+  cancelBeforeHold();
+  cropDrag = null;
+  activePointers.clear();
   RawLabDesignFlows.close();
   scene = s;
   previewBusy = s === "processing";
@@ -374,7 +383,7 @@ function canvas() {
   return `<div class="canvas ${photoMargin ? "" : "edge"}">${photo}${photoInfo()}${histogram()}${!compareMode ? `<div class="photo-footer">${selectedFilm} · ${zoomChoice}</div>` : ""}<div class="preview-progress" role="progressbar" aria-label="正在更新预览" ${previewBusy ? "" : "hidden"}><i></i></div>${scene === "saving-error" ? `<div class="save-error">${icon("warning")}<span>调整未保存</span><button data-action="retry-save">重试</button></div>` : ""}</div>`;
 }
 function toolChanged(id) {
-  if (id === "film") return selectedFilm !== "PROVIA";
+  if (id === "film") return selectedFilm !== neutralFilm;
   if (id === "recipe") return !!selectedRecipe;
   if (id === "hsl") return hsl.some((c) => c.some((v) => v !== 0));
   if (id === "wb" && wbMode !== "拍摄时设置") return true;
@@ -386,7 +395,7 @@ function groupMark(id) {
   if (id === "looks")
     return selectedRecipe
       ? "已选大师配方"
-      : selectedFilm !== "PROVIA"
+      : selectedFilm !== neutralFilm
         ? "已选 " + selectedFilm
         : values.strength !== 100
           ? "强度已调整"
@@ -421,6 +430,32 @@ function displayValue(value, field, min) {
   if (field === "temperature") return String(value);
   if (field === "exposure") return fmt(Number(value).toFixed(2));
   return min < 0 ? fmt(value) : String(Number(value));
+}
+function parameterValue(field) {
+  return field.startsWith("hsl-")
+    ? hsl[channel][Number(field.slice(4))]
+    : values[field];
+}
+function parseParameter(raw, min, max, step, original) {
+  const text = raw.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text))
+    return { error: "请输入完整的数值" };
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < min || value > max)
+    return { error: "请输入范围内的数值" };
+  // 旧记录的合法小数可原样关闭；只有新的输入才按当前平台网格校验。
+  if (value === original) return { value, unchanged: true };
+  const grid = (value - min) / step;
+  if (Math.abs(grid - Math.round(grid)) > 1e-7)
+    return { error: "请输入步进为 " + step + " 的数值" };
+  return { value, unchanged: false };
+}
+function commitParameter(field, value) {
+  if (field.startsWith("hsl-")) hsl[channel][Number(field.slice(4))] = value;
+  else {
+    values[field] = value;
+    if (["temperature", "tint"].includes(field)) wbMode = "自定义";
+  }
 }
 function unitOf(field) {
   if (field === "temperature") return "K";
@@ -527,7 +562,7 @@ function segmented(label, items, attr) {
 function hslPanel() {
   const name = palettes[channel][0];
   const bandChanged = (i) => hsl[i].some((v) => v !== 0);
-  return `<div class="hsl-layout"><div class="channel-block">${mobile ? "" : `<div class="channel-title"><strong>${name}色</strong></div>`}<div class="swatches" role="radiogroup" aria-label="HSL 色域">${palettes.map(([n, color], i) => `<button class="swatch ${bandChanged(i) ? "changed" : ""}" role="radio" data-channel="${i}" aria-label="${n}色${bandChanged(i) ? "，已调整" : ""}" aria-checked="${channel === i}" aria-pressed="${channel === i}"><i style="background:${color}"></i></button>`).join("")}</div></div><div class="axes">${["色相", "饱和度", "明度"].map((axisName, i) => axis(axisName, hsl[channel][i], "hsl-" + i, -100, 100, platform === "windows" ? 0.1 : 1)).join("")}</div></div>`;
+  return `<div class="hsl-layout"><div class="channel-block">${mobile ? "" : `<div class="channel-title"><strong>${name}色</strong></div>`}<div class="swatches" role="radiogroup" aria-label="HSL 色域">${palettes.map(([n, color], i) => `<button class="swatch ${bandChanged(i) ? "changed" : ""}" role="radio" data-channel="${i}" aria-label="${n}色${bandChanged(i) ? "，已调整" : ""}" aria-checked="${channel === i}" aria-pressed="${channel === i}"><i style="background:${color}"></i></button>`).join("")}</div></div><div class="axes">${["色相", "饱和度", "明度"].map((axisName, i) => axis(axisName, hsl[channel][i], "hsl-" + i, -100, 100, mobile ? 1 : 0.1)).join("")}</div></div>`;
 }
 function scalarPanel() {
   if (scene === "wb-unavailable" && tool === "wb")
@@ -688,9 +723,7 @@ function updateWindow() {
     available: {
       title: "RawLab 有新版本",
       copy: "RawLab 0.9.0（示例）已可用，当前版本为 0.8.2。安装前会先保存调整，并等待导出完成。",
-      extra:
-        notes +
-        `<label class="setting-row"><span>以后自动下载并安装更新<small>可随时在“设置 → 软件更新”中关闭。</small></span><input id="autoinstall" type="checkbox" role="switch" class="switch" ${autoInstall ? "checked" : ""}></label>`,
+      extra: notes,
       actions:
         act("skip-version", "跳过此版本", "quiet leading") +
         act("close-update", "稍后提醒") +
@@ -768,7 +801,10 @@ function modalHTML() {
   } else if (modal.kind === "leave") {
     title = "应用当前草稿？";
     copy = "几何或镜头调整尚未应用。离开前请选择如何处理，原照片不会被改写。";
-    buttons = `<div class="choice-actions"><button class="primary" data-action="apply-leave">应用并离开</button><button class="secondary destructive" data-action="discard-leave">放弃修改</button><button class="secondary" data-action="cancel-modal">继续编辑</button></div>`;
+    if (modal.afterReset)
+      copy =
+        "几何或镜头调整尚未应用。先处理草稿，再单独确认全部重置；继续编辑会取消本次重置。";
+    buttons = `<div class="choice-actions"><button class="primary" data-action="apply-leave" ${previewBusy ? "disabled" : ""}>应用并${modal.afterReset ? "继续" : "离开"}</button><button class="secondary destructive" data-action="discard-leave">放弃修改</button><button class="secondary" data-action="cancel-modal">继续编辑</button></div>`;
   } else if (modal.kind === "number") {
     title = "调整" + modal.name;
     const unit = unitOf(modal.field);
@@ -902,6 +938,9 @@ function focusKey(el) {
   return null;
 }
 function render() {
+  if (!canHoldBefore()) cancelBeforeHold();
+  const swatches = document.querySelector(".swatches");
+  if (swatches) swatchScrollLeft = swatches.scrollLeft;
   const keep = focusKey(document.activeElement);
   const nav = document.querySelector(".group-nav");
   if (nav) groupScrollLeft = nav.scrollLeft;
@@ -926,7 +965,7 @@ function render() {
         photoMargin = value;
       },
       requestResetAll: () => {
-        modal = { kind: "reset", scope: "all" };
+        requestReset("all");
       },
       toggleDock: () => {
         dockVisible = !dockVisible;
@@ -956,6 +995,8 @@ function render() {
       .forEach((button) => (button.disabled = true));
   const groupList = document.querySelector(".group-nav");
   if (groupList) groupList.scrollLeft = groupScrollLeft;
+  const colorList = document.querySelector(".swatches");
+  if (colorList) colorList.scrollLeft = swatchScrollLeft;
   document.querySelectorAll(".group-nav,.tool-tabs").forEach(updateNavFade);
   updateControlAvailability();
   positionMenu();
@@ -1010,6 +1051,7 @@ function toast(t) {
   }, 2400);
 }
 function navigate(nextGroup) {
+  cancelBeforeHold();
   if (draft && isDraftChanged()) {
     modal = { kind: "leave", target: nextGroup };
     render();
@@ -1027,47 +1069,54 @@ function navigate(nextGroup) {
   }
   render();
 }
-function resetTool() {
-  if (tool === "film") selectedFilm = "PROVIA";
-  else if (tool === "recipe") selectedRecipe = "";
-  else if (tool === "wb") {
+function resetTool(id = tool) {
+  if (id === "film") selectedFilm = neutralFilm;
+  else if (id === "recipe") selectedRecipe = "";
+  else if (id === "hsl") hsl = palettes.map(() => [0, 0, 0]);
+  else if (id === "wb") {
     wbMode = "拍摄时设置";
     values.temperature = defaults.temperature;
     values.tint = defaults.tint;
   } else {
-    if (tool === "denoise") denoiseEnabled = false;
-    (toolFields[tool] || []).forEach((k) => (values[k] = defaults[k]));
+    if (id === "denoise") denoiseEnabled = false;
+    (toolFields[id] || []).forEach((k) => (values[k] = defaults[k]));
+  }
+}
+function requestReset(scope) {
+  if (scope === "all" && draft && isDraftChanged()) {
+    modal = { kind: "leave", afterReset: scope };
+  } else {
+    const resumeDraft = scope === "all" && draft;
+    if (resumeDraft) draft = false;
+    modal = { kind: "reset", scope, resumeDraft };
+  }
+  render();
+}
+function resumeResetDraft() {
+  if (modal?.resumeDraft) {
+    draft = true;
+    draftBefore = { ...values };
+    draftTouched = false;
   }
 }
 function resetConfirmed() {
   const scope = modal.scope;
   if (scope === "hsl") hsl = palettes.map(() => [0, 0, 0]);
-  else if (scope === "group" && group === "color") {
-    ["wb", "saturation"].forEach((t) => {
-      tool = t;
-      resetTool();
-    });
-    tool = "hsl";
-    hsl = palettes.map(() => [0, 0, 0]);
-  } else if (scope === "group") {
-    const current = tool;
-    tools[group].forEach(([t]) => {
-      tool = t;
-      resetTool();
-    });
-    tool = current;
-  } else {
+  else if (scope === "group") tools[group].forEach(([id]) => resetTool(id));
+  else {
     hsl = palettes.map(() => [0, 0, 0]);
     Object.assign(values, defaults);
-    selectedFilm = "PROVIA";
+    selectedFilm = neutralFilm;
     selectedRecipe = "";
     denoiseEnabled = false;
     wbMode = "拍摄时设置";
   }
+  resumeResetDraft();
   modal = null;
   render();
 }
 function setCompare(mode) {
+  cancelBeforeHold();
   compareMode = mode;
   if (mode) lastCompare = mode;
   holdingBefore = false;
@@ -1085,11 +1134,9 @@ function runAction(a, b) {
     resetTool();
     render();
   } else if (a === "reset-all") {
-    modal = { kind: "reset", scope: "all" };
-    render();
+    requestReset("all");
   } else if (a.startsWith("reset-scope:")) {
-    modal = { kind: "reset", scope: a.slice(12) };
-    render();
+    requestReset(a.slice(12));
   } else if (a.startsWith("compare-set:")) {
     setCompare(Number(a.slice(12)));
     render();
@@ -1218,30 +1265,40 @@ function handleAction(a, b) {
   } else if (a === "confirm-reset") {
     resetConfirmed();
   } else if (a === "cancel-modal") {
+    resumeResetDraft();
     modal = null;
     render();
   } else if (a === "apply-number") {
     const input = document.querySelector("#number-field");
-    let n = Number(input.value);
-    if (!Number.isFinite(n) || n < Number(modal.min) || n > Number(modal.max)) {
-      input.setCustomValidity("请输入范围内的数值");
+    const parsed = parseParameter(
+      input.value,
+      Number(modal.min),
+      Number(modal.max),
+      Number(modal.step),
+      modal.value,
+    );
+    if (parsed.error) {
+      input.setCustomValidity(parsed.error);
       input.reportValidity();
       return;
     }
-    if (modal.field.startsWith("hsl-"))
-      hsl[channel][Number(modal.field.split("-")[1])] = n;
-    else {
-      values[modal.field] = n;
-      if (["temperature", "tint"].includes(modal.field)) wbMode = "自定义";
-    }
+    if (!parsed.unchanged) commitParameter(modal.field, parsed.value);
     modal = null;
     render();
   } else if (a === "apply-leave" || a === "discard-leave") {
+    if (a === "apply-leave" && previewBusy) return;
     const target = modal.target,
       next = modal.nextTool,
-      afterFlow = modal.afterFlow;
+      afterFlow = modal.afterFlow,
+      afterReset = modal.afterReset;
     if (a === "discard-leave") Object.assign(values, draftBefore);
     draft = false;
+    draftTouched = false;
+    if (afterReset) {
+      modal = { kind: "reset", scope: afterReset, resumeDraft: true };
+      render();
+      return;
+    }
     modal = null;
     group = target;
     tool = next || (group ? tools[group][0][0] : null);
@@ -1373,6 +1430,8 @@ function syncAxis(input) {
   number.classList.toggle("changed", n !== axisDefault(f));
 }
 app.addEventListener("input", (e) => {
+  if (e.target.matches("#number-field,[data-inline-field]"))
+    e.target.setCustomValidity("");
   if (e.target.matches("[data-compare-position]")) {
     comparePosition = Number(e.target.value);
     document
@@ -1445,7 +1504,6 @@ app.addEventListener("change", (e) => {
     denoiseEnabled = e.target.checked;
     render();
   }
-  if (e.target.id === "autoinstall") autoInstall = e.target.checked;
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -1462,8 +1520,7 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     if (modal) {
-      modal = null;
-      render();
+      handleAction("cancel-modal");
     } else if (UPDATE_SCENES.includes(scene)) {
       scene = "groups";
       render();
@@ -1474,7 +1531,10 @@ document.addEventListener("keydown", (e) => {
     (e.key === "i" || e.key === "I") &&
     !e.metaKey &&
     !e.ctrlKey &&
-    !e.target.matches("input,select,textarea") &&
+    !e.target.closest("input,select,textarea,[contenteditable]") &&
+    !draft &&
+    !menu &&
+    !UPDATE_SCENES.includes(scene) &&
     !modal &&
     !RawLabDesignFlows.active
   )
@@ -1483,8 +1543,12 @@ document.addEventListener("keydown", (e) => {
   if (
     e.key === "\\" &&
     !e.repeat &&
-    !compareMode &&
-    !e.target.matches("input,select,textarea")
+    !mobile &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    canHoldBefore() &&
+    !e.target.closest("input,select,textarea,[contenteditable]")
   ) {
     holdingBefore = true;
     render();
@@ -1492,7 +1556,7 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("keyup", (e) => {
   if (e.key === "\\" && holdingBefore) {
-    holdingBefore = false;
+    cancelBeforeHold();
     render();
   }
 });
@@ -1525,16 +1589,20 @@ app.addEventListener("keydown", (e) => {
   const f = e.target.dataset.inlineField;
   if (!f) return;
   if (e.key === "Enter") {
-    const n = parseFloat(e.target.value);
-    if (
-      Number.isFinite(n) &&
-      n >= Number(e.target.dataset.min) &&
-      n <= Number(e.target.dataset.max)
-    ) {
-      if (f.startsWith("hsl-")) hsl[channel][Number(f.split("-")[1])] = n;
-      else values[f] = n;
-      render();
-    } else toast("请输入范围内的数值");
+    const parsed = parseParameter(
+      e.target.value,
+      Number(e.target.dataset.min),
+      Number(e.target.dataset.max),
+      Number(e.target.dataset.step),
+      parameterValue(f),
+    );
+    if (parsed.error) {
+      e.target.setCustomValidity(parsed.error);
+      e.target.reportValidity();
+      return;
+    }
+    if (!parsed.unchanged) commitParameter(f, parsed.value);
+    render();
   }
   if (e.key === "Escape") {
     e.stopPropagation();
@@ -1612,38 +1680,94 @@ function moveCrop(handle, dx, dy) {
     cropH: Math.round(h * 10) / 10,
   });
 }
-let cropDrag = null,
-  holdTimer = null,
+function canHoldBefore() {
+  return (
+    scene !== "empty" &&
+    !compareMode &&
+    !draft &&
+    !modal &&
+    !menu &&
+    !RawLabDesignFlows.active &&
+    !UPDATE_SCENES.includes(scene)
+  );
+}
+function cancelBeforeHold() {
+  const pointerId = holdPointer?.id;
+  clearTimeout(holdTimer);
+  holdTimer = null;
+  holdPointer = null;
   tapStart = null;
+  const changed = holdingBefore;
+  holdingBefore = false;
+  if (pointerId != null && app.hasPointerCapture(pointerId))
+    app.releasePointerCapture(pointerId);
+  return changed;
+}
+function cancelPhotoGesture() {
+  const pointers = [...activePointers];
+  activePointers.clear();
+  cropDrag = null;
+  const changed = cancelBeforeHold();
+  pointers.forEach((id) => {
+    if (app.hasPointerCapture(id)) app.releasePointerCapture(id);
+  });
+  if (changed) render();
+}
+function capturePhotoPointer(e) {
+  // 合成检查事件没有浏览器的活动指针，只有真实输入才能取得 capture。
+  if (e.isTrusted) app.setPointerCapture(e.pointerId);
+}
 app.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  activePointers.add(e.pointerId);
+  if (activePointers.size > 1 || !e.isPrimary) {
+    cropDrag = null;
+    if (cancelBeforeHold()) render();
+    return;
+  }
   const handle = e.target.closest("[data-crop-handle]");
   if (handle) {
     e.preventDefault();
+    cancelBeforeHold();
     const frame = handle.closest(".photo-frame").getBoundingClientRect();
     cropDrag = {
+      pointerId: e.pointerId,
       handle: handle.dataset.cropHandle,
       frame,
       x: e.clientX,
       y: e.clientY,
     };
+    capturePhotoPointer(e);
     return;
   }
-  // 按住照片查看调整前：短按不触发，避免和点按、缩放冲突。
-  if (e.target.closest("[data-photo-frame]") && !compareMode && !draft)
+  if (!canHoldBefore() || e.target.closest("button,input,select,textarea"))
+    return;
+  // 一个指针只判断一次；移动、缩放或第二指针到来后不能在同一手势重新触发。
+  if (e.target.closest("[data-photo-frame]")) {
+    holdPointer = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    capturePhotoPointer(e);
     holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (!holdPointer || !canHoldBefore()) return;
       holdingBefore = true;
       render();
     }, 180);
+  }
   if (
     mobile &&
-    !draft &&
     e.target.closest(".canvas") &&
-    !e.target.closest("button,input,.histogram,.compare-switch,.save-error")
+    !e.target.closest(".histogram,.compare-switch,.save-error")
   )
-    tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+    tapStart = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() };
 });
 document.addEventListener("pointermove", (e) => {
-  if (!cropDrag) return;
+  if (
+    holdPointer?.id === e.pointerId &&
+    Math.hypot(e.clientX - holdPointer.x, e.clientY - holdPointer.y) >= 8
+  ) {
+    if (cancelBeforeHold()) render();
+  }
+  if (!cropDrag || cropDrag.pointerId !== e.pointerId) return;
   const dx = ((e.clientX - cropDrag.x) / cropDrag.frame.width) * 100;
   const dy = ((e.clientY - cropDrag.y) / cropDrag.frame.height) * 100;
   cropDrag.x = e.clientX;
@@ -1662,28 +1786,33 @@ document.addEventListener("pointermove", (e) => {
     );
 });
 document.addEventListener("pointerup", (e) => {
-  clearTimeout(holdTimer);
+  activePointers.delete(e.pointerId);
   const tap =
-    tapStart &&
+    tapStart?.id === e.pointerId &&
     !holdingBefore &&
     Date.now() - tapStart.t < 300 &&
     Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 8;
-  tapStart = null;
-  if (tap) {
-    immersive = !immersive;
-    render();
-    return;
-  }
-  if (cropDrag) {
+  const held = cancelBeforeHold();
+  const cropped = cropDrag?.pointerId === e.pointerId;
+  if (cropped) {
     cropDrag = null;
     draftTouched = true;
-    render();
   }
-  if (holdingBefore && scene !== "compare-hold") {
-    holdingBefore = false;
-    render();
-  }
+  if (tap) immersive = !immersive;
+  if (tap || held || cropped) render();
 });
+document.addEventListener("pointercancel", cancelPhotoGesture);
+app.addEventListener("lostpointercapture", cancelPhotoGesture);
+window.addEventListener("blur", cancelPhotoGesture);
+window.addEventListener("pagehide", cancelPhotoGesture);
+document.addEventListener("visibilitychange", cancelPhotoGesture);
+document.addEventListener(
+  "wheel",
+  (e) => {
+    if (e.target.closest(".canvas")) cancelPhotoGesture();
+  },
+  { passive: true },
+);
 
 // 双击（移动端双点）参数名称或滑杆恢复该项默认值，替代每行的重置按钮。
 app.addEventListener("dblclick", (e) => {

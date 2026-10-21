@@ -1990,7 +1990,13 @@ body.large-text {
 .mobile .hsl-layout {
   display: block;
 }
+.mobile .swatches {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
 .mobile .swatch {
+  flex: 0 0 var(--target);
+  min-width: var(--target);
   height: var(--target);
 }
 .mobile .parameter-grid {
