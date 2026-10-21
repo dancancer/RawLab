@@ -247,7 +247,17 @@ CPU 与 Metal 共用整幅显示域亮度、残差 MAD 和噪声插值分析。�
 tile 实际完成 Metal。`Force` 要求所有 tile 成功。任何失败均不提交部分结果。
 噪声分析仍在 CPU，因此不能把该路径称为全 GPU 算法；计时包含 CPU 分析与传输。
 
+`noise_aware_sharpen_failure` 使用独立链接替身检查混合 tile 的输出、回退和诊断，
+并通过测试进程的 C++ 分配器及 OpenCV 分配器注入早期、首块完成后及 CPU 回退中的异常。
+`std::bad_alloc` 返回 `OutOfMemory`，`cv::Exception` 返回 `ProcessingError`；
+两者都保持调用方图像不变并清空诊断。该测试不依赖 Metal 硬件。
+`noise_aware_sharpen_metal_failure` 则运行真实 Metal，在 command 完成后向读回缓冲
+注入 NaN／正负无穷，检查输出缓冲不变、Auto 混合回退、Force 整图原子性与恢复。
+读回注入点只编译进该测试目标，正常核心库不包含该开关；无受支持的系统／设备时
+此硬件测试明确跳过，不能当作通过。
+
 ```sh
+ctest --test-dir /path/to/configured-build -R '^noise_aware_sharpen' --output-on-failure
 cmake --build /path/to/configured-build --target denoise_sharpen_probe
 python3 lutools/tests/test_denoise_p3_native.py \
   --probe /path/to/configured-build/bin/denoise_sharpen_probe \

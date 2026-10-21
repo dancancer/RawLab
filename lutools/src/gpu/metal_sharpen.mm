@@ -10,6 +10,10 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#ifdef SONY2FUJI_TEST_P3_READBACK
+namespace sony2fuji { void testNoiseAwareSharpenReadback(float* values, size_t count); }
+#endif
+
 namespace {
 enum Kernel { Gradients, MeanRows, MeanColumns, Initial, Relax, Project, Output, KernelCount };
 struct Context {
@@ -98,6 +102,9 @@ bool filter(const float* rgb, const float* luma, const float* residual, const fl
     [command commit]; [command waitUntilCompleted];
     if (command.status != MTLCommandBufferStatusCompleted) return false;
     const auto* values = static_cast<const float*>(result.contents);
+#ifdef SONY2FUJI_TEST_P3_READBACK
+    sony2fuji::testNoiseAwareSharpenReadback(static_cast<float*>(result.contents), 3*count);
+#endif
     for (size_t i = 0; i < 3*count; ++i) if (!std::isfinite(values[i])) return false;
     std::memcpy(output, values, 3*bytes);
     return true;
