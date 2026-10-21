@@ -8,7 +8,7 @@ Spec：`docs/design/editor-workspace/requirements.md`、`technical-design.md` �
 
 - 六组 ID 固定 `looks/light/color/effects/detail/geometry`；scope 为组、当前 HSL 色域、全部 HSL、全部。本批不改界面，不把导航 ID 写进存储。
 - 各端保持原快照、默认解析、配方缩放和历史 decoder 语义。Mac 的 v2/v3 HSL 版本分支只属于 Mac；其他端没有此字段，不据此新增存储版本或迁移。
-- 重置先校验完整输入，再准备候选；无变化、取消、无效、不可表示均不改变原快照。完整对象包含关闭时仍保存的辅助字段。
+- 重置先校验完整输入，再准备候选；无变化、取消、无效、不可表示均不改变原快照。完整对象包含关闭时仍保存的辅助字段。raster 的 RAW-only WB/曝光基准本身不产生改动标记；配方相对 tint 的存储贡献仍标记，关闭的效果/降噪/镜头辅助值也不能隐藏。RAW camera 模式下回填的温度/绝对 tint 是元数据，不能单凭这些差异标记用户修改；custom 模式与配方相对 tint 仍需标记。
 - 外观独立化清全部外观身份；使用现有本端转换器先捕获有效值，物化后非外观 core Float 与最终 HSL Float 必须相等。无法表示返回 blocked，不以 clamp 修补；HSL 保留原转换已经产生的缩放与 clamp。
 - RAW 配方独立化涉及自定义 WB 或非零缩放后相对 tint 时，必须有真实 as-shot 校准（无配方或无关 scope 不因此额外阻挡）；普通图片按已有有效转换处理。不能猜测 6500/0 是真实相机校准。
 - 不改 Shared、C ABI、像素算法、现有 codec、批量格式或新 UI；原有配方选择/取消保持行为。只有明确指出的本端文件和测试由各执行者写入，CI 由协调者单一写入。
@@ -35,11 +35,11 @@ Owner：Mac transaction worker。独占 `RawLabMac/Sources/Editor/Model/EditorMo
 
 ## Task 2：iOS S1 规则与候选
 
-Owner：iOS worker。独占新增 `RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift`、必要的 `RawSettings.swift` 内部纯 helper、`RawLab/RawLab.xcodeproj/project.pbxproj`、`RawLab/tests/EditMemoryTests.swift` 和 `edit-memory.sh`。测试复用已存在 runner，协调者负责接 CI。UI/ViewModel/保存类实现不改；如现有 PhotoEditState initializer 的 nil fallback 会改变外部 filmID，可仅在 EditPersistence.swift 的该值类型增加显式保留身份的复制入口，不改编码或保存行为。
+Owner：iOS worker。独占新增 `RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift`、必要的 `RawSettings.swift` 内部纯 helper、`RawLab/RawLab.xcodeproj/project.pbxproj`、`RawLab/tests/EditMemoryTests.swift` 和 `edit-memory.sh`。测试复用已存在 runner，协调者负责接 CI。UI/ViewModel/保存类行为不改；允许仅将 `UI/EditorState/EditorDrafts.swift` 中纯 `EditorToolSelection` enum 原样移至规则模型，以同一类型提供 `groupFor/tool` 与有序工具表。旧工具 enum 和 UI 导航不改，tint 仅作历史颜色组 alias，不单列可见工具。如现有 PhotoEditState initializer 的 nil fallback 会改变外部 filmID，可仅在 EditPersistence.swift 的该值类型增加显式保留身份的复制入口，不改编码或保存行为。
 
 接口使用本端 `PhotoEditState`；返回 candidate 时保留原 `updatedAt`；非外观 scope 必须精确保留 filmID（包括 nil，不能被现有 initializer 的 lutID fallback 改写）。外观 scope 同步处理 `filmID`、`settings.lutID` 与 `masterRecipeID`。context 使用 RAW/raster、有效曝光默认和显式真实相机 temperature/tint（可缺失），不引入跨端 DTO。
 
-复用 `RawSettings.renderedRecipe(cameraTemperature:cameraTint:)` 的 Float strength/HSL 语义。RAW camera + 零相对 tint 沿已有免校准路径；RAW 配方独立化中的 custom 或有效 tint 非零缺校准 blocked，普通 HSL/无配方重置不因此被阻挡。普通图片按 processor `effectiveSettings` 最终 WB/noise/lens 约束比较。已知 recipe ID 沿现有 `MasterRecipe.recipe` 判断，未知 ID blocked；不新增不存在的 recipe version 字段。
+复用 `RawSettings.renderedRecipe(cameraTemperature:cameraTint:)` 的 Float strength/HSL 语义。RAW camera + 零相对 tint 沿已有免校准路径；RAW 配方独立化中的 custom 或有效 tint 非零缺校准 blocked，普通 HSL/无配方重置不因此被阻挡。配方独立化时，普通图片按 processor `effectiveSettings` 最终 WB/noise/lens 约束比较；改动标记仅忽略 raster 不适用的 WB/曝光基准，效果/降噪/镜头的完整存储辅助对象仍参与标记，不能改成只比较渲染结果。已知 recipe ID 沿现有 `MasterRecipe.recipe` 判断，未知 ID blocked；不新增不存在的 recipe version 字段。
 
 回归：六组与完整辅助对象、HSL 色域隔离/小数、完整清身份、全量默认及旧 exposureMode、strength 0/0.5/1/2、真实/缺失 WB、未知 recipe、越界/非有限、JSON round trip、timestamp/未选字段保持。运行 `edit-memory.sh` 和 `presentation.sh`；纯 macOS Swift harness 不代表 iOS simulator/真实 RAW 像素验证。
 
@@ -47,7 +47,7 @@ Owner：iOS worker。独占新增 `RawLab/RawLab/Core/Models/EditorAdjustmentRul
 
 Owner：Android worker。独占新增 `RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorAdjustmentRules.kt`、必要的 `settings/EditSettings.kt` 纯 helper、对应 `src/test/java/.../editor/EditorAdjustmentRulesTest.kt`。不改旧 `AdjustmentGroup`（几何/镜头）、工具 ID、UI/VM、JNI 或 codec。
 
-快照继续是不可变 `EditSettings`。context 传目标输入种类、有效默认、真实 as-shot 校准、由现有 catalog 解析的 recipe 或已知 ID 集合；不硬编码另一份 14 配方清单。六组的工具映射保留原 ID；9 只能作为历史 tint alias，不重新出现在可见工具顺序。
+快照继续是不可变 `EditSettings`。context 传目标输入种类、有效默认、真实 as-shot 校准、由现有 catalog 解析的 recipe 或已知 ID 集合；显式 as-shot 是 WB 默认的权威，普通 WB/color/all reset 复用现有 `resetWhiteBalance`，缺失时保留已解析 defaults，配方保留时使用相对 tint 0、全量清配方后使用绝对 tint；不硬编码另一份 14 配方清单。六组的工具映射保留原 ID；9 只能作为历史 tint alias，不重新出现在可见工具顺序。
 
 物化使用现有 Float 数据和 `recipeScale/renderHsl`；对照 JNI 当前 float 计算顺序：曝光/highlights/shadows 乘 strength；contrast/saturation 的最终值为 `1 + value * strength`；tone/sharpen 不再乘。RAW WB 与 JNI `std::round` 的半数远离零、加相对 tint、原 clamp 一致，不能用 tie-to-even 代替。构造目标 EditSettings 前检查可表示范围，不能触发隐式修补。复制当前公式的测试必须有依据 JNI 的独立向量，不仅重算同一 helper。
 

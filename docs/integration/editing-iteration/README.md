@@ -25,7 +25,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | Mac S1 已集成；Mac 提交事务及 iOS/Android/Windows S1 开发中，UI 待接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | Mac S1 已集成；Mac 提交事务及三端 S1 本地实现/独立复核完成，待远端 CI 与集成；UI 待接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -71,7 +71,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | Mac 提交事务 | `mac_reset_transactions` worker；默认代理独立核验 | `EditorModel.swift`、`EditorModel+Workflow.swift`、`EditorModel+Geometry.swift`、`EditModelTests.swift` | 消费已集成的 S1；完整源快照/revision 校验，草稿只改草稿，不改 View/持久化格式 |
 | 核心 C ABI / EditRecipe / CLI / schema | 协调者保留，按算法批次另派一个 owner | `lutools/include/sony2fuji/`、`src/ffi/`、`src/cli/`、对应核心/测试 | 新配置 additive；v5 真实贯通后才宣告支持 |
 | 核心算法 / Metal / GLES / D3D11 | 协调者保留 | `lutools/src/core/`、对应后端 | CPU 合同与质量先准入，不能各后端并行猜常量 |
-| iOS S1 纯规则与候选 | `ios_reset_rules` worker；默认代理独立核验 | `EditorAdjustmentRules.swift`、`RawSettings.swift` 必要纯 helper、`PhotoEditState` 身份复制 helper、project source 注册、EditMemoryTests/runner | 不改 ViewModel/保存实现/codec；CI 由协调者接入 |
+| iOS S1 纯规则与候选 | `ios_reset_rules` worker；默认代理独立核验 | `EditorAdjustmentRules.swift`、`RawSettings.swift` 必要纯 helper、`PhotoEditState` 身份复制 helper、project source 注册、EditMemoryTests/runner；EditorDrafts 仅搬移纯工具 enum | 不改 ViewModel/保存实现/codec；CI 由协调者接入 |
 | Android S1 纯规则与候选 | `android_reset_rules` worker；默认代理独立核验 | 本端 `EditorAdjustmentRules.kt`、`EditSettings.kt` 必要纯 helper、对应 JVM 测试 | 保留工具 ID、JNI Float/WB 及旧 codec 语义，不改 UI/JNI |
 | Windows S1 纯规则与候选 | `windows_reset_rules` worker；默认代理独立核验 | 本端 `EditorAdjustmentRules.cs`、`Adjustments.cs` 必要纯 helper、editing test 项目 | 完整 SavedEdit/数组隔离；不改 WPF/保存行为/JSON schema |
 | 共享本地化与无障碍 keys | 协调者保留 | `Shared/strings/` 及生成入口 | 功能 owner 提交 key/参数需求，单一资源 owner 写入 |
@@ -81,7 +81,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 
 首批由协调线程实施，默认代理负责独立核验，已按 **#107 → #108 → #109** 合入；#108 与 #109 没有运行时依赖。第二批由 worker 分端实施，默认代理独立核验，协调线程处理共享文档、CI、冲突和最终验证。Mac 提交事务及其余三端均接合入后的 `development`，每个 owner 在派发前绑定独占路径。第二批 owner 和独占路径见上表及第二批计划，不拥有表外并发写入权。
 
-第二批分支：`feature/editing-native-models-coordination`、`feature/editing-mac-reset-transactions`、`feature/editing-ios-reset-rules`、`feature/editing-android-reset-rules`、`feature/editing-windows-reset-rules`。全部从当前集成基线创建；实现与独立核验分工不改变提交、push、PR 和合并授权边界。
+第二批分支：`feature/editing-native-models-coordination`、`feature/editing-mac-reset-transactions`、`feature/editing-ios-reset-rules`、`feature/editing-android-reset-rules`、`feature/editing-windows-reset-rules`。全部从当前集成基线创建；实现与独立核验分工不改变提交、push、PR 和合并授权边界。第二批本地实现和独立复核已完成；新 PR 的远端 CI 与集成尚未执行。Mac 已覆盖本端构建与草稿运行，其他三端本批只完成模型/JVM/托管检查，不能替代设备及原生渲染验收。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
@@ -104,6 +104,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 - 首批将 MCP v4 与 Mac S1 并行：两者不写同一源码文件，不依赖新算法；Mac S1 提供规则参照，并非宣布 Mac 独有语义为跨端合同。
 - I0 的版本/范围/单位需以真实 native 模型核对；已有 v4 仅作最终 core 语义参考，不直接成为剪贴板格式。
 - 新参数处理顺序、identity bypass 和质量准入遵守总技术方案 8.1～8.7；候选公式不是冻结结果。
+- Mac 的工具到六组映射仍随原生 UI 批次接入；第二批 Mac 只交付提交事务，不将现有旧八组视作新导航实现。
 - 不改 r9 的 `approval` 或将整体 `implementation` 提前标为完成；首批纯模型接入也不是四端 UI 已落地。
 - Mac 的既有 raster normalization 提取到 `Adjustments.resolvedForRaster`，`Engine` 和候选 core 校验共用；不复制第二套 WB/曝光规则，不改变持久化快照。
 - MCP `validate_recipe` 保留 CLI 原始校验语义：引用文件可尚未存在、返回路径保持原表示；允许根限制仍适用。render/export 才要求实际输入和输出父目录存在。
