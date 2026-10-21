@@ -253,6 +253,38 @@ struct ControlGroupTests {
         let noCamera = candidate(.group(.looks), state(rgb))
         check(coreValues(noCamera.settings) == coreValues(rgb), "Zero relative tint needs no invented RAW calibration")
 
+        var customWithoutCamera = Adjustments()
+        customWithoutCamera.applyMasterRecipe(.hamadaDaylightV2)
+        customWithoutCamera.whiteBalanceMode = .custom
+        customWithoutCamera.tint = 0
+        if case .blocked(.missingAsShotWhiteBalance) = EditorAdjustmentRules.prepareReset(
+            scope: .group(.looks), snapshot: state(customWithoutCamera), context: rawContext) {
+            check(true, "Custom RAW white balance with zero relative tint blocks without as-shot calibration")
+        } else {
+            check(false, "Custom RAW white balance with zero relative tint blocks without as-shot calibration")
+        }
+
+        customWithoutCamera.strength = 0
+        if case .blocked(.missingAsShotWhiteBalance) = EditorAdjustmentRules.prepareReset(
+            scope: .group(.looks), snapshot: state(customWithoutCamera), context: rawContext) {
+            check(true, "Custom RAW white balance with zero strength blocks without as-shot calibration")
+        } else {
+            check(false, "Custom RAW white balance with zero strength blocks without as-shot calibration")
+        }
+
+        var customWithCamera = customWithoutCamera
+        customWithCamera.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8.2))
+        let customWithCameraResult = candidate(.group(.looks), state(customWithCamera))
+        check(coreValues(customWithCameraResult.settings) == coreValues(customWithCamera),
+              "Custom RAW white balance with camera calibration preserves non-look core values")
+
+        var asShotWithoutCamera = Adjustments()
+        asShotWithoutCamera.applyMasterRecipe(.hamadaDaylightV2)
+        asShotWithoutCamera.tint = 0
+        let asShotResult = candidate(.group(.looks), state(asShotWithoutCamera))
+        check(coreValues(asShotResult.settings) == coreValues(asShotWithoutCamera),
+              "As-shot RAW white balance with zero relative tint needs no calibration")
+
         var future = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rgb)) as! [String: Any]
         future["masterRecipeSettingsVersion"] = 4
         let futureSettings = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: future))

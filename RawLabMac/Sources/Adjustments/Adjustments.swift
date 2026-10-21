@@ -354,7 +354,7 @@ struct Adjustments: Equatable, Codable {
             result.shadows = shadows * scale
             result.saturation = saturation * scale
             if context.isRaw {
-                if tint * scale != 0 && asShotWhiteBalance == nil {
+                if (tint * scale != 0 || !usesAsShotWhiteBalance) && asShotWhiteBalance == nil {
                     throw EditorResetBlockedReason.missingAsShotWhiteBalance
                 }
                 var before = sony2fuji_request()
