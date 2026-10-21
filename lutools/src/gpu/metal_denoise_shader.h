@@ -24,6 +24,7 @@ constant float db2High[4] = {-.48296291314453414f, .83651630373780791f, -.224143
 struct WaveletParams {
     uint width, height, step, depth, level, window;
     float sigma, strength;
+    uint firmThreshold;
 };
 
 kernel void swtRows(constant WaveletParams& p [[buffer(0)]], device const float* input [[buffer(1)]],
@@ -83,7 +84,9 @@ kernel void waveletThreshold(constant WaveletParams& p [[buffer(0)]], device flo
     }
     const float variance = p.sigma * p.sigma;
     const float threshold = p.strength * variance / sqrt(max(sum / float(p.window) - variance, .05f * variance));
-    band[i] = copysign(max(abs(band[i]) - threshold, 0.f), band[i]) * float(1u << p.level);
+    float magnitude = max(abs(band[i]) - threshold, 0.f);
+    if (p.firmThreshold != 0) magnitude = min(abs(band[i]), 2 * magnitude);
+    band[i] = copysign(magnitude, band[i]) * float(1u << p.level);
 }
 
 kernel void iswtColumns(constant WaveletParams& p [[buffer(0)]], device const float* bands [[buffer(1)]],

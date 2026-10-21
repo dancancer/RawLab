@@ -27,7 +27,7 @@ cbuffer Parameters : register(b0) {
     uint channels, radius, stage, count;
     float sigma, strength, epsilon;
     uint direction;
-    uint sourceRow, outputRow, baseIndex, reserved;
+    uint sourceRow, outputRow, baseIndex, firmThreshold;
     float4 vignette, grain;
 };
 StructuredBuffer<float> sourceA : register(t0);

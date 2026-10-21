@@ -38,6 +38,7 @@
 "三分网格" = "Cuadrícula de tercios";
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "上次批量任务尚未完成" = "La última exportación por lotes aún no ha terminado";
+"不支持此处理版本，原有记录未被覆盖。" = "Esta versión de procesamiento no es compatible. Las ediciones guardadas no se han sobrescrito.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Esta foto, look o modo de procesamiento no es compatible. Comprueba la compatibilidad de los archivos y los ajustes de procesamiento.";
 "不是支持的 RAW 文件" = "No es un archivo RAW compatible";
 "不是支持的图像文件" = "Archivo de imagen no compatible";
@@ -119,7 +120,10 @@
 "垂直翻转" = "Voltear verticalmente";
 "垂直透视" = "Perspectiva vertical";
 "基础曝光偏移" = "Compensación de exposición base";
+"处理 v1（旧版）" = "Procesamiento v1 (anterior)";
+"处理 v2" = "Procesamiento v2";
 "处理失败：%@" = "Error de procesamiento: %@";
+"处理版本" = "Versión de procesamiento";
 "处理结果为空" = "El resultado del procesamiento está vacío.";
 "外观名称不能为空或包含控制字符。" = "El nombre del look no puede estar vacío ni contener caracteres de control.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible.";

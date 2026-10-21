@@ -127,6 +127,11 @@ typedef enum sony2fuji_raw_exposure_mode {
     SONY2FUJI_EXPOSURE_SENSOR = 2
 } sony2fuji_raw_exposure_mode;
 
+typedef enum sony2fuji_processing_version {
+    SONY2FUJI_PROCESSING_LEGACY = 1,
+    SONY2FUJI_PROCESSING_C5_V2 = 2
+} sony2fuji_processing_version;
+
 // ============================================================================
 // Request/Buffer
 // ============================================================================
@@ -311,6 +316,11 @@ typedef enum sony2fuji_render_backend {
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
+// New sessions use LEGACY. Unsupported versions leave the session unchanged.
+sony2fuji_status sony2fuji_session_set_processing_version(
+    sony2fuji_session* session, sony2fuji_processing_version version
+);
+
 // File adapters: single-frame opaque 8-bit SDR RGB.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
@@ -385,8 +395,9 @@ sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session
 // Linear-sRGB wavelets before user exposure, tone/LUT and sharpening. Additive ABI.
 // Exact previews and exports filter at source resolution. Explicit interactive
 // buffer previews may use a reduced image; final/file output is never downgraded.
-// Metal/GLES/D3D11 accelerate tiled SWT; estimation/calibration remain on CPU.
-// Auto falls back to CPU; Force requires the platform GPU to succeed.
+// Version 1 retains tiled SWT acceleration on Metal/GLES/D3D11 and CPU fallback.
+// Version 2 (C5) filters on CPU; Auto may retain GPU display rendering.
+// Force rejects active C5 filtering; it never substitutes CPU for a required GPU.
 // Old FBDD/display-chroma settings are independent; clients choose whether to stack.
 sony2fuji_status sony2fuji_session_set_wavelet_denoise(
     sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config

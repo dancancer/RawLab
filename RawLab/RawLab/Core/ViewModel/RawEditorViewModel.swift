@@ -57,6 +57,7 @@ final class RawEditorViewModel: ObservableObject {
     var failedDraftSource: EditorEditSource?
     var editNoticeID = UUID()
     var basePreviewGeometry = GeometrySettings()
+    var basePreviewProcessing = ProcessingIdentity.current
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?

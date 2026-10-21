@@ -1,5 +1,45 @@
 import Foundation
 
+struct ProcessingIdentity: Equatable, Hashable, Codable {
+    let family: String
+    let version: Int
+    let quality: String
+    static let legacy = ProcessingIdentity(version: 1)
+    static let current = ProcessingIdentity(version: 2)
+    var core: sony2fuji_processing_version {
+        version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
+    }
+
+    private init(version: Int) {
+        family = "rawlab"
+        self.version = version
+        quality = "standard"
+    }
+
+    private struct Field: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Field.self).allKeys
+        guard fields.allSatisfy({ CodingKeys(stringValue: $0.stringValue) != nil }) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unsupported processing identity field"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        family = try values.decode(String.self, forKey: .family)
+        version = try values.decode(Int.self, forKey: .version)
+        quality = try values.decode(String.self, forKey: .quality)
+        guard family == "rawlab", version == 1 || version == 2, quality == "standard" else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unsupported processing identity"))
+        }
+    }
+}
+
 struct WhiteBalance: Equatable, Codable {
     let temperature: Double
     let tint: Double

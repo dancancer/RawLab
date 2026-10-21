@@ -42,7 +42,8 @@ struct sony2fuji_session {
     sony2fuji_raw_exposure_mode raw_exposure_mode = SONY2FUJI_EXPOSURE_SCENE;
     int32_t raw_noise_reduction = 0;
     int32_t chroma_denoise = 0;
-    sony2fuji::WaveletDenoiseOptions wavelet_denoise;
+    sony2fuji::ProcessingVersion processing_version = sony2fuji::ProcessingVersion::Legacy;
+    sony2fuji::WaveletDenoiseOptions wavelet_denoise{false,40,46,50,sony2fuji::ProcessingVersion::Legacy};
     sony2fuji::PhotoEffectsOptions photo_effects;
     sony2fuji::HslOptions hsl;
     sony2fuji::GeometryOptions geometry;
@@ -783,7 +784,8 @@ sony2fuji_status loadRawImage(
         request.intent == SONY2FUJI_INTENT_PREVIEW &&
         request.output_target == SONY2FUJI_TARGET_BUFFER &&
         !(session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW && request.wb_mode == SONY2FUJI_WB_CAMERA);
-    std::string key = fileKey + ":" + std::to_string(request.wb_mode) +
+    const std::string processingKey = ":processing:" + std::to_string(static_cast<int>(session->processing_version));
+    std::string key = fileKey + processingKey + ":" + std::to_string(request.wb_mode) +
         ":" + std::to_string(session->raw_exposure_mode) + ":" + std::to_string(session->raw_noise_reduction);
     for (float multiplier : request.wb_mul) key += ":" + std::to_string(multiplier);
     if (request.wb_mode == SONY2FUJI_WB_TEMPERATURE)
@@ -796,7 +798,7 @@ sony2fuji_status loadRawImage(
             std::to_string(session->lens_correction.autoCrop) + ":" + session->lens_correction.profileID;
     }
     key += lensKey;
-    const std::string previewExposureKey = fileKey + lensKey;
+    const std::string previewExposureKey = fileKey + processingKey + lensKey;
     // A full-quality cache can serve a proxy, but never the reverse. Non-WB
     // sliders should not trigger another demosaic just because dragging began.
     const std::string exactKey = key + ":exact";
@@ -820,6 +822,8 @@ sony2fuji_status loadRawImage(
         }
         auto& processor = *session->raw_processor;
         sony2fuji::RAWProcessOptions options;
+        options.bayerDemosaic = session->processing_version == sony2fuji::ProcessingVersion::Legacy ?
+            sony2fuji::BayerDemosaicMethod::Legacy : sony2fuji::BayerDemosaicMethod::VNG;
         options.halfSize = interactive;
         options.rawNoiseReduction = session->raw_noise_reduction;
         options.outputLinear = true;
@@ -1164,6 +1168,16 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status sony2fuji_session_set_processing_version(
+    sony2fuji_session* session, sony2fuji_processing_version version
+) {
+    const auto processing = static_cast<sony2fuji::ProcessingVersion>(version);
+    if (!session || !sony2fuji::validProcessingVersion(processing)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    session->processing_version = processing;
+    session->wavelet_denoise.processingVersion = processing;
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
     sony2fuji_session* session, sony2fuji_raw_exposure_mode mode
 ) {
@@ -1192,7 +1206,8 @@ sony2fuji_status sony2fuji_session_set_wavelet_denoise(
     if (!session || !config || config->version != SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION ||
         config->struct_size < sizeof(*config) || (config->enabled != 0 && config->enabled != 1))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    const sony2fuji::WaveletDenoiseOptions options{config->enabled != 0,config->luma,config->chroma,config->coarse};
+    const sony2fuji::WaveletDenoiseOptions options{config->enabled != 0,config->luma,config->chroma,config->coarse,
+        session->processing_version};
     if (!sony2fuji::validWaveletDenoiseOptions(options)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (options.active() && !sony2fuji::waveletDenoiseAvailable()) return SONY2FUJI_STATUS_UNSUPPORTED;
     session->wavelet_denoise = options;
@@ -1515,7 +1530,9 @@ static sony2fuji_status processImpl(
             }
             sony2fuji::ColorConverter converter;
             converter.convertImage(image, toCoreColorSpace(color_space), sony2fuji::ColorSpace::sRGB);
-            const auto mode = gpuPipeline ? sony2fuji::GpuMode::Force : sony2fuji::GpuMode::Off;
+            const bool cpuC5 = session->wavelet_denoise.processingVersion == sony2fuji::ProcessingVersion::C5V2 &&
+                session->gpu_config.mode != sony2fuji::GpuMode::Force;
+            const auto mode = gpuPipeline && !cpuC5 ? sony2fuji::GpuMode::Force : sony2fuji::GpuMode::Off;
             sony2fuji::WaveletDenoiseDiagnostics diagnostics;
             auto filter = [&](sony2fuji::GpuMode backend) {
                 ++session->wavelet_cache.diagnostics.filterRuns;

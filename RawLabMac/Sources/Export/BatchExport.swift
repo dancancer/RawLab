@@ -91,6 +91,8 @@ final class BatchJournal {
     init(directory: URL = BatchJournal.defaultDirectory) { self.directory = directory }
 
     func save(_ job: BatchExportJob) throws {
+        _ = try readJob()
+        guard (1...2).contains(job.version) else { throw CocoaError(.fileReadCorruptFile) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(job).write(to: url, options: .atomic)
     }
@@ -103,10 +105,15 @@ final class BatchJournal {
         return copy
     }
 
-    func load() throws -> BatchExportJob? {
+    private func readJob() throws -> BatchExportJob? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        var job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
+        let job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
         guard (1...2).contains(job.version) else { throw CocoaError(.fileReadCorruptFile) }
+        return job
+    }
+
+    func load() throws -> BatchExportJob? {
+        guard var job = try readJob() else { return nil }
         for index in job.items.indices where [.running, .publishing].contains(job.items[index].status) {
             let item = job.items[index]
             if item.status == .publishing, let output = item.output, let expected = item.completedIdentity,

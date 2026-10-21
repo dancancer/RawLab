@@ -1,5 +1,42 @@
 import Foundation
 
+struct ProcessingIdentity: Equatable, Hashable, Codable {
+    let family: String
+    let version: Int
+    let quality: String
+    static let legacy = ProcessingIdentity(version: 1)
+    static let current = ProcessingIdentity(version: 2)
+    private init(version: Int) {
+        family = "rawlab"
+        self.version = version
+        quality = "standard"
+    }
+
+    private struct Field: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Field.self).allKeys
+        guard fields.allSatisfy({ CodingKeys(stringValue: $0.stringValue) != nil }) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unsupported processing identity field"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        family = try values.decode(String.self, forKey: .family)
+        version = try values.decode(Int.self, forKey: .version)
+        quality = try values.decode(String.self, forKey: .quality)
+        guard family == "rawlab", version == 1 || version == 2, quality == "standard" else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unsupported processing identity"))
+        }
+    }
+}
+
+
 enum RawDenoisePreset: String, CaseIterable, Identifiable {
     case detail = "细节优先", clean = "去噪优先", custom = "自定义"
     var id: String { rawValue }
@@ -213,6 +250,7 @@ struct RawSettings: Codable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
 
+    var processing = ProcessingIdentity.current
     var geometry = GeometrySettings()
     var denoise = RawDenoiseSettings()
     var lensCorrection: LensCorrectionSettings?
@@ -271,7 +309,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry
+        case masterRecipeID, lensCorrection, geometry, processing
     }
 
     var clampedLUTStrength: Float {
@@ -332,6 +370,8 @@ struct RawSettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        processing = values.contains(.processing)
+            ? try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
         guard geometry.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
@@ -371,6 +411,12 @@ struct RawSettings: Codable, Equatable {
     }
 
     var usesCustomWhiteBalance: Bool { whiteBalanceMode == .custom }
+
+    func resettingAdjustments() -> RawSettings {
+        var neutral = Self.default
+        neutral.processing = processing
+        return neutral
+    }
 
     func customWhiteBalance(cameraTemperature: Double, cameraTint: Double) -> RawSettings {
         var result = self

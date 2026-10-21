@@ -211,7 +211,7 @@ class NativeProcessorTest {
                 )
                 val result = processor.preview(input, null, settings, 200, false)
                 assertFalse(neutral.pixels.contentEquals(result.pixels))
-                processor.setGpuMode(NativeProcessor.FORCE)
+                processor.setGpuMode(NativeProcessor.AUTO)
                 val gpu = processor.preview(input, null, settings, 200, false)
                 assertEquals(2, gpu.backend)
                 assertEquals(result.pixels.size, gpu.pixels.size)
@@ -247,6 +247,10 @@ class NativeProcessorTest {
                 assertArrayEquals(off.pixels, processor.preview(input, null,
                     settings.copy(denoise = settings.denoise.copy(enabled = false)), 1600, false).pixels)
                 processor.setGpuMode(NativeProcessor.FORCE)
+                assertThrows(java.io.IOException::class.java) {
+                    processor.preview(input, null, settings, 1600, false)
+                }
+                processor.setGpuMode(NativeProcessor.AUTO)
                 val gpu = processor.preview(input, null, settings, 1600, false)
                 assertEquals(2, gpu.backend)
                 assertEquals(clean.pixels.size, gpu.pixels.size)

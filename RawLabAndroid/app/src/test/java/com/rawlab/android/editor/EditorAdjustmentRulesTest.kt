@@ -16,6 +16,16 @@ class EditorAdjustmentRulesTest {
     private fun candidate(scope: EditorResetScope, source: EditSettings, ctx: EditorResetContext = context()) =
         (rules.prepareReset(scope, source, ctx) as EditorResetResult.Ready).candidate
 
+    @Test fun fullResetPreservesLegacyIdentityAndNeutralLegacyIsUnmodified() {
+        val legacy = EditSettings(processing = ProcessingIdentity.LEGACY)
+        val ctx = context()
+        assertFalse(rules.isModified(EditorResetScope.All, legacy, ctx))
+        assertTrue(rules.prepareReset(EditorResetScope.All, legacy, ctx) is EditorResetResult.NoChange)
+        val reset = candidate(EditorResetScope.All, legacy.copy(exposure = 1f), ctx)
+        assertEquals(legacy, reset)
+        assertEquals(ProcessingIdentity.LEGACY, SettingsCodec.decode(SettingsCodec.encode(reset)).processing)
+    }
+
     @Test fun rawCameraWhiteBalanceMetadataDoesNotEnableResetScopes() {
         val ctx = context(shot = AsShotWhiteBalance(5200f, 8f))
         val source = EditSettings()
@@ -206,7 +216,7 @@ class EditorAdjustmentRulesTest {
             file.outputStream().use { properties.store(it, null) }
             val originalBytes = file.readBytes()
             val legacy = EditStore(directory).load(identity)!!
-            assertEquals(EditSettings(exposure = .5f, exposureMode = 0), legacy)
+            assertEquals(EditSettings(exposure = .5f, exposureMode = 0, processing = ProcessingIdentity.LEGACY), legacy)
             assertArrayEquals(originalBytes, file.readBytes())
             val source = legacy.copy(recipeID = recipeId, strength = .5f, hsl = HslSettings(List(24) { .5f }))
             val independent = candidate(EditorResetScope.Tool(15), source)

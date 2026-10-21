@@ -128,11 +128,16 @@ struct ProcessorExportTests {
         combined.sharpening = 0.5
         let combinedCPU = try cpuProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                            previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
-        let combinedGPU = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+        let combinedGPU = try processor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                               previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         check(Self.maximumDifference(combinedCPU.data, combinedGPU.data) <= 2,
-              "iOS forced Metal combined effects, wavelet, chroma and detail match CPU")
-        let combinedAgain = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+              "iOS Auto combined effects, C5, chroma and detail match CPU")
+        do {
+            _ = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
+                                                   previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
+            check(false, "Force must reject active C5")
+        } catch { print("PASS: Force rejects active C5") }
+        let combinedAgain = try processor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                                 previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         check(combinedAgain.data == combinedGPU.data, "iOS GPU grain is deterministic")
         let scroll = PhotoScrollView()
@@ -339,7 +344,7 @@ struct ProcessorExportTests {
         let rawDNGURL = output.appendingPathComponent("ios-raw-rendered.dng")
         try cpuProcessor.exportDNG(url: raw, settings: rawDNGSettings, lutURL: lut,
                                    outputURL: rawDNGURL, exportLongEdge: 128)
-        try forcedProcessor.exportDNG(url: raw, settings: rawDNGSettings, lutURL: lut,
+        try processor.exportDNG(url: raw, settings: rawDNGSettings, lutURL: lut,
                                       outputURL: output.appendingPathComponent("ios-raw-metal.dng"), exportLongEdge: 128)
         if let dngSource = CGImageSourceCreateWithURL(rawDNGURL as CFURL, nil),
            let dngProperties = CGImageSourceCopyPropertiesAtIndex(dngSource, 0, nil) as? [CFString: Any],
@@ -360,11 +365,11 @@ struct ProcessorExportTests {
                                                        previewLongEdge: nil, lutURL: lut,
                                                        exportLongEdge: 128)
         try rawFinalCPU.buffer.data.write(to: output.appendingPathComponent("ios-raw-reference.rgba"))
-        let rawFinalForce = try forcedProcessor.processRaw(url: raw, settings: rawDNGSettings,
+        let rawFinalAuto = try processor.processRaw(url: raw, settings: rawDNGSettings,
                                                             previewLongEdge: nil, lutURL: lut,
                                                             exportLongEdge: 128)
-        check(Self.maximumDifference(rawFinalCPU.buffer.data, rawFinalForce.buffer.data) <= 2,
-              "iOS actual RAW final CPU and Force Metal output stay within two code values")
+        check(Self.maximumDifference(rawFinalCPU.buffer.data, rawFinalAuto.buffer.data) <= 2,
+              "iOS actual RAW final CPU and Auto output stay within two code values")
         var cameraTemperature = RawSettings.default
         cameraTemperature.temperature = 3000
         cameraTemperature.tint = 80

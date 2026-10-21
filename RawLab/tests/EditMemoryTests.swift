@@ -8,6 +8,9 @@ struct EditMemoryTests {
     }
 
     static func main() throws {
+        let defaultObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default)) as! [String: Any]
+        check((defaultObject["processing"] as? [String: Any])?["version"] as? Int == 2,
+              "new settings persist current processing identity")
         check(PhotoImportFile.sourceKind(for: URL(fileURLWithPath: "/tmp/sigma.X3F"))?.isRaw == true,
               "Sigma X3F imports as RAW even without a system UTI registration")
         let root = FileManager.default.temporaryDirectory
@@ -65,6 +68,7 @@ struct EditMemoryTests {
         check(reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
         check(reopened.state(for: second) == nil, "unseen photo uses no previous record")
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
+        legacy.removeValue(forKey: "processing")
         legacy.removeValue(forKey: "geometry")
         legacy.removeValue(forKey: "denoise")
         legacy.removeValue(forKey: "photoEffects")
@@ -73,6 +77,42 @@ struct EditMemoryTests {
         legacy.removeValue(forKey: "exposureMode")
         legacy.removeValue(forKey: "lensCorrection")
         let legacySettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+        check(legacySettings.processing == .legacy, "missing identity preserves released processing")
+        let resetLegacy = legacySettings.resettingAdjustments()
+        check(resetLegacy.processing == .legacy && resetLegacy.exposure == 0 && !resetLegacy.denoise.enabled,
+              "reset all preserves legacy processing while clearing adjustments")
+        let resetIdentity = PhotoIdentity(resourceIdentifier: "reset-v1")
+        try store.save(resetIdentity, state: PhotoEditState(settings: resetLegacy))
+        let resetStore = try EditPersistence(directory: root)
+        check(resetStore.state(for: resetIdentity)?.settings.processing == .legacy,
+              "legacy reset remains legacy after saving and reopening")
+        var scopedSource = RawSettings.default
+        scopedSource.processing = .legacy
+        scopedSource.exposure = 1
+        let scopedContext = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .scene,
+                                                     cameraTemperature: 5200, cameraTint: 8)
+        guard case .candidate(let scopedReset, _) = EditorAdjustmentRules.prepareReset(.all,
+            snapshot: PhotoEditState(settings: scopedSource), context: scopedContext) else {
+            fatalError("expected legacy reset candidate")
+        }
+        check(scopedReset.settings.processing == .legacy, "scoped reset all preserves legacy identity")
+        try store.save(resetIdentity, state: scopedReset)
+        let scopedStore = try EditPersistence(directory: root)
+        check(scopedStore.state(for: resetIdentity)?.settings.processing == .legacy,
+              "scoped legacy reset survives save and reopen")
+        check(reopened.state(for: first)?.settings.processing == .current, "processing identity survives restart")
+        for identity: Any in [NSNull(), ["family": "other", "version": 2, "quality": "standard"],
+                             ["family": "rawlab", "version": 3, "quality": "standard"],
+                             ["family": "rawlab", "version": 2, "quality": "fast"],
+                             ["family": "rawlab", "version": 2, "quality": "standard", "future": true]] {
+            var invalid = defaultObject
+            invalid["processing"] = identity
+            do {
+                _ = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: invalid))
+                fatalError("invalid processing identity was accepted")
+            } catch is DecodingError { }
+        }
+        check(true, "unknown or null processing identity rejects before rendering")
         check(legacySettings.geometry.isIdentity, "older records default to identity geometry")
         check(legacySettings.denoise == RawDenoiseSettings(), "older records default to disabled denoise")
         check(!legacySettings.lensSettings.isEnabled, "older records default to disabled lens correction")

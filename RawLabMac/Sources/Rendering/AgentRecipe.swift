@@ -37,7 +37,9 @@ extension RenderEngine {
         }
         let size: [String: Any] = exportLongEdge.map { ["mode": "limit_long_edge", "long_edge": $0] } ?? ["mode": "native"]
         let document: [String: Any] = [
-            "schema_version": 4,
+            "schema_version": 5,
+            "processing": ["family": state.processing.family, "version": state.processing.version,
+                           "quality": state.processing.quality],
             "input": ["path": url.standardizedFileURL.path, "type": raster ? "raster" : "raw"],
             "edits": [
                 "exposure": ["mode": exposure, "ev": request.exposure_ev, "brightness": request.brightness],

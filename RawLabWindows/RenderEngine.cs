@@ -14,13 +14,13 @@ internal sealed partial class RenderEngine : IDisposable
     private int gpuMode;
     private sealed record Stamp(string Path,long Length,long Time);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
     private PreviewKey? previewKey;
     private (Stamp Raw,Stamp? Lut)? sourceStamp;
-    private (Stamp Raw,int Edge,GeometrySettings Geometry,RenderedImage Frame)? original;
+    private (Stamp Raw,int Edge,GeometrySettings Geometry,ProcessingIdentity Processing,RenderedImage Frame)? original;
     private readonly Dictionary<int,PreviewFrame> previews=new();
     // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
@@ -40,6 +40,7 @@ internal sealed partial class RenderEngine : IDisposable
     public double AutoExposure(string path, Adjustments settings)
     {
         settings = PrepareRecipe(path, settings);
+        SetProcessing(settings.Processing);
         EnsureInput(path);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -61,18 +62,19 @@ internal sealed partial class RenderEngine : IDisposable
         {session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;}
         sourceStamp=(rawStamp,lutStamp);
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,gpuMode,compare,clipping,rawStamp,lutStamp);
+            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var cacheEdge=edge;
         if(previews.TryGetValue(cacheEdge,out var cached)) {
-            original=compare ? (rawStamp,cacheEdge,settings.Geometry,cached.Neutral) : null;
+            original=compare ? (rawStamp,cacheEdge,settings.Geometry,settings.Processing,cached.Neutral) : null;
             return cached;
         }
-        if(original?.Raw!=rawStamp || original?.Geometry!=settings.Geometry)original=null;
+        if(original?.Raw!=rawStamp || original?.Geometry!=settings.Geometry || original?.Processing!=settings.Processing)original=null;
         if(!compare)original=null;
         var originalEdge=edge==0 || (interactive && original?.Edge==0) ? 0 : 2000;
         if(compare && (original==null || original.Value.Edge!=originalEdge))
-            original=(rawStamp,originalEdge,settings.Geometry,Render(path,new Adjustments { Geometry=settings.Geometry },null,originalEdge,statistics:false,clipping:false)!);
+            original=(rawStamp,originalEdge,settings.Geometry,settings.Processing,
+                Render(path,new Adjustments { Geometry=settings.Geometry, Processing=settings.Processing },null,originalEdge,statistics:false,clipping:false)!);
         var neutral=compare ? original!.Value.Frame : null;
         var result=Render(path,settings,lut,edge,interactive,clipping:clipping,viewportPreview:true)!;
         var frame=new PreviewFrame(neutral ?? result,result);
@@ -91,6 +93,7 @@ internal sealed partial class RenderEngine : IDisposable
     public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false)
     {
         settings = PrepareRecipe(path, settings);
+        SetProcessing(settings.Processing);
         EnsureInput(path);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -140,6 +143,8 @@ internal sealed partial class RenderEngine : IDisposable
     }
     internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
         (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
+    private void SetProcessing(ProcessingIdentity value) =>
+        Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version));
     private void SetLens(LensSettings value)
     {
         var config = new Native.LensConfig { Version=1,StructSize=(uint)Marshal.SizeOf<Native.LensConfig>(),
@@ -172,7 +177,7 @@ internal sealed partial class RenderEngine : IDisposable
         if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
         if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
         // 配方色调属于目标 RAW 的拍摄白平衡，不沿用冻结来源的相机值。
-        var neutral = new Adjustments { ExposureMode = settings.ExposureMode };
+        var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing };
         var camera = Render(path, neutral, null, 32, statistics: false, clipping: false)?.WhiteBalance
             ?? throw new InvalidOperationException(Loc.Text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"));
         var prepared = settings.Clone();

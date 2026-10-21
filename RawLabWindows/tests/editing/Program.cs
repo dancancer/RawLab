@@ -1,10 +1,100 @@
 using RawLab.Windows;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
+static void ProcessingChecks()
+{
+    Check(Processing(new Adjustments())?["version"]?.GetValue<int>() == 2,
+        "New desktop edits explicitly persist processing v2");
+    var old = JsonSerializer.SerializeToNode(new Adjustments().Capture())!.AsObject();
+    old.Remove("Processing");
+    var restored = old.Deserialize<AdjustmentSnapshot>()!.Restore();
+    Check(Processing(restored)?["version"]?.GetValue<int>() == 1,
+        "Missing identity restores legacy, not the latest processing default");
+    restored.Set(Parameter.Exposure, .7);
+    restored.Denoise = DenoiseSettings.Clean;
+    restored.ApplyMasterRecipe(MasterRecipe.All[0]);
+    restored.ResetAll();
+    Check(Processing(restored)?["version"]?.GetValue<int>() == 1 &&
+          Processing(restored.Clone())?["version"]?.GetValue<int>() == 1,
+        "Ordinary edits, recipes, reset and clone preserve legacy identity");
+    var scopedLegacy = PhotoInput.PrepareInputSettings("legacy.jpg", new Adjustments { Processing = ProcessingIdentity.Legacy });
+    var scopedIdentity = new OriginalIdentity("legacy.jpg", 12, 34, 56);
+    var all = new EditorResetScope(EditorResetKind.All);
+    Check(EditorAdjustmentRules.PrepareReset(all, new(scopedIdentity, scopedLegacy.Capture(), null)).Status == EditorResetStatus.NoChange,
+        "Neutral legacy reset does not count processing identity as an adjustment");
+    scopedLegacy.Set(Parameter.Exposure, .7);
+    var scopedReset = EditorAdjustmentRules.PrepareReset(all, new(scopedIdentity, scopedLegacy.Capture(), null));
+    Check(scopedReset.Status == EditorResetStatus.Ready && scopedReset.Candidate!.Settings.Processing == ProcessingIdentity.Legacy,
+        "Scoped full reset preserves legacy identity");
+    Check(JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(scopedReset.Candidate!.Settings))!.Restore().Processing == ProcessingIdentity.Legacy,
+        "Scoped legacy reset survives serialization and restore");
+    var current = JsonSerializer.SerializeToNode(restored.Capture())!.AsObject();
+    current["Processing"] = JsonNode.Parse("""{"family":"rawlab","version":2,"quality":"standard"}""");
+    Check(!restored.Capture().SameAs(current.Deserialize<AdjustmentSnapshot>()!),
+        "Snapshot equality detects processing changes even with identical sliders");
+    foreach (var invalid in new[] {
+        "null",
+        """{"family":"other","version":1,"quality":"standard"}""",
+        """{"family":"rawlab","version":3,"quality":"standard"}""",
+        """{"family":"rawlab","version":0,"quality":"standard"}""",
+        """{"family":"rawlab","version":true,"quality":"standard"}""",
+        """{"family":"rawlab","version":1,"quality":"fast"}""",
+        """{"family":"rawlab","version":1}""",
+        """{"family":"rawlab","version":2,"quality":"standard","future":true}"""
+    }) {
+        var document = JsonSerializer.SerializeToNode(new Adjustments().Capture())!.AsObject();
+        document["Processing"] = JsonNode.Parse(invalid);
+        try {
+            _ = document.Deserialize<AdjustmentSnapshot>()!.Restore();
+            throw new Exception("Unknown or malformed processing identity must fail without conversion");
+        } catch (JsonException) { }
+        catch (InvalidDataException) { }
+    }
+    Console.WriteLine("PASS: processing identity defaults, legacy restore, reset, snapshot equality and rejection");
+}
+ProcessingChecks();
+static void ProtectedProcessingChecks(string root)
+{
+    var directory = Path.Combine(root, "protected-edits");
+    Directory.CreateDirectory(directory);
+    var input = Path.Combine(directory, "photo.ARW");
+    File.WriteAllText(input, "fixture");
+    var store = new EditStore(directory);
+    var snapshot = new Adjustments().Capture();
+    store.Save(input, snapshot, null);
+    var path = Path.Combine(directory, "edits.json");
+    var registry = JsonNode.Parse(File.ReadAllText(path))!;
+    registry["Records"]!.AsObject().First().Value!["Settings"]!["Processing"]!["version"] = 99;
+    var protectedBytes = registry.ToJsonString();
+    File.WriteAllText(path, protectedBytes);
+    try { _ = new EditStore(directory); throw new Exception("Unknown processing must reject the registry"); }
+    catch (InvalidDataException) { }
+    try { store.Save(input, snapshot, null); throw new Exception("An already-open store cannot replace future records"); }
+    catch (InvalidDataException) { }
+    Check(File.ReadAllText(path) == protectedBytes, "Unsupported registry remains byte-identical");
+    var journal = new BatchJournal(Path.Combine(root, "protected-batch"));
+    Directory.CreateDirectory(journal.DirectoryPath);
+    var job = BatchJob.Create(input, snapshot, null, "");
+    var future = JsonSerializer.SerializeToNode(job)!;
+    future["Settings"]!["Processing"]!["version"] = 99;
+    var futureBytes = future.ToJsonString();
+    var journalPath = Path.Combine(journal.DirectoryPath, "job.json");
+    File.WriteAllText(journalPath, futureBytes);
+    try { _ = journal.Load(); throw new Exception("Unknown processing cannot resume"); }
+    catch (InvalidDataException) { }
+    try { journal.Save(job); throw new Exception("New batch cannot replace an unsupported journal"); }
+    catch (InvalidDataException) { }
+    Check(File.ReadAllText(journalPath) == futureBytes, "Unsupported journal remains byte-identical");
+    Console.WriteLine("PASS: unsupported stored processing blocks restore and replacement");
+}
 var root = Path.Combine(Path.GetTempPath(), "rawlab-edit-" + Guid.NewGuid());
 Directory.CreateDirectory(root);
 try
 {
+    ProtectedProcessingChecks(root);
     // S1 regression: reset scope ownership, lossless detach, input validation and candidate isolation.
     var resetIdentity = new OriginalIdentity("fixture.ARW", 12, 34, 56);
     SavedEdit Edit(Adjustments state, string? look = "film.cube") => new(resetIdentity, state.Capture(), look);

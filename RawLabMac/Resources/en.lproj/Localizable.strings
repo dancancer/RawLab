@@ -38,6 +38,7 @@
 "三分网格" = "Rule of Thirds Grid";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次批量任务尚未完成" = "The last batch task has not been completed yet";
+"不支持此处理版本，原有记录未被覆盖。" = "This processing version is not supported. Saved edits have not been overwritten.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不是支持的 RAW 文件" = "Not a supported RAW file";
 "不是支持的图像文件" = "Unsupported image file";
@@ -119,7 +120,10 @@
 "垂直翻转" = "Flip vertical";
 "垂直透视" = "Vertical perspective";
 "基础曝光偏移" = "Base exposure offset";
+"处理 v1（旧版）" = "Processing v1 (Legacy)";
+"处理 v2" = "Processing v2";
 "处理失败：%@" = "Processing failed: %@";
+"处理版本" = "Processing version";
 "处理结果为空" = "The processing result is empty";
 "外观名称不能为空或包含控制字符。" = "The look name cannot be empty or contain control characters.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required.";

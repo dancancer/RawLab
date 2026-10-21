@@ -9,6 +9,7 @@ namespace sony2fuji {
 // Paths are UTF-8; callers resolve relative paths against the recipe directory.
 struct EditRecipe {
     uint32_t schemaVersion = 1;
+    sony2fuji_processing_version processingVersion = SONY2FUJI_PROCESSING_LEGACY;
     std::string inputPath;
     bool rasterInput = false;
     std::string outputPath;

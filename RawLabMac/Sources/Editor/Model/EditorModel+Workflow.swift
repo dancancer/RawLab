@@ -193,12 +193,17 @@ extension EditorModel {
             return
         }
         guard saveEdits() else { return }
+        let restored: PhotoEditState?
+        do {
+            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+            restored = try editStore!.state(for: url)
+        } catch {
+            saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
+            return
+        }
         cancelViewportResize()
         editRevision = UUID()
         scheduler.setInteracting(false)
-        var restored: PhotoEditState?
-        do { restored = try editStore?.state(for: url) }
-        catch { saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription)) }
         file = url; neutral = nil; result = nil; error = nil; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true

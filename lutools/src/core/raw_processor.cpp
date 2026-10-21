@@ -88,6 +88,9 @@ public:
         if (options.rawNoiseReduction < 0 || options.rawNoiseReduction > 2 ||
             (options.rawNoiseReduction > 0 && !supportsNoiseReduction()))
             return ErrorCode::InvalidFormat;
+        if (options.bayerDemosaic != BayerDemosaicMethod::Legacy &&
+            options.bayerDemosaic != BayerDemosaicMethod::VNG && options.bayerDemosaic != BayerDemosaicMethod::DHT)
+            return ErrorCode::InvalidFormat;
         if (options.outputBitsPerSample != 8 && options.outputBitsPerSample != 16)
             return ErrorCode::InvalidFormat;
         if (!std::isfinite(options.exposure) || !std::isfinite(options.brightness) ||
@@ -106,6 +109,9 @@ public:
         params.fbdd_noiserd = options.rawNoiseReduction;
         const ErrorCode identificationResult = ensureIdentificationMode(cameraWB, autoWB);
         if (identificationResult != ErrorCode::Success) return identificationResult;
+        // 非 Bayer 必须重置，避免复用处理器时把 X-Trans 误送入 VNG。
+        params.user_qual = bayerSource_ && options.bayerDemosaic != BayerDemosaicMethod::Legacy ?
+            (options.bayerDemosaic == BayerDemosaicMethod::VNG ? 1 : 11) : -1;
         params.use_camera_matrix = 3;
         params.use_camera_wb = cameraWB ? 1 : 0;
         params.use_auto_wb = autoWB ? 1 : 0;
@@ -279,7 +285,7 @@ public:
         return true;
     }
 
-    bool supportsNoiseReduction() const { return sourceReady_ && noiseReductionSupported_; }
+    bool supportsNoiseReduction() const { return sourceReady_ && bayerSource_; }
     LensCorrectionReport getLensCorrectionReport() const { return lensReport_; }
 
     bool getCameraColorMatrix(float matrix[3][3]) const {
@@ -301,7 +307,7 @@ private:
         cameraModel_.clear();
         whiteBalance_.reset();
         cameraColorMatrixValid_ = false;
-        noiseReductionSupported_ = false;
+        bayerSource_ = false;
         previewExposureEV_ = 0;
         baselineExposureEV_ = 0;
         metadataExposureEV_ = 0;
@@ -357,7 +363,7 @@ private:
 
     void snapshotCalibration() {
         const auto& data = rawProcessor_->imgdata;
-        noiseReductionSupported_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
+        bayerSource_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
         width_ = data.sizes.width;
         height_ = data.sizes.height;
         cameraMake_ = data.idata.make;
@@ -412,7 +418,7 @@ private:
     std::unique_ptr<CameraWhiteBalance> whiteBalance_;
     std::array<std::array<float,3>,3> cameraColorMatrix_{};
     bool cameraColorMatrixValid_ = false;
-    bool noiseReductionSupported_ = false;
+    bool bayerSource_ = false;
     bool sourceReady_ = false;
     bool identificationCameraWB_ = false;
     bool identificationAutoWB_ = false;

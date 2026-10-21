@@ -80,10 +80,14 @@ private func writeJSON(_ value: [String: Any], to url: URL) throws {
     try data.write(to: url, options: .atomic)
 }
 
-private func inspectRecipe(_ data: Data, label: String) throws -> [String: Any] {
+private func inspectRecipe(_ data: Data, label: String, processing: ProcessingIdentity = .current) throws -> [String: Any] {
     let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    try check((root["schema_version"] as? NSNumber)?.intValue == 4,
-              "\(label): agent emits schema_version 4")
+    try check((root["schema_version"] as? NSNumber)?.intValue == 5,
+              "\(label): agent emits schema_version 5")
+    let identity = try dictionary(root["processing"], "processing")
+    try check(identity["family"] as? String == processing.family &&
+              (identity["version"] as? NSNumber)?.intValue == processing.version &&
+              identity["quality"] as? String == processing.quality, "\(label): processing identity is preserved")
     let edits = try dictionary(root["edits"], "edits")
     _ = try dictionary(edits["exposure"], "edits.exposure")
     _ = try dictionary(edits["white_balance"], "edits.white_balance")
@@ -207,7 +211,7 @@ private func runAgentParity(_ context: AgentRecipeContext, engine: RenderEngine,
     let recipeURL = context.root.appendingPathComponent("\(label).json")
     let data = try engine.agentRecipe(input, settings: settings, lut: lut, output: apiOutput,
                                       exportLongEdge: edge)
-    let recipe = try inspectRecipe(data, label: label)
+    let recipe = try inspectRecipe(data, label: label, processing: settings.processing)
     do {
         _ = try engine.render(input, settings: settings, lut: lut, edge: nil, output: apiOutput,
                               exportLongEdge: edge)
@@ -385,6 +389,10 @@ struct AgentRecipeRenderTests {
         let mixed = makeMixedSettings()
         let mixedOutput = try runAgentParity(context, engine: cpu, input: input, settings: mixed,
                                              lut: lut, label: "mixed", previewCheck: true)
+        var legacy = mixed
+        legacy.processing = .legacy
+        _ = try runAgentParity(context, engine: cpu, input: input, settings: legacy,
+                               lut: lut, label: "legacy-processing", previewCheck: true)
         let recipeLUT = MasterRecipe.hamadaDaylightV2.lutURL()!
 
         var clamped = Adjustments()

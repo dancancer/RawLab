@@ -101,7 +101,7 @@ public static class EditorAdjustmentRules
     private static readonly Parameter[] ColorParameters = [Parameter.Temperature, Parameter.Tint, Parameter.Saturation];
     private static SavedEdit Defaults(SavedEdit edit)
     {
-        var state = new Adjustments();
+        var state = new Adjustments { Processing = edit.Settings.Processing };
         if (PhotoInput.IsRaw(edit.Identity.Path)) state.ResolveWhiteBalance(edit.Settings.AsShotTemperature is {} t && edit.Settings.AsShotTint is {} tint ? (t, tint) : null);
         state = PhotoInput.PrepareInputSettings(edit.Identity.Path, state);
         return new(edit.Identity, state.Capture(), null);

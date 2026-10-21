@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 INPUT="${1:?Pass a real RAW fixture}"
+BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 CLI="${2:?Pass the sony2fuji CLI executable}"
 LENS_DATABASE="${3:-$ROOT/lutools/tests/fixtures/lenses.xml}"
 LENS_RAW="${4:-$ROOT/lutools/tests/fixtures/linear-lens.dng}"
@@ -24,7 +25,7 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
   "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
   "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" \
   "$ROOT/RawLabMac/tests/AgentRecipeRenderTests.swift" \
-  "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
+  "$BUILD/libsony2fuji_core.a" \
   -L "$(pkg-config --variable=libdir libraw)" \
   -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

@@ -86,24 +86,25 @@ extension EditorModel {
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
-                if self.originalCache?.file != work.file {
+                if self.originalCache?.file != work.file || self.originalCache?.processing != work.settings.processing {
                     self.originalCache = nil
                     self.geometryReferenceCache = nil
-                    if let original = try self.engine!.render(work.file, settings: Adjustments(), lut: nil, edge: nil) {
-                        self.originalCache = (work.file, original)
+                    if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil) {
+                        self.originalCache = (work.file, work.settings.processing, original)
                     }
                 }
                 let neutral: RenderedImage?
                 if work.editingGeometry || work.settings.geometrySettings.isIdentity {
                     neutral = self.originalCache?.frame
                 } else if let cached = self.geometryReferenceCache, cached.file == work.file,
+                          cached.processing == work.settings.processing,
                           cached.geometry == work.settings.geometrySettings, cached.lens == work.settings.lensSettings {
                     neutral = cached.frame
                 } else {
                     neutral = try self.engine!.render(work.file, settings: work.settings.neutralGeometrySettings,
                                                       lut: nil, edge: nil)
                     if let neutral {
-                        self.geometryReferenceCache = (work.file, work.settings.geometrySettings, work.settings.lensSettings, neutral)
+                        self.geometryReferenceCache = (work.file, work.settings.processing, work.settings.geometrySettings, work.settings.lensSettings, neutral)
                     }
                 }
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,

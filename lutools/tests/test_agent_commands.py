@@ -96,7 +96,7 @@ class AgentCommands(unittest.TestCase):
 
     def test_capabilities_and_flag_order(self):
         expected = {
-            "recipe_versions": [1, 2, 3, 4],
+            "recipe_versions": [1, 2, 3, 4, 5],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": ["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"],
             "output_formats": ["jpeg", "png", "dng"],

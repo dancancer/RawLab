@@ -52,7 +52,7 @@ layout(std140, binding = 0) uniform Parameters {
     uint channels, radius, stage, count;
     float sigma, strength, epsilon;
     uint direction;
-    uint sourceRow, outputRow, baseIndex, reserved;
+    uint sourceRow, outputRow, baseIndex, firmThreshold;
     vec4 vignette, grain;
 };
 float readA(uint i) { return sourceA[i]; }

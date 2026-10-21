@@ -1,6 +1,10 @@
-# Edit JSON v1
+# Edit JSON
 
 The CLI accepts a versioned edit recipe through the existing C API:
+
+Schemas 1–4 retain legacy processing. New desktop recipes use schema 5 with an
+explicit [processing identity](#v5-processing-identity); the v1 example below
+remains valid and does not silently opt into newer algorithms.
 
 ```sh
 sony2fuji --recipe edit.json --print-recipe  # validate and emit explicit defaults
@@ -325,3 +329,30 @@ The result protocol remains `protocol_version: 1`; v4 changes only the edit
 schema. `--print-recipe` still validates without opening the RAW and preserves
 recipe-relative paths. The CLI capabilities response must advertise v4 only
 when the v4 parser and serializer are available.
+
+## v5: Processing Identity
+
+[Schema v5](edit-json-v5.schema.json) retains all v4 input, edit and output
+groups, and requires one additional root object:
+
+```json
+"processing": { "family": "rawlab", "version": 2, "quality": "standard" }
+```
+
+The supported versions are `1` (released v0.8.2 RAW/SWT behavior) and `2`
+(Bayer VNG and C5 EAW denoising). Both use quality `standard`.
+Unknown members, families, versions or quality values are rejected before
+rendering or creating output. The processing version is independent of
+`schema_version`, the result protocol and request v2.
+
+Schemas 1–4 implicitly select processing version 1, continue rejecting the
+`processing` field, and normalize without adding it. An in-memory recipe with
+processing version 2 cannot be serialized as schema 1–4: the serializer throws
+instead of discarding its identity. A schema 5 recipe can explicitly select
+version 1 without changing any edit values.
+
+The macOS and Windows Agent adapters emit schema 5 and preserve the photo's
+selected identity, including old records restored as version 1. Ordinary
+parameter changes, resets and batch snapshots do not implicitly upgrade it.
+See the [processing-version contract](processing-version.md) for the compatibility
+baseline, cache isolation, platform boundaries and explicit conversion policy.

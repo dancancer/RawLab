@@ -44,20 +44,22 @@ extension RawEditorViewModel {
         let orientation: CGImagePropertyOrientation?
     }
 
-    func buildRawPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings()) throws -> RawPreviewBase {
+    func buildRawPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings(),
+                             processing: ProcessingIdentity = .current) throws -> RawPreviewBase {
+        var neutral = RawSettings.default
+        neutral.processing = processing
         let rawBase = try processor.processRaw(
             url: url,
-            settings: .default,
+            settings: neutral,
             previewLongEdge: previewMaxDimension,
             lutURL: nil
         )
         let previewBuffer = try processor.processBuffer(
             buffer: rawBase.buffer,
-            settings: .default,
+            settings: neutral,
             previewLongEdge: interactivePreviewMaxDimension,
             lutURL: nil
         )
-        var neutral = RawSettings.default
         neutral.geometry = geometry
         let comparison = geometry.isIdentity ? rawBase : try processor.processRaw(
             url: url, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
@@ -76,21 +78,23 @@ extension RawEditorViewModel {
         )
     }
 
-    func buildRasterPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings()) throws -> RasterPreviewBase {
+    func buildRasterPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings(),
+                                processing: ProcessingIdentity = .current) throws -> RasterPreviewBase {
+        var neutral = RawSettings.default
+        neutral.processing = processing
         let rasterBase = try processor.loadRasterBuffer(url: url, applyingOrientation: true)
         let baseBuffer = try processor.processBuffer(
             buffer: rasterBase.buffer,
-            settings: .default,
+            settings: neutral,
             previewLongEdge: previewMaxDimension,
             lutURL: nil
         )
         let previewBuffer = try processor.processBuffer(
             buffer: rasterBase.buffer,
-            settings: .default,
+            settings: neutral,
             previewLongEdge: interactivePreviewMaxDimension,
             lutURL: nil
         )
-        var neutral = RawSettings.default
         neutral.geometry = geometry
         let comparison = geometry.isIdentity ? baseBuffer : try processor.processBuffer(
             buffer: rasterBase.buffer, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
@@ -147,7 +151,7 @@ extension RawEditorViewModel {
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
                     try sourceFile.withReadAccess { localURL in
                         if sourceKind == .raw {
-                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry)
+                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing)
                             let lutURL = self.lutURL(for: restoredSettings)
                             let previewResult = try self.processor.processRaw(
                                 url: localURL,
@@ -182,6 +186,7 @@ extension RawEditorViewModel {
                                 self.basePreviewImage = rawBase.basePreviewImage
                                 self.baseHistogram = rawBase.baseHistogram
                                 self.basePreviewGeometry = restoredSettings.geometry
+                                self.basePreviewProcessing = restoredSettings.processing
                                 self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
                                 self.lensInfo = previewResult.lensInfo
                                 self.rawLUTID = restoredSettings.lutID
@@ -204,7 +209,7 @@ extension RawEditorViewModel {
                                 }
                             }
                         } else {
-                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry)
+                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing)
                             let adjustedBuffer = try self.processor.processBuffer(
                                 buffer: rasterBase.buffer,
                                 settings: restoredSettings,
@@ -237,6 +242,7 @@ extension RawEditorViewModel {
                                 self.basePreviewImage = rasterBase.basePreviewImage
                                 self.baseHistogram = rasterBase.baseHistogram
                                 self.basePreviewGeometry = restoredSettings.geometry
+                                self.basePreviewProcessing = restoredSettings.processing
                                 self.rawLUTID = nil
                                 self.rawLUTApplied = false
                                 self.rawWhiteBalance = nil

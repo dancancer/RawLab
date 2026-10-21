@@ -14,6 +14,25 @@ The scene-mode 0 EV baseline described below applies when that mode is selected.
 
 LibRaw performs black subtraction, active-area crop, white balance, demosaic and highlight blending in camera channels. WB must precede demosaic: the earlier no-auto-scale path produced a measurable difference from LibRaw's normal WB-before-demosaic processing. Histogram auto-bright, content-dependent maximum adjustment and integer output-color conversion remain disabled. `highlight=2` retains maximum-normalized WB before 16-bit demosaic and blends clipped highlight chroma after demosaic, before our camera matrix and LUT. The former `highlight=1` unclip mode preserved false magenta in saturated DSC06251 car-body highlights. Blending is not darktable's opposed-chroma reconstruction and cannot recover lost sensor detail; bright colors can become less saturated. We recover green-normalized camera RGB as `image16 / (65535 * post_scale_pre_mul[1])`, then apply the camera-to-sRGB matrix in float. Matrix negatives and values above 1 survive; we do not globally clamp scene RGB to 1. This is not an all-float demosaic: quantization and LibRaw's treatment of sensor-overrange values remain. The raw source is never written.
 
+Processing version 1 preserves LibRaw's released default interpolation choice
+(AHD for ordinary three-color Bayer); version 2 selects VNG. New C sessions and
+public `RAWProcessOptions` retain version-1 behavior. Mac, Windows, iOS and Android new edits
+explicitly select version 2, while records missing processing identity select
+version 1. The additive `sony2fuji_session_set_processing_version` selects the
+whole RAW/denoise profile without changing request v2. C++ callers may also select
+`RAWProcessOptions::bayerDemosaic = BayerDemosaicMethod::DHT` as an explicit
+alternative; this is not an automatic fallback or an extra denoise stage.
+Desktop clients expose a processing-version choice, not a separate demosaic selector.
+Non-Bayer inputs, including X-Trans and LinearRaw, retain LibRaw's original
+path; the quality parameter is reset on every process call, including decoder
+reuse and white-balance reload. With FBDD off, interactive half-size processing
+still bypasses full demosaic; enabling FBDD still forces full-size processing.
+VNG reduces directional color structure in the evaluated high-ISO Bayer scene but
+can increase false color on fine patterns; it is not a universal quality claim.
+Ordinary edits and resets do not upgrade old records. The
+[processing-version compatibility contract](processing-version.md) defines the
+released baseline, strict rejection and explicit conversion semantics.
+
 Default 0 EV is a declared scene-development baseline: **+0.7 EV plus valid DNG BaselineExposure**. The +0.7 is a workflow starting point, inspired by darktable's scene defaults, NOT sensor calibration or a claim that every camera needs this exact offset. DNG metadata is applied once (DJI fixture: +0.35, total +1.05 EV; Sony without that tag: +0.7 EV). Missing/sentinel/non-finite/out-of-range metadata falls back to zero metadata offset. User +1 EV still doubles the linear input. The default never decodes or meters the embedded JPEG. We deliberately do not undo a photographer's EXIF ExposureBiasValue, and do not invent undocumented camera-specific dynamic-range compensation.
 
 Optional `preview` mode retains the earlier median matching approximation: it samples 128x128 luminance values and applies `preview_median / raw_median` instead of the scene baseline, not on top of it. Preview styles, profiles, cropping and black borders can bias it. Untagged previews assume sRGB; known non-sRGB DNG previews are skipped, gray gamma 2.2 is handled explicitly. Missing/invalid references fall back to the scene baseline. Sensor mode applies neither metadata nor the workflow boost. In C++, disable both `applyBaselineExposure` and `matchEmbeddedPreviewExposure` for sensor mode. The C ABI exposes `sony2fuji_session_set_raw_exposure_mode` without changing the v2 request layout; the mode is part of the RAW cache key. Mac exposes all three modes and the actual base offset. Sensor saturation is not recoverable, and film LUTs may deliberately change apparent brightness.
@@ -253,23 +272,52 @@ implementations is copied or embedded.
 
 ### GPU Denoising
 
-The existing denoise controls and saved parameters are unchanged. Optional
-`SONY2FUJI_ENABLE_WAVELET_DENOISE` and `SONY2FUJI_ENABLE_CHROMA_DENOISE` builds remain
-independent. Mac/iOS use Metal, Android uses GLES 3.1 compute, and Windows uses
-hardware D3D11 compute for heavy filtering; GPU failures in Auto fall back to CPU.
-Force requires successful platform filters and photo rendering, never a
-silent CPU replacement. A reliable-noise estimate is still required; off/zero
-strength and insufficient-evidence cases remain no-ops.
+The existing luma, chroma and coarse strengths remain independently adjustable from
+0 to 100. Presets are starting points: stronger noise removal can suppress weak
+texture, and lower strengths retain more detail. Turning denoising off or setting
+both luma and chroma to zero preserves the input exactly. Insufficient calibration
+evidence also leaves the input unchanged.
 
-Wavelet denoising stays in linear sRGB before user exposure and LUT evaluation.
-CPU retains flat-sample selection, noise-model fitting, normalization, opponent
-conversion, band calibration and variance-aware restoration. The GPU executes db2
-SWT analysis, box-energy thresholds and the transpose inverse per tile/channel.
-The original 4/6 levels, periodic SWT indices, REFLECT_101 energy boundaries and
-512/1024 tile centers with 96/256 halos are preserved. Bounded GPU tile jobs are
-serialized to avoid allocating full-image wavelet coefficients. Float GPU results
-are tested against the existing double wavelib implementation, not substituted
-with a different denoising algorithm.
+Denoising runs in linear sRGB before user exposure and LUT evaluation. Version 1
+preserves the released SWT sample selection, four-level luma, seven-pixel fine
+energy windows, soft thresholds, inverse formula and chroma-only coarse tiling.
+Its CPU/Metal/GLES/D3D11 paths retain their existing fallback and Force semantics.
+
+Version 2 uses C5, a six-level edge-aware wavelet (EAW) with separable binomial taps
+`[1,4,6,4,1]` applied as a joint 5x5 neighborhood at dilations 1/2/4/8/16/32.
+Weights use the normalized opponent-channel distance and
+`exp2(-max(0, 0.02 * distance - 9))`. Guide MAD is measured on up to 24 selected
+64x64 flat samples. Band MAD and mean squared coefficient energy are global,
+independent of tile boundaries. Every band uses soft thresholding. Luma relative
+strengths are 1/1/2/2/1/1 with gain 3.5928893089294434; chroma gains are
+3.5928893089294434/1/1/1/3.5928893089294434/3.5928893089294434. The coarse control
+scales chroma levels 4–6 and does not alter luma.
+
+C5 first collects global statistics, then filters serial 512-pixel tile centers.
+Its scratch coefficients are bounded by a tile and sample patches; a complete
+output is retained until filtering finishes so failures cannot partially overwrite
+the input. The six-level source support is 126 pixels. Variance-aware restoration
+adds 12 pixels (the pinned OpenCV float Gaussian at sigma 3), giving a 138-pixel
+combined halo. Neighborhoods are clipped only at true image edges; intermediate
+levels clamp there rather than at tile seams. Different tile partitions agree
+with the independent full-frame C5 reference within floating-point tolerance.
+
+Restoration averages the piecewise inverse at `n - sqrt(v)` and `n + sqrt(v)`,
+where `n` is the filtered normalized value and `v` is local residual variance.
+This joins the positive and negative branches continuously without clipping
+negative or over-white linear RGB. It is a symmetric two-point approximation,
+not an exact Gaussian unbiased inverse.
+
+A simple low-noise guard uses the maximum fitted RGB standard deviation at linear
+0.18, divided by 0.18. Values at or below 0.02 bypass C5; 0.02–0.04 linearly scale
+all strengths; values at or above 0.04 use the selected strengths unchanged.
+This is an engineering guard, not camera/ISO calibration. Clipping and unreliable
+noise fits can also lead to bypass; it does not establish a universal noise floor.
+
+C5 currently filters on CPU. Auto can retain GPU photo rendering and filtered
+output caching after CPU denoise; Force rejects an active C5 filter request.
+A skipped filter does not claim GPU work. Legacy SWT and display-chroma GPU
+backends remain available; no approximate mobile algorithm shares the C5 identity.
 
 Filtered RAW results use one exact slot and two recent viewport slots, with a
 128 MiB retained preview-image budget. Source keys include file identity, RAW
@@ -279,8 +327,9 @@ anchor across camera-WB/FBDD transitions. Output matching also requires
 the complete denoise options and execution mode. CPU/Auto/Force cannot reuse
 each other's filtered results. The small source-analysis cache retains flat
 samples, the fitted noise model and calibrated bands across strength changes;
-it does not retain full-image coefficients or replace filtering. Coarse-band
-analysis is prepared lazily when needed. Source/quality/size changes invalidate
+it does not retain full-image coefficients or replace filtering. Legacy coarse-band
+analysis remains lazy. C5 caches all six global band statistics together;
+its coarse-analysis reuse diagnostic follows reuse of that complete analysis. Source/quality/size changes invalidate
 that entry's analysis. Interactive wavelet previews may remain approximations;
 final/file requests never reuse viewport results.
 Active chroma or photo effects require the exact source-resolution path unless

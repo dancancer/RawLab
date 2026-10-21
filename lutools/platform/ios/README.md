@@ -14,6 +14,11 @@ Integrate the Sony2Fuji core into a Swift/Objective-C app through the shared C A
 
 The former direct-C++ bridge examples omitted parts of F-Log2 and display-output processing. Use the shared photo API instead of implementing a second mobile color pipeline. Desktop verification does not establish iOS device coverage.
 
+RawLab iOS 新编辑显式选择 `rawlab/2/standard`（C5），缺少 `processing` 的旧记录保留版本 1。
+C5 在 CPU 上分块滤波；Auto 可以继续 Metal 显示渲染，Force 不支持需要执行 C5 的请求。
+移动端预览仍使用既有尺寸策略，完整导出不静默改用其他算法。亮度、色度和粗色斑强度可调，
+高强度可能削弱低对比度纹理。处理身份随预览、导出、自动曝光、中性对比图及批量快照传递。
+
 ## 1. 构建准备 / Build Prerequisites
 
 需要 macOS、完整 Xcode/iOS SDK、CMake 和 curl。从仓库根目录运行以下入口，自动下载并校验 LibRaw 0.22.2、Adobe DNG SDK 1.7、应用共享相机补丁，编译三个架构并生成应用使用的 XCFramework。iOS 构建不再通过宿主机 `pkg-config` 查找 LibRaw。

@@ -39,6 +39,89 @@ private func writeRasterFixture(_ image: CGImage, to url: URL, type: CFString) t
 private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Data }
 
 @main struct EditModelTests {
+    static func processingEditorChecks(root: URL, input: URL) throws {
+        let directory = root.appendingPathComponent("processing-edits")
+        var settings = Adjustments()
+        settings.processing = .legacy
+        settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 65, chroma: 72, coarse: 100)
+        let store = try EditPersistence(directory: directory)
+        try store.save(input, state: PhotoEditState(settings: settings, filmID: ""))
+        let registryURL = directory.appendingPathComponent("edits.json")
+        var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: registryURL)) as! [String: Any]
+        var records = registry["records"] as! [String: Any]
+        let key = records.keys.first!
+        var record = records[key] as! [String: Any]
+        var state = record["state"] as! [String: Any]
+        var saved = state["settings"] as! [String: Any]
+        saved.removeValue(forKey: "processing")
+        state["settings"] = saved; record["state"] = state; records[key] = record; registry["records"] = records
+        let legacyBytes = try JSONSerialization.data(withJSONObject: registry)
+        try legacyBytes.write(to: registryURL)
+        func makeEditor() -> EditorModel {
+            let editor = EditorModel(lookDirectory: root.appendingPathComponent("looks"), editDirectory: directory,
+                                     batchDirectory: root.appendingPathComponent("processing-batch"))
+            editor.fullResolution = true
+            return editor
+        }
+        let editor = makeEditor()
+        editor.open(input)
+        try waitForRender(editor, "unversioned real RAW record")
+        try check(editor.settings.processing == .legacy && editor.result!.isFullResolution,
+                  "unversioned RAW record restores legacy processing at native size")
+        try check(try Data(contentsOf: registryURL) == legacyBytes, "opening old records does not rewrite processing")
+        let reference = try RenderEngine().render(input, settings: settings, lut: nil, edge: nil)!
+        try check(pixels(editor.result!.image) == pixels(reference.image), "restored record reaches the legacy core profile")
+        let legacyPixels = pixels(editor.result!.image)
+        let legacyNeutral = editor.neutral!.image
+        editor.settings.processing = .current
+        try waitForRender(editor, "explicit current processing")
+        var current = settings; current.processing = .current
+        let currentReference = try RenderEngine().render(input, settings: current, lut: nil, edge: nil)!
+        try check(pixels(editor.result!.image) == pixels(currentReference.image) && editor.neutral!.image !== legacyNeutral,
+                  "explicit upgrade refreshes result and original caches")
+        editor.settings.processing = .legacy
+        try waitForRender(editor, "return to legacy processing")
+        try check(pixels(editor.result!.image) == legacyPixels &&
+                  pixels(editor.neutral!.image) == pixels(legacyNeutral), "old-new-old returns exact legacy pixels")
+        editor.settings.exposure = 0.5
+        try waitForRender(editor, "ordinary legacy edit")
+        try check(editor.settings.processing == .legacy && editor.saveEdits(),
+                  "ordinary edits save legacy identity without upgrading")
+        let savedPixels = pixels(editor.result!.image)
+        let reopened = makeEditor()
+        reopened.open(input)
+        try waitForRender(reopened, "reopened legacy edit")
+        try check(reopened.settings.processing == .legacy && pixels(reopened.result!.image) == savedPixels,
+                  "saved legacy record reopens with identical pixels")
+        reopened.settings.resetAll()
+        try waitForRender(reopened, "legacy reset")
+        try check(reopened.settings.processing == .legacy, "reset cannot upgrade a legacy record")
+        print("PASS: Real RAW unversioned restore, explicit conversion, original-cache isolation and legacy save/reopen")
+    }
+
+    static func protectedRestoreCheck(root: URL, input: URL) throws {
+        let directory = root.appendingPathComponent("unsupported-edits")
+        let store = try EditPersistence(directory: directory)
+        try store.save(input, state: PhotoEditState(settings: Adjustments(), filmID: ""))
+        let file = directory.appendingPathComponent("edits.json")
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        var records = object["records"] as! [String: Any]
+        let key = records.keys.first!
+        var record = records[key] as! [String: Any]
+        var state = record["state"] as! [String: Any]
+        var settings = state["settings"] as! [String: Any]
+        settings["processing"] = ["family": "rawlab", "version": 99, "quality": "standard"]
+        state["settings"] = settings; record["state"] = state; records[key] = record; object["records"] = records
+        let protectedBytes = try JSONSerialization.data(withJSONObject: object)
+        try protectedBytes.write(to: file)
+        let editor = EditorModel(lookDirectory: root.appendingPathComponent("looks"), editDirectory: directory,
+                                 batchDirectory: root.appendingPathComponent("protected-batch"))
+        editor.open(input)
+        try check(editor.file == nil && editor.saveError != nil && !editor.busy,
+                  "unsupported saved processing blocks opening instead of rendering new defaults")
+        try check(try Data(contentsOf: file) == protectedBytes, "failed restore cannot overwrite the old registry")
+    }
+
     static func waitForRender(_ model: EditorModel, _ label: String) throws {
         let deadline = Date().addingTimeInterval(120)
         while model.busy && Date() < deadline {
@@ -269,6 +352,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         defer { try? FileManager.default.removeItem(at: root) }
         let a = root.appendingPathComponent("a.ARW"), b = root.appendingPathComponent("b.ARW")
         try Data("a".utf8).write(to: a); try Data("b".utf8).write(to: b)
+        try protectedRestoreCheck(root: root, input: a)
         func model() -> EditorModel {
             EditorModel(lookDirectory: root.appendingPathComponent("looks"),
                         editDirectory: root.appendingPathComponent("edits"),
@@ -405,8 +489,11 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
         if CommandLine.arguments.count > 1 {
             fputs("[RAW SUCCESS REQUIRED] EditModelTests.realRAW: \(CommandLine.arguments[1]) must render successfully; decoder failures for this input are not expected.\n", stderr)
+            let raw = URL(fileURLWithPath: CommandLine.arguments[1])
+            let identity = try OriginalFileIdentity(raw)
+            try autoreleasepool { try processingEditorChecks(root: root, input: raw) }
             let live = model()
-            live.open(URL(fileURLWithPath: CommandLine.arguments[1]))
+            live.open(raw)
             func waitForRender() throws {
                 let deadline = Date().addingTimeInterval(120)
                 while live.busy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
@@ -435,6 +522,30 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             try waitForRender()
             try check(live.neutral!.image === original, "exact denoise must retain the same original")
             print("PASS: Original is native and unchanged across exposure, WB and interactive/exact denoise")
+            let savedSettings = live.settings
+            let savedPixels = pixels(live.result!.image)
+            live.fullResolution = true
+            try waitForRender()
+            try check(live.result!.isFullResolution, "saved RAW has a native-size exact baseline")
+            let savedNativePixels = pixels(live.result!.image)
+            try check(live.saveEdits(), "real RAW denoise edits save to the isolated library")
+            let reopened = model()
+            reopened.updatePreviewLongEdge(1000)
+            reopened.open(raw)
+            try Self.waitForRender(reopened, "reopened real RAW")
+            try check(reopened.settings == savedSettings, "real RAW reopen restores all current-version denoise settings")
+            try check(pixels(reopened.result!.image) == savedPixels,
+                      "fresh EditorModel renders the same exact pixels after current-version save/reopen")
+            reopened.fullResolution = true
+            try Self.waitForRender(reopened, "native-size reopened RAW")
+            try check(reopened.result!.isFullResolution &&
+                      reopened.result!.image.width == reopened.result!.nativeWidth &&
+                      reopened.result!.image.height == reopened.result!.nativeHeight,
+                      "reopened denoised RAW supports native-size exact preview")
+            try check(pixels(reopened.result!.image) == savedNativePixels,
+                      "native-size exact pixels remain identical after current-version save/reopen")
+            try check(try OriginalFileIdentity(raw) == identity, "save/reopen leaves original RAW identity unchanged")
+            print("PASS: Real RAW current-version save/reopen, exact proxy and native-size pixel parity")
             let app = NSApplication.shared
             app.setActivationPolicy(.accessory)
             var fieldAppeared = false
@@ -461,6 +572,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             timer.invalidate()
             try check(fieldAppeared, "save-panel size accessory must update when the chosen long edge changes")
             print("PASS: Save-panel size accessory updates its numeric input")
+        } else {
+            print("SKIP: Real RAW save/reopen, denoise and native-size parity require a RAW fixture argument")
         }
     }
 }

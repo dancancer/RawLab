@@ -15,7 +15,7 @@ class Arguments(BaseModel):
 
 
 class RecipeArguments(Arguments):
-    recipe_path: str = Field(min_length=1, description="Absolute path to an existing v1-v4 recipe JSON file")
+    recipe_path: str = Field(min_length=1, description="Absolute path to an existing v1-v5 recipe JSON file")
 
 
 class InfoArguments(Arguments):

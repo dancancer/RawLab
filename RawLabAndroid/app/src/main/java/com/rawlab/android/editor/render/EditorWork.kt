@@ -11,6 +11,7 @@ import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.InvalidLookException
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
@@ -26,7 +27,8 @@ data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature:
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,
-    val lens: LensSettings, val edge: Int, val interactive: Boolean)
+    val lens: LensSettings, val edge: Int, val interactive: Boolean,
+    val processing: ProcessingIdentity = ProcessingIdentity.CURRENT)
 
 /** Mobile 100% remains the fixed comparison-preview pixels, independent of current render demand. */
 internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {

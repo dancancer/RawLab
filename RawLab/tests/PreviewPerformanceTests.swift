@@ -338,6 +338,12 @@ struct PreviewPerformanceTests {
             try check(loads == 7, "cache: unreadable resource identity is never reused")
             _ = try cache.resolve(url: first, load: load)
             try check(loads == 8, "cache: unknown identity clears previous cached metadata")
+            _ = try cache.resolve(url: first, processing: .legacy, load: load)
+            try check(loads == 9, "cache: processing version changes invalidate the camera baseline")
+            _ = try cache.resolve(url: first, processing: .legacy, load: load)
+            try check(loads == 9, "cache: unchanged legacy identity reuses the baseline")
+            _ = try cache.resolve(url: first, processing: .current, load: load)
+            try check(loads == 10, "cache: returning to current identity loads its own baseline")
         }
         #endif
     }

@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <memory>
 #include <vector>
+#include <stdexcept>
 
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
 #include "wavelet_tile.h"
@@ -18,14 +19,17 @@
 namespace {
 struct WaveletGpuFailure {};
 constexpr int levels = 4, halo = 96, tileSize = 512;
-constexpr int chromaLevels = 6, coarseHalo = 256;
+constexpr int coarseLevels = 6, coarseHalo = 256;
 using Bands = std::array<std::array<float,3>,levels>;
-struct Sample { int x, y; cv::Vec3f mean, variance; };
+struct Sample { int x, y; cv::Vec3f mean, variance, gradient{}; };
 struct NoiseModel {
     cv::Vec3f a, b;
     std::array<Bands,3> sigma;
-    std::array<std::array<std::array<float,3>,chromaLevels-levels>,2> coarseSigma{};
+    std::array<std::array<std::array<float,3>,coarseLevels-levels>,2> coarseSigma{};
+    std::array<std::array<float,3>,coarseLevels-levels> lumaCoarseSigma{};
 };
+
+NoiseModel fitNoise(const std::vector<Sample>& samples);
 
 float quantile(std::vector<float> values, double fraction = .5) {
     if (values.empty()) return 0;
@@ -79,12 +83,14 @@ bool periodic(const cv::Mat& residual) {
     return peak/std::max(sum,1e-20)>.35;
 }
 
-std::vector<Sample> flatSamples(const cv::Mat& rgb) {
+std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstimateDiagnostics& diagnostics,
+                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     std::vector<Sample> samples;
     for (int y:positions(rgb.rows)) for (int x:positions(rgb.cols)) {
+        ++diagnostics.candidateTiles;
         const cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
         // Calibration uses full 64-pixel tiles, keeping SWT's size contract explicit.
-        if (patch.rows<64 || patch.cols<64) continue;
+        if (patch.rows<64 || patch.cols<64) { ++diagnostics.rejectedSmall; continue; }
         cv::Mat smooth;
         cv::GaussianBlur(patch,smooth,{},3);
         const cv::Mat residual=patch-smooth;
@@ -103,11 +109,40 @@ std::vector<Sample> flatSamples(const cv::Mat& rgb) {
             }
             const float sigma=mad(std::move(values));
             noisy |= sigma>=1e-7f;
-            if (quantile(std::move(gradient),.9)>std::max(.00002f,.35f*sigma)) flat=false;
+            sample.gradient[c]=quantile(std::move(gradient),.9);
+            if (sample.gradient[c]>std::max(.00002f,.35f*sigma)) flat=false;
             sample.mean[c]=quantile(std::move(means));
             sample.variance[c]=sigma*sigma;
         }
-        if (flat && noisy && !periodic(residual)) samples.push_back(sample);
+        if (!flat) ++diagnostics.rejectedStructure;
+        else if (!noisy) ++diagnostics.rejectedLowNoise;
+        else if (periodic(residual)) ++diagnostics.rejectedPeriodic;
+        else samples.push_back(sample);
+    }
+    if (version != sony2fuji::ProcessingVersion::Legacy && samples.size()>=8) {
+        const auto model=fitNoise(samples);
+        // 图案不能用自身抬高的 MAD 无限放宽结构门；固定首轮模型，只筛选一次。
+        samples.erase(std::remove_if(samples.begin(),samples.end(),[&](const Sample& sample) {
+            for (int c=0;c<3;++c) {
+                // 约束下限不是测得的噪声底，不用它收紧该通道的门限。
+                if (model.b[c]<=1e-12f) continue;
+                const float expected=model.a[c]*std::max(0.f,sample.mean[c])+model.b[c];
+                const float sigmaLimit=4*std::sqrt(expected);
+                if (std::isfinite(expected) && expected>0 &&
+                    sample.gradient[c]>std::max(.00002f,.35f*sigmaLimit)) {
+                    ++diagnostics.rejectedStructure;
+                    return true;
+                }
+            }
+            return false;
+        }),samples.end());
+    }
+    if (!samples.empty()) for (int c=0;c<3;++c) {
+        diagnostics.sampleMeanMin[c]=diagnostics.sampleMeanMax[c]=samples.front().mean[c];
+        for (const auto& sample:samples) {
+            diagnostics.sampleMeanMin[c]=std::min(diagnostics.sampleMeanMin[c],sample.mean[c]);
+            diagnostics.sampleMeanMax[c]=std::max(diagnostics.sampleMeanMax[c],sample.mean[c]);
+        }
     }
     return samples;
 }
@@ -153,6 +188,36 @@ NoiseModel fitNoise(const std::vector<Sample>& samples) {
         model.a[c]=static_cast<float>(a); model.b[c]=static_cast<float>(b);
     }
     return model;
+}
+
+// 仅描述已有样本和拟合，不参与阈值、样本选择或模型求解；残差不是置信概率。
+void describeFit(const std::vector<Sample>& samples, const NoiseModel& model,
+                 sony2fuji::WaveletNoiseEstimateDiagnostics& diagnostics) {
+    diagnostics.fitAvailable = true;
+    for (int c=0;c<3;++c) {
+        double squared=0;
+        std::vector<float> variances;
+        std::vector<double> squaredErrors;
+        for (const auto& sample:samples) {
+            variances.push_back(sample.variance[c]);
+            const double residual=double(model.a[c])*std::max(0.f,sample.mean[c])+model.b[c]-sample.variance[c];
+            squared+=residual*residual;
+            squaredErrors.push_back(residual*residual);
+        }
+        diagnostics.sampleVarianceMedian[c]=quantile(variances);
+        const double scale=std::max(diagnostics.sampleVarianceMedian[c],1e-12);
+        diagnostics.fitRmse[c]=std::sqrt(squared/samples.size());
+        diagnostics.relativeFitRmse[c]=diagnostics.fitRmse[c]/scale;
+        std::sort(squaredErrors.begin(),squaredErrors.end());
+        const size_t count=squaredErrors.size();
+        diagnostics.relativeFitMedianAbsResidual[c]=
+            .5*(std::sqrt(squaredErrors[(count-1)/2])+std::sqrt(squaredErrors[count/2]))/scale;
+        double dominant=0;
+        for (size_t i=count-(count+9)/10;i<count;++i) dominant+=squaredErrors[i];
+        diagnostics.fitTopDecileErrorFraction[c]=squared>0 ? dominant/squared : 0;
+        diagnostics.constantVarianceFallback[c]=std::max(0.f,diagnostics.sampleMeanMax[c])-
+            std::max(0.f,diagnostics.sampleMeanMin[c])<.01f;
+    }
 }
 
 cv::Mat normalize(const cv::Mat& rgb,const NoiseModel& model) {
@@ -234,7 +299,7 @@ void calibrateBands(NoiseModel& model,const cv::Mat& transformed,const std::vect
 }
 
 void calibrateCoarseBands(NoiseModel& model,const cv::Mat& transformed,const std::vector<Sample>& samples) {
-    constexpr int extraLevels=chromaLevels-levels;
+    constexpr int extraLevels=coarseLevels-levels;
     using CoarseCoefficients=std::array<std::array<std::array<std::vector<float>,3>,extraLevels>,2>;
     CoarseCoefficients measurements;
     std::array<std::array<std::vector<float>,3>,extraLevels> sharedNoise;
@@ -255,7 +320,7 @@ void calibrateCoarseBands(NoiseModel& model,const cv::Mat& transformed,const std
             for (int c=1;c<3;++c) {
                 cv::Mat plane;
                 cv::extractChannel(patch,plane,c);
-                StationaryWavelet transform(plane,chromaLevels);
+                StationaryWavelet transform(plane,coarseLevels);
                 for (int scale=0;scale<extraLevels;++scale) for (int direction=0;direction<3;++direction) {
                     const auto band=transform.band(scale,direction);
                     std::vector<float> values;
@@ -294,21 +359,70 @@ void calibrateCoarseBands(NoiseModel& model,const cv::Mat& transformed,const std
     }
 }
 
+void calibrateLumaCoarseBands(NoiseModel& model,const cv::Mat& transformed,const std::vector<Sample>& samples) {
+    constexpr int extraLevels=coarseLevels-levels;
+    std::array<std::array<std::vector<float>,3>,extraLevels> measurements;
+    const int count=std::min(16,static_cast<int>(samples.size()));
+    for (auto& scale:measurements) for (auto& direction:scale) direction.resize(count);
+    const int width=std::min(128,transformed.cols/64*64),height=std::min(128,transformed.rows/64*64);
+    cv::Mat padded;
+    cv::copyMakeBorder(transformed,padded,coarseHalo,coarseHalo,coarseHalo,coarseHalo,cv::BORDER_REFLECT_101);
+    cv::parallel_for_(cv::Range(0,count),[&](const cv::Range& range) {
+        for (int i=range.start;i<range.end;++i) {
+            const auto& sample=samples[static_cast<size_t>(double(i)*(samples.size()-1)/(count-1))];
+            const int x=std::clamp(sample.x+32-width/2,0,transformed.cols-width);
+            const int y=std::clamp(sample.y+32-height/2,0,transformed.rows-height);
+            cv::Mat plane;
+            cv::extractChannel(padded(cv::Rect(x,y,width+2*coarseHalo,height+2*coarseHalo)),plane,0);
+            StationaryWavelet transform(plane,coarseLevels);
+            for (int scale=0;scale<extraLevels;++scale) for (int direction=0;direction<3;++direction) {
+                const auto band=transform.band(scale,direction);
+                std::vector<float> values;
+                values.reserve(width*height);
+                for (int py=coarseHalo;py<coarseHalo+height;++py) for (int px=coarseHalo;px<coarseHalo+width;++px)
+                    values.push_back(band.at<float>(py,px));
+                measurements[scale][direction][i]=mad(std::move(values));
+            }
+        }
+    },4);
+    for (int scale=0;scale<extraLevels;++scale) for (int direction=0;direction<3;++direction) {
+        const float anchor=model.sigma[0][0][direction];
+        const float decay=std::clamp(anchor/model.sigma[0][1][direction],.5f,1.f);
+        // 归一化白噪声每层约减半；沿细层实测衰减外推上界，避免真实缓变明暗抬高粗层 MAD。
+        const float limit=anchor*std::pow(decay,static_cast<float>(extraLevels-scale));
+        model.lumaCoarseSigma[scale][direction]=std::max(1e-6f,
+            std::min(limit,quantile(std::move(measurements[scale][direction]))));
+    }
+}
+
+float bandSigma(const NoiseModel& model,int channel,int level,int direction) {
+    if (level<=levels) return model.sigma[channel][levels-level][direction];
+    return channel==0 ? model.lumaCoarseSigma[coarseLevels-level][direction] :
+        model.coarseSigma[channel-1][coarseLevels-level][direction];
+}
+
 cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,int channel,
                     sony2fuji::GpuMode gpuMode,std::atomic<bool>& gpuUsed) {
     const float strength=channel==0 ? options.luma*.02f : options.chroma*.025f;
     if (strength==0) return plane.clone();
-    const int depth=channel!=0 && options.coarse>0 ? chromaLevels : levels;
+    const bool legacy=options.processingVersion==sony2fuji::ProcessingVersion::Legacy;
+    const int depth=(channel==0 ? !legacy : options.coarse>0) ? coarseLevels : levels;
+    auto thresholdScale=[&](int level) {
+        if (legacy) return strength*(level>=levels ? (channel==0 ? .5f : options.coarse*.01f) : 1.f);
+        // 只加强中间尺度，避免靠压低最细颗粒或缓变明暗来掩盖结块。
+        if (channel==0) return strength*(level==3 || level==4 ? 2.f : 1.f);
+        return strength*(level>=levels ? options.coarse*.01f : 1.f);
+    };
     if (gpuMode != sony2fuji::GpuMode::Off) {
         sony2fuji::WaveletFilterSettings settings;
         settings.depth = depth;
+        settings.luminance = channel == 0;
+        settings.processingVersion = options.processingVersion;
         for (int scale = 0; scale < depth; ++scale) {
             const int sourceLevel = depth - scale;
-            settings.thresholdScale[scale] = strength * (sourceLevel >= levels ?
-                (channel == 0 ? .5f : options.coarse * .01f) : 1);
+            settings.thresholdScale[scale] = thresholdScale(sourceLevel);
             for (int direction = 0; direction < 3; ++direction)
-                settings.sigma[scale * 3 + direction] = sourceLevel > levels ?
-                    model.coarseSigma[channel - 1][scale][direction] : model.sigma[channel][levels - sourceLevel][direction];
+                settings.sigma[scale * 3 + direction] = bandSigma(model, channel, sourceLevel, direction);
         }
         cv::Mat result(plane.size(), CV_32F);
         if (sony2fuji::gpuWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
@@ -320,21 +434,23 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
     StationaryWavelet transform(plane,depth);
     for (int scale=0;scale<depth;++scale) {
         const int sourceLevel=depth-scale;
-        // 亮度粗层保持保守；第三个参数只改变粗尺度色度，不连带改变亮度参数。
-        const float multiplier=sourceLevel>=levels ? (channel==0 ? .5f : options.coarse*.01f) : 1;
+        const float scaleStrength=thresholdScale(sourceLevel);
+        const bool firm=sony2fuji::waveletUsesFirmThreshold(sourceLevel,channel==0,options.processingVersion);
         for (int direction=0;direction<3;++direction) {
             cv::Mat band=transform.band(scale,direction),power;
-            const int window=sourceLevel>levels ? (1<<(sourceLevel-1))+1 : 7;
+            const int window=sony2fuji::waveletEnergyWindow(sourceLevel,channel==0,options.processingVersion);
             cv::boxFilter(band.mul(band),power,-1,{window,window});
-            const float sigma=sourceLevel>levels ? model.coarseSigma[channel-1][scale][direction] :
-                model.sigma[channel][levels-sourceLevel][direction];
+            const float sigma=bandSigma(model,channel,sourceLevel,direction);
             const float variance=sigma*sigma;
             for (int y=0;y<band.rows;++y) {
                 auto* values=band.ptr<float>(y);
                 const auto* energy=power.ptr<float>(y);
                 for (int x=0;x<band.cols;++x) {
-                    const float threshold=strength*multiplier*variance/std::sqrt(std::max(energy[x]-variance,.05f*variance));
-                    values[x]=std::copysign(std::max(std::abs(values[x])-threshold,0.f),values[x]);
+                    const float threshold=scaleStrength*variance/std::sqrt(std::max(energy[x]-variance,.05f*variance));
+                    const float magnitude=std::abs(values[x]);
+                    const float soft=std::max(magnitude-threshold,0.f);
+                    // 中尺度色度采用 T 到 2T 的连续过渡，强颜色系数不再持续被软阈值削弱。
+                    values[x]=std::copysign(firm ? std::min(magnitude,2*soft) : soft,values[x]);
                 }
             }
             transform.setBand(scale,direction,band);
@@ -346,9 +462,10 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
 cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,
                 sony2fuji::GpuMode gpuMode,std::atomic<bool>& gpuUsed) {
     const int height=transformed.rows,width=transformed.cols;
-    const bool coarse=options.chroma>0 && options.coarse>0;
+    const bool coarseChroma=options.chroma>0 && options.coarse>0;
+    const bool coarseLuma=options.processingVersion!=sony2fuji::ProcessingVersion::Legacy && options.luma>0;
+    const bool coarse=coarseLuma || coarseChroma;
     const int centerSize=coarse ? 1024 : tileSize;
-    const int alignment=coarse ? 1<<chromaLevels : 1<<levels;
     cv::Mat output(transformed.size(),CV_32FC3);
     const int columns=(width+centerSize-1)/centerSize, rows=(height+centerSize-1)/centerSize;
     int stripes=coarse ? 4 : 8;
@@ -361,7 +478,8 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
             const int x=index%columns*centerSize,y=index/columns*centerSize;
             const int w=std::min(centerSize,width-x),h=std::min(centerSize,height-y);
             for (int c=0;c<3;++c) {
-                const int radius=c!=0 && coarse ? coarseHalo : halo, divisor=c!=0 && coarse ? alignment : 16;
+                const bool extended=c==0 ? coarseLuma : coarseChroma;
+                const int radius=extended ? coarseHalo : halo, divisor=extended ? 1<<coarseLevels : 1<<levels;
                 const auto plane=sony2fuji::waveletTilePlane(transformed,{x,y,w,h},radius,divisor,c);
                 const auto filtered=filterPlane(plane,model,options,c,gpuMode,gpuUsed);
                 for (int py=0;py<h;++py) for (int px=0;px<w;++px)
@@ -372,7 +490,8 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
     return output;
 }
 
-void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model) {
+void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
+             sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     cv::Mat normalized;
     cv::transform(filtered,normalized,opponent().t());
     filtered.release();
@@ -383,22 +502,41 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model) {
     cv::parallel_for_(cv::Range(0,rgb.rows),[&](const cv::Range& range) {
         for (int y=range.start;y<range.end;++y) for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
             const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
-            const float value=normalized.at<cv::Vec3f>(y,x)[c], positive=std::max(value,0.f);
-            rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
-                (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
+            const float value=normalized.at<cv::Vec3f>(y,x)[c];
+            if (version==sony2fuji::ProcessingVersion::Legacy) {
+                const float positive=std::max(value,0.f);
+                rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
+                    (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
+                continue;
+            }
+            const float variance=std::max(difference.at<cv::Vec3f>(y,x)[c],0.f), radius=std::sqrt(variance);
+            const float linear=std::sqrt(b)*value;
+            auto& restored=rgb.at<cv::Vec3f>(y,x)[c];
+            // 对称扰动的逆变换均值在零点附近连续，避免舍入误差触发整项方差补偿。
+            if (value>=radius) restored=linear+.25f*a*value*value+.25f*a*variance;
+            else if (value<=-radius) restored=linear;
+            else {
+                const float positive=value+radius;
+                restored=linear+.125f*a*positive*positive;
+            }
         }
     });
 }
+#include "eaw_denoise_impl.h"
 } // namespace
 #endif
 
 namespace sony2fuji {
 struct WaveletDenoiseAnalysisCache::Impl {
     std::string key;
+    ProcessingVersion processingVersion = ProcessingVersion::C5V2;
     int width = 0, height = 0;
-    bool ready = false, coarseReady = false;
+    bool ready = false, coarseReady = false, lumaCoarseReady = false;
+    WaveletNoiseEstimateDiagnostics estimate;
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
     NoiseModel model{};
+    eaw::Analysis eawAnalysis{};
+    bool eawReady = false;
     std::vector<Sample> samples;
 #endif
 };
@@ -409,6 +547,24 @@ WaveletDenoiseAnalysisCache::WaveletDenoiseAnalysisCache(WaveletDenoiseAnalysisC
 WaveletDenoiseAnalysisCache& WaveletDenoiseAnalysisCache::operator=(WaveletDenoiseAnalysisCache&&) noexcept = default;
 void WaveletDenoiseAnalysisCache::clear() { state.reset(); }
 
+const char* waveletDenoiseOutcomeName(WaveletDenoiseOutcome outcome) {
+    switch (outcome) {
+    case WaveletDenoiseOutcome::NotRun: return "not_run";
+    case WaveletDenoiseOutcome::Disabled: return "disabled";
+    case WaveletDenoiseOutcome::ZeroStrength: return "zero_strength";
+    case WaveletDenoiseOutcome::InvalidOptions: return "invalid_options";
+    case WaveletDenoiseOutcome::InvalidImage: return "invalid_image";
+    case WaveletDenoiseOutcome::UnsupportedBuild: return "unsupported_build";
+    case WaveletDenoiseOutcome::SmallImage: return "small_image";
+    case WaveletDenoiseOutcome::LowNoise: return "low_noise";
+    case WaveletDenoiseOutcome::InsufficientSamples: return "insufficient_samples";
+    case WaveletDenoiseOutcome::Applied: return "applied";
+    case WaveletDenoiseOutcome::GpuFailure: return "gpu_failure";
+    case WaveletDenoiseOutcome::ProcessingFailure: return "processing_failure";
+    }
+    return "unknown";
+}
+
 bool waveletDenoiseAvailable() {
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
     return true;
@@ -417,6 +573,7 @@ bool waveletDenoiseAvailable() {
 #endif
 }
 bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
+    if (!validProcessingVersion(options.processingVersion)) return false;
     for (float value : {options.luma, options.chroma, options.coarse})
         if (!std::isfinite(value) || value < 0 || value > 100) return false;
     return true;
@@ -425,85 +582,147 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey,
     const ImageData* immutableSource, ColorSpace sourceSpace) {
     if (diagnostics) *diagnostics = {};
-    if (!validWaveletDenoiseOptions(options)) return ErrorCode::InvalidFormat;
-    if (!options.active()) return ErrorCode::Success;
-#if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
-    const bool reloadable = immutableSource && immutableSource != &image;
-    if (reloadable && (immutableSource->width <= 0 || immutableSource->height <= 0 ||
-        immutableSource->pixels.size() != static_cast<size_t>(immutableSource->width) * immutableSource->height))
-        return ErrorCode::InvalidFormat;
-    auto reload = [&]() {
-        image = *immutableSource;
-        return ColorConverter().convertImage(image, sourceSpace, ColorSpace::sRGB);
+    auto finish = [&](WaveletDenoiseOutcome outcome, ErrorCode code) {
+        if (diagnostics) diagnostics->outcome=outcome;
+        return code;
     };
-    // Auto 在 GPU 失败后重试时，工作副本可能已释放；原始输入仍由 session 持有。
-    if (reloadable && image.pixels.empty()) {
-        const auto result = reload();
-        if (result != ErrorCode::Success) return result;
-    }
-    if (image.width<=0 || image.height<=0 || image.pixels.size()!=static_cast<size_t>(image.width)*image.height)
-        return ErrorCode::InvalidFormat;
-    if (reloadable && (immutableSource->width != image.width || immutableSource->height != image.height))
-        return ErrorCode::InvalidFormat;
-    static_assert(sizeof(RGB)==sizeof(float)*3);
-    cv::Mat rgb(image.height,image.width,CV_32FC3,image.pixels.data());
-    if (!cv::checkRange(rgb)) return ErrorCode::InvalidFormat;
-    WaveletDenoiseAnalysisCache::Impl local;
-    auto* state = &local;
-    bool reused = false;
-    // sourceKey 由调用方标识不可变输入；只保留小型分析模型，不缓存整图系数。
-    if (analysis && !sourceKey.empty()) {
-        reused = analysis->state && analysis->state->ready && analysis->state->key == sourceKey &&
-            analysis->state->width == image.width && analysis->state->height == image.height;
+    if (!validWaveletDenoiseOptions(options)) return finish(WaveletDenoiseOutcome::InvalidOptions, ErrorCode::InvalidFormat);
+    if (!options.active()) return finish(options.enabled ? WaveletDenoiseOutcome::ZeroStrength :
+        WaveletDenoiseOutcome::Disabled, ErrorCode::Success);
+#if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    try {
+        const bool reloadable = immutableSource && immutableSource != &image;
+        if (reloadable && (immutableSource->width <= 0 || immutableSource->height <= 0 ||
+            immutableSource->pixels.size() != static_cast<size_t>(immutableSource->width) * immutableSource->height))
+            return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        auto reload = [&]() {
+            image = *immutableSource;
+            return ColorConverter().convertImage(image, sourceSpace, ColorSpace::sRGB);
+        };
+        // Auto 在 GPU 失败后重试时，工作副本可能已释放；原始输入仍由 session 持有。
+        if (reloadable && image.pixels.empty()) {
+            const auto result = reload();
+            if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
+        }
+        if (image.width<=0 || image.height<=0 || image.pixels.size()!=static_cast<size_t>(image.width)*image.height)
+            return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        if (reloadable && (immutableSource->width != image.width || immutableSource->height != image.height))
+            return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        static_assert(sizeof(RGB)==sizeof(float)*3);
+        cv::Mat rgb(image.height,image.width,CV_32FC3,image.pixels.data());
+        if (!cv::checkRange(rgb)) return finish(WaveletDenoiseOutcome::InvalidImage, ErrorCode::InvalidFormat);
+        WaveletDenoiseAnalysisCache::Impl local;
+        auto* state = &local;
+        bool reused = false;
+        // sourceKey 由调用方标识不可变输入；只保留小型分析模型，不缓存整图系数。
+        if (analysis && !sourceKey.empty()) {
+            reused = analysis->state && analysis->state->ready && analysis->state->key == sourceKey &&
+                analysis->state->processingVersion == options.processingVersion &&
+                analysis->state->width == image.width && analysis->state->height == image.height;
+            if (!reused) {
+                analysis->state = std::make_unique<WaveletDenoiseAnalysisCache::Impl>();
+                analysis->state->key = sourceKey;
+                analysis->state->processingVersion = options.processingVersion;
+                analysis->state->width = image.width; analysis->state->height = image.height;
+            }
+            state = analysis->state.get();
+        }
+        if (!reused) state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+        const auto& samples = state->samples;
+        if (diagnostics) {
+            diagnostics->flatTiles=static_cast<int>(samples.size());
+            diagnostics->analysisReused=reused;
+            diagnostics->estimate=state->estimate;
+        }
+        if (samples.size()<8) {
+            state->ready=true;
+            const auto& estimate=state->estimate;
+            const auto outcome=estimate.rejectedSmall==estimate.candidateTiles ? WaveletDenoiseOutcome::SmallImage :
+                estimate.rejectedLowNoise==estimate.candidateTiles ? WaveletDenoiseOutcome::LowNoise :
+                WaveletDenoiseOutcome::InsufficientSamples;
+            return finish(outcome, ErrorCode::Success);
+        }
         if (!reused) {
-            analysis->state = std::make_unique<WaveletDenoiseAnalysisCache::Impl>();
-            analysis->state->key = sourceKey;
-            analysis->state->width = image.width; analysis->state->height = image.height;
+            state->model=fitNoise(samples);
+            describeFit(samples,state->model,state->estimate);
         }
-        state = analysis->state.get();
-    }
-    if (!reused) state->samples=flatSamples(rgb);
-    const auto& samples = state->samples;
-    if (diagnostics) {
-        diagnostics->flatTiles=static_cast<int>(samples.size());
-        diagnostics->analysisReused=reused;
-    }
-    if (samples.size()<8) { state->ready=true; return ErrorCode::Success; }
-    if (!reused) state->model=fitNoise(samples);
-    auto& model = state->model;
-    cv::Mat transformed;
-    {
-        const cv::Mat normalized=normalize(rgb,model);
-        cv::transform(normalized,transformed,opponent());
-    }
-    // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
-    if (reloadable) { rgb.release(); image = {}; }
-    if (!reused) calibrateBands(model,transformed,samples);
-    state->ready=true;
-    if (options.chroma>0 && options.coarse>0) {
-        if (diagnostics) diagnostics->coarseAnalysisReused=state->coarseReady;
-        if (!state->coarseReady) {
-            calibrateCoarseBands(model,transformed,samples);
-            state->coarseReady=true;
+        auto& model = state->model;
+        if (diagnostics) {
+            diagnostics->estimate=state->estimate;
+            for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
         }
+        if (options.processingVersion == ProcessingVersion::C5V2) {
+            // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
+            if (gpuMode == GpuMode::Force)
+                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            const float strengthScale=eaw::noiseScale(model);
+            if (strengthScale==0) {
+                state->ready=true;
+                return finish(WaveletDenoiseOutcome::LowNoise, ErrorCode::Success);
+            }
+            if (!state->eawReady) {
+                state->eawAnalysis=eaw::analyze(rgb,model,samples);
+                state->eawReady=true;
+            }
+            if (diagnostics) diagnostics->coarseAnalysisReused=reused;
+            state->ready=true;
+            const auto filtered=eaw::filter(rgb,model,state->eawAnalysis,options,strengthScale);
+            // 输出完整生成后才替换输入，失败不留下部分接缝或丢失工作副本。
+            filtered.copyTo(rgb);
+            if (diagnostics) diagnostics->applied=true;
+            return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
+        }
+        cv::Mat transformed;
+        {
+            const cv::Mat normalized=normalize(rgb,model);
+            cv::transform(normalized,transformed,opponent());
+        }
+        // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
+        if (reloadable) { rgb.release(); image = {}; }
+        if (!reused) calibrateBands(model,transformed,samples);
+        state->ready=true;
+        const bool needLumaCoarse=options.processingVersion!=ProcessingVersion::Legacy && options.luma>0;
+        const bool needChromaCoarse=options.chroma>0 && options.coarse>0;
+        if (diagnostics && (needLumaCoarse || needChromaCoarse))
+            diagnostics->coarseAnalysisReused=(!needLumaCoarse || state->lumaCoarseReady) &&
+                (!needChromaCoarse || state->coarseReady);
+        if (needLumaCoarse && !state->lumaCoarseReady) {
+            calibrateLumaCoarseBands(model,transformed,samples);
+            state->lumaCoarseReady=true;
+        }
+        if (needChromaCoarse) {
+            if (!state->coarseReady) {
+                calibrateCoarseBands(model,transformed,samples);
+                state->coarseReady=true;
+            }
+        }
+        std::atomic<bool> gpuUsed{false};
+        cv::Mat filtered;
+        try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
+        catch (const WaveletGpuFailure&) { return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError); }
+        transformed.release();
+        if (reloadable) {
+            const auto result = reload();
+            if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
+            rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
+        }
+        restore(rgb,std::move(filtered),model,options.processingVersion);
+        if (diagnostics) {
+            diagnostics->applied=true;
+            diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
+        }
+        return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
+    } catch (const std::bad_alloc&) {
+        if (options.processingVersion==ProcessingVersion::Legacy) throw;
+        return finish(WaveletDenoiseOutcome::ProcessingFailure, ErrorCode::OutOfMemory);
+    } catch (const cv::Exception& error) {
+        if (options.processingVersion==ProcessingVersion::Legacy) throw;
+        return finish(WaveletDenoiseOutcome::ProcessingFailure,
+            error.code==cv::Error::StsNoMem ? ErrorCode::OutOfMemory : ErrorCode::ProcessingError);
+    } catch (const std::exception&) {
+        if (options.processingVersion==ProcessingVersion::Legacy) throw;
+        return finish(WaveletDenoiseOutcome::ProcessingFailure, ErrorCode::ProcessingError);
     }
-    std::atomic<bool> gpuUsed{false};
-    cv::Mat filtered;
-    try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
-    catch (const WaveletGpuFailure&) { return ErrorCode::ProcessingError; }
-    transformed.release();
-    if (reloadable) {
-        const auto result = reload();
-        if (result != ErrorCode::Success) return result;
-        rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
-    }
-    restore(rgb,std::move(filtered),model);
-    if (diagnostics) {
-        diagnostics->applied=true;
-        diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
-        for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
-    }
-    return ErrorCode::Success;
 #else
     (void)image;
     (void)gpuMode;
@@ -511,7 +730,7 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     (void)sourceKey;
     (void)immutableSource;
     (void)sourceSpace;
-    return ErrorCode::InvalidFormat;
+    return finish(WaveletDenoiseOutcome::UnsupportedBuild, ErrorCode::InvalidFormat);
 #endif
 }
 }

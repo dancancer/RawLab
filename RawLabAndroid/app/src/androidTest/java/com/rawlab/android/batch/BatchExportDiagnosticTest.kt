@@ -39,6 +39,9 @@ class BatchExportDiagnosticTest {
             else -> error("Unknown GPU mode: $modeName")
         }
         val denoise = arguments.getString("batchDiagnosticDenoise", "true")!!.toBooleanStrict()
+        require(mode != NativeProcessor.FORCE || !denoise) {
+            "C5 denoise is CPU-only; use auto or cpu for this diagnostic"
+        }
         val runId = UUID.randomUUID().toString()
         val artifacts = File(context.getExternalFilesDir(null), "batch-diagnostic/$modeName-$denoise-$runId").apply { mkdirs() }
         val root = File(context.cacheDir, "batch-diagnostic-${System.nanoTime()}").apply { mkdirs() }

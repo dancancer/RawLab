@@ -99,7 +99,7 @@ object EditorAdjustmentRules {
         scope == EditorResetScope.Tool(8) || scope == EditorResetScope.Tool(9)
 
     private fun defaults(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): EditSettings {
-        val defaults = context.defaults.effectiveFor(context.input)
+        val defaults = context.defaults.effectiveFor(context.input).copy(processing = snapshot.processing)
         if (context.input == PhotoInputKind.RAW && includesWhiteBalance(scope) && context.asShot != null) {
             val source = if (scope == EditorResetScope.All) snapshot.copy(recipeID = null) else snapshot
             val wb = source.resetWhiteBalance(context.asShot.temperature, context.asShot.tint)

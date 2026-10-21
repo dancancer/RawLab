@@ -53,7 +53,8 @@ class EditStore(private val directory: File) {
             records[identity] = decode(properties.getProperty(key), film).copy(
                 recipeID = properties.getProperty("record.$encoded.recipe"),
                 lens = LensSettings.decode(properties.getProperty("record.$encoded.lens")),
-                geometry = GeometrySettings.decode(properties.getProperty("record.$encoded.geometry")))
+                geometry = GeometrySettings.decode(properties.getProperty("record.$encoded.geometry")),
+                processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))
         }
     }
 
@@ -66,6 +67,7 @@ class EditStore(private val directory: File) {
             settings.recipeID?.let { properties.setProperty("record.$encoded.recipe", it) }
             properties.setProperty("record.$encoded.lens", settings.lens.encode())
             properties.setProperty("record.$encoded.geometry", settings.geometry.encode())
+            properties.setProperty("record.$encoded.processing", settings.processing.encode())
             properties.setProperty("record.$encoded.film", Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(settings.film.toByteArray(StandardCharsets.UTF_8)))
         }

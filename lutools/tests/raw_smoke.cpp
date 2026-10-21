@@ -126,6 +126,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         reference.adjust_to_raw_inset_crop(3);
+        p.user_qual = -1;
         if (reference.dcraw_process()) return 1;
         const auto& ref=reference.imgdata;
         std::cout << "Reference " << ref.sizes.iwidth << 'x' << ref.sizes.iheight

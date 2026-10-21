@@ -18,10 +18,11 @@ struct FilterParams {
     uint32_t channels = 0, radius = 0, stage = 0, count = 0;
     float sigma = 0, strength = 0, epsilon = 0;
     uint32_t direction = 0;
-    uint32_t sourceRow = 0, outputRow = 0, baseIndex = 0, reserved = 0;
+    uint32_t sourceRow = 0, outputRow = 0, baseIndex = 0, firmThreshold = 0;
     float vignette[4]{}, grain[4]{};
 };
-static_assert(sizeof(FilterParams) == 96, "Native compute parameter layout");
+static_assert(sizeof(FilterParams) == 96 && offsetof(FilterParams, firmThreshold) == 60,
+              "Native compute parameter layout");
 
 struct FilterBuffer { virtual ~FilterBuffer() = default; };
 struct FilterContext { virtual ~FilterContext() = default; };

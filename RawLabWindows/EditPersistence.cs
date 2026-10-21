@@ -1,7 +1,25 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ProcessingIdentity(
+    [property: JsonPropertyName("family"), JsonRequired] string Family,
+    [property: JsonPropertyName("version"), JsonRequired] int Version,
+    [property: JsonPropertyName("quality"), JsonRequired] string Quality)
+{
+    public static readonly ProcessingIdentity Legacy = new("rawlab", 1, "standard");
+    public static readonly ProcessingIdentity Current = new("rawlab", 2, "standard");
+
+    public static ProcessingIdentity Require(ProcessingIdentity? value)
+    {
+        if (value is not { Family: "rawlab", Version: 1 or 2, Quality: "standard" })
+            throw new InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
+        return value;
+    }
+}
 
 public sealed record AdjustmentSnapshot(
     double[] Values,
@@ -17,8 +35,10 @@ public sealed record AdjustmentSnapshot(
     LensSettings? Lens = null,
     GeometrySettings? Geometry = null)
 {
+    public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
-    public bool SameAs(AdjustmentSnapshot other) => MasterRecipeID == other.MasterRecipeID && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
+    public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing &&
+        MasterRecipeID == other.MasterRecipeID && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
         AsShotTemperature == other.AsShotTemperature && AsShotTint == other.AsShotTint && Values.SequenceEqual(other.Values) &&
         (Denoise ?? new()) == (other.Denoise ?? new()) &&
         (Effects ?? new()) == (other.Effects ?? new()) && DisplayChromaDenoise == other.DisplayChromaDenoise &&
@@ -72,14 +92,21 @@ public sealed class EditStore
     public EditStore(string directory)
     {
         path = Path.Combine(directory, "edits.json");
-        if (!File.Exists(path)) return;
+        records = ReadRecords();
+    }
+
+    private Dictionary<string, SavedEdit> ReadRecords()
+    {
+        if (!File.Exists(path)) return new(StringComparer.OrdinalIgnoreCase);
         var registry = AtomicJson.Read<Registry>(path);
         if (registry.Version != 1) throw new InvalidDataException(Loc.Text("无法读取此版本的调整记录。"));
-        records = new(registry.Records, StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in registry.Records.Values) _ = entry.Settings.Restore();
+        return new(registry.Records, StringComparer.OrdinalIgnoreCase);
     }
 
     public SavedEdit? Find(string input)
     {
+        records = ReadRecords();
         var identity = OriginalIdentity.Read(input);
         return records.TryGetValue(identity.Path, out var entry) && entry.Identity.SameFile(identity) ? entry : null;
     }
@@ -91,7 +118,8 @@ public sealed class EditStore
 
     public void Save(IEnumerable<string> inputs, AdjustmentSnapshot settings, string? look)
     {
-        var updated = new Dictionary<string, SavedEdit>(records, StringComparer.OrdinalIgnoreCase);
+        _ = settings.Restore();
+        var updated = ReadRecords();
         foreach (var input in inputs)
         {
             var identity = OriginalIdentity.Read(input);

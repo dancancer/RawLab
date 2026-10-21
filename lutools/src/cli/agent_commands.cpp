@@ -130,7 +130,7 @@ int runAgentCommands(int argc, char* argv[]) {
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 64000000}};
 #endif
-            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4}},
+            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4, 5}},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
                 {"raster_input", raster},
                 {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}},
@@ -216,6 +216,8 @@ int runAgentCommands(int argc, char* argv[]) {
             status = sony2fuji_session_create(&pointer);
             auto destroy = [](sony2fuji_session* session) { sony2fuji_session_destroy(session); };
             const std::unique_ptr<sony2fuji_session, decltype(destroy)> session(pointer, destroy);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_processing_version(session.get(), recipe.processingVersion);
             if (status == SONY2FUJI_STATUS_OK && !lensDatabase.empty())
                 status = sony2fuji_session_set_lens_database(session.get(), lensDatabase.c_str());
             if (status == SONY2FUJI_STATUS_OK)

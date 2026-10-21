@@ -48,6 +48,7 @@ class NativeCacheTests(unittest.TestCase):
                              "lutools/third_party/nikon_he/codec.h",
                              "lutools/third_party/nikon_he/entropy.cpp",
                              "lutools/third_party/libraw/sony_arw6.cpp",
+                             "lutools/cmake/libraw-vng.cmake", "lutools/third_party/libraw/vng_parallel.inc",
                              "scripts/ci/native_cache.py", "scripts/ci/requirements.txt",
                              ".github/workflows/ci.yml#" + platform):
                     self.assertIn(path, inputs)

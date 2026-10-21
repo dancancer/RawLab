@@ -162,7 +162,9 @@ enum EditorAdjustmentRules {
         let defaults = defaults(context, recipe: settings.masterRecipeID != nil)
         switch scope {
         case .all:
-            return self.defaults(context)
+            var neutral = self.defaults(context)
+            neutral.processing = settings.processing
+            return neutral
         case .allHSL: result.hsl = HSLSettings()
         case .hslChannel(let channel):
             if (0..<8).contains(channel) { result.hsl.reset(channel: channel) }

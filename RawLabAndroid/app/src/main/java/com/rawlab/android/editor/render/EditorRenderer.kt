@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import java.io.File
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 
@@ -20,6 +21,7 @@ internal class EditorRenderer(
     private var processor: NativeProcessor? = null
     private var original: Pair<File, Bitmap>? = null
     private var originalAspect = 1f
+    private var originalProcessing: ProcessingIdentity? = null
     private var transformedNeutral: Pair<ComparisonPreviewKey, Bitmap>? = null
 
     fun close() { processor?.close() }
@@ -48,18 +50,19 @@ internal class EditorRenderer(
             val edge = work.edge
             val native = engine()
             native.setGpuMode(work.gpuMode)
-            if (original?.first != work.photo.file) {
+            if (original?.first != work.photo.file || originalProcessing != work.edits.processing) {
                 original = null
                 transformedNeutral = null
-                val source = native.preview(work.photo.file, null, EditSettings(), 1600, false, work.photo.inputKind)
+                val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing), 1600, false, work.photo.inputKind)
                 originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
                 original = work.photo.file to source.bitmap()
+                originalProcessing = work.edits.processing
             }
             val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
-                val key = ComparisonPreviewKey(work.photo.file.path, work.edits.geometry, work.edits.lens, edge, work.interactive)
+                val key = ComparisonPreviewKey(work.photo.file.path, work.edits.geometry, work.edits.lens, edge, work.interactive, work.edits.processing)
                 if (transformedNeutral?.first != key) {
                     transformedNeutral = null
-                    val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens)
+                    val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing)
                     transformedNeutral = key to native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind).bitmap()
                 }
                 transformedNeutral!!.second

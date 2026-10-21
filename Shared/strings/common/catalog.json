@@ -255,6 +255,14 @@
     "ja": "前回の一括書き出しはまだ完了していません",
     "zh-Hans": "上次批量任务尚未完成"
   },
+  "不支持此处理版本，原有记录未被覆盖。": {
+    "de": "Diese Verarbeitungsversion wird nicht unterstützt. Die gespeicherten Bearbeitungen wurden nicht überschrieben.",
+    "en": "This processing version is not supported. Saved edits have not been overwritten.",
+    "es": "Esta versión de procesamiento no es compatible. Las ediciones guardadas no se han sobrescrito.",
+    "fr": "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.",
+    "ja": "この処理バージョンには対応していません。保存済みの編集内容は上書きされていません。",
+    "zh-Hans": "不支持此处理版本，原有记录未被覆盖。"
+  },
   "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": {
     "de": "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.",
     "en": "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.",
@@ -711,6 +719,22 @@
     "ja": "垂直パース",
     "zh-Hans": "垂直透视"
   },
+  "处理 v1（旧版）": {
+    "de": "Verarbeitung v1 (alt)",
+    "en": "Processing v1 (Legacy)",
+    "es": "Procesamiento v1 (anterior)",
+    "fr": "Traitement v1 (ancien)",
+    "ja": "処理 v1（旧版）",
+    "zh-Hans": "处理 v1（旧版）"
+  },
+  "处理 v2": {
+    "de": "Verarbeitung v2",
+    "en": "Processing v2",
+    "es": "Procesamiento v2",
+    "fr": "Traitement v2",
+    "ja": "処理 v2",
+    "zh-Hans": "处理 v2"
+  },
   "处理失败：{0}": {
     "de": "Verarbeitung fehlgeschlagen: {0}",
     "en": "Processing failed: {0}",
@@ -718,6 +742,14 @@
     "fr": "Échec du traitement : {0}",
     "ja": "処理に失敗しました: {0}",
     "zh-Hans": "处理失败：{0}"
+  },
+  "处理版本": {
+    "de": "Verarbeitungsversion",
+    "en": "Processing version",
+    "es": "Versión de procesamiento",
+    "fr": "Version de traitement",
+    "ja": "処理バージョン",
+    "zh-Hans": "处理版本"
   },
   "外观名称不能为空或包含控制字符。": {
     "de": "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.",

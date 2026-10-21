@@ -22,7 +22,7 @@ struct ViewportPreviewTests {
             return
         }
         let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
-        let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+        let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         var detail = Adjustments()
         detail.exposure = 0.35; detail.sharpening = 100
         detail.setEffect(.vignetteAmount, to: -35)
@@ -40,7 +40,7 @@ struct ViewportPreviewTests {
             check(proxy.baselineEV == exact.baselineEV && proxy.asShotWhiteBalance == exact.asShotWhiteBalance,
                   "\(name): exposure and camera WB metadata survive reduction")
             let accelerated = try metal.render(raw, settings: settings, lut: lut, edge: 1200, viewportPreview: true)!
-            check(metal.lastBackend == SONY2FUJI_BACKEND_METAL, "\(name): Force completes on Metal")
+            check(metal.lastBackend == SONY2FUJI_BACKEND_METAL, "\(name): Auto completes display processing on Metal")
             let a = pixels(proxy.image), b = pixels(accelerated.image)
             let difference = zip(a, b).map { abs(Int($0) - Int($1)) }
             check(difference.max()! <= 4 && Double(difference.reduce(0, +)) / Double(difference.count) < 0.5,
@@ -95,7 +95,7 @@ struct ViewportPreviewTests {
         settings.exposure = -0.25
         _ = try engine.render(raw, settings: settings, lut: lut, edge: 832,
                               interactive: true, viewportPreview: true)
-        let reference = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+        let reference = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         let native = try reference.render(raw, settings: settings, lut: lut, edge: nil)!
         check(native.isFullResolution, "denoise reference uses native processing")
         let denoised = try reference.render(raw, settings: settings, lut: lut, edge: 512)!
@@ -124,7 +124,7 @@ struct ViewportPreviewTests {
     static func interactiveWhiteBalanceChecks(raw: URL, lut: URL) throws {
         for exposureMode in [ExposureMode.scene, .preview] {
             let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
-            let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+            let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
             let reference = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
             var settings = Adjustments()
             settings.exposureMode = exposureMode
@@ -146,10 +146,11 @@ struct ViewportPreviewTests {
         let model = EditorModel(lookDirectory: output.appendingPathComponent("looks"),
                                 editDirectory: output.appendingPathComponent("edits"),
                                 batchDirectory: output.appendingPathComponent("batch"))
-        model.films = [Film(name: "PROVIA", url: lut)]; model.selectedFilmID = lut.path
+        model.films = [Film(name: "PROVIA", url: lut)]
         model.updatePreviewLongEdge(832)
         model.open(raw)
         wait("initial viewport-sized model preview") { !model.busy && model.result?.image.width == 832 }
+        model.selectedFilmID = lut.path
         let original = model.neutral!.image
         model.settings.sharpening = 100
         model.settings.setEffect(.grainAmount, to: 45)

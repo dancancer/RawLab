@@ -1,0 +1,667 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RawLab edit recipe v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "processing",
+    "input",
+    "edits",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 5
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "raw",
+            "raster"
+          ],
+          "default": "raw"
+        }
+      }
+    },
+    "edits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exposure"
+      ],
+      "properties": {
+        "exposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "scene",
+                "preview",
+                "sensor"
+              ]
+            },
+            "ev": {
+              "type": "number",
+              "minimum": -20,
+              "maximum": 20,
+              "default": 0
+            },
+            "brightness": {
+              "type": "number",
+              "minimum": 1.1754943508222875e-38,
+              "maximum": 3.4028234663852886e+38,
+              "default": 1
+            }
+          }
+        },
+        "white_balance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "camera",
+                "auto",
+                "temperature",
+                "none"
+              ]
+            },
+            "temperature_kelvin": {
+              "type": "number",
+              "minimum": 2000,
+              "maximum": 50000
+            },
+            "tint": {
+              "type": "number",
+              "minimum": -150,
+              "maximum": 150,
+              "default": 0
+            }
+          },
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "temperature"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "temperature_kelvin"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "temperature_kelvin"
+                  ]
+                },
+                {
+                  "required": [
+                    "tint"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "look": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "default": null
+            },
+            "strength": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            }
+          }
+        },
+        "geometry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "crop": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Normalized rectangle after turns, flips, perspective and straightening; runtime also checks x+width and y+height <=1 with float boundary tolerance.",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                },
+                "width": {
+                  "type": "number",
+                  "minimum": 1.1754943508222875e-38,
+                  "maximum": 1,
+                  "default": 1
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 1.1754943508222875e-38,
+                  "maximum": 1,
+                  "default": 1
+                }
+              }
+            },
+            "quarter_turns": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3,
+              "default": 0
+            },
+            "flip_horizontal": {
+              "type": "boolean",
+              "default": false
+            },
+            "flip_vertical": {
+              "type": "boolean",
+              "default": false
+            },
+            "straighten_degrees": {
+              "type": "number",
+              "minimum": -45,
+              "maximum": 45,
+              "default": 0
+            },
+            "perspective": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "horizontal": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "vertical": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        "tone": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contrast": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            },
+            "saturation": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            },
+            "highlights": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "shadows": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "s_curve": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            }
+          }
+        },
+        "detail": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sharpening": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0
+            }
+          }
+        },
+        "hsl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hue": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100
+              },
+              "default": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "saturation": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100
+              },
+              "default": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "lightness": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100
+              },
+              "default": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        "effects": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vignette_amount": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100,
+              "default": 0
+            },
+            "vignette_midpoint": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50
+            },
+            "vignette_roundness": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100,
+              "default": 0
+            },
+            "vignette_feather": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50
+            },
+            "vignette_highlights": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 0
+            },
+            "grain_amount": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 0
+            },
+            "grain_size": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 25
+            },
+            "grain_roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        },
+        "denoise": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "raw_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0
+            },
+            "chroma_mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0
+            },
+            "wavelet": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "luma": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "default": 0
+                },
+                "chroma": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "default": 46
+                },
+                "coarse": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "default": 50
+                }
+              }
+            }
+          }
+        },
+        "lens_correction": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "distortion": {
+              "type": "boolean",
+              "default": false
+            },
+            "tca": {
+              "type": "boolean",
+              "default": false
+            },
+            "auto_crop": {
+              "type": "boolean",
+              "default": true
+            },
+            "profile_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "enum": [
+            "jpeg",
+            "png",
+            "dng"
+          ]
+        },
+        "jpeg_quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 95
+        },
+        "size": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "native"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "long_edge"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "limit_long_edge"
+                },
+                "long_edge": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "version",
+        "quality"
+      ],
+      "properties": {
+        "family": {
+          "const": "rawlab"
+        },
+        "version": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "quality": {
+          "const": "standard"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "raster"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "edits": {
+            "properties": {
+              "exposure": {
+                "properties": {
+                  "mode": {
+                    "const": "sensor"
+                  }
+                }
+              },
+              "white_balance": {
+                "properties": {
+                  "mode": {
+                    "const": "none"
+                  }
+                }
+              },
+              "denoise": {
+                "properties": {
+                  "raw_level": {
+                    "const": 0
+                  }
+                }
+              },
+              "lens_correction": {
+                "properties": {
+                  "distortion": {
+                    "const": false
+                  },
+                  "tca": {
+                    "const": false
+                  },
+                  "profile_id": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "anyOf": [
+              {
+                "not": {
+                  "required": [
+                    "type"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "raw"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "edits": {
+            "properties": {
+              "white_balance": {
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "camera",
+                      "auto",
+                      "temperature"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
