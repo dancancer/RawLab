@@ -118,6 +118,54 @@ try
     mixedState.Denoise = new(false, 13, 40, 27); mixedState.DisplayChromaDenoise = 2;
     mixedState.Geometry = new(PerspectiveHorizontal: .2); mixedState.Lens = new(true, true, false, true, "fixture");
     var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
+    var resetContext=new EditorResetContext("resolved-film.cube", 10);
+    var resetToken=EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Light), resetIdentity.Path, 2, 3, mixedEdit, resetContext);
+    var exposedCandidate=resetToken.Candidate!;
+    exposedCandidate.Settings.Values[(int)Parameter.Exposure]=2;
+    Check(resetToken.Candidate!.Settings.Values[(int)Parameter.Exposure]==0,
+        "prepared candidate cannot be changed through an exposed Values array");
+    var originalValue=mixedEdit.Settings.Values[(int)Parameter.Exposure];
+    mixedEdit.Settings.Values[(int)Parameter.Exposure]=1.5;
+    Check(resetToken.Matches(resetIdentity.Path,2,3,mixedEdit with{Settings=mixedFrozen},resetContext) &&
+        !resetToken.Matches(resetIdentity.Path,2,3,mixedEdit,resetContext),"prepared source Values are isolated and same-revision edits are stale");
+    mixedEdit.Settings.Values[(int)Parameter.Exposure]=originalValue;
+    foreach(var stale in new[] {
+        (File:"different.ARW", Open:2L, Edit:3L, State:mixedEdit, Context:resetContext),
+        (File:resetIdentity.Path, Open:4L, Edit:3L, State:mixedEdit, Context:resetContext),
+        (File:resetIdentity.Path, Open:2L, Edit:4L, State:mixedEdit, Context:resetContext),
+        (File:resetIdentity.Path, Open:2L, Edit:3L, State:mixedEdit with{Identity=resetIdentity with{Modified=99}}, Context:resetContext),
+        (File:resetIdentity.Path, Open:2L, Edit:3L, State:mixedEdit with{Look="another-film"}, Context:resetContext),
+        (File:resetIdentity.Path, Open:2L, Edit:3L, State:mixedEdit with{Settings=mixedFrozen with{AsShotTint=9}}, Context:resetContext),
+        (File:resetIdentity.Path, Open:2L, Edit:3L, State:mixedEdit, Context:resetContext with{Lut="different-resolved-path"}),
+        (File:resetIdentity.Path, Open:2L, Edit:3L, State:mixedEdit, Context:resetContext with{TransformGeneration=11})
+    }) {
+        var invoked=false;
+        Check(!resetToken.TryCommit(stale.File,stale.Open,stale.Edit,stale.State,stale.Context,_=>invoked=true) && !invoked,
+            "stale prepared reset makes no commit request: "+stale);
+    }
+    var resetCommits=0;SavedEdit? acceptedReset=null;
+    Check(resetToken.TryCommit(resetIdentity.Path,2,3,mixedEdit,resetContext,value=>{++resetCommits;acceptedReset=value;}) &&
+        resetCommits==1 && acceptedReset!.Settings.Values[(int)Parameter.Exposure]==0 && acceptedReset.Look=="film.cube",
+        "accepted ordinary reset commits exactly once and preserves non-look identity");
+    Check(!resetToken.TryCommit(resetIdentity.Path,2,3,mixedEdit,resetContext,_=>++resetCommits) && resetCommits==1,
+        "a prepared token cannot be consumed twice");
+    var noChangeToken=EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Light),resetIdentity.Path,2,3,Edit(neutral,null),resetContext);
+    Check(noChangeToken.Status==EditorResetStatus.NoChange && !noChangeToken.TryCommit(resetIdentity.Path,2,3,Edit(neutral,null),resetContext,_=>++resetCommits) && resetCommits==1,
+        "unchanged reset makes no commit request");
+    var pairDraft=new TransformDraft();pairDraft.Begin(mixedState.Geometry,mixedState.Lens,TransformTool.Lens);
+    var pairContext=resetContext with{Draft=new(TransformTool.Lens,pairDraft.Geometry,pairDraft.Lens)};
+    var pairToken=EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Geometry),resetIdentity.Path,2,3,mixedEdit,pairContext);
+    Check(pairToken.TargetsDraft && pairToken.TryCommit(resetIdentity.Path,2,3,mixedEdit,pairContext,value=>pairDraft.Update(value.Settings.Geometry!,value.Settings.Lens!)) &&
+        pairDraft.Geometry.IsIdentity && pairDraft.Lens==new LensSettings() && mixedEdit.Settings.SameAs(mixedFrozen),
+        "geometry group resets the complete draft pair without changing committed settings");
+    var draftBlocked=EditorResetTransaction.Prepare(new(EditorResetKind.All),resetIdentity.Path,2,3,mixedEdit,pairContext);
+    Check(draftBlocked.Status==EditorResetStatus.Blocked && !draftBlocked.TryCommit(resetIdentity.Path,2,3,mixedEdit,pairContext,_=>++resetCommits) && resetCommits==1,
+        "all reset waits for the active draft and creates no edit");
+    var changedDraftContext=pairContext with{Draft=pairContext.Draft! with{Geometry=new GeometrySettings(CropWidth:.8)}};
+    var stalePair=EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Geometry),resetIdentity.Path,2,3,mixedEdit,pairContext);
+    Check(!stalePair.TryCommit(resetIdentity.Path,2,3,mixedEdit,changedDraftContext,_=>++resetCommits) && resetCommits==1,
+        "draft pair changes invalidate preparation even without a generation bump");
+    pairDraft.Cancel();Check(pairDraft.Geometry==mixedState.Geometry && pairDraft.Lens==mixedState.Lens,"cancel restores both original draft objects");
     foreach (var group in Enum.GetValues<EditorAdjustmentGroup>()) {
         Check(EditorAdjustmentRules.IsModified(Group(group), mixedEdit), "complete stored objects contribute to marker: " + group);
         var prepared = EditorAdjustmentRules.PrepareReset(Group(group), mixedEdit);
@@ -341,6 +389,10 @@ try
     var transform=new TransformDraft();var committed=new Adjustments{Geometry=perspective};
     var committedSnapshot=committed.Capture();
     transform.Begin(committed.Geometry,committed.Lens,TransformTool.Geometry);
+    var unchangedRejected=false;
+    try { transform.Apply(); } catch (InvalidOperationException) { unchangedRejected=true; }
+    Check(unchangedRejected && transform.Active && !transform.Dirty,
+        "unchanged draft cannot be promoted or create a save request");
     transform.Update(perspective with{CropX=.1,CropWidth=.8,StraightenDegrees=12});
     Check(transform.Dirty && committed.Capture().SameAs(committedSnapshot) && transform.PreviewGeometry.CropWidth==1,
         "geometry draft previews full transformed canvas without changing committed/batch snapshot");
