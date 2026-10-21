@@ -54,6 +54,13 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 
 第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从上述基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
 
+| 首批 PR | 交付范围 | 集成状态 |
+| --- | --- | --- |
+| [#107](https://github.com/dancancer/RawLab/pull/107) | 本总账、字段目录与首批计划 | 待集成；payload 编码与逐端 adapter 另行冻结 |
+| [#108](https://github.com/dancancer/RawLab/pull/108) | MCP v4 五工具与本地兼容验证 | 待集成；Windows 实测仍待验收 |
+| [#109](https://github.com/dancancer/RawLab/pull/109) | Mac S1 规则、完整重置候选与配方独立化 | 待集成；提交事务和 UI 在后续批次接入 |
+
+
 ## 集成门槛
 
 1. 任务先给出消费/产出接口、独占文件、回归与实际平台范围；先证明失败，再实现最小变更。
