@@ -28,19 +28,25 @@ python3 - "$ROOT" "$OUT" "$ORIGINAL_XCTESTRUN" <<'PY'
 import difflib, json, pathlib, plistlib, subprocess, sys
 root, out, original = map(pathlib.Path, sys.argv[1:])
 transforms = {
-    "ContentView.swift": ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
+    "RawLab/RawLab/UI/Editor/ContentView.swift": ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
                           "        .onAppear {\n            Task { await self.runGeometrySourceReview() }\n            viewModel.loadLUTsIfNeeded()"),
-    "ContentView+Panels.swift": ("onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }",
-                                "onPreviewSizeChange: { GeometrySourceProbe.shared.viewportEdges.append($0); viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }")
+    "RawLab/RawLab/UI/Editor/ContentView+Panels.swift": ("onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }",
+                                "onPreviewSizeChange: { GeometrySourceProbe.shared.viewportEdges.append($0); viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }"),
+    "RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift": (
+        "        lastPreviewRequest = request",
+        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.previewRequests.append(settings) }\n        lastPreviewRequest = request"),
+    "RawLab/RawLab/Core/Persistence/EditPersistence.swift": (
+        "        updated[identity.key] = state",
+        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.saveAttempts.append(state) }\n        updated[identity.key] = state")
 }
 diffs = []
 for name, (before, after) in transforms.items():
-    source = root / "RawLab/RawLab/UI/Editor" / name
+    source = root / name
     text = source.read_text()
     if text.count(before) != 1:
         raise SystemExit(f"Expected exactly one marker in {source}")
     changed = text.replace(before, after)
-    target = out / "source" / name
+    target = out / "source" / source.name
     target.write_text(changed)
     diffs.extend(difflib.unified_diff(text.splitlines(True), changed.splitlines(True), fromfile=str(source), tofile=str(target)))
 (out / "instrumentation.diff").write_text("".join(diffs))
@@ -64,7 +70,7 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK
 SOURCES=()
 while IFS= read -r file; do
     case "$file" in
-        */ContentView.swift|*/ContentView+Panels.swift) ;;
+        */ContentView.swift|*/ContentView+Panels.swift|*/RawEditorViewModel+Rendering.swift|*/EditPersistence.swift) ;;
         *) SOURCES+=("$file") ;;
     esac
 done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort)
@@ -73,7 +79,8 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name GeometrySourceH
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$OUT/source/ContentView.swift" "$OUT/source/ContentView+Panels.swift" \
-    "$OUT/source/GeometrySourceHarness.swift" "$OUT/bridge.o" \
+    "$OUT/source/GeometrySourceHarness.swift" "$OUT/source/RawEditorViewModel+Rendering.swift" \
+    "$OUT/source/EditPersistence.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/geometry-source"
 codesign --force --deep --sign - "$HARNESS" >/dev/null

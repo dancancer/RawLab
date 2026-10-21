@@ -7,10 +7,12 @@ enum RulerFocusPhase: Equatable {
 
 extension ContentView {
     var effectivePreviewSettings: RawSettings {
-        var result = settings
-        if let lensDraft { result.lensCorrection = lensDraft.lensCorrection }
-        if let geometryDraft { result.geometry = geometryDraft }
-        return result
+        editorDraftSnapshot.projecting(on: settings)
+    }
+
+    var editorDraftSnapshot: EditorDraftSnapshot {
+        EditorDraftSnapshot(geometry: geometryDraft, lens: lensDraft,
+                            tool: currentEditorTool, destination: pendingToolSelection)
     }
 
     var draftPreviewSettings: RawSettings {
@@ -43,7 +45,7 @@ extension ContentView {
     var isEditorDraftActive: Bool { geometrySelected || lensSelected }
 
     var isEditorDraftChanged: Bool {
-        geometryDraft.map { $0 != settings.geometry } ?? lensDraft.map { $0.lensSettings != settings.lensSettings } ?? false
+        editorDraftSnapshot.isChanged(from: settings)
     }
 
     var rulerFocusOpacity: Double {
@@ -70,6 +72,9 @@ extension ContentView {
 
     private func activateEditorTool(_ selection: EditorToolSelection) {
         let leavingDraft = geometrySelected || lensSelected
+        if leavingDraft { viewModel.discardDraftSaveFailure(settings: settings) }
+        pendingToolSelection = nil
+        draftExitPresented = false
         cancelRulerFocus()
         geometryDraft = nil
         lensDraft = nil
@@ -86,15 +91,19 @@ extension ContentView {
     }
 
     func applyEditorDraft() {
-        commitEditorDraft()
+        guard commitEditorDraft() else { return }
         activateEditorTool(.adjustment(.exposure))
     }
 
-    private func commitEditorDraft() {
-        settings = effectivePreviewSettings
-        if geometrySelected { geometryDraft = settings.geometry }
-        if lensSelected { lensDraft = settings }
+    private func commitEditorDraft() -> Bool {
+        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !isAdjustingSlider,
+              let prepared = viewModel.prepareDraft(settings: settings, revision: settingsRevision, draft: editorDraftSnapshot),
+              viewModel.saveDraft(prepared, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot) else { return false }
+        settings = prepared.candidate.settings
+        geometryDraft = nil
+        lensDraft = nil
         cancelRulerFocus()
+        return true
     }
 
     func cancelEditorDraft() {
@@ -103,16 +112,50 @@ extension ContentView {
     }
 
     private func discardEditorDraft() {
-        if geometrySelected { geometryDraft = settings.geometry }
-        if lensSelected { lensDraft = settings }
+        geometryDraft = nil
+        lensDraft = nil
+        viewModel.discardDraftSaveFailure(settings: settings)
         cancelRulerFocus()
-        viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
     }
 
     func finishDraftNavigation(apply: Bool) {
-        if apply { commitEditorDraft() } else { discardEditorDraft() }
-        if let selection = pendingToolSelection { activateEditorTool(selection) }
+        if apply {
+            guard commitEditorDraft() else { return }
+        } else { discardEditorDraft() }
+        let selection = pendingToolSelection
         pendingToolSelection = nil
+        if let selection { activateEditorTool(selection) }
+    }
+
+    func retryEditorSave() {
+        if isEditorDraftActive && viewModel.hasFailedDraftSave {
+            if pendingToolSelection != nil { finishDraftNavigation(apply: true) }
+            else { applyEditorDraft() }
+        } else { viewModel.retrySave(settings: settings) }
+    }
+
+    func prepareEditorReset(_ scope: EditorAdjustmentScope) -> EditorResetPreparation {
+        viewModel.prepareReset(scope, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot)
+    }
+
+    @discardableResult
+    func commitEditorReset(_ prepared: PreparedEditorReset) -> Bool {
+        guard !editorBusy,
+              let candidate = viewModel.commitReset(prepared, settings: settings, revision: settingsRevision,
+                                                   draft: editorDraftSnapshot) else { return false }
+        if prepared.updatesDraft {
+            geometryDraft = candidate.settings.geometry
+            lensDraft = candidate.settings
+        } else {
+            let parametersChanged = settings != candidate.settings
+            applySettingsChange(candidate.settings)
+            if !parametersChanged {
+                // 仅外部外观身份改变时，SwiftUI 不会发出 settings onChange。
+                settingsRevision = UUID()
+                queueEditorSettingsChange(candidate.settings)
+            }
+        }
+        return true
     }
 
     func previewEditorDraft() {

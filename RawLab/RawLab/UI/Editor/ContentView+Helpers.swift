@@ -106,6 +106,17 @@ extension ContentView {
         settings = newSettings
     }
 
+    func queueEditorSettingsChange(_ newSettings: RawSettings) {
+        showingBefore = false
+        viewModel.queueSettingsSave(newSettings)
+        if isAdjustingSlider {
+            viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
+                                           includeHistogram: false, quality: .interactive)
+        } else {
+            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
+        }
+    }
+
     func adjustmentBinding(_ adjustment: AdjustmentKind) -> Binding<Double> {
         Binding(
             get: { adjustment.value(from: settings) },

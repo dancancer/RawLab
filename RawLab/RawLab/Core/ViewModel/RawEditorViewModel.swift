@@ -51,6 +51,10 @@ final class RawEditorViewModel: ObservableObject {
     var restoredSettings: RawSettings?
     var pendingSettings: RawSettings?
     var editSaveWork: DispatchWorkItem?
+    var settingsSaveRevision = UUID()
+    var editRecordMetadata: EditorRecordMetadata?
+    var persistedEditorSettings: PersistedEditorSettings?
+    var failedDraftSource: EditorEditSource?
     var editNoticeID = UUID()
     var basePreviewGeometry = GeometrySettings()
     var sourceOrientation: CGImagePropertyOrientation?
