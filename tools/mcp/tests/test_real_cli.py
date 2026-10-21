@@ -175,3 +175,84 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 result = await client.call_tool("validate_recipe", {"recipe_path": str(recipe)})
                 self.assertFalse(result.is_error, str(result))
                 self.assertEqual(result.structured_content["result"], direct_result)
+
+    async def test_missing_look_preserves_native_cli_error(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-missing-look-") as directory:
+            root = Path(directory).resolve()
+            source = root / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            recipe = root / "recipe.json"
+            recipe.write_text(json.dumps({
+                "schema_version": 4,
+                "input": {"path": source.name},
+                "edits": {
+                    "exposure": {"mode": "scene", "ev": 0.0},
+                    "look": {"path": "missing.cube"},
+                },
+                "output": {"path": "mcp.png", "format": "png"},
+            }), encoding="utf-8")
+
+            direct = subprocess.run(
+                [CLI, "--recipe", str(recipe), "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertNotEqual(direct.returncode, 0)
+            direct_value = json.loads(direct.stdout)
+            self.assertFalse(direct_value["ok"])
+            self.assertEqual(
+                (direct_value["error"]["code"], direct_value["error"]["status"]),
+                ("unsupported", 2),
+            )
+
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                result = await client.call_tool("export_photo", {"recipe_path": str(recipe)})
+                self.assertTrue(result.is_error, str(result))
+                self.assertEqual(
+                    (result.structured_content["error"]["code"], result.structured_content["error"]["status"]),
+                    ("unsupported", 2),
+                )
+            self.assertFalse((root / "mcp.png").exists())
+            self.assertEqual(list(root.glob(".rawlab-mcp-*")), [])
+
+    async def test_missing_output_parent_is_mcp_policy_not_native_parity(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-missing-parent-") as directory:
+            root = Path(directory).resolve()
+            source = root / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            recipe = root / "recipe.json"
+            recipe.write_text(json.dumps({
+                "schema_version": 4,
+                "input": {"path": source.name},
+                "edits": {"exposure": {"mode": "scene", "ev": 0.0}},
+                "output": {"path": "missing/mcp.png", "format": "png"},
+            }), encoding="utf-8")
+
+            direct = subprocess.run(
+                [CLI, "--recipe", str(recipe), "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertNotEqual(direct.returncode, 0)
+            direct_value = json.loads(direct.stdout)
+            self.assertFalse(direct_value["ok"])
+            self.assertEqual(
+                (direct_value["error"]["code"], direct_value["error"]["status"]),
+                ("processing_error", 4),
+            )
+
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                result = await client.call_tool("export_photo", {"recipe_path": str(recipe)})
+                self.assertTrue(result.is_error, str(result))
+                self.assertEqual(
+                    (result.structured_content["error"]["code"], result.structured_content["error"]["status"]),
+                    ("invalid_argument", None),
+                )
+            self.assertFalse((root / "missing" / "mcp.png").exists())
+            self.assertEqual(list(root.glob(".rawlab-mcp-*")), [])

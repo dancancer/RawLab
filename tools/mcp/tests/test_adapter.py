@@ -307,7 +307,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.ok)
         self.assertEqual((result.error.code, result.error.status), ("invalid_argument", None))
         self.assertFalse(self.argv_log.exists())
-        self.look_path.unlink()
+        self.input_path.unlink()
         result = await adapter.export_photo(self.recipe_path)
         self.assertFalse(result.ok)
         self.assertEqual((result.error.code, result.error.status), ("io_error", 3))
@@ -331,7 +331,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((result.error.code, result.error.status), ("io_error", 3))
         self.assertEqual(json.loads(self.argv_log.read_text())[0], "--recipe")
 
-    async def test_missing_output_parent_is_io_error_status_three(self):
+    async def test_missing_output_parent_uses_adapter_policy_without_staging(self):
         document = json.loads(self.recipe_path.read_text(encoding="utf-8"))
         document["output"]["path"] = "../../write/missing/export.jpg"
         self.recipe_path.write_text(json.dumps(document), encoding="utf-8")
@@ -339,7 +339,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await adapter.start()
         result = await adapter.export_photo(self.recipe_path)
         self.assertFalse(result.ok)
-        self.assertEqual((result.error.code, result.error.status), ("io_error", 3))
+        self.assertEqual((result.error.code, result.error.status), ("invalid_argument", None))
+        self.assertFalse((self.write_root / "missing" / "export.jpg").exists())
+        self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
 
     async def test_malformed_and_future_recipes_are_rejected_before_cli(self):
         adapter = self.adapter()

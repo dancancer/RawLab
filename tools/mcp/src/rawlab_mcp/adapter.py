@@ -248,7 +248,7 @@ class CliAdapter:
         if not self._inside(canonical, self.config.write_roots):
             raise AdapterError("Output parent must exist within an allowed write root")
         if require_parent and not path.parent.is_dir():
-            raise AdapterError("Output parent must exist within an allowed write root", "io_error", IO_ERROR_STATUS)
+            raise AdapterError("Output parent must exist within an allowed write root")
         return CheckedPath(path, canonical)
 
     async def _recipe(self, recipe_path, preview_output=None, *, validating=False):
@@ -278,7 +278,9 @@ class CliAdapter:
             protected = {source.canonical, image.canonical}
             look = recipe.get("edits", {}).get("look")
             if look and look.get("path"):
-                look_path = self._read_path(reference(look["path"]), require_file=not validating)
+                # Let native export preserve its backend error for a missing look;
+                # this still canonical-checks the reference against read roots.
+                look_path = self._read_path(reference(look["path"]), require_file=False)
                 protected.add(look_path.canonical)
                 if not validating:
                     look["path"] = str(look_path.lexical)
