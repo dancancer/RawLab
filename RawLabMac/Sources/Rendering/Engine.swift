@@ -176,15 +176,7 @@ final class RenderEngine {
     func resolvedSettings(_ url: URL, settings: Adjustments) throws -> Adjustments {
         if Self.isRasterInput(url) {
             // 批量可混合两类输入；相机专属状态不解释成普通图像的 RGB 白平衡或镜头参数。
-            var state = settings
-            state.exposureMode = .sensor
-            state.whiteBalanceMode = .asShot
-            state.resolveWhiteBalance(nil)
-            state.temperature = 6500
-            state.tint = 0
-            state.rawNoiseReduction = 0
-            state.lensCorrection = nil
-            return state
+            return settings.resolvedForRaster
         }
         let key = try? RawWhiteBalanceCacheKey(url)
         if let key, let cached = whiteBalanceCache, cached.key.file == key.file,
