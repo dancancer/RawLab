@@ -59,14 +59,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
-    onApplyDraft: () -> Unit = {}, onDiscardDraft: () -> Unit = {},
+    onApplyDraft: () -> Boolean = { false }, onDiscardDraft: () -> Unit = {},
     onGeometryRatio: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
     onFilmSelected: (UsageFilmKind) -> Unit = {}) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
-    var pendingLeave by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingLeave by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf<(() -> Unit)?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     LaunchedEffect(tool) { if (tool == 9) tool = 8 }
@@ -78,6 +78,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (state.draft?.changed == true) pendingLeave = action
         else { if (state.draft != null) onDiscardDraft(); action() }
     }
+    fun applyAndLeave(): Boolean {
+        if (!onApplyDraft()) return false
+        val destination = pendingLeave
+        pendingLeave = null
+        if (destination != null) destination() else tool = 2
+        return true
+    }
+    val retrySave = { if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
     val selectTool: (Int) -> Unit = { next -> if (next != tool) leave { tool = next; expanded = true } }
     LaunchedEffect(tool, state.canExport) {
         if (state.draft == null && state.canExport) when (tool) {
@@ -85,10 +93,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             16 -> onBeginDraft(AdjustmentGroup.LENS)
         }
     }
-    BackHandler(enabled = state.draft != null) { leave { tool = 0 } }
+    BackHandler(enabled = state.draft != null) { leave { tool = 2 } }
     if (pendingLeave != null) AlertDialog(onDismissRequest = { pendingLeave = null },
         title = { Text(stringResource(R.string.adjustment_leave)) },
-        confirmButton = { TextButton(onClick = { onApplyDraft(); pendingLeave?.invoke(); pendingLeave = null },
+        confirmButton = { TextButton(onClick = { applyAndLeave() },
             enabled = state.canApplyDraft) { Text(stringResource(R.string.adjustment_apply)) } },
         dismissButton = {
             Column {
@@ -174,25 +182,25 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
                             EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, onSaveRetry)
+                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave)
                             RenderError(state, onRetry)
                         }
                         VerticalDivider()
                         AdjustmentDock(state, Modifier.width(sideDockWidth).fillMaxHeight(), tool, selectTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected, onGeometryRatio)
+                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio)
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, onSaveRetry)
+                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave)
                     RenderError(state, onRetry)
                     if (state.photo != null) {
                         HorizontalDivider()
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, selectTool, expanded,
                             { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { onApplyDraft(); tool = 0 }, { onDiscardDraft(); tool = 0 }, onFilmSelected, onGeometryRatio)
+                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio)
                     }
                 }
             }

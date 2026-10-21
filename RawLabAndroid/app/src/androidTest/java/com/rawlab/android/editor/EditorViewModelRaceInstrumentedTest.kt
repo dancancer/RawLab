@@ -6,9 +6,12 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Assert.assertTrue
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertEquals
+import org.junit.Assert.*
+import android.os.FileObserver
+import java.util.concurrent.atomic.AtomicInteger
+import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.settings.EditStore
+import com.rawlab.android.settings.LensSettings
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -201,6 +204,170 @@ class EditorViewModelRaceInstrumentedTest {
             store.clear()
             root.deleteRecursively()
             first.delete(); last.delete(); bad.delete(); otherBad.delete(); raw.delete()
+        }
+    }
+
+    @Test fun resetCommitRejectsStaleEditsAndOnlySkipsIdenticalDurablePreviewWrites() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val raw = File(context.cacheDir, "reset-${UUID.randomUUID()}.RAW")
+        copyFixture(raw)
+        val owner = ViewModelStore()
+        val writes = AtomicInteger()
+        val directory = File(context.filesDir, "edits")
+        val observer = object : FileObserver(directory.absolutePath, FileObserver.MOVED_TO) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path == "edits.properties") writes.incrementAndGet()
+            }
+        }
+        try {
+            lateinit var model: EditorViewModel
+            instrumentation.runOnMainSync {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("reset", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(raw))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = .5f, customWb = true, temperature = 4000f)) }
+            awaitState(model) { it.canExport }
+            val revision = EditorViewModel::class.java.getDeclaredField("currentRevision").apply { isAccessible = true }
+            observer.startWatching()
+            fun settle(expected: Int) {
+                val deadline = SystemClock.elapsedRealtime() + 3000
+                while (writes.get() < expected && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(20)
+                SystemClock.sleep(150)
+                assertEquals(expected, writes.get())
+            }
+            val beforeRequest = revision.getLong(model)
+            instrumentation.runOnMainSync {
+                val reset = model.prepareReset(EditorResetScope.Tool(2)).prepared!!
+                assertTrue(model.commitReset(reset))
+                assertEquals(beforeRequest + 1, revision.getLong(model))
+            }
+            awaitState(model) { it.canExport }
+            settle(1)
+            assertEquals(0f, model.state.value.edits.exposure, 0f)
+            val preview = model.state.value.preview
+            instrumentation.runOnMainSync {
+                assertTrue(model.prepareReset(EditorResetScope.Tool(2)).result is EditorResetResult.NoChange)
+                assertEquals(beforeRequest + 1, revision.getLong(model))
+                assertSame(preview, model.state.value.preview)
+            }
+            settle(1)
+            // 普通编辑保留既有的 edit + resolved-preview 两次保存。
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = .75f)) }
+            awaitState(model) { it.canExport }
+            settle(3)
+            lateinit var stale: PreparedEditorReset
+            instrumentation.runOnMainSync {
+                stale = model.prepareReset(EditorResetScope.Tool(2)).prepared!!
+                model.edit(model.state.value.edits.copy(exposure = 1f))
+                model.edit(model.state.value.edits.copy(exposure = .75f))
+            }
+            awaitState(model) { it.canExport }
+            val currentRequest = revision.getLong(model)
+            val record = File(directory, "edits.properties").readBytes()
+            instrumentation.runOnMainSync { assertFalse(model.commitReset(stale)) }
+            assertEquals(currentRequest, revision.getLong(model))
+            assertArrayEquals(record, File(directory, "edits.properties").readBytes())
+            assertEquals(.75f, model.state.value.edits.exposure, 0f)
+            settle(6)
+            // 强制 WB 从自定义转换为相机；native 返回真实 metadata 必须沿原路径落盘。
+            writes.set(0)
+            instrumentation.runOnMainSync {
+                model.edit(model.state.value.edits.copy(customWb = false, temperature = 6500f, tint = 0f))
+            }
+            awaitState(model) { it.canExport }
+            settle(2)
+            assertNotEquals(6500f, model.state.value.edits.temperature)
+            assertEquals(model.state.value.edits, EditStore(directory).load(model.state.value.photo!!.identity))
+            val unchangedRequest = revision.getLong(model)
+            val unchangedRecord = File(directory, "edits.properties").readBytes()
+            instrumentation.runOnMainSync {
+                model.beginDraft(AdjustmentGroup.LENS)
+                assertTrue(model.state.value.draftReady)
+                assertFalse(model.applyDraft())
+            }
+            assertEquals(unchangedRequest, revision.getLong(model))
+            assertArrayEquals(unchangedRecord, File(directory, "edits.properties").readBytes())
+            settle(2)
+            instrumentation.runOnMainSync {
+                model.changeDraft(model.state.value.visibleEdits.copy(lens = LensSettings(autoCrop = false)))
+            }
+            awaitState(model) { it.canApplyDraft }
+            settle(2)
+            val draftRequest = revision.getLong(model)
+            instrumentation.runOnMainSync {
+                assertTrue(model.applyDraft())
+                assertEquals(draftRequest + 1, revision.getLong(model))
+            }
+            awaitState(model) { it.canExport }
+            settle(3)
+            assertEquals(model.state.value.edits, EditStore(directory).load(model.state.value.photo!!.identity))
+        } finally {
+            observer.stopWatching()
+            instrumentation.runOnMainSync { owner.clear() }
+            raw.delete()
+        }
+    }
+
+    @Test fun geometryGroupResetStaysInDraftAndAppliesBothFieldsOnce() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val raw = File(context.cacheDir, "pair-reset-${UUID.randomUUID()}.RAW")
+        copyFixture(raw)
+        val owner = ViewModelStore()
+        try {
+            lateinit var model: EditorViewModel
+            instrumentation.runOnMainSync {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("pair-reset", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(raw))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync {
+                model.edit(model.state.value.edits.copy(exposure = .5f, customWb = true,
+                    geometry = GeometrySettings(quarterTurns = 1), lens = LensSettings(autoCrop = false)))
+            }
+            awaitState(model) { it.canExport }
+            val original = model.state.value.edits
+            val identity = model.state.value.photo!!.identity
+            val directory = File(context.filesDir, "edits")
+            for (group in AdjustmentGroup.entries) {
+                instrumentation.runOnMainSync { model.beginDraft(group) }
+                awaitState(model) { it.draftReady }
+                assertFalse(model.state.value.canApplyDraft)
+                instrumentation.runOnMainSync {
+                    val prepared = model.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.GEOMETRY)).prepared!!
+                    assertTrue(model.commitReset(prepared))
+                    assertEquals(original, model.state.value.edits)
+                    assertEquals(original, EditStore(directory).load(identity))
+                    assertEquals(GeometrySettings(), model.state.value.visibleEdits.geometry)
+                    assertEquals(LensSettings(), model.state.value.visibleEdits.lens)
+                }
+                awaitState(model) { it.canApplyDraft }
+                instrumentation.runOnMainSync { model.discardDraft() }
+                awaitState(model) { it.canExport }
+                assertEquals(original, model.state.value.edits)
+            }
+            instrumentation.runOnMainSync { model.beginDraft(AdjustmentGroup.GEOMETRY) }
+            awaitState(model) { it.draftReady }
+            instrumentation.runOnMainSync {
+                assertTrue(model.commitReset(model.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.GEOMETRY)).prepared!!))
+            }
+            awaitState(model) { it.canApplyDraft }
+            instrumentation.runOnMainSync { assertTrue(model.applyDraft()) }
+            awaitState(model) { it.canExport }
+            assertNull(model.state.value.draft)
+            assertEquals(GeometrySettings(), model.state.value.edits.geometry)
+            assertEquals(LensSettings(), model.state.value.edits.lens)
+            assertEquals(.5f, model.state.value.edits.exposure, 0f)
+            assertEquals(model.state.value.edits, EditStore(directory).load(identity))
+        } finally {
+            instrumentation.runOnMainSync { owner.clear() }
+            raw.delete()
         }
     }
 

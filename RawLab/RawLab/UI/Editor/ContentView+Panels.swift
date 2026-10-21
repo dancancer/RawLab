@@ -248,7 +248,7 @@ extension ContentView {
                 .foregroundStyle(.secondary)
         case .failed(let message):
             Button {
-                viewModel.retrySave(settings: settings)
+                retryEditorSave()
             } label: {
                 editSaveLabel(L10n.text("调整未保存 · 重试"), symbol: "exclamationmark.triangle.fill")
                     .frame(minWidth: 44, minHeight: 44)

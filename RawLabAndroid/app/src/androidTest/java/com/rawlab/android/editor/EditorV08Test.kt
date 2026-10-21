@@ -141,6 +141,167 @@ class EditorV08DraftTest {
     val compose = createAndroidComposeRule<MainActivity>()
     @get:Rule val rule = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
+    @Test fun failedDraftSaveKeepsCommittedDraftAndRecordUntilRetry() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File(context.cacheDir, "draft-save-${System.nanoTime()}.RAW")
+        val record = File(context.filesDir, "edits/edits.properties")
+        val backup = File(context.cacheDir, "draft-record-${System.nanoTime()}.properties")
+        val model = compose.activity.model
+        fun ready() {
+            compose.waitUntil(180_000) { model.state.value.error != null ||
+                model.state.value.exact && !model.state.value.rendering }
+            assertNull(model.state.value.error)
+        }
+        instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
+        try {
+            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready()
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .5f)) }
+            ready()
+            val original = model.state.value.edits
+            val identity = model.state.value.photo!!.identity
+            val before = record.readBytes()
+            compose.runOnUiThread {
+                model.beginDraft(AdjustmentGroup.GEOMETRY)
+                model.changeDraft(original.copy(geometry = GeometrySettings(cropWidth = .75f)))
+            }
+            ready()
+            val draft = model.state.value.draft
+            assertTrue(model.state.value.canApplyDraft)
+            assertTrue(record.renameTo(backup))
+            assertTrue(record.mkdir())
+            File(record, "occupied").writeText("keep")
+            compose.runOnUiThread { assertFalse(model.applyDraft()) }
+            assertEquals("Failed save must keep committed edits", original, model.state.value.edits)
+            assertEquals("Failed save must keep the same draft", draft, model.state.value.draft)
+            assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            assertArrayEquals(before, backup.readBytes())
+            assertTrue(record.deleteRecursively())
+            assertTrue(backup.renameTo(record))
+            assertEquals(original, EditStore(record.parentFile!!).load(identity))
+            compose.runOnUiThread { model.retrySave() }
+            ready()
+            assertNull(model.state.value.draft)
+            assertEquals(.75f, model.state.value.edits.geometry.cropWidth, 0f)
+            assertEquals(model.state.value.edits, EditStore(record.parentFile!!).load(identity))
+        } finally {
+            if (backup.exists()) { record.deleteRecursively(); backup.renameTo(record) }
+            source.delete()
+        }
+    }
+
+    @Test fun failedApplyAndLeaveKeepsDestinationUntilSaveSucceeds() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File(context.cacheDir, "draft-leave-${System.nanoTime()}.RAW")
+        val record = File(context.filesDir, "edits/edits.properties")
+        val backup = File(context.cacheDir, "leave-record-${System.nanoTime()}.properties")
+        val model = compose.activity.model
+        fun ready() {
+            compose.waitUntil(180_000) { model.state.value.error != null || model.state.value.canExport }
+            assertNull(model.state.value.error)
+        }
+        instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
+        try {
+            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready()
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .5f)) }
+            ready()
+            val original = model.state.value.edits
+            val identity = model.state.value.photo!!.identity
+            compose.onNodeWithContentDescription(context.getString(R.string.all_tools)).performClick()
+            compose.onNodeWithTag("editor-tool-17").performScrollTo().performClick()
+            compose.waitUntil(180_000) { model.state.value.draftReady }
+            compose.onNodeWithTag("draft.apply").assertIsNotEnabled()
+            compose.runOnUiThread { model.changeDraft(model.state.value.visibleEdits.copy(geometry = GeometrySettings(cropWidth = .75f))) }
+            compose.waitUntil(180_000) { model.state.value.canApplyDraft }
+            val draft = model.state.value.draft
+            assertTrue(record.renameTo(backup))
+            assertTrue(record.mkdir())
+            File(record, "occupied").writeText("keep")
+            compose.waitForIdle()
+            compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            compose.onNode(hasText(context.getString(R.string.adjustment_apply)) and hasAnyAncestor(isDialog())).performClick()
+            assertEquals(original, model.state.value.edits)
+            assertEquals(draft, model.state.value.draft)
+            compose.onNodeWithText(context.getString(R.string.adjustment_leave)).assertIsDisplayed()
+            compose.onNodeWithText(model.state.value.saveError!!).assertIsDisplayed()
+            assertTrue(record.deleteRecursively())
+            assertTrue(backup.renameTo(record))
+            assertEquals(original, EditStore(record.parentFile!!).load(identity))
+            compose.onNode(hasText(context.getString(R.string.adjustment_apply)) and hasAnyAncestor(isDialog())).performClick()
+            ready()
+            compose.onNodeWithText(context.getString(R.string.adjustment_leave)).assertDoesNotExist()
+            compose.onNodeWithTag("draft.apply").assertDoesNotExist()
+            compose.onNodeWithTag("editor-tool-2").assertIsSelected()
+            compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+            assertNull(model.state.value.draft)
+            assertEquals(.75f, model.state.value.edits.geometry.cropWidth, 0f)
+            assertEquals(model.state.value.edits, EditStore(record.parentFile!!).load(identity))
+            // 成功目的地保持普通工具；不能在 canExport 恢复后重新创建几何草稿。
+            compose.waitForIdle()
+            assertNull(model.state.value.draft)
+        } finally {
+            if (backup.exists()) { record.deleteRecursively(); backup.renameTo(record) }
+            source.delete()
+        }
+    }
+
+    @Test fun inPlaceApplyRetryAndDiscardReturnToExposureOnlyAfterSuccess() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File(context.cacheDir, "draft-in-place-${System.nanoTime()}.RAW")
+        val record = File(context.filesDir, "edits/edits.properties")
+        val backup = File(context.cacheDir, "in-place-record-${System.nanoTime()}.properties")
+        val model = compose.activity.model
+        fun ready() {
+            compose.waitUntil(180_000) { model.state.value.error != null || model.state.value.canExport }
+            assertNull(model.state.value.error)
+        }
+        fun select(id: Int) {
+            compose.onNodeWithContentDescription(context.getString(R.string.all_tools)).performClick()
+            compose.onNodeWithTag("editor-tool-$id").performScrollTo().performClick()
+            compose.waitUntil(180_000) { model.state.value.draftReady }
+        }
+        instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
+        try {
+            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready()
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .5f)) }
+            ready()
+            val original = model.state.value.edits
+            select(17)
+            compose.runOnUiThread { model.changeDraft(model.state.value.visibleEdits.copy(geometry = GeometrySettings(cropWidth = .75f))) }
+            compose.waitUntil(180_000) { model.state.value.canApplyDraft }
+            assertTrue(record.renameTo(backup))
+            assertTrue(record.mkdir())
+            File(record, "occupied").writeText("keep")
+            compose.onNodeWithTag("draft.apply").performClick()
+            assertEquals(original, model.state.value.edits)
+            assertNotNull(model.state.value.draft)
+            compose.onNodeWithTag("draft.apply").assertIsDisplayed()
+            compose.onNodeWithTag("edit-save-retry").assertIsDisplayed()
+            compose.onNodeWithTag("exposure.auto").assertDoesNotExist()
+            assertTrue(record.deleteRecursively())
+            assertTrue(backup.renameTo(record))
+            compose.onNodeWithTag("edit-save-retry").performClick()
+            ready()
+            compose.onNodeWithTag("editor-tool-2").assertIsSelected()
+            compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+            assertNull(model.state.value.draft)
+            select(16)
+            compose.onNodeWithTag("draft.cancel").performClick()
+            ready()
+            compose.onNodeWithTag("editor-tool-2").assertIsSelected()
+            compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+            assertNull(model.state.value.draft)
+        } finally {
+            if (backup.exists()) { record.deleteRecursively(); backup.renameTo(record) }
+            source.delete()
+        }
+    }
+
     @Test fun nativeLayoutKeepsPhotoAndControlsSeparateAndExposesDraftActions() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -170,7 +331,7 @@ class EditorV08DraftTest {
             capture("exposure")
             compose.onNodeWithContentDescription("全部工具").performClick()
             compose.onNodeWithTag("editor-tool-17").performScrollTo().performClick()
-            compose.waitUntil(30_000) { model.state.value.draft != null && model.state.value.canApplyDraft }
+            compose.waitUntil(30_000) { model.state.value.draftReady }
             compose.onNodeWithTag("editor-tool-17").assertIsDisplayed()
             compose.onNodeWithTag("draft.cancel").assertIsDisplayed()
             compose.onNodeWithTag("draft.apply").assertIsDisplayed()

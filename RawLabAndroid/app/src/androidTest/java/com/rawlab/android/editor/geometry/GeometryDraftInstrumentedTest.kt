@@ -46,7 +46,7 @@ class GeometryDraftInstrumentedTest {
         }
         fun ready(draft: Boolean = false) {
             compose.waitUntil(180_000) { model.state.value.error != null ||
-                if (draft) model.state.value.canApplyDraft else model.state.value.canExport }
+                if (draft) model.state.value.draftReady else model.state.value.canExport }
             assertNull(model.state.value.error)
         }
         try {
@@ -100,7 +100,7 @@ class GeometryDraftInstrumentedTest {
         var model = compose.activity.model
         fun ready(draft: Boolean = false) {
             compose.waitUntil(180_000) { model.state.value.error != null ||
-                if (draft) model.state.value.canApplyDraft else model.state.value.canExport }
+                if (draft) model.state.value.draftReady else model.state.value.canExport }
             assertNull(model.state.value.error)
         }
         fun hash() = MessageDigest.getInstance("SHA-256").digest(source.readBytes()).joinToString("") { "%02x".format(it) }
