@@ -116,6 +116,198 @@ struct EditMemoryTests {
         check(!FileManager.default.fileExists(atPath: retained.path), "temporary picker ownership is released after use")
         PhotoImportFile.release(sameNameB)
         check(FileManager.default.fileExists(atPath: sameNameB.path), "temporary cleanup never removes unrelated inputs")
+        try resetRules()
         print("PASS: edit memory regression suite")
+    }
+}
+
+
+extension EditMemoryTests {
+    static func resetRules() throws {
+        let toolOrder: [(EditorAdjustmentGroup, [EditorToolSelection])] = [
+            (.looks, [.film, .recipe, .adjustment(.strength)]),
+            (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
+                      .adjustment(.contrast), .adjustment(.toneCurve)]),
+            (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.hsl)]),
+            (.effects, [.adjustment(.vignette), .adjustment(.grain)]),
+            (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
+            (.geometry, [.geometry, .lens])
+        ]
+        check(toolOrder.map { $0.0 } == EditorAdjustmentGroup.allCases,
+              "stable groups follow looks light color effects detail geometry order")
+        var visibleTools = [EditorToolSelection]()
+        for (group, expectedTools) in toolOrder {
+            let tools = EditorAdjustmentRules.tools(group)
+            check(tools == expectedTools, "group \(group) preserves visible tool order and default first tool")
+            check(tools.allSatisfy { EditorAdjustmentRules.groupFor($0) == group },
+                  "visible tools map back to their owning group \(group)")
+            visibleTools += tools
+        }
+        let expectedVisible = Set(AdjustmentKind.toolCases.map(EditorToolSelection.adjustment) + [.film, .recipe, .geometry, .lens])
+        check(visibleTools.count == Set(visibleTools).count && Set(visibleTools) == expectedVisible,
+              "all visible tools appear exactly once across the six groups")
+        check(EditorAdjustmentRules.groupFor(.adjustment(.tint)) == .color &&
+              !visibleTools.contains(.adjustment(.tint)),
+              "legacy tint maps to color without becoming a second visible WB tool")
+        let context = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview,
+                                              cameraTemperature: 5200, cameraTint: 8)
+        let noCamera = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview)
+        let raster = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
+        let rasterDefault = PhotoEditState(settings: .default)
+        for scope in [EditorAdjustmentScope.all, .group(.light), .group(.color)] {
+            check(!EditorAdjustmentRules.isModified(scope, snapshot: rasterDefault, context: raster),
+                  "raster default has no light color or all marker despite stored preview exposure")
+            if case .unchanged = EditorAdjustmentRules.prepareReset(scope, snapshot: rasterDefault, context: raster) {
+                check(true, "raster default reset is an effective no-op")
+            } else { fatalError("raster default reset unexpectedly produced a candidate") }
+        }
+        var rasterWB = RawSettings.default
+        rasterWB.whiteBalanceMode = .custom; rasterWB.temperature = 4250; rasterWB.tint = 12
+        let rasterCustom = PhotoEditState(settings: rasterWB)
+        for scope in [EditorAdjustmentScope.all, .group(.light), .group(.color)] {
+            check(!EditorAdjustmentRules.isModified(scope, snapshot: rasterCustom, context: raster),
+                  "raster ignores stored custom WB and exposure mode when marking applicable values")
+            if case .unchanged = EditorAdjustmentRules.prepareReset(scope, snapshot: rasterCustom, context: raster) {
+                check(true, "raster custom WB effective no-op leaves stored values alone")
+            } else { fatalError("raster custom WB generated a no-op candidate") }
+        }
+        var rasterAuxiliary = rasterWB
+        rasterAuxiliary.photoEffects.grainSize = 61
+        rasterAuxiliary.denoise.chroma = 72
+        rasterAuxiliary.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "disabled-profile")
+        for group in [EditorAdjustmentGroup.effects, .detail, .geometry] {
+            check(EditorAdjustmentRules.isModified(.group(group), snapshot: PhotoEditState(settings: rasterAuxiliary), context: raster),
+                  "raster still marks complete disabled auxiliary objects in \(group)")
+        }
+        let timestamp = Date(timeIntervalSince1970: 1234)
+        func state(_ settings: RawSettings, film: String? = "external") -> PhotoEditState {
+            PhotoEditState(settings: settings, filmID: film, updatedAt: timestamp)
+        }
+        func candidate(_ scope: EditorAdjustmentScope, _ original: PhotoEditState,
+                       _ context: EditorAdjustmentContext = context) -> PhotoEditState {
+            guard case .candidate(let value, _) = EditorAdjustmentRules.prepareReset(scope, snapshot: original, context: context) else {
+                fatalError("expected reset candidate for \(scope)")
+            }
+            check(value.updatedAt == timestamp, "candidate retains snapshot timestamp")
+            return value
+        }
+        func blocked(_ settings: RawSettings, _ scope: EditorAdjustmentScope = .group(.looks),
+                     _ context: EditorAdjustmentContext = noCamera) -> Bool {
+            if case .blocked = EditorAdjustmentRules.prepareReset(scope, snapshot: state(settings), context: context) { return true }
+            return false
+        }
+        check(!EditorAdjustmentRules.isModified(.group(.color), snapshot: state(.default, film: nil), context: context),
+              "RAW camera WB placeholder fields do not claim adjustment against real calibration")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: state(.default, film: nil), context: context) {
+            check(true, "neutral RAW camera snapshot remains unchanged with actual calibration")
+        } else { fatalError("neutral RAW produced a save candidate") }
+        var settings = RawSettings.default
+        settings.exposure = 1; settings.exposureMode = .scene; settings.highlights = -0.25
+        settings.shadows = 0.2; settings.contrast = 1.1; settings.toneCurve = 0.3
+        settings.saturation = 1.2; settings.whiteBalanceMode = .custom
+        settings.temperature = 4250; settings.tint = 12
+        settings.hsl = try JSONDecoder().decode(HSLSettings.self, from: Data("{\"hue\":[0.5,1.5,0,0,0,0,0,0],\"saturation\":[2.5,3.5,0,0,0,0,0,0],\"lightness\":[4.5,5.5,0,0,0,0,0,0]}".utf8))
+        settings.photoEffects.vignetteMidpoint = 63; settings.photoEffects.grainSize = 61
+        settings.denoise = RawDenoiseSettings(enabled: false, luma: 10, chroma: 72, coarse: 100)
+        settings.noiseReduction = 0.3; settings.sharpening = 0.4; settings.displayChromaDenoise = 2
+        settings.geometry.quarterTurns = 1
+        settings.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "stored-disabled-profile")
+        let original = state(settings)
+        for group in EditorAdjustmentGroup.allCases {
+            check(EditorAdjustmentRules.isModified(.group(group), snapshot: original, context: context), "stored changes mark \(group)")
+        }
+        let light = candidate(.group(.light), original)
+        check(light.settings.exposure == 0 && light.settings.exposureMode == .preview && light.settings.contrast == 1 && light.settings.toneCurve == 0 && light.settings.highlights == 0 && light.settings.shadows == 0,
+              "light reset restores every owned value and effective exposure default")
+        var expected = settings
+        expected.exposure = 0; expected.exposureMode = .preview; expected.highlights = 0
+        expected.shadows = 0; expected.contrast = 1; expected.toneCurve = 0
+        check(light.settings == expected && light.filmID == "external", "light reset preserves all unselected values and identity")
+        let color = candidate(.group(.color), original)
+        check(color.settings.whiteBalanceMode == .camera && color.settings.temperature == 5200 && color.settings.tint == 8 && color.settings.saturation == 1 && color.settings.hsl.isIdentity, "color reset uses actual camera WB and clears HSL")
+        check(color.settings.photoEffects == settings.photoEffects && color.settings.exposureMode == .scene, "color reset preserves effects and legacy exposure mode")
+        let effects = candidate(.group(.effects), original)
+        check(effects.settings.photoEffects == PhotoEffectsSettings() && effects.settings.denoise == settings.denoise, "effects reset includes disabled auxiliary values")
+        let detail = candidate(.group(.detail), original)
+        check(detail.settings.denoise == RawDenoiseSettings() && detail.settings.noiseReduction == 0 && detail.settings.displayChromaDenoise == 0 && detail.settings.sharpening == 0, "detail reset clears modern and legacy complete noise settings")
+        let geometry = candidate(.group(.geometry), original)
+        check(geometry.settings.geometry.isIdentity && geometry.settings.lensCorrection == nil && geometry.settings.hsl == settings.hsl, "geometry reset includes complete disabled lens configuration")
+        let channel = candidate(.hslChannel(0), original)
+        check(channel.settings.hsl.hue[0] == 0 && channel.settings.hsl.saturation[0] == 0 && channel.settings.hsl.lightness[0] == 0 && channel.settings.hsl.hue[1] == 1.5 && channel.settings.hsl.saturation[1] == 3.5 && channel.settings.hsl.lightness[1] == 5.5,
+              "HSL channel reset isolates three axes and preserves other fractional channels")
+        check(candidate(.allHSL, original).settings.hsl.isIdentity, "all HSL reset clears 24 values")
+        let all = candidate(.all, original)
+        var defaults = RawSettings.default; defaults.temperature = 5200; defaults.tint = 8
+        check(all.settings == defaults && all.filmID == nil, "all reset restores effective defaults and clears identities")
+        let roundTrip = try JSONDecoder().decode(PhotoEditState.self, from: JSONEncoder().encode(channel))
+        check(roundTrip == channel, "candidate JSON round trip preserves fractional HSL and timestamp")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: all, context: context) { check(true, "default reset is unchanged") } else { fatalError("default reset changed") }
+        var nilFilmJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
+        var lutSettings = settings; lutSettings.lutID = "provia"
+        nilFilmJSON["settings"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(lutSettings))
+        nilFilmJSON.removeValue(forKey: "filmID")
+        let nilFilm = try JSONDecoder().decode(PhotoEditState.self, from: JSONSerialization.data(withJSONObject: nilFilmJSON))
+        check(candidate(.allHSL, nilFilm).filmID == nil, "non-look reset preserves explicit nil filmID even with LUT")
+        let look = candidate(.group(.looks), nilFilm)
+        check(look.filmID == nil && look.settings.lutID == nil && look.settings.masterRecipeID == nil && look.settings.lutStrength == 1 && look.settings.hsl == settings.hsl, "looks clears all identities without touching independent adjustments")
+        let recipe = MasterRecipe.allRecipes[0]
+        for strength in [0.0, 0.5, 1, 2] {
+            var recipeSettings = settings
+            recipeSettings.masterRecipeID = recipe.id; recipeSettings.lutID = "also-lut"
+            recipeSettings.whiteBalanceMode = .camera; recipeSettings.tint = 3
+            recipeSettings.lutStrength = strength
+            let result = candidate(.group(.looks), state(recipeSettings), context)
+            check(result.settings.exposure == strength && Float(result.settings.contrast) == Float(1 + 0.1 * strength) && result.settings.hsl.hue[0] == 0.5 * strength && result.settings.tint == (strength == 0 ? 0 : 8 + 3 * strength),
+                  "looks materializes recipe strength \(strength) with fractional HSL and real WB")
+            check(result.settings.masterRecipeID == nil && result.settings.lutID == nil && result.filmID == nil && result.settings.exposureMode == .scene && result.settings.geometry == settings.geometry,
+                  "recipe removal clears all look identities and retains other groups")
+            check(EditorAdjustmentRules.isModified(.group(.light), snapshot: state(recipeSettings), context: context), "recipe storage remains modified at strength \(strength)")
+        }
+        var recipeSettings = settings; recipeSettings.masterRecipeID = recipe.id
+        check(blocked(recipeSettings), "RAW custom recipe requires real calibration")
+        recipeSettings.whiteBalanceMode = .camera; recipeSettings.tint = 1
+        check(blocked(recipeSettings), "RAW relative tint recipe requires real calibration")
+        check(candidate(.allHSL, state(recipeSettings), noCamera).settings.tint == 1, "unrelated HSL reset does not require camera calibration")
+        recipeSettings.tint = 0
+        check(candidate(.group(.looks), state(recipeSettings), noCamera).settings.whiteBalanceMode == .camera, "RAW camera zero tint remains calibration-free")
+        recipeSettings.whiteBalanceMode = .custom; recipeSettings.tint = 10
+        let rasterLook = candidate(.group(.looks), state(recipeSettings), raster)
+        check(rasterLook.settings.whiteBalanceMode == recipeSettings.whiteBalanceMode && rasterLook.settings.temperature == recipeSettings.temperature && rasterLook.settings.tint == recipeSettings.tint && rasterLook.settings.noiseReduction == recipeSettings.noiseReduction && rasterLook.settings.lensCorrection == recipeSettings.lensCorrection, "raster materialization retains disabled RAW fields under processor effective constraints")
+        recipeSettings.exposure = 4; recipeSettings.lutStrength = 2
+        check(blocked(recipeSettings, .group(.looks), context), "unrepresentable scaled exposure blocks without clamping")
+        recipeSettings = RawSettings.default; recipeSettings.masterRecipeID = "unknown-recipe"
+        check(blocked(recipeSettings, .all), "unknown recipe blocks even all reset")
+        for invalid in [Double.nan, Double.infinity, 4.01] {
+            var invalidSettings = settings; invalidSettings.exposure = invalid
+            check(blocked(invalidSettings, .allHSL), "complete input validation rejects invalid unselected exposure")
+        }
+        var invalidSettings = settings; invalidSettings.denoise.chroma = 101
+        check(blocked(invalidSettings, .group(.light)), "complete validation includes disabled denoise auxiliary values")
+        check(blocked(settings, .hslChannel(8)), "invalid channel blocks")
+        check(original.settings == settings && original.filmID == "external" && original.updatedAt == timestamp,
+              "preparing, discarding and blocking candidates never mutate original snapshot")
+        let legacy = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
+        var legacyChanged = legacy; legacyChanged.hsl.set(.hue, channel: 1, value: 5)
+        check(candidate(.allHSL, state(legacyChanged), noCamera).settings.exposureMode == .scene,
+              "legacy missing exposure mode stays scene for unrelated reset")
+        var storedRecipe = settings; storedRecipe.masterRecipeID = recipe.id; storedRecipe.lutStrength = 0
+        let lightRecipe = candidate(.group(.light), state(storedRecipe), noCamera)
+        check(lightRecipe.settings.masterRecipeID == recipe.id && lightRecipe.settings.hsl == settings.hsl &&
+              lightRecipe.settings.tint == settings.tint && lightRecipe.settings.lutStrength == 0,
+              "light reset at recipe strength zero preserves color and recipe without replay")
+        let colorRecipe = candidate(.group(.color), state(storedRecipe), context)
+        check(colorRecipe.settings.tint == 0 && colorRecipe.settings.masterRecipeID == recipe.id && colorRecipe.settings.exposure == 1,
+              "recipe color reset clears relative tint and leaves light contribution stored")
+        storedRecipe.tint = 90; storedRecipe.lutStrength = 2
+        storedRecipe.hsl.set(.saturation, channel: 4, value: 75)
+        let clamped = candidate(.group(.looks), state(storedRecipe), context)
+        check(clamped.settings.tint == 150 && clamped.settings.hsl.saturation[4] == 100,
+              "materialization preserves existing native tint and HSL clamp")
+        for (key, invalid) in [(\RawSettings.temperature, 1999.0), (\RawSettings.tint, 151.0),
+                               (\RawSettings.contrast, 2.01), (\RawSettings.sharpening, -0.01),
+                               (\RawSettings.lutStrength, 2.01)] {
+            var invalidSettings = settings; invalidSettings[keyPath: key] = invalid
+            check(blocked(invalidSettings, .all), "full reset rejects out-of-range input before discarding it")
+        }
     }
 }
