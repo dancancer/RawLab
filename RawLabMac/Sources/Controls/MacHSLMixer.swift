@@ -5,9 +5,16 @@ struct MacHSLMixer: View {
     @Environment(\.locale) private var localizationLocale
     @Binding var settings: HSLSettings
     var onEditingChanged: (Bool) -> Void = { _ in }
-    @State private var channel = 0
+    @Binding var channel: Int
+    var onReset: (EditorResetScope) -> Void = { _ in }
     @State private var resetRevision = 0
     private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink]
+
+    init(settings: Binding<HSLSettings>, channel: Binding<Int> = .constant(0),
+         onEditingChanged: @escaping (Bool) -> Void = { _ in }, onReset: @escaping (EditorResetScope) -> Void = { _ in }) {
+        _settings = settings; _channel = channel
+        self.onEditingChanged = onEditingChanged; self.onReset = onReset
+    }
 
     var body: some View {
         let _ = localizationLocale
@@ -47,9 +54,12 @@ struct MacHSLMixer: View {
                         Text(L10n.text(HSLSettings.channelNames[index]))
                             .font(.system(size: 11)).multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
+                        Circle().fill(HSLAxis.allCases.contains { settings.value($0, channel: index) != 0 } ? Color.yellow : Color.clear)
+                            .frame(width: 3, height: 3)
                     }.frame(minWidth: 34, maxWidth: 48)
                 }.buttonStyle(.plain)
                     .accessibilityLabel(L10n.text(HSLSettings.channelNames[index]))
+                    .accessibilityValue(HSLAxis.allCases.contains { settings.value($0, channel: index) != 0 } ? L10n.text("已调整") : "")
                     .accessibilityAddTraits(channel == index ? .isSelected : [])
                     .accessibilityIdentifier("hsl.channel.\(index)")
             }
@@ -60,14 +70,14 @@ struct MacHSLMixer: View {
         HStack(spacing: 12) {
             Button(L10n.text("重置当前颜色")) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                settings.reset(channel: channel)
+                onReset(.hslColor(channel))
                 resetRevision += 1
             }
                 .disabled(HSLAxis.allCases.allSatisfy { settings.value($0, channel: channel) == 0 })
                 .accessibilityIdentifier("hsl.reset.current")
             Button(L10n.text("重置 HSL")) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                settings.reset()
+                onReset(.hslAll)
                 resetRevision += 1
             }
                 .disabled(settings.isIdentity)

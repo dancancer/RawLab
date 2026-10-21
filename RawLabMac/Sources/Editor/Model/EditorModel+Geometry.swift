@@ -43,6 +43,7 @@ extension EditorModel {
         geometryDraftEpoch = UUID(); editRevision = UUID()
         geometryDraft = MacGeometryDraft(geometry: settings.geometrySettings, lens: settings.lensSettings)
         geometryDraftTab = tab; geometryDraftPreviewReady = false
+        adjustmentNavigation.selectTool(tab == .lens ? .lens : .geometry)
         cropAspectPreset = .free; cropAspectSwapped = false
         invalidGeometryDraftInputs.removeAll()
         batch?.sourceEditingGeometry = true
@@ -177,6 +178,7 @@ extension EditorModel {
     }
 
     private func endGeometryDraft() {
+        if resetReturnTool == nil && !geometryDraftDeparturePending { adjustmentNavigation.selectTool(.exposure) }
         geometryDraft = nil; geometryDraftPreviewReady = false
         geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
         geometryDraftEntrySaveError = nil; geometryDraftSaveFailed = false

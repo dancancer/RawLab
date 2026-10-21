@@ -37,6 +37,14 @@ final class EditorModel: ObservableObject {
         let editingGeometry: Bool
     }
 
+    @Published var adjustmentNavigation = EditorAdjustmentNavigation()
+    @Published var resetConfirmation: PreparedReset?
+    @Published var resetConfirmationScope: EditorResetScope?
+    @Published var resetBlockedMessage: String?
+    var resetReturnTool: EditorAdjustmentTool?
+    var resetReturnGeometryTab: MacGeometryTab?
+    var resetSource: URL?
+
     @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { edited() } } }
     @Published var geometryDraft: MacGeometryDraft?
     @Published var geometryDraftPreviewReady = false
@@ -61,7 +69,7 @@ final class EditorModel: ObservableObject {
     var geometryDraftHasChanges: Bool { geometryDraft?.hasChanges == true || !invalidGeometryDraftInputs.isEmpty }
     var geometryCropInputEnabled: Bool { geometryDraft != nil && geometryDraftTab == .crop }
     var geometryDraftCanApply: Bool {
-        geometryDraft != nil && geometryDraftSettings.isValid && invalidGeometryDraftInputs.isEmpty &&
+        geometryDraft?.hasChanges == true && geometryDraftSettings.isValid && invalidGeometryDraftInputs.isEmpty &&
             geometryDraftPreviewReady && !busy && !geometryCropInteracting && !exporting
     }
     var lensDraftPreviewIsCurrent: Bool { geometryDraftPreviewReady && !busy }
@@ -104,7 +112,7 @@ final class EditorModel: ObservableObject {
     @Published var file: URL?
     @Published var neutral: RenderedImage?
     @Published var result: RenderedImage?
-    @Published var busy = false
+    @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
     var editRevision = UUID()
     @Published var exporting = false

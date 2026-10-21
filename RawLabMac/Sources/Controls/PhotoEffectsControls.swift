@@ -6,6 +6,7 @@ struct PhotoEffectsControls: View {
     @ObservedObject var model: EditorModel
     let tool: AdjustmentParameter
     var onPreferredHeight: (CGFloat) -> Void = { _ in }
+    var onReset: () -> Void = {}
     @State private var advanced = false
 
     private var isVignette: Bool { tool == .vignetteAmount }
@@ -30,7 +31,7 @@ struct PhotoEffectsControls: View {
                 Spacer(minLength: 0)
                 if !isVignette || advanced { Button {
                     NSApp.keyWindow?.makeFirstResponder(nil)
-                    model.settings.resetEffect(tool)
+                    onReset()
                 } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28)
                 }.buttonStyle(.borderless)
@@ -56,8 +57,7 @@ struct PhotoEffectsControls: View {
                     .accessibilityIdentifier("effects.disabledReason.\(tool.rawValue)")
             }
         }.frame(maxWidth: 720).padding(.horizontal, 16)
-            .onAppear { onPreferredHeight(AdjustmentPanelLayout.effectsHeight(rows: parameters.count)) }
-            .onChange(of: advanced) { _, _ in onPreferredHeight(AdjustmentPanelLayout.effectsHeight(rows: parameters.count)) }
+
     }
 
     private var disabledReason: String? {

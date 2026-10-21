@@ -13,7 +13,7 @@ struct MacGeometryWorkspace: View {
                 ForEach(MacGeometryTab.allCases, id: \.self) { tab in
                     Button {
                         finishInput()
-                        _ = model.selectGeometryDraftTab(tab)
+                        model.selectAdjustmentGeometryTab(tab)
                     } label: {
                         Text(tab.title).font(.system(size: 13))
                             .padding(.vertical, 7)
@@ -30,8 +30,7 @@ struct MacGeometryWorkspace: View {
                 Spacer(minLength: 8)
                 Button {
                     finishInput()
-                    if model.geometryDraftTab == .lens { model.resetLensDraft() }
-                    else { model.resetGeometryDraft() }
+                    model.requestAdjustmentReset(.tool(model.geometryDraftTab == .lens ? .lens : .geometry))
                 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28) }
                     .buttonStyle(.borderless).help(L10n.text("重置本工具"))
                     .accessibilityLabel(L10n.text("重置本工具")).accessibilityIdentifier("geometry.draft.reset")

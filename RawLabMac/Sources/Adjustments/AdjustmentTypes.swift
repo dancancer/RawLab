@@ -255,16 +255,95 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
     }
 }
 
-// 新导航语义不进入存储格式；旧八组仍服务现有界面。
-enum EditorAdjustmentGroup: String, CaseIterable {
+// 编辑导航仅属于会话，不能写入照片调整记录。
+enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
     case looks, light, color, effects, detail, geometry
+    var id: String { rawValue }
+    var title: String {
+        L10n.text(["外观", "光线", "颜色", "效果", "细节", "几何与镜头"][Self.allCases.firstIndex(of: self)!])
+    }
+    var tools: [EditorAdjustmentTool] {
+        switch self {
+        case .looks: return [.film, .recipe, .strength]
+        case .light: return [.exposure, .highlights, .shadows, .contrast, .toneCurve]
+        case .color: return [.whiteBalance, .saturation, .hsl]
+        case .effects: return [.vignette, .grain]
+        case .detail: return [.denoise, .sharpening]
+        case .geometry: return [.geometry, .lens]
+        }
+    }
+    var defaultTool: EditorAdjustmentTool { tools[0] }
+}
+
+enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
+    case film, recipe, strength, exposure, highlights, shadows, contrast, toneCurve
+    case whiteBalance, saturation, hsl, vignette, grain, denoise, sharpening, geometry, lens
+    var id: String { rawValue }
+    var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
+    var parameter: AdjustmentParameter? {
+        switch self {
+        case .strength: return .strength
+        case .exposure: return .exposure
+        case .highlights: return .highlights
+        case .shadows: return .shadows
+        case .contrast: return .contrast
+        case .toneCurve: return .toneCurve
+        case .whiteBalance: return .temperature
+        case .saturation: return .saturation
+        case .vignette: return .vignetteAmount
+        case .grain: return .grainAmount
+        case .denoise: return .denoiseMode
+        case .sharpening: return .sharpening
+        default: return nil
+        }
+    }
+    var title: String {
+        switch self {
+        case .film: return L10n.text("胶片")
+        case .recipe: return L10n.text("大师配方")
+        case .whiteBalance: return L10n.text("白平衡")
+        case .hsl: return "HSL"
+        case .geometry: return L10n.text("几何")
+        case .lens: return L10n.text("镜头")
+        default: return parameter!.spec.title
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .film: return "film"
+        case .recipe: return "photo.stack"
+        case .hsl: return "slider.horizontal.3"
+        case .geometry: return "crop.rotate"
+        case .lens: return "viewfinder"
+        default: return parameter!.symbol
+        }
+    }
+    var usesGeometryDraft: Bool { self == .geometry || self == .lens }
+}
+
+struct EditorAdjustmentNavigation: Equatable {
+    var expandedGroup: EditorAdjustmentGroup? = .looks
+    var tool: EditorAdjustmentTool = .film
+    var selectedHSLChannel = 0
+    mutating func selectGroup(_ group: EditorAdjustmentGroup) {
+        if expandedGroup == group { expandedGroup = nil }
+        else { expandedGroup = group; tool = group.defaultTool }
+    }
+    mutating func selectTool(_ target: EditorAdjustmentTool) { tool = target; expandedGroup = target.group }
 }
 
 enum EditorResetScope: Equatable {
+    case tool(EditorAdjustmentTool)
     case group(EditorAdjustmentGroup)
     case hslColor(Int)
     case hslAll
     case all
+    var usesGeometryDraft: Bool {
+        switch self {
+        case .group(.geometry), .tool(.geometry), .tool(.lens): return true
+        default: return false
+        }
+    }
 }
 
 struct EditorAdjustmentContext {

@@ -112,9 +112,10 @@ struct CompactControlsPresentationTests {
             throw RenderError.failed("\(name): view bitmap unavailable")
         }
         host.cacheDisplay(in: host.bounds, to: bitmap)
-        guard bitmap.pixelsWide == Int(size.width), bitmap.pixelsHigh == Int(size.height),
+        let backingSize = window.convertToBacking(host.bounds).size
+        guard bitmap.pixelsWide == Int(backingSize.width), bitmap.pixelsHigh == Int(backingSize.height),
               let png = bitmap.representation(using: .png, properties: [:]) else {
-            throw RenderError.failed("\(name): invalid bitmap dimensions or PNG encoding")
+            throw RenderError.failed("\(name): invalid bitmap dimensions \(bitmap.pixelsWide)x\(bitmap.pixelsHigh), expected backing size \(backingSize), or PNG encoding")
         }
         var sampledColors: Set<String> = []
         for y in stride(from: 0, to: bitmap.pixelsHigh, by: 9) {
@@ -164,7 +165,7 @@ struct CompactControlsPresentationTests {
             for (name, size) in [("empty-minimum", NSSize(width: 950, height: 620)),
                                  ("empty-wide", NSSize(width: 1440, height: 900))] {
                 snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
-                    size: size, expectedFields: 1, output: output))
+                    size: size, expectedFields: 0, output: output))
             }
             guard model.file == nil, model.result == nil, !model.busy, !model.exporting else {
                 throw RenderError.failed("Empty-state snapshots changed the editor state")
@@ -180,6 +181,7 @@ struct CompactControlsPresentationTests {
         }
         model.open(fixture)
         try await waitForRender(model)
+        model.selectAdjustmentTool(.exposure)
         model.settings.exposure = 1.25
         model.settings.setEffect(.grainAmount, to: 45)
         model.settings.setEffect(.grainSize, to: 60)

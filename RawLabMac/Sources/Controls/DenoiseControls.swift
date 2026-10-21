@@ -5,6 +5,7 @@ struct DenoiseControls: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
     var onExpansionChanged: (Bool) -> Void = { _ in }
+    var onReset: () -> Void = {}
     @State private var advanced = false
 
     var body: some View {
@@ -32,9 +33,7 @@ struct DenoiseControls: View {
                 }
             }
         }.frame(maxWidth: 720)
-            .onAppear { onExpansionChanged(advanced && !model.settings.hasLegacyDenoise) }
-            .onChange(of: advanced) { _, expanded in onExpansionChanged(expanded) }
-            .onChange(of: model.settings.hasLegacyDenoise) { _, legacy in onExpansionChanged(advanced && !legacy) }
+
     }
 
     private var modeControls: some View {
@@ -75,7 +74,7 @@ struct DenoiseControls: View {
                 .accessibilityIdentifier("denoise.advanced")
             Button {
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                model.settings.set(.denoiseMode, to: 0)
+                onReset()
             } label: {
                 Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28)
             }.buttonStyle(.borderless).help(L10n.text("重置降噪"))

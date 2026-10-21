@@ -12,8 +12,49 @@ struct ControlGroupTests {
         try denoise()
         try effects()
         try editorGroups()
+        try currentTools()
         try recipeReset()
         try invalidResetSources()
+    }
+
+    private static func currentTools() throws {
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"], "Six stable group IDs keep their order")
+        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .vignette, .denoise, .geometry], "Each group opens its declared default tool")
+        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 17 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all seventeen tools")
+        var navigation = EditorAdjustmentNavigation()
+        navigation.selectedHSLChannel = 6
+        navigation.selectGroup(.color)
+        check(navigation.tool == .whiteBalance && navigation.expandedGroup == .color, "Switching groups selects the default tool")
+        navigation.selectTool(.hsl); navigation.selectGroup(.light); navigation.selectGroup(.color); navigation.selectTool(.hsl)
+        check(navigation.selectedHSLChannel == 6, "HSL session channel survives group and tool changes")
+        navigation.selectGroup(.color)
+        check(navigation.expandedGroup == nil && navigation.tool == .hsl, "Repeated group click collapses without clearing tool")
+        var source = Adjustments()
+        source.exposure = 1; source.highlights = 22; source.sharpening = 15
+        source.photoEffects = PhotoEffectsSettings(vignetteMidpoint: 12, grainSize: 62)
+        source.waveletNoiseReduction = WaveletDenoiseSettings(luma: 23, preset: .custom)
+        let exposure = candidate(.tool(.exposure), state(source))
+        var expected = source; expected.exposure = 0
+        check(exposure.settings == expected, "Current exposure reset preserves the rest of light and other groups")
+        let vignette = candidate(.tool(.vignette), state(source))
+        expected = source; expected.resetEffect(.vignetteAmount)
+        check(vignette.settings == expected, "Vignette tool resets auxiliary fields while retaining grain")
+        let denoise = candidate(.tool(.denoise), state(source))
+        expected = source; expected.rawNoiseReduction = 0; expected.chromaNoiseReduction = nil; expected.waveletNoiseReduction = nil
+        check(denoise.settings == expected && denoise.settings.sharpening == 15, "Disabled denoise tool reset clears the complete object and preserves sharpening")
+        check(EditorAdjustmentRules.prepareReset(scope: .tool(.recipe), snapshot: state(source), context: rawContext) == .unchanged, "Unselected recipe reset is NoChange")
+        source.strength = 0.2
+        var selected = state(source); selected.filmID = "film"
+        let film = candidate(.tool(.film), selected)
+        check(film.filmID == "neutral" && film.settings == source, "Film tool reset preserves independent strength and parameters")
+        source.resolveWhiteBalance(WhiteBalance(temperature: 5230, tint: 7))
+        source.set(.temperature, to: 7000); source.set(.tint, to: 20)
+        let wb = candidate(.tool(.whiteBalance), state(source))
+        expected = source; expected.resetWhiteBalance()
+        check(wb.settings == expected, "Current WB reset restores mode and both camera parameters while preserving color peers")
+        source.processing = .legacy
+        let legacy = candidate(.all, state(source))
+        check(legacy.settings.processing == .legacy && EditorAdjustmentRules.prepareReset(scope: .all, snapshot: legacy, context: rawContext) == .unchanged, "All reset retains legacy processing identity and is idempotent")
     }
 
     private static func hsl() throws {
@@ -306,6 +347,8 @@ struct ControlGroupTests {
         coupled.lensCorrection = LensCorrectionSettings(distortion: true)
         coupled.waveletNoiseReduction = WaveletDenoiseSettings(luma: 15, preset: .custom)
         let detached = candidate(.group(.looks), state(coupled))
+        let detachedTool = candidate(.tool(.recipe), state(coupled))
+        check(detachedTool == detached, "Current recipe reset uses the exact same lossless detach as the looks group")
         check(detached.settings.photoEffects == coupled.photoEffects && detached.settings.geometry == coupled.geometry &&
               detached.settings.lensCorrection == coupled.lensCorrection && detached.settings.waveletNoiseReduction == coupled.waveletNoiseReduction,
               "Recipe detachment preserves exact effect, geometry, lens and denoise snapshots")

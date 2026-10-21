@@ -10,12 +10,15 @@ extension EditorModel {
 
     func prepareReset(scope: EditorResetScope) -> ResetPreparation {
         guard let file, let identity = try? OriginalFileIdentity(file) else { return .blocked(.sourceUnavailable) }
-        let isGeometry = scope == .group(.geometry)
+        let isGeometry = scope.usesGeometryDraft
         if geometryDraft != nil && !isGeometry { return .blocked(.geometryDraftActive) }
         if isGeometry && geometryDraft == nil { return .blocked(.geometryDraftRequired) }
+        if scope == .tool(.geometry) && geometryDraftTab == .lens || scope == .tool(.lens) && geometryDraftTab != .lens {
+            return .blocked(.geometryDraftRequired)
+        }
         guard invalidGeometryDraftInputs.isEmpty else { return .blocked(.invalidDraftInputs) }
         let context = EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
-                                              defaultExposureMode: Adjustments().exposureMode, neutralFilmID: "")
+                                              defaultExposureMode: RenderEngine.isRasterInput(file) ? .sensor : Adjustments().exposureMode, neutralFilmID: "")
         let original = editState(settings: settings)
         var snapshot = original
         if let draft = geometryDraft {
@@ -47,7 +50,7 @@ extension EditorModel {
             draft.lens = prepared.candidate.settings.lensSettings
             guard draft != geometryDraft else { return true }
             geometryDraft = draft
-            cropAspectPreset = .free; cropAspectSwapped = false
+            if draft.geometry != prepared.draft?.geometry { cropAspectPreset = .free; cropAspectSwapped = false }
             geometryDraftRevision &+= 1
             if previousPreview != draft.previewGeometry || previousLens != draft.lens {
                 geometryDraftPreviewReady = false
@@ -63,6 +66,129 @@ extension EditorModel {
             edited()
         }
         return true
+    }
+
+    var adjustmentContext: EditorAdjustmentContext {
+        EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
+            defaultExposureMode: RenderEngine.isRasterInput(file) ? .sensor : Adjustments().exposureMode, neutralFilmID: "")
+    }
+
+    func isAdjustmentModified(_ scope: EditorResetScope) -> Bool {
+        var snapshot = editState(settings: settings)
+        if let draft = geometryDraft {
+            snapshot.settings.geometry = draft.geometry.isIdentity ? nil : draft.geometry
+            snapshot.settings.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
+        }
+        return EditorAdjustmentRules.isModified(scope: scope, snapshot: snapshot, context: adjustmentContext)
+    }
+
+    func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
+        var target = adjustmentNavigation
+        target.selectGroup(group)
+        navigateAdjustment(to: target)
+    }
+
+    func selectAdjustmentTool(_ tool: EditorAdjustmentTool) {
+        guard tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
+        var target = adjustmentNavigation; target.selectTool(tool)
+        navigateAdjustment(to: target)
+    }
+
+    func selectAdjustmentGeometryTab(_ tab: MacGeometryTab) {
+        let tool: EditorAdjustmentTool = tab == .lens ? .lens : .geometry
+        if geometryDraft != nil && adjustmentNavigation.tool == tool {
+            _ = selectGeometryDraftTab(tab)
+            return
+        }
+        var target = adjustmentNavigation; target.selectTool(tool)
+        navigateAdjustment(to: target, geometryTab: tab)
+    }
+
+    private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
+        NSApp?.keyWindow?.makeFirstResponder(nil)
+        guard resetReturnTool == nil, resetConfirmation == nil else { return }
+        let action = { [weak self] in
+            guard let self else { return }
+            if target.expandedGroup != nil && target.tool.usesGeometryDraft {
+                guard self.beginGeometryDraft(tab: geometryTab ?? (target.tool == .lens ? .lens : .crop)) else { return }
+            }
+            self.adjustmentNavigation = target
+        }
+        if geometryDraft != nil { requestLeavingGeometryDraft(action) }
+        else { action() }
+    }
+
+    func requestAdjustmentReset(_ scope: EditorResetScope) {
+        NSApp?.keyWindow?.makeFirstResponder(nil)
+        guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
+        if scope == .all, geometryDraft != nil {
+            if !geometryDraftHasChanges && !isAdjustmentModified(.all) { return }
+            resetReturnTool = adjustmentNavigation.tool
+            resetReturnGeometryTab = geometryDraftTab
+            resetSource = file
+            requestLeavingGeometryDraft({ [weak self] in self?.prepareAdjustmentReset(scope) }, onStay: { [weak self] in
+                self?.resetReturnTool = nil; self?.resetReturnGeometryTab = nil; self?.resetSource = nil
+            })
+        } else { prepareAdjustmentReset(scope) }
+    }
+
+    private func prepareAdjustmentReset(_ scope: EditorResetScope) {
+        switch prepareReset(scope: scope) {
+        case .unchanged: resumeResetToolIfReady()
+        case .blocked(let reason): resetBlockedMessage = resetMessage(reason); resumeResetToolIfReady()
+        case .prepared(let prepared):
+            let needsConfirmation: Bool
+            switch scope {
+            case .all, .group, .hslAll, .tool(.hsl): needsConfirmation = true
+            case .tool(.film), .tool(.recipe): needsConfirmation = !resetConversions(prepared).isEmpty
+            default: needsConfirmation = false
+            }
+            if needsConfirmation { resetConfirmationScope = scope; resetConfirmation = prepared }
+            else if !commitReset(prepared) { resetBlockedMessage = L10n.text("照片或调整已变化，请重新确认重置。") }
+        }
+    }
+
+    func finishAdjustmentReset(confirm: Bool) {
+        let candidate = resetConfirmation
+        resetConfirmation = nil; resetConfirmationScope = nil
+        if confirm, let candidate, !commitReset(candidate) {
+            resetBlockedMessage = L10n.text("照片或调整已变化，请重新确认重置。")
+        }
+        resumeResetToolIfReady()
+    }
+
+    func resumeResetToolIfReady() {
+        guard resetConfirmation == nil, let tool = resetReturnTool else { return }
+        guard file == resetSource else { resetReturnTool = nil; resetReturnGeometryTab = nil; resetSource = nil; return }
+        guard !busy, pendingGeometryPresentation == nil else { return }
+        if tool.usesGeometryDraft {
+            guard beginGeometryDraft(tab: resetReturnGeometryTab ?? (tool == .lens ? .lens : .crop)) else { return }
+        }
+        adjustmentNavigation.selectTool(tool)
+        resetReturnTool = nil; resetReturnGeometryTab = nil; resetSource = nil
+    }
+
+    func resetConversions(_ prepared: PreparedReset) -> [String] {
+        let before = prepared.original.settings, after = prepared.candidate.settings
+        guard before.masterRecipeID != nil, after.masterRecipeID == nil else { return [] }
+        var changes = [String]()
+        for parameter in [AdjustmentParameter.exposure, .contrast, .highlights, .shadows, .saturation, .temperature, .tint] {
+            if before[keyPath: parameter.spec.keyPath] != after[keyPath: parameter.spec.keyPath] { changes.append(parameter.spec.title) }
+        }
+        if before.whiteBalanceMode != after.whiteBalanceMode { changes.append(L10n.text("白平衡")) }
+        if before.hslSettings != after.hslSettings { changes.append("HSL") }
+        return changes
+    }
+
+    private func resetMessage(_ reason: ResetBlockedReason) -> String {
+        switch reason {
+        case .adjustment(.missingAsShotWhiteBalance): return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
+        case .adjustment(.unrepresentableRecipe): return L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+        case .adjustment(.invalidSnapshot("masterRecipe")), .adjustment(.invalidSnapshot("masterRecipeID")):
+            return L10n.text("当前配方不可用，无法安全重置外观。")
+        case .geometryDraftActive, .geometryDraftRequired, .invalidDraftInputs: return L10n.text("预览尚未就绪，请稍后重试。")
+        default: return L10n.text("当前照片或调整记录无效，无法安全重置。")
+        }
     }
 
     func selectMasterRecipe(_ recipe: MasterRecipe?) {
