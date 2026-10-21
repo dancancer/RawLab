@@ -16,6 +16,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,7 +29,7 @@ import com.rawlab.android.R
 import com.rawlab.android.about.LanguageMenu
 import com.rawlab.android.analytics.UsageFilmKind
 import com.rawlab.android.editor.AdjustmentGroup
-import com.rawlab.android.editor.EditorState
+import com.rawlab.android.editor.*
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.editor.canvas.PhotoCanvasState
 import com.rawlab.android.editor.controls.AdjustmentHapticGate
@@ -33,6 +37,7 @@ import com.rawlab.android.editor.controls.LocalAdjustmentFocus
 import com.rawlab.android.editor.controls.LocalAdjustmentHapticGate
 import com.rawlab.android.editor.controls.LocalEditorHaptics
 import com.rawlab.android.editor.controls.editorUsesSideDock
+import com.rawlab.android.editor.controls.editorDockLayout
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.photo.PhotoInfoReader
@@ -49,7 +54,7 @@ internal fun filmSelectionChanged(edits: EditSettings, selectedId: String): Bool
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
-    onEdit: (EditSettings, Boolean) -> Unit, onReset: () -> Unit, onRetry: () -> Unit,
+    onEdit: (EditSettings, Boolean) -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
     onSaveRetry: () -> Unit = {},
     onAutoExposure: () -> Unit = {},
@@ -61,11 +66,21 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
     onApplyDraft: () -> Boolean = { false }, onDiscardDraft: () -> Unit = {},
     onGeometryRatio: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
-    onFilmSelected: (UsageFilmKind) -> Unit = {}) {
+    onFilmSelected: (UsageFilmKind) -> Unit = {},
+    onPrepareReset: (EditorResetScope) -> EditorResetPreparation = {
+        EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
+    },
+    onCommitReset: (PreparedEditorReset) -> Boolean = { false }) {
     var compare by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
+    var channel by rememberSaveable { mutableIntStateOf(0) }
+    var pendingAll by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
+    var prepareAllWhenReady by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
+    var preparedReset by remember { mutableStateOf<PreparedEditorReset?>(null) }
+    var blockedScope by remember { mutableStateOf<EditorResetScope?>(null) }
+    var resetError by remember { mutableStateOf<Int?>(null) }
     var pendingLeave by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf<(() -> Unit)?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
@@ -75,6 +90,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val preferences = remember(context) { context.getSharedPreferences("editor", android.content.Context.MODE_PRIVATE) }
     var haptics by rememberSaveable { mutableStateOf(preferences.getBoolean("haptics", true)) }
     fun leave(action: () -> Unit) {
+        if (pendingAll) return
         if (state.draft?.changed == true) pendingLeave = action
         else { if (state.draft != null) onDiscardDraft(); action() }
     }
@@ -87,23 +103,87 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     val retrySave = { if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
     val selectTool: (Int) -> Unit = { next -> if (next != tool) leave { tool = next; expanded = true } }
-    LaunchedEffect(tool, state.canExport) {
-        if (state.draft == null && state.canExport) when (tool) {
+    val selectGroup: (EditorAdjustmentGroup) -> Unit = { group ->
+        leave {
+            if (expanded && EditorAdjustmentRules.groupFor(tool) == group) expanded = false
+            else { tool = EditorAdjustmentRules.defaultTool(group); expanded = true }
+        }
+    }
+    fun finishAll() { pendingAll = false; prepareAllWhenReady = false }
+    fun prepareReset(scope: EditorResetScope) {
+        val result = onPrepareReset(scope)
+        when (val outcome = result.result) {
+            EditorResetResult.NoChange -> finishAll()
+            is EditorResetResult.Blocked -> {
+                blockedScope = scope
+                resetError = when {
+                    outcome.reason.contains("Unknown recipe") -> R.string.editor_reset_unknown_recipe
+                    outcome.reason.contains("Missing white balance") -> R.string.editor_reset_missing_wb
+                    outcome.reason.contains("preview") -> R.string.editor_reset_not_ready
+                    outcome.reason.contains("represented") -> R.string.editor_reset_unrepresentable
+                    else -> R.string.editor_reset_invalid
+                }
+                finishAll()
+            }
+            is EditorResetResult.Ready -> result.prepared?.let { prepared ->
+                if (outcome.requiresConfirmation) preparedReset = prepared
+                else if (!onCommitReset(prepared)) resetError = R.string.editor_reset_stale
+            }
+        }
+    }
+    val requestReset: (EditorResetScope) -> Unit = { scope ->
+        if (!pendingAll) {
+            if (scope == EditorResetScope.All) {
+                // 中性且未改动的草稿原地保持，避免离开/重进产生额外预览。
+                if (state.draft?.changed == true || EditorAdjustmentRules.isModified(scope, state.edits, state.resetContext())) {
+                    leave { pendingAll = true; prepareAllWhenReady = true }
+                    pendingAll = true
+                }
+            } else prepareReset(scope)
+        }
+    }
+    LaunchedEffect(pendingAll, prepareAllWhenReady, state.draft, state.exact, state.rendering, state.previewResizePending) {
+        if (pendingAll && prepareAllWhenReady && state.draft == null && state.exact &&
+            !state.rendering && !state.previewResizePending) {
+            prepareAllWhenReady = false
+            prepareReset(EditorResetScope.All)
+        }
+    }
+    LaunchedEffect(tool, expanded, state.canExport, pendingAll) {
+        if (expanded && !pendingAll && state.draft == null && state.canExport) when (tool) {
             17 -> onBeginDraft(AdjustmentGroup.GEOMETRY)
             16 -> onBeginDraft(AdjustmentGroup.LENS)
         }
     }
     BackHandler(enabled = state.draft != null) { leave { tool = 2 } }
-    if (pendingLeave != null) AlertDialog(onDismissRequest = { pendingLeave = null },
+    if (pendingLeave != null) AlertDialog(onDismissRequest = { pendingLeave = null; finishAll() },
         title = { Text(stringResource(R.string.adjustment_leave)) },
         confirmButton = { TextButton(onClick = { applyAndLeave() },
             enabled = state.canApplyDraft) { Text(stringResource(R.string.adjustment_apply)) } },
         dismissButton = {
             Column {
                 TextButton(onClick = { onDiscardDraft(); pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
-                TextButton(onClick = { pendingLeave = null }) { Text(stringResource(R.string.adjustment_continue)) }
+                TextButton(onClick = { pendingLeave = null; finishAll() }) { Text(stringResource(R.string.adjustment_continue)) }
             }
         })
+    preparedReset?.let { prepared ->
+        EditorResetConfirmation(prepared, onDismiss = { preparedReset = null; finishAll() }) {
+            preparedReset = null
+            if (!onCommitReset(prepared)) resetError = R.string.editor_reset_stale
+            finishAll()
+        }
+    }
+    resetError?.let { message -> AlertDialog(onDismissRequest = { resetError = null },
+        title = { Text(stringResource(R.string.editor_reset_blocked_title)) }, text = { Text(stringResource(message)) },
+        confirmButton = { TextButton(onClick = { resetError = null }) { Text(stringResource(R.string.confirm)) } },
+        dismissButton = {
+            if (blockedScope != EditorResetScope.All && message in listOf(R.string.editor_reset_unknown_recipe,
+                    R.string.editor_reset_missing_wb, R.string.editor_reset_unrepresentable)) {
+                TextButton(onClick = { resetError = null; requestReset(EditorResetScope.All) }) {
+                    Text(stringResource(R.string.editor_reset_all))
+                }
+            }
+        }) }
     if (settings) AlertDialog(onDismissRequest = { settings = false }, title = { Text(stringResource(R.string.editor_settings)) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,9 +251,22 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         })
     }) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
-            val dockHeight = if (expanded) (maxHeight * .48f).coerceIn(300.dp, 460.dp).coerceAtMost(maxHeight * .7f) else 56.dp
-            val wide = editorUsesSideDock(maxWidth.value, maxHeight.value)
-            val sideDockWidth = if (maxWidth >= 1000.dp) 360.dp else 340.dp
+            val density = LocalDensity.current
+            val textMeasurer = rememberTextMeasurer()
+            val groupStyle = MaterialTheme.typography.labelMedium
+            val titles = EditorAdjustmentGroup.entries.map { stringResource(groupTitle(it)) }
+            val slotWidth = (320.dp - 16.dp) / 6
+            val labelsFit = slotWidth >= 48.dp && titles.all { title ->
+                val measurement = textMeasurer.measure(AnnotatedString(title), groupStyle,
+                    constraints = Constraints(maxWidth = with(density) { (slotWidth - 8.dp).roundToPx() }))
+                measurement.lineCount <= 2
+            }
+            val wide = editorUsesSideDock(maxWidth.value, maxHeight.value, density.fontScale,
+                if (labelsFit) 320f else Float.POSITIVE_INFINITY)
+            // 顶部进度区与底部分隔线不属于照片/面板可分配高度。
+            val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
+            val dockHeight = dockLayout.height.dp
+            val sideDockWidth = 320.dp
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().height(4.dp)) {
                     if (state.rendering || state.previewResizePending || state.operation == Operation.EXPORT) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -187,9 +280,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         }
                         VerticalDivider()
                         AdjustmentDock(state, Modifier.width(sideDockWidth).fillMaxHeight(), tool, selectTool, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
+                            { leave { expanded = !expanded } }, compare, { compare = !compare }, onEdit,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio)
+                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, wide, !pendingAll, dockLayout.compactNavigation)
                     }
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
@@ -198,9 +291,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     if (state.photo != null) {
                         HorizontalDivider()
                         AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, selectTool, expanded,
-                            { expanded = !expanded }, compare, { compare = !compare }, onEdit, onReset,
+                            { leave { expanded = !expanded } }, compare, { compare = !compare }, onEdit,
                             onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio)
+                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, wide, !pendingAll, dockLayout.compactNavigation)
                     }
                 }
             }

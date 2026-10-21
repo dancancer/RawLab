@@ -29,7 +29,7 @@ class UsageFilmSelectionTest {
                         photo = ImportedPhoto(Uri.parse("content://fixture/photo"), "Fixture", File("unused")),
                         looks = listOf(LookChoice("missing", "Missing look", managed = true, available = false)),
                     ),
-                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> edits++ }, onReset = {},
+                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> edits++ },
                     onRetry = {}, onExport = {}, onFilmSelected = { events++ },
                     onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
                 )

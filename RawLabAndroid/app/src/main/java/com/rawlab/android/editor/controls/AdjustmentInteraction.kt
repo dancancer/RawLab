@@ -50,4 +50,19 @@ internal data class AdjustmentScale(
     }
 }
 
-internal fun editorUsesSideDock(width: Float, height: Float): Boolean = width >= 600f && width > height
+internal fun editorUsesSideDock(width: Float, height: Float, fontScale: Float = 1f,
+    requiredGroupWidth: Float = 0f, dockWidth: Float = 320f): Boolean =
+    width >= 600f && width > height && fontScale < 1.3f && requiredGroupWidth <= dockWidth
+
+internal data class EditorDockLayout(val height: Float, val compactNavigation: Boolean)
+
+internal fun editorDockLayout(availableHeight: Float, fontScale: Float, sideDock: Boolean, expanded: Boolean): EditorDockLayout {
+    val strip = 88f + 24f * (fontScale - 1f).coerceAtLeast(0f)
+    // 所有工具都预留草稿底栏和完整80dp刻度，避免切入几何后挤掉参数视口。
+    val regular = 48f + strip * 2f + 64f + 104f
+    val maximum = if (sideDock) availableHeight else availableHeight * .7f
+    val compact = maximum < regular
+    return EditorDockLayout(if (sideDock) availableHeight else if (!expanded) {
+        if (compact) 48f else 160f * fontScale
+    } else regular.coerceAtMost(maximum), compact)
+}

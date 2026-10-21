@@ -137,7 +137,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
-            onEdit = model::edit, onReset = model::reset, onRetry = model::retry,
+            onEdit = model::edit, onRetry = model::retry,
+            onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = model::retrySave,
             onAutoExposure = model::autoExposure,
             onFilmSelected = { usage.record(UsageEvent.FilmSelected(it)) },

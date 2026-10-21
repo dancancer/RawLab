@@ -16,6 +16,24 @@ class EditorAdjustmentRulesTest {
     private fun candidate(scope: EditorResetScope, source: EditSettings, ctx: EditorResetContext = context()) =
         (rules.prepareReset(scope, source, ctx) as EditorResetResult.Ready).candidate
 
+    @Test fun allResetCanRemoveUnavailableRecipeWithoutMaterializingIt() {
+        val source = EditSettings(recipeID = "unavailable", film = "unavailable", exposure = 3f,
+            processing = ProcessingIdentity.LEGACY)
+        val outcome = rules.prepareReset(EditorResetScope.All, source, context())
+        assertTrue(outcome is EditorResetResult.Ready)
+        val reset = outcome as EditorResetResult.Ready
+        assertEquals(EditSettings(processing = ProcessingIdentity.LEGACY), reset.candidate)
+        assertTrue(reset.requiresConfirmation)
+    }
+
+    @Test fun wholeHslToolRequiresTheSameConfirmationAsAllHsl() {
+        val settings = EditSettings(hsl = HslSettings().withValue(0, 3, 15f))
+        val context = EditorResetContext(PhotoInputKind.RAW, EditSettings())
+        val reset = EditorAdjustmentRules.prepareReset(EditorResetScope.Tool(14), settings, context) as EditorResetResult.Ready
+        assertTrue(reset.requiresConfirmation)
+        assertEquals(HslSettings(), reset.candidate.hsl)
+    }
+
     @Test fun fullResetPreservesLegacyIdentityAndNeutralLegacyIsUnmodified() {
         val legacy = EditSettings(processing = ProcessingIdentity.LEGACY)
         val ctx = context()
