@@ -1,11 +1,88 @@
 /* Web-prototype tokens mapped from DESIGN.md and native controls. They do not replace native tokens. */
 body {
+  /* 表面：照片优先，界面只用中性灰分层 */
   --bg: #1c1c1e;
+  --canvas: #1b1b1d;
+  --chrome: #262628;
+  --sidebar: #222224;
   --surface: #252527;
   --raised: #303033;
+  --control: #414145;
+  --popup: #2f2f32;
   --line: #3c3c3f;
+  --line-soft: #ffffff14;
+  --outline: #5c5c63;
+  --hover: #ffffff0d;
+  --scrim: #0009;
+  --overlay: #101011db;
+  /* 文本 */
   --fg: #f2f2f3;
   --muted: #b5b5bc;
+  --faint: #8e8e96;
+  /* 功能色：黄色只表示选中、已改动和进度，不用于重置等次要操作 */
   --accent: #f2ce48;
+  --accent-text: #221f12;
+  --accent-strong: #ffe17b;
+  --accent-weak: #4b4530;
   --danger: #ffb1a9;
+  --danger-weak: #3d2c29;
+  /* 滑杆 */
+  --track: #55555c;
+  --thumb: #ececef;
+  /* 字号阶梯；大字号模式整体替换这一组 */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 20px;
+  --text-3xl: 24px;
+  /* 间距以 4 为单位 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  /* 圆角与点击目标 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 12px;
+  --target: 32px;
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+body.ios {
+  --target: 44px;
+}
+body.android {
+  --bg: #1c1b1f;
+  --surface: #252428;
+  --raised: #343238;
+  --accent: #f0cf57;
+  --target: 48px;
+  --radius-lg: 22px;
+  --font: Roboto, system-ui, "PingFang SC", sans-serif;
+}
+/* WPF Controls.xaml：按钮 5、下拉框 4 的圆角，Segoe UI 与微软雅黑 */
+body.windows {
+  --chrome: #2b2b2d;
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+  --font:
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui,
+    sans-serif;
+}
+body.large-text {
+  --text-2xs: 13px;
+  --text-xs: 14px;
+  --text-sm: 15px;
+  --text-md: 16px;
+  --text-base: 17px;
+  --text-lg: 19px;
+  --text-xl: 21px;
+  --text-2xl: 23px;
+  --text-3xl: 28px;
 }

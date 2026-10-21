@@ -4,7 +4,7 @@
 
 | 资产 | 用途 | 状态来源 |
 | --- | --- | --- |
-| [四端应用设计资产](editor-workspace/README.md) · [设计板](editor-workspace/index.html) · [覆盖表](editor-workspace/coverage.html) | 四端现有完整功能界面；本轮分组、HSL、三态对比与桌面更新；共用图标、状态和检查工具 | [manifest.js](editor-workspace/manifest.js) |
+| [四端应用设计资产](editor-workspace/README.md) · [设计板](editor-workspace/index.html) · [覆盖表](editor-workspace/coverage.html) | 四端现有完整功能界面；本轮分组、HSL、前后对比与桌面更新；共用图标、状态和检查工具 | [manifest.js](editor-workspace/manifest.js) |
 | [调整记忆与批量导出](2026-10-09-edit-memory-batch-export/README.md) | 既有已确认方案与静态参考图 | 该目录 README；保留历史来源，不把图片当运行证据 |
 
 ## 后续如何维护

@@ -1,7 +1,7 @@
 .flow-backdrop {
   position: absolute;
   inset: 30px 0 0;
-  background: #0006;
+  background: var(--scrim);
   z-index: 6;
 }
 .flow-window {
@@ -9,8 +9,8 @@
   inset: 7% 10%;
   z-index: 7;
   background: var(--surface);
-  border: 1px solid #55555d;
-  border-radius: 10px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -28,7 +28,7 @@
   flex: none;
 }
 .flow-header h2 {
-  font-size: 17px;
+  font-size: var(--text-lg);
   margin: 0;
 }
 .flow-header .space {
@@ -41,16 +41,16 @@
   flex: 1;
 }
 .flow-body h3 {
-  font-size: 14px;
+  font-size: var(--text-base);
   margin: 18px 0 12px;
 }
 .flow-body p {
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.8;
   color: var(--muted);
 }
 .flow-body .flow-lead {
-  font-size: 17px;
+  font-size: var(--text-lg);
   color: var(--fg);
   margin: 0 0 20px;
 }
@@ -77,7 +77,7 @@
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   padding: 12px 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .flow-row > .muted {
   display: flex;
@@ -88,7 +88,7 @@
 .flow-link small {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   margin-top: 5px;
 }
 .flow-field {
@@ -98,14 +98,14 @@
   gap: 18px;
   min-height: 58px;
   border-bottom: 1px solid var(--line);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .flow-field input,
 .flow-field select,
 .flow-form-inline select {
   color: var(--fg);
   background: var(--raised);
-  border: 1px solid #65656d;
+  border: 1px solid var(--outline);
   border-radius: 5px;
   padding: 9px;
   max-width: 65%;
@@ -117,7 +117,7 @@
   justify-content: space-between;
   gap: 16px;
   min-height: 50px;
-  font-size: 13px;
+  font-size: var(--text-md);
   border-bottom: 1px solid var(--line);
 }
 .flow-static strong {
@@ -131,25 +131,25 @@
 .flow-note {
   color: var(--muted);
   line-height: 1.8;
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin: 16px 0;
 }
 .flow-error {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  background: #332a28;
+  background: var(--danger-weak);
   padding: 16px;
   border-radius: 6px;
-  color: #ffc6b5;
+  color: var(--danger);
 }
 .flow-error strong {
-  font-size: 14px;
+  font-size: var(--text-base);
 }
 .flow-error p {
   margin: 7px 0 0 !important;
   color: #e8c7bc !important;
-  font-size: 12px !important;
+  font-size: var(--text-sm) !important;
 }
 .flow-error svg {
   color: #f0b3a0;
@@ -159,7 +159,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin-bottom: 18px;
 }
 .flow-form-inline label {
@@ -197,7 +197,7 @@
 }
 .flow-photo-item button > span {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-xs);
   padding: 8px 0 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -234,7 +234,7 @@
   margin: 0 0 12px;
 }
 .flow-summary summary {
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
   color: var(--muted);
 }
@@ -243,7 +243,7 @@
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 .flow-summary dd,
@@ -268,7 +268,7 @@
   min-height: 80px;
   padding: 8px 0;
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .flow-job-row > div,
 .flow-job-row > .flow-link {
@@ -284,12 +284,12 @@
   margin-top: 7px;
 }
 .flow-job-row .error-text {
-  color: #ffc6b5;
+  color: var(--danger);
 }
 .flow-job-progress {
   height: 3px;
   margin: 20px 0;
-  background: #424247;
+  background: var(--track);
 }
 .flow-job-progress i {
   display: block;
@@ -328,7 +328,7 @@
   justify-content: space-between;
   gap: 18px;
   min-height: 60px;
-  font-size: 14px;
+  font-size: var(--text-base);
   border-bottom: 1px solid var(--line);
 }
 .flow-toggle input {
@@ -362,10 +362,10 @@
   min-height: 110px;
   background: var(--surface);
   padding: 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .icon-catalog code {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--muted);
   word-break: break-all;
 }
@@ -379,7 +379,7 @@
   user-select: text;
 }
 .flow-subtitle {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin: 12px 24px 0;
 }
@@ -408,7 +408,7 @@
   min-height: 56px;
 }
 .mobile .flow-header h2 {
-  font-size: 17px;
+  font-size: var(--text-lg);
 }
 .mobile .flow-header .icon {
   min-width: 44px;
@@ -453,17 +453,17 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .mobile.large-text .flow-header h2 {
-  font-size: 21px;
+  font-size: var(--text-2xl);
 }
 .mobile.large-text .flow-body p,
 .mobile.large-text .flow-row,
 .mobile.large-text .flow-field,
 .mobile.large-text .flow-static,
 .mobile.large-text .flow-body h3 {
-  font-size: 18px;
+  font-size: var(--text-xl);
 }
 .mobile.large-text .flow-footer button {
-  font-size: 17px;
+  font-size: var(--text-lg);
   min-height: 48px;
 }
 .android.mobile .flow-header .icon,
@@ -525,4 +525,109 @@
   .mobile .batch-output > .flow-note {
     order: 3;
   }
+}
+
+/* 规划中入口：可见但不可用，说明交付阶段 */
+.flow-row.planned {
+  color: var(--faint);
+  cursor: default;
+}
+.flow-row .tag {
+  font-size: var(--text-2xs);
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.flow-toggle small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  margin-top: 4px;
+  line-height: 1.6;
+}
+/* iOS 表单里的选择项呈现为菜单按钮：右对齐的当前值加上下箭头，不画网页下拉框 */
+.ios .flow-field select {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  background: transparent
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M3 6l3-3 3 3M3 10l3 3 3-3' fill='none' stroke='%23b5b5bc' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    right center / 12px 16px no-repeat;
+  color: var(--muted);
+  text-align: right;
+  text-align-last: right;
+  padding: 9px 20px 9px 0;
+  min-width: 0;
+}
+/* Android 使用带边框的下拉框（Material 外框样式） */
+.android .flow-field select {
+  border-radius: var(--radius-sm);
+  border-color: var(--outline);
+}
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.token-grid > div {
+  display: grid;
+  gap: 4px;
+  font-size: var(--text-xs);
+}
+.token-grid i {
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+.token-grid strong {
+  font-weight: 500;
+}
+.token-grid code,
+.type-scale code {
+  font-size: var(--text-2xs);
+  color: var(--faint);
+}
+.type-scale p {
+  margin: 0 0 6px;
+  color: var(--fg) !important;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  line-height: 1.4 !important;
+}
+.type-scale code {
+  width: 90px;
+  flex: none;
+}
+.component-axes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 28px;
+  max-width: 720px;
+}
+.component-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.group-sample {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sample-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.mobile .token-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mobile .component-axes {
+  grid-template-columns: 1fr;
 }

@@ -35,6 +35,9 @@ const shots = new Set([
   "processing",
   "compare",
   "compare-wipe",
+  "compare-hold",
+  "reset-menu",
+  "update-settings",
   "export-options",
   "batch-confirm",
   "batch-running",
@@ -89,8 +92,10 @@ const shots = new Set([
           ![
             "compare",
             "compare-wipe",
+            "compare-hold",
             "draft-confirm",
             "update-ready",
+            "reset-menu",
           ].includes(id)
         )
           assert.equal(
@@ -104,6 +109,15 @@ const shots = new Set([
             (es) => es.filter((e) => e.scrollWidth > e.clientWidth + 1).length,
           );
         assert.equal(bad, 0, current + " flow overflow");
+        // 流程标题栏有上一级时只给返回，顶层只给关闭，不同时出现。
+        assert(
+          (await page
+            .locator(
+              ".flow-header [data-flow-action=back], .flow-header [data-flow-action=close]",
+            )
+            .count()) <= 1,
+          current + " flow header shows both back and close",
+        );
         if (shots.has(id))
           await page.screenshot({
             path: path.join(out, platform + "-" + id + ".png"),
@@ -120,29 +134,97 @@ const shots = new Set([
           ),
         );
       const rect = await rectangles();
-      for (const cls of ["side-by-side", "wipe", null]) {
-        await page.locator(".toolbar [data-action=compare]").click();
+      const compareIs = async (cls, label) => {
         assert.equal(
           await page
             .locator(cls ? ".compare-stage." + cls : ".compare-stage")
             .count(),
           cls ? 1 : 0,
-          current + " comparison cycle",
+          current + " comparison " + label,
         );
         assert.deepEqual(
           await rectangles(),
           rect,
           current + " comparison moved layout",
         );
-        if (cls === "wipe") {
-          await page.locator("[data-compare-position]").fill("72");
-          assert(
-            (
-              await page.locator(".compare-stage").getAttribute("style")
-            ).includes("72%"),
-          );
-        }
+      };
+      const toggle = () =>
+        page.locator(".toolbar [data-action=compare]").click();
+      // 点按只开关，并回到上次使用的方式；方式在画面内切换或从菜单选择。
+      await toggle();
+      await compareIs("side-by-side", "opens last mode");
+      await toggle();
+      await compareIs(null, "tap closes");
+      await toggle();
+      await page.locator('[data-compare-mode="2"]').click();
+      await compareIs("wipe", "in-canvas switch");
+      await page.locator("[data-compare-position]").fill("72");
+      assert(
+        (await page.locator(".compare-stage").getAttribute("style")).includes(
+          "72%",
+        ),
+      );
+      const frame = await page
+        .locator(".compare-stage .photo-frame")
+        .boundingBox();
+      const divider = await page.locator(".compare-divider").boundingBox();
+      assert(
+        divider.y >= frame.y - 1 &&
+          divider.y + divider.height <= frame.y + frame.height + 1,
+        current + " divider leaves the photo",
+      );
+      await toggle();
+      await compareIs(null, "tap closes wipe");
+      await toggle();
+      await compareIs("wipe", "remembers last mode");
+      if (!["ios", "android"].includes(platform)) {
+        await page.locator("[data-action=compare-menu]").click();
+        await page.locator('[data-menu-action="compare-set:1"]').click();
+        await compareIs("side-by-side", "menu choice");
       }
+      await toggle();
+      await compareIs(null, "closed");
+      // 再点当前分组收起面板；组内工具页签标出已调整的工具。
+      await page.locator('[data-group="light"]').click();
+      assert.equal(await page.locator(".editor.has-group").count(), 1);
+      assert.equal(
+        await page.locator('[data-tool="exposure"] .tab-dot').count(),
+        1,
+        current + " changed tool dot",
+      );
+      assert.equal(
+        await page.locator('[data-tool="contrast"] .tab-dot').count(),
+        0,
+      );
+      await page.locator('[data-group="light"]').click();
+      assert.equal(
+        await page.locator(".editor.has-group").count(),
+        0,
+        current + " re-tap collapses panel",
+      );
+      // 双向参数的填充从中点开始，而不是从最左端。
+      await goto("tool-highlights");
+      const fill = await page
+        .locator('[data-axis="highlights"]')
+        .getAttribute("style");
+      assert(fill.includes("--hi:50.00%"), current + " bipolar fill " + fill);
+      assert.equal(
+        await page
+          .locator('[data-axis="highlights"]')
+          .evaluate((e) =>
+            e
+              .closest(".axis")
+              .querySelector(".number")
+              .classList.contains("changed"),
+          ),
+        true,
+      );
+      await goto("tool-contrast");
+      assert.equal(
+        await page.locator(".axis .number.changed").count(),
+        0,
+        current + " unchanged value styled as changed",
+      );
       for (const id of ["tool-exposure", "hsl", "draft"]) {
         await goto(id);
         const r = await rectangles();
@@ -175,10 +257,28 @@ const shots = new Set([
         footer,
         current + " draft footer moved while parameters scrolled",
       );
+      // 照片上的裁切框可直接拖动，拖动后草稿变为可应用。
+      const handle = await page
+        .locator('[data-crop-handle="se"]')
+        .boundingBox();
+      const before = await page.locator(".crop-frame").boundingBox();
+      await page.mouse.move(
+        handle.x + handle.width / 2,
+        handle.y + handle.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(handle.x - 30, handle.y - 20, { steps: 4 });
+      await page.mouse.up();
+      const after = await page.locator(".crop-frame").boundingBox();
+      assert(after.width < before.width - 10, current + " crop drag");
+      assert.equal(
+        await page.locator("[data-action=apply-draft]").isDisabled(),
+        false,
+      );
       if (["ios", "android"].includes(platform)) {
         await goto("groups");
         const rows = await page
-          .locator("[data-group]")
+          .locator(".group-nav [data-group]")
           .evaluateAll(
             (es) =>
               new Set(es.map((e) => Math.round(e.getBoundingClientRect().top)))
@@ -187,7 +287,7 @@ const shots = new Set([
         assert.equal(rows, 1, current + " groups wrapped");
         assert(
           await page
-            .locator(".group-list")
+            .locator(".group-nav")
             .evaluate((e) => e.scrollWidth > e.clientWidth),
         );
         if (platform === "android") {
@@ -271,7 +371,7 @@ const shots = new Set([
       }
       checks.push(
         platform +
-          ": registered screens, comparison 3-cycle, no layout shift, batch selection/back, system handoff/back, reauthorization",
+          ": registered screens, comparison toggle/switch/menu, collapsible groups, changed markers, bipolar fill, no layout shift, crop drag, flow exits, batch selection/back, system handoff/back, reauthorization",
       );
       await page.close();
     }
@@ -305,10 +405,38 @@ const shots = new Set([
             false,
             `${platform} ${width} ${id} ${large}`,
           );
-          if (id === "groups" && ["ios", "android"].includes(platform))
+          const side = await page.evaluate(
+            (l) =>
+              !l &&
+              matchMedia("(min-width: 600px) and (orientation: landscape)")
+                .matches,
+            large,
+          );
+          if (id === "groups" && ["ios", "android"].includes(platform)) {
+            const rowCount = await page
+              .locator(".group-nav [data-group]")
+              .evaluateAll(
+                (es) =>
+                  new Set(
+                    es.map((e) => Math.round(e.getBoundingClientRect().top)),
+                  ).size,
+              );
+            // 竖屏底部分组栏单行横滑；横屏侧栏六组一次可见，不需要横滑。
+            if (side) {
+              assert.equal(
+                await page
+                  .locator(".group-nav")
+                  .evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
+                true,
+                `${platform} ${width} side groups scroll`,
+              );
+            } else
+              assert.equal(rowCount, 1, `${platform} ${width} groups wrapped`);
+          }
+          if (id === "hsl")
             assert.equal(
               await page
-                .locator("[data-group]")
+                .locator(".swatch")
                 .evaluateAll(
                   (es) =>
                     new Set(
@@ -316,6 +444,7 @@ const shots = new Set([
                     ).size,
                 ),
               1,
+              `${platform} ${width} ${large} swatches wrapped`,
             );
           if (id === "hsl" && !large)
             await page.screenshot({
@@ -346,7 +475,7 @@ const shots = new Set([
     await page.goto(base + "coverage.html");
     assert((await page.locator("#summary").innerText()).includes("可直达"));
     checks.push(
-      "Responsive row layout, coverage index and platform deep links",
+      "Responsive group layout, single-row swatches, coverage index and platform deep links",
     );
     assert.deepEqual(failures, []);
     const report = {

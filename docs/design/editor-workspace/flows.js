@@ -9,6 +9,8 @@ window.RawLabDesignFlows = (() => {
     language = "简体中文",
     privacy = false,
     haptics = true,
+    autoCheck = true,
+    autoInstall = false,
     imported = false,
     removed = false,
     batchSnapshot = null,
@@ -28,6 +30,9 @@ window.RawLabDesignFlows = (() => {
   const link = (id, text, value = "") =>
     `<button class="flow-row" data-flow="${id}"><span>${text}</span><span class="muted">${value}${context.icon("next")}</span></button>`;
   const note = (text) => `<p class="flow-note">${text}</p>`;
+  // 第二阶段入口先占位并明确不可用，避免下一轮再改导航。
+  const planned = (text) =>
+    `<div class="flow-row planned" aria-disabled="true"><span>${text}<small>第二阶段规划，当前不可用</small></span><span class="tag">规划中</span></div>`;
   const error = (title, text) =>
     `<div class="flow-error">${context.icon("warning")}<div><strong>${title}</strong><p>${text}</p></div></div>`;
   function open(id, options = {}) {
@@ -61,7 +66,13 @@ window.RawLabDesignFlows = (() => {
     return `<div class="flow-photo-grid">${photos.map((name, i) => `<div class="flow-photo-item ${selected.has(i) ? "is-selected" : ""}"><button data-flow-photo="${i}" aria-label="${checks ? "选择" : "查看"}${name}">${context.photoMarkup("flow-thumbnail", name)}<span>${name}</span></button>${checks ? `<input type="checkbox" data-flow-select="${i}" aria-label="选择${name}" ${selected.has(i) ? "checked" : ""}>` : ""}</div>`).join("")}</div>`;
   }
   function sizeControls() {
-    return `<label class="flow-field">导出尺寸<select data-flow-field="size"><option value="native" ${size === "native" ? "selected" : ""}>原始分辨率</option>${[2048, 3000, 4096].map((n) => `<option ${size == n ? "selected" : ""}>${n}</option>`).join("")}<option value="custom" ${size === "custom" ? "selected" : ""}>自定义长边</option></select></label>${size === "custom" ? '<label class="flow-field">长边像素<input type="number" min="1" max="65535" value="5000" aria-label="长边像素"></label>' : ""}`;
+    return `<label class="flow-field">导出尺寸<select data-flow-field="size"><option value="native" ${size === "native" ? "selected" : ""}>原始分辨率</option>${[2048, 3000, 4096].map((n) => `<option ${size == n ? "selected" : ""}>${n}</option>`).join("")}<option value="custom" ${size === "custom" ? "selected" : ""}>自定义长边</option></select></label>${size === "custom" ? '<label class="flow-field">长边像素<input type="number" min="1" max="65535" value="5000" aria-label="长边像素"></label>' : ""}<div class="flow-static"><span>输出像素</span><strong>${outputPixels()}（示例）</strong></div>`;
+  }
+  // 示例照片 7952 × 5304；按长边缩放，便于确认导出前的实际尺寸。
+  function outputPixels() {
+    const edge =
+      size === "native" ? 7952 : size === "custom" ? 5000 : Number(size);
+    return edge + " × " + Math.round((edge * 5304) / 7952);
   }
   function formatControls() {
     const choices =
@@ -116,7 +127,11 @@ window.RawLabDesignFlows = (() => {
         (p === "android"
           ? link("library", "相册") + link("licenses", "开源许可")
           : "") +
-        (p === "ios" ? "" : link("about", "关于 RawLab"));
+        (p === "ios" ? "" : link("about", "关于 RawLab")) +
+        (context.mobile
+          ? `<button class="flow-row" data-flow-action="toggle-dock"><span>${context.dockVisible() ? "隐藏调整面板" : "显示调整面板"}</span></button><button class="flow-row" data-flow-action="reset-all"><span>重置全部调整…</span></button>`
+          : "") +
+        `<h3>调整复用</h3>${planned("复制调整")}${planned("粘贴调整")}`;
     } else if (active === "import") {
       body = `<p class="flow-lead">打开 RAW 或支持的普通图片</p>${p === "ios" ? link("system-picker", "从照片图库选择") + link("system-picker", "从文件选择") : p === "android" ? link("library", "从相册选择") + link("system-picker", "从文件选择") : link("system-picker", "选择照片文件") + link("destination", "添加照片文件夹")}${note("继续前保存当前照片的调整。原始文件保持只读。")}`;
     } else if (active === "system-picker") {
@@ -256,8 +271,9 @@ window.RawLabDesignFlows = (() => {
         );
     } else if (active === "batch-confirm") {
       body = `<div class="batch-layout"><section class="batch-targets"><div class="flow-section-title"><h3>${selected.size} 张目标照片</h3>${action("batch-edit-selection", "更改")}</div>${[...selected].map((i) => `<div class="flow-job-row">${context.photoMarkup("job-thumbnail", photos[i])}<button class="flow-link" data-inspect-target="${i}">${photos[i]}<small>查看效果</small></button><button class="axis-reset" data-remove-target="${i}" aria-label="移除${photos[i]}">${context.icon("close")}</button></div>`).join("")}</section><section class="batch-output">${sourceSummary()}${formatControls()}</section></div>${note("仅用于本次导出，保留各照片原有调整；每张照片使用自己的拍摄元数据。")}`;
+      // 桌面窗口保留“取消”结束整个流程；移动端由标题栏返回与系统手势处理。
       footer =
-        action("batch-edit-selection", "返回") +
+        (context.mobile ? "" : action("close", "取消")) +
         action(
           "start-batch",
           "导出 " + selected.size + " 张",
@@ -338,7 +354,7 @@ window.RawLabDesignFlows = (() => {
         link("privacy", "隐私与使用统计") +
         (p === "ios" ? "" : link("about", "关于 RawLab")) +
         (p === "android" ? link("licenses", "开源许可") : "") +
-        (!context.mobile ? link("update", "软件更新") : "");
+        (!context.mobile ? link("update-settings", "软件更新") : "");
     } else if (active === "language") {
       body = `<label class="flow-field">界面语言<select data-flow-field="language">${["简体中文", "English", "Deutsch", "Français", "Español", "日本語"].map((n) => `<option ${n === language ? "selected" : ""}>${n}</option>`).join("")}</select></label>${note("外观、胶片和作者专有名称保持原名。")}`;
       footer = action("back-settings", "完成", "primary");
@@ -348,7 +364,10 @@ window.RawLabDesignFlows = (() => {
       body = `<label class="flow-toggle"><span>允许使用统计</span><input type="checkbox" data-flow-field="privacy" ${privacy ? "checked" : ""}></label><p>开启后，由阿里云处理功能使用次数，数据存储在中国大陆。SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。</p><p>不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。</p>${link("privacy-policy", "隐私政策")}`;
       footer = action("close", "完成", "primary");
     } else if (active === "about") {
-      body = `<div class="flow-result"><h3>RawLab</h3><p>版本 0.8.2（设计示例）</p></div>${link("project", "GitHub 项目")}${link("author", "作者")}${link("language", "语言", language)}${p === "android" ? link("mobile-update", "检查更新") : link("update", "软件更新")}${link("privacy", "使用统计与隐私")}`;
+      body = `<div class="flow-result"><h3>RawLab</h3><p>版本 0.8.2（设计示例）</p></div>${link("project", "GitHub 项目")}${link("author", "作者")}${link("language", "语言", language)}${p === "android" ? link("mobile-update", "检查更新") : link("update-settings", "软件更新")}${link("privacy", "使用统计与隐私")}`;
+    } else if (active === "update-settings") {
+      body = `<div class="flow-static"><span>当前版本</span><strong>0.8.2（示例）</strong></div><label class="flow-toggle"><span>自动检查更新<small>后台检查，不打断正在进行的编辑。</small></span><input type="checkbox" data-flow-field="auto-check" ${autoCheck ? "checked" : ""}></label><label class="flow-toggle"><span>自动下载并安装更新<small>默认关闭。开启后先保存调整、等待导出结束，在退出或重启时安装。</small></span><input type="checkbox" data-flow-field="auto-install" ${autoInstall ? "checked" : ""}></label>${note("上次检查：今天 09:41（示例）。更新提示只询问本次是否安装，长期设置在这里修改。")}`;
+      footer = action("check-now", "立即检查", "primary");
     } else if (active === "mobile-update") {
       body = `<label class="flow-toggle"><span>自动检查更新</span><input type="checkbox" checked></label><p>发现更新时前往官方发布页下载。</p>${note("Android 保持现有检查与手动下载方式，本轮不设计移动端自动安装。")}`;
       footer =
@@ -376,7 +395,28 @@ window.RawLabDesignFlows = (() => {
       body = `<h3>已完成的输出</h3>${batchRows("batch-done")}${note(context.mobile ? "正式应用打开照片图库或文件位置查看保存结果。" : "正式应用在文件管理器中打开输出文件夹。")}`;
       footer = action("close", "完成", "primary");
     } else if (active === "components") {
-      body = `<h3>语义图标</h3><div class="icon-catalog">${Object.entries(
+      const tokens = [
+        ["--canvas", "照片画布"],
+        ["--surface", "调整区与对话框"],
+        ["--raised", "输入框"],
+        ["--control", "次要按钮"],
+        ["--line", "分隔线"],
+        ["--fg", "主要文字"],
+        ["--muted", "次要文字"],
+        ["--accent", "选中 / 已改动 / 进度"],
+        ["--accent-weak", "选中底色"],
+        ["--danger", "错误与破坏性"],
+      ];
+      const sizes = [
+        ["--text-2xs", "刻度、角标"],
+        ["--text-xs", "说明"],
+        ["--text-sm", "参数名、页签"],
+        ["--text-md", "正文"],
+        ["--text-base", "主要正文"],
+        ["--text-lg", "标题"],
+        ["--text-2xl", "空状态标题"],
+      ];
+      body = `<h3>颜色令牌</h3>${note("黄色只表示选中、已改动和进度；重置、自动等次要操作使用中性灰。")}<div class="token-grid">${tokens.map(([v, t]) => `<div><i style="background:var(${v})"></i><strong>${t}</strong><code>${v}</code></div>`).join("")}</div><h3>字号阶梯</h3>${note("大字号模式整体替换这一组令牌，控件尺寸随之放大。")}<div class="type-scale">${sizes.map(([v, t]) => `<p style="font-size:var(${v})"><code>${v}</code>${t}</p>`).join("")}</div><h3>按钮</h3><div class="flow-form-inline">${action("component-demo", "主要", "primary")}${action("component-demo", "次要")}<button class="quiet" data-flow-action="component-demo">${context.icon("reset")}重置</button>${action("component-demo", "不可用", "secondary", true)}<button class="secondary destructive" data-flow-action="component-demo">放弃修改</button></div><h3>滑杆与数值</h3>${note("填充从默认值画到当前值：双向参数从中点向两侧；数值未改动时为中性色，改动后为黄色。HSL 轨道显示颜色变化方向。")}<div class="component-axes">${context.axis("双向 · 默认", 0, "contrast")}${context.axis("双向 · 负向已改动", -35, "highlights")}${context.axis("单向 · 已改动", 40, "sharpen", 0, 200)}${context.axis("单向 · 默认", 25, "grainSize", 0, 100)}</div><h3>分组与工具</h3><div class="component-row"><span class="group-sample"><span class="sample-dot"></span>已调整分组带小点，完整说明在可访问名称中</span><span class="tool-tabs"><button class="selected" aria-pressed="true">曝光<i class="tab-dot"></i></button><button>高光<i class="tab-dot"></i></button><button>对比度</button><button class="planned" disabled>我的预设<small>规划中</small></button></span></div><h3>语义图标</h3><div class="icon-catalog">${Object.entries(
         RawLabDesignIcons,
       )
         .map(
@@ -385,12 +425,34 @@ window.RawLabDesignFlows = (() => {
         )
         .join(
           "",
-        )}</div><h3>控件状态</h3><div class="flow-form-inline">${action("component-demo", "普通")}${action("component-demo", "主要", "primary")}${action("component-demo", "不可用", "secondary", true)}</div><div class="flow-row"><span>选择、默认、禁用与错误保持可辨</span></div>${error("保存失败示例", "保留参数并提供重试。")}`;
+        )}</div><h3>状态提示</h3>${error("保存失败示例", "保留参数并提供重试。")}`;
     } else {
       body = `<p>${titles()[active] || "平台界面"}</p>${note("由系统或现有应用入口打开；原型不发起真实外部访问。")}`;
       footer = action("close", "返回", "primary");
     }
     return { body, footer, sub };
+  }
+  // 有上一级时只显示返回；顶层界面只显示关闭，两者不同时出现。
+  function parentOf(id) {
+    if (["system-picker", "destination"].includes(id)) return pickerReturn;
+    if (id === "batch-confirm") return "batch-select";
+    if (id === "batch-inspect") return "batch-confirm";
+    if (
+      [
+        "language",
+        "haptics",
+        "privacy",
+        "about",
+        "licenses",
+        "update-settings",
+      ].includes(id)
+    )
+      return "settings";
+    if (
+      ["look-import", "look-error", "look-delete", "look-rename"].includes(id)
+    )
+      return "looks";
+    return null;
   }
   function render(ctx) {
     context = ctx;
@@ -398,7 +460,18 @@ window.RawLabDesignFlows = (() => {
     const busy = ["export-running", "batch-running", "batch-stopping"].includes(
       active,
     );
-    const { body, footer, sub } = content();
+    const result = content();
+    const { body, sub } = result;
+    let footer = result.footer;
+    const parent = parentOf(active);
+    // 移动端顶层界面由标题栏关闭；桌面窗口用底部按钮和 Esc 关闭，不再重复右上角关闭。
+    if (ctx.mobile && !parent)
+      footer = footer.replace(
+        /<button class="secondary" data-flow-action="close"[^>]*>[^<]*<\/button>/g,
+        "",
+      );
+    const showClose =
+      !parent && !(!ctx.mobile && /data-flow-action="close"/.test(footer));
     const sheet = [
       "import",
       "export",
@@ -406,7 +479,7 @@ window.RawLabDesignFlows = (() => {
       "photo-info",
       "file-actions",
     ].includes(active);
-    return `<div class="flow-backdrop"></div><section class="flow-window ${sheet ? "flow-sheet" : ""}" role="dialog" aria-modal="true" aria-label="${titles()[active] || active}" data-flow-view="${active}"><header class="flow-header"><button class="icon" data-flow-action="back" aria-label="返回" ${busy ? "disabled" : ""}>${ctx.icon("back")}</button><h2>${titles()[active] || { "system-picker": "选择照片", destination: "选择位置", haptics: "触觉反馈", "look-rename": "重命名外观", "folder-error": "目录读取失败", "folder-remove": "移除目录", "apply-settings": "应用完整设置" }[active] || "RawLab"}</h2><span class="space"></span><button class="icon" data-flow-action="close" aria-label="关闭" ${busy ? "disabled" : ""}>${ctx.icon("close")}</button></header>${sub ? `<p class="flow-subtitle">${sub}</p>` : ""}<div class="flow-body">${body}</div>${footer ? `<footer class="flow-footer">${footer}</footer>` : ""}</section>`;
+    return `<div class="flow-backdrop"></div><section class="flow-window ${sheet ? "flow-sheet" : ""}" role="dialog" aria-modal="true" tabindex="-1" aria-label="${titles()[active] || active}" data-flow-view="${active}"><header class="flow-header">${parent ? `<button class="icon" data-flow-action="back" aria-label="返回" ${busy ? "disabled" : ""}>${ctx.icon("back")}</button>` : ""}<h2>${titles()[active] || { "system-picker": "选择照片", destination: "选择位置", haptics: "触觉反馈", "look-rename": "重命名外观", "folder-error": "目录读取失败", "folder-remove": "移除目录", "apply-settings": "应用完整设置" }[active] || "RawLab"}</h2><span class="space"></span>${showClose ? `<button class="icon" data-flow-action="close" aria-label="关闭" ${busy ? "disabled" : ""}>${ctx.icon("close")}</button>` : ""}</header>${sub ? `<p class="flow-subtitle">${sub}</p>` : ""}<div class="flow-body">${body}</div>${footer ? `<footer class="flow-footer">${footer}</footer>` : ""}</section>`;
   }
   function handleClick(e) {
     const to = e.target.closest("[data-flow]");
@@ -464,16 +537,8 @@ window.RawLabDesignFlows = (() => {
       open(pickerReturn);
     else if (a === "close") close();
     else if (a === "back") {
-      if (["system-picker", "destination"].includes(active)) open(pickerReturn);
-      else if (active === "batch-confirm") open("batch-select");
-      else if (active === "batch-inspect") open("batch-confirm");
-      else if (active.startsWith("batch-") && active !== "batch-select")
-        open("batch-confirm");
-      else if (
-        ["language", "haptics", "privacy", "about", "licenses"].includes(active)
-      )
-        open("settings");
-      else close();
+      const parent = parentOf(active);
+      parent ? open(parent) : close();
     } else if (a === "import-selected") {
       if (active === "system-picker" && pickerReturn === "look-import") {
         imported = true;
@@ -553,7 +618,17 @@ window.RawLabDesignFlows = (() => {
     } else if (a === "open-results") open("results");
     else if (a === "release-page") open("external-release");
     else if (a === "component-demo") context.notify("按钮已触发 · 组件演示");
-    else if (RawLabDesign.flowTitles[a]) open(a);
+    else if (a === "check-now") {
+      close();
+      context.gotoScene("update");
+      return true;
+    } else if (a === "toggle-dock") {
+      context.toggleDock();
+      close();
+    } else if (a === "reset-all") {
+      close();
+      context.requestResetAll();
+    } else if (RawLabDesign.flowTitles[a]) open(a);
     context.repaint();
     return true;
   }
@@ -589,6 +664,8 @@ window.RawLabDesignFlows = (() => {
       if (f === "language") language = v;
       if (f === "privacy") privacy = v;
       if (f === "haptics") haptics = v;
+      if (f === "auto-check") autoCheck = v;
+      if (f === "auto-install") autoInstall = v;
       context.repaint();
       return true;
     }

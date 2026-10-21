@@ -3,7 +3,7 @@ window.RawLabDesignManifest = {
   schemaVersion: 1,
   id: "rawlab-editor-workspace",
   title: "RawLab 四端应用设计",
-  designVersion: "r2",
+  designVersion: "r3",
   status: "in_review",
   updatedAt: "2026-10-21",
   approval: null,
@@ -11,7 +11,9 @@ window.RawLabDesignManifest = {
   scopes: [
     "四端现有完整功能界面",
     "调整分组与 HSL 基础交互",
-    "三态对比切换",
+    "前后对比与按住查看调整前",
+    "重置菜单、滑杆填充与裁切框直接操作",
+    "第二阶段入口占位（规划中）",
     "桌面自动下载与安装更新",
   ],
   platforms: {

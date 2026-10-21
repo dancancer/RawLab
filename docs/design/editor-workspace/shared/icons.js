@@ -73,6 +73,20 @@ window.RawLabDesignIcons = {
     label: "拖动分割线",
   },
   fit: { path: "M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5", label: "适合窗口" },
+  undo: { path: "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3", label: "撤销" },
+  redo: { path: "m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h3", label: "重做" },
+  scope: {
+    path: "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14M12 2v5m0 10v5M2 12h5m10 0h5",
+    label: "精细",
+  },
+  gear: {
+    path: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6M10.3 3h3.4l.5 2.5 2.1 1.2 2.4-.9 1.7 3-1.9 1.7v2.4l1.9 1.7-1.7 3-2.4-.9-2.1 1.2-.5 2.5h-3.4l-.5-2.5-2.1-1.2-2.4.9-1.7-3 1.9-1.7v-2.4L3.6 8.8l1.7-3 2.4.9 2.1-1.2z",
+    label: "设置",
+  },
+  help: {
+    path: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M9.6 9.3a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.5M12 17h.1",
+    label: "关于与帮助",
+  },
 };
 
 Object.assign(RawLabDesignIcons.compare, {
@@ -82,7 +96,8 @@ Object.assign(RawLabDesignIcons.compare, {
     macos: "rectangle.split.2x1",
     windows: "EditorIcon.Compare",
   },
-  decision: "三态循环：关闭、并排、拖动分割线；统一矩形分屏轮廓",
+  decision:
+    "点按开关并记住上次方式；桌面旁边的下拉箭头、移动端长按或画面内切换选择并排/分割线；统一矩形分屏轮廓",
 });
 Object.assign(RawLabDesignIcons["rotate-left"], {
   native: {

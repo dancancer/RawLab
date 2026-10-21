@@ -41,8 +41,10 @@ window.RawLabDesignScreens = [
       "groups",
       "hsl",
       "light",
+      "reset-menu",
       "compare",
       "compare-wipe",
+      "compare-hold",
       "zoom",
       "photo-info",
       "histogram",
@@ -167,7 +169,13 @@ window.RawLabDesignScreens = [
     title: "桌面更新",
     area: "桌面更新",
     platforms: ["macos", "windows"],
-    states: ["update", "updating-wait", "update-error", "update-ready"],
+    states: [
+      "update",
+      "updating-wait",
+      "update-error",
+      "update-ready",
+      "update-settings",
+    ],
     scope: "proposed",
     source: "现有检查更新 + 本轮自动安装提案",
   },
@@ -191,6 +199,9 @@ window.RawLabDesign.flowTitles = {
   "file-actions": "照片操作",
   compare: "并排对比",
   "compare-wipe": "拖动分割线",
+  "compare-hold": "按住看调整前",
+  "reset-menu": "重置菜单",
+  "update-settings": "软件更新设置",
   zoom: "缩放与显示",
   "photo-info": "照片信息",
   histogram: "直方图",
@@ -254,14 +265,31 @@ RawLabDesign.supportsScreen = (screen, id, platform) =>
   (screen.statePlatforms?.[id] || screen.platforms).includes(platform);
 
 RawLabDesign.descriptions.compare = [
-  "三态对比：并排",
-  "点击同一对比图标按关闭→并排→拖动分割线→关闭循环。模式切换保持查看与调整状态。",
-  ["四端均支持本轮双模式提案", "并排两侧使用同一查看状态，照片仅为示意"],
+  "对比：并排",
+  "点按对比图标开关对比，并记住上次使用的方式；桌面旁边的下拉箭头、移动端长按图标或画面底部的切换选择并排/分割线。画布高而窄时并排改为上下排列。",
+  [
+    "两侧共用同一查看状态，标签贴在各自照片上",
+    "切换方式不修改照片参数，也不改变照片区或调整区高度",
+  ],
 ];
 RawLabDesign.descriptions["compare-wipe"] = [
-  "三态对比：拖动分割线",
-  "拖动照片上的分割线比较中性显影与调整后。再次点击图标关闭对比。",
-  ["可用方向键调整分割位置", "不改变照片参数或视图高度"],
+  "对比：拖动分割线",
+  "分割线只在照片范围内。拖动或用方向键调整位置；再点对比图标关闭，下次打开仍回到分割线。",
+  ["左侧调整前、右侧调整后", "不改变照片参数或视图高度"],
+];
+RawLabDesign.descriptions["compare-hold"] = [
+  "按住看调整前",
+  "不打开对比时，按住照片（桌面按住反斜杠键）临时显示调整前，松开恢复。这是最快的前后对比方式。",
+  ["短按不触发，避免与点按、缩放冲突", "顶部标签说明当前显示的是调整前"],
+];
+RawLabDesign.descriptions["reset-menu"] = [
+  "重置菜单",
+  "重置统一收进调整区右上角的菜单，按作用范围从小到大排列；影响整组或全部的项需要确认。",
+  [
+    "HSL：当前颜色 → 全部 HSL → 颜色组 → 全部调整",
+    "重置是次要操作，使用中性灰，不使用表示选中的黄色",
+    "每行参数旁的重置图标仍可直接恢复单个值",
+  ],
 ];
 RawLabDesign.descriptions.processing = [
   "处理进度",
@@ -270,6 +298,11 @@ RawLabDesign.descriptions.processing = [
     "显示与隐藏进度不改变画布、面板或工具高度",
     "进度通过无障碍标签表达，不弹出处理提示框",
   ],
+];
+RawLabDesign.descriptions["update-settings"] = [
+  "软件更新设置",
+  "长期设置集中在“设置 → 软件更新”：自动检查默认开启，自动下载并安装默认关闭；可从这里立即检查。",
+  ["更新提示只询问本次是否安装", "Android 保持现有检查与手动下载方式"],
 ];
 
 RawLabDesign.nativeSources = {
