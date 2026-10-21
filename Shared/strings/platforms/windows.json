@@ -2175,6 +2175,10 @@
     "颜色": {
       "formats": [],
       "source": "颜色"
+    },
+    "当前工具": {
+      "formats": [],
+      "source": "当前工具"
     }
   },
   "overrides": {
@@ -3375,6 +3379,14 @@
       "fr": "Échec de la validation",
       "ja": "検証に失敗しました",
       "zh-Hans": "验证失败"
+    },
+    "当前工具": {
+      "de": "Aktuelles Werkzeug",
+      "en": "Current tool",
+      "es": "Herramienta actual",
+      "fr": "Outil actuel",
+      "ja": "現在のツール",
+      "zh-Hans": "当前工具"
     }
   }
 }
