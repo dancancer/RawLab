@@ -9,6 +9,8 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
+from subprocess_support import python_cli_patch
+
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
@@ -139,9 +141,14 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return script
 
     def adapter(self, **env):
+        if os.name == "nt":
+            launcher = python_cli_patch()
+            launcher.start()
+            self.addCleanup(launcher.stop)
         merged = {
             "FAKE_ARGV_LOG": str(self.argv_log),
             "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
         }
         merged.update(env)
         return CliAdapter(self.config, environment=merged)
@@ -270,7 +277,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         await adapter.start()
         self.argv_log.unlink()
-        invalid_paths = (str(self.input_path) + "\x00tail", str(self.input_path) + "\ud800")
+        invalid_paths = tuple(str(self.input_path) + suffix for suffix in ("\x00tail", "\ud800", "\udcff"))
         for invalid_path in invalid_paths:
             with self.subTest(path=repr(invalid_path)):
                 results = await asyncio.gather(
@@ -404,24 +411,29 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.root.exists())
 
     async def test_cleanup_failure_preserves_timeout(self):
-        adapter = self.adapter(FAKE_SLEEP="1")
+        pid_log = self.root / "timeout-pid"
+        adapter = self.adapter(FAKE_SLEEP="5", FAKE_PID_LOG=str(pid_log))
         await adapter.start()
-        adapter.config = ServerConfig(self.cli, (self.read_root,), (self.write_root,), timeout=0.1)
+        adapter.config = ServerConfig(self.cli, (self.read_root,), (self.write_root,), timeout=2)
         with patch("rawlab_mcp.adapter.shutil.rmtree", side_effect=OSError("cleanup denied")):
             result = await adapter.export_photo(self.recipe_path)
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "processing_error")
         self.assertIn("timed out", result.error.message)
+        self.assertTrue(pid_log.exists(), "Timeout must reach the staged render process")
         self.assertFalse((self.write_root / "export.jpg").exists())
         self.assertEqual(len(list(self.write_root.glob(".rawlab-mcp-*"))), 1)
         self.temporary.cleanup()
         self.assertFalse(self.root.exists())
 
     async def test_cleanup_failure_preserves_cancellation(self):
-        adapter = self.adapter(FAKE_SLEEP="1")
+        pid_log = self.root / "cancel-pid"
+        adapter = self.adapter(FAKE_SLEEP="5", FAKE_PID_LOG=str(pid_log))
         await adapter.start()
         task = asyncio.create_task(adapter.export_photo(self.recipe_path))
-        await asyncio.sleep(0.05)
+        async with asyncio.timeout(3):
+            while not pid_log.exists():
+                await asyncio.sleep(0.01)
         with patch("rawlab_mcp.adapter.shutil.rmtree", side_effect=OSError("cleanup denied")):
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
