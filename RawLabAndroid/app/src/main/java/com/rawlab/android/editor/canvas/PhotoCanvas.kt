@@ -170,9 +170,10 @@ internal fun PhotoCanvas(
                                 else -> false
                             }
                         }.focusable())
-                        Icon(Icons.Outlined.SwapHoriz, null, Modifier
-                            .offset { IntOffset((image.splitX(state.split).coerceIn(image.left + minOf(24.dp.toPx(), image.width / 2), image.right - minOf(24.dp.toPx(), image.width / 2)) - 16.dp.toPx()).roundToInt(), ((image.top + image.bottom) / 2 - 16.dp.toPx()).roundToInt()) }
-                            .size(32.dp).testTag("comparison-handle").background(Color.White, CircleShape).padding(5.dp), tint = Color.Black)
+                        Box(Modifier.offset { IntOffset((image.splitX(state.split).coerceIn(image.left + minOf(24.dp.toPx(), image.width / 2), image.right - minOf(24.dp.toPx(), image.width / 2)) - 16.dp.toPx()).roundToInt(), ((image.top + image.bottom) / 2 - 16.dp.toPx()).roundToInt()) }
+                            .size(32.dp).testTag("comparison-handle").background(Color.White, CircleShape).padding(4.dp)) {
+                            Icon(Icons.Outlined.SwapHoriz, null, Modifier.fillMaxSize().testTag("comparison-handle-glyph"), tint = Color.Black)
+                        }
                     }
                     if (showOverlays && (paneLabel != null || wipe)) {
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
@@ -183,10 +184,12 @@ internal fun PhotoCanvas(
                             // 短照片放不下两条完整文案时分居两行；通常仍留在底部避开信息入口。
                             val separateRows = paneLabel == null && labels.sumOf { measurer.measure(it, labelStyle).size.width } +
                                 with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() } > image.width
+                            val labelPadding = if (separateRows) 0.dp else 4.dp
                             for ((index, label) in labels.withIndex()) Text(label,
                                 Modifier.align(if (paneLabel != null || index == 0 && !separateRows) Alignment.BottomStart
                                     else if (index == 0) Alignment.TopStart else Alignment.BottomEnd)
-                                    .padding(4.dp).background(Color.Black.copy(alpha = .65f)).padding(4.dp), color = Color.White,
+                                    .padding(labelPadding).testTag(if (neutralOnly || paneLabel == null && index == 0) "comparison-label-before" else "comparison-label-after")
+                                    .background(Color.Black.copy(alpha = .65f)).padding(labelPadding), color = Color.White,
                                 style = labelStyle, maxLines = 1)
                         }
                     }

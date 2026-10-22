@@ -76,6 +76,14 @@ class PhotoViewRuntimeTest {
             wipe.performKeyInput { pressKey(androidx.compose.ui.input.key.Key.MoveHome) }
             wipe.assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
                 androidx.compose.ui.semantics.ProgressBarRangeInfo(.5f, 0f..1f)))
+            val density = compose.activity.resources.displayMetrics.density
+            val handle = compose.onNodeWithTag("comparison-handle-glyph", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertEquals(24f * density, handle.width, 1f); assertEquals(24f * density, handle.height, 1f)
+            val backgrounds = listOf("comparison-label-before", "comparison-label-after").associateWith { tag ->
+                compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            }
+            for ((tag, background) in backgrounds) assertFalse("Actual short label background leaves the handle body visible: $tag $background $handle", background.overlaps(handle))
+            android.util.Log.i("RawLabShortOverlayEvidence", "scale=$scale density=$density photo=$photo glyph=$handle backgrounds=$backgrounds")
             capture("rotation-$scale-wipe.png")
             android.util.Log.i("RawLabViewRotationEvidence", "scale=$scale root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=${compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot}")
             assertEquals(committed, compose.activity.model.state.value.edits)

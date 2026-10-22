@@ -288,6 +288,12 @@ class PhotoCanvasTest {
     @Test fun shortLargePhotoKeepsFullComparisonLabels() {
         shortLargePhoto()
         val image = compose.onNodeWithTag("comparison-wipe").fetchSemanticsNode().boundsInRoot
+        val handle = compose.onNodeWithTag("comparison-handle-glyph", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertEquals(24f, handle.width, 1f); assertEquals(24f, handle.height, 1f)
+        for (tag in listOf("comparison-label-before", "comparison-label-after")) {
+            val background = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertFalse("Actual label background must leave the 24dp handle body visible: $background $handle", background.overlaps(handle))
+        }
         for (label in listOf("调整前", "调整后")) {
             val node = compose.onNodeWithText(label)
             val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
