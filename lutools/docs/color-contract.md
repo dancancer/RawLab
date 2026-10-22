@@ -90,6 +90,14 @@ floating-point/HDR, multi-frame/page and CMYK inputs are rejected, not flattened
 or silently quantized. Untagged grayscale/indexed images are not inferred to use
 a particular gray transfer function and are rejected.
 
+Raster import adapters accept up to 128,000,000 source pixels, including the
+roughly 102–105 MP dimensions of 100 MP medium-format cameras. Apple, Windows
+and Android use the same budget; the CLI advertises it in `raster_input`.
+Overflow checks and format/depth validation still run before allocation. This
+is a decode budget, not a promise that every device has enough free memory.
+The separate embedded-preview exposure-reference budget does not limit RAW
+main-image decoding.
+
 Display input is inverse-sRGB-decoded once, uses the existing linear exposure,
 wavelet, look, tone/HSL, chroma/detail/effects and geometry stages, and re-encodes
 sRGB instead of adding the RAW scene sigmoid. With defaults its RGB8 pixels
@@ -203,6 +211,11 @@ ill-conditioned near gray; applying a full lightness offset there amplified
 CPU/GPU floating-point differences into visible brightness speckles. This fade
 is shared by CPU and all three GPU backends, leaves hue/saturation controls
 unchanged and becomes exactly one at or above `1/255`.
+Tone and contrast may leave finite working RGB outside [0,1]. For those pixels,
+HSL applies only the change from its clamped neutral reconstruction and adds
+that change to the original RGB. Thus an arbitrarily small interpolated control
+does not suddenly clamp an otherwise untouched hue. CPU and all GPU backends
+preserve this out-of-range residual; SDR clipping still happens at output.
 RGB/HSL conversion follows the standard definition in
 [CSS Color](https://www.w3.org/TR/css-color-4/#hsl-to-rgb).
 
@@ -426,6 +439,14 @@ and [stable combined-coordinate API](https://github.com/lensfun/lensfun/blob/v0.
 
 The generic CUBE library implements standard R-fast storage, DOMAIN_MIN/MAX, float outputs and trilinear interpolation. It does not clamp table values. CPU and GPU normalize the same input domain.
 
+The standalone Android GLES LUT path streams pixel blocks bounded by 16 MiB,
+the device's shader-storage limit and its compute dispatch limit. Total image
+size does not determine a single GPU dispatch. Upload, dispatch, mapping and
+unmapping must all succeed before the staged image is committed. On failure,
+Auto applies the CPU LUT to the untouched input; Force returns an error. This
+path also serves display-input looks even though the full photo backend remains
+CPU. Its bounds do not change client decoder limits or remove host-memory needs.
+
 The PHOTO API is narrower. Supported files declare comments such as:
 
 ```text
@@ -624,7 +645,31 @@ and LUT, strength blend, tone/color, detail, final resize. RAW absolute WB and
 highlight reconstruction remain in LibRaw. Auto falls back to the unchanged CPU
 reference if Metal cannot render; Force reports an error. Request v2 layout is
 unchanged. `sony2fuji_session_get_last_backend` diagnoses the pixel pipeline, not
-LibRaw or file encoding. Two processing buffers are reused between GPU kernels.
+LibRaw or file encoding. Processing uses row bands with reusable buffers bounded
+by 16 MiB and the device's maximum buffer length. Bands preserve global resize
+and effect coordinates and include the source rows needed by detail filters and
+bilinear sampling. The destination is published only after every band succeeds;
+an error in a later band cannot expose partial output or modify the RAW source
+used by Auto fallback.
+
+Large-image processing bounds temporary working storage without reducing export
+resolution. CPU look blending uses fixed-size blocks; detail filters retain only
+original neighboring rows. Internal chroma uses bounded bands; reloadable Legacy
+wavelet reconstructs one tile at a time from immutable RAW pixels. Both preserve
+global statistics, sampling rules and original filter halos. Their private working
+image must be discarded on failure.
+The public chroma entry point retains its atomic input-update behavior.
+
+Filtered images above the 128 MiB retention budget are not cached. Final/file
+renders release large RAW pixel caches, while previews may retain one RAW source
+for repeated adjustments. Large RAW decoder storage is released after its metadata
+is captured. CPU may take ownership of an evicted RAW image; GPU retains an
+immutable source until successful completion or CPU fallback. Metadata remains
+available after pixel eviction. This bounds duplicate images, but RAW decoding,
+transactional GPU staging and full-resolution output still require host memory.
+The iOS adapter serializes use of its preview/export sessions, releases the preview
+session before final export, and transfers C output ownership into Swift Data
+without a second full-resolution byte copy.
 
 Android uses an OpenGL ES 3.1 compute photo pipeline with the same operation
 order and explicit trilinear LUT interpolation. Pointwise processing and resizing

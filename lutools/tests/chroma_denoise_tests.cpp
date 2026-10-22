@@ -2,6 +2,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "native_gpu_test_support.h"
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <random>
@@ -48,6 +49,37 @@ int main(int argc, char** argv) {
         assert(std::isfinite(b.r) && std::isfinite(b.g) && std::isfinite(b.b));
     }
     assert(after < before * .5);
+    for (const auto size : {std::pair<int,int>{597,389}, {779,539}, {801,797}, {17,1}, {1,33}}) {
+        sony2fuji::ImageData input(size.first,size.second);
+        for (auto& p : input.pixels) p = {.45f+noise(rng),.45f+noise(rng),.45f+noise(rng)};
+        for (int mode : {1,2}) {
+            auto expected = input, bounded = input;
+            sony2fuji::ChromaDenoiseDiagnostics a, b;
+            assert(sony2fuji::applyChromaDenoise(expected,mode,&a) == sony2fuji::ErrorCode::Success);
+            assert(sony2fuji::applyChromaDenoiseWorking(bounded,mode,&b) == sony2fuji::ErrorCode::Success);
+            assert(a.flatTiles == b.flatTiles && a.confidence == b.confidence && a.applied == b.applied);
+            float maximum = 0;
+            for (size_t i = 0; i < input.pixels.size(); ++i) {
+                const auto x = expected.pixels[i], y = bounded.pixels[i];
+                maximum = std::max({maximum,std::abs(x.r-y.r),std::abs(x.g-y.g),std::abs(x.b-y.b)});
+            }
+            std::cout << "Chroma bounded " << size.first << 'x' << size.second << " mode=" << mode << " max=" << maximum << std::endl;
+            assert(maximum <= .0002f);
+            if (nativeGpu && size.first == 779) {
+                expected = input; bounded = input;
+                assert(sony2fuji::applyChromaDenoise(expected,mode,&a,sony2fuji::GpuMode::Force) == sony2fuji::ErrorCode::Success);
+                assert(sony2fuji::applyChromaDenoiseWorking(bounded,mode,&b,sony2fuji::GpuMode::Force) == sony2fuji::ErrorCode::Success);
+                assert(a.gpuUsed == b.gpuUsed);
+                maximum = 0;
+                for (size_t i = 0; i < input.pixels.size(); ++i) {
+                    const auto x = expected.pixels[i], y = bounded.pixels[i];
+                    maximum = std::max({maximum,std::abs(x.r-y.r),std::abs(x.g-y.g),std::abs(x.b-y.b)});
+                }
+                std::cout << "Chroma bounded GPU mode=" << mode << " max=" << maximum << std::endl;
+                assert(maximum <= .0002f);
+            }
+        }
+    }
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
     assert(sony2fuji_session_set_chroma_denoise(session, 1) == SONY2FUJI_STATUS_OK);

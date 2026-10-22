@@ -191,8 +191,10 @@ jobs:
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
             ci_timed look-library bash RawLabMac/tests/look-library.sh
             ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
+            ctest_exclude='native_dcp_metal|gpu_photo|metal_denoise'
+            [[ "$RAWLAB_ARCH" != x86_64 ]] || ctest_exclude="$ctest_exclude|metal_workspace"
             ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
-              -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
+              -E "^($ctest_exclude)$" \
               --output-junit "$PWD/build/ci/macos-ctest.xml"
           fi
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"

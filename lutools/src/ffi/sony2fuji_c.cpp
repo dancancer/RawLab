@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cctype>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -617,74 +618,51 @@ void applyToneAdjustments(sony2fuji::ImageData& image, const sony2fuji_request& 
     }
 }
 
-sony2fuji::RGB sumRow3(const sony2fuji::ImageData& image, int y, int x0, int x1, int x2) {
-    const sony2fuji::RGB& c0 = image.at(x0, y);
-    const sony2fuji::RGB& c1 = image.at(x1, y);
-    const sony2fuji::RGB& c2 = image.at(x2, y);
-    return sony2fuji::RGB(c0.r + c1.r + c2.r, c0.g + c1.g + c2.g, c0.b + c1.b + c2.b);
-}
-
-std::vector<sony2fuji::RGB> blurImage(const sony2fuji::ImageData& image) {
-    std::vector<sony2fuji::RGB> output(image.pixels.size());
-    int width = image.width;
-    int height = image.height;
-    if (width <= 0 || height <= 0) {
-        return output;
-    }
-
+// 保存两行原像素，避免已写回的行进入下一行的 3x3 邻域。
+template <typename Apply>
+void applyBlurredDetail(sony2fuji::ImageData& image, Apply apply) {
+    const int width = image.width, height = image.height;
+    if (width <= 0 || height <= 0) return;
+    std::vector<sony2fuji::RGB> previous(width), current(width);
+    std::copy_n(image.pixels.data(), width, previous.data());
+    const auto sumRow = [](const sony2fuji::RGB* row, int a, int b, int c) {
+        return sony2fuji::RGB(row[a].r + row[b].r + row[c].r,
+            row[a].g + row[b].g + row[c].g, row[a].b + row[b].b + row[c].b);
+    };
     for (int y = 0; y < height; ++y) {
-        int y0 = std::max(0, y - 1);
-        int y1 = y;
-        int y2 = std::min(height - 1, y + 1);
+        auto* destination = image.pixels.data() + size_t(y) * width;
+        std::copy_n(destination, width, current.data());
+        const auto* next = y + 1 < height ? destination + width : current.data();
         for (int x = 0; x < width; ++x) {
-            int x0 = std::max(0, x - 1);
-            int x1 = x;
-            int x2 = std::min(width - 1, x + 1);
-            sony2fuji::RGB sum = sumRow3(image, y0, x0, x1, x2);
-            sony2fuji::RGB row1 = sumRow3(image, y1, x0, x1, x2);
-            sony2fuji::RGB row2 = sumRow3(image, y2, x0, x1, x2);
-            sum.r += row1.r + row2.r;
-            sum.g += row1.g + row2.g;
-            sum.b += row1.b + row2.b;
-            output[static_cast<size_t>(y) * width + x] = sony2fuji::RGB(
-                sum.r / 9.0f,
-                sum.g / 9.0f,
-                sum.b / 9.0f
-            );
+            const int a = std::max(0, x - 1), c = std::min(width - 1, x + 1);
+            auto sum = sumRow(previous.data(), a, x, c);
+            const auto middle = sumRow(current.data(), a, x, c);
+            const auto bottom = sumRow(next, a, x, c);
+            sum.r += middle.r + bottom.r;
+            sum.g += middle.g + bottom.g;
+            sum.b += middle.b + bottom.b;
+            destination[x] = apply(current[x], sony2fuji::RGB(sum.r / 9.0f, sum.g / 9.0f, sum.b / 9.0f));
         }
+        previous.swap(current);
     }
-
-    return output;
 }
 
 void applyNoiseReduction(sony2fuji::ImageData& image, float amount) {
-    float strength = clampFloat(amount, 0.0f, 1.0f);
-    if (strength <= 0.0f) {
-        return;
-    }
-
-    std::vector<sony2fuji::RGB> blurred = blurImage(image);
-    float blend = strength * 0.4f;
-    for (size_t i = 0; i < image.pixels.size(); ++i) {
-        image.pixels[i] = lerpRGB(image.pixels[i], blurred[i], blend);
-    }
+    const float strength = clampFloat(amount, 0.0f, 1.0f);
+    if (strength <= 0.0f) return;
+    applyBlurredDetail(image, [strength](const auto& current, const auto& blur) {
+        return lerpRGB(current, blur, strength * 0.4f);
+    });
 }
 
 void applySharpening(sony2fuji::ImageData& image, float amount) {
-    float strength = clampFloat(amount, 0.0f, 2.0f);
-    if (strength <= 0.0f) {
-        return;
-    }
-
-    std::vector<sony2fuji::RGB> blurred = blurImage(image);
-    for (size_t i = 0; i < image.pixels.size(); ++i) {
-        sony2fuji::RGB current = image.pixels[i];
-        sony2fuji::RGB blur = blurred[i];
-        current.r = clamp01(current.r + strength * (current.r - blur.r));
-        current.g = clamp01(current.g + strength * (current.g - blur.g));
-        current.b = clamp01(current.b + strength * (current.b - blur.b));
-        image.pixels[i] = current;
-    }
+    const float strength = clampFloat(amount, 0.0f, 2.0f);
+    if (strength <= 0.0f) return;
+    applyBlurredDetail(image, [strength](const auto& current, const auto& blur) {
+        return sony2fuji::RGB(clamp01(current.r + strength * (current.r - blur.r)),
+            clamp01(current.g + strength * (current.g - blur.g)),
+            clamp01(current.b + strength * (current.b - blur.b)));
+    });
 }
 
 void applyDetailAdjustments(sony2fuji::ImageData& image, const sony2fuji_request& request) {
@@ -701,7 +679,15 @@ bool isLutDiagnosticsEnabled() {
     return value != nullptr && value[0] != '\0';
 }
 
-void applyFLog2Encoding(sony2fuji::ImageData& image, bool clamp_only) {
+void logFLog2Diagnostics(const sony2fuji::GammaConverter::FLog2Diagnostics& diagnostics) {
+    std::fprintf(stderr,
+        "F-Log2 diagnostics: min=%f max=%f scale=%f offset=%f neg=%zu over=%zu\n",
+        diagnostics.min_linear, diagnostics.max_linear, diagnostics.scale, diagnostics.offset,
+        diagnostics.negative_pixels, diagnostics.over_pixels);
+}
+
+void applyFLog2Encoding(sony2fuji::ImageData& image, bool clamp_only,
+    sony2fuji::GammaConverter::FLog2Diagnostics* total = nullptr) {
     sony2fuji::GammaConverter::FLog2Options options;
     options.normalizeToRange = !clamp_only;
     options.clampOnly = clamp_only;
@@ -710,17 +696,68 @@ void applyFLog2Encoding(sony2fuji::ImageData& image, bool clamp_only) {
     sony2fuji::GammaConverter::FLog2Diagnostics diagnostics =
         sony2fuji::GammaConverter::applyFLog2ToImage(image, options);
     if (options.enableDiagnostics) {
-        std::fprintf(
-            stderr,
-            "F-Log2 diagnostics: min=%f max=%f scale=%f offset=%f neg=%zu over=%zu\n",
-            diagnostics.min_linear,
-            diagnostics.max_linear,
-            diagnostics.scale,
-            diagnostics.offset,
-            diagnostics.negative_pixels,
-            diagnostics.over_pixels
-        );
+        if (total) {
+            total->min_linear = std::min(total->min_linear, diagnostics.min_linear);
+            total->max_linear = std::max(total->max_linear, diagnostics.max_linear);
+            total->negative_pixels += diagnostics.negative_pixels;
+            total->over_pixels += diagnostics.over_pixels;
+        } else logFLog2Diagnostics(diagnostics);
     }
+}
+
+sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
+    const std::shared_ptr<sony2fuji::LUT3D>& lut, const std::shared_ptr<const sony2fuji::DcpLook>& dcp,
+    float strength, bool displayInput, const sony2fuji::GpuConfig& config) {
+    const auto encode = displayInput ? sony2fuji::GammaConverter::applySRGBGamma : sony2fuji::neutralDisplay;
+    if (!lut && !dcp) {
+        for (auto& p : image.pixels) p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+        return SONY2FUJI_STATUS_OK;
+    }
+    sony2fuji::GammaConverter::FLog2Diagnostics diagnostics;
+    diagnostics.min_linear = std::numeric_limits<float>::max();
+    diagnostics.max_linear = std::numeric_limits<float>::lowest();
+    const bool diagnosticBlocks = config.mode == sony2fuji::GpuMode::Off && lut &&
+        lut->inputTransfer() == sony2fuji::LUTTransfer::FLog2 && isLutDiagnosticsEnabled();
+    auto render = [&](sony2fuji::ImageData& working) {
+        auto base = working;
+        for (auto& p : base.pixels) p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+        if (dcp) {
+            const size_t count = working.pixels.size();
+#ifdef _OPENMP
+#pragma omp parallel for if (count >= (1u << 16))
+#endif
+            for (size_t i = 0; i < count; ++i) working.pixels[i] = dcp->apply(working.pixels[i]);
+        } else {
+            if (lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) working = base;
+            else if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2)
+                sony2fuji::encodePhotoLUTInput(working, lut->inputTransfer());
+            else {
+                sony2fuji::ColorConverter().convertImage(working, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);
+                applyFLog2Encoding(working, false, diagnosticBlocks ? &diagnostics : nullptr);
+            }
+            const auto result = sony2fuji::applyLUTWithConfig(lut, working, config);
+            if (result != sony2fuji::ErrorCode::Success) return mapError(result);
+            sony2fuji::renderPhotoLUTOutput(working, lut->outputTransfer());
+        }
+        for (size_t i = 0; i < working.pixels.size(); ++i)
+            working.pixels[i] = lerpRGB(base.pixels[i], working.pixels[i], strength);
+        return SONY2FUJI_STATUS_OK;
+    };
+    // 独立 LUT GPU 仍以整次调用为事务；CPU 混合只保留两块各 3 MiB 的工作区。
+    if (config.mode != sony2fuji::GpuMode::Off) return render(image);
+    constexpr size_t blockPixels = 1u << 18;
+    sony2fuji::ImageData block;
+    block.height = 1;
+    for (size_t first = 0; first < image.pixels.size(); first += blockPixels) {
+        const size_t count = std::min(blockPixels, image.pixels.size() - first);
+        block.width = static_cast<int>(count);
+        block.pixels.assign(image.pixels.begin() + first, image.pixels.begin() + first + count);
+        const auto status = render(block);
+        if (status != SONY2FUJI_STATUS_OK) return status;
+        std::copy(block.pixels.begin(), block.pixels.end(), image.pixels.begin() + first);
+    }
+    if (diagnosticBlocks) logFLog2Diagnostics(diagnostics);
+    return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status ensureLinear(
@@ -813,7 +850,12 @@ sony2fuji_status loadRawImage(
             image = {};
             if (status != SONY2FUJI_STATUS_OK) return status;
         }
+        // 失效的整图缓存必须在下一次解码之前释放，WB/照片切换不能叠加两张 RAW。
+        session->raw_cache = {};
+        session->raw_key.clear();
         if (!session->raw_processor || session->processor_key != fileKey) {
+            session->raw_processor.reset();
+            session->processor_key.clear();
             auto processor = std::make_unique<sony2fuji::RAWProcessor>();
             const auto loaded = processor->loadFile(request.input_path);
             if (loaded != sony2fuji::ErrorCode::Success) return mapError(loaded);
@@ -859,6 +901,11 @@ sony2fuji_status loadRawImage(
             session->preview_exposure_key = previewExposureKey;
             session->preview_camera_ev = session->baseline_ev;
         }
+    }
+    // 大图已保存全部元数据，后续调色不再需要 LibRaw 的解包像素。
+    if (session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget) {
+        session->raw_processor.reset();
+        session->processor_key.clear();
     }
     session->lens_report = session->raw_lens_report;
     if (copyImage) image = session->raw_cache;
@@ -989,6 +1036,10 @@ sony2fuji_status finishOutput(
     uint32_t native_width,
     uint32_t native_height
 ) {
+    // 预览保留唯一 RAW 缓存供连续调整复用；导出前由 Swift 释放预览 session。
+    if ((request.intent != SONY2FUJI_INTENT_PREVIEW || request.output_target != SONY2FUJI_TARGET_BUFFER) &&
+        session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
+        session->raw_cache = {};
     const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
     if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
     if (session->geometry.active()) session->last_backend = SONY2FUJI_BACKEND_CPU;
@@ -1217,7 +1268,7 @@ sony2fuji_status sony2fuji_session_set_wavelet_denoise(
 sony2fuji_status sony2fuji_session_get_raw_noise_reduction_support(
     const sony2fuji_session* session, int32_t* supported
 ) {
-    if (!session || !supported || session->raw_cache.pixels.empty())
+    if (!session || !supported || session->raw_key.empty())
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     *supported = session->raw_noise_reduction_supported ? 1 : 0;
     return SONY2FUJI_STATUS_OK;
@@ -1226,7 +1277,7 @@ sony2fuji_status sony2fuji_session_get_raw_noise_reduction_support(
 sony2fuji_status sony2fuji_session_get_raw_exposure(
     const sony2fuji_session* session, float* baseline_ev, float* metadata_ev
 ) {
-    if (!session || !baseline_ev || !metadata_ev || session->raw_cache.pixels.empty())
+    if (!session || !baseline_ev || !metadata_ev || session->raw_key.empty())
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     *baseline_ev = session->baseline_ev;
     *metadata_ev = session->metadata_ev;
@@ -1236,7 +1287,7 @@ sony2fuji_status sony2fuji_session_get_raw_exposure(
 sony2fuji_status sony2fuji_session_get_raw_white_balance(
     const sony2fuji_session* session, float* temperature, float* tint
 ) {
-    if (!session || !temperature || !tint || session->raw_cache.pixels.empty())
+    if (!session || !temperature || !tint || session->raw_key.empty())
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (!session->calibrated_wb) return SONY2FUJI_STATUS_UNSUPPORTED;
     *temperature=session->as_shot_temperature; *tint=session->as_shot_tint;
@@ -1450,8 +1501,16 @@ static sony2fuji_status processImpl(
     if (local.input_type == SONY2FUJI_INPUT_RAW) {
         auto raw_request = local;
         if (geometryActive) raw_request.intent = SONY2FUJI_INTENT_FINAL;
-        status = loadRawImage(session, raw_request, image, &color_space, &is_linear,
-            !viewportPreview && (!gpuPipeline || waveletActive));
+        status = loadRawImage(session, raw_request, image, &color_space, &is_linear, false);
+        if (status == SONY2FUJI_STATUS_OK && !viewportPreview && (!gpuPipeline || waveletActive)) {
+            const bool large = session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) >
+                sony2fuji::WaveletRenderCache::defaultPreviewBudget;
+            // C5 失败不会破坏工作图；Legacy 的 GPU 重试仍需要原始 RAW。
+            const bool reloadableWavelet = waveletActive &&
+                session->wavelet_denoise.processingVersion != sony2fuji::ProcessingVersion::C5V2;
+            if (large && !reloadableWavelet) image = std::move(session->raw_cache);
+            else image = session->raw_cache;
+        }
     } else {
         status = loadBufferImage(local, image, &color_space, &is_linear);
     }
@@ -1538,7 +1597,8 @@ static sony2fuji_status processImpl(
                 ++session->wavelet_cache.diagnostics.filterRuns;
                 const auto result = sony2fuji::applyWaveletDenoise(image, session->wavelet_denoise, &diagnostics,
                     backend, entry ? &entry->analysis : nullptr, waveletKey,
-                    local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview && !fastWavelet ? &session->raw_cache : nullptr,
+                    local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview && !fastWavelet &&
+                        !session->raw_cache.pixels.empty() ? &session->raw_cache : nullptr,
                     toCoreColorSpace(color_space));
                 if (diagnostics.analysisReused) ++session->wavelet_cache.diagnostics.analysisHits;
                 return result;
@@ -1553,6 +1613,10 @@ static sony2fuji_status processImpl(
             if (entry && !fallback)
                 session->wavelet_cache.store(*entry, image, session->wavelet_denoise, session->gpu_config.mode);
         }
+        // 小波及其重试已完成；viewport 仍需缓存 RAW 供下一次滑杆调整复用。
+        if (!viewportPreview &&
+            session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
+            session->raw_cache = {};
         color_space = SONY2FUJI_COLOR_SRGB;
     }
 #if defined(SONY2FUJI_ENABLE_METAL)
@@ -1570,7 +1634,11 @@ static sony2fuji_status processImpl(
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-        if (local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview) image = session->raw_cache;
+        if (local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview) {
+            if (session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
+                image = std::move(session->raw_cache);
+            else image = session->raw_cache;
+        }
     }
 #endif
 #if defined(SONY2FUJI_ENABLE_GLES)
@@ -1629,45 +1697,14 @@ static sony2fuji_status processImpl(
     color_space = SONY2FUJI_COLOR_SRGB;
     for (auto& pixel : image.pixels) applyExposureAndWhiteBalance(pixel, exposure, wb);
 
-    sony2fuji::ImageData base = image;
-    for (auto& p : base.pixels) {
-        const auto encode = displayInput ? sony2fuji::GammaConverter::applySRGBGamma : sony2fuji::neutralDisplay;
-        p.r = encode(p.r);
-        p.g = encode(p.g);
-        p.b = encode(p.b);
-    }
-    if (use_lut) {
-        if (dcp) {
-            const size_t count = image.pixels.size();
-#ifdef _OPENMP
-#pragma omp parallel for if (count >= (1u << 16))
-#endif
-            for (size_t i = 0; i < count; ++i) image.pixels[i] = dcp->apply(image.pixels[i]);
-        } else {
-            if (lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
-                image = base;
-            } else if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2) {
-                sony2fuji::encodePhotoLUTInput(image, lut->inputTransfer());
-            } else {
-                converter.convertImage(image, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);
-                applyFLog2Encoding(image, false);
-            }
-            auto config = session->gpu_config;
-            if (gpuPipeline || hslActive || session->chroma_denoise != 0 || waveletActive || effectsActive) config.mode = sony2fuji::GpuMode::Off;
-            auto result = sony2fuji::applyLUTWithConfig(lut, image, config);
-            if (result != sony2fuji::ErrorCode::Success) return mapError(result);
-            sony2fuji::renderPhotoLUTOutput(image, lut->outputTransfer());
-        }
-        for (size_t i=0; i<image.pixels.size(); ++i)
-            image.pixels[i] = lerpRGB(base.pixels[i], image.pixels[i], local.lut_strength);
-    } else {
-        image = std::move(base);
-    }
-    // 混合参考图已不再使用，避免与后续色度降噪和细节处理的临时数据叠加。
-    base = {};
+    auto lookConfig = session->gpu_config;
+    if (gpuPipeline || hslActive || session->chroma_denoise != 0 || waveletActive || effectsActive)
+        lookConfig.mode = sony2fuji::GpuMode::Off;
+    status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
+    if (status != SONY2FUJI_STATUS_OK) return status;
     applyToneAdjustments(image, local);
     sony2fuji::applyHsl(image, session->hsl);
-    const auto chromaResult = sony2fuji::applyChromaDenoise(image, session->chroma_denoise);
+    const auto chromaResult = sony2fuji::applyChromaDenoiseWorking(image, session->chroma_denoise);
     if (chromaResult != sony2fuji::ErrorCode::Success) return mapError(chromaResult);
     applyDetailAdjustments(image, local);
     sony2fuji::applyPhotoEffects(image, session->photo_effects);

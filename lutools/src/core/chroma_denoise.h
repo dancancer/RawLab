@@ -17,4 +17,8 @@ bool chromaDenoiseAvailable();
 ErrorCode applyChromaDenoise(ImageData& image, int mode,
     ChromaDenoiseDiagnostics* diagnostics = nullptr, GpuMode gpuMode = GpuMode::Off);
 
+// 内部工作图入口：调用方必须保证失败后丢弃 image，不发布部分结果。
+ErrorCode applyChromaDenoiseWorking(ImageData& image, int mode,
+    ChromaDenoiseDiagnostics* diagnostics = nullptr, GpuMode gpuMode = GpuMode::Off);
+
 } // namespace sony2fuji

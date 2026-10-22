@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/bitmap.h>
 #include "render_request.h"
 #include <cstring>
 #include <limits>
@@ -70,6 +71,48 @@ struct UtfChars {
         if (s && !chars) throw std::bad_alloc();
     }
     ~UtfChars() { if (chars) env->ReleaseStringUTFChars(value, chars); }
+};
+struct BitmapPixels {
+    JNIEnv* env;
+    jobject value;
+    void* locked = nullptr;
+    const void* bytes = nullptr;
+    std::vector<uint8_t> packed;
+    BitmapPixels(JNIEnv* e, jobject bitmap, jint width, jint height, jint format) : env(e), value(bitmap) {
+        if (!bitmap) {
+            if (width != 0 || height != 0 || format != 0) throw std::invalid_argument("Invalid RAW image buffer");
+            return;
+        }
+        AndroidBitmapInfo info{};
+        if (width <= 0 || height <= 0 || format != SONY2FUJI_PIXEL_RGBA8 ||
+            AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
+            info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 || info.width != static_cast<uint32_t>(width) ||
+            info.height != static_cast<uint32_t>(height) || info.stride < uint64_t(width) * 4)
+            throw std::invalid_argument("Invalid display bitmap");
+        const size_t rowBytes = static_cast<size_t>(width) * 4;
+        if (static_cast<size_t>(height) > std::numeric_limits<size_t>::max() / rowBytes)
+            throw std::invalid_argument("Display bitmap is too large");
+        const auto result = AndroidBitmap_lockPixels(env, bitmap, &locked);
+        if (result == ANDROID_BITMAP_RESULT_ALLOCATION_FAILED) throw std::bad_alloc();
+        if (result != ANDROID_BITMAP_RESULT_SUCCESS) throw std::runtime_error("Unable to lock display bitmap");
+        try {
+            if (!locked) throw std::runtime_error("Display bitmap has no pixels");
+            bytes = locked;
+            // C ABI 接收紧凑 RGBA；只有平台给出填充行时才在原生内存重新排布。
+            if (info.stride != rowBytes) {
+                packed.resize(rowBytes * height);
+                for (int y = 0; y < height; ++y)
+                    std::memcpy(packed.data() + size_t(y) * rowBytes,
+                        static_cast<const uint8_t*>(locked) + size_t(y) * info.stride, rowBytes);
+                bytes = packed.data();
+            }
+        } catch (...) {
+            AndroidBitmap_unlockPixels(env, value);
+            locked = nullptr;
+            throw;
+        }
+    }
+    ~BitmapPixels() { if (locked) AndroidBitmap_unlockPixels(env, value); }
 };
 struct ByteArrayElements {
     JNIEnv* env;
@@ -367,7 +410,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetGpuMode(JNIEnv* env, job
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
-    jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
+    jstring input, jobject inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
     jstring lut, jstring output, jfloat strength, jfloat exposure,
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
     jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
@@ -385,18 +428,9 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
         check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         UtfChars in(env, input), film(env, lut), out(env, output);
-        ByteArrayElements inputBytes(env, inputPixels);
+        BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
         const bool displayInput = inputPixels != nullptr;
-        if (displayInput) {
-            if (inputWidth <= 0 || inputHeight <= 0 || inputPixelFormat != SONY2FUJI_PIXEL_RGBA8)
-                throw std::invalid_argument("Invalid display image dimensions");
-            const uint64_t expected = static_cast<uint64_t>(inputWidth) * static_cast<uint64_t>(inputHeight) * 4;
-            if (expected > static_cast<uint64_t>(std::numeric_limits<jsize>::max()) ||
-                env->GetArrayLength(inputPixels) < static_cast<jsize>(expected))
-                throw std::invalid_argument("Invalid display image buffer");
-        } else if (inputWidth != 0 || inputHeight != 0 || inputPixelFormat != 0) {
-            throw std::invalid_argument("Invalid RAW image buffer");
-        }
+
         bool effectiveCustom = customWb;
         if (!displayInput)
             prepareRecipeWb(session, in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
@@ -486,23 +520,16 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
 
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, jobject, jlong id,
-    jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
+    jstring input, jobject inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
     jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength, jint processingVersion) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
         UtfChars in(env, input);
-        ByteArrayElements inputBytes(env, inputPixels);
+        BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
         const bool displayInput = inputPixels != nullptr;
-        if (displayInput) {
-            if (inputWidth <= 0 || inputHeight <= 0 || inputPixelFormat != SONY2FUJI_PIXEL_RGBA8)
-                throw std::invalid_argument("Invalid display image dimensions");
-            const uint64_t expected = static_cast<uint64_t>(inputWidth) * static_cast<uint64_t>(inputHeight) * 4;
-            if (expected > static_cast<uint64_t>(std::numeric_limits<jsize>::max()) ||
-                env->GetArrayLength(inputPixels) < static_cast<jsize>(expected))
-                throw std::invalid_argument("Invalid display image buffer");
-        }
+
         check(sony2fuji_session_set_processing_version(found->second.get(), static_cast<sony2fuji_processing_version>(processingVersion)));
         check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         bool effectiveCustom = customWb;

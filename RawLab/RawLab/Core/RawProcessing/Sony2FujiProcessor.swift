@@ -23,26 +23,36 @@ struct Sony2FujiProcessor {
 
         deinit { if let session { sony2fuji_session_destroy(session) } }
 
-        func use<T>(create: () throws -> OpaquePointer,
+        func use<T>(reuse: Bool, create: () throws -> OpaquePointer,
                     body: (OpaquePointer) throws -> T) throws -> T {
             lock.lock()
             defer { lock.unlock() }
+            if !reuse {
+                // 导出与预览共享这把锁，先释放预览 RAW 再创建临时 session。
+                if let session { sony2fuji_session_destroy(session) }
+                session = nil
+                let temporary = try create()
+                defer { sony2fuji_session_destroy(temporary) }
+                return try body(temporary)
+            }
             if session == nil { session = try create() }
-            return try body(session!)
+            do { return try body(session!) }
+            catch {
+                if let session { sony2fuji_session_destroy(session) }
+                session = nil
+                throw error
+            }
         }
     }
 
-    private func withRawSession<T>(reuse: Bool, body: (OpaquePointer) throws -> T) throws -> T {
+    private func withRawSession<T>(reuse: Bool, inputType: sony2fuji_input_type = SONY2FUJI_INPUT_RAW, body: (OpaquePointer) throws -> T) throws -> T {
         let create = { () throws -> OpaquePointer in
             let session = try createSession()
-            do { try loadLensDatabase(session) }
+            do { try loadLensDatabase(session, inputType: inputType) }
             catch { destroySession(session); throw error }
             return session
         }
-        if reuse { return try previewSession.use(create: create, body: body) }
-        let session = try create()
-        defer { destroySession(session) }
-        return try body(session)
+        return try previewSession.use(reuse: reuse, create: create, body: body)
     }
     // =========================================================================
     // Types
@@ -128,39 +138,38 @@ struct Sony2FujiProcessor {
         } else {
             throw ProcessorError.rasterDecodeFailed
         }
-        let session = try createSession()
-        defer { destroySession(session) }
-        try loadLensDatabase(session, inputType: inputType)
-        let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
-        try configureProcessing(session, identity: settings.processing)
-        try configureLens(session, settings: settings.lensSettings)
-        let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-        guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
-        }
-        var request = makeBaseRequest(settings: settings, inputType: inputType)
-        request.input_type = inputType
-        var ev: Float = 0
-        let status: sony2fuji_status
-        if let url {
-            status = url.path.withCString { path in
-                request.input_path = path
-                return sony2fuji_session_estimate_auto_exposure(session, &request, &ev)
+        return try withRawSession(reuse: false, inputType: inputType) { session in
+            let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
+            try configureProcessing(session, identity: settings.processing)
+            try configureLens(session, settings: settings.lensSettings)
+            let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
+            guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
+                throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
             }
-        } else if let buffer {
-            request.input_width = UInt32(buffer.width)
-            request.input_height = UInt32(buffer.height)
-            request.input_pixel_format = buffer.pixelFormat
-            request.input_color_space = SONY2FUJI_COLOR_SRGB
-            status = buffer.data.withUnsafeBytes { bytes in
-                request.input_pixels = bytes.baseAddress
-                return sony2fuji_session_estimate_auto_exposure(session, &request, &ev)
+            var request = makeBaseRequest(settings: settings, inputType: inputType)
+            request.input_type = inputType
+            var ev: Float = 0
+            let status: sony2fuji_status
+            if let url {
+                status = url.path.withCString { path in
+                    request.input_path = path
+                    return sony2fuji_session_estimate_auto_exposure(session, &request, &ev)
+                }
+            } else if let buffer {
+                request.input_width = UInt32(buffer.width)
+                request.input_height = UInt32(buffer.height)
+                request.input_pixel_format = buffer.pixelFormat
+                request.input_color_space = SONY2FUJI_COLOR_SRGB
+                status = buffer.data.withUnsafeBytes { bytes in
+                    request.input_pixels = bytes.baseAddress
+                    return sony2fuji_session_estimate_auto_exposure(session, &request, &ev)
+                }
+            } else { throw ProcessorError.rasterDecodeFailed }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", String(describing: statusMessage(status))))
             }
-        } else { throw ProcessorError.rasterDecodeFailed }
-        guard status == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", String(describing: statusMessage(status))))
+            return Double(ev)
         }
-        return Double(ev)
     }
 
     func processRaw(
@@ -212,7 +221,7 @@ struct Sony2FujiProcessor {
                 throw processingFailure(status)
             }
 
-            var output = try copyBuffer(buffer, semantic: .legacy)
+            var output = try takeBuffer(&buffer, semantic: .legacy)
             output.nativeSize = geometrySize(session)
             let rawWhiteBalance = readRawWhiteBalance(from: session)
             return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: try readLens(session, url: url))
@@ -232,42 +241,41 @@ struct Sony2FujiProcessor {
             throw ProcessorError.invalidExportSize
         }
         let inputType = semanticInputType(for: buffer)
-        let session = try createSession()
-        defer { destroySession(session) }
-        try loadLensDatabase(session, inputType: inputType)
-        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
-        try configureSession(session, settings: settings,
-                             interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
-                             viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
+        return try withRawSession(reuse: false, inputType: inputType) { session in
+            let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+            try configureSession(session, settings: settings,
+                                 interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
+                                 viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
 
-        var request = makeBaseRequest(settings: settings, inputType: inputType)
-        request.input_type = inputType
-        request.input_width = UInt32(buffer.width)
-        request.input_height = UInt32(buffer.height)
-        request.input_pixel_format = buffer.pixelFormat
-        request.input_color_space = SONY2FUJI_COLOR_SRGB
-        request.input_is_linear = 0
-        applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
-                  previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
-        let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
-        request.lut_strength = lutStrength
+            var request = makeBaseRequest(settings: settings, inputType: inputType)
+            request.input_type = inputType
+            request.input_width = UInt32(buffer.width)
+            request.input_height = UInt32(buffer.height)
+            request.input_pixel_format = buffer.pixelFormat
+            request.input_color_space = SONY2FUJI_COLOR_SRGB
+            request.input_is_linear = 0
+            applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
+                      previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
+            let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
+            request.lut_strength = lutStrength
 
-        var outBuffer = sony2fuji_buffer()
-        defer { sony2fuji_release_buffer(&outBuffer) }
-        let status = processBuffer(
-            session: session,
-            request: &request,
-            buffer: buffer,
-            lutPath: lutURL?.path,
-            outBuffer: &outBuffer
-        )
-        guard status == SONY2FUJI_STATUS_OK else {
-            throw processingFailure(status)
+            var outBuffer = sony2fuji_buffer()
+            defer { sony2fuji_release_buffer(&outBuffer) }
+            let status = processBuffer(
+                session: session,
+                request: &request,
+                buffer: buffer,
+                lutPath: lutURL?.path,
+                outBuffer: &outBuffer
+            )
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status)
+            }
+
+            var output = try takeBuffer(&outBuffer, semantic: buffer.semantic)
+            output.nativeSize = geometrySize(session)
+            return output
         }
-
-        var output = try copyBuffer(outBuffer, semantic: buffer.semantic)
-        output.nativeSize = geometrySize(session)
-        return output
     }
 
     func exportDNG(
@@ -284,22 +292,21 @@ struct Sony2FujiProcessor {
         let rawDimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
         let width = rawDimensions.width > 0 ? rawDimensions.width : metadata.width
         let height = rawDimensions.height > 0 ? rawDimensions.height : metadata.height
-        let session = try createSession()
-        defer { destroySession(session) }
-        try loadLensDatabase(session)
-        let settings = try prepareRecipe(settings, session: session, url: url)
-        try configureSession(session, settings: settings, interactive: false)
+        try withRawSession(reuse: false) { session in
+            let settings = try prepareRecipe(settings, session: session, url: url)
+            try configureSession(session, settings: settings, interactive: false)
 
-        var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
-        request.input_type = SONY2FUJI_INPUT_RAW
-        applySize(&request, width: width, height: height, previewLongEdge: nil, exportLongEdge: exportLongEdge)
-        request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
-        configureDNGFile(&request)
-        let status = processRawToFile(session: session, request: &request,
-                                      inputPath: url.path, lutPath: lutURL?.path, outputPath: outputURL.path)
-        if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
-        guard status == SONY2FUJI_STATUS_OK else {
-            throw processingFailure(status, input: url, look: lutURL, output: outputURL)
+            var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
+            request.input_type = SONY2FUJI_INPUT_RAW
+            applySize(&request, width: width, height: height, previewLongEdge: nil, exportLongEdge: exportLongEdge)
+            request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+            configureDNGFile(&request)
+            let status = processRawToFile(session: session, request: &request,
+                                          inputPath: url.path, lutPath: lutURL?.path, outputPath: outputURL.path)
+            if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status, input: url, look: lutURL, output: outputURL)
+            }
         }
     }
 
@@ -313,29 +320,28 @@ struct Sony2FujiProcessor {
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
-        let session = try createSession()
-        defer { destroySession(session) }
         let inputType = semanticInputType(for: buffer)
-        try loadLensDatabase(session, inputType: inputType)
-        let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
-        try configureSession(session, settings: settings, interactive: false)
+        try withRawSession(reuse: false, inputType: inputType) { session in
+            let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+            try configureSession(session, settings: settings, interactive: false)
 
-        var request = makeBaseRequest(settings: settings, inputType: inputType)
-        request.input_type = inputType
-        request.input_width = UInt32(buffer.width)
-        request.input_height = UInt32(buffer.height)
-        request.input_pixel_format = buffer.pixelFormat
-        request.input_color_space = SONY2FUJI_COLOR_SRGB
-        request.input_is_linear = 0
-        applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
-                  previewLongEdge: nil, exportLongEdge: exportLongEdge)
-        request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
-        configureDNGFile(&request)
-        let status = processBufferToFile(session: session, request: &request, buffer: buffer,
-                                         lutPath: lutURL?.path, outputPath: outputURL.path)
-        if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
-        guard status == SONY2FUJI_STATUS_OK else {
-            throw processingFailure(status, look: lutURL, output: outputURL)
+            var request = makeBaseRequest(settings: settings, inputType: inputType)
+            request.input_type = inputType
+            request.input_width = UInt32(buffer.width)
+            request.input_height = UInt32(buffer.height)
+            request.input_pixel_format = buffer.pixelFormat
+            request.input_color_space = SONY2FUJI_COLOR_SRGB
+            request.input_is_linear = 0
+            applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
+                      previewLongEdge: nil, exportLongEdge: exportLongEdge)
+            request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+            configureDNGFile(&request)
+            let status = processBufferToFile(session: session, request: &request, buffer: buffer,
+                                             lutPath: lutURL?.path, outputPath: outputURL.path)
+            if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status, look: lutURL, output: outputURL)
+            }
         }
     }
 
@@ -352,7 +358,7 @@ struct Sony2FujiProcessor {
         // EXIF orientation. Keep the parameter for source compatibility, but do
         // not permit a second orientation pass.
         _ = applyingOrientation
-        let buffer = try copyBuffer(native, semantic: .display)
+        let buffer = try takeBuffer(&native, semantic: .display)
         return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
     }
 

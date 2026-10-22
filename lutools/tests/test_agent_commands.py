@@ -109,6 +109,8 @@ class AgentCommands(unittest.TestCase):
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
                 features = result["result"]["optional_features"]
+                if sys.platform in ("darwin", "win32"):
+                    self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                 if sys.platform == "win32":
                     self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff"])
                 self.assertEqual(set(features), {"wavelet_denoise", "chroma_denoise", "lens_correction"})

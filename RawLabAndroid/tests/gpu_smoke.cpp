@@ -1,4 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "gpu/gles_photo.h"
+#include "hsl_gpu_boundary.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -60,6 +62,12 @@ double benchmark(Session& session, const sony2fuji_request& request, bool gpu) {
 }
 
 int main(int argc, char** argv) {
+    require(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+        const sony2fuji::HslOptions& hsl, sony2fuji::ImageData& output) {
+        sony2fuji::GlesPhotoRenderer renderer;
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
+            input.width, input.height, 0, output, {}, 0, false, hsl);
+    }), "HSL out-of-range boundary and active adjustment");
     Session forced(SONY2FUJI_GPU_FORCE);
     Session cpu(SONY2FUJI_GPU_OFF), automatic(SONY2FUJI_GPU_AUTO);
     std::vector<uint8_t> pixels(53 * 41 * 3);

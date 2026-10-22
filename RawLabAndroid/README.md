@@ -190,6 +190,48 @@ c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
 /tmp/rawlab-android-request-test
 ```
 
+独立 GLES LUT 回归直接编译当前源码并在 ARM64 真机运行，不安装 APK。覆盖分块边界、
+6100 万/1 亿像素，以及上传、计算、映射和读回失败后的 Auto 回退、Force 报错与恢复。
+需要 NDK 27.2.12479018；脚本会清理本机及设备上的临时文件。
+
+```bash
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SERIAL=<serial> \
+  bash RawLabAndroid/tests/gles-lut.sh
+```
+
+完整 RAW/显示输入回归使用独立目标 `rawlab_large_image_tests`，与 `rawlab_gpu_tests`
+一样显式构建，并将可执行文件、对应 `libraw.so`、`libc++_shared.so` 和样片/LUT 放进
+设备的专用临时目录。它检查非默认曝光、白平衡、LUT、色调和 HSL，第二块 GPU 失败后的
+完整 CPU 回退，以及同会话恢复；`export` 还逐字节比较成功 GPU JPEG 与已核验 buffer 的
+独立编码结果，以及回退 JPEG 与 CPU 导出文件。
+这两组真机测试不会由普通 APK 构建自动运行。
+
+```bash
+cmake --build <android-native-build> --target rawlab_large_image_tests
+# 在设备专用临时目录内执行；结束后删除该目录。
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests display samalive.cube 6000x4000 export
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests display samalive.cube 2560x3840 export
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests scene velvia.cube 10000x10000 export
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests photo.RAF velvia.cube 100000000 export
+```
+
+真实 RAW 的末个数字是要求的最小输出像素数，需按相机的有效裁切尺寸填写；合成输入使用
+明确宽高。JPEG/PNG 文件导入上限为 1.28 亿像素，覆盖富士/哈苏一亿像素机型的实际尺寸。
+默认保留 HSL 和 2 色阶的编码前 CPU/GPU 门禁；`RAWLAB_TEST_NO_HSL=1` 仅用于定位数值差异，
+其结果不能替代默认配置的验收。
+
+`LargeRasterInstrumentedTest` 另测真实 Bitmap 解码与像素读取，默认跳过，避免普通设备测试
+无条件分配一亿像素缓冲区。显式运行时，它验证 `11656×8742` JPEG 与 `11808×8754` PNG
+没有被拒绝或缩小，并检查大图 EXIF 旋转和资源释放。`RasterNativeInstrumentedTest` 的
+大图用例还使用外部一亿像素 JPEG，检查 Samalive 预览和全尺寸 PNG 导出的 CPU/Auto 一致性：
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \
+  -PrawlabTestRaster=/path/to/100mp.jpg \
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.rawlab.android.raster.LargeRasterInstrumentedTest,com.rawlab.android.raster.RasterNativeInstrumentedTest#mediumFormatImportPreviewAndExportPreserveAdjustments' \
+  -Pandroid.testInstrumentationRunnerArguments.largeRasterImport=true
+```
+
 设备测试通过 `RAWLAB_TEST_RAW` 或 `-PrawlabTestRaw=/path/to/photo.ARW` 使用外部样片，只将其放入测试 APK，不放入正式应用 APK。v0.2 使用 Sony 样片验证了 7008x4672 原尺寸 JPEG / 16-bit PNG 和 EXIF，并在正式签名 APK 上通过了 10 项模拟器测试。
 测试报告位于 `app/build/reports/`，APK 位于 `app/build/outputs/apk/debug/`。
 实际验证记录见 [verification.md](verification.md)。
