@@ -133,10 +133,12 @@
           </StackPanel>
           <Border x:Name="HistogramSurface" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
             <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-              <Button x:Name="HistogramButton" Click="HistogramClicked" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" Padding="6,2" ToolTip="{DynamicResource '展开直方图'}" AutomationProperties.Name="{DynamicResource '直方图'}"><local:EditorIcon Kind="Histogram" Width="18" Height="18"/></Button>
-              <Grid x:Name="HistogramPanel" Grid.Row="1"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <local:HistogramView x:Name="Histogram" MaxHeight="105" Margin="2,8"/>
-                <TextBlock x:Name="ClipStats" Grid.Row="1" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+              <Button x:Name="HistogramButton" Click="HistogramClicked" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" Padding="6,2" ToolTip="{DynamicResource '展开直方图'}" AutomationProperties.Name="{DynamicResource 'RGB 直方图'}"><local:EditorIcon Kind="Histogram" Width="18" Height="18"/></Button>
+              <Grid x:Name="HistogramPanel" Grid.Row="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <TextBlock x:Name="HistogramTitle" Text="{DynamicResource 'RGB 直方图'}" FontSize="{DynamicResource EditorCaptionSize}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <TextBlock x:Name="HistogramSource" Grid.Row="1" Margin="0,4,0,0" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap"/>
+                <local:HistogramView x:Name="Histogram" Grid.Row="2" MaxHeight="105" Margin="2,8"/>
+                <TextBlock x:Name="ClipStats" Grid.Row="3" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
               </Grid>
             </Grid>
           </Border>

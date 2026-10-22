@@ -20,6 +20,15 @@ internal static class ViewComparisonChecks
     private static object? Invoke(MainWindow window,string name,params object[] args)=>typeof(MainWindow).GetMethod(name,Private)!.Invoke(window,args);
     private static void Click(Control control)=>control.RaiseEvent(new RoutedEventArgs(control is MenuItem ? MenuItem.ClickEvent : Button.ClickEvent));
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+    internal static void CheckHistogram(RenderedImage frame,Action<bool,string> check,string label)
+    {
+        var bytes=new byte[frame.Image.PixelWidth*frame.Image.PixelHeight*4];
+        new FormatConvertedBitmap(frame.Image,PixelFormats.Bgra32,null,0).CopyPixels(bytes,frame.Image.PixelWidth*4,0);
+        var expected=new uint[768];
+        for(var i=0;i<bytes.Length;i+=4){expected[bytes[i+2]]++;expected[256+bytes[i+1]]++;expected[512+bytes[i]]++;}
+        check(frame.Histogram.SequenceEqual(expected),label+": all 768 bins match the actual frame pixels");
+        check(Enumerable.Range(0,3).All(c=>frame.Histogram.Skip(c*256).Take(256).Sum(v=>(long)v)==(long)frame.Image.PixelWidth*frame.Image.PixelHeight),label+": each RGB channel counts the displayed dimensions");
+    }
     internal static void Run(string repo,string raw,Action<bool,string> check,Application? application=null,bool pointerOnly=false,bool labelsOnly=false)
     {
         var output=Path.Combine(repo,"build","windows-v08-results","view-comparison",DateTime.Now.ToString("yyyyMMdd-HHmmss"));Directory.CreateDirectory(output);
@@ -49,8 +58,9 @@ internal static class ViewComparisonChecks
             var source=Path.Combine(output,"same-values"+Path.GetExtension(raw));File.Copy(raw,source,true);window.OpenFile(source);Ready(window);
             check(!view.Enabled && !view.HoldingBefore && view.PreferredMode==ComparisonMode.Wipe,"Actual photo replacement closes comparison and remembers the session mode");
             Click(window.BeforeViewMenu);InteractionChecks.PumpUntil(()=>window.ResultCanvas.ShowingBefore);Capture(window,output,"semantic-before");
-            check(view.HoldingBefore && window.Histogram.Bins==null && window.ClipStats.Text=="","Before action hides after statistics when the real neutral frame has no bins");
-            Click(window.BeforeViewMenu);check(!window.ResultCanvas.ShowingBefore,"Accessible before action returns to the adjusted frame");
+            var neutral=Get<RenderedImage>(window,"neutralResult");CheckHistogram(neutral,check,"held before");
+            check(view.HoldingBefore && ReferenceEquals(window.Histogram.Bins,neutral.Histogram) && window.HistogramSource.Text==Loc.Text("调整前"),"Before action displays statistics from the actual neutral frame and labels its source");
+            Click(window.BeforeViewMenu);check(!window.ResultCanvas.ShowingBefore && window.HistogramSource.Text==Loc.Text("调整后"),"Accessible before action returns to the adjusted frame and statistics source");
             ReferenceReadinessChecks(window,source,output,check);
             var inset=window.ResultCanvas.ImageBounds;Click(window.MenuPhotoMargin);window.UpdateLayout();Capture(window,output,"no-margin");
             check(!view.PhotoMargin && !window.ZoomPhotoMargin.IsChecked && window.ResultCanvas.ImageBounds.Width>=inset.Width && window.ResultCanvas.ImageBounds.Height>=inset.Height,"View menu removes margins while keeping the entire photograph fitted");
@@ -67,6 +77,7 @@ internal static class ViewComparisonChecks
             if(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1")PointerChecks(window,output,check);
             else Console.WriteLine("NOT REACHED: native S3 pointer/keyboard checks require RAWLAB_TEST_NATIVE_POINTER=1 on the interactive input desktop");
             LayoutChecks(window,app,output,check);
+            StatisticsFailureUi(window,output,check);
             check(initial.SameAs(Get<Adjustments>(window,"settings").Capture()) && revision==Get<long>(window,"editRevision") && !Get<bool>(window,"editDirty"),"Comparison, hold, info, margins and layout create no parameter edit or autosave");
             var image=Get<BitmapSource>(window.ResultCanvas,"image");var accepted=Get<RenderedImage>(window,"result");
             var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");Set(window,"lut",invalid);Invoke(window,"Schedule",false);
@@ -92,6 +103,11 @@ internal static class ViewComparisonChecks
                 Loc.SetPreference(language,preference);app.Resources["EditorBodySize"]=font;window.FontSize=font;
                 window.Width=font==26 ? 1000 : 1200;window.Height=font==26 ? 720 : 800;window.UpdateLayout();
                 window.SetComparisonMode(true,true);Ready(window);window.UpdateLayout();
+                check(window.HistogramTitle.Text==Loc.Text("RGB 直方图") && window.HistogramSource.Text==Loc.Text("调整后"),"RGB title and comparison statistics source follow the active language: "+language);
+                foreach(var text in new[]{window.HistogramTitle,window.HistogramSource,window.ClipStats}) {
+                    var bounds=text.TransformToAncestor(window.PhotoArea).TransformBounds(new Rect(text.RenderSize));
+                    check(text.IsVisible && text.ActualHeight+text.Margin.Top+text.Margin.Bottom+.5>=text.DesiredSize.Height && System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && new Rect(window.PhotoArea.RenderSize).Contains(bounds),$"Histogram text fits the photo area: {language}/{font}/{text.Name}; actual={text.ActualHeight:0.##}, desired={text.DesiredSize.Height:0.##}, margin={text.Margin}, bounds={bounds}");
+                }
                 Capture(window,output,$"view-{language}-{window.Width}-{font}");CheckLabels(window,check);
                 check(window.BusyIndicator.Height==2 && window.CompareButton.ActualWidth>=28 && window.CompareModeButton.ActualWidth>=28,
                     $"Viewing controls retain reachable targets and fixed progress thickness: {language}/{font}");
@@ -137,11 +153,13 @@ internal static class ViewComparisonChecks
             }
         } finally {Loc.SetPreference(previous,preference);app.Resources["EditorBodySize"]=font;}
     }
-    private static void NeutralChecks(string raw,string output,Action<bool,string> check)
+    internal static void NeutralChecks(string raw,string output,Action<bool,string> check)
     {
+        Directory.CreateDirectory(output);
         byte[] Pixels(BitmapSource bitmap){var bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];new FormatConvertedBitmap(bitmap,PixelFormats.Bgra32,null,0).CopyPixels(bytes,bitmap.PixelWidth*4,0);return bytes;}
         using var engine=new RenderEngine(0);var edited=new Adjustments();edited.Set(Parameter.Exposure,.8);
         var first=engine.RenderPreview(raw,edited,null,256,false,true,false);
+        CheckHistogram(first.Neutral,check,"RAW neutral");CheckHistogram(first.Result,check,"RAW after");
         var expected=engine.Render(raw,new Adjustments(),null,256,statistics:false,clipping:false,viewportPreview:true)!;
         check(Pixels(first.Neutral.Image).SequenceEqual(Pixels(expected.Image)) && !Pixels(first.Neutral.Image).SequenceEqual(Pixels(first.Result.Image)),"Real RAW before matches the default neutral render and differs from the user's exposure adjustment");
         edited.Set(Parameter.Exposure,1.2);
@@ -152,6 +170,7 @@ internal static class ViewComparisonChecks
         edited.Geometry=new(.1,.1,.7,.6,1);var geometry=engine.RenderPreview(raw,edited,null,256,false,true,false);
         check(geometry.Neutral.NativeWidth==geometry.Result.NativeWidth && geometry.Neutral.NativeHeight==geometry.Result.NativeHeight,"Real neutral and edited frames share the committed geometry dimensions");
         var resized=engine.RenderPreview(raw,edited,null,384,false,true,false);
+        CheckHistogram(resized.Neutral,check,"resized neutral");CheckHistogram(resized.Result,check,"resized after");
         check(!ReferenceEquals(geometry.Neutral,resized.Neutral) && Math.Max(resized.Neutral.Image.PixelWidth,resized.Neutral.Image.PixelHeight)==384,"Neutral reference demand changes produce the requested exact size");
         engine.RenderPreview(raw,edited,null,384,false,false,false);
         check(Get<object?>(engine,"original")!=null,"Closing comparison retains a same-key neutral for temporary before reuse");
@@ -162,9 +181,58 @@ internal static class ViewComparisonChecks
         check(Get<object?>(engine,"original")==null,"A composition change releases the obsolete neutral while comparison is closed");
         var raster=Path.Combine(output,"neutral-raster.png");var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(first.Result.Image));using(var stream=File.Create(raster))encoder.Save(stream);
         var rasterEdit=new Adjustments();rasterEdit.Set(Parameter.Exposure,.7);var rasterFrame=engine.RenderPreview(raster,rasterEdit,null,192,false,true,false);
+        CheckHistogram(rasterFrame.Neutral,check,"raster neutral");CheckHistogram(rasterFrame.Result,check,"raster after");
         var rasterDefault=engine.Render(raster,new Adjustments(),null,192,statistics:false,clipping:false,viewportPreview:true)!;
         check(Pixels(rasterFrame.Neutral.Image).SequenceEqual(Pixels(rasterDefault.Image)) && !Pixels(rasterFrame.Neutral.Image).SequenceEqual(Pixels(rasterFrame.Result.Image)),"Real raster before uses the sensor/none default without copying the adjusted exposure");
+        using var unavailable=new RenderEngine(0,statisticsAnalyzer:FailStatistics);
+        foreach(var clipping in new[]{false,true}) {
+            var frame=unavailable.Render(raster,rasterEdit,null,192,clipping:clipping,viewportPreview:true)!;
+            check(Pixels(frame.Image).SequenceEqual(Pixels(rasterFrame.Result.Image)) && frame.Histogram.Length==0 && frame.Clipping==null,
+                "Native analysis failure retains current pixels and clears statistics/mask: clipping="+clipping);
+        }
+        AnalysisRecoveryChecks(raster,rasterEdit,check);
         SourceIdentityChecks(output,check);
+    }
+    private static void AnalysisRecoveryChecks(string raster,Adjustments settings,Action<bool,string> check)
+    {
+        foreach(var failingCalls in new[]{new[]{1},new[]{2},new[]{1,2}}) {
+            var calls=0;
+            int Analyze(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask) {
+                ++calls;
+                return failingCalls.Contains(calls) ? FailStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask) :
+                    RenderEngine.AnalyzeStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask);
+            }
+            using var engine=new RenderEngine(0,statisticsAnalyzer:Analyze);
+            var first=engine.RenderPreview(raster,settings,null,192,false,true,false);
+            check(engine.CachedPreviewBytes==0,"Unavailable statistics do not populate the accepted-preview cache: "+string.Join(",",failingCalls));
+            var recovered=engine.RenderPreview(raster,settings,null,192,false,true,false);
+            CheckHistogram(recovered.Neutral,check,"same-engine retry neutral");CheckHistogram(recovered.Result,check,"same-engine retry after");
+            var attempts=calls;var cached=engine.RenderPreview(raster,settings,null,192,false,true,false);
+            check(ReferenceEquals(recovered,cached) && calls==attempts,"Recovered complete frame resumes normal cache reuse");
+        }
+    }
+    private static int FailStatistics(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask)
+    {
+        Native.Buffer invalid=default;
+        return RenderEngine.AnalyzeStatistics(ref invalid,clipping,bins,out shadows,out highlights,out mask);
+    }
+    private static void StatisticsFailureUi(MainWindow window,string output,Action<bool,string> check)
+    {
+        var engine=Get<RenderEngine>(window,"engine");var previous=Get<RenderedImage>(window,"result");
+        var fail=true;
+        int Analyze(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask)=>
+            fail ? FailStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask) :
+                RenderEngine.AnalyzeStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask);
+        using var unavailable=new RenderEngine(0,statisticsAnalyzer:Analyze);
+        Set(window,"engine",unavailable);
+        try {
+            Invoke(window,"Schedule",false);Ready(window);window.UpdateLayout();
+            var accepted=Get<RenderedImage>(window,"result");
+            check(!ReferenceEquals(previous,accepted) && accepted.Image.PixelWidth>0 && window.Histogram.Bins==null && window.ClipStats.Text==Loc.Text("统计不可用") && !Get<bool>(window,"renderFailed"),"Actual WPF accepts a photo with unavailable statistics without keeping the prior bins or failing the photo");
+            Capture(window,output,"statistics-unavailable");
+            fail=false;Invoke(window,"Schedule",false);Ready(window);
+            check(window.Histogram.Bins?.Length==768 && window.HistogramSource.Text==Loc.Text("调整后"),"Same-engine same-settings statistics retry restores current after bins");
+        } finally {Set(window,"engine",engine);Invoke(window,"Schedule",false);Ready(window);}
     }
     internal static void SourceIdentityChecks(string output,Action<bool,string> check)
     {
