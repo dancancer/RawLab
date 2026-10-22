@@ -78,11 +78,12 @@ bool periodic(const cv::Mat& residual) {
     return peak/std::max(total,1e-12) > .35;
 }
 
-NoiseProfile estimate(const cv::Mat& lab) {
+NoiseProfile estimate(const cv::Mat& lab, bool rgbInput = false) {
     std::vector<TileNoise> tiles;
     int total = 0;
     for (int y : positions(lab.rows)) for (int x : positions(lab.cols)) {
-        const cv::Mat patch = lab(cv::Rect(x,y,std::min(64,lab.cols-x),std::min(64,lab.rows-y))).clone();
+        cv::Mat patch = lab(cv::Rect(x,y,std::min(64,lab.cols-x),std::min(64,lab.rows-y))).clone();
+        if (rgbInput) cv::cvtColor(patch,patch,cv::COLOR_RGB2Lab);
         if (std::min(patch.rows,patch.cols) < 16) continue;
         ++total;
         cv::Vec3f sigma;
@@ -249,6 +250,51 @@ void filter(cv::Mat& lab, const NoiseProfile& noise, bool coarse, sony2fuji::Gpu
     cv::mixChannels(&ab,1,&lab,1,mapping,2);
 }
 
+// 使用全图坐标重建低分辨率修正，不为 INTER_LINEAR 放大分配完整 ab 图。
+cv::Vec2f resizedChroma(const cv::Mat& image, cv::Size destination, int x, int y) {
+    const auto coordinate = [](int p, int source, int target, int& first, int& second, float& fraction) {
+        const float position = static_cast<float>((p + .5) * double(source) / target - .5);
+        first = static_cast<int>(std::floor(position));
+        fraction = position - first;
+        if (first < 0) { first = 0; fraction = 0; }
+        if (first >= source - 1) { first = source - 1; fraction = 0; }
+        second = std::min(source - 1, first + 1);
+    };
+    int x0, x1, y0, y1; float tx, ty;
+    coordinate(x, image.cols, destination.width, x0, x1, tx);
+    coordinate(y, image.rows, destination.height, y0, y1, ty);
+    const auto top = image.at<cv::Vec2f>(y0,x0) * (1 - tx) + image.at<cv::Vec2f>(y0,x1) * tx;
+    const auto bottom = image.at<cv::Vec2f>(y1,x0) * (1 - tx) + image.at<cv::Vec2f>(y1,x1) * tx;
+    return top * (1 - ty) + bottom * ty;
+}
+
+cv::Mat downsampleChroma(const cv::Mat& lab, cv::Size size, const cv::Mat* priorCorrection) {
+    cv::Mat result(size, CV_32FC2);
+    const double scaleX = double(lab.cols) / size.width, scaleY = double(lab.rows) / size.height;
+    for (int y = 0; y < size.height; ++y) {
+        const double top = y * scaleY, bottom = (y + 1) * scaleY;
+        for (int x = 0; x < size.width; ++x) {
+            const double left = x * scaleX, right = (x + 1) * scaleX;
+            cv::Vec2f value(0,0);
+            for (int sy = int(std::floor(top)); sy < std::min(lab.rows, int(std::ceil(bottom))); ++sy) {
+                cv::Vec2f row(0,0);
+                const float wy = float((std::min(bottom, double(sy + 1)) - std::max(top, double(sy))) / scaleY);
+                for (int sx = int(std::floor(left)); sx < std::min(lab.cols, int(std::ceil(right))); ++sx) {
+                    const float wx = float((std::min(right, double(sx + 1)) - std::max(left, double(sx))) / scaleX);
+                    const auto pixel = lab.at<cv::Vec3f>(sy,sx);
+                    cv::Vec2f sample(pixel[1], pixel[2]);
+                    if (priorCorrection) sample += resizedChroma(*priorCorrection, lab.size(), sx, sy);
+                    row += sample * wx;
+                }
+                value += row * wy;
+            }
+            result.at<cv::Vec2f>(y,x) = value;
+        }
+    }
+    return result;
+}
+
+
 } // namespace
 #endif
 
@@ -285,6 +331,86 @@ ErrorCode applyChromaDenoise(ImageData& image, int mode, ChromaDenoiseDiagnostic
 #else
     (void)image;
     (void)gpuMode;
+    return ErrorCode::InvalidFormat;
+#endif
+}
+
+// 只用于调用方拥有、失败后可丢弃的工作图；公开入口保留失败不修改输入的语义。
+ErrorCode applyChromaDenoiseWorking(ImageData& image, int mode, ChromaDenoiseDiagnostics* diagnostics, GpuMode gpuMode) {
+    if (diagnostics) *diagnostics = {};
+    if (mode < 0 || mode > 2) return ErrorCode::InvalidFormat;
+    if (mode == 0) return ErrorCode::Success;
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+    if (image.width <= 0 || image.height <= 0 || image.pixels.size() != size_t(image.width) * image.height)
+        return ErrorCode::InvalidFormat;
+    cv::Mat pixels(image.height, image.width, CV_32FC3, image.pixels.data());
+    if (!cv::checkRange(pixels)) return ErrorCode::InvalidFormat;
+    const auto noise = estimate(pixels, true);
+    if (diagnostics) { diagnostics->flatTiles = noise.tiles; diagnostics->confidence = noise.confidence; }
+    if (noise.confidence == 0) return ErrorCode::Success;
+    try {
+        const auto convertRows = [&](int conversion) {
+            for (int y = 0; y < pixels.rows; y += 64) {
+                auto rows = pixels.rowRange(y, std::min(pixels.rows, y + 64));
+                cv::Mat converted;
+                cv::cvtColor(rows, converted, conversion);
+                converted.copyTo(rows);
+            }
+        };
+        convertRows(cv::COLOR_RGB2Lab);
+        std::array<cv::Mat, 2> guides, corrections;
+        if (mode == 2) {
+            for (int i = 0; i < 2; ++i) {
+                const int scale = i == 0 ? 4 : 16;
+                cv::resize(pixels, guides[i], {std::max(4, pixels.cols / scale), std::max(4, pixels.rows / scale)},
+                    0, 0, cv::INTER_AREA);
+            }
+        }
+        // guided 的两次半径 8 滤波、sigma .7 预平滑及 sigma 6 高通总支持小于 64。
+        // 先保存原 halo，再写回中心；后续分带永远不读取已降噪的邻域。
+        constexpr int rowsPerBand = 128, halo = 64;
+        cv::Mat previous;
+        int previousFirst = 0, previousEnd = 0;
+        bool gpuUsed = false;
+        for (int y = 0; y < pixels.rows; y += rowsPerBand) {
+            const int end = std::min(pixels.rows, y + rowsPerBand);
+            const int top = std::max(0, y - halo), bottom = std::min(pixels.rows, end + halo);
+            cv::Mat band = pixels.rowRange(top, bottom).clone();
+            if (top < previousEnd)
+                previous.rowRange(top - previousFirst, previousEnd - previousFirst).copyTo(band.rowRange(0, previousEnd - top));
+            previousEnd = end; previousFirst = std::max(0, end - halo);
+            previous = band.rowRange(previousFirst - top, previousEnd - top).clone();
+            filter(band, noise, false, gpuMode, gpuUsed);
+            band.rowRange(y - top, end - top).copyTo(pixels.rowRange(y, end));
+        }
+        if (mode == 2) {
+            for (int i = 0; i < 2; ++i) {
+                const auto source = downsampleChroma(pixels, guides[i].size(), i == 0 ? nullptr : &corrections[0]);
+                corrections[i] = guided(guides[i], source, 4, std::max(.05f, 4 * noise.sigma * noise.sigma), gpuMode, gpuUsed) - source;
+                guides[i].release();
+            }
+            const float limit = .5f * noise.sigma * .35f * noise.confidence;
+            for (int y = 0; y < pixels.rows; ++y) for (int x = 0; x < pixels.cols; ++x) {
+                auto& pixel = pixels.at<cv::Vec3f>(y,x);
+                const cv::Vec2f base(pixel[1], pixel[2]);
+                const auto candidate = base + resizedChroma(corrections[0], pixels.size(), x, y) +
+                    resizedChroma(corrections[1], pixels.size(), x, y);
+                const auto correction = candidate - base;
+                const float norm = std::sqrt(correction.dot(correction));
+                const auto corrected = base + correction * std::min(1.f, limit / std::max(norm, 1e-8f));
+                pixel[1] = corrected[0]; pixel[2] = corrected[1];
+            }
+        }
+        convertRows(cv::COLOR_Lab2RGB);
+        if (diagnostics) { diagnostics->applied = true; diagnostics->gpuUsed = gpuUsed; }
+        return ErrorCode::Success;
+    } catch (const ChromaGpuFailure&) { return ErrorCode::ProcessingError; }
+    catch (const std::bad_alloc&) { return ErrorCode::OutOfMemory; }
+    catch (const cv::Exception& error) {
+        return error.code == cv::Error::StsNoMem ? ErrorCode::OutOfMemory : ErrorCode::ProcessingError;
+    }
+#else
+    (void)image; (void)gpuMode;
     return ErrorCode::InvalidFormat;
 #endif
 }

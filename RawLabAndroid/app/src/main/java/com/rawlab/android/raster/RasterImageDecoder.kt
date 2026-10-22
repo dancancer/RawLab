@@ -8,18 +8,19 @@ import android.os.Build
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.IOException
-import java.nio.ByteBuffer
 import kotlin.math.min
 
 // ============================================================================
 //  普通图像解码：方向、色彩空间与像素上限
 // ============================================================================
 
-internal data class DecodedRaster(val width: Int, val height: Int, val pixels: ByteArray)
+internal class DecodedRaster(val bitmap: Bitmap) : AutoCloseable {
+    val width: Int get() = bitmap.width
+    val height: Int get() = bitmap.height
+    override fun close() = bitmap.recycle()
+}
 
 internal object RasterImageDecoder {
-    private const val MAX_PIXELS = 64_000_000L
-
     fun decode(file: File): DecodedRaster {
         val validation = file.inputStream().use(RasterContainerValidator::inspect)
         val info = validation.info ?: throw IOException(validation.error ?: "Unsupported raster image")
@@ -30,7 +31,7 @@ internal object RasterImageDecoder {
             throw IOException("Unable to decode image")
         if (bounds.outWidth != info.width || bounds.outHeight != info.height)
             throw IOException("Image dimensions changed during decode")
-        if (bounds.outWidth.toLong() * bounds.outHeight > MAX_PIXELS) throw IOException("Image is too large")
+        if (bounds.outWidth.toLong() * bounds.outHeight > RasterContainerValidator.MAX_PIXELS) throw IOException("Image is too large")
         if (info.hasColorProfile && bounds.outColorSpace == null)
             throw IOException("Image color space is not supported")
         if (Build.VERSION.SDK_INT >= 26 && !isSupportedSdrColorSpace(bounds.outColorSpace))
@@ -41,6 +42,7 @@ internal object RasterImageDecoder {
             if (Build.VERSION.SDK_INT >= 26) inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
         }
         val bitmap = BitmapFactory.decodeFile(file.path, options) ?: throw IOException("Unable to decode image")
+        var oriented: Bitmap? = null
         try {
             if (bitmap.config != Bitmap.Config.ARGB_8888 || bitmap.width != info.width || bitmap.height != info.height)
                 throw IOException("Image is not an 8-bit RGB image")
@@ -49,13 +51,13 @@ internal object RasterImageDecoder {
             if (Build.VERSION.SDK_INT >= 34 && bitmap.hasGainmap())
                 throw IOException("HDR gain maps are not supported")
             if (info.mayContainAlpha && !isOpaque(bitmap)) throw IOException("Transparent PNG is not supported")
-            val oriented = orient(bitmap, file)
-            try {
-                val bytes = ByteArray(oriented.width * oriented.height * 4)
-                oriented.copyPixelsToBuffer(ByteBuffer.wrap(bytes))
-                return DecodedRaster(oriented.width, oriented.height, bytes)
-            } finally { if (oriented !== bitmap) oriented.recycle() }
-        } finally { bitmap.recycle() }
+            oriented = orient(bitmap, file)
+            // 像素保留在 Bitmap 的原生内存，由 JNI 在处理期间锁定；不复制到受 Java 堆限制的整图数组。
+            return DecodedRaster(oriented)
+        } catch (error: Throwable) {
+            oriented?.recycle()
+            throw error
+        } finally { if (oriented !== bitmap) bitmap.recycle() }
     }
 
     private fun isOpaque(bitmap: Bitmap): Boolean {

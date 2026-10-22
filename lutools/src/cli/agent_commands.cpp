@@ -128,7 +128,7 @@ int runAgentCommands(int argc, char* argv[]) {
             raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
 #endif
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
-                {"backend", "cpu"}, {"max_pixels", 64000000}};
+                {"backend", "cpu"}, {"max_pixels", 128000000}};
 #endif
             std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4, 5}},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},

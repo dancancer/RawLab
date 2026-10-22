@@ -18,6 +18,26 @@ import com.rawlab.android.settings.PhotoIdentity
 
 class RasterInputTest {
     @Test
+    fun mediumFormatDimensionsAreAcceptedWithinThePixelBudget() {
+        for ((width, height) in listOf(10000 to 10000, 11808 to 8754, 11904 to 8842, 16000 to 8000)) {
+            assertTrue("PNG $width x $height", RasterContainerValidator.inspect(pngHeader(width, height, 8, 2, true)).isValid)
+            assertTrue("JPEG $width x $height", RasterContainerValidator.inspect(jpegDimensions(width, height)).isValid)
+        }
+        for ((width, height) in listOf(16001 to 8000, 65535 to 65535)) {
+            assertFalse(RasterContainerValidator.inspect(pngHeader(width, height, 8, 2, true)).isValid)
+            assertFalse(RasterContainerValidator.inspect(jpegDimensions(width, height)).isValid)
+        }
+    }
+
+    private fun jpegDimensions(width: Int, height: Int): ByteArray {
+        val bytes = Base64.getDecoder().decode(PROGRESSIVE_JPEG_BASE64)
+        val sof = (0 until bytes.size - 9).first { bytes[it] == 0xFF.toByte() && bytes[it + 1] == 0xC2.toByte() }
+        bytes[sof + 5] = (height ushr 8).toByte(); bytes[sof + 6] = height.toByte()
+        bytes[sof + 7] = (width ushr 8).toByte(); bytes[sof + 8] = width.toByte()
+        return bytes
+    }
+
+    @Test
     fun photoFilesAcceptsRawAndValidatedRasterContainers() {
         assertEquals(PhotoInputKind.RAW, PhotoFiles.kind("capture.ARW", "image/x-sony-arw"))
         assertEquals(PhotoInputKind.RASTER, PhotoFiles.kind("capture.jpg", "image/jpeg"))
