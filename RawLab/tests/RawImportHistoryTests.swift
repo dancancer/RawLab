@@ -36,8 +36,8 @@ private struct Content: Equatable {
     let comparison: Data?
     let size: CGSize?
     let geometry: GeometrySettings
-    let histogram: [CGFloat]
-    let baseHistogram: [CGFloat]
+    let histogram: Sony2FujiProcessor.RGBHistogram?
+    let baseHistogram: Sony2FujiProcessor.RGBHistogram?
 
     init(_ model: RawEditorViewModel) {
         source = model.sourceFile?.withReadAccess({ $0 })
@@ -68,6 +68,8 @@ struct RawImportHistoryTests {
 
     private static func render(_ model: RawEditorViewModel, settings: RawSettings,
                                deliveries: Deliveries) throws -> [() -> Void] {
+        // 与 ContentView 的已提交参数观察器同步，草稿参考不走这个入口。
+        model.committedPreviewSettings = settings
         model.updatePreview(settings: settings, includeHistogram: true, quality: .final, histogramDelay: 0)
         model.renderQueue.sync {}
         model.renderQueue.sync {}
@@ -116,7 +118,7 @@ struct RawImportHistoryTests {
         try check(bCallbacks == [bSettings] && model.restoredSettings == bSettings && model.editSaveState == .restored,
                   "RAW B restores its own exposure, perspective and saved notice")
         try check(publishedB.preview != nil && publishedB.comparison != nil && publishedB.size != nil &&
-                  !publishedB.histogram.isEmpty && !publishedB.baseHistogram.isEmpty && publishedB.geometry == bSettings.geometry,
+                  publishedB.histogram != nil && publishedB.baseHistogram != nil && publishedB.geometry == bSettings.geometry,
                   "RAW B publishes pixels, geometry and both histograms")
         let bRevision = model.sourceRevision
         lateA.forEach { $0() }

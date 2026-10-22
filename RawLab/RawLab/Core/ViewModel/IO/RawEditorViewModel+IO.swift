@@ -29,7 +29,7 @@ extension RawEditorViewModel {
         let buffer: Sony2FujiProcessor.Buffer
         let previewBuffer: Sony2FujiProcessor.Buffer
         let basePreviewImage: UIImage?
-        let baseHistogram: [CGFloat]
+        let baseHistogram: Sony2FujiProcessor.RGBHistogram?
         let lutID: String?
         let lutApplied: Bool
         let orientation: CGImagePropertyOrientation?
@@ -40,7 +40,7 @@ extension RawEditorViewModel {
         let buffer: Sony2FujiProcessor.Buffer
         let previewBuffer: Sony2FujiProcessor.Buffer
         let basePreviewImage: UIImage?
-        let baseHistogram: [CGFloat]
+        let baseHistogram: Sony2FujiProcessor.RGBHistogram?
         let orientation: CGImagePropertyOrientation?
     }
 
@@ -65,7 +65,7 @@ extension RawEditorViewModel {
         let comparison = geometry.isIdentity && !lens.isEnabled ? rawBase : try processor.processRaw(
             url: url, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
         let basePreviewImage = processor.makeUIImage(from: comparison.buffer, orientation: .up)
-        let baseHistogram = processor.computeHistogram(from: comparison.buffer, bins: histogramBins)
+        let baseHistogram = processor.computeRGBHistogram(from: comparison.buffer)
 
         return RawPreviewBase(
             buffer: rawBase.buffer,
@@ -101,7 +101,7 @@ extension RawEditorViewModel {
         let comparison = geometry.isIdentity && !lens.isEnabled ? baseBuffer : try processor.processBuffer(
             buffer: rasterBase.buffer, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
         let basePreviewImage = processor.makeUIImage(from: comparison, orientation: .up)
-        let baseHistogram = processor.computeHistogram(from: comparison, bins: histogramBins)
+        let baseHistogram = processor.computeRGBHistogram(from: comparison)
 
         return RasterPreviewBase(
             buffer: rasterBase.buffer,
@@ -166,10 +166,7 @@ extension RawEditorViewModel {
                                 from: previewResult.buffer,
                                 orientation: previewResult.orientation ?? rawBase.orientation
                             )
-                            let adjustedHistogram = self.processor.computeHistogram(
-                                from: previewResult.buffer,
-                                bins: self.histogramBins
-                            )
+                            let adjustedHistogram = self.processor.computeRGBHistogram(from: previewResult.buffer)
 
                             self.resultDelivery {
                                 guard self.activeImportRevision == importRevision else { return }
@@ -223,10 +220,7 @@ extension RawEditorViewModel {
                                 from: adjustedBuffer,
                                 orientation: rasterBase.orientation
                             )
-                            let adjustedHistogram = self.processor.computeHistogram(
-                                from: adjustedBuffer,
-                                bins: self.histogramBins
-                            )
+                            let adjustedHistogram = self.processor.computeRGBHistogram(from: adjustedBuffer)
 
                             self.resultDelivery {
                                 guard self.activeImportRevision == importRevision else { return }
@@ -296,8 +290,8 @@ extension RawEditorViewModel {
                         self.lensInfo = nil
                         self.editSaveState = .idle
                         self.hasImage = false
-                        self.histogram = []
-                        self.baseHistogram = []
+                        self.histogram = nil
+                        self.baseHistogram = nil
                         self.sourceRevision = UUID()
                     }
                 }

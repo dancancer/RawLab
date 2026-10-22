@@ -33,8 +33,8 @@ final class RawEditorViewModel: ObservableObject {
     }
     var comparisonReferenceKey: ComparisonReferenceKey?
     var basePreviewLens = LensCorrectionSettings()
-    @Published var histogram: [CGFloat] = []
-    @Published var baseHistogram: [CGFloat] = []
+    @Published var histogram: Sony2FujiProcessor.RGBHistogram? = nil
+    @Published var baseHistogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var availableLUTs: [LUTOption] = []
     @Published var isLoadingLUTs = false
     @Published var isImportingLooks = false
@@ -95,7 +95,6 @@ final class RawEditorViewModel: ObservableObject {
     let previewMaxDimension: CGFloat = 1280
     let interactivePreviewMaxDimension: CGFloat = 720
     let histogramDelay: TimeInterval = 0.25
-    let histogramBins = 128
     var lutMap: [String: LUTReference] = [:]
     var didStartLUTLoad = false
     var rawLUTID: String?

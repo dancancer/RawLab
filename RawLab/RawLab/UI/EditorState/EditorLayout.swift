@@ -107,7 +107,8 @@ extension ContentView {
         let navigationHeight = groupNavigationButtonHeight
         let scrollTools = scrollsToolsWithParameters(size: size, accessibility: accessibility)
         let available = max(0, size.height - (scrollTools ? 0 : editorToolHeight) - navigationHeight - 3)
-        let photoSpace = scrollTools ? min(32, available * 0.12) : min(96, available)
+        // 即使工具与参数一起滚动，也保留 44pt 照片叠层触点及上下留白。
+        let photoSpace = min(scrollTools ? 68 : 96, available)
         return min(preferred, max(0, available - photoSpace))
     }
 }
