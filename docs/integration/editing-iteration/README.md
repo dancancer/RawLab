@@ -10,7 +10,8 @@
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
 - 第三批集成基线：`development@1031745c06968fa7d5ea7961f19f0eff002ad462`，已包含 #107～#118；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39617993292)已通过四端及汇总门禁，其范围限于工作流实际执行的套件。
 - 第五批开发起点：`development@fcf90f0f2159c08caea55d86652bb82e6c8c46c7`，已包含 #106 的处理版本兼容契约及第四批 #119～#123；该源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39736091998)最终 9 项成功。Android 首轮因 runner shutdown 中断，定向重跑通过，源码未改变。
-- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)、[第五批 S2b 计划](fifth-batch-plan.md)。第四批六组导航与生产重置已集成并完成对应原生验证；第五批接参数输入、移动精细模式与 iOS 刻度窗口，查看与 RGB 能力仍单独验收。
+- 第六批开发起点：`development@8f40dbcc688b87d7b05ee30092de3183aa4678c6`，第五批 #124～#128 已合入，最终源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39774419810) 9 项成功；其范围限于实际执行的检查。
+- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)、[第五批 S2b 计划](fifth-batch-plan.md)、[第六批 S3 计划](sixth-batch-plan.md)。S2a/S2b 已集成；第六批接查看、对比和移动纯预览，S4 RGB 与整体工作流继续单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
 
@@ -26,7 +27,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1 与 S2a 已集成，各自源与联合 CI、四端原生验证及独立复评通过；第五批 S2b 本地实现、相关验证与独立复评完成，交付见 #124～#128；远端状态以对应 PR/Actions 为准，S3/S4 仍待后续接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1/S2a/S2b 已集成，相关原生验证、独立复评和最终源联合 CI 完成，边界见对应批次；S3 按第六批计划开发中，尚未验收；S4 待后续接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -145,7 +146,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 - 首批将 MCP v4 与 Mac S1 并行：两者不写同一源码文件，不依赖新算法；Mac S1 提供规则参照，并非宣布 Mac 独有语义为跨端合同。
 - I0 的版本/范围/单位需以真实 native 模型核对；已有 v4 仅作最终 core 语义参考，不直接成为剪贴板格式。
 - 新参数处理顺序、identity bypass 和质量准入遵守总技术方案 8.1～8.7；候选公式不是冻结结果。
-- 第四批已将四端 17 个工具接入六组导航及范围重置并集成；第五批只推进 S2b 输入，不扩大为 S3 查看或 S4 RGB 验收。
+- 第四批四端 17 工具六组导航/范围重置和第五批 S2b 输入均已集成；第六批推进 S3 查看/对比及受影响守卫，S4 RGB 不混入本批。
 - 三端当前保存均同步执行；第三批保留该串行实现，以可返回成功/失败的候选保存边界满足草稿事务。普通重置沿原一次编辑入口，不能与草稿 save-first 混为同一策略。
 - Android 的裁切/比例 ready 与可应用 changed 分开；reset/draft 只去除完全相同的重复保存，预览实际补入的 WB metadata 仍保存。
 - Windows [目录复制路径](https://github.com/dancancer/RawLab/blob/bff2b8602b913a08676e04ab7f1109a148f68834/RawLabWindows/MainWindow/Library.cs#L259)在异步枚举前捕获快照，恢复后尚无 source/edit guard；可能覆盖等待期间更新的当前照片记录。此源码风险登记到 I2/ITER-08，需专门回归，不混入第三批重置事务。

@@ -78,9 +78,12 @@
 "全部调整" = "Alle Anpassungen";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "Farbton, Sättigung und Helligkeit aller acht Farbbereiche werden auf 0 zurückgesetzt. Andere Anpassungen bleiben unverändert.";
 "关闭" = "Schließen";
+"关闭对比" = "Vergleich ausschalten";
 "内存不足，无法解码普通图片。" = "Nicht genügend Speicher zum Dekodieren des Bildes.";
 "几何" = "Geometrie";
 "几何与镜头" = "Geometrie und Objektiv";
+"分割位置" = "Position der Trennlinie";
+"分割线" = "Trennlinie";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Kalifornisches Sonnenlicht mit japanischem Filmlook, diffuses urbanes Gold und klarer warmer Schimmer";
 "匹配内嵌预览" = "An eingebettete Vorschau anpassen";
 "匹配照片" = "Passt zum Foto";
@@ -108,6 +111,7 @@
 "完成" = "Fertig";
 "对比" = "Vergleich";
 "对比度" = "Kontrast";
+"对比方式" = "Vergleichsmodus";
 "导入外观" = "Look importieren";
 "导入外观…" = "Look importieren…";
 "导入照片" = "Foto importieren";
@@ -154,9 +158,11 @@
 "已生成渲染型 DNG，未另存到所选位置。" = "Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.";
 "已调整" = "Bearbeitet";
 "已选 %@ 张" = "%@ ausgewählt";
+"并排" = "Nebeneinander";
 "应用" = "Anwenden";
 "开启" = "Ein";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.";
+"开启对比" = "Vergleich einschalten";
 "强度" = "Intensität";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Starker Hell-Dunkel-Kontrast, tiefe kühl-cyane Schatten, kontrollierte Schwarztöne und warme Akzentlichter";
 "当前构建未配置使用统计，未采集或上报。" = "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.";
@@ -247,6 +253,7 @@
 "极简禅意 · 日系街拍" = "Minimalistisches Zen · japanische Streetfotografie";
 "查看批量任务 · %@ 张" = "Stapelauftrag anzeigen · %@";
 "查看批量任务…" = "Stapel-Export anzeigen…";
+"查看调整前" = "Vorher anzeigen";
 "标准显影" = "Standardentwicklung";
 "标准灵敏度" = "Standardempfindlichkeit";
 "核对 DNG 文件" = "DNG-Dateien prüfen";
@@ -265,6 +272,7 @@
 "正在导入" = "Wird importiert";
 "正在导出" = "Wird exportiert";
 "正在显影" = "Wird entwickelt";
+"正在显影…" = "Wird entwickelt…";
 "正在生成效果预览…" = "Vorschau wird erstellt…";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
@@ -283,6 +291,7 @@
 "滨田英明" = "Hideaki Hamada";
 "照片" = "Foto";
 "照片信息" = "Fotoinformationen";
+"照片四周留白" = "Abstand um das Foto";
 "照片图库" = "Fotos";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "Das Foto wurde geschrieben, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst das Ergebnis.";
 "照片或调整已变化，请重新确认重置。" = "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.";
@@ -317,6 +326,7 @@
 "继续未完成的 %@ 张" = "Ausstehende Fotos fortsetzen (%@)";
 "继续编辑" = "Weiter bearbeiten";
 "绿" = "Grün";
+"缩放与显示" = "Zoom und Anzeige";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Die Weißabgleichsdaten der Aufnahme fehlen. Die Wirkung des Rezepts kann daher nicht beibehalten werden.";
 "缺少有效相机校准，保留拍摄时白平衡" = "Kein gültiges Kameraprofil; Weißabgleich wie aufgenommen bleibt erhalten";
 "羽化" = "Weiche Kante";
@@ -356,6 +366,7 @@
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
 "请输入 1–65535 之间的像素数" = "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein";
 "调整" = "Anpassungen";
+"调整前" = "Vorher";
 "调整后" = "Nachher";
 "调整已保存" = "Anpassungen gespeichert";
 "调整未保存 · 重试" = "Anpassungen nicht gespeichert · Erneut versuchen";
@@ -367,6 +378,9 @@
 "跟随系统" = "Systemsprache verwenden";
 "输出" = "Ausgabe";
 "返回" = "Zurück";
+"返回调整后" = "Nachher anzeigen";
+"进入纯预览" = "Reine Vorschau öffnen";
+"退出纯预览" = "Reine Vorschau schließen";
 "适合窗口" = "An Fenster anpassen";
 "选择" = "Auswählen";
 "选择镜头" = "Objektiv auswählen";
@@ -387,6 +401,7 @@
 "重置全部调整" = "Alle Anpassungen zurücksetzen";
 "重置全部调整…" = "Alle Anpassungen zurücksetzen…";
 "重置全部调整？" = "Alle Anpassungen zurücksetzen?";
+"重置分割线" = "Trennlinie zurücksetzen";
 "重置当前颜色" = "Aktuelle Farbe zurücksetzen";
 "重置当前颜色（%@）" = "Aktuelle Farbe (%@) zurücksetzen";
 "重置所有调整并返回中性" = "Alle Anpassungen zurücksetzen und zum neutralen Zustand zurückkehren";
@@ -394,6 +409,7 @@
 "重置调整" = "Anpassungen zurücksetzen";
 "重置镜头校正" = "Objektivkorrektur zurücksetzen";
 "重置降噪" = "Rauschreduzierung zurücksetzen";
+"重试" = "Erneut versuchen";
 "重试失败的 %@ 张" = "Fehlgeschlagene Fotos erneut versuchen (%@)";
 "钨丝电影 · 红灯冷青" = "Tungsten-Kino · rotes Licht und kühles Cyan";
 "锐化" = "Schärfen";
@@ -416,6 +432,8 @@
 "霓虹都市 · 冷青粉紫" = "Neonstadt · kühles Cyan und Pinkviolett";
 "青" = "Cyan";
 "预览尚未就绪，请稍后重试。" = "Die Vorschau ist noch nicht bereit. Versuchen Sie es gleich erneut.";
+"预览已更新" = "Vorschau aktualisiert";
+"预览未更新" = "Vorschau nicht aktualisiert";
 "预设" = "Voreinstellung";
 "颗粒" = "Körnung";
 "颗粒大小" = "Korngröße";

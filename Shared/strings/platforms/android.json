@@ -2587,6 +2587,108 @@
         "s",
         "s"
       ]
+    },
+    "editor_compare_before": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整前",
+      "types": []
+    },
+    "editor_compare_disable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "关闭对比",
+      "types": []
+    },
+    "editor_compare_enable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "开启对比",
+      "types": []
+    },
+    "editor_compare_hold_before": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看调整前",
+      "types": []
+    },
+    "editor_compare_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "对比方式",
+      "types": []
+    },
+    "editor_compare_reset_split": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置分割线",
+      "types": []
+    },
+    "editor_compare_show_after": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "返回调整后",
+      "types": []
+    },
+    "editor_compare_side_by_side": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "并排",
+      "types": []
+    },
+    "editor_compare_split": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "分割位置",
+      "types": []
+    },
+    "editor_compare_wipe": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "分割线",
+      "types": []
+    },
+    "editor_photo_info": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片信息",
+      "types": []
+    },
+    "editor_photo_margin": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片四周留白",
+      "types": []
+    },
+    "editor_preview_enter": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "进入纯预览",
+      "types": []
+    },
+    "editor_preview_exit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "退出纯预览",
+      "types": []
+    },
+    "editor_preview_outdated": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览未更新",
+      "types": []
+    },
+    "editor_preview_updated": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览已更新",
+      "types": []
+    },
+    "editor_zoom_display": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "缩放与显示",
+      "types": []
     }
   },
   "overrides": {

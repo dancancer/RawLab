@@ -89,6 +89,7 @@
 "关于 RawLab" = "About RawLab";
 "关于 RawLab…" = "About RawLab…";
 "关闭" = "Close";
+"关闭对比" = "Turn off comparison";
 "关闭提示" = "Dismiss";
 "关闭镜头选择" = "Close Lens Selection";
 "内存不足，无法解码普通图片。" = "Not enough memory to decode the image.";
@@ -97,6 +98,8 @@
 "几何与镜头" = "Geometry & Lens";
 "几何与镜头草稿" = "Geometry and Lens Draft";
 "几何编辑" = "Geometry edits";
+"分割位置" = "Split position";
+"分割线" = "Wipe";
 "前往下载 %@" = "Download %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
 "匹配内嵌预览" = "Match embedded preview";
@@ -139,6 +142,7 @@
 "实际像素 · 100%" = "Actual pixels · 100%";
 "对比" = "Comparison";
 "对比度" = "Contrast";
+"对比方式" = "Comparison mode";
 "导入外观" = "Import Look";
 "导入外观…" = "Import Look…";
 "导入结果" = "Import results";
@@ -196,6 +200,7 @@
 "已选中" = "Selected";
 "常用导出尺寸" = "Commonly used export sizes";
 "常用尺寸" = "Common sizes";
+"并排" = "Side by side";
 "应用" = "Apply";
 "应用几何和镜头编辑" = "Apply Geometry and Lens Changes";
 "应用并离开" = "Apply and Leave";
@@ -203,6 +208,7 @@
 "应用当前设置到 %@ 张照片？" = "Apply current settings (photos: %@)?";
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
+"开启对比" = "Turn on comparison";
 "强度" = "Intensity";
 "强度为 0，其他参数会保留。" = "Intensity is 0. Other settings are retained.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
@@ -316,6 +322,7 @@
 "查看应用后的效果" = "Preview the Result with These Adjustments";
 "查看批量任务…" = "View Batch Task…";
 "查看更新" = "View updates";
+"查看调整前" = "Show before";
 "标准显影" = "Standard development";
 "校正后裁去空白边缘" = "Crop Blank Edges After Correction";
 "核对 DNG 文件" = "Verify DNG Files";
@@ -363,6 +370,7 @@
 "滨田英明" = "Hideaki Hamada";
 "照片" = "Photo";
 "照片信息" = "Photo Information";
+"照片四周留白" = "Space around photo";
 "照片或调整已变化，请重新确认重置。" = "The photo or its adjustments have changed. Confirm the reset again.";
 "照片缺少有效焦距，未应用校正" = "No Valid Focal Length; Correction Not Applied";
 "版本 %@" = "Version %@";
@@ -405,6 +413,7 @@
 "绿" = "Green";
 "缩小" = "Zoom out";
 "缩放" = "Zoom";
+"缩放与显示" = "Zoom and display";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "As-shot white balance data is missing, so the recipe's appearance cannot be preserved.";
 "羽化" = "Feather";
 "胶片" = "Film";
@@ -457,6 +466,7 @@
 "请输入有效数字" = "Please enter a valid number";
 "请输入范围内的有效数字" = "Please enter a valid number within the range";
 "调整亮度、色彩和粗色斑降噪" = "Adjust luma, chroma and coarse artifact noise reduction";
+"调整前" = "Before";
 "调整后" = "After";
 "调整工具" = "Adjustment Tools";
 "调整已保存" = "Adjustments Saved";
@@ -472,6 +482,7 @@
 "载入照片后可用" = "Available after loading photos";
 "输入调整" = "Input adjustments";
 "输出" = "Output";
+"返回调整后" = "Return to after";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "These changes have not been applied. Apply them and leave, discard them, or keep editing.";
 "适合窗口" = "Fit to window";
 "选择 %@" = "Select %@";
@@ -503,6 +514,7 @@
 "重置全部调整…" = "Reset all adjustments…";
 "重置全部调整？" = "Reset all adjustments?";
 "重置几何编辑" = "Reset geometry edits";
+"重置分割线" = "Reset split";
 "重置当前颜色" = "Reset Current Color";
 "重置当前颜色（%@）" = "Reset current color (%@)";
 "重置本工具" = "Reset This Tool";
@@ -537,6 +549,8 @@
 "项目与作者" = "Project and Author";
 "预览" = "Preview";
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
+"预览已更新" = "Preview updated";
+"预览未更新" = "Preview not updated";
 "预设" = "Preset";
 "颗粒" = "Grain";
 "颗粒强度" = "Grain Intensity";

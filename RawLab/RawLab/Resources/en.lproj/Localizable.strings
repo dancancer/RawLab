@@ -78,9 +78,12 @@
 "全部调整" = "All Adjustments";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "Hue, saturation and lightness will return to 0 for all eight colors. Other adjustments will stay unchanged.";
 "关闭" = "Close";
+"关闭对比" = "Turn off comparison";
 "内存不足，无法解码普通图片。" = "Not enough memory to decode the image.";
 "几何" = "Geometry";
 "几何与镜头" = "Geometry & Lens";
+"分割位置" = "Split position";
+"分割线" = "Wipe";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
 "匹配内嵌预览" = "Match embedded preview";
 "匹配照片" = "Matches Photo";
@@ -108,6 +111,7 @@
 "完成" = "Done";
 "对比" = "Comparison";
 "对比度" = "Contrast";
+"对比方式" = "Comparison mode";
 "导入外观" = "Import Look";
 "导入外观…" = "Import Look…";
 "导入照片" = "Import Photo";
@@ -154,9 +158,11 @@
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
 "已调整" = "Adjusted";
 "已选 %@ 张" = "%@ selected";
+"并排" = "Side by side";
 "应用" = "Apply";
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
+"开启对比" = "Turn on comparison";
 "强度" = "Intensity";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
@@ -247,6 +253,7 @@
 "极简禅意 · 日系街拍" = "Minimalist Zen · Japanese street photography";
 "查看批量任务 · %@ 张" = "View Batch Task · %@";
 "查看批量任务…" = "View Batch Task…";
+"查看调整前" = "Show before";
 "标准显影" = "Standard development";
 "标准灵敏度" = "Standard Sensitivity";
 "核对 DNG 文件" = "Verify DNG Files";
@@ -265,6 +272,7 @@
 "正在导入" = "Importing";
 "正在导出" = "Exporting";
 "正在显影" = "Developing";
+"正在显影…" = "Developing…";
 "正在生成效果预览…" = "Generating Result Preview…";
 "正在读取镜头信息…" = "Reading Lens Information…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.";
@@ -283,6 +291,7 @@
 "滨田英明" = "Hideaki Hamada";
 "照片" = "Photo";
 "照片信息" = "Photo Information";
+"照片四周留白" = "Space around photo";
 "照片图库" = "Photos";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "The Photo Was Written, but the Task Record Was Not Updated. Check the Save Result First.";
 "照片或调整已变化，请重新确认重置。" = "The photo or its adjustments have changed. Confirm the reset again.";
@@ -317,6 +326,7 @@
 "继续未完成的 %@ 张" = "Continue Unfinished Photos (%@)";
 "继续编辑" = "Keep Editing";
 "绿" = "Green";
+"缩放与显示" = "Zoom and display";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "As-shot white balance data is missing, so the recipe's appearance cannot be preserved.";
 "缺少有效相机校准，保留拍摄时白平衡" = "No Valid Camera Calibration; Preserving As-Shot White Balance";
 "羽化" = "Feather";
@@ -356,6 +366,7 @@
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请输入 1–65535 之间的像素数" = "Enter a pixel count from 1 to 65,535";
 "调整" = "Adjustments";
+"调整前" = "Before";
 "调整后" = "After";
 "调整已保存" = "Adjustments Saved";
 "调整未保存 · 重试" = "Adjustments not saved · Try again";
@@ -367,6 +378,9 @@
 "跟随系统" = "Follow system";
 "输出" = "Output";
 "返回" = "Back";
+"返回调整后" = "Return to after";
+"进入纯预览" = "Enter immersive preview";
+"退出纯预览" = "Exit immersive preview";
 "适合窗口" = "Fit to window";
 "选择" = "Select";
 "选择镜头" = "Choose Lens";
@@ -387,6 +401,7 @@
 "重置全部调整" = "Reset All Adjustments";
 "重置全部调整…" = "Reset all adjustments…";
 "重置全部调整？" = "Reset all adjustments?";
+"重置分割线" = "Reset split";
 "重置当前颜色" = "Reset Current Color";
 "重置当前颜色（%@）" = "Reset current color (%@)";
 "重置所有调整并返回中性" = "Reset All Adjustments and Return to Neutral";
@@ -394,6 +409,7 @@
 "重置调整" = "Reset Adjustments";
 "重置镜头校正" = "Reset Lens Correction";
 "重置降噪" = "Reset Noise Reduction";
+"重试" = "Try again";
 "重试失败的 %@ 张" = "Retry Failed Photos (%@)";
 "钨丝电影 · 红灯冷青" = "Tungsten cinema · red lights and cool cyan";
 "锐化" = "Sharpening";
@@ -416,6 +432,8 @@
 "霓虹都市 · 冷青粉紫" = "Neon city · cool cyan and pink-purple";
 "青" = "Cyan";
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
+"预览已更新" = "Preview updated";
+"预览未更新" = "Preview not updated";
 "预设" = "Preset";
 "颗粒" = "Grain";
 "颗粒大小" = "Grain Size";
