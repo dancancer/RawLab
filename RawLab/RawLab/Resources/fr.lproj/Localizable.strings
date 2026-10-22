@@ -1,4 +1,5 @@
 /* 由 scripts/localization/generate.py 生成，勿手改 */
+"%@ · %@" = "%@ · %@";
 "%@ · %@%%" = "%@ · %@%%";
 "%@数值" = "Valeur de %@";
 "16:9" = "16:9";
@@ -87,6 +88,7 @@
 "原始比例" = "Format d’origine";
 "去噪优先" = "Priorité à la réduction du bruit";
 "参数或输出路径无效。" = "Paramètres ou chemin de sortie non valides.";
+"双击名称或轨道恢复默认值。" = "Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut.";
 "取消" = "Annuler";
 "取消导出" = "Annuler l’exportation";
 "史诗自然 · 雾气冷青" = "Nature épique · cyan froid brumeux";
@@ -173,6 +175,7 @@
 "拍摄参数" = "Paramètres de prise de vue";
 "拍摄时设置" = "Réglage selon la prise";
 "拍摄时：%.0f K · 色调 %+.0f" = "Selon la prise : %.0f K · Teinte %+.0f";
+"拖动灵敏度为普通模式的四分之一。" = "La sensibilité du glissement est réduite au quart de la normale.";
 "拖动边角裁切，拖动画面内移动选区。" = "Faites glisser un coin pour recadrer ; faites glisser à l’intérieur de la zone pour la déplacer.";
 "指定长边" = "Spécifier le bord long";
 "按每张照片" = "Par photo";
@@ -216,6 +219,7 @@
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Peau lumineuse japonaise, bleu cyan transparent et aérien, ombres ouvertes et hautes lumières douces";
 "日系青空 · 高调日光" = "Ciel bleu japonais · lumière du jour high-key";
 "明度" = "Luminosité";
+"明度：从暗到亮。" = "Luminosité : du sombre au clair.";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.";
 "暖调日系 · 漫射金光" = "Style japonais chaud · lumière dorée diffuse";
 "暖金光影 · 质感人像" = "Lumière dorée chaude · portrait texturé";
@@ -326,6 +330,7 @@
 "色彩降噪" = "Réduction du bruit de chrominance";
 "色温" = "Température";
 "色相" = "Teinte";
+"色相：向相邻颜色偏移。" = "Teinte : décalage vers les couleurs voisines.";
 "色调" = "Teinte";
 "色调偏移" = "Décalage de teinte";
 "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织" = "Montagnes enneigées et brume forestière, verts numériques agressifs supprimés ; verts froids de toundra et or chaud doux";
@@ -345,6 +350,7 @@
 "裁切高度" = "Hauteur du recadrage";
 "裁边 %@%%" = "Recadrage %@%%";
 "语言" = "Langue";
+"请使用 %@ 的步进。" = "Utilisez un pas de %@.";
 "请先导入一张照片。" = "Importez d’abord une photo.";
 "请等待当前任务完成。" = "Attendez la fin de la tâche actuelle.";
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
@@ -417,6 +423,7 @@
 "颗粒粗糙度" = "Rugosité du grain";
 "颜色" = "Couleur";
 "饱和度" = "Saturation";
+"饱和度：从灰色到彩色。" = "Saturation : du gris à la couleur.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Nuit urbaine néon à Séoul, base cyan froide opposée aux hautes lumières rose-violet et aux reflets de rue mouillée";
 "高光" = "Hautes lumières";
 "高光保护" = "Protection des hautes lumières";
@@ -426,3 +433,4 @@
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Douce lueur du crépuscule, hautes lumières or chaud et ombres bleu cyan douces, portraits peints à l'huile à faible contraste et couleurs voisines";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Look de film haut de gamme à l'heure dorée, sujet lumineux en fort contraste, ombres profondes et contour doré des cheveux";
 "默认" = "Par défaut";
+"默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valeur par défaut : %@ ; plage : de %@ à %@ ; pas : %@.";

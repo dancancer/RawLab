@@ -26,6 +26,7 @@
     <string name="edit_read_error">"No se puede leer el registro de ajuste: %1$s"</string>
     <string name="edit_unsaved_detail">"Ajustes no guardados: %1$s"</string>
     <string name="editor_adjusted">"Ajustado"</string>
+    <string name="editor_fine_hint">"Al arrastrar, la sensibilidad es una cuarta parte de la normal."</string>
     <string name="editor_group_collapse">"Contraer el grupo %1$s"</string>
     <string name="editor_group_color">"Color"</string>
     <string name="editor_group_detail">"Detalle"</string>
@@ -34,6 +35,13 @@
     <string name="editor_group_geometry">"Geometría y objetivo"</string>
     <string name="editor_group_light">"Luz"</string>
     <string name="editor_group_looks">"Aspectos"</string>
+    <string name="editor_hsl_hue_direction">"Tono: desplaza hacia los colores adyacentes."</string>
+    <string name="editor_hsl_lightness_direction">"Luminosidad: de oscuro a claro."</string>
+    <string name="editor_hsl_saturation_direction">"Saturación: de gris a color."</string>
+    <string name="editor_numeric_help">"Valor predeterminado: %1$s; rango: de %2$s a %3$s; incremento: %4$s."</string>
+    <string name="editor_numeric_reset_hint">"Toca dos veces el nombre o la pista para restablecer el valor predeterminado."</string>
+    <string name="editor_numeric_step_error">"Usa incrementos de %1$s."</string>
+    <string name="editor_parameter_pair">"%1$s · %2$s"</string>
     <string name="editor_reset_all">"Restablecer todos los ajustes…"</string>
     <string name="editor_reset_all_message">"Restablece todos los ajustes de la foto actual. La foto original no se modificará."</string>
     <string name="editor_reset_all_title">"¿Restablecer todos los ajustes?"</string>

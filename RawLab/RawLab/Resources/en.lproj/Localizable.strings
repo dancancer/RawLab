@@ -1,4 +1,5 @@
 /* 由 scripts/localization/generate.py 生成，勿手改 */
+"%@ · %@" = "%@ · %@";
 "%@ · %@%%" = "%@ · %@%%";
 "%@数值" = "%@ Value";
 "16:9" = "16:9";
@@ -87,6 +88,7 @@
 "原始比例" = "Original Ratio";
 "去噪优先" = "Noise Reduction Priority";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
+"双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取消" = "Cancel";
 "取消导出" = "Cancel Export";
 "史诗自然 · 雾气冷青" = "Epic nature · misty cool cyan";
@@ -173,6 +175,7 @@
 "拍摄参数" = "Capture Settings";
 "拍摄时设置" = "As-Shot Setting";
 "拍摄时：%.0f K · 色调 %+.0f" = "As Shot: %.0f K · Tint %+.0f";
+"拖动灵敏度为普通模式的四分之一。" = "Dragging uses one quarter of the normal sensitivity.";
 "拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
 "指定长边" = "Specify long edge";
 "按每张照片" = "Per Photo";
@@ -216,6 +219,7 @@
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanese luminous skin, airy transparent blue-cyan, open shadows and soft highlights";
 "日系青空 · 高调日光" = "Japanese blue sky · high-key daylight";
 "明度" = "Lightness";
+"明度：从暗到亮。" = "Lightness: from dark to light.";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.";
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
 "暖金光影 · 质感人像" = "Warm golden light · textured portrait";
@@ -326,6 +330,7 @@
 "色彩降噪" = "Chroma Noise Reduction";
 "色温" = "Temperature";
 "色相" = "Hue";
+"色相：向相邻颜色偏移。" = "Hue: shift toward neighboring colors.";
 "色调" = "Tint";
 "色调偏移" = "Tint Offset";
 "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织" = "Vast snowy mountains and forest mist, removing harsh digital greens; tundra cool greens blend with soft warm gold";
@@ -345,6 +350,7 @@
 "裁切高度" = "Crop height";
 "裁边 %@%%" = "Crop %@%%";
 "语言" = "Language";
+"请使用 %@ 的步进。" = "Use increments of %@.";
 "请先导入一张照片。" = "Import a Photo First.";
 "请等待当前任务完成。" = "Wait for the Current Task to Finish.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
@@ -417,6 +423,7 @@
 "颗粒粗糙度" = "Grain Roughness";
 "颜色" = "Color";
 "饱和度" = "Saturation";
+"饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";
 "高光" = "Highlights";
 "高光保护" = "Highlight protection";
@@ -426,3 +433,4 @@
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Soft twilight glow, warm-gold highlights and gentle blue-cyan shadows, low-contrast oil-painted portraits with adjacent-color harmony";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Golden-hour feature-film look, luminous subjects in high contrast, deep shadows and golden hair rim light";
 "默认" = "Default";
+"默认值：%@；范围：%@ 至 %@；步进：%@。" = "Default: %@; range: %@ to %@; increment: %@.";

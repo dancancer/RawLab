@@ -1799,9 +1799,63 @@
     "颜色": {
       "formats": [],
       "source": "颜色"
+    },
+    "%@ · %@": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "{0} · {1}"
+    },
+    "双击名称或轨道恢复默认值。": {
+      "formats": [],
+      "source": "双击名称或轨道恢复默认值。"
+    },
+    "拖动灵敏度为普通模式的四分之一。": {
+      "formats": [],
+      "source": "拖动灵敏度为普通模式的四分之一。"
+    },
+    "明度：从暗到亮。": {
+      "formats": [],
+      "source": "明度：从暗到亮。"
+    },
+    "色相：向相邻颜色偏移。": {
+      "formats": [],
+      "source": "色相：向相邻颜色偏移。"
+    },
+    "请使用 %@ 的步进。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "请使用 {0} 的步进。"
+    },
+    "饱和度：从灰色到彩色。": {
+      "formats": [],
+      "source": "饱和度：从灰色到彩色。"
+    },
+    "默认值：%@；范围：%@ 至 %@；步进：%@。": {
+      "formats": [
+        "%@",
+        "%@",
+        "%@",
+        "%@"
+      ],
+      "source": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
     }
   },
-  "overrides": {},
+  "overrides": {
+    "双击名称或轨道恢复默认值。": {
+      "reason": "移动端使用双击触摸手势，桌面使用鼠标双击；提示仅用于普通输入，不覆盖读屏激活操作。",
+      "values": {
+        "de": "Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen.",
+        "en": "Double-tap the name or track to restore the default.",
+        "es": "Toca dos veces el nombre o la pista para restablecer el valor predeterminado.",
+        "fr": "Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut.",
+        "ja": "名前またはトラックをダブルタップすると、デフォルト値に戻ります。",
+        "zh-Hans": "双击名称或轨道恢复默认值。"
+      }
+    }
+  },
   "unique": {
     "Failed to load the selected photo.": {
       "de": "Das ausgewählte Foto konnte nicht geladen werden.",

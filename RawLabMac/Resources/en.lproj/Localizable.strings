@@ -1,4 +1,5 @@
 /* 由 scripts/localization/generate.py 生成，勿手改 */
+"%@ · %@" = "%@ · %@";
 "%@ · %@%%" = "%@ · %@%%";
 "%@ · 大师配方" = "%@ · Master Recipe";
 "%@ · 本次导出效果" = "%@ · For This Export";
@@ -108,6 +109,7 @@
 "原尺寸" = "Original size";
 "去噪优先" = "Noise Reduction Priority";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
+"双击名称或轨道恢复默认值。" = "Double-click the name or track to restore the default.";
 "发现新版本 %@" = "New Version Available: %@";
 "取消" = "Cancel";
 "取消几何和镜头编辑" = "Cancel Geometry and Lens Editing";
@@ -282,6 +284,7 @@
 "旧版色度降噪" = "Legacy Chroma Noise Reduction";
 "旧版：%@" = "Legacy: %@";
 "明度" = "Lightness";
+"明度：从暗到亮。" = "Lightness: from dark to light.";
 "明暗" = "Tone";
 "显示 %@" = "Showing %@";
 "显示成片" = "Show Exported Photo";
@@ -305,6 +308,7 @@
 "未找到机身或传感器尺寸信息" = "Camera or Sensor Size Information Missing";
 "未找到镜头" = "No Lenses Found";
 "未读取到拍摄参数" = "Capture Settings Unavailable";
+"未调整" = "Unadjusted";
 "未选中" = "Not selected";
 "未选择" = "Not selected";
 "极简禅意 · 日系街拍" = "Minimalist Zen · Japanese street photography";
@@ -420,6 +424,7 @@
 "色温" = "Temperature";
 "色相" = "Hue";
 "色相、饱和度和明度" = "Hue, saturation, and lightness";
+"色相：向相邻颜色偏移。" = "Hue: shift toward neighboring colors.";
 "色调" = "Tint";
 "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织" = "Vast snowy mountains and forest mist, removing harsh digital greens; tundra cool greens blend with soft warm gold";
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "British countryside autumn oil-painting look, rich earth tones, golden dry grass and deep forest green";
@@ -443,6 +448,7 @@
 "裁切高度" = "Crop height";
 "裁边 %@%%" = "Crop %@%%";
 "语言" = "Language";
+"请使用 %@ 的步进。" = "Use increments of %@.";
 "请先纠正无效数值" = "Correct Invalid Values First";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请至少选择一张 RAW 照片。" = "Please select at least one RAW photo.";
@@ -536,6 +542,7 @@
 "颗粒强度" = "Grain Intensity";
 "颜色" = "Color";
 "饱和度" = "Saturation";
+"饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";
 "高光" = "Highlights";
 "高光 %@" = "Highlights %@";
@@ -545,3 +552,4 @@
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Soft twilight glow, warm-gold highlights and gentle blue-cyan shadows, low-contrast oil-painted portraits with adjacent-color harmony";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Golden-hour feature-film look, luminous subjects in high contrast, deep shadows and golden hair rim light";
 "黑位 %@" = "Black level %@";
+"默认值：%@；范围：%@ 至 %@；步进：%@。" = "Default: %@; range: %@ to %@; increment: %@.";

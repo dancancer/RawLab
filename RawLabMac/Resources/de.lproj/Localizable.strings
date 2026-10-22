@@ -1,4 +1,5 @@
 /* 由 scripts/localization/generate.py 生成，勿手改 */
+"%@ · %@" = "%@ · %@";
 "%@ · %@%%" = "%@ · %@%%";
 "%@ · 大师配方" = "%@ · Master-Rezept";
 "%@ · 本次导出效果" = "%@ · Für diesen Export";
@@ -108,6 +109,7 @@
 "原尺寸" = "Originalgröße";
 "去噪优先" = "Rauschreduzierung priorisieren";
 "参数或输出路径无效。" = "Ungültige Parameter oder ungültiger Ausgabepfad.";
+"双击名称或轨道恢复默认值。" = "Doppelklicke auf den Namen oder die Spur, um den Standardwert wiederherzustellen.";
 "发现新版本 %@" = "Neue Version verfügbar: %@";
 "取消" = "Abbrechen";
 "取消几何和镜头编辑" = "Geometrie- und Objektivbearbeitung abbrechen";
@@ -282,6 +284,7 @@
 "旧版色度降噪" = "Ältere Chroma-Rauschreduzierung";
 "旧版：%@" = "Älteres Verfahren: %@";
 "明度" = "Helligkeit";
+"明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
 "明暗" = "Tonwert";
 "显示 %@" = "Zeigt %@";
 "显示成片" = "Exportiertes Foto anzeigen";
@@ -305,6 +308,7 @@
 "未找到机身或传感器尺寸信息" = "Kamera- oder Sensorgrößeninformationen fehlen";
 "未找到镜头" = "Keine Objektive gefunden";
 "未读取到拍摄参数" = "Aufnahmeparameter nicht verfügbar";
+"未调整" = "Unbearbeitet";
 "未选中" = "Nicht ausgewählt";
 "未选择" = "Nicht ausgewählt";
 "极简禅意 · 日系街拍" = "Minimalistisches Zen · japanische Streetfotografie";
@@ -420,6 +424,7 @@
 "色温" = "Temperatur";
 "色相" = "Farbton";
 "色相、饱和度和明度" = "Farbton, Sättigung und Helligkeit";
+"色相：向相邻颜色偏移。" = "Farbton: Verschiebung zu benachbarten Farben.";
 "色调" = "Tönung";
 "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织" = "Weite Schneelandschaften und Waldnebel, harte digitale Grüntöne entfernt; Tundra-Kühlgrün trifft auf weiches Warmgold";
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "Ölgemälde-Look eines britischen Herbstes auf dem Land, satte Erdtöne, goldenes Gras und tiefes Waldgrün";
@@ -443,6 +448,7 @@
 "裁切高度" = "Zuschnitthöhe";
 "裁边 %@%%" = "Beschnitt %@%%";
 "语言" = "Sprache";
+"请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
 "请先纠正无效数值" = "Ungültige Werte zuerst korrigieren";
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
 "请至少选择一张 RAW 照片。" = "Bitte wählen Sie mindestens ein RAW-Foto aus.";
@@ -536,6 +542,7 @@
 "颗粒强度" = "Kornstärke";
 "颜色" = "Farbe";
 "饱和度" = "Sättigung";
+"饱和度：从灰色到彩色。" = "Sättigung: von Grau zu Farbe.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Neon-Nachtbild von Seoul, kühles Cyan gegen pink-violette Lichter und Reflexionen nasser Straßen";
 "高光" = "Lichter";
 "高光 %@" = "Lichter %@";
@@ -545,3 +552,4 @@
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Sanftes Dämmerlicht, warmgoldene Lichter und weiche blau-cyane Schatten, kontrastarme Ölgemälde-Porträts mit benachbarten Farbtönen";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Hochwertiger Look zur goldenen Stunde, leuchtende Motive bei hohem Kontrast, tiefe Schatten und goldenes Haar-Kantenlicht";
 "黑位 %@" = "Schwarzwert %@";
+"默认值：%@；范围：%@ 至 %@；步进：%@。" = "Standard: %@; Bereich: %@ bis %@; Schrittweite: %@.";

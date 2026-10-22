@@ -26,6 +26,7 @@
     <string name="edit_read_error">"Anpassungsdatensatz konnte nicht gelesen werden: %1$s"</string>
     <string name="edit_unsaved_detail">"Anpassungen nicht gespeichert: %1$s"</string>
     <string name="editor_adjusted">"Bearbeitet"</string>
+    <string name="editor_fine_hint">"Die Empfindlichkeit beim Ziehen beträgt ein Viertel der normalen Empfindlichkeit."</string>
     <string name="editor_group_collapse">"Gruppe „%1$s“ zuklappen"</string>
     <string name="editor_group_color">"Farbe"</string>
     <string name="editor_group_detail">"Detail"</string>
@@ -34,6 +35,13 @@
     <string name="editor_group_geometry">"Geometrie und Objektiv"</string>
     <string name="editor_group_light">"Licht"</string>
     <string name="editor_group_looks">"Looks"</string>
+    <string name="editor_hsl_hue_direction">"Farbton: Verschiebung zu benachbarten Farben."</string>
+    <string name="editor_hsl_lightness_direction">"Helligkeit: von dunkel zu hell."</string>
+    <string name="editor_hsl_saturation_direction">"Sättigung: von Grau zu Farbe."</string>
+    <string name="editor_numeric_help">"Standard: %1$s; Bereich: %2$s bis %3$s; Schrittweite: %4$s."</string>
+    <string name="editor_numeric_reset_hint">"Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen."</string>
+    <string name="editor_numeric_step_error">"Verwende eine Schrittweite von %1$s."</string>
+    <string name="editor_parameter_pair">"%1$s · %2$s"</string>
     <string name="editor_reset_all">"Alle Anpassungen zurücksetzen…"</string>
     <string name="editor_reset_all_message">"Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert."</string>
     <string name="editor_reset_all_title">"Alle Anpassungen zurücksetzen?"</string>

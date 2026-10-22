@@ -92,6 +92,6 @@
 - [x] Task 3：Android原生接线、JVM/lint及实际Compose/VM/草稿回归通过；六语短屏/大字完整控件与独立评审已闭合，本地提交就绪。
 - [x] Task 4：Windows原生接线、managed/WPF 构建、实际 Windows 交互与六语两尺寸布局/截图通过，独立评审已闭合；长语言大字号保留参数视口、辅助控件与完整统计文字。宽窗为 WPF 离屏内容布局，系统 DPI、无障碍服务和硬件 GPU 仍另列。
 - [x] 四端独立复核及协调者关键调用链核验完成，本地源码没有未关闭的 P1/P2。
-- [ ] 2026-10-22 已获远端操作授权，五个 PR 已创建：[基础资源 #119](https://github.com/dancancer/RawLab/pull/119) → [Mac #120](https://github.com/dancancer/RawLab/pull/120) → [iOS #121](https://github.com/dancancer/RawLab/pull/121) → [Android #122](https://github.com/dancancer/RawLab/pull/122) → [Windows #123](https://github.com/dancancer/RawLab/pull/123)。按最新源的独立评审与 CI 门禁依次集成，最后核实 development 联合 CI；实时源提交、验证与合入记录保留在上述 PR。
+- [x] 2026-10-22 已按授权顺序合入：[基础资源 #119](https://github.com/dancancer/RawLab/pull/119) → [Mac #120](https://github.com/dancancer/RawLab/pull/120) → [iOS #121](https://github.com/dancancer/RawLab/pull/121) → [Android #122](https://github.com/dancancer/RawLab/pull/122) → [Windows #123](https://github.com/dancancer/RawLab/pull/123)。各最新源的独立评审和受影响 CI 通过，最终 `development@fcf90f0f` 的[联合 CI 39736091998](https://github.com/dancancer/RawLab/actions/runs/39736091998)最终 9 项成功；源提交、验证边界与合入记录保留在上述 PR。
 
 纯模型、编译、模拟器、真实硬件分别登记；本批完成也不代表整个S2或ITER-02验收通过。

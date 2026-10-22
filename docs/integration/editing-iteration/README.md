@@ -9,8 +9,8 @@
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
 - 第三批集成基线：`development@1031745c06968fa7d5ea7961f19f0eff002ad462`，已包含 #107～#118；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39617993292)已通过四端及汇总门禁，其范围限于工作流实际执行的套件。
-- 当前开发基线：`development@0fd52624648f5473364b78e6cfb28cf7c471be17`，新增已合入 #106 的处理版本兼容契约；该源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39629200983)已全部通过。第四批重置与导航保持该身份，不改核心算法或存储策略。
-- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)。三端提交/草稿事务已集成；第四批六组导航与生产重置入口已完成本地实现和独立复评，等待远端 CI 与集成，后续输入与查看能力继续单独验收。
+- 当前开发基线：`development@fcf90f0f2159c08caea55d86652bb82e6c8c46c7`，已包含 #106 的处理版本兼容契约及第四批 #119～#123；该源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39736091998)最终 9 项成功。Android 首轮因 runner shutdown 中断，定向重跑通过，源码未改变。
+- 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)、[第五批 S2b 计划](fifth-batch-plan.md)。第四批六组导航与生产重置已集成并完成对应原生验证；第五批接参数输入、移动精细模式与 iOS 刻度窗口，查看与 RGB 能力仍单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
 
@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1、重置提交与草稿事务已集成；第四批 S2a 本地实现及独立复评完成，Mac/iOS/Android 原生验证通过，Windows 实际 WPF 与六语布局/截图通过；五个 PR 的源 CI 与集成门禁见下表，其余工作区 UI 分批接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1 与 S2a 已集成，各自源与联合 CI、四端原生验证及独立复评通过；第五批 S2b 本地实现、相关验证与独立复评完成，尚未远端交付；S3/S4 仍待后续接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -69,14 +69,14 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | 总账、批次计划、共享语义决定 | 协调者 | `docs/integration/editing-iteration/`；必要的规范勘误 | 决策关联需求/源码，修订后通知受影响执行者 |
 | I0 字段目录 | 协调者；`field_contract` 来源核验 | `docs/design/editing-iteration/field-catalog.md` | 不新增通用 native DTO，不宣称尚未验证的跨端映射已冻结 |
 | MCP v4 工具 | 协调者执行；`mcp_phase1` 接入核验 | `tools/mcp/` | CLI/C ABI 不改；协议缺口提交协调者另拆前置 |
-| Mac S1、事务与本批 UI | Mac workspace worker；默认代理独立核验 | 第四批 Task 1：Adjustments/Model、EditorView/Dock/Layout 与受影响 controls/tests | 保留既有事务与 processing identity；不把模型完成当 UI 验收 |
+| Mac S1、事务与本批 UI | Mac workspace worker；默认代理独立核验 | 第五批 Task 1：Inputs、AdjustmentRow/HSL、导航与关闭的取消接线及 tests | 保留既有事务与 processing identity；不把模型完成当 UI 验收 |
 | 核心 C ABI / EditRecipe / CLI / schema | 协调者保留，按算法批次另派一个 owner | `lutools/include/sony2fuji/`、`src/ffi/`、`src/cli/`、对应核心/测试 | 新配置 additive；#106 已接入含 processing 的 v5，后续新字段另按真实链路声明支持 |
 | 核心算法 / Metal / GLES / D3D11 | 协调者保留 | `lutools/src/core/`、对应后端 | CPU 合同与质量先准入，不能各后端并行猜常量 |
-| iOS 事务与本批 UI | iOS workspace worker；默认代理独立核验 | 第四批 Task 2：rules/transaction、ContentView/Panels/Layout、HSL channel 与 tests/project 注册 | ContentView 保持 settings owner；保存成功后才提交草稿，精确保留记录 metadata，不改 codec |
-| Android 事务与本批 UI | Android workspace worker；默认代理独立核验 | 第四批 Task 3：rules/state/VM、EditorScreen/Tools/Dock/HSL 与 JVM/instrumentation | 保留工具 ID/JNI/codec；分开 draft-ready 与 changed Apply，真实 WB metadata 不因去重丢失 |
-| Windows 事务与本批 UI | Windows workspace worker；默认代理独立核验 | 第四批 Task 4：rules/transaction/workflow、MainWindow 与 HslPanel、managed/WPF 回归 | 保留 save-first 和同 dialog retry；不改 JSON/Library 批量复制 |
+| iOS 事务与本批 UI | iOS workspace worker；默认代理独立核验 | 第五批 Task 2：参数控件/刻度窗口、ContentView 面板会话与受影响 UI tests | ContentView 保持 settings owner；保存成功后才提交草稿，精确保留记录 metadata，不改 codec |
+| Android 事务与本批 UI | Android workspace worker；默认代理独立核验 | 第五批 Task 3：controls/Dock 的输入会话和布局、JVM/instrumentation；VM/state 冻结 | 保留工具 ID/JNI/codec；分开 draft-ready 与 changed Apply，真实 WB metadata 不因去重丢失 |
+| Windows 事务与本批 UI | Windows workspace worker；默认代理独立核验 | 第五批 Task 4：ParameterRow/Slider、严格 UI parser、导航取消接线与 managed/WPF 回归 | 保留 save-first 和同 dialog retry；不改 JSON/Library 批量复制 |
 | 共享本地化与无障碍 keys | 协调者保留 | `Shared/strings/` 及生成入口 | 功能 owner 提交 key/参数需求，单一资源 owner 写入 |
-| 构建、CI、公共依赖与许可证 | 协调者；第四批 CI 绑定基础分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | #108 的 MCP、#112 的 iOS 模型检查已集成；第三批已将 Windows transform-ui 加入门禁；第四批增加现有工作区及本地化 UI 入口和截图产物，不降低既有检查 |
+| 构建、CI、公共依赖与许可证 | 协调者；第五批 CI 绑定基础分支 | 根构建、`lutools/CMakeLists.txt`、`.github/`、`scripts/ci/`、共享依赖 | #108 的 MCP、#112 的 iOS 模型检查已集成；第三批已将 Windows transform-ui 加入门禁；第四批增加现有工作区及本地化 UI 入口和截图产物；第五批补 Mac parameter-value 与 iOS adjustment-scale 现有 runner，不降低既有检查 |
 
 第一批分支：`feature/editing-iteration-coordination`、`feature/editing-mcp-v4`、`feature/editing-mac-workspace-rules`，均从初始开发基线创建独立 worktree。不存在把其他历史分支或降噪试验一起纳入本迭代的授权。
 
@@ -87,6 +87,20 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 第三批复用干净独立 worktree，从 `bff2b860` 创建四个分支，已按 **#115 → #116 → #117 → #118** 合入。iOS 真实 simulator、Android 标准素材 instrumentation、Windows 实际 WPF/native 回归已通过；对应源与最终集成源 CI 均已通过。验证细节留在各 PR，设备/GPU缺口继续保留。
 
 第四批从最新 `0fd52624` 创建基础资源分支及四端消费者分支，复用同一批干净 worktree。协调者独占共享六语/CI/总账，平台 worker 各自拥有第四批计划列出的UI和窄模型接线，默认代理独立评审。各消费者显式合入同一基础资源提交；远端先合入基础PR，再更新消费者并核验受影响组合。四端本地实现与独立复评已完成，Mac/iOS/Android 的实际界面及事务验证通过；Windows managed/WPF 构建、实际重置/草稿回归及六语两尺寸布局/截图已通过；长语言大字号下的零参数视口和窄窗直方图文字裁切已修复并独立复评。用户已于 2026-10-22 授权按基础资源→四端消费者顺序 push、创建五个 PR；各 PR 最新源提交的独立评审和 CI 全部通过（包括 Windows 实际 WPF 与截图）后，按顺序合入 development 并核实联合 CI。五个 PR 已建立；最新源的检查、合入和目标分支联合 CI 记录以对应 PR 与 Actions 为准。
+
+第四批已按 **#119 → #120 → #121 → #122 → #123** 合入，最终源为 `fcf90f0f`。第五批继续由原四端 owner 负责各自输入 UI，协调者负责共享六语、CI 入口和总账，独占路径见第五批计划。消费者正式 CI 等共享前置合入后再启动；未合入依赖时保持 draft。实际 Windows 验证在本地交付阶段完成，不延迟到远端 CI 才首次验证。原生验证以 source/configuration 为边界，零源码变化的同步只做增量绑定，不重复全套实验。
+
+第五批本地交付状态（2026-10-22）：四端消费同一资源基础 `08e275cb`，以下平台提交均以它为父提交。共享基础及本表尚未 push，不代表远端 CI 或合入完成。
+
+| 第五批交付 | 本地提交 | 当前状态与保留边界 |
+| --- | --- | --- |
+| 共享资源、CI 入口与协调 | `2d8c1f46`、`08e275cb`；本次收口文档随基础分支交付 | 六语生成、占位符与 CI policy/actionlint 本地通过；消费者无共享文件重叠 |
+| Mac 参数输入 | `d15db205` | 本批原生界面、模型/输入与六语布局验证及独立复评完成 |
+| iOS 参数输入 | `f52eac9b` | 本批 iPhone/iPad 模拟器验证及独立复评完成；额外 PhotoWorkflow 停在胶片横屏位置断言，后续返回/导出未到达，未据此判定本批产品回归 |
+| Android 参数输入 | `8f7fef0c` | 本批私有模拟器、实际 RAW、布局/旋转与独立复评完成；真实 TalkBack 与硬件 GPU 未验证 |
+| Windows 参数输入 | `a17d9551` | 本批实际 WPF/鼠标、六语布局与独立复评完成；额外默认 native 套件的镜头候选检查未通过，宽窗包含离屏 composition 验证 |
+
+各平台证据按实际源码、构建和执行批次分别归属，不拼成一个 binary 的全量通过。移动真机、实际读屏和硬件 GPU 仍需后续验收。上表仅关闭 S2b 的本地交付，S3/S4、远端集成及全工作流联合验收继续独立登记。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
@@ -131,7 +145,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 - 首批将 MCP v4 与 Mac S1 并行：两者不写同一源码文件，不依赖新算法；Mac S1 提供规则参照，并非宣布 Mac 独有语义为跨端合同。
 - I0 的版本/范围/单位需以真实 native 模型核对；已有 v4 仅作最终 core 语义参考，不直接成为剪贴板格式。
 - 新参数处理顺序、identity bypass 和质量准入遵守总技术方案 8.1～8.7；候选公式不是冻结结果。
-- 第四批已将四端 17 个工具接入六组导航及范围重置；不将 S2a 本地完成扩大为 S2b 输入、S3 查看或 S4 RGB 验收。
+- 第四批已将四端 17 个工具接入六组导航及范围重置并集成；第五批只推进 S2b 输入，不扩大为 S3 查看或 S4 RGB 验收。
 - 三端当前保存均同步执行；第三批保留该串行实现，以可返回成功/失败的候选保存边界满足草稿事务。普通重置沿原一次编辑入口，不能与草稿 save-first 混为同一策略。
 - Android 的裁切/比例 ready 与可应用 changed 分开；reset/draft 只去除完全相同的重复保存，预览实际补入的 WB metadata 仍保存。
 - Windows [目录复制路径](https://github.com/dancancer/RawLab/blob/bff2b8602b913a08676e04ab7f1109a148f68834/RawLabWindows/MainWindow/Library.cs#L259)在异步枚举前捕获快照，恢复后尚无 source/edit guard；可能覆盖等待期间更新的当前照片记录。此源码风险登记到 I2/ITER-08，需专门回归，不混入第三批重置事务。
