@@ -64,7 +64,7 @@ struct PhotoCanvas: View {
                         }
                     }
                     .overlay {
-                        if clipping { Image(decorative: frame.clipping, scale: 1).resizable().interpolation(.none) }
+                        if clipping, let mask = frame.clipping { Image(decorative: mask, scale: 1).resizable().interpolation(.none) }
                     }.rotationEffect(.degrees(straighten.angle)).offset(x: displayPan.width, y: displayPan.height)
                 if let cropSettings {
                     MacCropOverlay(settings: cropSettings, imageBounds: imageBounds, canvasSize: straighten.safeCanvas,

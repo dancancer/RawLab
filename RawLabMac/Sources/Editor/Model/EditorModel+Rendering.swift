@@ -94,7 +94,7 @@ extension EditorModel {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 // nil edge explicitly requests the existing immutable full-native baseline.
                 let originalKey = MacNeutralReferenceKey(source: work.source, settings: work.settings.neutralSettings, edge: nil)
-                if self.originalCache?.key != originalKey {
+                if self.originalCache?.key != originalKey || self.originalCache?.frame.histogram.count != 3 {
                     self.originalCache = nil
                     self.geometryReferenceCache = nil
                     if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil) {
@@ -105,7 +105,8 @@ extension EditorModel {
                 let key = MacNeutralReferenceKey(source: work.source, settings: work.settings, edge: work.edge)
                 if work.editingGeometry || key.usesOriginal {
                     neutral = self.originalCache?.frame
-                } else if let cached = self.geometryReferenceCache, cached.key.canServe(key, fullResolution: cached.frame.isFullResolution) {
+                } else if let cached = self.geometryReferenceCache, cached.frame.histogram.count == 3,
+                          cached.key.canServe(key, fullResolution: cached.frame.isFullResolution) {
                     neutral = cached.frame
                     self.geometryReferenceCache = (key, cached.frame)
                 } else {

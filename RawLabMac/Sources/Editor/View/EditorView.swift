@@ -43,7 +43,8 @@ struct EditorView: View {
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
                     .overlay(alignment: .topTrailing) {
                         if model.geometryDraft == nil {
-                            FloatingHistogram(frame: viewing.holdingBefore ? model.neutral : model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                            FloatingHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
+                                before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded).padding(12)
                         }
                     }
                     .overlay(alignment: .topLeading) {
@@ -475,11 +476,13 @@ private extension View {
     }
 }
 
-private struct FloatingHistogram: View {
+struct FloatingHistogram: View {
     let frame: RenderedImage?
+    var before = false
     @Environment(\.locale) private var localizationLocale
     @Binding var clipping: Bool
     @Binding var expanded: Bool
+    private var source: String { L10n.text(before ? "调整前" : "调整后") }
     var body: some View {
         VStack(spacing: 10) {
         let _ = localizationLocale
@@ -487,20 +490,34 @@ private struct FloatingHistogram: View {
                 Button { expanded.toggle() } label: {
                     Image(systemName: "chart.bar.xaxis").font(.system(size: 11, weight: .medium))
                 }.buttonStyle(.plain).help(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
-                    .accessibilityLabel(L10n.text("直方图"))
-                    .accessibilityValue(expanded ? L10n.text("已展开") : L10n.text("已收起"))
+                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityValue(source + " · " + (expanded ? L10n.text("已展开") : L10n.text("已收起")))
+                    .accessibilityIdentifier("histogram.toggle")
                 if expanded {
                     Spacer()
                     Toggle(isOn: $clipping) { Image(systemName: "exclamationmark.triangle") }
                         .toggleStyle(.button).buttonStyle(.borderless).tint(.yellow)
-                        .help(L10n.text("显示输出高光与黑位裁切")).accessibilityLabel(L10n.text("显示裁切提示")).disabled(frame == nil)
+                        .help(L10n.text("显示输出高光与黑位裁切")).accessibilityLabel(L10n.text("显示裁切提示")).disabled(frame?.clipping == nil)
                 }
                 Button { expanded.toggle() } label: { Image(systemName: expanded ? "chevron.up" : "chevron.down") }
                     .font(.system(size: 10)).buttonStyle(.plain)
                     .accessibilityLabel(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
             }
             if expanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.text("RGB 直方图")).font(.system(size: 12, weight: .semibold))
+                    Text(source).font(.system(size: 11))
+                }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityIdentifier("histogram.source")
                 HistogramView(bins: frame?.histogram ?? []).frame(height: 68)
+                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityIdentifier("histogram.plot")
+                if frame?.histogram.isEmpty != false {
+                    Text(L10n.text("统计不可用")).font(.system(size: 11))
+                        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("histogram.unavailable")
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.format("高光 %@", String(describing: percent(frame?.highlights))))
                         .fixedSize(horizontal: false, vertical: true)
