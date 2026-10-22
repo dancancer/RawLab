@@ -23,16 +23,17 @@ public partial class MainWindow
         {
             path=Path.GetFullPath(path);
             if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
+            CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
             RestoreEdits(path);
-            compare=swipe=false;
+            CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
             file=path; interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
             RefreshComparisonToolTip();
             viewport.SetSourceSize(0,0);
-            NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(placeholder,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
+            NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(null,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
             previewLongEdge=requestedPreviewLongEdge=ResultCanvas.PreviewLongEdge>0 ? ResultCanvas.PreviewLongEdge : 2000;
             syncing=false;
             RefreshPhotoInfo();
@@ -88,7 +89,7 @@ public partial class MainWindow
             if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
             if(result==null && !renderFailed && preview.Image!=null)
             {
-                NeutralCanvas.SetImage(preview.Image,null);ResultCanvas.SetImage(preview.Image,null);ResultCanvas.SetComparison(preview.Image,null);
+                NeutralCanvas.SetImage(preview.Image,null);ResultCanvas.SetImage(preview.Image,null);ResultCanvas.SetComparison(null,null);
                 SetStatus(() => Loc.Text("相机内嵌预览 · 正在显影…"));
             }
         }
@@ -121,11 +122,14 @@ public partial class MainWindow
         previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
-        if(!LookAvailable){exactReady=false;result=null;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"),true);UpdateBusy();return;}
+        if(!LookAvailable){exactReady=false;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"),true);UpdateBusy();return;}
         renderFailed=false;
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
-        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,compare,clipping,initialPreview,transformGeneration));
+        if(CurrentViewSource is not {} source) {exactReady=false;renderFailed=true;SetStatus(()=>Loc.Text("预览未更新"),true);UpdateBusy();return;}
+        var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy));
+        if(acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
+        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,view.NeedsReference,clipping,initialPreview,transformGeneration,openRevision,source));
         exactReady=false; SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…")); UpdateBusy();
         Pump();
     }
@@ -146,20 +150,23 @@ public partial class MainWindow
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         // A current-file proxy may publish while dragging; stale exact work never publishes.
-        if(work.File==file && work.Lut==lut && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && work.Compare==compare && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
+        if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
-            if(failure!=null) { if(current){result=null;exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();Report(failure);} }
+            if(failure!=null) { if(current){exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
             else if(rendered!=null && neutral!=null)
             {
-                result=rendered;if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
+                result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
+                if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 // The core supplies the post-geometry canvas before preview/export resizing.
                 syncing=true;
                 try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }
                 finally { syncing=false; }
                 renderedGpuMode=work.GpuMode;
-                NeutralCanvas.SetImage(neutral.Image,neutral.Clipping); ResultCanvas.SetImage(rendered.Image,rendered.Clipping);
-                ResultCanvas.SetComparison(neutral.Image,neutral.Clipping);
-                Histogram.Bins=rendered.Histogram; Histogram.InvalidateVisual();
+                ResultCanvas.SetImage(rendered.Image,rendered.Clipping);
+                if(work.Compare) {
+                    neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
+                }
+                RefreshViewingFrames();
                 RefreshRenderLabels();
                 exactReady=current && !work.Interactive && !transform.Active;
                 if(transform.Active)

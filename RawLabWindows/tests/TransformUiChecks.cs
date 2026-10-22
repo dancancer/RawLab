@@ -52,6 +52,9 @@ internal static class TransformUiChecks
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var draft=Get<TransformDraft>(window,"transform");
             check(draft.Active && !window.ExportPng.IsEnabled,"Real WPF geometry workspace gates export");
+            window.SetComparisonMode(true,true);window.BeforeViewMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            check(draft.Active && !Get<EditorViewState>(window,"view").Enabled && !Get<EditorViewState>(window,"view").HoldingBefore,
+                "Comparison commands and before action cannot exit or bypass an active geometry draft");
             var unchangedRevision=Get<long>(window,"editRevision");
             check(!window.ApplyDraftButton.IsEnabled && !(bool)Invoke(window,"ApplyTransformDraft")! &&
                 draft.Active && Get<long>(window,"editRevision")==unchangedRevision,"Unchanged exact draft cannot apply");

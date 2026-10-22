@@ -315,9 +315,10 @@ public partial class MainWindow
             }
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
             var lookTitle=LookTitle;
-            ActiveFilm.Text=lookTitle;FilmLabelText.Text=lut==null ? Loc.Text("调整后") : lookTitle;ActiveFilm.ToolTip=lookTitle;
+            ActiveFilm.Text=lookTitle;FilmLabelText.Text=Loc.Text("调整后");ActiveFilm.ToolTip=lookTitle;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
             RefreshComparisonLayout();
+            RefreshViewingFrames();
             RefreshComparisonSelection();
             ClippingButton.Tag=clipping ? "selected" : null;
             InfoButton.Tag=photoInfoMode == PhotoInfoMode.Hidden ? null : "selected";
@@ -343,9 +344,16 @@ public partial class MainWindow
         MenuImportLook.IsEnabled=!exporting;
         HistogramSurface.Visibility=result!=null ? Visibility.Visible : Visibility.Collapsed;
         RefreshStateToolTips();
-        CompareButton.IsEnabled=ClippingButton.IsEnabled=InfoButton.IsEnabled=AdjustToggleButton.IsEnabled=file!=null && !exporting;
+        ClippingButton.IsEnabled=InfoButton.IsEnabled=AdjustToggleButton.IsEnabled=file!=null && !exporting;
+        CompareButton.IsEnabled=CompareModeButton.IsEnabled=file!=null && !exporting && !transform.Active;
+        InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
+        InfoEntryButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
-        BusyIndicator.Visibility=scheduler.Busy || previewResize.IsEnabled || exporting ? Visibility.Visible : Visibility.Collapsed;
+        var busy=scheduler.Busy || previewResize.IsEnabled;
+        BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
+        BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;
+        BusyStill.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Collapsed : Visibility.Visible;
+        AutomationProperties.SetItemStatus(BusyIndicator,Loc.Text(busy ? "正在显影…" : renderFailed ? "预览未更新" : "预览已更新"));
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
         ExportButton.ToolTip=file==null ? Loc.Text("载入照片后可用") : transform.Active ? Loc.Text("草稿未应用，无法导出或复制设置。") :
             renderFailed ? Status.Text :
@@ -360,7 +368,7 @@ public partial class MainWindow
         // 没有显影结果：正在打开时说明在显影；空闲或失败时只留平台与色彩空间，不沿用过时的进度
         if (result == null) { BackendLabel.Text=file != null && !renderFailed ? Loc.Text("相机预览 · 正在显影") : "Windows · sRGB"; return; }
         BackendLabel.Text=$"{(result.Backend==3 ? "Direct3D 11 · GPU" : renderedGpuMode==0 || (file!=null && LibraryEntry.IsRaster(file)) ? "CPU" : Loc.Text("CPU · GPU 已回退"))} · sRGB";
-        ClipStats.Text=Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计", result.Shadows, result.Highlights);
+        RefreshViewingFrames();
         var raster=file!=null && LibraryEntry.IsRaster(file);
         BaselineLabel.Text=raster ? Loc.Text("显示图像") : Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
         AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature, result.WhiteBalance.Value.Tint);

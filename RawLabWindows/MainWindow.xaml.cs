@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source);
     private readonly Library library=new();
     private LookLibrary? lookLibrary;
     private Exception? lookLibraryLoadError;
@@ -39,7 +39,14 @@ public partial class MainWindow : Window
     private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
     // The modeless batch owns its lifetime; foreground completion must not clear it.
     private bool exporting=>foregroundBusy || batchWindow?.Busy==true;
-    private bool compare,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance,swipe;
+    private readonly EditorViewState view=new();
+    private bool compare=>view.Enabled;
+    private bool swipe=>view.Enabled && view.PreferredMode==ComparisonMode.Wipe;
+    private bool clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance;
+    private RenderedImage? neutralResult;
+    private long neutralRevision;
+    private NeutralReferenceKey? acceptedReference;
+    private NeutralReferenceKey? acceptedAfter;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
     private bool choosingHsl,autoExposing;
@@ -78,7 +85,7 @@ public partial class MainWindow : Window
         if (!LookLibrary.TryLoad(lookLibraryDirectory, out lookLibrary, out lookLibraryLoadError))
             lookLibrary = null;
         AutomationProperties.SetAutomationId(this,"MainWindow");
-        foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareOff,CompareSide,CompareSwipe,
+        foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareModeButton,CompareOff,CompareSide,CompareSwipe,
             MenuCompareOff,MenuCompareSide,MenuCompareSwipe,NeutralCanvas,ResultCanvas,ExportButton,ExportPng,SaveState,Status,Files})
             AutomationProperties.SetAutomationId(control,control.Name);
         AutomationProperties.SetAutomationId(ValueSlider,"ParameterValueSlider");
@@ -117,6 +124,16 @@ public partial class MainWindow : Window
         ToolsScroller.SizeChanged+=(_,_)=>UpdateDockMinimum();
         NeutralCanvas.Viewport=ResultCanvas.Viewport=viewport;
         ResultCanvas.PreviewSizeChanged+=UpdatePreviewSize;
+        ResultCanvas.HoldStarted+=BeginHoldingBefore;
+        ResultCanvas.HoldEnded+=EndHoldingBefore;
+        NeutralCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        ResultCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        PreviewKeyUp+=ViewKeyReleased;
+        Activated+=(_,_)=>SyncBeforeKeyState();
+        AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
+        Deactivated+=(_,_)=>CancelViewingInput();
+        MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
+        CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
         previewResize.Tick+=(_,_)=>CommitPreviewSize();
         films.Add(new("中性",null,null));
@@ -171,6 +188,7 @@ public partial class MainWindow : Window
             interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
         };
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
+        SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();
         InitializeEditWorkflow();
         Closing+=WindowClosing;
