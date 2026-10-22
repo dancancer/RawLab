@@ -26,6 +26,16 @@
     <string name="edit_read_error">"Anpassungsdatensatz konnte nicht gelesen werden: %1$s"</string>
     <string name="edit_unsaved_detail">"Anpassungen nicht gespeichert: %1$s"</string>
     <string name="editor_adjusted">"Bearbeitet"</string>
+    <string name="editor_compare_before">"Vorher"</string>
+    <string name="editor_compare_disable">"Vergleich ausschalten"</string>
+    <string name="editor_compare_enable">"Vergleich einschalten"</string>
+    <string name="editor_compare_hold_before">"Vorher anzeigen"</string>
+    <string name="editor_compare_mode">"Vergleichsmodus"</string>
+    <string name="editor_compare_reset_split">"Trennlinie zurücksetzen"</string>
+    <string name="editor_compare_show_after">"Nachher anzeigen"</string>
+    <string name="editor_compare_side_by_side">"Nebeneinander"</string>
+    <string name="editor_compare_split">"Position der Trennlinie"</string>
+    <string name="editor_compare_wipe">"Trennlinie"</string>
     <string name="editor_fine_hint">"Die Empfindlichkeit beim Ziehen beträgt ein Viertel der normalen Empfindlichkeit."</string>
     <string name="editor_group_collapse">"Gruppe „%1$s“ zuklappen"</string>
     <string name="editor_group_color">"Farbe"</string>
@@ -42,6 +52,12 @@
     <string name="editor_numeric_reset_hint">"Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen."</string>
     <string name="editor_numeric_step_error">"Verwende eine Schrittweite von %1$s."</string>
     <string name="editor_parameter_pair">"%1$s · %2$s"</string>
+    <string name="editor_photo_info">"Fotoinformationen"</string>
+    <string name="editor_photo_margin">"Abstand um das Foto"</string>
+    <string name="editor_preview_enter">"Reine Vorschau öffnen"</string>
+    <string name="editor_preview_exit">"Reine Vorschau schließen"</string>
+    <string name="editor_preview_outdated">"Vorschau nicht aktualisiert"</string>
+    <string name="editor_preview_updated">"Vorschau aktualisiert"</string>
     <string name="editor_reset_all">"Alle Anpassungen zurücksetzen…"</string>
     <string name="editor_reset_all_message">"Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert."</string>
     <string name="editor_reset_all_title">"Alle Anpassungen zurücksetzen?"</string>
@@ -64,6 +80,7 @@
     <string name="editor_reset_unknown_recipe">"Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden."</string>
     <string name="editor_reset_unrepresentable">"Die verfügbaren Parameterbereiche können die Wirkung des Rezepts nicht vollständig erhalten. Brechen Sie ab oder bestätigen Sie separat das Zurücksetzen aller Anpassungen."</string>
     <string name="editor_settings">"Einstellungen"</string>
+    <string name="editor_zoom_display">"Zoom und Anzeige"</string>
     <string name="empty_hint">"RAW aus einem Album auswählen oder aus Systemdateien importieren."</string>
     <string name="geometry_drag_hint">"Zuschnittauswahl"</string>
     <string name="geometry_full">"Zuschnitt zurücksetzen"</string>

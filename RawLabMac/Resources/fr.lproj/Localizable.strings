@@ -89,6 +89,7 @@
 "关于 RawLab" = "À propos de RawLab";
 "关于 RawLab…" = "À propos de RawLab…";
 "关闭" = "Fermer";
+"关闭对比" = "Désactiver la comparaison";
 "关闭提示" = "Fermer l’alerte";
 "关闭镜头选择" = "Fermer la sélection d’objectif";
 "内存不足，无法解码普通图片。" = "Mémoire insuffisante pour décoder l’image.";
@@ -97,6 +98,8 @@
 "几何与镜头" = "Géométrie et objectif";
 "几何与镜头草稿" = "Brouillon de géométrie et d’objectif";
 "几何编辑" = "Réglages géométriques";
+"分割位置" = "Position de la séparation";
+"分割线" = "Ligne de séparation";
 "前往下载 %@" = "Télécharger %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Soleil californien mêlé à un film japonais, or urbain diffus et lueur chaude transparente";
 "匹配内嵌预览" = "Adapter à l'aperçu intégré";
@@ -139,6 +142,7 @@
 "实际像素 · 100%" = "Pixels réels · 100 %";
 "对比" = "Comparaison";
 "对比度" = "Contraste";
+"对比方式" = "Mode de comparaison";
 "导入外观" = "Importer un look";
 "导入外观…" = "Importer un look…";
 "导入结果" = "Résultat de l’importation";
@@ -196,6 +200,7 @@
 "已选中" = "Sélectionné";
 "常用导出尺寸" = "Tailles d'exportation couramment utilisées";
 "常用尺寸" = "Tailles courantes";
+"并排" = "Côte à côte";
 "应用" = "Appliquer";
 "应用几何和镜头编辑" = "Appliquer les réglages de géométrie et d’objectif";
 "应用并离开" = "Appliquer et quitter";
@@ -203,6 +208,7 @@
 "应用当前设置到 %@ 张照片？" = "Appliquer les réglages actuels (photos : %@) ?";
 "开启" = "Activé";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions.";
+"开启对比" = "Activer la comparaison";
 "强度" = "Intensité";
 "强度为 0，其他参数会保留。" = "L’intensité est à 0. Les autres réglages sont conservés.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude";
@@ -316,6 +322,7 @@
 "查看应用后的效果" = "Voir le résultat avec les réglages appliqués";
 "查看批量任务…" = "Afficher la tâche par lots…";
 "查看更新" = "Afficher les mises à jour";
+"查看调整前" = "Afficher avant";
 "标准显影" = "Développement standard";
 "校正后裁去空白边缘" = "Recadrer les bords vides après correction";
 "核对 DNG 文件" = "Vérifier les fichiers DNG";
@@ -363,6 +370,7 @@
 "滨田英明" = "Hideaki Hamada";
 "照片" = "Photo";
 "照片信息" = "Informations de la photo";
+"照片四周留白" = "Marge autour de la photo";
 "照片或调整已变化，请重新确认重置。" = "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.";
 "照片缺少有效焦距，未应用校正" = "Distance focale invalide ; correction non appliquée";
 "版本 %@" = "Version %@";
@@ -405,6 +413,7 @@
 "绿" = "Vert";
 "缩小" = "Zoom arrière";
 "缩放" = "Zoomer";
+"缩放与显示" = "Zoom et affichage";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Les données de balance des blancs à la prise de vue sont manquantes ; le rendu de la recette ne peut donc pas être préservé.";
 "羽化" = "Contour progressif";
 "胶片" = "Film";
@@ -457,6 +466,7 @@
 "请输入有效数字" = "Veuillez saisir un nombre valide";
 "请输入范围内的有效数字" = "Veuillez saisir un numéro valide dans la plage";
 "调整亮度、色彩和粗色斑降噪" = "Régler la réduction du bruit de luminance, de chrominance et des artefacts grossiers";
+"调整前" = "Avant";
 "调整后" = "Après";
 "调整工具" = "Outils de réglage";
 "调整已保存" = "Réglages enregistrés";
@@ -472,6 +482,7 @@
 "载入照片后可用" = "Disponible après le chargement des photos";
 "输入调整" = "Réglages d’entrée";
 "输出" = "Sortie";
+"返回调整后" = "Revenir à après";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "Ces modifications n’ont pas encore été appliquées. Appliquez-les et quittez, abandonnez-les ou continuez à modifier.";
 "适合窗口" = "Ajuster à la fenêtre";
 "选择 %@" = "Sélectionner %@";
@@ -503,6 +514,7 @@
 "重置全部调整…" = "Réinitialiser tous les réglages…";
 "重置全部调整？" = "Réinitialiser tous les réglages ?";
 "重置几何编辑" = "Réinitialiser la géométrie";
+"重置分割线" = "Réinitialiser la séparation";
 "重置当前颜色" = "Réinitialiser la couleur actuelle";
 "重置当前颜色（%@）" = "Réinitialiser la couleur actuelle (%@)";
 "重置本工具" = "Réinitialiser cet outil";
@@ -537,6 +549,8 @@
 "项目与作者" = "Projet et auteur";
 "预览" = "Aperçu";
 "预览尚未就绪，请稍后重试。" = "L’aperçu n’est pas encore prêt. Réessayez dans un instant.";
+"预览已更新" = "Aperçu actualisé";
+"预览未更新" = "Aperçu non actualisé";
 "预设" = "Préréglage";
 "颗粒" = "Grain";
 "颗粒强度" = "Intensité du grain";

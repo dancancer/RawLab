@@ -3686,5 +3686,133 @@
     "fr": "Valeur par défaut : {0} ; plage : de {1} à {2} ; pas : {3}.",
     "ja": "デフォルト：{0}、範囲：{1}～{2}、刻み：{3}。",
     "zh-Hans": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
+  },
+  "关闭对比": {
+    "de": "Vergleich ausschalten",
+    "en": "Turn off comparison",
+    "es": "Desactivar comparación",
+    "fr": "Désactiver la comparaison",
+    "ja": "比較をオフ",
+    "zh-Hans": "关闭对比"
+  },
+  "分割位置": {
+    "de": "Position der Trennlinie",
+    "en": "Split position",
+    "es": "Posición de la división",
+    "fr": "Position de la séparation",
+    "ja": "分割位置",
+    "zh-Hans": "分割位置"
+  },
+  "分割线": {
+    "de": "Trennlinie",
+    "en": "Wipe",
+    "es": "Línea divisoria",
+    "fr": "Ligne de séparation",
+    "ja": "分割線",
+    "zh-Hans": "分割线"
+  },
+  "对比方式": {
+    "de": "Vergleichsmodus",
+    "en": "Comparison mode",
+    "es": "Modo de comparación",
+    "fr": "Mode de comparaison",
+    "ja": "比較方法",
+    "zh-Hans": "对比方式"
+  },
+  "并排": {
+    "de": "Nebeneinander",
+    "en": "Side by side",
+    "es": "En paralelo",
+    "fr": "Côte à côte",
+    "ja": "並べて表示",
+    "zh-Hans": "并排"
+  },
+  "开启对比": {
+    "de": "Vergleich einschalten",
+    "en": "Turn on comparison",
+    "es": "Activar comparación",
+    "fr": "Activer la comparaison",
+    "ja": "比較をオン",
+    "zh-Hans": "开启对比"
+  },
+  "查看调整前": {
+    "de": "Vorher anzeigen",
+    "en": "Show before",
+    "es": "Ver antes",
+    "fr": "Afficher avant",
+    "ja": "補正前を表示",
+    "zh-Hans": "查看调整前"
+  },
+  "照片四周留白": {
+    "de": "Abstand um das Foto",
+    "en": "Space around photo",
+    "es": "Espacio alrededor de la foto",
+    "fr": "Marge autour de la photo",
+    "ja": "写真の周囲に余白",
+    "zh-Hans": "照片四周留白"
+  },
+  "缩放与显示": {
+    "de": "Zoom und Anzeige",
+    "en": "Zoom and display",
+    "es": "Zoom y visualización",
+    "fr": "Zoom et affichage",
+    "ja": "ズームと表示",
+    "zh-Hans": "缩放与显示"
+  },
+  "调整前": {
+    "de": "Vorher",
+    "en": "Before",
+    "es": "Antes",
+    "fr": "Avant",
+    "ja": "補正前",
+    "zh-Hans": "调整前"
+  },
+  "返回调整后": {
+    "de": "Nachher anzeigen",
+    "en": "Return to after",
+    "es": "Volver a después",
+    "fr": "Revenir à après",
+    "ja": "補正後に戻る",
+    "zh-Hans": "返回调整后"
+  },
+  "进入纯预览": {
+    "de": "Reine Vorschau öffnen",
+    "en": "Enter immersive preview",
+    "es": "Entrar en vista previa inmersiva",
+    "fr": "Ouvrir l’aperçu immersif",
+    "ja": "プレビューのみ表示",
+    "zh-Hans": "进入纯预览"
+  },
+  "退出纯预览": {
+    "de": "Reine Vorschau schließen",
+    "en": "Exit immersive preview",
+    "es": "Salir de vista previa inmersiva",
+    "fr": "Quitter l’aperçu immersif",
+    "ja": "編集画面に戻る",
+    "zh-Hans": "退出纯预览"
+  },
+  "重置分割线": {
+    "de": "Trennlinie zurücksetzen",
+    "en": "Reset split",
+    "es": "Restablecer división",
+    "fr": "Réinitialiser la séparation",
+    "ja": "分割線をリセット",
+    "zh-Hans": "重置分割线"
+  },
+  "预览已更新": {
+    "de": "Vorschau aktualisiert",
+    "en": "Preview updated",
+    "es": "Vista previa actualizada",
+    "fr": "Aperçu actualisé",
+    "ja": "プレビューを更新しました",
+    "zh-Hans": "预览已更新"
+  },
+  "预览未更新": {
+    "de": "Vorschau nicht aktualisiert",
+    "en": "Preview not updated",
+    "es": "Vista previa sin actualizar",
+    "fr": "Aperçu non actualisé",
+    "ja": "プレビューが更新されていません",
+    "zh-Hans": "预览未更新"
   }
 }

@@ -26,6 +26,16 @@
     <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
     <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_adjusted">"Adjusted"</string>
+    <string name="editor_compare_before">"Before"</string>
+    <string name="editor_compare_disable">"Turn off comparison"</string>
+    <string name="editor_compare_enable">"Turn on comparison"</string>
+    <string name="editor_compare_hold_before">"Show before"</string>
+    <string name="editor_compare_mode">"Comparison mode"</string>
+    <string name="editor_compare_reset_split">"Reset split"</string>
+    <string name="editor_compare_show_after">"Return to after"</string>
+    <string name="editor_compare_side_by_side">"Side by side"</string>
+    <string name="editor_compare_split">"Split position"</string>
+    <string name="editor_compare_wipe">"Wipe"</string>
     <string name="editor_fine_hint">"Dragging uses one quarter of the normal sensitivity."</string>
     <string name="editor_group_collapse">"Collapse %1$s group"</string>
     <string name="editor_group_color">"Color"</string>
@@ -42,6 +52,12 @@
     <string name="editor_numeric_reset_hint">"Double-tap the name or track to restore the default."</string>
     <string name="editor_numeric_step_error">"Use increments of %1$s."</string>
     <string name="editor_parameter_pair">"%1$s · %2$s"</string>
+    <string name="editor_photo_info">"Photo Information"</string>
+    <string name="editor_photo_margin">"Space around photo"</string>
+    <string name="editor_preview_enter">"Enter immersive preview"</string>
+    <string name="editor_preview_exit">"Exit immersive preview"</string>
+    <string name="editor_preview_outdated">"Preview not updated"</string>
+    <string name="editor_preview_updated">"Preview updated"</string>
     <string name="editor_reset_all">"Reset all adjustments…"</string>
     <string name="editor_reset_all_message">"Reset all adjustments for the current photo. The original photo will not be modified."</string>
     <string name="editor_reset_all_title">"Reset all adjustments?"</string>
@@ -64,6 +80,7 @@
     <string name="editor_reset_unknown_recipe">"The current recipe is unavailable, so its look cannot be reset safely."</string>
     <string name="editor_reset_unrepresentable">"The available parameter ranges cannot preserve the recipe\'s full appearance. Cancel, or separately confirm resetting all adjustments."</string>
     <string name="editor_settings">"Settings"</string>
+    <string name="editor_zoom_display">"Zoom and display"</string>
     <string name="empty_hint">"Choose a RAW from an album or import from system files."</string>
     <string name="geometry_drag_hint">"Crop Selection"</string>
     <string name="geometry_full">"Reset crop"</string>

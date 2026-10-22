@@ -26,6 +26,16 @@
     <string name="edit_read_error">"无法读取调整记录：%1$s"</string>
     <string name="edit_unsaved_detail">"调整未保存：%1$s"</string>
     <string name="editor_adjusted">"已调整"</string>
+    <string name="editor_compare_before">"调整前"</string>
+    <string name="editor_compare_disable">"关闭对比"</string>
+    <string name="editor_compare_enable">"开启对比"</string>
+    <string name="editor_compare_hold_before">"查看调整前"</string>
+    <string name="editor_compare_mode">"对比方式"</string>
+    <string name="editor_compare_reset_split">"重置分割线"</string>
+    <string name="editor_compare_show_after">"返回调整后"</string>
+    <string name="editor_compare_side_by_side">"并排"</string>
+    <string name="editor_compare_split">"分割位置"</string>
+    <string name="editor_compare_wipe">"分割线"</string>
     <string name="editor_fine_hint">"拖动灵敏度为普通模式的四分之一。"</string>
     <string name="editor_group_collapse">"收起%1$s组"</string>
     <string name="editor_group_color">"颜色"</string>
@@ -42,6 +52,12 @@
     <string name="editor_numeric_reset_hint">"双击名称或轨道恢复默认值。"</string>
     <string name="editor_numeric_step_error">"请使用 %1$s 的步进。"</string>
     <string name="editor_parameter_pair">"%1$s · %2$s"</string>
+    <string name="editor_photo_info">"照片信息"</string>
+    <string name="editor_photo_margin">"照片四周留白"</string>
+    <string name="editor_preview_enter">"进入纯预览"</string>
+    <string name="editor_preview_exit">"退出纯预览"</string>
+    <string name="editor_preview_outdated">"预览未更新"</string>
+    <string name="editor_preview_updated">"预览已更新"</string>
     <string name="editor_reset_all">"重置全部调整…"</string>
     <string name="editor_reset_all_message">"恢复当前照片的全部调整，不改写原始照片。"</string>
     <string name="editor_reset_all_title">"重置全部调整？"</string>
@@ -64,6 +80,7 @@
     <string name="editor_reset_unknown_recipe">"当前配方不可用，无法安全重置外观。"</string>
     <string name="editor_reset_unrepresentable">"现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。"</string>
     <string name="editor_settings">"设置"</string>
+    <string name="editor_zoom_display">"缩放与显示"</string>
     <string name="empty_hint">"选择相册中的 RAW，或从系统文件中导入。"</string>
     <string name="geometry_drag_hint">"裁切选区"</string>
     <string name="geometry_full">"重置裁切"</string>
