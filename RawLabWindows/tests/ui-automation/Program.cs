@@ -58,9 +58,7 @@ internal static class Program
             {
                 OpenPhoto(raw);
                 WaitMode("off");
-                var slider = FindById(main, "ParameterValueSlider") ??
-                    throw new InvalidOperationException("ParameterValueSlider UIA control is missing.");
-                var value = GetRangeValue(slider);
+                var value = GetRangeValue("ParameterValueSlider");
                 Check(Math.Abs(value - 1.25) < .02, "Restarted profile restores RAW exposure history");
                 CloseMainWindow();
                 return 0;
@@ -80,7 +78,7 @@ internal static class Program
                 SetRangeValue("ParameterValueSlider", 1.25);
             });
             WaitMode("swipe");
-            Check(Math.Abs(GetRangeValue(FindById(main,"ResultCanvas")!) - 35)<.01,
+            Check(Math.Abs(GetRangeValue("ResultCanvas") - 35)<.01,
                 "Async exposure preserves the native swipe divider");
 
             OpenPhoto(png);
@@ -89,8 +87,7 @@ internal static class Program
             WaitMode("off");
             OpenPhoto(raw);
             WaitMode("off");
-            Check(Math.Abs(GetRangeValue(FindById(main, "ParameterValueSlider") ??
-                throw new InvalidOperationException("ParameterValueSlider UIA control is missing.")) - 1.25) < .02,
+            Check(Math.Abs(GetRangeValue("ParameterValueSlider") - 1.25) < .02,
                 "Same-profile RAW reopen restores the edited exposure");
             CloseMainWindow();
             return 0;
@@ -249,19 +246,15 @@ internal static class Program
             }
         }
 
-        private void SetRangeValue(string id, double value)
+        private RangeValuePattern RangePattern(string id) => Wait(() =>
         {
-            var element = Wait(() => FindById(main, id), TimeSpan.FromSeconds(10)) ??
-                throw new InvalidOperationException("Range UIA control is missing: " + id);
-            var pattern = (RangeValuePattern)element.GetCurrentPattern(RangeValuePattern.Pattern);
-            pattern.SetValue(value);
-        }
+            var element = FindById(main, id);
+            return element != null && element.TryGetCurrentPattern(RangeValuePattern.Pattern, out var pattern)
+                ? pattern as RangeValuePattern : null;
+        }, TimeSpan.FromSeconds(10)) ?? throw new InvalidOperationException("Range UIA control is unavailable: " + id);
 
-        private static double GetRangeValue(AutomationElement element)
-        {
-            var pattern = (RangeValuePattern)element.GetCurrentPattern(RangeValuePattern.Pattern);
-            return pattern.Current.Value;
-        }
+        private void SetRangeValue(string id, double value) => RangePattern(id).SetValue(value);
+        private double GetRangeValue(string id) => RangePattern(id).Current.Value;
 
         private void CloseMainWindow()
         {

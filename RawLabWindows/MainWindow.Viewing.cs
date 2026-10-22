@@ -75,7 +75,8 @@ public partial class MainWindow
         ResultCanvas.ShowingBefore=view.HoldingBefore && reference!=null;
         var shown=view.HoldingBefore ? reference : result;
         Histogram.Bins=shown?.Histogram is { Length:768 } bins ? bins : null;Histogram.InvalidateVisual();
-        ClipStats.Text=shown?.Histogram.Length==768 ? Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",shown.Shadows,shown.Highlights) : "";
+        HistogramSource.Text=Loc.Text(view.HoldingBefore ? "调整前" : "调整后");
+        ClipStats.Text=shown?.Histogram.Length==768 ? Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",shown.Shadows,shown.Highlights) : Loc.Text("统计不可用");
         RefreshPhotoLabels();
     }
     private void RefreshPhotoLabels()

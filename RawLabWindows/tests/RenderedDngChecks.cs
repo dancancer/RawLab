@@ -127,8 +127,10 @@ internal static class RenderedDngChecks
             Check(ExportPair(cpu, source, settings, look, output, "cpu") == 0, "CPU DNG export reports the CPU backend");
             Reject(1, () => cpu.Render(source, settings, look, 0, output: source), "Direct input overwrite is rejected");
             var existing = Path.Combine(output, "cpu.dng"); var hash = Digest(existing);
-            Reject(3, () => cpu.Render(Path.Combine(output, "missing.ARW"), settings, look, 0, output: existing),
-                "Missing source remains a source I/O failure");
+            var missingRejected=false;
+            try { cpu.Render(Path.Combine(output, "missing.ARW"), settings, look, 0, output: existing); }
+            catch(FileNotFoundException) { missingRejected=true; }
+            Check(missingRejected,"Missing source is rejected by the managed input check before native export");
             Check(hash.SequenceEqual(Digest(existing)), "Failed input cannot replace a completed DNG");
             var alias = Path.Combine(output, "source-alias.dng");
             if (CreateHardLink(alias, source, IntPtr.Zero))
