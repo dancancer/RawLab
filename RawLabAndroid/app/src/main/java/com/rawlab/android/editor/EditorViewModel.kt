@@ -416,7 +416,10 @@ class EditorViewModel @JvmOverloads constructor(
             currentRevision, current.edits)
     }
 
-    fun retry() { if (mutable.value.draft != null) renderDraft(false) else edit(mutable.value.edits) }
+    fun retry() {
+        if (mutable.value.draft != null) renderDraft(false)
+        else if (mutable.value.controlsEnabled) renderCommittedForNavigation()
+    }
     fun autoExposure() {
         val current = mutable.value
         if (!current.controlsEnabled || current.preview == null || current.rendering || current.draft != null) return

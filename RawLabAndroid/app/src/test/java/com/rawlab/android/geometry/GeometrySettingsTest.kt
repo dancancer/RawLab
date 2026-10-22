@@ -90,6 +90,14 @@ class GeometrySettingsTest {
         assertEquals(geometry, geometry.rotated(true).rotated(false))
     }
 
+    @Test fun comparisonKeySeparatesLogicalSourceAndInputKindEvenAtTheSamePath() {
+        val first = ComparisonPreviewKey("source", GeometrySettings(), LensSettings(), 800, false,
+            sourceIdentity = com.rawlab.android.settings.PhotoIdentity("first"), inputKind = com.rawlab.android.format.PhotoInputKind.RAW)
+        assertNotEquals(first, first.copy(sourceIdentity = com.rawlab.android.settings.PhotoIdentity("second")))
+        assertNotEquals(first, first.copy(inputKind = com.rawlab.android.format.PhotoInputKind.RASTER))
+        assertNotEquals(first, first.copy(processing = com.rawlab.android.settings.ProcessingIdentity.LEGACY))
+    }
+
     @Test fun comparisonKeySeparatesSourceGeometryLensAndPreviewDemand() {
         val key = ComparisonPreviewKey("source.raw", GeometrySettings(), LensSettings(), 800, false)
         assertNotEquals(key, key.copy(inputPath = "other.raw"))

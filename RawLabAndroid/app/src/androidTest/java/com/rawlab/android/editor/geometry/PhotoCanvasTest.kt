@@ -29,6 +29,7 @@ import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.canvas.PhotoCanvas
 import com.rawlab.android.editor.canvas.PhotoCanvasState
 import com.rawlab.android.editor.canvas.PhotoZoom
+import com.rawlab.android.editor.canvas.ComparisonMode
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.photo.ImportedPhoto
@@ -56,8 +57,8 @@ class PhotoCanvasTest {
         }
         compose.runOnIdle {
             assertEquals(852f, state.viewport!!.width, .01f)
-            assertEquals(600f, state.viewport!!.height, .01f)
-            assertEquals(listOf(896), edges)
+            assertEquals(552f, state.viewport!!.height, .01f)
+            assertEquals(listOf(832), edges)
             pair = PreviewPair(original, Bitmap.createScaledBitmap(original, 512, 341, false), 6500f, 0f)
         }
         compose.runOnIdle { assertEquals(1, edges.size); state.transform(1f, Offset(2f, 0f), Offset.Zero) }
@@ -80,10 +81,10 @@ class PhotoCanvasTest {
         canvas.performTouchInput { doubleClick(center) }
         compose.runOnIdle { assertEquals(state.viewport!!.fitScale, state.zoom!!.scale, .001f) }
         canvas.performTouchInput {
-            pinch(Offset(centerX - 80, centerY), Offset(centerX + 80, centerY),
-                Offset(centerX - 240, centerY), Offset(centerX + 240, centerY), 600)
+            pinch(start0 = Offset(centerX - 80, centerY), end0 = Offset(centerX - 240, centerY),
+                start1 = Offset(centerX + 80, centerY), end1 = Offset(centerX + 240, centerY), durationMillis = 600)
         }
-        compose.runOnIdle { assertTrue(state.zoom!!.scale > state.viewport!!.fitScale * 2) }
+        compose.runOnIdle { assertEquals(3f, state.view.magnification, .15f) }
         canvas.performTouchInput { swipeLeft() }
         compose.runOnIdle {
             assertTrue(state.zoom!!.x < 0)
@@ -97,14 +98,14 @@ class PhotoCanvasTest {
     @Test fun comparisonWipeDoesNotCompeteWithPinchOrTwoFingerPan() {
         val state = PhotoCanvasState()
         val pair = fixture()
-        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, true, "comparison-test", state) } }
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, true, "comparison-test", state, mode = ComparisonMode.WIPE) } }
         val canvas = compose.onNodeWithTag("photo-canvas")
         canvas.performTouchInput {
-            pinch(Offset(centerX - 80, centerY), Offset(centerX + 80, centerY),
-                Offset(centerX - 240, centerY), Offset(centerX + 240, centerY), 600)
+            pinch(start0 = Offset(centerX - 80, centerY), end0 = Offset(centerX - 240, centerY),
+                start1 = Offset(centerX + 80, centerY), end1 = Offset(centerX + 240, centerY), durationMillis = 600)
         }
         compose.runOnIdle {
-            assertTrue(state.zoom!!.scale > state.viewport!!.fitScale * 2)
+            assertEquals(3f, state.view.magnification, .15f)
             assertEquals(.5f, state.split, .001f)
         }
         canvas.performTouchInput {
@@ -144,10 +145,14 @@ class PhotoCanvasTest {
         restoration.emulateSavedInstanceStateRestore()
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
         val smaller = Bitmap.createScaledBitmap(pair.result, 1200, 800, false)
-        compose.runOnIdle { editor = editor.copy(preview = PreviewPair(smaller, smaller, 6500f, 0f)) }
+        compose.runOnIdle { editor = editor.copy(preview = pair.copy(neutral = smaller, result = smaller)) }
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
-        compose.onNodeWithContentDescription("对比").performClick()
-        canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "100%"))
+        compose.onNodeWithContentDescription("开启对比").performClick()
+        compose.onNodeWithTag("comparison-before").assertIsDisplayed()
+        // 并排按同一相对 fit 焦点投影，pane 内的显示像素百分比可随布局变化。
+        canvas.assert(SemanticsMatcher("comparison retains magnification above fit") {
+            !it.config[SemanticsProperties.StateDescription].startsWith("适合窗口")
+        })
         compose.runOnIdle { editor = editor.copy(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-b"), "photo-b", File("photo-b")), preview = pair) }
         canvas.assert(SemanticsMatcher("photo starts fitted") {
             it.config[SemanticsProperties.StateDescription].startsWith("适合窗口")
@@ -158,7 +163,7 @@ class PhotoCanvasTest {
         val state = PhotoCanvasState()
         val original = fixture().neutral
         var pair by mutableStateOf(PreviewPair(original, original, 6500f, 0f))
-        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, true, "denoise-photo", state) } }
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(pair, true, "denoise-photo", state, mode = ComparisonMode.WIPE) } }
         val canvas = compose.onNodeWithTag("photo-canvas")
         canvas.performTouchInput { doubleClick(center) }
         canvas.performTouchInput {
@@ -181,6 +186,132 @@ class PhotoCanvasTest {
             }
         }
         capture("denoise-proxy-exact-pan.png")
+    }
+
+    @Test fun wipeAccessibilityTargetAndHandleStayInsideTheLetterboxedPhoto() {
+        val state = PhotoCanvasState()
+        compose.setChineseContent {
+            MaterialTheme { CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                Box(Modifier.width(300.dp).height(300.dp)) { PhotoCanvas(fixture(), true, "wipe-bounds", state, mode = ComparisonMode.WIPE) }
+            } }
+        }
+        val rect = compose.onNodeWithTag("comparison-wipe").fetchSemanticsNode().boundsInRoot
+        assertEquals("Wipe AX hit target excludes top and bottom letterbox", 189.333f, rect.height, 1f)
+        assertEquals(55.333f, rect.top, 1f)
+        assertEquals(244.667f, rect.bottom, 1f)
+        for (split in listOf(0f, 1f)) {
+            compose.onNodeWithTag("comparison-wipe").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(split) }
+            val handle = compose.onNodeWithTag("comparison-handle", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue("Visible handle stays inside the photograph at $split: $handle in $rect", handle.left >= rect.left && handle.right <= rect.right && handle.top >= rect.top && handle.bottom <= rect.bottom)
+        }
+    }
+
+    @Test fun pinchAcrossBothComparisonPanesChangesOneSharedPhotoView() {
+        val state = PhotoCanvasState()
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(fixture(), true, "both-panes", state) } }
+        compose.onNodeWithTag("photo-canvas").performTouchInput {
+            pinch(start0 = Offset(centerX, centerY - 60f), end0 = Offset(centerX, centerY - 180f),
+                start1 = Offset(centerX, centerY + 60f), end1 = Offset(centerX, centerY + 180f), durationMillis = 600)
+        }
+        compose.runOnIdle { assertEquals("A threefold cross-pane pinch is applied once to the shared view", 3f, state.view.magnification, .15f) }
+    }
+
+    @Test fun crossPanePinchCannotBecomeSingleFingerPanAfterOneFingerLifts() {
+        val state = PhotoCanvasState()
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(fixture(), true, "both-panes-handoff", state) } }
+        val canvas = compose.onNodeWithTag("photo-canvas")
+        canvas.performTouchInput {
+            down(0, Offset(centerX, centerY - 60f)); down(1, Offset(centerX, centerY + 60f))
+            moveTo(0, Offset(centerX, centerY - 180f), 300)
+            moveTo(1, Offset(centerX, centerY + 180f), 300)
+        }
+        var before = com.rawlab.android.editor.canvas.PhotoViewTransform()
+        compose.runOnIdle {
+            assertEquals(3f, state.view.magnification, .15f)
+            before = state.view
+        }
+        canvas.performTouchInput { up(1); moveBy(0, Offset(100f, 0f), 200); up(0) }
+        compose.runOnIdle { assertEquals("Lifting one finger does not start a new pan or wipe", before, state.view); assertEquals(.5f, state.split, 0f) }
+    }
+
+    @Test fun verticalCrossPaneFocusDoesNotDependOnFirstPointer() = crossPaneFocus(false, false)
+    @Test fun verticalCrossPaneReverseFocusDoesNotDependOnFirstPointer() = crossPaneFocus(false, true)
+    @Test fun horizontalCrossPaneFocusDoesNotDependOnFirstPointer() = crossPaneFocus(true, false)
+    @Test fun horizontalCrossPaneReverseFocusDoesNotDependOnFirstPointer() = crossPaneFocus(true, true)
+    private fun crossPaneFocus(horizontal: Boolean, reverse: Boolean) {
+        val state = PhotoCanvasState()
+        compose.setChineseContent { MaterialTheme { CompositionLocalProvider(LocalDensity provides Density(1f)) {
+            Box(Modifier.width(if (horizontal) 600.dp else 300.dp).height(if (horizontal) 300.dp else 600.dp)) {
+                PhotoCanvas(fixture(), true, "pane-focus", state)
+            }
+        } } }
+        compose.onNodeWithTag("photo-canvas").performTouchInput {
+            val direction = if (horizontal) Offset(1f, 0f) else Offset(0f, 1f)
+            val sign = if (reverse) -1f else 1f
+            pinch(start0 = center - direction * 50f * sign, end0 = center - direction * 150f * sign,
+                start1 = center + direction * 50f * sign, end1 = center + direction * 150f * sign, durationMillis = 600)
+        }
+        compose.runOnIdle {
+            assertEquals(3f, state.view.magnification, .15f)
+            assertEquals("Both pane pointers anchor the same photo X", .5f, state.view.focusX, .005f)
+            assertEquals("Both pane pointers anchor the same photo Y", .5f, state.view.focusY, .005f)
+            assertEquals(0f, state.zoom!!.x, 1f); assertEquals(0f, state.zoom!!.y, 1f)
+        }
+    }
+
+    @Test fun normalPhotoLabelsDoNotOverlapTheInformationControl() {
+        compose.setChineseContent { MaterialTheme { CompositionLocalProvider(LocalDensity provides Density(1f)) {
+            Box(Modifier.width(300.dp).height(200.dp)) { PhotoCanvas(fixture(), true, "normal-labels", PhotoCanvasState(), mode = ComparisonMode.WIPE) }
+        } } }
+        val button = compose.onNodeWithTag("photo-info-button").fetchSemanticsNode().boundsInRoot
+        val label = compose.onNodeWithText("调整前").fetchSemanticsNode().boundsInRoot
+        assertFalse("Normal photo keeps before label clear of information control: $label $button", label.overlaps(button))
+    }
+
+    private fun shortLargePhoto() {
+        val state = PhotoCanvasState()
+        compose.setChineseContent { MaterialTheme { CompositionLocalProvider(LocalDensity provides Density(1f, 1.6f)) {
+            Box(Modifier.width(400.dp).height(100.dp)) { PhotoCanvas(fixture(), true, "short-overlays", state,
+                mode = ComparisonMode.WIPE, bottomOverlayInset = 60.dp) }
+        } } }
+    }
+
+    @Test fun shortLargePhotoKeepsInformationTarget() {
+        shortLargePhoto()
+        val button = compose.onNodeWithTag("photo-info-button").fetchSemanticsNode().boundsInRoot
+        assertEquals("Information target remains 48dp despite save-overlay inset", 48f, button.height, 1f)
+        val description = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.getString(com.rawlab.android.R.string.info_hidden)
+        val glyph = compose.onNode(hasContentDescription(description) and !hasClickAction(), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertEquals(24f, glyph.width, 1f); assertEquals(24f, glyph.height, 1f)
+    }
+
+    @Test fun shortLargePhotoKeepsFullComparisonLabels() {
+        shortLargePhoto()
+        val image = compose.onNodeWithTag("comparison-wipe").fetchSemanticsNode().boundsInRoot
+        for (label in listOf("调整前", "调整后")) {
+            val node = compose.onNodeWithText(label)
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            node.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            val bounds = node.fetchSemanticsNode().boundsInRoot
+            android.util.Log.i("RawLabShortLabelEvidence", "label=$label size=${layout.size} lines=${layout.lineCount} widthOverflow=${layout.didOverflowWidth} heightOverflow=${layout.didOverflowHeight} right=${layout.getLineRight(0)} left=${layout.getLineLeft(0)} ellipsis=${layout.isLineEllipsized(0)} rect=$bounds image=$image")
+            val dir = java.io.File(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "view-native").apply { mkdirs() }
+            java.io.File(dir, "short-overlays.png").outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            assertFalse("Label has no clipped lines", layout.didOverflowHeight)
+            assertEquals(1, layout.lineCount)
+            assertTrue("Both labels have complete glyphs inside their measured width: $label", !layout.isLineEllipsized(0) && layout.getLineLeft(0) >= -1f && layout.getLineRight(0) <= layout.size.width + 1f)
+            assertTrue("Whole label is visible", bounds.width >= layout.size.width - 1 && bounds.height >= layout.size.height - 1)
+            assertTrue("Label stays in visible photograph", bounds.left >= image.left && bounds.right <= image.right && bounds.top >= image.top && bounds.bottom <= image.bottom)
+        }
+    }
+
+    @Test fun photoInformationTextDoesNotBlockPhotoPan() {
+        val state = PhotoCanvasState()
+        compose.setChineseContent { MaterialTheme { PhotoCanvas(fixture(), false, "info-pan", state,
+            info = com.rawlab.android.photo.PhotoInfo(fileName = "information"), infoMode = 1) } }
+        compose.runOnIdle { state.zoom = PhotoZoom(1f) }
+        compose.onNodeWithTag("photo-info-panel").performTouchInput { swipe(Offset(width * .2f, centerY), Offset(width * .8f, centerY), 500) }
+        compose.runOnIdle { assertTrue("Noninteractive info text lets the canvas pan", state.zoom!!.x > 0f) }
     }
 
     private fun fixture(): PreviewPair {
