@@ -52,6 +52,23 @@ cv::Matx33f opponent() {
     return {a,a,a, b,0,-b, c,-2*c,c};
 }
 
+void transformOpponent(const cv::Mat& source,cv::Mat& output,const cv::Matx33f& matrix) {
+    output.create(source.size(),CV_32FC3);
+    // OpenCV 的 AVX2 主段与标量尾部采用不同的乘加顺序；分块会移动尾部位置。
+    // Legacy 重载必须逐位一致，因此整图、行带和 tile 共用固定的逐像素计算。
+    cv::parallel_for_(cv::Range(0,source.rows),[&](const cv::Range& range) {
+        for (int y=range.start;y<range.end;++y) {
+            const auto* input=source.ptr<cv::Vec3f>(y);
+            auto* target=output.ptr<cv::Vec3f>(y);
+            for (int x=0;x<source.cols;++x) {
+                const auto value=input[x];
+                for (int c=0;c<3;++c)
+                    target[x][c]=(matrix(c,0)*value[0]+matrix(c,1)*value[1])+matrix(c,2)*value[2];
+            }
+        }
+    });
+}
+
 std::vector<int> positions(int length) {
     const int count = std::min(12,std::max(1,length/64));
     std::vector<int> result;
@@ -509,7 +526,7 @@ void filterWorking(cv::Mat& transformed,const sony2fuji::ImageData& source,sony2
         cv::Mat tile(original.height,original.width,CV_32FC3,original.pixels.data());
         {
             const auto normalized=normalize(tile,model);
-            cv::transform(normalized,tile,opponent());
+            transformOpponent(normalized,tile,opponent());
         }
         for (int c=0;c<3;++c) {
             const bool extended=c==0 ? coarseLuma : coarseChroma;
@@ -525,7 +542,10 @@ void filterWorking(cv::Mat& transformed,const sony2fuji::ImageData& source,sony2
 void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     cv::Mat normalized;
-    cv::transform(filtered,normalized,opponent().t());
+    if (version==sony2fuji::ProcessingVersion::Legacy)
+        transformOpponent(filtered,normalized,opponent().t());
+    else
+        cv::transform(filtered,normalized,opponent().t());
     filtered.release();
     cv::Mat difference=normalize(rgb,model);
     cv::subtract(difference,normalized,difference);
@@ -733,11 +753,11 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             for (int y=0;y<rgb.rows;y+=64) {
                 auto band=rgb.rowRange(y,std::min(rgb.rows,y+64));
                 const auto normalized=normalize(band,model);
-                cv::transform(normalized,band,opponent());
+                transformOpponent(normalized,band,opponent());
             }
         } else {
             const cv::Mat normalized=normalize(rgb,model);
-            cv::transform(normalized,transformed,opponent());
+            transformOpponent(normalized,transformed,opponent());
         }
         if (!reused) calibrateBands(model,transformed,samples);
         state->ready=true;
