@@ -62,7 +62,8 @@ extension ContentView {
         return layout {
             previewSection.frame(maxWidth: .infinity, maxHeight: .infinity)
             if viewModel.hasImage {
-                Divider()
+                Divider().opacity(photoViewing.previewOnly ? 0 : 1)
+                    .frame(width: side && photoViewing.previewOnly ? 0 : nil, height: !side && photoViewing.previewOnly ? 0 : nil)
                 VStack(spacing: 0) {
                     if side { groupNavigation(side: true) }
                     if adjustmentsExpanded {
@@ -89,7 +90,11 @@ extension ContentView {
                         groupNavigation(side: false)
                     }
                 }
-                .frame(width: side ? sideWidth : nil)
+                .frame(width: side ? (photoViewing.previewOnly ? 0 : sideWidth) : nil,
+                       height: photoViewing.previewOnly ? 0 : nil)
+                .opacity(photoViewing.previewOnly ? 0 : 1)
+                .allowsHitTesting(!photoViewing.previewOnly)
+                .accessibilityHidden(photoViewing.previewOnly)
                 .frame(maxHeight: side ? .infinity : nil, alignment: .top)
                 .background(Color(.secondarySystemBackground))
             }

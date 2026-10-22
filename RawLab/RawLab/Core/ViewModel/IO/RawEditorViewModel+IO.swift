@@ -45,7 +45,7 @@ extension RawEditorViewModel {
     }
 
     func buildRawPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings(),
-                             processing: ProcessingIdentity = .current) throws -> RawPreviewBase {
+                             processing: ProcessingIdentity = .current, lens: LensCorrectionSettings = LensCorrectionSettings()) throws -> RawPreviewBase {
         var neutral = RawSettings.default
         neutral.processing = processing
         let rawBase = try processor.processRaw(
@@ -61,7 +61,8 @@ extension RawEditorViewModel {
             lutURL: nil
         )
         neutral.geometry = geometry
-        let comparison = geometry.isIdentity ? rawBase : try processor.processRaw(
+        neutral.lensCorrection = lens
+        let comparison = geometry.isIdentity && !lens.isEnabled ? rawBase : try processor.processRaw(
             url: url, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
         let basePreviewImage = processor.makeUIImage(from: comparison.buffer, orientation: .up)
         let baseHistogram = processor.computeHistogram(from: comparison.buffer, bins: histogramBins)
@@ -79,7 +80,7 @@ extension RawEditorViewModel {
     }
 
     func buildRasterPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings(),
-                                processing: ProcessingIdentity = .current) throws -> RasterPreviewBase {
+                                processing: ProcessingIdentity = .current, lens: LensCorrectionSettings = LensCorrectionSettings()) throws -> RasterPreviewBase {
         var neutral = RawSettings.default
         neutral.processing = processing
         let rasterBase = try processor.loadRasterBuffer(url: url, applyingOrientation: true)
@@ -96,7 +97,8 @@ extension RawEditorViewModel {
             lutURL: nil
         )
         neutral.geometry = geometry
-        let comparison = geometry.isIdentity ? baseBuffer : try processor.processBuffer(
+        neutral.lensCorrection = lens
+        let comparison = geometry.isIdentity && !lens.isEnabled ? baseBuffer : try processor.processBuffer(
             buffer: rasterBase.buffer, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
         let basePreviewImage = processor.makeUIImage(from: comparison, orientation: .up)
         let baseHistogram = processor.computeHistogram(from: comparison, bins: histogramBins)
@@ -151,7 +153,7 @@ extension RawEditorViewModel {
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
                     try sourceFile.withReadAccess { localURL in
                         if sourceKind == .raw {
-                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing)
+                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
                             let lutURL = self.lutURL(for: restoredSettings)
                             let previewResult = try self.processor.processRaw(
                                 url: localURL,
@@ -197,6 +199,7 @@ extension RawEditorViewModel {
                                 self.hasImage = rawBase.basePreviewImage != nil || adjustedImage != nil
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
+                                self.recordImportedComparison(settings: restoredSettings)
                                 self.retainEditMetadata(record ?? PhotoEditState(settings: restoredSettings))
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
@@ -209,7 +212,7 @@ extension RawEditorViewModel {
                                 }
                             }
                         } else {
-                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing)
+                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
                             let adjustedBuffer = try self.processor.processBuffer(
                                 buffer: rasterBase.buffer,
                                 settings: restoredSettings,
@@ -253,6 +256,7 @@ extension RawEditorViewModel {
                                 self.hasImage = rasterBase.basePreviewImage != nil || adjustedImage != nil
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
+                                self.recordImportedComparison(settings: restoredSettings)
                                 self.retainEditMetadata(record ?? PhotoEditState(settings: restoredSettings))
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
