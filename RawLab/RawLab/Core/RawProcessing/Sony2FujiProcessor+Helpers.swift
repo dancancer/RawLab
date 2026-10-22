@@ -333,7 +333,7 @@ extension Sony2FujiProcessor {
         }
     }
 
-    func copyBuffer(_ buffer: sony2fuji_buffer, semantic: Buffer.Semantic = .legacy) throws -> Buffer {
+    func takeBuffer(_ buffer: inout sony2fuji_buffer, semantic: Buffer.Semantic = .legacy) throws -> Buffer {
         guard let baseAddress = buffer.data,
               buffer.width > 0,
               buffer.height > 0,
@@ -342,13 +342,20 @@ extension Sony2FujiProcessor {
             throw ProcessorError.bufferCopyFailed
         }
 
-        let data = Data(bytes: baseAddress, count: Int(buffer.size_bytes))
+        let native = buffer
+        let data = Data(bytesNoCopy: baseAddress, count: Int(native.size_bytes), deallocator: .custom { pointer, _ in
+            var released = sony2fuji_buffer()
+            released.data = pointer
+            sony2fuji_release_buffer(&released)
+        })
+        // 保留调用方 defer 的错误路径清理；成功后只由 Data 释放原生内存。
+        buffer = sony2fuji_buffer()
         return Buffer(
             data: data,
-            width: Int(buffer.width),
-            height: Int(buffer.height),
-            stride: Int(buffer.stride_bytes),
-            pixelFormat: buffer.pixel_format,
+            width: Int(native.width),
+            height: Int(native.height),
+            stride: Int(native.stride_bytes),
+            pixelFormat: native.pixel_format,
             semantic: semantic
         )
     }

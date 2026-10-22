@@ -48,6 +48,15 @@ RGB applyHsl(const RGB& pixel, const HslOptions& options) {
     if (dh == 0 && ds == 0 && dl == 0) return pixel;
     float lightness = std::clamp((maximum+minimum)*.5f, 0.0f, 1.0f);
     float saturation = delta / std::max(1e-6f, 1-std::abs(2*lightness-1));
+    RGB residual;
+    if (minimum < 0 || maximum > 1) {
+        // HSL 限幅会改变越界像素的无调整基准；只叠加调整量，避免未调整色相边界跳变。
+        const float baseChroma = (1-std::abs(2*lightness-1)) * std::clamp(saturation, 0.0f, 1.0f);
+        const float scale = baseChroma / delta;
+        const float offset = lightness - baseChroma*.5f;
+        residual = RGB(pixel.r - ((pixel.r-minimum)*scale+offset),
+            pixel.g - ((pixel.g-minimum)*scale+offset), pixel.b - ((pixel.b-minimum)*scale+offset));
+    }
     hue = std::fmod(hue + dh*.3f + 360, 360);
     saturation = std::clamp(saturation*(1+ds*.01f), 0.0f, 1.0f);
     lightness = std::clamp(lightness+dl*.005f, 0.0f, 1.0f);
@@ -61,7 +70,7 @@ RGB applyHsl(const RGB& pixel, const HslOptions& options) {
     else if (hue < 240) rgb = RGB(0,x,chroma);
     else if (hue < 300) rgb = RGB(x,0,chroma);
     else rgb = RGB(chroma,0,x);
-    return RGB(rgb.r+offset,rgb.g+offset,rgb.b+offset);
+    return RGB(rgb.r+offset+residual.r,rgb.g+offset+residual.g,rgb.b+offset+residual.b);
 }
 
 void applyHsl(ImageData& image, const HslOptions& options) {

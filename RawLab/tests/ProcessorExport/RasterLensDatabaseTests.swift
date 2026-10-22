@@ -118,7 +118,7 @@ extension ProcessorExportTests {
         let status = processor.processBuffer(session: session, request: &request, buffer: buffer,
                                              lutPath: nil, outBuffer: &native)
         check(status == SONY2FUJI_STATUS_OK, "explicitly loaded raster reference succeeds")
-        var result = try processor.copyBuffer(native, semantic: .display)
+        var result = try processor.takeBuffer(&native, semantic: .display)
         result.nativeSize = processor.geometrySize(session)
         return result
     }
