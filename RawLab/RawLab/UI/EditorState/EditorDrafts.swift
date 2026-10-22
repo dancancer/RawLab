@@ -75,7 +75,8 @@ extension ContentView {
         return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
     }
 
-    func activateEditorTool(_ selection: EditorToolSelection) {
+    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
+        if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
         let leavingDraft = geometrySelected || lensSelected
         if leavingDraft { viewModel.discardDraftSaveFailure(settings: settings) }
@@ -227,7 +228,7 @@ extension ContentView {
             let tool = currentEditorTool
             let group = selectedGroup
             // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。
-            activateEditorTool(.film)
+            activateEditorTool(.film, resettingFine: false)
             collapsedEditorTool = tool
             selectedGroup = group
         }

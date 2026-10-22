@@ -27,11 +27,7 @@ extension EditorUITests {
         XCTAssertTrue(tool.isSelected, "The save regression must exercise the selected native exposure control")
         XCTAssertTrue(ruler.isHittable, "The native ruler must be reachable at every text size")
         let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
-        let scalarReset = app.buttons["adjustment.reset"]
-        if scalarReset.isEnabled {
-            scalarReset.tap()
-            XCTAssertTrue(notice.waitForExistence(timeout: 5))
-        }
+        resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
         let transientNotice = app.descendants(matching: .any).matching(NSPredicate(
             format: "label == %@ OR label == %@", "Adjustments Saved", "Previous Adjustments Restored"
         )).firstMatch
@@ -50,12 +46,18 @@ extension EditorUITests {
         let savedFrames = controls.map(\.frame)
         XCTAssertTrue(reset.isEnabled)
         XCTAssertTrue(reset.isHittable, "Save feedback must preserve the reset target")
-        assertSaveNoticeFrames(beforeFrames, equalTo: savedFrames)
+        print("SAVE_NOTICE_VALUE before=\(originalValue ?? "nil") saved=\(value.value as? String ?? "nil") framesBefore=\(beforeFrames) framesSaved=\(savedFrames)")
+        // 单行数字变宽会占用轨道宽度；反馈本身必须保留外框，且同值下消失也不能重排。
+        assertSaveNoticeFrames([beforeFrames[0], beforeFrames[1], beforeFrames[3]],
+                              equalTo: [savedFrames[0], savedFrames[1], savedFrames[3]])
+        XCTAssertEqual(beforeFrames[2].minX, savedFrames[2].minX, accuracy: 0.5)
+        XCTAssertEqual(beforeFrames[2].minY, savedFrames[2].minY, accuracy: 0.5)
+        XCTAssertEqual(beforeFrames[2].height, savedFrames[2].height, accuracy: 0.5)
         capture("save-notice-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
         expectation(for: NSPredicate { _, _ in !notice.exists }, evaluatedWith: app)
         waitForExpectations(timeout: 8)
         let idleFrames = controls.map(\.frame)
-        assertSaveNoticeFrames(beforeFrames, equalTo: idleFrames)
+        assertSaveNoticeFrames(savedFrames, equalTo: idleFrames)
         XCTAssertTrue(reset.isHittable)
         print("SAVE_NOTICE_FRAMES orientation=\(orientation.rawValue) category=\(contentSizeCategory ?? "default") before=\(beforeFrames) saved=\(savedFrames) idle=\(idleFrames)")
         capture("save-notice-dismissed-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
@@ -68,6 +70,18 @@ extension EditorUITests {
             XCTAssertEqual(before.width, after.width, accuracy: 0.5, "Save feedback must not resize editing controls horizontally")
             XCTAssertEqual(before.height, after.height, accuracy: 0.5, "Save feedback must not resize editing controls vertically")
         }
+    }
+
+    func resetParameterDefault(_ identifier: String, expectedValue: String, in app: XCUIApplication) {
+        let value = app.buttons["\(identifier).value"]
+        revealRuler(value, in: app)
+        value.tap()
+        let action = app.buttons["adjustment.wheel.default"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5)); XCTAssertTrue(action.isHittable); action.tap()
+        app.buttons["adjustment.wheel.apply"].tap()
+        expectation(for: NSPredicate { _, _ in !app.buttons["adjustment.wheel.apply"].exists }, evaluatedWith: nil)
+        waitForExpectations(timeout: 5)
+        XCTAssertEqual(value.value as? String, expectedValue)
     }
 
     func dragRuler(_ ruler: XCUIElement, increasing: Bool = true) {
@@ -189,6 +203,11 @@ extension EditorUITests {
             return app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists
         }, evaluatedWith: app)
         waitForExpectations(timeout: 90)
+        if !app.buttons["editor.compare"].isEnabled && app.alerts.firstMatch.exists {
+            let alert = app.alerts.firstMatch
+            print("IMPORT_FAILURE_ALERT texts=\(alert.staticTexts.allElementsBoundByIndex.map(\.label)) buttons=\(alert.buttons.allElementsBoundByIndex.map(\.label))")
+            capture("import-failure-alert")
+        }
         XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.alerts.debugDescription)
         tapTool("exposure", in: app)
     }

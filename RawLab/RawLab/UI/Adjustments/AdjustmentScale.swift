@@ -17,6 +17,29 @@ struct AdjustmentScale: Equatable {
     var intervalCount: Int { Int((span / step + 1e-8).rounded(.down)) }
     var tapeLength: Double { reciprocal ? 1_200 : min(max(Double(intervalCount) * 8, 400), 1_920) }
 
+    func window(at position: Double, width: Double) -> AdjustmentRulerWindow {
+        let span = min(1, max(1e-9, width / tapeLength))
+        let current = min(1, max(0, position.isFinite ? position : 0))
+        let start = min(max(current - span / 2, 0), 1 - span)
+        return AdjustmentRulerWindow(start: start, span: span, indicator: (current - start) / span)
+    }
+
+    func completeText(_ value: Double, displayScale: Double = 1, locale: Locale,
+                      formatter: (Double) -> String) -> String {
+        let ordinary = formatter(value)
+        let parser = NumberFormatter()
+        parser.locale = locale
+        parser.numberStyle = .decimal
+        if let displayed = parser.number(from: ordinary.hasPrefix("+") ? String(ordinary.dropFirst()) : ordinary)?.doubleValue {
+            let logical = displayed / displayScale
+            // 同一既有网格点保留正常格式，避免二进制长尾；旧非网格值仍须精确相等。
+            if logical == value || (contains(logical) && rounded(logical) == value) { return ordinary }
+        }
+        // Swift 的最短往返表示保留合法历史小数；候选的 Double 本身不经过格式化再解析。
+        let exact = String(value * displayScale).replacingOccurrences(of: ".", with: locale.decimalSeparator ?? ".")
+        return (ordinary.hasPrefix("+") && value > 0 ? "+" : "") + exact
+    }
+
     func contains(_ value: Double) -> Bool {
         value.isFinite && range.contains(value)
     }
@@ -142,4 +165,12 @@ struct AdjustmentTickMotion {
         let base = tick.major ? 22.0 : 13.0
         return base + (28 - base) * (reduceMotion ? 0 : amount(for: tick.id, at: time))
     }
+}
+
+struct AdjustmentRulerWindow {
+    let start: Double
+    let span: Double
+    let indicator: Double
+
+    func fraction(for position: Double) -> Double { (position - start) / span }
 }

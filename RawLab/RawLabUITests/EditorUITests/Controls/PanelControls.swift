@@ -26,8 +26,7 @@ extension EditorUITests {
         let panel = app.scrollViews["editor.panel"]
         revealRuler(saturation, in: app)
         XCTAssertTrue(saturation.isHittable)
-        let saturationReset = app.buttons["hsl.saturation.reset"]
-        if saturationReset.isEnabled { saturationReset.tap() }
+        resetParameterDefault("hsl.saturation", expectedValue: "0", in: app)
         let originalSaturation = app.buttons["hsl.saturation.value"].value as? String
         dragRuler(saturation, increasing: false)
         XCTAssertNotEqual(app.buttons["hsl.saturation.value"].value as? String, originalSaturation)

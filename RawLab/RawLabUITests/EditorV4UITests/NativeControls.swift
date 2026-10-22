@@ -42,6 +42,168 @@ extension EditorV4UITests {
         capture("v08-integrated-raw-history-perspective-batch", in: app)
     }
 
+    func testParameterInputWorkspaceSessionsAndLayout() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else { throw XCTSkip("Use the workspace UI harness") }
+        let german = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "de"
+        let large = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1"
+        let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
+        app.launchArguments = ["-RawLab.language", german ? "de" : "en", "-RawLab.workspaceUIOnly", "-RawLab.parameterInputUI"]
+        if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        XCUIDevice.shared.orientation = .portrait; app.launch()
+        let probe = app.staticTexts["geometry.review.probe"]
+        func snapshot() throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
+        }
+        func state() throws -> [String: Any] { try XCTUnwrap(try snapshot()["editorState"] as? [String: Any]) }
+        func hue() throws -> Double {
+            let settings = try XCTUnwrap(try state()["settings"] as? [String: Any])
+            let hsl = try XCTUnwrap(settings["hsl"] as? [String: Any])
+            return try XCTUnwrap((hsl["hue"] as? [Double])?.first)
+        }
+        func record(_ name: String) throws {
+            let data = try JSONSerialization.data(withJSONObject: snapshot(), options: [.sortedKeys])
+            let item = XCTAttachment(data: data, uniformTypeIdentifier: "public.json"); item.name = name; item.lifetime = .keepAlways; add(item)
+            print("PARAMETER_WORKSPACE \(name) \(String(decoding: data, as: UTF8.self))")
+        }
+        func noEdit(since before: [String: Any], _ label: String) throws {
+            let after = try snapshot()
+            let savesBefore = before["saveAttemptCount"] as? Int, savesAfter = after["saveAttemptCount"] as? Int
+            let previewsBefore = (before["previewReceipts"] as? [Any])?.count, previewsAfter = (after["previewReceipts"] as? [Any])?.count
+            print("PARAMETER_NO_EDIT \(label) saves=\(String(describing: savesBefore))->\(String(describing: savesAfter)) previews=\(String(describing: previewsBefore))->\(String(describing: previewsAfter))")
+            XCTAssertEqual(savesBefore, savesAfter, label); XCTAssertEqual(previewsBefore, previewsAfter, label)
+        }
+        var verifiedFineHit = false
+        func fine(_ on: Bool) throws {
+            let before = try snapshot()
+            let toggle = app.switches["editor.fine"]
+            try revealInPanel(toggle, in: app, fully: true)
+            try revealHorizontally(toggle, in: app.scrollViews["editor.parameterHeader"], app: app)
+            XCTAssertTrue(toggle.isHittable)
+            let measured = try XCTUnwrap((try snapshot()["layoutFrames"] as? [String: [Double]])?["fine"])
+            let frame = CGRect(x: measured[0], y: measured[1], width: measured[2], height: measured[3])
+            XCTAssertGreaterThanOrEqual(frame.height, 44)
+            if !verifiedFineHit {
+                let before = try state()["fine"] as? Bool
+                let native = try XCTUnwrap(try snapshot()["nativeSwitches"] as? [[Double]])
+                    .map { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) }
+                    .filter { frame.insetBy(dx: -1, dy: -1).contains(CGPoint(x: $0.midX, y: $0.midY)) }
+                XCTAssertEqual(native.count, 1)
+                let control = try XCTUnwrap(native.first)
+                let target = CGRect(x: control.midX - 22, y: control.midY - 22, width: 44, height: 44)
+                let point = CGPoint(x: control.midX, y: control.midY - 21.5)
+                print("PARAMETER_FINE_HIT layout=\(frame) ax=\(toggle.frame) native=\(control) target=\(target) point=\(point)")
+                // 44pt 目标围绕真实UISwitch中心，不把放大label的整块边缘当作开关触点。
+                XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(target))
+                XCTAssertTrue(target.contains(point)); XCTAssertFalse(control.contains(point))
+                capture("parameter-fine-before-outside-glyph-tap", in: app)
+                app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+                waitUntil { (try? state()["fine"] as? Bool) != before }
+                XCTAssertNotEqual(try state()["fine"] as? Bool, before, "The native Toggle accepts touches within its complete44pt layout")
+                capture("parameter-fine-after-outside-glyph-tap", in: app)
+                verifiedFineHit = true
+            }
+            if (toggle.value as? String == "1") != on { toggle.tap() }
+            waitUntil { (try? state()["fine"] as? Bool) == on }
+            XCTAssertEqual(toggle.value as? String, on ? "1" : "0")
+            try noEdit(since: before, "fine mode only")
+        }
+        waitUntil(timeout: 30) { (try? snapshot()["done"] as? Bool) == true }
+        try selectTool("hsl", in: app)
+        let originalPanel = (try snapshot()["layoutFrames"] as? [String: [Double]])?["panel"]
+        for axis in ["hue", "saturation", "lightness"] {
+            let value = app.buttons["hsl.\(axis).value"]
+            if large { try revealInPanel(value, in: app, fully: true) }
+            XCTAssertTrue(value.isHittable)
+            XCTAssertTrue(app.scrollViews["editor.panel"].frame.contains(value.frame))
+            XCTAssertFalse((value.value as? String ?? "").contains("%")); XCTAssertFalse((value.value as? String ?? "").contains("°"))
+            XCTAssertFalse(app.buttons["hsl.\(axis).fine"].exists); XCTAssertFalse(app.buttons["hsl.\(axis).reset"].exists)
+            if !large {
+                XCTAssertEqual(value.frame.midY, app.descendants(matching: .any)["hsl.\(axis).ruler"].frame.midY, accuracy: 2)
+            }
+        }
+        capture("parameter-workspace-three-axes", in: app)
+        try revealInPanel(app.buttons["hsl.hue.value"], in: app, fully: true)
+        XCTAssertEqual(app.buttons["hsl.hue.value"].value as? String, german ? "+0,5" : "+0.5")
+        let before = try snapshot()
+        try openWheel("hsl.hue.value", in: app)
+        app.buttons["adjustment.wheel.apply"].tap()
+        waitUntil { !app.buttons["adjustment.wheel.apply"].exists }
+        XCTAssertEqual(try hue(), 0.5)
+        try noEdit(since: before, "unchanged half-value Apply")
+        try fine(true)
+        // 真实同值换照片：夹具只提供外部导入事件，旧输入仍由生产 scope 关闭。
+        let source = try state()["sourceRevision"] as? String
+        let beforeSource = try snapshot()
+        let beforeSettings = try JSONSerialization.data(withJSONObject: try XCTUnwrap(try state()["settings"]), options: [.sortedKeys])
+        try openWheel("hsl.hue.value", in: app)
+        try selectWheelValue("+1", title: "Hue", in: app)
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.tests.parameter-inputs.next-source" as CFString), nil, nil, true)
+        waitUntil(timeout: 35) { (try? state()["sourceRevision"] as? String) != source && ((try? snapshot()["details"] as? [String: String])?["sourceSwitch"] == "completed") }
+        XCTAssertFalse(app.buttons["adjustment.wheel.apply"].exists)
+        XCTAssertEqual(try hue(), 0.5)
+        XCTAssertEqual(try state()["fine"] as? Bool, false)
+        XCTAssertEqual(try JSONSerialization.data(withJSONObject: try XCTUnwrap(try state()["settings"]), options: [.sortedKeys]), beforeSettings)
+        let imported = try snapshot()
+        let previews = try XCTUnwrap(imported["previewReceipts"] as? [[String: Any]])
+        let saves = try XCTUnwrap(imported["saveReceipts"] as? [[String: Any]])
+        let previewStart = (beforeSource["previewReceipts"] as? [Any])?.count ?? 0
+        let saveStart = (beforeSource["saveReceipts"] as? [Any])?.count ?? 0
+        for receipt in previews.dropFirst(previewStart) {
+            let settings = try XCTUnwrap(receipt["settings"] as? [String: Any])
+            let hsl = try XCTUnwrap(settings["hsl"] as? [String: Any])
+            XCTAssertNotEqual((hsl["hue"] as? [Double])?.first, 1, "The old wheel candidate never enters a source-lifecycle preview")
+        }
+        for receipt in saves.dropFirst(saveStart) {
+            let saved = try XCTUnwrap(receipt["state"] as? [String: Any])
+            let settings = try XCTUnwrap(saved["settings"] as? [String: Any])
+            let hsl = try XCTUnwrap(settings["hsl"] as? [String: Any])
+            XCTAssertNotEqual((hsl["hue"] as? [Double])?.first, 1, "The old wheel candidate never reaches persistence")
+        }
+        print("PARAMETER_SOURCE_LIFECYCLE source=\(String(describing: source))->\(String(describing: try state()["sourceRevision"])) saves=\(saveStart)->\(saves.count) previews=\(previewStart)->\(previews.count)")
+        try record("parameter-same-value-source-invalidated")
+        try fine(true)
+        let beforeChannel = try snapshot()
+        try revealInPanel(app.buttons["hsl.channel.1"], in: app, fully: true); app.buttons["hsl.channel.1"].tap()
+        XCTAssertEqual(try state()["fine"] as? Bool, true, "Channel selection shares the panel mode")
+        try noEdit(since: beforeChannel, "channel selection")
+        let beforeGroup = try snapshot()
+        try selectTool("exposure", in: app)
+        XCTAssertEqual(try state()["fine"] as? Bool, false, "A real group/tool change clears fine")
+        try noEdit(since: beforeGroup, "actual group change")
+        try fine(true)
+        let beforeTool = try snapshot()
+        try selectTool("highlights", in: app)
+        XCTAssertEqual(try state()["fine"] as? Bool, false, "A tool change within one group clears fine")
+        try noEdit(since: beforeTool, "actual tool change")
+        XCTAssertEqual((try snapshot()["layoutFrames"] as? [String: [Double]])?["panel"], originalPanel)
+        try selectTool("geometry", in: app); try fine(true)
+        let rotate = app.buttons["geometry.rotateRight"]; try revealInPanel(rotate, in: app); rotate.tap()
+        waitUntil(timeout: 20) { app.buttons["editor.draft.apply"].isEnabled }
+        let beforeStay = try snapshot()
+        let effects = app.buttons["editor.group.effects"]
+        try revealHorizontally(effects, in: app.scrollViews["editor.groups"], app: app); effects.tap()
+        let stay = app.alerts.buttons[german ? "Weiter bearbeiten" : "Keep Editing"]
+        XCTAssertTrue(stay.waitForExistence(timeout: 5)); stay.tap()
+        XCTAssertEqual(try state()["fine"] as? Bool, true, "Stay does not change tools or clear the panel mode")
+        XCTAssertEqual(try state()["draftChanged"] as? Bool, true)
+        try noEdit(since: beforeStay, "Stay keeps the draft and mode")
+        try record("parameter-draft-stay-keeps-fine")
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("hsl", in: app)
+        try revealInPanel(app.buttons["hsl.channel.0"], in: app, fully: true); app.buttons["hsl.channel.0"].tap()
+        let title = app.staticTexts["hsl.hue.title"]; try revealInPanel(title, in: app, fully: true); title.doubleTap()
+        waitUntil { (try? hue()) == 0 }
+        XCTAssertEqual(try hue(), 0)
+        capture("parameter-workspace-single-reset", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        let last = app.buttons["hsl.lightness.value"]; try revealInPanel(last, in: app, fully: true)
+        XCTAssertTrue(app.scrollViews["editor.panel"].frame.contains(last.frame)); XCTAssertTrue(last.isHittable)
+        print("PARAMETER_SHORT panel=\(app.scrollViews["editor.panel"].frame) last=\(last.frame) photo=\(app.images["editor.photo"].frame)")
+        capture("parameter-workspace-landscape-last", in: app)
+        try record("parameter-workspace-complete")
+    }
+
     func testGeometrySourceRestorationUsesUncroppedPreview() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else {
             throw XCTSkip("Run RawLab/tests/geometry-source-ui.sh to enable the separate source-restoration harness.")
@@ -419,7 +581,7 @@ extension EditorV4UITests {
     func testExposureNativeWheelCancelApplySignAndDefault() throws {
         let app = try launchImportedEditor()
         try selectTool("exposure", in: app)
-        resetIfEnabled("adjustment.reset", in: app)
+        try resetParameterDefault("adjustment", in: app)
         let value = app.buttons["adjustment.value"]
         XCTAssertEqual(try number(value), 0, accuracy: 0.0001)
         capture("v4-loaded-exposure", in: app)
@@ -451,13 +613,13 @@ extension EditorV4UITests {
         app.buttons["adjustment.wheel.apply"].tap()
         waitUntil { app.buttons["adjustment.value"].isHittable }
         XCTAssertEqual(try number(value), 0, accuracy: 0.0001)
-        XCTAssertFalse(app.buttons["adjustment.reset"].isEnabled)
+        XCTAssertFalse(app.buttons["adjustment.reset"].exists, "Single-value reset is available through default/semantic actions")
     }
 
     func testRulerAndFineAdjustmentKeepExposureGridAndLimits() throws {
         let app = try launchImportedEditor()
         try selectTool("exposure", in: app)
-        resetIfEnabled("adjustment.reset", in: app)
+        try resetParameterDefault("adjustment", in: app)
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         try revealInPanel(ruler, in: app)
         XCTAssertTrue(ruler.isHittable)
@@ -470,12 +632,13 @@ extension EditorV4UITests {
         XCTAssertGreaterThan(standard, 0)
         XCTAssertEqual(try number(ruler), standard, accuracy: 0.0001)
 
-        resetIfEnabled("adjustment.reset", in: app)
-        let fine = app.buttons["adjustment.fine"]
-        try revealInPanel(fine, in: app)
+        try resetParameterDefault("adjustment", in: app)
+        let fine = app.switches["editor.fine"]
+        try revealInPanel(fine, in: app, fully: true)
+        try revealHorizontally(fine, in: app.scrollViews["editor.parameterHeader"], app: app)
         let standardSensitivity = fine.value as? String
         fine.tap()
-        XCTAssertTrue(fine.isSelected, fine.debugDescription)
+        XCTAssertEqual(fine.value as? String, "1", fine.debugDescription)
         XCTAssertNotEqual(fine.value as? String, standardSensitivity)
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.75, to: 0.25)
@@ -486,7 +649,7 @@ extension EditorV4UITests {
         XCTAssertLessThan(precise, standard, "The same gesture in fine mode must move fewer legal steps")
         XCTAssertEqual(try number(ruler), precise, accuracy: 0.0001)
         fine.tap()
-        XCTAssertFalse(fine.isSelected)
+        XCTAssertEqual(fine.value as? String, "0")
         XCTAssertEqual(fine.value as? String, standardSensitivity)
 
         try setValue("+4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
@@ -497,7 +660,7 @@ extension EditorV4UITests {
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.25, to: 0.75)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), -4, accuracy: 0.0001)
-        resetIfEnabled("adjustment.reset", in: app)
+        try resetParameterDefault("adjustment", in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0, accuracy: 0.0001)
         capture("v4-exposure-ruler", in: app)
     }
@@ -540,14 +703,14 @@ extension EditorV4UITests {
                        "Perspective must retain the legal integer value across draft application")
 
         try setValue("4.5", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
-        try selectTool("exposure", in: app)
+        app.buttons["editor.group.light"].tap()
         let discard = app.buttons["Discard Changes"]
         XCTAssertTrue(discard.waitForExistence(timeout: 5), app.debugDescription)
-        let continueEditing = app.buttons["Continue Editing"]
+        let continueEditing = app.alerts.buttons["Keep Editing"]
         XCTAssertTrue(continueEditing.waitForExistence(timeout: 5), app.debugDescription)
         continueEditing.tap()
         XCTAssertEqual(try number(straighten), 4.5, accuracy: 0.0001, "Continuing editing keeps the active draft")
-        try selectTool("exposure", in: app)
+        app.buttons["editor.group.light"].tap()
         discard.tap()
         XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
         try selectTool("geometry", in: app)
@@ -676,7 +839,7 @@ extension EditorV4UITests {
         try revealInPanel(advanced, in: app)
         advanced.tap()
         XCTAssertTrue(app.buttons["effects.vignette.reset"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["effects.vignette.vignetteAmount.reset"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["effects.vignette.vignetteAmount.reset"].exists)
         resetIfEnabled("effects.vignette.reset", in: app)
         capture("v4-vignette-after-expand", in: app)
         let highlights = app.buttons["effects.vignette.vignetteHighlights.value"]
@@ -701,7 +864,8 @@ extension EditorV4UITests {
         XCTAssertNotEqual(otherChannelValue, 12)
         red.tap()
         XCTAssertEqual(try number(app.buttons["hsl.hue.value"]), 12, accuracy: 0.0001)
-        resetIfEnabled("hsl.hue.reset", in: app)
+        try revealInPanel(app.staticTexts["hsl.hue.title"], in: app, fully: true)
+        app.staticTexts["hsl.hue.title"].doubleTap()
         XCTAssertEqual(try number(app.buttons["hsl.hue.value"]), 0, accuracy: 0.0001)
         capture("v4-hsl-native-controls", in: app)
     }

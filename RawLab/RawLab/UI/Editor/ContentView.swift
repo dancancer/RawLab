@@ -34,6 +34,7 @@ struct ContentView: View {
     @State var pendingToolSelection: EditorToolSelection?
     @State var selectedGroup = EditorAdjustmentGroup.looks
     @State var hslChannel = 0
+    @State var adjustmentFine = false
     @State var pendingAdjustmentExpansion: Bool?
     @State var collapsedEditorTool: EditorToolSelection?
     @State var preparedReset: PreparedEditorReset?
@@ -169,6 +170,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
+            adjustmentFine = false
             geometryDraft = nil
             lensDraft = nil
             pendingToolSelection = nil

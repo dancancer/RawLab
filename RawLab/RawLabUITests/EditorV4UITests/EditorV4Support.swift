@@ -212,7 +212,7 @@ extension EditorV4UITests {
 
     func openWheel(_ identifier: String, in app: XCUIApplication) throws {
         let button = app.buttons[identifier]
-        try revealInPanel(button, in: app)
+        try revealInPanel(button, in: app, fully: true)
         button.tap()
         let picker = app.descendants(matching: .any)["adjustment.wheel"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
@@ -267,6 +267,13 @@ extension EditorV4UITests {
         waitUntil(timeout: 60) { apply.isEnabled && apply.isHittable }
         apply.tap()
         waitUntil { app.buttons["adjustment.value"].exists && !apply.exists }
+    }
+
+    func resetParameterDefault(_ identifier: String, in app: XCUIApplication) throws {
+        try openWheel("\(identifier).value", in: app)
+        app.buttons["adjustment.wheel.default"].tap()
+        app.buttons["adjustment.wheel.apply"].tap()
+        waitUntil { !app.buttons["adjustment.wheel.apply"].exists }
     }
 
     func resetIfEnabled(_ identifier: String, in app: XCUIApplication) {

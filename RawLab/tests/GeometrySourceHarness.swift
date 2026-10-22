@@ -26,9 +26,11 @@ final class GeometrySourceProbe {
                                              longEdge: request.longEdge, resize: isViewportResizeRequest))
     }
     var saveAttempts: [PhotoEditState] = []
+    var saveReceipts: [[String: Any]] = []
     var checks: [String: Bool] = [:]
     var details: [String: String] = [:]
     var editorState: (() -> [String: Any])?
+    var replaceParameterSource: (() -> Void)?
     var done = false
     var layoutFrames: [String: [Double]] = [:]
     var layoutPolicy: [String: Any] = [:]
@@ -40,9 +42,20 @@ final class GeometrySourceProbe {
         print("GEOMETRY_SOURCE \(passed ? "PASS" : "FAIL") \(name)")
     }
 
+    private var nativeSwitches: [[Double]] {
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows).first(where: \.isKeyWindow) else { return [] }
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        return descendants(window).compactMap { view in
+            guard view is UISwitch else { return nil }
+            let frame = view.convert(view.bounds, to: window)
+            return [frame.minX, frame.minY, frame.width, frame.height]
+        }
+    }
+
     var json: String {
         let value: [String: Any] = ["editorState": editorState?() ?? [:], "saveAttemptCount": saveAttempts.count, "done": done, "checks": checks, "details": details,
-                                  "viewportEdges": viewportEdges, "layoutFrames": layoutFrames, "layoutPolicy": layoutPolicy, "groupRects": groupRects, "groupTextRects": groupTextRects,
+                                  "saveReceipts": saveReceipts, "nativeSwitches": nativeSwitches, "viewportEdges": viewportEdges, "layoutFrames": layoutFrames, "layoutPolicy": layoutPolicy, "groupRects": groupRects, "groupTextRects": groupTextRects,
                                   "previewReceipts": previewReceipts.map { receipt -> [String: Any] in
                                       let settings = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(receipt.settings))
                                       return ["source": receipt.source.uuidString, "settings": settings,
@@ -69,7 +82,8 @@ extension ContentView {
         guard !probe.started else { return }
         probe.started = true
         probe.editorState = {
-            ["prepared": preparedReset != nil, "presented": resetConfirmationPresented,
+            ["fine": adjustmentFine, "sourceRevision": viewModel.sourceRevision.uuidString, "channel": hslChannel,
+             "prepared": preparedReset != nil, "presented": resetConfirmationPresented,
              "waiting": resetWaitingForReady, "suspended": resetDraftSuspended,
              "draftExitPresented": draftExitPresented, "draftActive": isEditorDraftActive,
              "draftChanged": isEditorDraftChanged, "geometrySelected": geometrySelected,
@@ -89,6 +103,21 @@ extension ContentView {
                 try geometryReviewImage(url, color: .systemBlue)
                 let identity = PhotoIdentity(resourceIdentifier: "workspace-ui")
                 var fixture = RawSettings.default; fixture.exposure = 0.5
+                if ProcessInfo.processInfo.arguments.contains("-RawLab.parameterInputUI") {
+                    var full = HSLSettings(); full.set(.hue, channel: 0, value: 100)
+                    fixture.hsl = full.scaled(by: 0.005)
+                    let nextIdentity = PhotoIdentity(resourceIdentifier: "workspace-ui-next")
+                    try persistence.save(nextIdentity, state: PhotoEditState(settings: fixture))
+                    probe.replaceParameterSource = {
+                        probe.details["sourceSwitch"] = "scheduled"
+                        Task { @MainActor in
+                            do {
+                                try await geometryReviewImport(url, identity: nextIdentity)
+                                probe.details["sourceSwitch"] = "completed"
+                            } catch { probe.details["sourceSwitch"] = "failed: \(error)" }
+                        }
+                    }
+                }
                 try persistence.save(identity, state: PhotoEditState(settings: fixture))
                 try await geometryReviewImport(url, identity: identity)
                 activateEditorTool(.film)
@@ -579,6 +608,11 @@ final class GeometrySourceSceneDelegate: NSObject, UIWindowSceneDelegate {
         probe.isAccessibilityElement = true
         probe.accessibilityIdentifier = "geometry.review.probe"
         host.view.addSubview(probe)
+        if ProcessInfo.processInfo.arguments.contains("-RawLab.parameterInputUI") {
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, _, _, _ in
+                DispatchQueue.main.async { GeometrySourceProbe.shared.replaceParameterSource?() }
+            }, "com.rawlab.tests.parameter-inputs.next-source" as CFString, nil, .deliverImmediately)
+        }
         self.window = window
     }
 }
