@@ -2,10 +2,16 @@ import SwiftUI
 
 struct PhotoCanvas: View {
     let frame: RenderedImage
-    let viewport: PhotoViewport
+    @Binding var viewport: PhotoViewport
     let sourceWidth: Int
-    @Binding var pan: CGSize
     let clipping: Bool
+    var margins = true
+    var beforeFrame: RenderedImage? = nil
+    var split: Binding<Double>? = nil
+    var comparisonLabel: String? = nil
+    var canHold = false
+    var onHold: (Bool) -> Void = { _ in }
+    var onDoubleClick: () -> Void = {}
     var sourceHeight: Int? = nil
     var onPreviewSizeChange: ((Int) -> Void)? = nil
     var cropSettings: GeometrySettings? = nil
@@ -15,7 +21,7 @@ struct PhotoCanvas: View {
     var onCropChange: ((GeometrySettings) -> Void)? = nil
     var onCropEditingChanged: ((Bool) -> Void)? = nil
     @Environment(\.displayScale) private var displayScale
-    @State private var dragOrigin: CGSize?
+    @State private var dragOrigin: CGPoint?
 
     var body: some View {
         GeometryReader { geometry in
@@ -30,23 +36,33 @@ struct PhotoCanvas: View {
                     imageBounds: CGRect(origin: .zero, size: safeRendered))
             }
             let fitted = selection?.size ?? straighten.rotatedSize(rendered)
-            let fit = max(0.001, min((geometry.size.width - 24) / fitted.width,
-                                     (geometry.size.height - 24) / fitted.height))
+            let margin: CGFloat = margins ? 12 : 0
+            let fit = max(0.001, min((geometry.size.width - 2 * margin) / fitted.width,
+                                     (geometry.size.height - 2 * margin) / fitted.height))
             let factor = viewport.factor(fit: fit, displayScale: displayScale,
                                          sourceWidth: CGFloat(sourceWidth), renderedWidth: CGFloat(frame.image.width))
             let previewEdge = viewport.previewLongEdge(canvas: geometry.size, displayScale: displayScale,
                 source: CGSize(width: CGFloat(sourceWidth), height: sourceHeight.map(CGFloat.init) ??
-                    CGFloat(sourceWidth) * CGFloat(frame.image.height) / CGFloat(frame.image.width)))
+                    CGFloat(sourceWidth) * CGFloat(frame.image.height) / CGFloat(frame.image.width)), margin: margin)
+            let displayedSize = CGSize(width: safeRendered.width * factor, height: safeRendered.height * factor)
+            let pan = viewport.pan(displayed: displayedSize)
             let displayPan = CGSize(width: pan.width + (safeRendered.width / 2 - (selection?.midX ?? safeRendered.width / 2)) * factor,
                                     height: pan.height + (safeRendered.height / 2 - (selection?.midY ?? safeRendered.height / 2)) * factor)
             let imageBounds = MacCropInteraction.imageBounds(canvasSize: geometry.size,
                 renderedSize: safeRendered, factor: factor, pan: displayPan)
             let sourceBounds = MacCropInteraction.imageBounds(canvasSize: geometry.size,
                 renderedSize: rendered, factor: factor, pan: displayPan)
+            let visibleImage = sourceBounds.intersection(CGRect(origin: .zero, size: geometry.size))
             ZStack {
                 Color.clear
                 Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)
                     .frame(width: CGFloat(frame.image.width) * factor, height: CGFloat(frame.image.height) * factor)
+                    .overlay(alignment: .leading) {
+                        if let beforeFrame, let split {
+                            Image(decorative: beforeFrame.image, scale: 1).resizable().interpolation(.high)
+                                .mask(alignment: .leading) { Rectangle().frame(width: rendered.width * factor * split.wrappedValue) }
+                        }
+                    }
                     .overlay {
                         if clipping { Image(decorative: frame.clipping, scale: 1).resizable().interpolation(.none) }
                     }.rotationEffect(.degrees(straighten.angle)).offset(x: displayPan.width, y: displayPan.height)
@@ -65,14 +81,56 @@ struct PhotoCanvas: View {
                     } else { Rectangle() }
                 }
                 .clipped().contentShape(Rectangle())
-                .gesture(DragGesture().onChanged { value in
-                    guard onCropChange == nil else { return }
-                    if dragOrigin == nil { dragOrigin = pan }
-                    pan = CGSize(width: dragOrigin!.width + value.translation.width,
-                                 height: dragOrigin!.height + value.translation.height)
-                }.onEnded { _ in dragOrigin = nil })
+                .overlay {
+                    if onCropChange == nil {
+                        MacCanvasInput(imageRect: sourceBounds, canHold: canHold, onHold: onHold,
+                            onPan: { translation in
+                                if dragOrigin == nil { dragOrigin = viewport.focus }
+                                viewport.moveFocus(from: dragOrigin ?? viewport.focus, translation: translation, displayed: displayedSize)
+                            }, onPanEnd: { dragOrigin = nil }, onDoubleClick: onDoubleClick)
+                    }
+                }
+                .overlay {
+                    if let split, beforeFrame != nil, !visibleImage.isNull {
+                        let x = sourceBounds.minX + sourceBounds.width * split.wrappedValue
+                        Rectangle().fill(.white).frame(width: 1, height: visibleImage.height)
+                            .position(x: x, y: visibleImage.midY).allowsHitTesting(false)
+                        Color.clear.frame(width: 24, height: visibleImage.height).contentShape(Rectangle())
+                            .position(x: x, y: visibleImage.midY)
+                            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("photoCanvas"))
+                                .onChanged { split.wrappedValue = min(1, max(0, ($0.location.x - sourceBounds.minX) / max(1, sourceBounds.width))) })
+                            .focusable().onKeyPress { key in
+                                if key.key == .leftArrow { split.wrappedValue = max(0, split.wrappedValue - 0.01); return .handled }
+                                if key.key == .rightArrow { split.wrappedValue = min(1, split.wrappedValue + 0.01); return .handled }
+                                if key.key == .home { split.wrappedValue = 0.5; return .handled }
+                                return .ignored
+                            }
+                            .accessibilityElement().accessibilityLabel(L10n.text("分割位置"))
+                            .accessibilityValue(String(format: "%.0f%%", split.wrappedValue * 100))
+                            .accessibilityAdjustableAction { direction in
+                                split.wrappedValue = min(1, max(0, split.wrappedValue + (direction == .increment ? 0.01 : -0.01)))
+                            }
+                            .accessibilityAction(named: Text(L10n.text("重置分割线"))) { split.wrappedValue = 0.5 }
+                            .accessibilityIdentifier("compare.split")
+                    }
+                }
+                .overlay {
+                    if !visibleImage.isNull {
+                        HStack {
+                            if let comparisonLabel { photoLabel(comparisonLabel) }
+                            Spacer(minLength: 8)
+                            if beforeFrame != nil { photoLabel(L10n.text("调整后")) }
+                        }.padding(8).frame(width: visibleImage.width, height: visibleImage.height, alignment: .bottom)
+                            .position(x: visibleImage.midX, y: visibleImage.midY).allowsHitTesting(false)
+                    }
+                }
+                .coordinateSpace(name: "photoCanvas")
                 .onChange(of: previewEdge, initial: true) { _, edge in onPreviewSizeChange?(edge) }
         }
+    }
+    private func photoLabel(_ text: String) -> some View {
+        Text(text).font(.system(size: 11, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
+            .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
