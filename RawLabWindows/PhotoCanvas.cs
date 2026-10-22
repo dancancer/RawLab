@@ -120,7 +120,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         LostMouseCapture+=(_,_)=>{CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
         LostKeyboardFocus+=(_,_)=>CancelHold();
         TouchDown+=(_,_)=>CancelHold();
-        IsVisibleChanged+=(_,_)=>{if(!IsVisible)CancelPointer();};
+        IsVisibleChanged+=(_,_)=>{if(!IsVisible)CancelPointer();else UpdateTransform();};
         KeyDown+=(_,e)=> { if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{CancelPointer();UpdateTransform();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();

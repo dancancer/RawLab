@@ -51,8 +51,9 @@ public partial class MainWindow
     {
         EndHoldingBefore();ResultCanvas.CancelPointer();NeutralCanvas.CancelPointer();
     }
+    private static Key ViewingKey(KeyEventArgs e)=>e.Key==Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
     private void ViewKeyReleased(object sender,KeyEventArgs e)
-    {if(e.Key==Key.Oem5){EndHoldingBefore();e.Handled=true;}}
+    {if(ViewingKey(e)==Key.Oem5){EndHoldingBefore();e.Handled=true;}}
     private void PhotoMarginClicked(object sender,RoutedEventArgs e)=>SetPhotoMargin(!view.PhotoMargin);
     private void SetPhotoMargin(bool enabled)
     {
@@ -91,5 +92,22 @@ public partial class MainWindow
         }
         Place(NeutralLabel,compare && !swipe ? NeutralCanvas : ResultCanvas,false);
         Place(FilmLabel,ResultCanvas,swipe);
+        if(swipe && NeutralLabel.Visibility==Visibility.Visible && FilmLabel.Visibility==Visibility.Visible &&
+            NeutralLabel.DesiredSize.Width+FilmLabel.DesiredSize.Width+24>ResultCanvas.VisibleImageBounds.Width)
+        {
+            var visiblePhoto=ResultCanvas.VisibleImageBounds;
+            var photo=new Rect(ResultCanvas.TranslatePoint(visiblePhoto.TopLeft,PhotoLabels),visiblePhoto.Size);
+            var after=new Rect(new Point(Canvas.GetLeft(FilmLabel),Canvas.GetTop(FilmLabel)),FilmLabel.DesiredSize);
+            var info=InfoEntryButton.IsVisible ? new Rect(InfoEntryButton.TranslatePoint(new Point(),PhotoLabels),InfoEntryButton.RenderSize) : Rect.Empty;
+            var image=ResultCanvas.ImageBounds;
+            var center=ResultCanvas.TranslatePoint(new Point(image.X+image.Width*ResultCanvas.Divider,visiblePhoto.Y+visiblePhoto.Height/2),PhotoLabels);
+            var handle=new Rect(center.X-16,center.Y-16,32,32);
+            foreach(var x in new[]{photo.Left+8,photo.Right-NeutralLabel.DesiredSize.Width-8})
+            {
+                var candidate=new Rect(new Point(x,photo.Top+8),NeutralLabel.DesiredSize);
+                if(!photo.Contains(candidate) || candidate.IntersectsWith(after) || candidate.IntersectsWith(info) || candidate.IntersectsWith(handle))continue;
+                Canvas.SetLeft(NeutralLabel,candidate.Left);Canvas.SetTop(NeutralLabel,candidate.Top);break;
+            }
+        }
     }
 }
