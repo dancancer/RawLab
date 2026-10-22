@@ -133,22 +133,27 @@ internal static class Program
                 var invocation = Task.Run(() => Invoke(open));
                 var dialog = Wait(() => FindDialog(), TimeSpan.FromSeconds(15));
                 if (dialog == null) throw new InvalidOperationException("OpenFileDialog did not appear through UIA.");
+                Trace("open-dialog " + System.IO.Path.GetFileName(path) + " name=" + dialog.Current.Name + " hwnd=" + dialog.Current.NativeWindowHandle);
                 if (invocation.IsFaulted) throw invocation.Exception!.GetBaseException();
                 var edit = Wait(() => dialog.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.AutomationIdProperty, "1148"))) ??
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, "1148")), TimeSpan.FromSeconds(10)) ??
                     dialog.FindFirst(TreeScope.Descendants,
                         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
                 if (edit == null) throw new InvalidOperationException("OpenFileDialog file-name edit is missing.");
+                Trace("open-filename-found " + edit.Current.ControlType.ProgrammaticName);
                 SetValue(edit, path);
+                Trace("open-filename-set " + System.IO.Path.GetFileName(path));
                 var accept = FindByNames(dialog, "打开", "Open", "选择", "Select") ??
                     dialog.FindFirst(TreeScope.Descendants, new AndCondition(
                         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
                         new PropertyCondition(AutomationElement.AutomationIdProperty, "1")));
                 if (accept == null) throw new InvalidOperationException("OpenFileDialog accept button is missing.");
                 Invoke(accept);
+                Trace("open-accepted " + System.IO.Path.GetFileName(path));
                 if (!invocation.Wait(TimeSpan.FromSeconds(10)))
                     throw new TimeoutException("OpenPhoto modal Invoke did not return.");
                 Wait(() => main.Current.Name.EndsWith(System.IO.Path.GetFileName(path), StringComparison.OrdinalIgnoreCase));
+                Trace("open-title " + System.IO.Path.GetFileName(path));
             });
             Trace("open-ready " + System.IO.Path.GetFileName(path));
             var raster=path.Equals(png,StringComparison.OrdinalIgnoreCase) || path.Equals(jpeg,StringComparison.OrdinalIgnoreCase);
@@ -166,9 +171,11 @@ internal static class Program
             var condition = new AndCondition(
                 new PropertyCondition(AutomationElement.ProcessIdProperty, hostPid),
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window));
-            return main.FindFirst(TreeScope.Children, condition) ??
-                root.FindAll(TreeScope.Children, condition).Cast<AutomationElement>()
-                .FirstOrDefault(element => element.Current.NativeWindowHandle != main.Current.NativeWindowHandle);
+            // WPF 会保留无标题辅助窗口；只接系统文件选择器，避免第二次打开时选到它。
+            return main.FindAll(TreeScope.Children, condition).Cast<AutomationElement>()
+                .Concat(root.FindAll(TreeScope.Children, condition).Cast<AutomationElement>())
+                .FirstOrDefault(element => element.Current.NativeWindowHandle != main.Current.NativeWindowHandle &&
+                    !element.Current.IsOffscreen && element.Current.ClassName == "#32770");
         }
 
         private void SelectMode(string mode)
@@ -193,10 +200,11 @@ internal static class Program
             Wait(() => !string.IsNullOrWhiteSpace(FindById(main, "CompareButton")?.Current.ItemStatus));
             if(loaded)
             {
-                var canvas=FindById(main,"ResultCanvas") ?? throw new InvalidOperationException("Result canvas is missing.");
+                var canvas=Wait(()=>FindById(main,"ResultCanvas"),TimeSpan.FromSeconds(10)) ?? throw new InvalidOperationException("Result canvas is missing.");
                 Wait(()=>canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _)==(mode=="swipe"));
                 var range=canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _);
                 Check(range==(mode=="swipe"),"Native canvas range support matches "+mode);
+                Wait(()=>{var current=FindById(main,"NeutralCanvas");return (current!=null && !current.Current.IsOffscreen)==(mode=="side");});
                 var neutral=FindById(main,"NeutralCanvas");
                 Check((neutral!=null && !neutral.Current.IsOffscreen)==(mode=="side"),"Native neutral canvas visibility matches "+mode);
                 Invoke(FindById(main,"CompareModeButton")!);
@@ -231,6 +239,7 @@ internal static class Program
             {
                 if (!export.Current.IsEnabled) Interlocked.Exchange(ref busy, 1);
                 action();
+                Trace("wait-busy observed=" + Volatile.Read(ref busy) + " enabled=" + export.Current.IsEnabled);
                 Wait(() => Volatile.Read(ref busy) != 0 || !export.Current.IsEnabled);
                 Wait(() => export.Current.IsEnabled);
             }
@@ -242,7 +251,8 @@ internal static class Program
 
         private void SetRangeValue(string id, double value)
         {
-            var element = FindById(main, id) ?? throw new InvalidOperationException("Range UIA control is missing: " + id);
+            var element = Wait(() => FindById(main, id), TimeSpan.FromSeconds(10)) ??
+                throw new InvalidOperationException("Range UIA control is missing: " + id);
             var pattern = (RangeValuePattern)element.GetCurrentPattern(RangeValuePattern.Pattern);
             pattern.SetValue(value);
         }

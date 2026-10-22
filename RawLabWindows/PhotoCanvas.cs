@@ -93,6 +93,8 @@ public sealed partial class PhotoCanvas : FrameworkElement
         referenceDrawing.Transform=editedDrawing.Transform=imageTransform;
         RenderOptions.SetBitmapScalingMode(this,BitmapScalingMode.LowQuality);
         ClipToBounds=true; Focusable=true; Cursor=Cursors.Hand;
+        // 照片只接收查看快捷键，避免输入法组合在焦点往返后吞掉原始按键；文本控件仍保留输入法。
+        InputMethod.SetIsInputMethodEnabled(this,false);
         holdTimer.Interval=TimeSpan.FromMilliseconds(Math.Max(1,SystemParameters.MouseHoverTime.TotalMilliseconds));
         holdTimer.Tick+=(_,_)=>{holdTimer.Stop();if(drag!=null && !panning && !GeometryEditing && !ComparisonEnabled && Mouse.LeftButton==MouseButtonState.Pressed)HoldStarted?.Invoke();};
         MouseWheel+=(_,e)=> { CancelHold();if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2);e.Handled=image!=null; };

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -10,6 +11,10 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private readonly HashSet<ContextMenu> viewingMenus=[];
+    private bool beforeKeyDown;
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
+    // 窗口外松键不会清掉 WPF 的 repeat 缓存；激活和焦点恢复时以真实键状态同步。
+    private void SyncBeforeKeyState()=>beforeKeyDown=(GetAsyncKeyState(0xdc)&0x8000)!=0;
     static MainWindow()
     {
         EventManager.RegisterClassHandler(typeof(ContextMenu),ContextMenu.OpenedEvent,new RoutedEventHandler(ViewContextMenuChanged),true);
@@ -53,7 +58,7 @@ public partial class MainWindow
     }
     private static Key ViewingKey(KeyEventArgs e)=>e.Key==Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
     private void ViewKeyReleased(object sender,KeyEventArgs e)
-    {if(ViewingKey(e)==Key.Oem5){EndHoldingBefore();e.Handled=true;}}
+    {if(ViewingKey(e)==Key.Oem5){beforeKeyDown=false;EndHoldingBefore();e.Handled=true;}}
     private void PhotoMarginClicked(object sender,RoutedEventArgs e)=>SetPhotoMargin(!view.PhotoMargin);
     private void SetPhotoMargin(bool enabled)
     {

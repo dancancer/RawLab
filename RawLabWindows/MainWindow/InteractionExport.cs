@@ -125,10 +125,12 @@ public partial class MainWindow
     private void ZoomOutClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(.8);}
     private void KeyPressed(object sender,KeyEventArgs e)
     {
-        if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         var viewingKey=ViewingKey(e);
+        var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
+        if(viewingKey==Key.Oem5)beforeKeyDown=true;
+        if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
-        if(viewingKey==Key.Oem5){if(!e.IsRepeat)BeginHoldingBefore();e.Handled=true;return;}
+        if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
         else if(e.Key is Key.Add or Key.OemPlus)ZoomInClicked(sender,e); else if(e.Key is Key.Subtract or Key.OemMinus)ZoomOutClicked(sender,e);

@@ -215,15 +215,28 @@ internal static class ViewComparisonChecks
     {
         var view=Get<EditorViewState>(window,"view");var activated=window.Activate();var focused=window.ResultCanvas.Focus();var bounds=window.ResultCanvas.VisibleImageBounds;
         var center=window.ResultCanvas.PointToScreen(new(bounds.X+bounds.Width/2,bounds.Y+bounds.Height/2));
-        var trace=new List<object>();var timer=Stopwatch.StartNew();var keyDowns=0;var lastVirtualKey=0;
+        var trace=new List<object>();var timer=Stopwatch.StartNew();var keyDowns=0;var keyUps=0;var lastVirtualKey=0;var lastReleasedKey=0;var lastKeyRepeat=false;
         void Await(Func<bool> condition,string message){var wait=Stopwatch.StartNew();InteractionChecks.PumpUntil(()=>condition() || wait.ElapsedMilliseconds>=3000);check(condition(),message);}
         void Trace(string kind,object? source=null)=>trace.Add(new {kind,source=source?.ToString(),elapsed=timer.ElapsedMilliseconds,activated,focused,window.IsActive,window.ResultCanvas.IsMouseCaptured,window.ResultCanvas.IsKeyboardFocusWithin,
             foreground=GetForegroundWindow().ToInt64(),target=new WindowInteropHelper(window).Handle.ToInt64(),hit=WindowFromPoint(new ScreenPoint{X=(int)center.X,Y=(int)center.Y}).ToInt64(),center.X,center.Y,
             mouse=Mouse.LeftButton.ToString(),nativeLeft=(GetAsyncKeyState(1)&0x8000)!=0,over=Mouse.DirectlyOver?.ToString(),keyboard=Keyboard.FocusedElement?.ToString(),modifiers=Keyboard.Modifiers.ToString(),blocked=typeof(MainWindow).GetProperty("ViewInputBlocked",Private)!.GetValue(window),position=Mouse.GetPosition(window.ResultCanvas),drag=Get<Point?>(window.ResultCanvas,"drag"),holdTimer=Get<DispatcherTimer>(window.ResultCanvas,"holdTimer").IsEnabled,view.HoldingBefore,window.ResultCanvas.ShowingBefore});
-        ProcessInputEventHandler keyboardTrace=(_,e)=>{if(e.StagingItem.Input is KeyEventArgs key && key.RoutedEvent==Keyboard.PreviewKeyDownEvent){keyDowns++;lastVirtualKey=KeyInterop.VirtualKeyFromKey(key.Key==Key.ImeProcessed ? key.ImeProcessedKey : key.Key==Key.System ? key.SystemKey : key.Key);Trace("KeyDownComplete",new {key.Key,key.SystemKey,key.ImeProcessedKey,key.IsRepeat});}};
+        ProcessInputEventHandler keyboardTrace=(_,e)=>{
+            if(e.StagingItem.Input is not KeyEventArgs key)return;
+            var virtualKey=KeyInterop.VirtualKeyFromKey(key.Key==Key.ImeProcessed ? key.ImeProcessedKey : key.Key==Key.System ? key.SystemKey : key.Key);
+            if(key.RoutedEvent==Keyboard.PreviewKeyDownEvent){keyDowns++;lastVirtualKey=virtualKey;lastKeyRepeat=key.IsRepeat;Trace("KeyDownComplete",new {key.Key,key.SystemKey,key.ImeProcessedKey,key.IsRepeat});}
+            if(key.RoutedEvent==Keyboard.PreviewKeyUpEvent){keyUps++;lastReleasedKey=virtualKey;Trace("KeyUpComplete",new {key.Key,key.SystemKey,key.ImeProcessedKey});}
+        };
         InputManager.Current.PostProcessInput+=keyboardTrace;
         window.AddHandler(Keyboard.PreviewKeyDownEvent,new KeyEventHandler((_,e)=>Trace("WindowKeyDown",new {e.Key,e.SystemKey,e.ImeProcessedKey,e.IsRepeat})),true);
         void KeyDown(byte key){var previous=keyDowns;keybd_event(key,0,0,UIntPtr.Zero);Await(()=>keyDowns>previous && lastVirtualKey==key,"Injected key-down completes the real WPF preview input route");}
+        // 下一场景切焦点前先等待真实 key-up，避免输入法把异步松键留到新焦点。
+        void KeyUp(byte key){var previous=keyUps;keybd_event(key,0,2,UIntPtr.Zero);Await(()=>keyUps>previous && lastReleasedKey==key,"Injected key-up completes the real WPF preview input route");}
+        void CloseMenu(ContextMenu menu)
+        {
+            var closed=false;RoutedEventHandler onClosed=(_,_)=>closed=true;menu.Closed+=onClosed;
+            try {menu.IsOpen=false;Await(()=>closed,"Native context menu finishes closing before the next canvas input");}
+            finally {menu.Closed-=onClosed;}
+        }
         void MouseHold(){mouse_event(2,0,0,0,UIntPtr.Zero);Await(()=>window.ResultCanvas.IsMouseCaptured && Mouse.LeftButton==MouseButtonState.Pressed,"Native press reaches photo capture before the hold interval");Await(()=>view.HoldingBefore,"System hold interval completes after the actual photo press");}
         window.AddHandler(Mouse.PreviewMouseDownEvent,new MouseButtonEventHandler((_,e)=>Trace("PreviewMouseDown",e.OriginalSource)),true);
         window.ResultCanvas.AddHandler(Mouse.MouseDownEvent,new MouseButtonEventHandler((_,e)=>Trace("MouseDown",e.OriginalSource)),true);
@@ -244,22 +257,29 @@ internal static class ViewComparisonChecks
         // 先用真实 Escape 结束输入法组合，再开始下一段独立的画布快捷键操作。
         keybd_event(0x1b,0,0,UIntPtr.Zero);keybd_event(0x1b,0,2,UIntPtr.Zero);Pump(120);
         window.OrdinaryParameter.CancelInput();window.ResultCanvas.Focus();
-        KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before moving focus");window.AutoExposureButton.Focus();Pump(40);check(!view.HoldingBefore,"Moving real keyboard focus away from the photo cancels before even before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);
+        KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before moving focus");window.AutoExposureButton.Focus();Pump(40);check(!view.HoldingBefore,"Moving real keyboard focus away from the photo cancels before even before key-up");KeyUp(0xdc);
         foreach(var menu in new[]{(ContextMenu)window.ZoomPhotoMargin.Parent,window.ExportButton.ContextMenu!,window.FileTreeContextMenu}) {
             window.ResultCanvas.Focus();KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before opening a context menu");
             menu.PlacementTarget=ReferenceEquals(menu,window.FileTreeContextMenu) ? window.Files : window.ResultCanvas;menu.IsOpen=true;Pump(60);
             Capture(window,output,"native-menu-"+(ReferenceEquals(menu,window.FileTreeContextMenu) ? "tree" : ReferenceEquals(menu,window.ExportButton.ContextMenu) ? "export" : "zoom"));
             check(!view.HoldingBefore,"The real context menu Opened event cancels an active before hold");keybd_event(0xdc,0,2,UIntPtr.Zero);
             var mode=Get<PhotoInfoMode>(window,"photoInfoMode");KeyDown(0xdc);check(!view.HoldingBefore,"Native backslash down stays excluded inside the open menu before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);KeyDown(0x49);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(60);
-            check(menu.IsOpen && !view.HoldingBefore && Get<PhotoInfoMode>(window,"photoInfoMode")==mode,"Native backslash and I remain excluded while a zoom/export/tree menu is active");menu.IsOpen=false;Pump(40);
+            check(menu.IsOpen && !view.HoldingBefore && Get<PhotoInfoMode>(window,"photoInfoMode")==mode,"Native backslash and I remain excluded while a zoom/export/tree menu is active");CloseMenu(menu);
         }
         window.ResultCanvas.Focus();SetCursorPos((int)center.X,(int)center.Y);MouseHold();check(view.HoldingBefore,"Native before is active before losing mouse capture");Mouse.Capture(null);Pump(40);
         check(!view.HoldingBefore,"Losing actual photo mouse capture cancels before");mouse_event(4,0,0,0,UIntPtr.Zero);
         window.ResultCanvas.Focus();KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before wheel zoom");mouse_event(0x800,0,0,120,UIntPtr.Zero);Await(()=>!view.HoldingBefore,"Native wheel event cancels hold before release");
-        check(!view.HoldingBefore,"Native mouse wheel zoom cancels keyboard-held before before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);Ready(window);
+        check(!view.HoldingBefore,"Native mouse wheel zoom cancels keyboard-held before before key-up");
+        KeyDown(0xdc);check(lastKeyRepeat && !view.HoldingBefore,"Native key repeat cannot restart before after wheel cancellation");KeyUp(0xdc);Ready(window);
         window.ResultCanvas.Focus();KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before opening an owned window");var dialog=new Window{Owner=window,Width=240,Height=140,Content=new TextBox()};dialog.Show();Await(()=>!view.HoldingBefore,"Owned window deactivation cancels hold before release");Capture(window,output,"native-owned-window-cancel");
         check(!view.HoldingBefore,"Opening another owned window cancels before on real deactivation");keybd_event(0xdc,0,2,UIntPtr.Zero);dialog.Close();window.Activate();window.ResultCanvas.Focus();
-        KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before minimizing");window.WindowState=WindowState.Minimized;Await(()=>!view.HoldingBefore,"Native minimize deactivation cancels hold before release");check(!view.HoldingBefore,"Minimizing the real window cancels before");keybd_event(0xdc,0,2,UIntPtr.Zero);window.WindowState=WindowState.Normal;window.Activate();Ready(window);
+        KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before held-key activation test");
+        window.WindowState=WindowState.Minimized;Await(()=>!view.HoldingBefore,"Minimizing cancels before while the key remains held");
+        window.WindowState=WindowState.Normal;window.Activate();Ready(window);window.ResultCanvas.Focus();
+        KeyDown(0xdc);check(lastKeyRepeat && !view.HoldingBefore,"Restoring the window while still holding backslash cannot restart before");KeyUp(0xdc);
+        KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before minimizing");window.WindowState=WindowState.Minimized;Await(()=>!view.HoldingBefore,"Native minimize deactivation cancels hold before release");check(!view.HoldingBefore,"Minimizing the real window cancels before");keybd_event(0xdc,0,2,UIntPtr.Zero);
+        Await(()=>(GetAsyncKeyState(0xdc)&0x8000)==0,"Native backslash is released while the window is minimized");
+        window.WindowState=WindowState.Normal;window.Activate();Ready(window);
         window.ResultCanvas.Focus();KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before reopening the source");window.OpenFile(Get<string>(window,"file"));Ready(window);Capture(window,output,"native-source-cancel");
         check(!view.HoldingBefore && !view.Enabled,"Reopening even the same photo cancels native held-before state before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);
         } finally {keybd_event(0xdc,0,2,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);Mouse.Capture(null);Trace("FinallyReleased");InputManager.Current.PostProcessInput-=keyboardTrace;File.WriteAllText(Path.Combine(output,"pointer.trace.json"),JsonSerializer.Serialize(trace));}

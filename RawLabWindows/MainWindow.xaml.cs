@@ -129,6 +129,8 @@ public partial class MainWindow : Window
         NeutralCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
         ResultCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
         PreviewKeyUp+=ViewKeyReleased;
+        Activated+=(_,_)=>SyncBeforeKeyState();
+        AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
         Deactivated+=(_,_)=>CancelViewingInput();
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
