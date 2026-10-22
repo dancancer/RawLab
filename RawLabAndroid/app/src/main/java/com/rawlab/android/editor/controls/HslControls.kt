@@ -5,12 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -34,29 +30,36 @@ fun HslControls(settings: HslSettings, enabled: Boolean, channel: Int, onChannel
                 val name = stringResource(names[index])
                 val changed = (0..2).any { settings.value(it, index) != 0f }
                 val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
-                Column(Modifier.width(72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.width(48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(onClick = { onChannelChange(index) }, enabled = enabled,
-                        modifier = Modifier.testTag("hsl-channel-$index").semantics { contentDescription = name; selected = channel == index; stateDescription = status }) {
-                        Box(Modifier.size(24.dp).background(colors[index], CircleShape)
-                            .border(if (channel == index) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape))
+                        modifier = Modifier.size(48.dp).testTag("hsl-channel-$index").semantics { contentDescription = name; selected = channel == index; stateDescription = status }) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.size(24.dp).testTag("hsl-color-$index").background(colors[index], CircleShape)
+                                .border(if (channel == index) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape))
+                            Spacer(Modifier.height(3.dp))
+                            Box(Modifier.size(3.dp).testTag("hsl-marker-$index")
+                                .background(if (changed) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape))
+                        }
                     }
-                    Text(name, style = MaterialTheme.typography.labelSmall)
-                    Box(Modifier.size(3.dp).background(if (changed) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape))
                 }
             }
         }
         val axes = listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)
-        axes.forEachIndexed { axis, label ->
-            NumericControl(label, settings.value(axis, channel), -100f..100f, "", enabled,
-                { value, dragging -> onEdit(settings.withValue(axis, channel, value), dragging) },
-                { onEdit(settings.withValue(axis, channel, 0f), false) })
-        }
-        Row {
-            IconButton(onClick = { onReset(false) }, enabled = enabled && (0..2).any { settings.value(it, channel) != 0f }) {
-                Icon(Icons.Outlined.Refresh, stringResource(R.string.hsl_reset_channel))
-            }
-            IconButton(onClick = { onReset(true) }, enabled = enabled && !settings.isIdentity) {
-                Icon(Icons.Outlined.RestartAlt, stringResource(R.string.hsl_reset))
+        val directions = listOf(R.string.editor_hsl_hue_direction, R.string.editor_hsl_saturation_direction, R.string.editor_hsl_lightness_direction)
+        val selectedName = stringResource(names[channel])
+        val scope = LocalAdjustmentSession.current
+        CompositionLocalProvider(LocalAdjustmentSession provides (scope to channel)) {
+            axes.forEachIndexed { axis, label ->
+                val pair = stringResource(R.string.editor_parameter_pair, selectedName, stringResource(label))
+                val colorsForAxis = when (axis) {
+                    0 -> listOf(colors[(channel + 7) % 8], colors[channel], colors[(channel + 1) % 8])
+                    1 -> listOf(Color.Gray, colors[channel])
+                    else -> listOf(Color.Black, colors[channel], Color.White)
+                }
+                NumericControl(label, settings.value(axis, channel), -100f..100f, "", enabled,
+                    { value, dragging -> onEdit(settings.withValue(axis, channel, value), dragging) },
+                    { onEdit(settings.withValue(axis, channel, 0f), false) },
+                    trackColors = colorsForAxis, axisDescription = "$pair. ${stringResource(directions[axis])}")
             }
         }
     }

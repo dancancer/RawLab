@@ -113,8 +113,8 @@ class EditorToolsTest {
         assertEquals(lefts.toString(), 1, lefts.values.distinct().size)
     }
 
-    // 标题行的“重置调整”（全部重置）和参数行的“重置此项”紧挨着，两个按钮不能长得一模一样
-    @Test fun headerResetLooksDifferentFromTheParameterReset() {
+    // 面板重置保留可见入口；单参数重置通过语义动作提供，避免每行常驻按钮。
+    @Test fun headerResetRemainsVisibleAndParameterResetIsASemanticAction() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         compose.setContent {
             RawLabTheme {
@@ -131,15 +131,10 @@ class EditorToolsTest {
             }
         }
         compose.onNodeWithTag("editor-group-light").performClick()
-        val header = compose.onNodeWithContentDescription("重置调整").captureToImage().asAndroidBitmap()
-        val parameter = compose.onNodeWithContentDescription("重置此项").captureToImage().asAndroidBitmap()
-        // 只比较字形：按亮度二值化后逐点比，颜色或启用态的深浅不算区别
-        assertEquals(header.width, parameter.width)
-        assertEquals(header.height, parameter.height)
-        fun lit(b: Bitmap, x: Int, y: Int) = b.getPixel(x, y).let { (it shr 16 and 0xFF) + (it shr 8 and 0xFF) + (it and 0xFF) > 300 }
-        val total = header.width * header.height
-        val differing = (0 until total).count { lit(header, it % header.width, it / header.width) != lit(parameter, it % header.width, it / header.width) }
-        assertTrue("header reset and parameter reset render the same glyph ($differing of $total pixels differ)", differing * 50 > total)
+        compose.onNodeWithContentDescription("重置调整").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(0)
+        val actions = compose.onNodeWithTag("adjustment-slider").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        assertEquals(listOf("重置此项"), actions.map { it.label })
     }
 
     // 与 Mac、iOS 一致：“已调整”标记是工具名下方单独的小圆点，在圆圈外面；没调整时透明但仍占位，切换时工具条不跳动

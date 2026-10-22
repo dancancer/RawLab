@@ -49,7 +49,7 @@ class EditorV08ControlsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         compose.setContent { RawLabTheme { NumericControl(R.string.exposure, value, -4f..4f, "EV", true,
             { next, _ -> value = next }, { value = 0f }) } }
-        compose.onNodeWithText("+0.35 EV").performClick()
+        compose.onNodeWithTag("adjustment-value-${R.string.exposure}").performClick()
         compose.onNodeWithContentDescription(context.getString(R.string.adjustment_toggle_sign)).performClick()
         compose.onNodeWithTag("adjustment-input").assertTextContains("-0.35")
         compose.runOnIdle { assertEquals(.35f, value, 0f) }
@@ -83,16 +83,20 @@ class EditorV08ControlsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         compose.setContent { RawLabTheme { NumericControl(R.string.exposure, value, -4f..4f, "EV", true,
             { next, _ -> value = next }, { value = 0f }) } }
-        compose.onNodeWithText("+0.35 EV").performClick()
+        compose.onNodeWithTag("adjustment-value-${R.string.exposure}").performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("NaN")
         compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
         compose.runOnIdle { assertEquals(.35f, value, 0f) }
         compose.onNodeWithTag("adjustment-input").performTextReplacement("0.76")
         compose.onNodeWithText(context.getString(R.string.cancel)).performClick()
         compose.runOnIdle { assertEquals(.35f, value, 0f) }
-        compose.onNodeWithText("+0.35 EV").performClick()
-        compose.onNodeWithTag("adjustment-input").assertTextContains("+0.35")
+        compose.onNodeWithTag("adjustment-value-${R.string.exposure}").performClick()
+        compose.onNodeWithTag("adjustment-input").assertTextContains("0.35")
         compose.onNodeWithTag("adjustment-input").performTextReplacement("0.76")
+        compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
+        compose.onNodeWithTag("adjustment-input").assertExists()
+        compose.runOnIdle { assertEquals(.35f, value, 0f) }
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("0.75")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(.75f, value, .00001f) }
     }

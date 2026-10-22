@@ -77,6 +77,42 @@ class EditorWorkspaceGroupsTest {
         File(dir, "$name.png").outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    @Test fun onePanelFineResetsOnlyAfterActualToolOrGroupNavigation() {
+        show(); group("color"); tool(14)
+        compose.onAllNodesWithTag("adjustment-fine").assertCountEquals(1)
+        compose.onNodeWithTag("adjustment-fine").performScrollTo().performClick().assertIsOn()
+        compose.onNodeWithTag("hsl-channel-1").performClick()
+        compose.onNodeWithTag("adjustment-fine").assertIsOn()
+        tool(7)
+        compose.onNodeWithTag("adjustment-fine").assertIsOff().performClick().assertIsOn()
+        group("light")
+        compose.onNodeWithTag("adjustment-fine").assertIsOff()
+        compose.runOnIdle { assertEquals(0, edits); assertEquals(0, commits) }
+    }
+
+    @Test fun stayingInChangedGeometryRetainsFineWithoutCallbacks() {
+        show(); group("geometry")
+        compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.edits.copy(geometry = GeometrySettings(quarterTurns = 1)))) }
+        compose.onNodeWithTag("adjustment-fine").performScrollTo().performClick().assertIsOn()
+        val draft = state.draft
+        group("color"); dialog("继续编辑").performClick()
+        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+        compose.onNodeWithTag("adjustment-fine").assertIsOn()
+        compose.runOnIdle { assertSame(draft, state.draft); assertEquals(0, edits); assertEquals(0, commits); assertEquals(0, draftApplies); assertEquals(0, draftDiscards) }
+    }
+
+    @Test fun anotherSourceWithTheSameHslValueCancelsTheOldDraftBeforeRebinding() {
+        state = state.copy(edits = state.edits.copy(hsl = state.edits.hsl.withValue(0, 0, .5f)))
+        show(); group("color"); tool(14)
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.hsl_hue}").performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("25")
+        compose.runOnIdle { state = state.copy(photo = photo.copy(identity = PhotoIdentity("other-source"), file = File("other-fixture"))) }
+        compose.onNodeWithTag("adjustment-input").assertDoesNotExist()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.hsl_hue}").assertTextContains("0.5").performClick()
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(.5f, state.edits.hsl.value(0, 0), 0f); assertEquals(0, edits); assertEquals(0, commits) }
+    }
+
     @Test fun emptyWorkspaceHidesBothNavigationAndAdjustmentPanel() {
         state = EditorState()
         show()

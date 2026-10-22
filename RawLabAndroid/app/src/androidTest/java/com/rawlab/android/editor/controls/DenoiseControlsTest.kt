@@ -64,6 +64,7 @@ class DenoiseControlsTest {
             MaterialTheme { Box(Modifier.width(360.dp)) { DenoiseControls(DenoiseSettings(), true) { _, _ -> } } }
         }
         compose.onNodeWithContentDescription("重置降噪").assertExists()
-        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(3)
+        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(0)
+        compose.onAllNodesWithTag("adjustment-slider").assertCountEquals(3)
     }
 }
