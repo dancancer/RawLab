@@ -90,8 +90,8 @@
 - [x] Task 1：Mac原生六组/current-tool/reset/固定面板及实际交互、六语截图通过；独立评审关闭已确认问题，本地提交就绪。
 - [x] Task 2：iOS原生接线、iPhone/iPad实际界面及草稿回归通过；大字号/短横窗的完整文字、末项与工具可达性及独立评审已闭合，本地提交就绪。
 - [x] Task 3：Android原生接线、JVM/lint及实际Compose/VM/草稿回归通过；六语短屏/大字完整控件与独立评审已闭合，本地提交就绪。
-- [ ] Task 4：Windows原生接线、managed/crossbuild与独立评审已完成，本地提交就绪；真实 Windows WPF 回归及截图须待最新源提交的 CI 验证。
+- [x] Task 4：Windows原生接线、managed/WPF 构建、实际 Windows 交互与六语两尺寸布局/截图通过，独立评审已闭合；长语言大字号保留参数视口、辅助控件与完整统计文字。宽窗为 WPF 离屏内容布局，系统 DPI、无障碍服务和硬件 GPU 仍另列。
 - [x] 四端独立复核及协调者关键调用链核验完成，本地源码没有未关闭的 P1/P2。
-- [ ] 2026-10-22 已获远端操作授权；按基础资源→四端消费者顺序提交五个 PR，全部最新源的独立评审和 CI（含 Windows 实际 WPF 与截图）通过后按顺序集成，最后核实联合 CI。
+- [ ] 2026-10-22 已获远端操作授权，五个 PR 已创建：[基础资源 #119](https://github.com/dancancer/RawLab/pull/119) → [Mac #120](https://github.com/dancancer/RawLab/pull/120) → [iOS #121](https://github.com/dancancer/RawLab/pull/121) → [Android #122](https://github.com/dancancer/RawLab/pull/122) → [Windows #123](https://github.com/dancancer/RawLab/pull/123)。按最新源的独立评审与 CI 门禁依次集成，最后核实 development 联合 CI；实时源提交、验证与合入记录保留在上述 PR。
 
 纯模型、编译、模拟器、真实硬件分别登记；本批完成也不代表整个S2或ITER-02验收通过。
