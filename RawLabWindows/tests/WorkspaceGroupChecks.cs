@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -77,10 +78,26 @@ internal static class WorkspaceGroupChecks
                 window.HslSurface.ScrollToBottom();window.UpdateLayout();
                 var reset=PhotoFeatureChecks.Descendants<Button>(window.HslEditor).Single(button=>Equals(button.Content,Loc.Text("重置 HSL")));
                 var last=reset.TransformToAncestor(window.HslSurface).Transform(new Point(0,reset.ActualHeight/2));
-                check(last.Y>=0 && last.Y<=window.HslSurface.ActualHeight,"Last HSL action remains reachable through internal scrolling: "+language+"/"+size);
-                var surface=EditorShellChecks.ArrangeLayout(window,size);
-                EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}.png"));
-                CheckHistogramStatistics(window,language,size,check);
+                FrameworkElement? presenter=reset;
+                while(presenter!=null && presenter is not ScrollContentPresenter)presenter=VisualTreeHelper.GetParent(presenter) as FrameworkElement;
+                Console.WriteLine("Workspace layout "+JsonSerializer.Serialize(new {
+                    language,size.Width,size.Height,window.FontSize,dock=window.AdjustmentPanel.ActualHeight,
+                    rows=((Grid)window.DockHeader.Parent).RowDefinitions.Select(row=>row.ActualHeight),
+                    header=window.DockHeader.ActualHeight,headerDesired=window.DockHeader.DesiredSize,
+                    hslVisible=window.HslSurface.IsVisible,hsl=window.HslSurface.ActualHeight,
+                    window.HslSurface.ViewportHeight,window.HslSurface.ExtentHeight,window.HslSurface.VerticalOffset,window.HslSurface.ScrollableHeight,
+                    resetVisible=reset.IsVisible,resetSize=reset.RenderSize,
+                    resetBounds=reset.TransformToAncestor(window.HslSurface).TransformBounds(new Rect(reset.RenderSize)),resetCenter=last.Y,
+                    presenterSize=presenter?.RenderSize,presenterBounds=presenter==null ? (Rect?)null : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize))
+                }));
+                try {
+                    check(last.Y>=0 && last.Y<=window.HslSurface.ActualHeight,"Last HSL action remains reachable through internal scrolling: "+language+"/"+size);
+                    CheckHistogramStatistics(window,language,size,check);
+                } finally {
+                    // 断言失败也保留对应截图，尺寸检查仍在拍摄重排之前执行。
+                    var surface=EditorShellChecks.ArrangeLayout(window,size);
+                    EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}.png"));
+                }
             }
         } finally {window.FontSize=originalFont;Loc.SetPreference(previous,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;}
         Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);
