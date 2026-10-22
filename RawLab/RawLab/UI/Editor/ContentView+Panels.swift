@@ -109,6 +109,7 @@ extension ContentView {
                                   label: L10n.text("调整后"), viewing: $photoViewing, viewport: $photoViewport,
                                   isDraft: isEditorDraftActive,
                                   interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingFileImporter && !showingLookImporter,
+                                  overlayAvoidanceRect: photoComparisonControlBounds,
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -206,14 +207,23 @@ extension ContentView {
             .overlay(alignment: .bottomTrailing) {
                 if photoViewing.enabled && !photoViewing.previewOnly && !isEditorDraftActive {
                     Menu { comparisonModeMenu } label: {
-                        Image(systemName: "rectangle.split.2x1").frame(minWidth: 44, minHeight: 44)
+                        Image(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 22)).frame(minWidth: 44, minHeight: 44)
                     }
                     .background(.regularMaterial, in: Circle())
+                    .background {
+                        GeometryReader { control in
+                            Color.clear.preference(key: PhotoComparisonControlBoundsKey.self,
+                                value: control.frame(in: .named("editor.photo.canvas")))
+                        }
+                    }
                     .padding(12)
                     .accessibilityLabel(L10n.text("对比方式"))
                     .accessibilityIdentifier("editor.compare.mode")
                 }
             }
+            .coordinateSpace(name: "editor.photo.canvas")
+            .onPreferenceChange(PhotoComparisonControlBoundsKey.self) { photoComparisonControlBounds = $0 }
             .clipped()
         }
     }
@@ -497,4 +507,9 @@ extension EditorToolSelection {
         case .adjustment(let kind): return kind.iconName
         }
     }
+}
+
+private struct PhotoComparisonControlBoundsKey: PreferenceKey {
+    static var defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }

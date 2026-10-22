@@ -4,11 +4,11 @@ import CoreFoundation
 final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
-    func launch() -> XCUIApplication {
+    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.viewing-editor")
-        let language = ProcessInfo.processInfo.environment["S3_VIEWING_LANGUAGE"] ?? "en"
+        let language = requestedLanguage ?? ProcessInfo.processInfo.environment["S3_VIEWING_LANGUAGE"] ?? "en"
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-RawLab.language", language]
-        if let category = ProcessInfo.processInfo.environment["S3_VIEWING_TEXT"], !category.isEmpty {
+        if let category = textCategory ?? ProcessInfo.processInfo.environment["S3_VIEWING_TEXT"], !category.isEmpty {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
         }
         app.launch()
@@ -47,6 +47,107 @@ final class ViewingEditorUITests: XCTestCase {
         app.buttons["editor.group.geometry"].tap()
         if !app.buttons["tool.geometry"].isSelected { app.buttons["tool.geometry"].tap() }
         wait(app) { $0["ready"] as? Bool == true && $0["draftActive"] as? Bool == true }
+    }
+    func testNewViewingControlsAcrossSixLanguages() {
+        let samples = [
+            ("zh-Hans", "开启对比", "关闭对比", "调整前", "调整后", "并排", "分割线", "缩放与显示", "照片四周留白"),
+            ("en", "Turn on comparison", "Turn off comparison", "Before", "After", "Side by side", "Wipe", "Zoom and display", "Space around photo"),
+            ("de", "Vergleich einschalten", "Vergleich ausschalten", "Vorher", "Nachher", "Nebeneinander", "Trennlinie", "Zoom und Anzeige", "Abstand um das Foto"),
+            ("fr", "Activer la comparaison", "Désactiver la comparaison", "Avant", "Après", "Côte à côte", "Ligne de séparation", "Zoom et affichage", "Marge autour de la photo"),
+            ("ja", "比較をオン", "比較をオフ", "補正前", "補正後", "並べて表示", "分割線", "ズームと表示", "写真の周囲に余白"),
+            ("es", "Activar comparación", "Desactivar comparación", "Antes", "Después", "En paralelo", "Línea divisoria", "Zoom y visualización", "Espacio alrededor de la foto")
+        ]
+        for (language, enabled, disabled, before, after, side, wipe, display, margin) in samples {
+            let app = launch(language: language, textCategory: language == "de" ? "UICTContentSizeCategoryAccessibilityXXXL" : nil)
+            let original = receipt(app)
+            XCTAssertEqual(app.buttons["editor.compare"].label, enabled)
+            app.buttons["editor.compare"].tap()
+            wait(app) { $0["compare"] as? Bool == true && $0["ready"] as? Bool == true }
+            XCTAssertEqual(app.buttons["editor.compare"].label, disabled)
+            for (id, expected, photoID) in [("editor.compare.before", before, "editor.photo.before"), ("editor.compare.after", after, "editor.photo")] {
+                let text = app.staticTexts[id]
+                XCTAssertEqual(text.label, expected)
+                XCTAssertTrue(app.images[photoID].frame.contains(text.frame))
+            }
+            let mode = app.buttons["editor.compare.mode"]
+            XCTAssertGreaterThanOrEqual(mode.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(mode.frame.height, 44)
+            capture(app, "locale-\(language)-labels")
+            mode.tap()
+            XCTAssertEqual(app.buttons["editor.compare.sideBySide"].label, side)
+            XCTAssertEqual(app.buttons["editor.compare.wipe"].label, wipe)
+            for id in ["editor.compare.sideBySide", "editor.compare.wipe"] {
+                XCTAssertTrue(app.frame.contains(app.buttons[id].frame), "localized menu item must fit the window")
+            }
+            capture(app, "locale-\(language)-compare-menu")
+            app.buttons["editor.compare.close"].tap()
+            app.buttons["editor.privacy"].tap()
+            app.buttons[display].tap()
+            XCTAssertTrue(app.buttons[margin].isHittable)
+            XCTAssertTrue(app.frame.contains(app.buttons[margin].frame))
+            capture(app, "locale-\(language)-display-menu")
+            XCTAssertEqual(receipt(app)["settings"] as? String, original["settings"] as? String)
+            XCTAssertEqual((receipt(app)["saves"] as! [[String: Any]]).count, (original["saves"] as! [[String: Any]]).count)
+            app.terminate()
+        }
+    }
+    func assertCompleteViewingLabels(_ app: XCUIApplication) {
+        let labels = receipt(app)["comparisonLabelMetrics"] as! [[String: Any]]
+        XCTAssertEqual(labels.count, 2)
+        let frames = labels.map { value -> CGRect in
+            let rect = value["rect"] as! [Double]
+            return CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3])
+        }
+        XCTAssertFalse(frames[0].intersects(frames[1]), "before/after labels must not cover one another")
+        for label in labels {
+            let rect = label["rect"] as! [Double]
+            XCTAssertGreaterThanOrEqual(rect[2], label["fullTextWidth"] as! Double)
+            XCTAssertGreaterThanOrEqual(rect[3], label["lineHeight"] as! Double)
+            XCTAssertGreaterThanOrEqual(label["pointSize"] as! Double, 13)
+            XCTAssertLessThanOrEqual(label["pointSize"] as! Double, 17)
+            XCTAssertFalse(CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]).intersects(app.buttons["editor.compare.mode"].frame))
+        }
+    }
+    func testLargeViewingLabelsAndModeStayComplete() {
+        let app = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
+        app.buttons["editor.compare"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["compare"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["preferredContentSizeCategory"] as? String, "UICTContentSizeCategoryAccessibilityXXXL")
+        capture(app, "de-xxxl-side-text-metrics")
+        assertCompleteViewingLabels(app)
+        XCTAssertEqual(app.staticTexts["editor.compare.before"].label, "Vorher")
+        XCTAssertEqual(app.staticTexts["editor.compare.after"].label, "Nachher")
+        XCTAssertEqual(app.buttons["editor.compare.mode"].frame.width, 44)
+        XCTAssertEqual(app.buttons["editor.compare.mode"].frame.height, 44)
+        capture(app, "de-xxxl-complete-side-labels")
+        app.buttons["editor.compare.mode"].tap()
+        app.buttons["editor.compare.wipe"].tap()
+        wait(app) { $0["mode"] as? String == "wipe" && $0["ready"] as? Bool == true }
+        assertCompleteViewingLabels(app)
+        capture(app, "de-xxxl-complete-wipe-labels")
+    }
+    func testWipeLabelAvoidsModeControlInsideActualPhoto() {
+        let app = launch()
+        app.buttons["editor.compare"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["compare"] as? Bool == true }
+        app.buttons["editor.compare.mode"].tap()
+        app.buttons["editor.compare.wipe"].tap()
+        wait(app) { $0["mode"] as? String == "wipe" && $0["ready"] as? Bool == true }
+        let label = app.staticTexts["editor.compare.after"]
+        let mode = app.buttons["editor.compare.mode"]
+        XCTAssertTrue(app.images["editor.photo"].frame.contains(label.frame))
+        XCTAssertFalse(label.frame.intersects(mode.frame))
+        XCTAssertGreaterThanOrEqual(mode.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(mode.frame.height, 44)
+        assertCompleteViewingLabels(app)
+        capture(app, "wipe-label-avoids-mode")
+    }
+    func testActualPinchUsesCommonViewport() {
+        let app = launch()
+        capture(app, "pinch-initial")
+        app.images["editor.photo"].pinch(withScale: 3, velocity: 1)
+        wait(app) { ($0["relativeScale"] as? Double ?? 1) > 1.2 && $0["ready"] as? Bool == true }
+        capture(app, "pinch-actual-zoom")
     }
     func testEnteringGeometryFromZoomUsesCropCanvasViewport() {
         let app = launch()
@@ -184,7 +285,7 @@ final class ViewingEditorUITests: XCTestCase {
         wait(app) { $0["fine"] as? Bool == true }
         XCTAssertTrue(app.buttons["hsl.channel.6"].exists)
         app.buttons["hsl.channel.6"].tap()
-        app.images["editor.photo"].pinch(withScale: 1.5, velocity: 1)
+        app.images["editor.photo"].pinch(withScale: 3, velocity: 1)
         wait(app) { ($0["relativeScale"] as? Double ?? 1) > 1.2 && $0["ready"] as? Bool == true }
         let initial = receipt(app)
         let saves = (initial["saves"] as! [[String: Any]]).count
@@ -220,6 +321,8 @@ final class ViewingEditorUITests: XCTestCase {
         app.buttons["editor.compare.mode"].tap()
         app.buttons["editor.compare.wipe"].tap()
         wait(app) { $0["mode"] as? String == "wipe" }
+        XCTAssertFalse(app.staticTexts["editor.compare.after"].frame.intersects(app.buttons["editor.compare.mode"].frame), "wipe label must avoid the actual SwiftUI mode button")
+        XCTAssertTrue(app.images["editor.photo"].frame.contains(app.staticTexts["editor.compare.after"].frame))
         capture(app, "comparison-wipe")
         app.buttons["editor.compare"].tap()
         app.buttons["editor.compare"].tap()

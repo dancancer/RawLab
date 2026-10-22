@@ -30,6 +30,7 @@ final class ViewingEditorProbe {
     }
     func snapshot(window: UIWindow?) -> [String: Any] {
         var value = readEditor?() ?? [:]
+        value["preferredContentSizeCategory"] = UIApplication.shared.preferredContentSizeCategory.rawValue
         value["saves"] = saves
         value["previews"] = previews
         value["failNextSave"] = failNextSave
@@ -44,6 +45,15 @@ final class ViewingEditorProbe {
             value["nativeSwitchRects"] = views.compactMap { view -> [Double]? in
                 guard view is UISwitch else { return nil }
                 return rect(view.convert(view.bounds, to: window))
+            }
+            value["comparisonLabelMetrics"] = views.compactMap { view -> [String: Any]? in
+                guard let label = view as? UILabel, !label.isHidden,
+                      ["editor.compare.before", "editor.compare.after"].contains(label.accessibilityIdentifier ?? "") else { return nil }
+                let font = label.font!
+                return ["id": label.accessibilityIdentifier!, "text": label.text ?? "",
+                        "rect": rect(label.convert(label.bounds, to: window)), "pointSize": font.pointSize,
+                        "fullTextWidth": (label.text ?? "").size(withAttributes: [.font: font]).width,
+                        "lineHeight": font.lineHeight]
             }
             value["nativeSplitRects"] = views.filter { $0.accessibilityIdentifier == "editor.compare.split" && !$0.isHidden }.map { rect($0.convert($0.bounds, to: window)) }
         }

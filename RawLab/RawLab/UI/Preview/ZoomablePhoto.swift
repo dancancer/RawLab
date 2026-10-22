@@ -10,12 +10,13 @@ struct ZoomablePhoto: UIViewRepresentable {
     @Binding var viewing: PhotoViewingState
     @Binding var viewport: PhotoViewport
     var isDraft = false
+    var overlayAvoidanceRect = CGRect.zero
     var interactionEnabled = true
     var onPreviewSizeChange: ((Int) -> Void)? = nil
 
     init(image: UIImage, referenceImage: UIImage?, label: String,
          viewing: Binding<PhotoViewingState>, viewport: Binding<PhotoViewport>,
-         isDraft: Bool = false, interactionEnabled: Bool = true,
+         isDraft: Bool = false, interactionEnabled: Bool = true, overlayAvoidanceRect: CGRect = .zero,
          onPreviewSizeChange: ((Int) -> Void)? = nil) {
         self.image = image
         self.referenceImage = referenceImage
@@ -24,6 +25,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         _viewport = viewport
         self.isDraft = isDraft
         self.interactionEnabled = interactionEnabled
+        self.overlayAvoidanceRect = overlayAvoidanceRect
         self.onPreviewSizeChange = onPreviewSizeChange
     }
 
@@ -42,7 +44,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         view.onViewportChange = { viewport = $0 }
         view.onPreviewSizeChange = onPreviewSizeChange
         view.configure(image: image, reference: referenceImage, label: label, state: viewing,
-                       viewport: viewport, displayScale: displayScale,
+                       viewport: viewport, displayScale: displayScale, overlayAvoidanceRect: overlayAvoidanceRect,
                        isDraft: isDraft, interactionEnabled: interactionEnabled)
     }
 }
@@ -57,6 +59,7 @@ final class PhotoCanvasView: UIView {
     private var viewport = PhotoViewport()
     private var syncingViewport = false
     private var isDraft = false
+    private var overlayAvoidanceRect = CGRect.zero
     private var interactionEnabled = true
     private var touchMonitor: PhotoTouchMonitor?
     var onViewingChange: ((PhotoViewingState) -> Void)?
@@ -70,7 +73,7 @@ final class PhotoCanvasView: UIView {
         addSubview(result)
         for label in [beforeLabel, afterLabel] {
             label.font = .preferredFont(forTextStyle: .caption1)
-            label.adjustsFontForContentSizeCategory = true
+            label.adjustsFontForContentSizeCategory = false
             label.textColor = .white
             label.backgroundColor = UIColor.black.withAlphaComponent(0.65)
             label.isUserInteractionEnabled = false
@@ -118,7 +121,7 @@ final class PhotoCanvasView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func configure(image: UIImage, reference imageBefore: UIImage?, label: String,
-                   state: PhotoViewingState, viewport: PhotoViewport, displayScale: CGFloat,
+                   state: PhotoViewingState, viewport: PhotoViewport, displayScale: CGFloat, overlayAvoidanceRect: CGRect = .zero,
                    isDraft: Bool, interactionEnabled: Bool) {
         var displayState = state
         if imageBefore == nil {
@@ -126,6 +129,7 @@ final class PhotoCanvasView: UIView {
             displayState.endTemporaryViewing()
         }
         self.state = displayState
+        self.overlayAvoidanceRect = displayState.enabled && !displayState.previewOnly && !isDraft ? overlayAvoidanceRect : .zero
         self.viewport = viewport
         self.isDraft = isDraft
         self.interactionEnabled = interactionEnabled
@@ -181,7 +185,14 @@ final class PhotoCanvasView: UIView {
         let resultRect = result.visiblePhotoRect(in: self)
         let referenceRect = side ? reference.visiblePhotoRect(in: self) : resultRect
         place(beforeLabel, in: referenceRect, trailing: false)
-        place(afterLabel, in: resultRect, trailing: !side)
+        place(afterLabel, in: resultRect, trailing: !side, avoiding: overlayAvoidanceRect)
+        if comparing && !side && beforeLabel.frame.intersects(afterLabel.frame) {
+            var above = beforeLabel.frame
+            above.origin.y = referenceRect.minY
+            if referenceRect.contains(above) && !above.intersects(afterLabel.frame) && !above.intersects(overlayAvoidanceRect) {
+                beforeLabel.frame = above
+            }
+        }
         let imageRect = result.imageView.convert(result.imageView.bounds, to: self)
         let x = imageRect.minX + imageRect.width * state.split
         divider.isHidden = !comparing || state.preferredMode != .wipe || resultRect.isEmpty || x < resultRect.minX || x > resultRect.maxX
@@ -189,16 +200,34 @@ final class PhotoCanvasView: UIView {
         divider.frame = CGRect(x: max(resultRect.minX, min(x - 22, resultRect.maxX - min(44, resultRect.width))),
                                y: resultRect.minY, width: min(44, resultRect.width), height: resultRect.height)
         divider.lineX = x - divider.frame.minX
+        divider.lineExclusionRects = [beforeLabel, afterLabel].filter { !$0.isHidden }
+            .map { $0.convert($0.bounds, to: divider) }
         divider.setNeedsDisplay()
     }
 
-    private func place(_ label: UILabel, in rect: CGRect, trailing: Bool) {
+    private func place(_ label: UILabel, in rect: CGRect, trailing: Bool, avoiding exclusion: CGRect = .zero) {
         guard !rect.isEmpty else { label.frame = .zero; return }
-        let size = label.sizeThatFits(rect.size)
-        let width = min(rect.width, size.width + 8)
-        let height = min(rect.height, size.height + 4)
+        // 照片注释保留完整名称，字号随 caption 增长至 17pt；小照片不低于 13pt。
+        let preferred = UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: traitCollection)
+        let pointSize = min(17, max(13, preferred.pointSize))
+        var font = preferred.withSize(pointSize)
+        let text = label.text ?? ""
+        let naturalWidth = text.size(withAttributes: [.font: font]).width
+        if naturalWidth > max(0, rect.width - 8), naturalWidth > 0 {
+            font = font.withSize(max(13, pointSize * max(0, rect.width - 8) / naturalWidth))
+        }
+        label.font = font
+        let size = text.size(withAttributes: [.font: font])
+        let width = min(rect.width, ceil(size.width) + 8)
+        let height = min(rect.height, ceil(font.lineHeight) + 4)
         label.frame = CGRect(x: trailing ? rect.maxX - width : rect.minX,
                              y: rect.maxY - height, width: width, height: height)
+        if !exclusion.isEmpty && label.frame.intersects(exclusion) {
+            let above = label.frame.offsetBy(dx: 0, dy: exclusion.minY - label.frame.maxY)
+            let leading = label.frame.offsetBy(dx: exclusion.minX - label.frame.maxX, dy: 0)
+            if rect.contains(above) { label.frame = above }
+            else if rect.contains(leading) { label.frame = leading }
+        }
         label.textAlignment = .center
         label.clipsToBounds = true
     }
@@ -235,6 +264,7 @@ final class PhotoSplitControl: UIControl {
     var position: CGFloat = 0.5 { didSet { accessibilityValue = "\(Int((position * 100).rounded()))%" } }
     var imageRect = CGRect.zero
     var lineX: CGFloat = 22
+    var lineExclusionRects: [CGRect] = []
     var onChange: ((CGFloat) -> Void)?
 
     override init(frame: CGRect) {
@@ -267,7 +297,19 @@ final class PhotoSplitControl: UIControl {
     @objc private func home() { _ = resetSplit() }
     override func draw(_ rect: CGRect) {
         UIColor.white.setFill()
-        UIBezierPath(rect: CGRect(x: lineX - 1, y: 0, width: 2, height: bounds.height)).fill()
+        let line = CGRect(x: lineX - 1, y: 0, width: 2, height: bounds.height)
+        let exclusions = lineExclusionRects.map { $0.intersection(line) }
+            .filter { !$0.isNull && !$0.isEmpty }.sorted { $0.minY < $1.minY }
+        var start: CGFloat = 0
+        for exclusion in exclusions {
+            if exclusion.minY > start {
+                UIBezierPath(rect: CGRect(x: line.minX, y: start, width: line.width, height: exclusion.minY - start)).fill()
+            }
+            start = max(start, exclusion.maxY)
+        }
+        if start < line.maxY {
+            UIBezierPath(rect: CGRect(x: line.minX, y: start, width: line.width, height: line.maxY - start)).fill()
+        }
     }
 }
 

@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var didAutoLoadSample = false
     @State var photoViewing = PhotoViewingState()
     @State var photoViewport = PhotoViewport()
+    @State var photoComparisonControlBounds = CGRect.zero
     @State var pendingPhotoImport = false
     @State var pendingFileImport = false
     var showingBefore: Bool {
@@ -186,6 +187,7 @@ struct ContentView: View {
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
             photoViewing.sourceChanged()
+            photoComparisonControlBounds = .zero
             photoViewport = PhotoViewport()
             pendingFileImport = false
             pendingPhotoImport = false
@@ -235,6 +237,7 @@ struct ContentView: View {
         .onChange(of: geometrySelected) { _, active in
             if active {
                 photoViewing.sourceChanged()
+                photoComparisonControlBounds = .zero
                 // 裁切 controller 使用 fit 画布，进入时显式收敛唯一视口。
                 photoViewport = PhotoViewport()
             }
