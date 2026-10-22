@@ -12,7 +12,7 @@ extension ContentView {
 
     var editorDraftSnapshot: EditorDraftSnapshot {
         EditorDraftSnapshot(geometry: geometryDraft, lens: lensDraft,
-                            tool: currentEditorTool, destination: pendingToolSelection)
+                            tool: resetDraftSuspended || collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection)
     }
 
     var draftPreviewSettings: RawSettings {
@@ -54,7 +54,11 @@ extension ContentView {
     }
 
     func selectEditorTool(_ selection: EditorToolSelection) {
-        guard !editorBusy, selection != currentEditorTool else { return }
+        guard !editorBusy else { return }
+        if selection == currentEditorTool {
+            if !adjustmentsExpanded { requestAdjustmentExpansion(true) }
+            return
+        }
         if isEditorDraftChanged {
             pendingToolSelection = selection
             draftExitPresented = true
@@ -64,13 +68,15 @@ extension ContentView {
     }
 
     var currentEditorTool: EditorToolSelection {
+        if let collapsedEditorTool { return collapsedEditorTool }
         if geometrySelected { return .geometry }
         if lensSelected { return .lens }
         if choosingMasterRecipe { return .recipe }
         return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
     }
 
-    private func activateEditorTool(_ selection: EditorToolSelection) {
+    func activateEditorTool(_ selection: EditorToolSelection) {
+        collapsedEditorTool = nil
         let leavingDraft = geometrySelected || lensSelected
         if leavingDraft { viewModel.discardDraftSaveFailure(settings: settings) }
         pendingToolSelection = nil
@@ -81,6 +87,7 @@ extension ContentView {
         geometrySelected = selection == .geometry
         lensSelected = selection == .lens
         choosingMasterRecipe = selection == .recipe
+        selectedGroup = EditorAdjustmentRules.groupFor(selection)
         if case .adjustment(let adjustment) = selection { selectedAdjustment = adjustment }
         else { selectedAdjustment = nil }
         if geometrySelected { geometryAspectPreset = .free; geometryDraft = settings.geometry }
@@ -95,7 +102,7 @@ extension ContentView {
         activateEditorTool(.adjustment(.exposure))
     }
 
-    private func commitEditorDraft() -> Bool {
+    func commitEditorDraft() -> Bool {
         guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !isAdjustingSlider,
               let prepared = viewModel.prepareDraft(settings: settings, revision: settingsRevision, draft: editorDraftSnapshot),
               viewModel.saveDraft(prepared, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot) else { return false }
@@ -111,7 +118,7 @@ extension ContentView {
         activateEditorTool(.adjustment(.exposure))
     }
 
-    private func discardEditorDraft() {
+    func discardEditorDraft() {
         geometryDraft = nil
         lensDraft = nil
         viewModel.discardDraftSaveFailure(settings: settings)
@@ -122,14 +129,27 @@ extension ContentView {
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
+        if resetRestoreTool != nil {
+            resetDraftSuspended = true
+            resetWaitingForReady = true
+            draftExitPresented = false
+            // Apply/Discard 已结束；最终确认取消也不回退这一步。
+            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
+            continuePendingAllReset()
+            return
+        }
         let selection = pendingToolSelection
+        let expansion = pendingAdjustmentExpansion
         pendingToolSelection = nil
+        pendingAdjustmentExpansion = nil
+        if expansion == false { completeAdjustmentExpansion(false); return }
         if let selection { activateEditorTool(selection) }
+        if let expansion { completeAdjustmentExpansion(expansion) }
     }
 
     func retryEditorSave() {
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
         } else { viewModel.retrySave(settings: settings) }
     }
@@ -172,6 +192,175 @@ extension ContentView {
     func selectedScalarBadge(_ adjustment: AdjustmentKind) -> String? {
         guard selectedAdjustment == adjustment, !geometrySelected, !lensSelected else { return nil }
         return adjustment.badge(for: adjustment.value(from: settings))
+    }
+
+    func selectEditorGroup(_ group: EditorAdjustmentGroup) {
+        guard !editorBusy, !resetDraftSuspended else { return }
+        if group == selectedGroup {
+            requestAdjustmentExpansion(!adjustmentsExpanded)
+        } else {
+            let target = EditorAdjustmentRules.defaultTool(group)
+            if isEditorDraftChanged {
+                pendingToolSelection = target
+                pendingAdjustmentExpansion = true
+                draftExitPresented = true
+            } else {
+                activateEditorTool(target)
+                adjustmentsExpanded = true
+            }
+        }
+    }
+
+    func requestAdjustmentExpansion(_ expanded: Bool) {
+        guard !editorBusy, !resetDraftSuspended else { return }
+        if !expanded && isEditorDraftChanged {
+            pendingToolSelection = currentEditorTool
+            pendingAdjustmentExpansion = false
+            draftExitPresented = true
+        } else { completeAdjustmentExpansion(expanded) }
+    }
+
+    func completeAdjustmentExpansion(_ expanded: Bool) {
+        if expanded {
+            if let tool = collapsedEditorTool { activateEditorTool(tool) }
+        } else if isEditorDraftActive {
+            let tool = currentEditorTool
+            let group = selectedGroup
+            // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。
+            activateEditorTool(.film)
+            collapsedEditorTool = tool
+            selectedGroup = group
+        }
+        adjustmentsExpanded = expanded
+    }
+
+    func cancelDraftNavigation() {
+        pendingToolSelection = nil
+        pendingAdjustmentExpansion = nil
+        resetRestoreTool = nil
+        resetIntentSource = nil
+        resetWaitingForReady = false
+    }
+
+    var resetSnapshot: PhotoEditState {
+        let state = viewModel.currentEditState(settings: settings)
+        return state.replacing(settings: effectivePreviewSettings, preservingFilmID: state.filmID)
+    }
+
+    var resetContext: EditorAdjustmentContext {
+        EditorAdjustmentContext(isRaw: viewModel.sourceKind == .raw,
+            defaultExposureMode: RawSettings.default.exposureMode,
+            cameraTemperature: viewModel.rawWhiteBalance?.isCalibrated == true ? viewModel.rawWhiteBalance?.temperature : nil,
+            cameraTint: viewModel.rawWhiteBalance?.isCalibrated == true ? viewModel.rawWhiteBalance?.tint : nil)
+    }
+
+    func resetModified(_ scope: EditorAdjustmentScope) -> Bool {
+        EditorAdjustmentRules.isModified(scope, snapshot: resetSnapshot, context: resetContext)
+    }
+
+    func requestEditorReset(_ scope: EditorAdjustmentScope) {
+        guard !editorBusy else { return }
+        if scope == .all && isEditorDraftActive {
+            resetRestoreTool = currentEditorTool
+            resetIntentSource = viewModel.editorEditSource
+            if isEditorDraftChanged { draftExitPresented = true; return }
+            resetDraftSuspended = true
+            resetWaitingForReady = true
+            continuePendingAllReset()
+        } else { presentEditorReset(scope) }
+    }
+
+    func continuePendingAllReset() {
+        guard resetWaitingForReady else { return }
+        guard resetIntentSource == viewModel.editorEditSource else { cancelEditorReset(); return }
+        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !isAdjustingSlider else { return }
+        resetWaitingForReady = false
+        presentEditorReset(.all)
+    }
+
+    func presentEditorReset(_ scope: EditorAdjustmentScope) {
+        switch prepareEditorReset(scope) {
+        case .unchanged: restoreResetDraft()
+        case .blocked(let reason):
+            viewModel.statusMessage = resetBlockedMessage(reason)
+            restoreResetDraft()
+        case .prepared(let candidate):
+            preparedResetScope = scope
+            preparedReset = candidate
+            if candidate.requiresConfirmation { resetConfirmationPresented = true }
+            else { confirmEditorReset() }
+        }
+    }
+
+    func confirmEditorReset() {
+        guard let candidate = preparedReset else { restoreResetDraft(); return }
+        if !commitEditorReset(candidate) { viewModel.statusMessage = L10n.text("照片或调整已变化，请重新确认重置。") }
+        preparedReset = nil
+        preparedResetScope = nil
+        restoreResetDraft(preview: false)
+    }
+
+    func cancelEditorReset() {
+        preparedReset = nil
+        preparedResetScope = nil
+        restoreResetDraft()
+    }
+
+    func restoreResetDraft(preview: Bool = true) {
+        guard let tool = resetRestoreTool else { return }
+        let sameSource = resetIntentSource == viewModel.editorEditSource
+        resetRestoreTool = nil
+        resetIntentSource = nil
+        resetDraftSuspended = false
+        resetWaitingForReady = false
+        guard sameSource else { return }
+        let freshGeometry = tool == .geometry ? settings.geometry : nil
+        let freshLens = tool == .lens ? settings : nil
+        if geometryDraft != freshGeometry || lensDraft != freshLens {
+            // 确认后的 settings observer 已负责预览；取消时重进几何要恢复 uncropped 画面。
+            suppressNextDraftPreview = !preview
+        }
+        geometryDraft = freshGeometry
+        lensDraft = freshLens
+    }
+
+    var resetConfirmationTitle: String {
+        switch preparedResetScope {
+        case .all: return L10n.text("重置全部调整？")
+        case .allHSL, .tool(.adjustment(.hsl)): return L10n.text("重置全部 HSL？")
+        case .group(let group): return L10n.format("重置%@组？", group.title)
+        case .tool(let tool): return L10n.format("重置%@？", tool.title)
+        default: return L10n.text("重置调整")
+        }
+    }
+
+    var resetConfirmationMessage: String {
+        let base: String
+        switch preparedResetScope {
+        case .all: base = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
+        case .allHSL, .tool(.adjustment(.hsl)):
+            base = L10n.text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。")
+        case .group(let group): base = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)
+        default: base = ""
+        }
+        guard let preparedReset else { return base }
+        let fields = EditorAdjustmentRules.materializedFields(before: preparedReset.original.committed.settings,
+            after: preparedReset.candidate.settings)
+        let wasRecipe = preparedReset.original.committed.settings.masterRecipeID != nil
+        let removesRecipe = preparedReset.candidate.settings.masterRecipeID == nil
+        guard wasRecipe && removesRecipe && preparedResetScope != .all && !fields.isEmpty else { return base }
+        return [base, L10n.format("将以下项目转为独立调整，以保留其他分组的当前效果：%@",
+                                fields.map { L10n.text($0) }.joined(separator: ", "))].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    func resetBlockedMessage(_ reason: EditorAdjustmentResetBlock?) -> String {
+        switch reason {
+        case .invalidInput: return L10n.text("当前照片或调整记录无效，无法安全重置。")
+        case .unknownRecipe: return L10n.text("当前配方不可用，无法安全重置外观。")
+        case .missingCameraWhiteBalance: return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
+        case .unrepresentable: return L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+        case nil: return L10n.text("预览尚未就绪，请稍后重试。")
+        }
     }
 
     // MARK: - Interruptible focus return

@@ -4,6 +4,8 @@ struct IOSDenoiseControls: View {
     @Environment(\.locale) private var localizationLocale
     @Binding var settings: RawDenoiseSettings
     let onEditingChanged: (Bool) -> Void
+    let onReset: () -> Void
+    var resetEnabled: Bool = true
     @State private var advancedExpanded = false
 
     private var parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] { [
@@ -18,12 +20,12 @@ struct IOSDenoiseControls: View {
                 Toggle(L10n.text("降噪"), isOn: $settings.enabled)
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("denoise.enabled")
-                Button { settings = RawDenoiseSettings() } label: {
+                Button(action: onReset) {
                     Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.text("重置降噪"))
                 .accessibilityIdentifier("denoise.reset")
-                .disabled(settings == RawDenoiseSettings())
+                .disabled(!resetEnabled)
             }
             Picker(L10n.text("预设"), selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
                 Text(RawDenoisePreset.detail.title).tag(RawDenoisePreset.detail)
@@ -67,14 +69,12 @@ struct IOSPhotoEffectsControls: View {
     let effect: AdjustmentKind
     @Binding var settings: PhotoEffectsSettings
     let onEditingChanged: (Bool) -> Void
+    let onReset: () -> Void
+    var resetEnabled: Bool = true
     @State private var advancedExpanded = false
 
     private var parameters: [PhotoEffectParameter] {
         PhotoEffectParameter.allCases.filter { $0.isVignette == (effect == .vignette) }
-    }
-
-    private var effectIsDefault: Bool {
-        parameters.allSatisfy { settings[keyPath: $0.keyPath] == $0.defaultValue }
     }
 
     var body: some View {
@@ -85,12 +85,12 @@ struct IOSPhotoEffectsControls: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if effect != .vignette || advancedExpanded {
-                    Button(action: resetEffect) {
+                    Button(action: onReset) {
                         Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                     }
                     .accessibilityLabel(L10n.format("重置%@", effect.title))
                     .accessibilityIdentifier("effects.\(effect.rawValue).reset")
-                    .disabled(effectIsDefault)
+                    .disabled(!resetEnabled)
                 }
             }
             parameterControl(effect == .vignette ? .vignetteAmount : .grainAmount,
@@ -137,16 +137,15 @@ struct IOSPhotoEffectsControls: View {
         })
     }
 
-    private func resetEffect() {
-        if effect == .vignette { settings.resetVignette() }
-        else { settings.resetGrain() }
-    }
+
 }
 
 struct IOSHSLMixer: View {
     @Binding var settings: HSLSettings
     let onEditingChanged: (Bool) -> Void
-    @State private var channel = 0
+    @Binding var channel: Int
+    let onResetChannel: () -> Void
+    let onResetAll: () -> Void
     private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink]
 
     var body: some View {
@@ -181,13 +180,13 @@ struct IOSHSLMixer: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button { settings.reset(channel: channel) } label: {
+                Button(action: onResetChannel) {
                     Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.text("重置当前颜色"))
                 .accessibilityIdentifier("hsl.resetChannel")
                 .disabled(HSLAxis.allCases.allSatisfy { settings.value($0, channel: channel) == 0 })
-                Button { settings.reset() } label: {
+                Button(action: onResetAll) {
                     Image(systemName: "arrow.uturn.backward.circle").frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(L10n.text("重置 HSL"))

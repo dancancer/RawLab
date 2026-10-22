@@ -98,6 +98,26 @@ extension EditorUITests {
     }
 
     func tapTool(_ name: String, in app: XCUIApplication) {
+        let group: String
+        switch name {
+        case "film", "masterRecipe", "strength": group = "looks"
+        case "exposure", "highlights", "shadows", "contrast", "toneCurve": group = "light"
+        case "temperature", "tint", "saturation", "hsl": group = "color"
+        case "vignette", "grain": group = "effects"
+        case "noiseReduction", "sharpening": group = "detail"
+        default: group = "geometry"
+        }
+        let groupButton = app.buttons["editor.group." + group]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in groupButton.exists && groupButton.isEnabled }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        if !groupButton.isSelected || !app.buttons["tool." + name].exists {
+            let groups = app.scrollViews["editor.groups"]
+            for _ in 0..<12 {
+                if groupButton.isHittable && groups.frame.contains(CGPoint(x: groupButton.frame.midX, y: groupButton.frame.midY)) { break }
+                if groupButton.frame.midX < groups.frame.midX { groups.swipeRight() } else { groups.swipeLeft() }
+            }
+            groupButton.tap()
+        }
         let button = app.buttons["tool." + name]
         let strip = app.scrollViews.containing(.button, identifier: "tool." + name)
             .allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
@@ -170,6 +190,7 @@ extension EditorUITests {
         }, evaluatedWith: app)
         waitForExpectations(timeout: 90)
         XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.alerts.debugDescription)
+        tapTool("exposure", in: app)
     }
 
     func importedPhotoFileName(in app: XCUIApplication) -> String {

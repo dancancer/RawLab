@@ -47,6 +47,10 @@ extension EditorV4UITests {
             throw XCTSkip("Run RawLab/tests/geometry-source-ui.sh to enable the separate source-restoration harness.")
         }
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
+        app.launchArguments = ["-RawLab.language", ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] ?? "en"]
+        if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
         app.launch()
         let probe = app.staticTexts["geometry.review.probe"]
         XCTAssertTrue(probe.waitForExistence(timeout: 15))
@@ -55,14 +59,361 @@ extension EditorV4UITests {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
             return json["done"] as? Bool == true
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 120), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 240), .completed)
         let text = try XCTUnwrap(probe.value as? String)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let checks = try XCTUnwrap(json["checks"] as? [String: Bool])
         print("Geometry source harness result: \(text)")
         XCTAssertGreaterThanOrEqual(checks.count, 35)
         let failures = checks.filter { !$0.value }.map(\.key).sorted()
+        XCTAssertFalse((app.buttons["tool.film"].value as? String ?? "").isEmpty,
+                       "Film accessibility value must retain the selected film name")
         XCTAssertTrue(failures.isEmpty, "Failed checks: \(failures)\n\(text)")
+        let nativeAttachment = XCTAttachment(data: Data(text.utf8), uniformTypeIdentifier: "public.json")
+        nativeAttachment.name = "workspace-native-results"; nativeAttachment.lifetime = .keepAlways; add(nativeAttachment)
+        // direct-call harness 边界可能残留 system presentation；真实 UI 在新进程单独验证。
+        app.terminate()
+        app.launchArguments.append("-RawLab.workspaceUIOnly")
+        app.launch()
+        waitUntil(timeout: 30) {
+            guard let value = probe.value as? String, let data = value.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+            return json["done"] as? Bool == true
+        }
+        XCTAssertFalse(app.alerts.firstMatch.exists, "The UI-only process never drives reset state directly")
+        func snapshot() throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
+        }
+        func editorState() throws -> [String: Any] { try XCTUnwrap(try snapshot()["editorState"] as? [String: Any]) }
+        func recordState(_ name: String) throws -> [String: Any] {
+            var value = try editorState()
+            value["saveAttemptCount"] = try snapshot()["saveAttemptCount"]
+            value["previewCount"] = (try snapshot()["previewReceipts"] as? [Any])?.count
+            let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+            print("WORKSPACE_UI_STATE \(name): \(String(decoding: data, as: UTF8.self))")
+            return value
+        }
+        let groups = ["looks", "light", "color", "effects", "detail", "geometry"]
+        let expectedTools = ["film", "exposure", "temperature", "vignette", "noiseReduction", "geometry"]
+        let navigation = app.scrollViews["editor.groups"]
+        XCTAssertTrue(navigation.exists)
+        func selectGroup(_ id: String) throws {
+            let group = app.buttons["editor.group." + id]
+            try revealHorizontally(group, in: navigation, app: app)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
+            let groups = try XCTUnwrap(json["groupRects"] as? [String: [Double]])
+            let texts = try XCTUnwrap(json["groupTextRects"] as? [String: [Double]])
+            let g = try XCTUnwrap(groups[id]); let t = try XCTUnwrap(texts[id])
+            let frame = CGRect(x: g[0], y: g[1], width: g[2], height: g[3])
+            let text = CGRect(x: t[0], y: t[1], width: t[2], height: t[3])
+            let edges = [CGPoint(x: frame.minX + 2, y: frame.midY), CGPoint(x: frame.maxX - 2, y: frame.midY)]
+            let point = try XCTUnwrap(edges.first { frame.contains($0) && !text.contains($0) && navigation.frame.contains($0) }, "The full group target must include a reachable point outside its text")
+            XCTAssertGreaterThanOrEqual(frame.width, 44); XCTAssertGreaterThanOrEqual(frame.height, 44)
+            print("WORKSPACE_HIT \(id): layout=\(frame) text=\(text) point=\(point)")
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+        }
+        func panelFrame() throws -> CGRect {
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
+            let layouts = try XCTUnwrap(json["layoutFrames"] as? [String: [Double]])
+            let frame = try XCTUnwrap(layouts["panel"])
+            return CGRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3])
+        }
+        func layoutReceipt(_ name: String) throws -> [String: Any] {
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
+            var policy = try XCTUnwrap(json["layoutPolicy"] as? [String: Any])
+            policy["groupFrames"] = groups.map { id -> [String: Any] in
+                let frame = app.buttons["editor.group." + id].frame
+                XCTAssertGreaterThanOrEqual(frame.width, 44)
+                XCTAssertGreaterThanOrEqual(frame.height, 44)
+                return ["id": id, "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
+            }
+            let width = try XCTUnwrap(policy["width"] as? Double)
+            let height = try XCTUnwrap(policy["height"] as? Double)
+            let accessibility = try XCTUnwrap(policy["accessibility"] as? Bool)
+            let required = try XCTUnwrap(policy["requiredWidth"] as? Double)
+            let sideWidth = try XCTUnwrap(policy["sideWidth"] as? Double)
+            if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "zh-Hans" && !accessibility {
+                XCTAssertEqual(policy["buttonWidth"] as? Double, 44, "CJK fallback glyphs fit two actual lines at the 44pt target")
+            }
+            let rects = try XCTUnwrap(json["groupRects"] as? [String: [Double]])
+            let texts = try XCTUnwrap(json["groupTextRects"] as? [String: [Double]])
+            let buttonHeight = try XCTUnwrap(policy["buttonHeight"] as? Double)
+            for id in groups {
+                let g = try XCTUnwrap(rects[id]); let t = try XCTUnwrap(texts[id])
+                XCTAssertEqual(g[3], buttonHeight, accuracy: 1)
+                XCTAssertGreaterThanOrEqual(t[1], g[1] - 1, "Complete group text stays inside its target")
+                XCTAssertLessThanOrEqual(t[1] + t[3], g[1] + g[3] + 1)
+            }
+            let expectedSide = width >= 600 && width > height && !accessibility && required <= sideWidth
+            XCTAssertEqual(policy["side"] as? Bool, expectedSide)
+            let frame = try panelFrame()
+            if expectedSide {
+                XCTAssertEqual(frame.width, sideWidth, accuracy: 1)
+                XCTAssertGreaterThan(frame.minX, app.frame.midX, "A fitting wide-window panel must be beside the photo")
+            } else {
+                XCTAssertEqual(frame.width, width, accuracy: 1, "Narrow, accessibility or non-fitting text uses the bottom layout")
+            }
+            let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: policy, options: [.prettyPrinted, .sortedKeys]), uniformTypeIdentifier: "public.json")
+            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+            print("WORKSPACE_LAYOUT \(name): \(policy)")
+            return policy
+        }
+        var regionFrame: CGRect?
+        _ = try layoutReceipt("workspace-portrait-layout")
+        for (group, tool) in zip(groups, expectedTools) {
+            if group != "looks" { try selectGroup(group) }
+            let target = app.buttons["tool." + tool]
+            XCTAssertTrue(target.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(target.isSelected)
+            if tool == "exposure" {
+                XCTAssertTrue((target.value as? String ?? "").contains("EV"), "Exposure accessibility value retains its number and EV unit")
+            }
+            XCTAssertGreaterThanOrEqual(target.frame.height, 44)
+            XCTAssertTrue(app.scrollViews["editor.panel"].exists)
+            if let frame = regionFrame {
+                XCTAssertEqual(try panelFrame(), frame, "Tool content must keep the same measured outer panel frame")
+            } else { regionFrame = try panelFrame() }
+            capture("workspace-group-" + group, in: app)
+        }
+        try selectGroup("geometry")
+        XCTAssertFalse(app.scrollViews["editor.panel"].exists, "Repeated group tap collapses parameters")
+        XCTAssertTrue(navigation.exists, "Group navigation stays present when collapsed")
+        try selectGroup("color")
+        try selectTool("hsl", in: app)
+        let swatch = app.buttons["hsl.channel.6"]
+        let colors = app.scrollViews.containing(.button, identifier: "hsl.channel.6").firstMatch
+        try revealHorizontally(swatch, in: colors, app: app)
+        swatch.tap()
+        try selectGroup("light")
+        try selectGroup("color")
+        try selectTool("hsl", in: app)
+        XCTAssertTrue(app.buttons["hsl.channel.6"].isSelected, "HSL channel belongs to the editing session")
+        try revealInPanel(app.buttons["hsl.lightness.value"], in: app)
+        XCTAssertTrue(app.buttons["hsl.lightness.value"].isHittable)
+        capture("workspace-hsl-session", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        XCTAssertTrue(app.scrollViews["editor.groups"].isHittable)
+        capture("workspace-landscape", in: app)
+        let policy = try layoutReceipt("workspace-landscape-layout")
+        let landscapePanelFrame = try panelFrame()
+        if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
+            if policy["scrollTools"] as? Bool == true {
+                XCTAssertGreaterThan(app.images["editor.photo"].frame.height, 0)
+                XCTAssertGreaterThan(app.images["editor.photo"].frame.width, 0)
+            } else { assertLargeTextPhotoVisible(in: app) }
+        }
+        try selectGroup("color")
+        XCTAssertFalse(app.scrollViews["editor.panel"].exists)
+        let width = try XCTUnwrap(policy["width"] as? Double)
+        let height = try XCTUnwrap(policy["height"] as? Double)
+        let accessibility = try XCTUnwrap(policy["accessibility"] as? Bool)
+        let buttonWidth = try XCTUnwrap(policy["buttonWidth"] as? Double)
+        let sideWidth = try XCTUnwrap(policy["sideWidth"] as? Double)
+        let expectedCollapsedSide = width >= 600 && width > height && !accessibility && buttonWidth * 3 + 16 <= sideWidth
+        let first = app.buttons["editor.group.looks"].frame
+        let fourth = app.buttons["editor.group.effects"].frame
+        XCTAssertEqual(abs(first.minY - fourth.minY) > 1, expectedCollapsedSide, "A fitting collapsed sidebar exposes the six groups in two rows")
+        capture("workspace-landscape-collapsed", in: app)
+        try selectGroup("color")
+        XCTAssertTrue(app.buttons["tool.hsl"].isSelected)
+
+        XCUIDevice.shared.orientation = .portrait
+        waitUntil { app.frame.height > app.frame.width }
+        try selectGroup("light")
+        let isGerman = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "de"
+        let allLabel = isGerman ? "Alle Anpassungen zurücksetzen…" : "重置全部调整…"
+        let cancelLabel = isGerman ? "Abbrechen" : "取消"
+        func openAllReset() throws {
+            try revealInPanel(app.buttons["editor.reset"], in: app, fully: true)
+            app.buttons["editor.reset"].tap()
+            let all = app.buttons[allLabel]
+            XCTAssertTrue(all.waitForExistence(timeout: 5)); XCTAssertTrue(all.isEnabled); all.tap()
+        }
+        let beforeCancel = try recordState("workspace-real-all-before")
+        try openAllReset()
+        waitUntil { (try? editorState()["prepared"] as? Bool) == true && (try? editorState()["presented"] as? Bool) == true }
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
+        _ = try recordState("workspace-real-all-confirmation")
+        capture("workspace-real-all-confirmation", in: app)
+        app.alerts.buttons[cancelLabel].tap()
+        waitUntil { !app.alerts.firstMatch.exists && (try? editorState()["prepared"] as? Bool) == false && (try? editorState()["presented"] as? Bool) == false }
+        let afterCancel = try recordState("workspace-real-all-cancelled")
+        XCTAssertEqual(beforeCancel["saveAttemptCount"] as? Int, afterCancel["saveAttemptCount"] as? Int)
+        XCTAssertEqual(beforeCancel["previewCount"] as? Int, afterCancel["previewCount"] as? Int)
+        try selectGroup("effects")
+        XCTAssertTrue(app.buttons["tool.vignette"].isSelected, "Real Cancel leaves group navigation clickable")
+        try selectGroup("geometry")
+        let rotate = app.buttons["geometry.rotateRight"]
+        try revealInPanel(rotate, in: app); rotate.tap()
+        waitUntil(timeout: 30) { app.buttons["editor.draft.apply"].isEnabled }
+        let dirty = try recordState("workspace-real-dirty-draft")
+        XCTAssertEqual(dirty["draftChanged"] as? Bool, true)
+        try openAllReset()
+        let discard = app.alerts.buttons[isGerman ? "Änderungen verwerfen" : "放弃修改"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 10)); discard.tap()
+        waitUntil(timeout: 30) { (try? editorState()["prepared"] as? Bool) == true && (try? editorState()["presented"] as? Bool) == true }
+        XCTAssertTrue(app.alerts.buttons[cancelLabel].waitForExistence(timeout: 10))
+        _ = try recordState("workspace-real-discard-all-confirmation")
+        capture("workspace-real-discard-all-confirmation", in: app)
+        app.alerts.buttons[cancelLabel].tap()
+        waitUntil { !app.alerts.firstMatch.exists && (try? editorState()["prepared"] as? Bool) == false && (try? editorState()["presented"] as? Bool) == false }
+        let fresh = try recordState("workspace-real-discard-all-cancelled")
+        XCTAssertEqual(fresh["geometrySelected"] as? Bool, true)
+        XCTAssertEqual(fresh["draftActive"] as? Bool, true)
+        XCTAssertEqual(fresh["draftChanged"] as? Bool, false)
+        XCTAssertEqual(fresh["freshGeometry"] as? Bool, true)
+        XCTAssertEqual(dirty["saveAttemptCount"] as? Int, fresh["saveAttemptCount"] as? Int)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        XCTAssertEqual(try panelFrame(), landscapePanelFrame, "Draft actions do not change the outer panel budget")
+        let last = app.buttons["geometry.cropHeight.value"]
+        try revealInPanel(last, in: app, fully: true)
+        let scroll = app.scrollViews["editor.panel"]
+        let apply = app.buttons["editor.draft.apply"]
+        let cancel = app.buttons["editor.draft.cancel"]
+        capture("workspace-draft-landscape-last-control", in: app)
+        print("WORKSPACE_DRAFT_RECTS scroll=\(scroll.frame) last=\(last.frame) apply=\(apply.frame) cancel=\(cancel.frame) photo=\(app.images["editor.photo"].frame)")
+        XCTAssertTrue(app.frame.contains(apply.frame)); XCTAssertTrue(app.frame.contains(cancel.frame))
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertTrue(scroll.frame.contains(last.frame), "A complete final parameter must fit above the fixed draft actions")
+        XCTAssertTrue(last.isHittable)
+    }
+
+    func testWorkspaceResetHeaderGlyphsAndCancel() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else { throw XCTSkip("Use the dedicated workspace harness") }
+        let german = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "de"
+        let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
+        app.launchArguments = ["-RawLab.language", german ? "de" : "zh-Hans", "-RawLab.workspaceUIOnly"]
+        if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        let probe = app.staticTexts["geometry.review.probe"]
+        func snapshot() throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
+        }
+        waitUntil(timeout: 30) { (try? snapshot()["done"] as? Bool) == true }
+        try selectTool("exposure", in: app)
+        let reset = app.buttons["editor.reset"]
+        try revealInPanel(reset, in: app, fully: true)
+        let glyphs = reset.images.allElementsBoundByIndex
+        print("WORKSPACE_RESET_GLYPHS window=\(app.frame) button=\(reset.frame) glyphs=\(glyphs.map { "\($0.label):\($0.frame)" })")
+        capture("workspace-reset-header-glyphs", in: app)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "workspace-reset-header-hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        XCTAssertEqual(glyphs.count, 2)
+        XCTAssertGreaterThanOrEqual(reset.frame.width, 44); XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
+        for glyph in glyphs {
+            XCTAssertTrue(app.frame.contains(glyph.frame), "The complete \(glyph.label) glyph stays inside the window")
+            XCTAssertTrue(reset.frame.insetBy(dx: -1, dy: -1).contains(glyph.frame), "The menu label contains the complete \(glyph.label) glyph")
+        }
+        let before = try snapshot()
+        let frames = try XCTUnwrap(before["layoutFrames"] as? [String: [Double]])
+        print("WORKSPACE_RESET_OUTER_FRAMES ordinary=\(frames)")
+        reset.tap()
+        let all = app.buttons[german ? "Alle Anpassungen zurücksetzen…" : "重置全部调整…"]
+        XCTAssertTrue(all.waitForExistence(timeout: 5)); XCTAssertTrue(all.isEnabled); all.tap()
+        waitUntil {
+            guard let state = try? snapshot()["editorState"] as? [String: Any] else { return false }
+            return state["prepared"] as? Bool == true && state["presented"] as? Bool == true
+        }
+        let confirmation = try snapshot()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
+        capture("workspace-reset-header-all-confirmation", in: app)
+        app.alerts.buttons[german ? "Abbrechen" : "取消"].tap()
+        waitUntil {
+            guard let state = try? snapshot()["editorState"] as? [String: Any] else { return false }
+            return !app.alerts.firstMatch.exists && state["prepared"] as? Bool == false && state["presented"] as? Bool == false
+        }
+        let after = try snapshot()
+        XCTAssertEqual(before["saveAttemptCount"] as? Int, after["saveAttemptCount"] as? Int)
+        XCTAssertEqual((before["previewReceipts"] as? [Any])?.count, (after["previewReceipts"] as? [Any])?.count)
+        for (name, state) in [("before", before), ("confirmation", confirmation), ("cancelled", after)] {
+            let data = try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "workspace-reset-header-\(name)"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        let effects = app.buttons["editor.group.effects"]
+        try revealHorizontally(effects, in: app.scrollViews["editor.groups"], app: app); effects.tap()
+        XCTAssertTrue(app.buttons["tool.vignette"].isSelected)
+        capture("workspace-reset-header-after-cancel", in: app)
+        // 仅测试夹具替换标题文字，沿用相同 Text 字体、两行上限及布局优先级。
+        app.terminate()
+        app.launchArguments.append("-RawLab.workspaceLongHeader")
+        app.launch()
+        waitUntil(timeout: 30) { (try? snapshot()["done"] as? Bool) == true }
+        try selectTool("exposure", in: app)
+        try revealInPanel(reset, in: app, fully: true)
+        let title = app.staticTexts["Hideaki Hamada – Ausführliche Filmrezept-Anpassungen für natürliches Tageslicht"]
+        XCTAssertTrue(title.exists)
+        let longFrames = try XCTUnwrap(try snapshot()["layoutFrames"] as? [String: [Double]])
+        print("WORKSPACE_RESET_OUTER_FRAMES longTitle=\(longFrames)")
+        XCTAssertEqual(frames, longFrames, "The menu and title retain the same header and parameter budget")
+        print("WORKSPACE_RESET_LONG_TITLE window=\(app.frame) button=\(reset.frame) title=\(title.frame) glyphs=\(reset.images.allElementsBoundByIndex.map { "\($0.label):\($0.frame)" })")
+        capture("workspace-reset-header-long-title", in: app)
+        for glyph in reset.images.allElementsBoundByIndex {
+            XCTAssertTrue(app.frame.contains(glyph.frame)); XCTAssertTrue(reset.frame.insetBy(dx: -1, dy: -1).contains(glyph.frame))
+            XCTAssertLessThanOrEqual(title.frame.maxX, reset.frame.minX)
+        }
+    }
+
+    func testWorkspaceShortAccessibilityDraftLayout() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else { throw XCTSkip("Use the dedicated workspace harness") }
+        let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
+        app.launchArguments = ["-RawLab.language", "de", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-RawLab.workspaceUIOnly"]
+        app.launch()
+        let probe = app.staticTexts["geometry.review.probe"]
+        waitUntil(timeout: 30) {
+            guard let value = probe.value as? String, let data = value.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+            return json["done"] as? Bool == true
+        }
+        try selectTool("geometry", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        let scroll = app.scrollViews["editor.panel"]
+        let last = app.buttons["geometry.cropHeight.value"]
+        let apply = app.buttons["editor.draft.apply"]
+        let cancel = app.buttons["editor.draft.cancel"]
+        capture("workspace-short-draft-before-scroll", in: app)
+        print("WORKSPACE_SHORT_DRAFT scroll=\(scroll.frame) last=\(last.frame) apply=\(apply.frame) cancel=\(cancel.frame) photo=\(app.images["editor.photo"].frame)")
+        XCTAssertGreaterThanOrEqual(scroll.frame.height, last.frame.height, "The scrolling parameters must fit a complete operable value")
+        try revealInPanel(last, in: app, fully: true)
+        XCTAssertTrue(scroll.frame.contains(last.frame)); XCTAssertTrue(last.isHittable)
+        XCTAssertTrue(app.frame.contains(apply.frame)); XCTAssertTrue(app.frame.contains(cancel.frame)); XCTAssertTrue(cancel.isHittable)
+        capture("workspace-short-draft-last-control", in: app)
+        let expandedPhoto = app.images["editor.photo"].frame
+        let geometryTool = app.buttons["tool.geometry"]
+        try revealInPanel(geometryTool, in: app, fully: true)
+        XCTAssertTrue(scroll.frame.contains(geometryTool.frame)); XCTAssertTrue(geometryTool.isHittable)
+        geometryTool.tap(); XCTAssertTrue(geometryTool.isSelected)
+        print("WORKSPACE_SHORT_TOOL scroll=\(scroll.frame) tool=\(geometryTool.frame) photo=\(expandedPhoto)")
+        let group = app.buttons["editor.group.geometry"]
+        try revealHorizontally(group, in: app.scrollViews["editor.groups"], app: app); group.tap()
+        waitUntil { !app.scrollViews["editor.panel"].exists }
+        let collapsedPhoto = app.images["editor.photo"].frame
+        XCTAssertGreaterThan(collapsedPhoto.height, expandedPhoto.height + 80)
+        print("WORKSPACE_SHORT_PHOTO expanded=\(expandedPhoto) collapsed=\(collapsedPhoto)")
+        capture("workspace-short-photo-collapsed", in: app)
+        group.tap()
+        XCTAssertTrue(app.buttons["tool.geometry"].isSelected)
+        // 从末项滚回组内工具，再跨工具验证选择与 HSL 会话仍可用。
+        try selectTool("hsl", in: app)
+        let swatch = app.buttons["hsl.channel.6"]
+        try revealInPanel(swatch, in: app)
+        let colors = app.scrollViews.containing(.button, identifier: "hsl.channel.6").allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
+        try revealHorizontally(swatch, in: colors, app: app); swatch.tap()
+        try revealInPanel(app.buttons["hsl.lightness.value"], in: app, fully: true)
+        try revealInPanel(app.buttons["tool.saturation"], in: app, fully: true)
+        try selectTool("saturation", in: app)
+        XCTAssertTrue(app.buttons["tool.saturation"].isSelected)
+        try selectTool("hsl", in: app)
+        XCTAssertTrue(app.buttons["hsl.channel.6"].isSelected)
+        capture("workspace-short-tools-reachable", in: app)
     }
 
     func testExposureNativeWheelCancelApplySignAndDefault() throws {

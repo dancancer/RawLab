@@ -51,7 +51,7 @@ extension ContentView {
             .accessibilityIdentifier("editor.compare")
             .opacity(rulerFocusOpacity)
 
-            Button { adjustmentsExpanded.toggle() } label: {
+            Button { requestAdjustmentExpansion(!adjustmentsExpanded) } label: {
                 Image(systemName: "slider.horizontal.3")
                     .foregroundStyle(!viewModel.hasImage ? Color.secondary : adjustmentsExpanded ? .yellow : .primary)
             }
@@ -208,29 +208,39 @@ extension ContentView {
                 Spacer(minLength: 8)
                 editSaveStatus
                 Menu {
-                    Button(L10n.text("重置所有调整并返回中性"), role: .destructive) {
-                        applySettingsChange(settings.resettingAdjustments())
+                    if currentEditorTool == .adjustment(.hsl) {
+                        Button(L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[hslChannel]))) {
+                            requestEditorReset(.hslChannel(hslChannel))
+                        }.disabled(!resetModified(.hslChannel(hslChannel)))
+                        Button(L10n.text("重置全部 HSL…")) { requestEditorReset(.allHSL) }
+                            .disabled(!resetModified(.allHSL))
+                    } else {
+                        Button(L10n.format("重置%@", currentEditorTool.title)) { requestEditorReset(.tool(currentEditorTool)) }
+                            .disabled(!resetModified(.tool(currentEditorTool)))
                     }
-                    if let adjustment = selectedAdjustment {
-                        Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetSelectedAdjustment() }
-                    }
+                    Button(L10n.format("重置%@组…", selectedGroup.title)) { requestEditorReset(.group(selectedGroup)) }
+                        .disabled(!resetModified(.group(selectedGroup)))
+                    Button(L10n.text("重置全部调整…"), role: .destructive) { requestEditorReset(.all) }
+                        .disabled(!resetModified(.all))
                 } label: {
                     // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
                     HStack(spacing: 1) {
                         Image(systemName: "arrow.counterclockwise")
                         Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
                     }
-                    .frame(width: 44, height: 44)
+                    .fixedSize()
+                    .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel(L10n.text("重置调整"))
                 .accessibilityIdentifier("editor.reset")
-                .disabled(!viewModel.hasImage || editingLocked || settings == .default || geometrySelected || lensSelected)
+                .disabled(!viewModel.hasImage || editorBusy || resetDraftSuspended)
+                .layoutPriority(2)
             }
             .frame(height: max(44, panelHeaderHeight))
             .padding(.horizontal, 16)
             .opacity(rulerFocusOpacity)
 
-            valuePanel
+            valuePanel.disabled(resetDraftSuspended)
         }
         .padding(.bottom, 12)
     }
@@ -268,82 +278,142 @@ extension ContentView {
         .accessibilityLabel(title)
     }
 
+    func groupNavigation(side: Bool) -> some View {
+        let buttonWidth = groupNavigationButtonWidth
+        let buttonHeight = groupNavigationButtonHeight
+        return ScrollView(.horizontal, showsIndicators: false) {
+            let layout = side && !adjustmentsExpanded
+                ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+            layout {
+                if side && !adjustmentsExpanded {
+                    ForEach(0..<2, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            ForEach(Array(EditorAdjustmentGroup.allCases[(row * 3)..<(row * 3 + 3)]), id: \.rawValue) { group in
+                                groupNavigationButton(group, width: buttonWidth, height: buttonHeight)
+                            }
+                        }
+                    }
+                } else {
+                    ForEach(EditorAdjustmentGroup.allCases, id: \.rawValue) { group in groupNavigationButton(group, width: buttonWidth, height: buttonHeight) }
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+        .frame(height: buttonHeight * (side && !adjustmentsExpanded ? 2 : 1))
+        .disabled(editorBusy || resetDraftSuspended)
+        .accessibilityIdentifier("editor.groups")
+    }
+
+    private func groupNavigationButton(_ group: EditorAdjustmentGroup, width: CGFloat, height: CGFloat) -> some View {
+        Button { selectEditorGroup(group) } label: {
+            VStack(spacing: 4) {
+                Text(group.title).font(.caption).lineLimit(2)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                Circle().fill(resetModified(.group(group)) ? Color.yellow : .clear).frame(width: 4, height: 4)
+            }
+            .padding(.horizontal, 4)
+            .frame(width: width, height: height)
+            .contentShape(Rectangle())
+            .foregroundStyle(selectedGroup == group ? Color.yellow : .primary)
+            .background(selectedGroup == group ? Color.yellow.opacity(0.12) : .clear)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.format(adjustmentsExpanded && selectedGroup == group ? "收起%@组" : "展开%@组", group.title))
+        .accessibilityValue(resetModified(.group(group)) ? L10n.text("已调整") : "")
+        .accessibilityAddTraits(selectedGroup == group ? .isSelected : [])
+        .accessibilityIdentifier("editor.group.\(group.rawValue)")
+    }
+
+    func editorToolAccessibilityValue(_ tool: EditorToolSelection) -> String {
+        switch tool {
+        case .film: return selectedFilmName
+        case .recipe: return settings.masterRecipe?.title ?? L10n.text("无配方")
+        case .adjustment(let adjustment): return adjustment.valueLabel(for: adjustment.value(from: settings))
+        default: return resetModified(.tool(tool)) ? L10n.text("已调整") : ""
+        }
+    }
+
     var toolStrip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    Button { selectEditorTool(.film) } label: {
-                        AdjustmentToolLabel(title: L10n.text("胶片"), symbol: "film", selected: selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected,
-                                            progress: 0, width: toolWidth, height: editorToolHeight)
-                    }
-                    .accessibilityValue(selectedFilmName)
-                    .accessibilityAddTraits(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? .isSelected : [])
-                    .accessibilityIdentifier("tool.film")
-                    .opacity(selectedAdjustment == nil && !choosingMasterRecipe && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
-                    .id("film")
-                    Button { selectEditorTool(.recipe) } label: {
-                        AdjustmentToolLabel(title: L10n.text("大师配方"), symbol: "square.stack.3d.up", selected: choosingMasterRecipe,
-                                            progress: settings.masterRecipeID == nil ? 0 : 1, width: toolWidth, height: editorToolHeight)
-                    }.accessibilityIdentifier("tool.masterRecipe").accessibilityValue(settings.masterRecipe?.title ?? L10n.text("无配方"))
-                        .accessibilityAddTraits(choosingMasterRecipe ? .isSelected : [])
-                        .opacity(choosingMasterRecipe ? 1 : rulerFocusOpacity)
-                        .id("masterRecipe")
-                    Button { selectEditorTool(.lens) } label: {
-                        AdjustmentToolLabel(title: L10n.text("镜头"), symbol: "viewfinder", selected: lensSelected,
-                                            progress: settings.lensSettings.isEnabled ? 1 : 0,
-                                            width: toolWidth, height: editorToolHeight)
-                    }.disabled(viewModel.sourceKind != .raw)
-                        .accessibilityIdentifier("tool.lens")
-                        .opacity(lensSelected ? 1 : rulerFocusOpacity)
-                        .accessibilityAddTraits(lensSelected ? .isSelected : []).id("lens")
-                    Button { selectEditorTool(.geometry) } label: {
-                        AdjustmentToolLabel(title: L10n.text("几何"), symbol: "crop.rotate", selected: geometrySelected,
-                                            progress: settings.geometry.isIdentity ? 0 : 1, width: toolWidth, height: editorToolHeight)
-                    }
-                    .accessibilityIdentifier("tool.geometry")
-                    .opacity(geometrySelected ? 1 : rulerFocusOpacity)
-                    .accessibilityAddTraits(geometrySelected ? .isSelected : []).id("geometry")
-                    ForEach(AdjustmentKind.toolCases) { adjustment in
-                        Button { selectEditorTool(.adjustment(adjustment)) } label: {
-                            AdjustmentToolLabel(title: adjustment.title, symbol: adjustment.iconName,
-                                                selected: selectedAdjustment == adjustment && !lensSelected && !geometrySelected,
-                                                progress: adjustmentProgress(adjustment),
-                                                width: toolWidth, height: editorToolHeight,
-                                                currentValue: selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? selectedScalarBadge(adjustment) : nil)
+                    ForEach(EditorAdjustmentRules.tools(selectedGroup), id: \.self) { tool in
+                        Button { selectEditorTool(tool) } label: {
+                            AdjustmentToolLabel(title: tool.title, symbol: tool.symbol, selected: currentEditorTool == tool,
+                                progress: tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: editorToolHeight,
+                                currentValue: tool.scalar.flatMap(selectedScalarBadge))
+                                .overlay(alignment: .bottom) {
+                                    Circle().fill(resetModified(.tool(tool)) ? Color.yellow : .clear)
+                                        .frame(width: 4, height: 4)
+                                }
                         }
-                        .disabled(adjustment == .strength && !settings.hasLook)
-                        .accessibilityValue(adjustment.valueLabel(for: adjustment.value(from: settings)))
-                        .accessibilityAddTraits(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? .isSelected : [])
-                        .accessibilityIdentifier("tool.\(adjustment.rawValue)")
-                        .opacity(selectedAdjustment == adjustment && !lensSelected && !geometrySelected ? 1 : rulerFocusOpacity)
+                        .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
+                                  (tool == .adjustment(.strength) && !settings.hasLook))
+                        .accessibilityLabel(tool.title)
+                        .accessibilityValue(editorToolAccessibilityValue(tool))
+                        .accessibilityHint(resetModified(.tool(tool)) ? L10n.text("已调整") : "")
+                        .accessibilityAddTraits(currentEditorTool == tool ? .isSelected : [])
+                        .accessibilityIdentifier("tool.\(tool.stableID)")
                         .contextMenu {
-                            Button(L10n.format("重置%@", String(describing: adjustment.title))) { resetTool(adjustment) }
-                            .disabled(!viewModel.hasImage || adjustmentProgress(adjustment) == 0 || editingLocked || lensSelected || geometrySelected)
+                            Button(L10n.format("重置%@", tool.title)) { requestEditorReset(.tool(tool)) }
+                                .disabled(!resetModified(.tool(tool)) || editorBusy || resetDraftSuspended ||
+                                          ((tool == .geometry || tool == .lens) && (!isEditorDraftActive || currentEditorTool != tool)))
                         }
-                        .id(adjustment.rawValue)
+                        .id(tool.stableID)
                     }
-                }
-                .padding(.horizontal, 12)
+                }.padding(.horizontal, 12)
             }
             .frame(height: editorToolHeight)
-            .onGeometryChange(for: CGFloat.self) { geometry in geometry.size.width } action: { _ in
-                proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : selectedAdjustment?.rawValue ?? "film", anchor: .center)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
+                proxy.scrollTo(currentEditorTool.stableID, anchor: .center)
             }
-            .onChange(of: selectedAdjustment) { _, adjustment in
-                proxy.scrollTo(geometrySelected ? "geometry" : lensSelected ? "lens" : choosingMasterRecipe ? "masterRecipe" : adjustment?.rawValue ?? "film", anchor: .center)
-            }
-            .onChange(of: lensSelected) { _, selected in
-                if selected { proxy.scrollTo("lens", anchor: .center) }
-            }
-            .onChange(of: geometrySelected) { _, selected in
-                if selected { proxy.scrollTo("geometry", anchor: .center) }
-            }
-            .onChange(of: choosingMasterRecipe) { _, selected in
-                if selected { proxy.scrollTo("masterRecipe", anchor: .center) }
-            }
+            .onChange(of: currentEditorTool) { _, tool in proxy.scrollTo(tool.stableID, anchor: .center) }
         }
         .buttonStyle(.plain)
-        .disabled(editorBusy)
+        .disabled(editorBusy || resetDraftSuspended)
     }
+}
 
+extension EditorAdjustmentGroup {
+    var title: String {
+        switch self {
+        case .looks: return L10n.text("外观")
+        case .light: return L10n.text("光线")
+        case .color: return L10n.text("颜色")
+        case .effects: return L10n.text("效果")
+        case .detail: return L10n.text("细节")
+        case .geometry: return L10n.text("几何与镜头")
+        }
+    }
+}
+
+extension EditorToolSelection {
+    var scalar: AdjustmentKind? { if case .adjustment(let value) = self { return value }; return nil }
+    var stableID: String {
+        switch self {
+        case .film: return "film"
+        case .recipe: return "masterRecipe"
+        case .lens: return "lens"
+        case .geometry: return "geometry"
+        case .adjustment(let kind): return kind.rawValue
+        }
+    }
+    var title: String {
+        switch self {
+        case .film: return L10n.text("胶片")
+        case .recipe: return L10n.text("大师配方")
+        case .lens: return L10n.text("镜头")
+        case .geometry: return L10n.text("几何")
+        case .adjustment(let kind): return kind.title
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .film: return "film"
+        case .recipe: return "square.stack.3d.up"
+        case .lens: return "viewfinder"
+        case .geometry: return "crop.rotate"
+        case .adjustment(let kind): return kind.iconName
+        }
+    }
 }

@@ -15,22 +15,7 @@ extension EditorUITests {
             ["言語", "標準現像", "埋め込みプレビューに合わせる", "センサー基準", "撮影時の設定", "カスタム", "ディテール優先", "ノイズ低減優先", "元のサイズ", "長辺を指定", "長辺 %@ px", "キャンセル", "現在の写真を保存", "戻る", "一括書き出しを表示…", "調整元", "%@ 枚を選択", "書き出しサイズ", "写真に%@枚保存しました", "完了", "システムに従う"],
             ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Ajuste según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Tamaño original", "Especificar borde largo", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes…", "Origen de los ajustes", "Seleccionadas: %@", "Tamaño de exportación", "Guardadas en Fotos: %@", "Listo", "Seguir el sistema"]
         ]
-        func tapTool(_ id: String) {
-            let button = app.buttons["tool." + id]
-            let strips = app.scrollViews.containing(.button, identifier: "tool." + id).allElementsBoundByIndex
-            guard let strip = strips.min(by: { $0.frame.height < $1.frame.height }) else {
-                XCTFail("Tool strip missing: " + id); return
-            }
-            for _ in 0..<10 {
-                let frame = button.frame
-                if frame.width > 0 && strip.frame.insetBy(dx: 8, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) {
-                    app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
-                    return
-                }
-                if frame.midX < strip.frame.midX { strip.swipeRight() } else { strip.swipeLeft() }
-            }
-            XCTFail("Could not reveal tool: " + id)
-        }
+        func tapTool(_ id: String) { self.tapTool(id, in: app) }
         tapTool("exposure")
         dragRuler(app.descendants(matching: .any)["adjustment.ruler"])
         guard let exposure = app.buttons["tool.exposure"].value as? String else {
@@ -86,6 +71,7 @@ extension EditorUITests {
                 capture("extra-batch-completed-spanish")
                 app.buttons[c[19]].tap()
             } else { app.buttons[c[13]].tap() }
+            tapTool("exposure")
             XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure)
         }
 
@@ -145,6 +131,7 @@ extension EditorUITests {
             XCTAssertTrue(exportSize.label.contains("2048"), exportSize.label)
             app.buttons[c[11]].tap()
 
+            tapTool("exposure")
             XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure)
         }
         app.buttons["settings.language"].tap()
