@@ -54,6 +54,7 @@ extension EditorModel {
 
     @discardableResult func selectGeometryDraftTab(_ tab: MacGeometryTab) -> Bool {
         if tab == .lens && RenderEngine.isRasterInput(file) { return false }
+        ParameterValueField.cancelPendingInputs()
         guard geometryDraft != nil, invalidGeometryDraftInputs.isEmpty else { return false }
         geometryDraftTab = tab
         return true
@@ -190,9 +191,8 @@ extension EditorModel {
 
     func requestLeavingGeometryDraft(_ action: @escaping () -> Void, onStay: @escaping () -> Void = {}) {
         guard !geometryDraftDeparturePending else { return }
-        // A valid text draft can still be uncommitted when a file is dropped.
-        // Resolve the native field before deciding whether the task has changes.
-        NSApp?.keyWindow?.makeFirstResponder(nil)
+        // Navigation discards only uncommitted field text before inspecting the geometry transaction.
+        ParameterValueField.cancelPendingInputs()
         if geometryDraftHasChanges {
             geometryDepartureAction = action; geometryDepartureStay = onStay
             geometryDraftDeparturePending = true

@@ -14,6 +14,10 @@ struct CompactControlsPresentationTests {
         let width: Double
         let height: Double
         let matchesDeclaredFrame: Bool
+        let initialX: Double
+        let initialY: Double
+        let initiallyFullyVisible: Bool
+        let reachableByScrolling: Bool
     }
 
     private struct SnapshotEvidence: Codable {
@@ -23,6 +27,7 @@ struct CompactControlsPresentationTests {
         let height: Int
         let sampledColorCount: Int
         let fields: [FieldEvidence]
+        let scrollScreenshots: [String]
     }
 
     private struct Report: Codable {
@@ -67,9 +72,9 @@ struct CompactControlsPresentationTests {
 
     @MainActor private static func snapshot<V: View>(
         _ view: V, name: String, language: AppLanguage, size: NSSize,
-        expectedFields: Int, output: URL, renderModel: EditorModel? = nil
+        expectedFields: Int, output: URL, renderModel: EditorModel? = nil, textSize: DynamicTypeSize = .large
     ) async throws -> SnapshotEvidence {
-        let host = NSHostingView(rootView: view.environment(\.locale, Locale(identifier: language.rawValue))
+        let host = NSHostingView(rootView: view.dynamicTypeSize(textSize).environment(\.locale, Locale(identifier: language.rawValue))
             .preferredColorScheme(.dark))
         host.appearance = NSAppearance(named: .darkAqua)
         host.frame = NSRect(origin: .zero, size: size)
@@ -84,29 +89,6 @@ struct CompactControlsPresentationTests {
         if let renderModel { try await waitForRender(renderModel) }
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
-
-        let nativeFields = fields(in: host)
-        guard nativeFields.count == expectedFields else {
-            throw RenderError.failed("\(name): expected \(expectedFields) numeric fields; found \(nativeFields.count)")
-        }
-        var fieldEvidence: [FieldEvidence] = []
-        for field in nativeFields {
-            let bounds = field.convert(field.bounds, to: host)
-            let matchesDeclaredFrame = abs(field.bounds.width - 72) < 0.5 && abs(field.bounds.height - 26) < 0.5
-            guard matchesDeclaredFrame, field.font?.pointSize == 13,
-                  host.bounds.insetBy(dx: -0.5, dy: -0.5).contains(bounds),
-                  !field.isHiddenOrHasHiddenAncestor else {
-                throw RenderError.failed("\(name): invalid numeric field geometry \(bounds)")
-            }
-            let textWidth = (field.stringValue as NSString).size(withAttributes: [.font: field.font!]).width
-            guard textWidth <= field.bounds.width - 14 else {
-                throw RenderError.failed("\(name): numeric text does not fit \(field.stringValue)")
-            }
-            fieldEvidence.append(FieldEvidence(identifier: field.accessibilityIdentifier(),
-                text: field.stringValue, fontSize: Double(field.font!.pointSize),
-                x: Double(bounds.minX), y: Double(bounds.minY), width: Double(bounds.width), height: Double(bounds.height),
-                matchesDeclaredFrame: matchesDeclaredFrame))
-        }
 
         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
             throw RenderError.failed("\(name): view bitmap unavailable")
@@ -127,11 +109,54 @@ struct CompactControlsPresentationTests {
         guard sampledColors.count >= 16 else {
             throw RenderError.failed("\(name): view snapshot appears blank (\(sampledColors.count) sampled colors)")
         }
+
+        let nativeFields = fields(in: host)
+        guard nativeFields.count == expectedFields else {
+            throw RenderError.failed("\(name): expected \(expectedFields) numeric fields; found \(nativeFields.count)")
+        }
+        var fieldEvidence: [FieldEvidence] = []
+        var scrollScreenshots: [String] = []
+        let windowFrame = window.frame
+        for field in nativeFields {
+            let initialBounds = field.convert(field.bounds, to: host)
+            let initiallyFullyVisible = host.bounds.contains(initialBounds) && field.visibleRect.contains(field.bounds)
+            if !initiallyFullyVisible && textSize.isAccessibilitySize {
+                field.scrollToVisible(field.bounds)
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(60))
+                host.layoutSubtreeIfNeeded()
+                let reachedFile = "\(name)-reached-\(field.accessibilityIdentifier())-\(language.rawValue).png"
+                guard let reached = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("Missing reachability bitmap") }
+                host.cacheDisplay(in: host.bounds, to: reached)
+                guard let reachedPNG = reached.representation(using: .png, properties: [:]) else { throw RenderError.failed("Missing reachability PNG") }
+                try reachedPNG.write(to: output.appendingPathComponent(reachedFile))
+                scrollScreenshots.append(reachedFile)
+            }
+            let bounds = field.convert(field.bounds, to: host)
+            let reachable = host.bounds.insetBy(dx: -0.5, dy: -0.5).contains(bounds) && field.visibleRect.insetBy(dx: -0.5, dy: -0.5).contains(field.bounds)
+            guard window.frame == windowFrame else { throw RenderError.failed("\(name): scrolling changed the window frame") }
+            let matchesDeclaredFrame = field.bounds.width >= 71.5 && field.bounds.height >= 25.5
+            guard matchesDeclaredFrame, (field.font?.pointSize ?? 0) >= 13,
+                  reachable,
+                  !field.isHiddenOrHasHiddenAncestor else {
+                throw RenderError.failed("\(name): invalid numeric field geometry \(bounds)")
+            }
+            let textWidth = (field.stringValue as NSString).size(withAttributes: [.font: field.font!]).width
+            guard textWidth <= field.bounds.width - 14 else {
+                throw RenderError.failed("\(name): numeric text does not fit \(field.stringValue)")
+            }
+            fieldEvidence.append(FieldEvidence(identifier: field.accessibilityIdentifier(),
+                text: field.stringValue, fontSize: Double(field.font!.pointSize),
+                x: Double(bounds.minX), y: Double(bounds.minY), width: Double(bounds.width), height: Double(bounds.height),
+                matchesDeclaredFrame: matchesDeclaredFrame, initialX: Double(initialBounds.minX), initialY: Double(initialBounds.minY),
+                initiallyFullyVisible: initiallyFullyVisible, reachableByScrolling: reachable))
+        }
+
         let file = "\(name)-\(language.rawValue).png"
         try png.write(to: output.appendingPathComponent(file))
         print("PASS: native view snapshot \(file), \(Int(size.width))×\(Int(size.height)), \(nativeFields.count) fields")
         return SnapshotEvidence(file: file, language: language.rawValue,
-            width: bitmap.pixelsWide, height: bitmap.pixelsHigh, sampledColorCount: sampledColors.count, fields: fieldEvidence)
+            width: bitmap.pixelsWide, height: bitmap.pixelsHigh, sampledColorCount: sampledColors.count, fields: fieldEvidence, scrollScreenshots: scrollScreenshots)
     }
 
     @MainActor private static func run() async throws {
@@ -200,6 +225,32 @@ struct CompactControlsPresentationTests {
             languages = [language]
         } else {
             languages = AppLanguage.allCases.filter { $0 != .system }
+        }
+        if ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_MATRIX"] == "1" {
+            var snapshots: [SnapshotEvidence] = []
+            for language in languages {
+                UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language.rawValue, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
+                for (tool, fieldCount) in [(EditorAdjustmentTool.exposure, 1), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)] {
+                    model.selectAdjustmentTool(tool)
+                    try await waitForRender(model)
+                    for (fontName, fontSize) in [("normal", DynamicTypeSize.large), ("large", .accessibility3)] {
+                        for (sizeName, size) in [("minimum", NSSize(width: 950, height: 620)), ("wide", NSSize(width: 1440, height: 900))] {
+                            snapshots.append(try await snapshot(EditorView(model: model),
+                                name: "parameter-\(tool.rawValue)-\(fontName)-\(sizeName)", language: language,
+                                size: size, expectedFields: fieldCount, output: output, renderModel: model, textSize: fontSize))
+                        }
+                    }
+                    if model.geometryDraft != nil { model.cancelGeometryDraft(); try await waitForRender(model) }
+                }
+            }
+            let report = Report(method: "Actual EditorView rendered in test-owned native windows", fixture: fixture.lastPathComponent,
+                renderedWidth: frame.image.width, renderedHeight: frame.image.height,
+                limitations: ["Initial and reached rectangles, unshrunk font, exact numeric text fit, scroll reachability, stable window frame and nonblank pixels are checked. Initial and reached screenshots are separate.",
+                    "Screenshots do not prove pointer, focus, scrolling, reset or VoiceOver interaction."], snapshots: snapshots)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(report).write(to: output.appendingPathComponent("report.json"))
+            print("PASS: \(snapshots.count) parameter input matrix snapshots")
+            return
         }
         var snapshots: [SnapshotEvidence] = []
         for language in languages {
@@ -280,7 +331,7 @@ struct CompactControlsPresentationTests {
             limitations: ["Editor snapshots cover the actual content view; window chrome and the application toolbar are excluded.",
                           "File tree starts empty with isolated temporary preferences.",
                           "HSL and grain snapshots show the actual product components at 650 points: the workspace remaining in a 950-point window with a 300-point file tree.",
-                          "72×26 native field geometry, 13-point font, numeric text fit, direct locale lookup, field containment, and nonblank bitmap are strict automated checks; label wrapping requires visual inspection.",
+                          "Minimum 72×26 native field geometry, unshrunk font, numeric text fit, direct locale lookup, field containment, and nonblank bitmap are strict automated checks; label wrapping requires visual inspection.",
                           "Actual mouse, keyboard, scroll-wheel, focus traversal, and VoiceOver verification remain pending while the Mac is locked.",
                           "These view snapshots do not establish that the complete native/core test gate has passed."], snapshots: snapshots)
         let encoder = JSONEncoder()

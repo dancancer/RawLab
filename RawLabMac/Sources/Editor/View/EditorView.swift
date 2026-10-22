@@ -388,7 +388,7 @@ struct EditorView: View {
     }
 
     private func collapsePanel() {
-        NSApp.keyWindow?.makeFirstResponder(nil)
+        ParameterValueField.cancelPendingInputs()
         model.requestLeavingGeometryDraft { adjustmentPanel.collapsed = true }
     }
 

@@ -44,8 +44,17 @@ enum ParameterPrecision {
         case .temperature: decimals = 0
         case .standard: decimals = abs(clean - clean.rounded()) < 0.0000001 ? 0 : 1
         }
-        let result = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
+        let roundedText = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
+        // Existing values may predate the editing grid, including camera white balance.
+        let result = Double(roundedText) == clean ? roundedText : String(clean)
         return signed && clean > 0 ? "+" + result : result
+    }
+
+    func accepts(_ value: Double, original: Double, in range: ClosedRange<Double>) -> Bool {
+        guard value.isFinite, range.contains(value) else { return false }
+        if value == original { return true }
+        let ticks = value * scale
+        return value == ticks.rounded() / scale
     }
 
     func parse(_ draft: String) -> Double? {
@@ -66,6 +75,12 @@ enum ParameterSliderMapping {
             position = (1 / range.lowerBound - 1 / bounded) / (1 / range.lowerBound - 1 / range.upperBound)
         }
         return position.isFinite ? min(1, max(0, position)) : 0
+    }
+
+    func fill(from defaultValue: Double, to value: Double, in range: ClosedRange<Double>) -> ClosedRange<Double> {
+        let origin = position(for: defaultValue, in: range)
+        let current = position(for: value, in: range)
+        return min(origin, current)...max(origin, current)
     }
 
     func value(at position: Double, in range: ClosedRange<Double>) -> Double {

@@ -43,13 +43,14 @@ extension MacGeometryDraftTests {
             guard let field = nativeFields(host).first(where: { $0.accessibilityIdentifier() == "geometry.value.cropWidth" }) else {
                 throw Failure(description: "precise crop width native field is missing")
             }
+            let requestBeforeTyping = model.scheduler.latest?.id
             field.selectText(nil)
             guard let editor = field.currentEditor() as? NSTextView else {
                 throw Failure(description: "precise crop field has no native field editor")
             }
             editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
             try await Task.sleep(for: .milliseconds(50))
-            try check(model.busy, "uncommitted native typing owns the scheduler interaction")
+            try check(!model.busy && model.scheduler.latest?.id == requestBeforeTyping, "uncommitted native typing submits no preview or scheduler interaction")
             try check(model.geometryDraftSettings.cropWidth == 1, "typing has not yet committed the crop width")
             guard let firstField = nativeFields(host).first(where: { $0.accessibilityIdentifier() == "geometry.value.cropX" }) else {
                 throw Failure(description: "precise crop first row is missing")
@@ -63,23 +64,101 @@ extension MacGeometryDraftTests {
                     context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!)
             }
             try await Task.sleep(for: .milliseconds(200))
-            if text == "80" {
-                try check(!nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" },
-                          "the hosted disclosure really collapsed its precise controls")
-            }
-            try check(!model.busy, "collapsing precise crop ends native numeric interaction")
-            if text == "80" {
-                try check(abs(model.geometryDraftSettings.cropWidth - 0.8) < 1e-9 && model.geometryDraftCanApply,
-                          "collapse commits the legal crop width before removing its editor")
-                try check(!nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" },
-                          "legal collapse removes precise controls after the commit")
-            } else {
-                try check(model.invalidGeometryDraftInputs.contains("geometry.value.cropWidth") && !model.geometryDraftCanApply,
-                          "collapse never accepts an invalid crop draft")
-                try check(nativeFields(host).contains { $0 === field } && field.stringValue == text,
-                          "an invalid precise draft remains visible for correction")
-            }
+            try check(!nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" },
+                      "hiding precise controls removes the native field for either valid or invalid uncommitted text")
+            try check(!model.busy && model.geometryDraftSettings.cropWidth == 1 && model.invalidGeometryDraftInputs.isEmpty,
+                      "hiding precise controls cancels only field text and ends native interaction")
+
         }
+    }
+
+    @MainActor static func runNativeInputDepartureChecks(_ model: EditorModel, mode: String) {
+        Task { @MainActor in
+            do {
+                try await nativeInputDepartureChecks(model, modes: mode == "native-departure" ? ["close", "terminate"] : [mode == "native-close" ? "close" : "terminate"])
+                print("PASS: \(checks) native field departure checks")
+                exit(0)
+            } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+        }
+        NSApp.run()
+    }
+
+    @MainActor static func nativeInputDepartureChecks(_ model: EditorModel, modes: [String]) async throws {
+        func fields(_ view: NSView) -> [NumericTextField] {
+            (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap(fields)
+        }
+        func awaitPreview(_ name: String, draft: Bool = false) async throws {
+            let deadline = Date().addingTimeInterval(90)
+            while Date() < deadline && (model.busy || model.result == nil || (draft && !model.geometryDraftPreviewReady)) {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try check(!model.busy && model.result != nil && (!draft || model.geometryDraftPreviewReady), "\(name): matching preview completes")
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        model.settings.exposure = 0.5
+        try await awaitPreview("native departure committed baseline")
+        try check(model.saveEdits(), "native departure baseline saves before observing field input")
+        for mode in modes {
+            let host = NSHostingView(rootView: AdjustmentRow(parameter: .exposure,
+                value: Binding(get: { model.settings.exposure }, set: { model.settings.set(.exposure, to: $0) }),
+                onEditingChanged: model.setInteracting))
+            let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 740, height: 180),
+                styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let closeDelegate = MacGeometryWindowGuard.CloseDelegate(model: model)
+            window.delegate = closeDelegate; window.contentView = host
+            window.makeKeyAndOrderFront(nil)
+            defer { window.delegate = nil; window.contentView = nil; window.close() }
+            try await Task.sleep(for: .milliseconds(200))
+            host.layoutSubtreeIfNeeded()
+            guard let field = fields(host).first(where: { $0.accessibilityIdentifier() == "value.exposure" }) else {
+                throw Failure(description: "native departure exposure field is missing")
+            }
+            let requestBeforeTyping = model.scheduler.latest?.id
+            var writes = 0, renders = 0
+            let observer = model.$settings.dropFirst().sink { _ in writes += 1 }
+            let renderObserver = model.$result.dropFirst().sink { _ in renders += 1 }
+            defer { observer.cancel(); renderObserver.cancel() }
+            field.selectText(nil)
+            guard let editor = field.currentEditor() as? NSTextView else { throw Failure(description: "native field editor is missing") }
+            editor.insertText("1.23", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            try check(model.settings.exposure == 0.5 && writes == 0, "\(mode): real native typing remains uncommitted")
+            if mode == "close" { window.performClose(nil) }
+            else {
+                let delegate = RawLabMacDelegate(); delegate.model = model
+                try check(delegate.applicationShouldTerminate(NSApp) == .terminateNow,
+                          "termination delegate returns its reply without invoking application termination")
+            }
+            try check(model.settings.exposure == 0.5 && writes == 0,
+                      "\(mode): native departure cancels text before blur without any settings publication")
+            try check(!model.dirty && !model.busy && renders == 0 && model.scheduler.latest?.id == requestBeforeTyping,
+                      "\(mode): focus, typing and cancellation submit and publish zero previews")
+        }
+        try check(model.beginGeometryDraft(tab: .crop), "native Stay guard starts a geometry draft")
+        try await awaitPreview("native Stay guard reference", draft: true)
+        model.setGeometryDraftParameter(.cropWidth, to: 0.8)
+        let formedDraft = model.geometryDraft
+        let host = NSHostingView(rootView: GeometryControls(model: model, showsPreciseCrop: true))
+        let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 740, height: 400),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let closeDelegate = MacGeometryWindowGuard.CloseDelegate(model: model)
+        window.delegate = closeDelegate; window.contentView = host; window.makeKeyAndOrderFront(nil)
+        defer { window.delegate = nil; window.contentView = nil; window.close(); model.cancelGeometryDraft() }
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        guard let field = fields(host).first(where: { $0.accessibilityIdentifier() == "geometry.value.cropWidth" }) else {
+            throw Failure(description: "native Stay guard crop field is missing")
+        }
+        field.selectText(nil)
+        guard let editor = field.currentEditor() as? NSTextView else { throw Failure(description: "native crop editor is missing") }
+        editor.insertText("70", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        window.performClose(nil)
+        try check(window.isVisible && model.geometryDraftDeparturePending && model.geometryDraft == formedDraft,
+                  "native close cancels text while preserving the formed draft and its departure guard")
+        model.resolveGeometryDraftDeparture(.stay)
+        try check(window.isVisible && !model.geometryDraftDeparturePending && model.geometryDraft == formedDraft,
+                  "native close Stay keeps the formed draft unchanged")
     }
 
     final class WindowDelegateProbe: NSObject, NSWindowDelegate {
@@ -181,6 +260,42 @@ extension MacGeometryDraftTests {
                   Data(contentsOf: edits.appendingPathComponent("edits.json")) == record,
                   "no stale draft canvas publishes after cancel and cancel writes no edit record")
         observer.cancel()
+    }
+
+    static func inputCancellationChecks(_ model: EditorModel) throws {
+        for hasNumericDraft in [false, true] {
+            try check(model.beginGeometryDraft(tab: .crop), "input-cancellation transaction opens")
+            try wait(model, draft: true, "input-cancellation reference")
+            if hasNumericDraft { model.setGeometryDraftParameter(.cropWidth, to: 0.8) }
+            let numericDraft = model.geometryDraft
+            let parent = ParameterValueField(value: Binding(
+                get: { model.geometryDraftSettings.cropWidth * 100 },
+                set: { model.setGeometryDraftParameter(.cropWidth, to: $0 / 100) }),
+                range: 0.1...100, precision: .standard, title: "Width", unit: "%", identifier: "geometry.value.cropWidth",
+                defaultValue: 100, onEditingChanged: model.setInteracting, invalidInputPolicy: .retain,
+                onValidityChange: { model.setGeometryDraftInputValidity(identifier: "geometry.value.cropWidth", isValid: $0) })
+            let coordinator = ParameterValueField.Coordinator(parent)
+            let field = NumericTextField()
+            coordinator.field = field
+            coordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
+            field.stringValue = "70"
+            coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+            var leaves = 0
+            model.requestLeavingGeometryDraft { leaves += 1 }
+            coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+            if hasNumericDraft {
+                try check(model.geometryDraft == numericDraft && model.geometryDraftDeparturePending && leaves == 0,
+                          "canceling field text preserves the already formed geometry draft and its departure guard")
+                model.resolveGeometryDraftDeparture(.stay)
+                try check(model.geometryDraft == numericDraft && !model.geometryDraftDeparturePending && leaves == 0,
+                          "Stay preserves the formed draft after uncommitted text was canceled")
+                model.cancelGeometryDraft()
+            } else {
+                try check(model.geometryDraft == nil && !model.geometryDraftDeparturePending && leaves == 1,
+                          "uncommitted field text alone creates no geometry departure transaction")
+            }
+            try wait(model, "input-cancellation cleanup")
+        }
     }
 
     static func invalidAndDepartureChecks(_ model: EditorModel, raw: URL, edits: URL) throws {
