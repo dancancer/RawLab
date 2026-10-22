@@ -26,6 +26,7 @@
     <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
     <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_adjusted">"Adjusted"</string>
+    <string name="editor_collapse_histogram">"Collapse histogram"</string>
     <string name="editor_compare_before">"Before"</string>
     <string name="editor_compare_disable">"Turn off comparison"</string>
     <string name="editor_compare_enable">"Turn on comparison"</string>
@@ -36,6 +37,7 @@
     <string name="editor_compare_side_by_side">"Side by side"</string>
     <string name="editor_compare_split">"Split position"</string>
     <string name="editor_compare_wipe">"Wipe"</string>
+    <string name="editor_expand_histogram">"Expand histogram"</string>
     <string name="editor_fine_hint">"Dragging uses one quarter of the normal sensitivity."</string>
     <string name="editor_group_collapse">"Collapse %1$s group"</string>
     <string name="editor_group_color">"Color"</string>
@@ -79,7 +81,9 @@
     <string name="editor_reset_tool_title">"Reset %1$s?"</string>
     <string name="editor_reset_unknown_recipe">"The current recipe is unavailable, so its look cannot be reset safely."</string>
     <string name="editor_reset_unrepresentable">"The available parameter ranges cannot preserve the recipe\'s full appearance. Cancel, or separately confirm resetting all adjustments."</string>
+    <string name="editor_rgb_histogram">"RGB Histogram"</string>
     <string name="editor_settings">"Settings"</string>
+    <string name="editor_statistics_unavailable">"Statistics unavailable"</string>
     <string name="editor_zoom_display">"Zoom and display"</string>
     <string name="empty_hint">"Choose a RAW from an album or import from system files."</string>
     <string name="geometry_drag_hint">"Crop Selection"</string>

@@ -32,6 +32,7 @@
 "PNG · 16-bit…" = "PNG · 16 bits…";
 "RAW 照片" = "Photo RAW";
 "RAW 降噪" = "Réduction du bruit RAW";
+"RGB 直方图" = "Histogramme RVB";
 "RGB 输出直方图" = "Histogramme de sortie RVB";
 "RawLab %@ 已发布" = "RawLab %@ est disponible";
 "RawLab 文件" = "Fichiers RawLab";
@@ -403,6 +404,7 @@
 "纽约电影 · 戏剧光影" = "Cinéma new-yorkais · lumière dramatique";
 "细节" = "Détail";
 "细节优先" = "Priorité aux détails";
+"统计不可用" = "Statistiques indisponibles";
 "统计已停止，请重启应用后再开启。" = "L’analyse est arrêtée. Redémarrez l’application avant de la réactiver.";
 "统计服务未能启动，照片编辑不受影响。" = "Le service d’analyse n’a pas pu démarrer. La retouche photo n’est pas affectée.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Le réglage d’analyse n’a pas pu être enregistré. La collecte est arrêtée pour ce processus. Vérifiez l’autorisation de stockage avant de redémarrer.";

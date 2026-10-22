@@ -32,6 +32,7 @@
 "PNG · 16-bit…" = "PNG · 16-bit…";
 "RAW 照片" = "RAW Photo";
 "RAW 降噪" = "RAW noise reduction";
+"RGB 直方图" = "RGB Histogram";
 "RGB 输出直方图" = "RGB output histogram";
 "RawLab %@ 已发布" = "RawLab %@ released";
 "RawLab 文件" = "RawLab Files";
@@ -403,6 +404,7 @@
 "纽约电影 · 戏剧光影" = "New York cinema · dramatic light";
 "细节" = "Detail";
 "细节优先" = "Detail Priority";
+"统计不可用" = "Statistics unavailable";
 "统计已停止，请重启应用后再开启。" = "Analytics has stopped. Restart the app before enabling it again.";
 "统计服务未能启动，照片编辑不受影响。" = "The analytics service could not start. Photo editing is unaffected.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.";

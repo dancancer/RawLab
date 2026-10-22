@@ -31,6 +31,7 @@
 "Invalid photo effects: %@" = "Invalid photo effects: %@";
 "No image loaded." = "No Image Loaded.";
 "RAW 照片" = "RAW Photo";
+"RGB 直方图" = "RGB Histogram";
 "Raster decode failed." = "Raster Decode Failed.";
 "RawLab 文件" = "RawLab Files";
 "S 曲线" = "S Curve";
@@ -51,7 +52,6 @@
 "临时选择" = "Temporary Selection";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.";
 "乡村秋日 · 古典油画" = "Countryside autumn · classical oil painting";
-"亮度直方图" = "Luma Histogram";
 "亮度降噪" = "Luma Noise Reduction";
 "仅在暗角强度为负值时可用。" = "Available only when vignette intensity is negative.";
 "仅用于本次导出，保留各照片原有调整" = "For This Export Only; Each Photo’s Existing Adjustments Are Preserved";
@@ -136,6 +136,7 @@
 "尚未选择 RAW" = "No RAW Photos Selected";
 "尚未选择照片" = "No Photos Selected";
 "展开%@组" = "Expand %@ group";
+"展开直方图" = "Expand histogram";
 "展开调整栏" = "Expand Adjustments";
 "已保存" = "Saved";
 "已保存 %@ 张到照片图库" = "Saved to Photos: %@";
@@ -168,7 +169,6 @@
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
-"当前预览的亮度分布" = "Current Preview Luminance Distribution";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
 "恢复默认" = "Restore Default";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
@@ -188,6 +188,7 @@
 "授权核对相册中的保存结果" = "Authorize Access to Verify Saved Results in Photos";
 "搜索镜头" = "Search Lenses";
 "收起%@组" = "Collapse %@ group";
+"收起直方图" = "Collapse histogram";
 "收起调整栏" = "Collapse Adjustments";
 "放弃任务" = "Discard Task";
 "放弃修改" = "Discard Changes";
@@ -320,6 +321,7 @@
 "纽约电影 · 戏剧光影" = "New York cinema · dramatic light";
 "细节" = "Detail";
 "细节优先" = "Detail Priority";
+"统计不可用" = "Statistics unavailable";
 "统计已停止，请重启应用后再开启。" = "Analytics has stopped. Restart the app before enabling it again.";
 "统计服务未能启动，照片编辑不受影响。" = "The analytics service could not start. Photo editing is unaffected.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "The analytics setting could not be saved; collection is stopped for this process. Check storage permission before restarting.";

@@ -26,6 +26,7 @@
     <string name="edit_read_error">"No se puede leer el registro de ajuste: %1$s"</string>
     <string name="edit_unsaved_detail">"Ajustes no guardados: %1$s"</string>
     <string name="editor_adjusted">"Ajustado"</string>
+    <string name="editor_collapse_histogram">"Contraer histograma"</string>
     <string name="editor_compare_before">"Antes"</string>
     <string name="editor_compare_disable">"Desactivar comparación"</string>
     <string name="editor_compare_enable">"Activar comparación"</string>
@@ -36,6 +37,7 @@
     <string name="editor_compare_side_by_side">"En paralelo"</string>
     <string name="editor_compare_split">"Posición de la división"</string>
     <string name="editor_compare_wipe">"Línea divisoria"</string>
+    <string name="editor_expand_histogram">"Expandir histograma"</string>
     <string name="editor_fine_hint">"Al arrastrar, la sensibilidad es una cuarta parte de la normal."</string>
     <string name="editor_group_collapse">"Contraer el grupo %1$s"</string>
     <string name="editor_group_color">"Color"</string>
@@ -79,7 +81,9 @@
     <string name="editor_reset_tool_title">"¿Restablecer %1$s?"</string>
     <string name="editor_reset_unknown_recipe">"La receta actual no está disponible, por lo que su aspecto no se puede restablecer de forma segura."</string>
     <string name="editor_reset_unrepresentable">"Los rangos disponibles de los parámetros no permiten conservar todo el aspecto de la receta. Cancela o confirma por separado el restablecimiento de todos los ajustes."</string>
+    <string name="editor_rgb_histogram">"Histograma RGB"</string>
     <string name="editor_settings">"Ajustes"</string>
+    <string name="editor_statistics_unavailable">"Estadísticas no disponibles"</string>
     <string name="editor_zoom_display">"Zoom y visualización"</string>
     <string name="empty_hint">"Elige un RAW de un álbum o impórtalo desde los archivos del sistema."</string>
     <string name="geometry_drag_hint">"Selección de recorte"</string>

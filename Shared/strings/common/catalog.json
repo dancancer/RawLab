@@ -3814,5 +3814,21 @@
     "fr": "Aperçu non actualisé",
     "ja": "プレビューが更新されていません",
     "zh-Hans": "预览未更新"
+  },
+  "RGB 直方图": {
+    "de": "RGB-Histogramm",
+    "en": "RGB Histogram",
+    "es": "Histograma RGB",
+    "fr": "Histogramme RVB",
+    "ja": "RGB ヒストグラム",
+    "zh-Hans": "RGB 直方图"
+  },
+  "统计不可用": {
+    "de": "Statistik nicht verfügbar",
+    "en": "Statistics unavailable",
+    "es": "Estadísticas no disponibles",
+    "fr": "Statistiques indisponibles",
+    "ja": "統計を利用できません",
+    "zh-Hans": "统计不可用"
   }
 }

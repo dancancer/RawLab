@@ -2410,6 +2410,14 @@
     "预览未更新": {
       "formats": [],
       "source": "预览未更新"
+    },
+    "RGB 直方图": {
+      "source": "RGB 直方图",
+      "formats": []
+    },
+    "统计不可用": {
+      "source": "统计不可用",
+      "formats": []
     }
   },
   "overrides": {},

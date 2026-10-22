@@ -26,6 +26,7 @@
     <string name="edit_read_error">"Impossible de lire l\'enregistrement d\'ajustement : %1$s"</string>
     <string name="edit_unsaved_detail">"Ajustements non enregistrés : %1$s"</string>
     <string name="editor_adjusted">"Ajusté"</string>
+    <string name="editor_collapse_histogram">"Réduire l\'histogramme"</string>
     <string name="editor_compare_before">"Avant"</string>
     <string name="editor_compare_disable">"Désactiver la comparaison"</string>
     <string name="editor_compare_enable">"Activer la comparaison"</string>
@@ -36,6 +37,7 @@
     <string name="editor_compare_side_by_side">"Côte à côte"</string>
     <string name="editor_compare_split">"Position de la séparation"</string>
     <string name="editor_compare_wipe">"Ligne de séparation"</string>
+    <string name="editor_expand_histogram">"Développer l\'histogramme"</string>
     <string name="editor_fine_hint">"La sensibilité du glissement est réduite au quart de la normale."</string>
     <string name="editor_group_collapse">"Réduire le groupe %1$s"</string>
     <string name="editor_group_color">"Couleur"</string>
@@ -79,7 +81,9 @@
     <string name="editor_reset_tool_title">"Réinitialiser %1$s ?"</string>
     <string name="editor_reset_unknown_recipe">"La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité."</string>
     <string name="editor_reset_unrepresentable">"Les plages de paramètres disponibles ne permettent pas de préserver entièrement le rendu de la recette. Annulez ou confirmez séparément la réinitialisation de tous les réglages."</string>
+    <string name="editor_rgb_histogram">"Histogramme RVB"</string>
     <string name="editor_settings">"Réglages"</string>
+    <string name="editor_statistics_unavailable">"Statistiques indisponibles"</string>
     <string name="editor_zoom_display">"Zoom et affichage"</string>
     <string name="empty_hint">"Choisissez un RAW dans un album ou importez-le depuis les fichiers système."</string>
     <string name="geometry_drag_hint">"Zone de recadrage"</string>

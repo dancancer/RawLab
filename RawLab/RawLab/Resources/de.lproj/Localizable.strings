@@ -31,6 +31,7 @@
 "Invalid photo effects: %@" = "Ungültige Fotoeffekte: %@";
 "No image loaded." = "Kein Bild geladen.";
 "RAW 照片" = "RAW-Foto";
+"RGB 直方图" = "RGB-Histogramm";
 "Raster decode failed." = "Rasterdekodierung fehlgeschlagen.";
 "RawLab 文件" = "RawLab-Dateien";
 "S 曲线" = "S-Kurve";
@@ -51,7 +52,6 @@
 "临时选择" = "Vorläufige Auswahl";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Um aktive Geräte zu zählen, speichert die App eine zufällig erzeugte Installations-ID auf diesem Gerät. Sie enthält keine personenbezogenen Daten und wird gelöscht, wenn Sie die Analyse deaktivieren.";
 "乡村秋日 · 古典油画" = "Ländlicher Herbst · klassisches Ölgemälde";
-"亮度直方图" = "Luminanzhistogramm";
 "亮度降噪" = "Luminanz-Rauschreduzierung";
 "仅在暗角强度为负值时可用。" = "Nur bei negativer Vignettenstärke verfügbar.";
 "仅用于本次导出，保留各照片原有调整" = "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten";
@@ -136,6 +136,7 @@
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
 "尚未选择照片" = "Keine Fotos ausgewählt";
 "展开%@组" = "Gruppe „%@“ aufklappen";
+"展开直方图" = "Histogramm erweitern";
 "展开调整栏" = "Anpassungsbereich ausklappen";
 "已保存" = "Gespeichert";
 "已保存 %@ 张到照片图库" = "In Fotos gespeichert: %@";
@@ -168,7 +169,6 @@
 "当前构建未配置使用统计，未采集或上报。" = "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.";
 "当前照片或调整记录无效，无法安全重置。" = "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.";
 "当前配方不可用，无法安全重置外观。" = "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.";
-"当前预览的亮度分布" = "Aktuelle Luminanzverteilung der Vorschau";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
 "恢复默认" = "Standard wiederherstellen";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
@@ -188,6 +188,7 @@
 "授权核对相册中的保存结果" = "Zugriff auf Fotos erlauben, um gespeicherte Ergebnisse zu prüfen";
 "搜索镜头" = "Objektive suchen";
 "收起%@组" = "Gruppe „%@“ zuklappen";
+"收起直方图" = "Histogramm ausblenden";
 "收起调整栏" = "Anpassungsbereich einklappen";
 "放弃任务" = "Auftrag verwerfen";
 "放弃修改" = "Änderungen verwerfen";
@@ -320,6 +321,7 @@
 "纽约电影 · 戏剧光影" = "New Yorker Filmlook · dramatisches Licht";
 "细节" = "Detail";
 "细节优先" = "Detailpriorität";
+"统计不可用" = "Statistik nicht verfügbar";
 "统计已停止，请重启应用后再开启。" = "Die Analyse wurde gestoppt. Starten Sie die App neu, bevor Sie sie wieder aktivieren.";
 "统计服务未能启动，照片编辑不受影响。" = "Der Analysedienst konnte nicht gestartet werden. Die Fotobearbeitung ist nicht betroffen.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Die Analyseeinstellung konnte nicht gespeichert werden. Die Erfassung wurde für diesen Prozess gestoppt. Prüfen Sie vor dem Neustart die Speicherberechtigung.";

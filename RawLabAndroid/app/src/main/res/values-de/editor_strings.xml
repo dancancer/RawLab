@@ -26,6 +26,7 @@
     <string name="edit_read_error">"Anpassungsdatensatz konnte nicht gelesen werden: %1$s"</string>
     <string name="edit_unsaved_detail">"Anpassungen nicht gespeichert: %1$s"</string>
     <string name="editor_adjusted">"Bearbeitet"</string>
+    <string name="editor_collapse_histogram">"Histogramm ausblenden"</string>
     <string name="editor_compare_before">"Vorher"</string>
     <string name="editor_compare_disable">"Vergleich ausschalten"</string>
     <string name="editor_compare_enable">"Vergleich einschalten"</string>
@@ -36,6 +37,7 @@
     <string name="editor_compare_side_by_side">"Nebeneinander"</string>
     <string name="editor_compare_split">"Position der Trennlinie"</string>
     <string name="editor_compare_wipe">"Trennlinie"</string>
+    <string name="editor_expand_histogram">"Histogramm erweitern"</string>
     <string name="editor_fine_hint">"Die Empfindlichkeit beim Ziehen beträgt ein Viertel der normalen Empfindlichkeit."</string>
     <string name="editor_group_collapse">"Gruppe „%1$s“ zuklappen"</string>
     <string name="editor_group_color">"Farbe"</string>
@@ -79,7 +81,9 @@
     <string name="editor_reset_tool_title">"%1$s zurücksetzen?"</string>
     <string name="editor_reset_unknown_recipe">"Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden."</string>
     <string name="editor_reset_unrepresentable">"Die verfügbaren Parameterbereiche können die Wirkung des Rezepts nicht vollständig erhalten. Brechen Sie ab oder bestätigen Sie separat das Zurücksetzen aller Anpassungen."</string>
+    <string name="editor_rgb_histogram">"RGB-Histogramm"</string>
     <string name="editor_settings">"Einstellungen"</string>
+    <string name="editor_statistics_unavailable">"Statistik nicht verfügbar"</string>
     <string name="editor_zoom_display">"Zoom und Anzeige"</string>
     <string name="empty_hint">"RAW aus einem Album auswählen oder aus Systemdateien importieren."</string>
     <string name="geometry_drag_hint">"Zuschnittauswahl"</string>

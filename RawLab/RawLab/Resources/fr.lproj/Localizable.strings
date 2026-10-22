@@ -31,6 +31,7 @@
 "Invalid photo effects: %@" = "Effets photo invalides : %@";
 "No image loaded." = "Aucune image chargée.";
 "RAW 照片" = "Photo RAW";
+"RGB 直方图" = "Histogramme RVB";
 "Raster decode failed." = "Échec du décodage de l’image raster.";
 "RawLab 文件" = "Fichiers RawLab";
 "S 曲线" = "Courbe en S";
@@ -51,7 +52,6 @@
 "临时选择" = "Sélection provisoire";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Pour compter les appareils actifs, l’application enregistre sur cet appareil un identifiant d’installation généré aléatoirement. Il ne contient aucune information personnelle et est supprimé lorsque vous désactivez l’analyse.";
 "乡村秋日 · 古典油画" = "Automne rural · peinture à l'huile classique";
-"亮度直方图" = "Histogramme de luminance";
 "亮度降噪" = "Réduction du bruit de luminance";
 "仅在暗角强度为负值时可用。" = "Disponible uniquement lorsque l’intensité du vignettage est négative.";
 "仅用于本次导出，保留各照片原有调整" = "Pour cette exportation uniquement ; les réglages existants de chaque photo sont conservés";
@@ -136,6 +136,7 @@
 "尚未选择 RAW" = "Aucune photo RAW sélectionnée";
 "尚未选择照片" = "Aucune photo sélectionnée";
 "展开%@组" = "Développer le groupe %@";
+"展开直方图" = "Développer l'histogramme";
 "展开调整栏" = "Développer les réglages";
 "已保存" = "Enregistré";
 "已保存 %@ 张到照片图库" = "Enregistrées dans Photos : %@";
@@ -168,7 +169,6 @@
 "当前构建未配置使用统计，未采集或上报。" = "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.";
 "当前照片或调整记录无效，无法安全重置。" = "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.";
 "当前配方不可用，无法安全重置外观。" = "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.";
-"当前预览的亮度分布" = "Distribution de luminance de l’aperçu actuel";
 "恢复当前照片的全部调整，不改写原始照片。" = "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.";
 "恢复默认" = "Rétablir la valeur par défaut";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Réussite %@ · Échec %@ · Non traitées %@";
@@ -188,6 +188,7 @@
 "授权核对相册中的保存结果" = "Autoriser l’accès pour vérifier les résultats enregistrés dans Photos";
 "搜索镜头" = "Rechercher un objectif";
 "收起%@组" = "Réduire le groupe %@";
+"收起直方图" = "Réduire l'histogramme";
 "收起调整栏" = "Réduire les réglages";
 "放弃任务" = "Abandonner la tâche";
 "放弃修改" = "Abandonner les modifications";
@@ -320,6 +321,7 @@
 "纽约电影 · 戏剧光影" = "Cinéma new-yorkais · lumière dramatique";
 "细节" = "Détail";
 "细节优先" = "Priorité aux détails";
+"统计不可用" = "Statistiques indisponibles";
 "统计已停止，请重启应用后再开启。" = "L’analyse est arrêtée. Redémarrez l’application avant de la réactiver.";
 "统计服务未能启动，照片编辑不受影响。" = "Le service d’analyse n’a pas pu démarrer. La retouche photo n’est pas affectée.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Le réglage d’analyse n’a pas pu être enregistré. La collecte est arrêtée pour ce processus. Vérifiez l’autorisation de stockage avant de redémarrer.";

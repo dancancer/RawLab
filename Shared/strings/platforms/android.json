@@ -2689,6 +2689,30 @@
       "formats": [],
       "source": "缩放与显示",
       "types": []
+    },
+    "editor_rgb_histogram": {
+      "source": "RGB 直方图",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "editor_statistics_unavailable": {
+      "source": "统计不可用",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "editor_expand_histogram": {
+      "source": "展开直方图",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "editor_collapse_histogram": {
+      "source": "收起直方图",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
     }
   },
   "overrides": {
