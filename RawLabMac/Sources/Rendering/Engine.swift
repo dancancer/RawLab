@@ -43,10 +43,10 @@ enum ExportFormat: String, CaseIterable, Codable, Identifiable {
 struct RenderedImage {
     let image: CGImage
     let isFullResolution: Bool
-    let clipping: CGImage
+    let clipping: CGImage?
     let histogram: [[Double]]
-    let shadows: Double
-    let highlights: Double
+    let shadows: Double?
+    let highlights: Double?
     let baselineEV: Double
     let metadataEV: Double
     let asShotWhiteBalance: WhiteBalance?
@@ -54,6 +54,34 @@ struct RenderedImage {
     var lensInfo: LensInfo? = nil
     var nativeWidth: Int? = nil
     var nativeHeight: Int? = nil
+}
+
+struct PreviewStatistics {
+    let histogram: [[Double]]
+    let clipping: CGImage
+    let shadows: Double
+    let highlights: Double
+
+    static func analyze(_ buffer: inout sony2fuji_buffer) -> PreviewStatistics? {
+        var bins = [UInt32](repeating: 0, count: 768)
+        var black: UInt32 = 0, white: UInt32 = 0
+        var mask = sony2fuji_buffer()
+        defer { sony2fuji_release_buffer(&mask) }
+        // 显示像素已在 CPU；统计失败不改变照片渲染的 GPU 模式或丢弃照片。
+        guard sony2fuji_analyze_image(&buffer, SONY2FUJI_GPU_OFF, &bins, &black, &white, &mask) == SONY2FUJI_STATUS_OK,
+              let pixels = mask.data else { return nil }
+        let width = Int(buffer.width), height = Int(buffer.height), count = Double(width * height)
+        let histogram = (0..<3).map { channel in (0..<256).map { Double(bins[channel * 256 + $0]) } }
+        guard count > 0, histogram.allSatisfy({ $0.reduce(0, +) == count }) else { return nil }
+        let data = Data(bytes: pixels, count: mask.size_bytes)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let provider = CGDataProvider(data: data as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: Int(mask.stride_bytes), space: space,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider,
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
+        return PreviewStatistics(histogram: histogram, clipping: image,
+            shadows: Double(black) / count, highlights: Double(white) / count)
+    }
 }
 
 struct RawWhiteBalanceCacheKey: Equatable {
@@ -110,6 +138,7 @@ final class RenderEngine {
     }
     private var session: OpaquePointer?
     private let gpuMode: sony2fuji_gpu_mode
+    private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
     private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, value: WhiteBalance?)?
     private let lensDatabaseURL: URL?
     private struct LensCatalogKey: Equatable {
@@ -119,8 +148,10 @@ final class RenderEngine {
     }
     private var lensCatalogKey: LensCatalogKey?
     private var lensCandidates: [LensCandidate] = []
-    init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil) throws {
+    init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil,
+         statisticsProvider: @escaping (inout sony2fuji_buffer) -> PreviewStatistics? = PreviewStatistics.analyze) throws {
         self.gpuMode = gpuMode
+        self.statisticsProvider = statisticsProvider
         self.lensDatabaseURL = lensDatabaseURL
         try resetSession()
     }
@@ -323,19 +354,9 @@ final class RenderEngine {
                 bitsPerPixel: 32, bytesPerRow: Int(buffer.stride_bytes), space: space,
                 bitmapInfo: bitmap, provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
         else { throw RenderError.failed(L10n.text("无法显示处理结果")) }
-        var bins = [UInt32](repeating: 0, count: 768)
-        var black: UInt32 = 0, white: UInt32 = 0
-        var clippingBuffer = sony2fuji_buffer()
-        defer { sony2fuji_release_buffer(&clippingBuffer) }
-        guard sony2fuji_analyze_image(&buffer, gpuMode, &bins, &black, &white, &clippingBuffer) == SONY2FUJI_STATUS_OK,
-              let clippingPixels = clippingBuffer.data else { throw RenderError.failed(L10n.text("无法计算直方图")) }
-        let histogram = (0..<3).map { channel in (0..<256).map { Double(bins[channel*256+$0]) } }
-        let overlay = Data(bytes: clippingPixels, count: clippingBuffer.size_bytes)
-        let mask = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-            bytesPerRow: width*4, space: space, bitmapInfo: bitmap,
-            provider: CGDataProvider(data: overlay as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
-        return RenderedImage(image: image, isFullResolution: edge == nil, clipping: mask, histogram: histogram,
-            shadows: Double(black)/Double(width*height), highlights: Double(white)/Double(width*height),
+        let statistics = statisticsProvider(&buffer)
+        return RenderedImage(image: image, isFullResolution: edge == nil, clipping: statistics?.clipping, histogram: statistics?.histogram ?? [],
+            shadows: statistics?.shadows, highlights: statistics?.highlights,
             baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance,
             supportsRawNoiseReduction: noiseReductionSupported == 1, lensInfo: raster ? nil : lensInfo(for: url),
             nativeWidth: Int(nativeWidth), nativeHeight: Int(nativeHeight))

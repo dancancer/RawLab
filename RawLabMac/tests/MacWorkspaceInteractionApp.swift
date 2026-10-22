@@ -18,6 +18,9 @@ struct MacWorkspaceInteractionApp {
         let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
                                 editDirectory: directory.appendingPathComponent("edits"),
                                 batchDirectory: directory.appendingPathComponent("batch"))
+        if environment["RAWLAB_HISTOGRAM_UNAVAILABLE"] == "1" {
+            model.engine = try! RenderEngine(statisticsProvider: { _ in nil })
+        }
         let geometryEvents = model.$geometryDraft.sink { draft in
             if let geometry = draft?.geometry {
                 print("GEOMETRY_STATE straighten=\(geometry.straightenDegrees) width=\(geometry.cropWidth) horizontal=\(geometry.perspectiveHorizontal)")
