@@ -19,6 +19,7 @@ import java.util.UUID
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.settings.DenoisePreset
 import com.rawlab.android.settings.DenoiseSettings
+import com.rawlab.android.testing.assertHistogramMatches
 
 @RunWith(AndroidJUnit4::class)
 class EditorViewModelRaceInstrumentedTest {
@@ -46,6 +47,9 @@ class EditorViewModelRaceInstrumentedTest {
             }
             awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 512 }
             assertEquals(.5f, model.state.value.edits.exposure)
+            val neutralHistogram = requireNotNull(model.state.value.preview!!.neutralHistogram)
+            assertHistogramMatches(model.state.value.preview!!.neutral, neutralHistogram)
+            assertHistogramMatches(model.state.value.preview!!.result, model.state.value.preview!!.resultHistogram)
             instrumentation.runOnMainSync {
                 model.updatePreviewSize(640)
                 model.updatePreviewSize(512)
@@ -64,6 +68,8 @@ class EditorViewModelRaceInstrumentedTest {
             }
             awaitState(model) { !it.rendering && maxOf(it.preview!!.result.width, it.preview.result.height) == 1216 }
             assertFalse(model.state.value.exact)
+            assertNull(model.state.value.preview!!.resultHistogram)
+            assertSame(neutralHistogram, model.state.value.preview!!.neutralHistogram)
             instrumentation.runOnMainSync { model.edit(model.state.value.edits) }
             awaitState(model) { it.canExport }
             instrumentation.runOnMainSync {
@@ -72,7 +78,43 @@ class EditorViewModelRaceInstrumentedTest {
                 model.cancelExport()
             }
             awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 896 }
+            assertSame(neutralHistogram, model.state.value.preview!!.neutralHistogram)
+            assertHistogramMatches(model.state.value.preview!!.neutral, neutralHistogram)
+            assertHistogramMatches(model.state.value.preview!!.result, model.state.value.preview!!.resultHistogram)
         } finally { store.clear(); raw.delete() }
+    }
+    @Test fun sourceSwitchRejectsPendingOldPixelsAndTheirHistogram() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val root = File(context.cacheDir, "rgb-source-${UUID.randomUUID()}").apply { mkdirs() }
+        val a = File(root, "a.png")
+        val b = File(root, "b.png")
+        for ((file, color) in listOf(a to 0xffdd2211.toInt(), b to 0xff1177cc.toInt())) {
+            val image = android.graphics.Bitmap.createBitmap(800, 600, android.graphics.Bitmap.Config.ARGB_8888)
+            image.eraseColor(color)
+            file.outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            image.recycle()
+        }
+        val store = ViewModelStore()
+        try {
+            val model = EditorViewModel(context.applicationContext as Application)
+            store.put("editor", model)
+            instrumentation.runOnMainSync { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(a)) }
+            awaitState(model) { it.canExport }
+            val old = requireNotNull(model.state.value.preview!!.resultHistogram)
+            instrumentation.runOnMainSync {
+                model.edit(model.state.value.edits.copy(exposure = 1f))
+                assertTrue(model.state.value.rendering)
+                model.importPhoto(Uri.fromFile(b))
+            }
+            awaitState(model) { it.photo?.name == b.name && it.canExport }
+            val frame = requireNotNull(model.state.value.preview)
+            assertHistogramMatches(frame.neutral, frame.neutralHistogram)
+            assertHistogramMatches(frame.result, frame.resultHistogram)
+            assertEquals(480000L, frame.resultHistogram!!.count(0, 17))
+            assertEquals(0L, old.count(0, 17))
+            assertEquals(0xff1177cc.toInt(), frame.result.getPixel(0, 0))
+        } finally { store.clear(); root.deleteRecursively() }
     }
     @Test fun startupLookLoadSurvivesImmediatePhotoImport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

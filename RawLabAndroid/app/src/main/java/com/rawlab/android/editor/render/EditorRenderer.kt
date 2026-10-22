@@ -2,6 +2,7 @@ package com.rawlab.android.editor.render
 
 import android.graphics.Bitmap
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
@@ -17,9 +18,10 @@ internal class EditorRenderer(
     private val debuggable: Boolean,
 ) {
     private var processor: NativeProcessor? = null
-    private var original: Pair<NeutralSourceKey, Bitmap>? = null
+    private data class ReferenceFrame(val bitmap: Bitmap, val histogram: RgbHistogram?)
+    private var original: Pair<NeutralSourceKey, ReferenceFrame>? = null
     private var originalAspect = 1f
-    private var transformedNeutral: Pair<ComparisonPreviewKey, Bitmap>? = null
+    private var transformedNeutral: Pair<ComparisonPreviewKey, ReferenceFrame>? = null
 
     fun close() { processor?.close() }
 
@@ -53,7 +55,7 @@ internal class EditorRenderer(
                 transformedNeutral = null
                 val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing), 1600, false, work.photo.inputKind)
                 originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
-                original = sourceKey to source.bitmap()
+                original = sourceKey to ReferenceFrame(source.bitmap(), source.histogram)
             }
             val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
                 val key = ComparisonPreviewKey(work.photo.file.absolutePath, work.edits.geometry, work.edits.lens, edge, work.interactive,
@@ -61,15 +63,16 @@ internal class EditorRenderer(
                 if (transformedNeutral?.first != key) {
                     transformedNeutral = null
                     val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing)
-                    transformedNeutral = key to native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind).bitmap()
+                    val frame = native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind)
+                    transformedNeutral = key to ReferenceFrame(frame.bitmap(), frame.histogram)
                 }
                 transformedNeutral!!.second
             }
             val lut = storage.lookPath(work.edits)
             val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind)
             val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
-            WorkResult.Preview(work, PreviewPair(neutral, film.bitmap(), film.temperature, film.tint, film.lens,
-                dimensions.first, dimensions.second, originalAspect))
+            WorkResult.Preview(work, PreviewPair(neutral.bitmap, film.bitmap(), film.temperature, film.tint, film.lens,
+                dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram))
         }
         is Work.Export -> {
             val output = storage.temporaryOutput(work.format)

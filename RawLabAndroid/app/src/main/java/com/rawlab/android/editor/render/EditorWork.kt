@@ -3,6 +3,7 @@ package com.rawlab.android.editor.render
 import android.graphics.Bitmap
 import android.net.Uri
 import com.rawlab.android.engine.LensInfo
+import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
@@ -25,7 +26,8 @@ import com.rawlab.android.settings.LookChoice
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
     val comparisonHeight: Float = neutral.height.toFloat(),
-    val originalAspect: Float = neutral.width.toFloat() / neutral.height)
+    val originalAspect: Float = neutral.width.toFloat() / neutral.height,
+    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null)
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,

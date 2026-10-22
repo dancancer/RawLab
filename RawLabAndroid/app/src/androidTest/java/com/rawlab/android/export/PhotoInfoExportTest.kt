@@ -84,9 +84,12 @@ class PhotoInfoExportTest {
             val button = compose.onNodeWithTag("photo-info-button")
             button.performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("info-source.ARW", substring = true).fetchSemanticsNodes().size > 1 }
-            compose.onNodeWithTag("photo-info-panel").assertIsDisplayed()
+            compose.waitUntil(10_000) {
+                runCatching { compose.onNodeWithTag("photo-info-panel").assertIsDisplayed(); true }.getOrDefault(false)
+            }
+            capture("file-info.png")
             button.performClick()
-            compose.onNodeWithText("SONY", substring = true).assertIsDisplayed()
+            compose.onNodeWithText(requireNotNull(PhotoInfoReader.read(source).camera), substring = true).assertIsDisplayed()
             capture("capture-info.png")
             button.performClick(); compose.onNodeWithTag("photo-info-panel").assertDoesNotExist()
             import(target)
