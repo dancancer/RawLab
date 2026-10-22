@@ -100,8 +100,11 @@ class WorkflowContractTests(unittest.TestCase):
                     uploads.append(step)
                     self.assertEqual(step["if"], "always()")
                     self.assertEqual(step["with"]["retention-days"], "7")
+                    allowed_paths = {"build/ci/*.log", "build/ci/*.json", "build/ci/*.xml"}
+                    if name == "windows":
+                        allowed_paths.add("build/windows-v08-results/**/*.png")
                     for path in step["with"]["path"].splitlines():
-                        self.assertRegex(path, r"^build/ci/\*\.(?:log|json|xml)$")
+                        self.assertIn(path, allowed_paths)
             self.assertEqual(len(uploads), 0 if name in ("changes", "result") else 1, name)
 
     def test_android_uses_a_dedicated_linux_runner_with_bounded_parallelism(self):
@@ -214,6 +217,18 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("transform-ui", selected, "Draft save failure and retry require the real WPF harness")
         self.assertIn("editing", selected)
         self.assertIn("-RawPath $raw -NativeArtifacts $package", invocation)
+
+    def test_windows_workspace_navigation_has_runtime_and_visual_evidence(self):
+        steps = self.workflow["jobs"]["windows"]["steps"]
+        commands = "\n".join(step.get("run", "") for step in steps)
+        invocation = next(line for line in commands.splitlines()
+                          if "./RawLabWindows/tests/run-v08.ps1" in line)
+        selected = invocation.split("-Only '", 1)[1].split("'", 1)[0].split(",")
+        for suite in ("tool-groups", "ui-details", "editor-shell", "editor-review",
+                      "localization-ui", "transform-ui"):
+            self.assertIn(suite, selected, "Workspace navigation requires its real WPF suite")
+        upload = next(step for step in steps if step.get("with", {}).get("name") == "windows-results")
+        self.assertIn("build/windows-v08-results/**/*.png", upload["with"]["path"])
 
     def test_lut_contracts_include_the_adapter_dependencies(self):
         contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])

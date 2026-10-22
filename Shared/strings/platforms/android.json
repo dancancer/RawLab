@@ -2303,6 +2303,222 @@
       "formats": [],
       "source": "适合窗口",
       "types": []
+    },
+    "editor_adjusted": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已调整",
+      "types": []
+    },
+    "editor_group_collapse": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "收起{0}组",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_group_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颜色",
+      "types": []
+    },
+    "editor_group_detail": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "细节",
+      "types": []
+    },
+    "editor_group_effects": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "效果",
+      "types": []
+    },
+    "editor_group_expand": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "展开{0}组",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_group_geometry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "几何与镜头",
+      "types": []
+    },
+    "editor_group_light": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光线",
+      "types": []
+    },
+    "editor_group_looks": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观",
+      "types": []
+    },
+    "editor_reset_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部调整…",
+      "types": []
+    },
+    "editor_reset_all_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "恢复当前照片的全部调整，不改写原始照片。",
+      "types": []
+    },
+    "editor_reset_all_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部调整？",
+      "types": []
+    },
+    "editor_reset_blocked_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法重置调整",
+      "types": []
+    },
+    "editor_reset_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置",
+      "types": []
+    },
+    "editor_reset_conversion_message": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "将以下项目转为独立调整，以保留其他分组的当前效果：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_group": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}组…",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_group_message": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "此操作只恢复{0}组内的调整，其他分组保持不变。",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_group_title": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}组？",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_hsl_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部 HSL…",
+      "types": []
+    },
+    "editor_reset_hsl_all_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。",
+      "types": []
+    },
+    "editor_reset_hsl_all_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部 HSL？",
+      "types": []
+    },
+    "editor_reset_hsl_color": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置当前颜色（{0}）",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_invalid": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前照片或调整记录无效，无法安全重置。",
+      "types": []
+    },
+    "editor_reset_missing_wb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "缺少拍摄时白平衡数据，无法保留配方效果。",
+      "types": []
+    },
+    "editor_reset_not_ready": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览尚未就绪，请稍后重试。",
+      "types": []
+    },
+    "editor_reset_stale": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片或调整已变化，请重新确认重置。",
+      "types": []
+    },
+    "editor_reset_tool": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_tool_title": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}？",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_unknown_recipe": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前配方不可用，无法安全重置外观。",
+      "types": []
+    },
+    "editor_reset_unrepresentable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。",
+      "types": []
     }
   },
   "overrides": {
