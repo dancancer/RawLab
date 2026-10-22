@@ -172,6 +172,7 @@
     "强度": "Intensité",
     "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光": "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude",
     "当前外观不可用，不能应用设置。": "Le rendu actuel est indisponible ; les réglages ne peuvent pas être appliqués.",
+    "当前工具": "Outil actuel",
     "当前构建未配置使用统计，未采集或上报。": "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.",
     "当前照片或调整记录无效，无法安全重置。": "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.",
     "当前配方不可用，无法安全重置外观。": "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.",

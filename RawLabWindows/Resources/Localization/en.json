@@ -172,6 +172,7 @@
     "强度": "Intensity",
     "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光": "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light",
     "当前外观不可用，不能应用设置。": "The current look is unavailable; settings cannot be applied.",
+    "当前工具": "Current tool",
     "当前构建未配置使用统计，未采集或上报。": "Usage analytics is not configured in this build; nothing is collected or reported.",
     "当前照片或调整记录无效，无法安全重置。": "The current photo or edit record is invalid and cannot be reset safely.",
     "当前配方不可用，无法安全重置外观。": "The current recipe is unavailable, so its look cannot be reset safely.",
