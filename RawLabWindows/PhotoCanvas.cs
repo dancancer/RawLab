@@ -4,22 +4,33 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
+using System.Windows.Threading;
 
 namespace RawLab.Windows;
 public sealed class Viewport
 {
     public bool ActualPixels { get; private set; }
     public double Zoom { get; private set; } = 1;
-    public Vector Pan { get; private set; }
+    private double focusX=.5,focusY=.5;
+    private Size lastProjection;
+    public Vector Pan=>new(Math.Round((.5-focusX)*lastProjection.Width,8),Math.Round((.5-focusY)*lastProjection.Height,8));
     public Size SourceSize { get; private set; }
     public void SetSourceSize(int width,int height) { SourceSize=width>0 && height>0 ? new(width,height) : default;Changed?.Invoke(); }
     public event Action? Changed;
     public event Action? ResolutionChanged;
-    public void Fit() { var wasActual=ActualPixels;ActualPixels=false; Zoom=1; Pan=default; Changed?.Invoke();if(wasActual)ResolutionChanged?.Invoke(); }
-    public void Actual() { var wasActual=ActualPixels;ActualPixels=true; Zoom=1; Pan=default; Changed?.Invoke();if(!wasActual)ResolutionChanged?.Invoke(); }
+    public void Fit() { var wasActual=ActualPixels;ActualPixels=false; Zoom=1; focusX=focusY=.5; Changed?.Invoke();if(wasActual)ResolutionChanged?.Invoke(); }
+    public void Actual() { var wasActual=ActualPixels;ActualPixels=true; Zoom=1; focusX=focusY=.5; Changed?.Invoke();if(!wasActual)ResolutionChanged?.Invoke(); }
     public void ToggleActualPixels() { if(ActualPixels || Zoom!=1)Fit();else Actual(); }
     public void Magnify(double factor) { Zoom=Math.Clamp(Zoom*factor,.1,16); Changed?.Invoke(); }
-    public void Move(Vector delta) { Pan+=delta; Changed?.Invoke(); }
+    public void Move(Vector delta)=>Move(delta,lastProjection);
+    internal void Move(Vector delta,Size photo)
+    {if(photo.Width<=0 || photo.Height<=0)return;focusX-=delta.X/photo.Width;focusY-=delta.Y/photo.Height;Changed?.Invoke();}
+    internal Rect Project(Size area,Size source,DpiScale dpi,double margin)
+    {
+        var value=PhotoViewProjection.Project(area.Width,area.Height,source.Width,source.Height,Zoom,focusX,focusY,margin,
+            ActualPixels ? 1/dpi.DpiScaleX : 0,ActualPixels ? 1/dpi.DpiScaleY : 0);
+        lastProjection=new(value.Width,value.Height);return new(value.X,value.Y,value.Width,value.Height);
+    }
     internal int PreviewLongEdge(Size area,DpiScale dpi,Size fallback)
     {
         if(ActualPixels)return 0;
@@ -44,7 +55,17 @@ public sealed partial class PhotoCanvas : FrameworkElement
     private BitmapSource? image,mask,comparison,comparisonMask;
     private Viewport? viewport;
     private Point? drag;
-    private bool draggingDivider,comparisonEnabled;
+    private bool draggingDivider,comparisonEnabled,showingBefore,photoMargin,panning;
+    private Point pressOrigin;
+    private readonly DispatcherTimer holdTimer=new();
+    public event Action? HoldStarted;
+    public event Action? HoldEnded;
+    public event Action? ImageBoundsChanged;
+    public event Action? DividerChanged;
+    public bool PhotoMargin {get=>photoMargin;set{if(photoMargin==value)return;photoMargin=value;UpdateTransform();}}
+    public bool ShowingBefore {get=>showingBefore;set{showingBefore=value;UpdateComparison();}}
+    internal Rect VisibleImageBounds=>Rect.Intersect(ImageBounds,new Rect(RenderSize));
+    private double DividerX=>ImageBounds.X+ImageBounds.Width*Divider;
     private bool showClipping;
     private readonly VisualCollection layers;
     private readonly ContainerVisual referenceLayer=new(),editedLayer=new();
@@ -56,12 +77,12 @@ public sealed partial class PhotoCanvas : FrameworkElement
     private double divider=.5;
     internal int PreviewLongEdge { get; private set; } = 2000;
     internal event Action<int>? PreviewSizeChanged;
-    public bool ComparisonEnabled { get=>comparisonEnabled; set { comparisonEnabled=value;UpdateComparison(); } }
-    public double Divider { get=>divider; set { if(!double.IsFinite(value))throw new ArgumentOutOfRangeException(nameof(value));divider=Math.Clamp(value,0,1);UpdateComparison(); } }
+    public bool ComparisonEnabled { get=>comparisonEnabled; set { comparisonEnabled=value;if(value)CancelHold();UpdateComparison(); } }
+    public double Divider { get=>divider; set { if(!double.IsFinite(value))throw new ArgumentOutOfRangeException(nameof(value));divider=Math.Clamp(value,0,1);UpdateComparison();DividerChanged?.Invoke(); } }
     public bool ShowClipping { get=>showClipping; set {if(showClipping==value)return;showClipping=value;DrawImages();} }
     public Viewport? Viewport { get => viewport; set { if(viewport!=null) viewport.Changed-=UpdateTransform; viewport=value; if(value!=null)value.Changed+=UpdateTransform;UpdateTransform(); } }
-    public void SetImage(BitmapSource? source,BitmapSource? clipping) { image=source; mask=clipping;DrawImages();UpdateTransform(); }
-    public void SetComparison(BitmapSource? source,BitmapSource? clipping) { comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
+    public void SetImage(BitmapSource? source,BitmapSource? clipping) { if(ReferenceEquals(image,source) && ReferenceEquals(mask,clipping))return;image=source; mask=clipping;DrawImages();UpdateTransform(); }
+    public void SetComparison(BitmapSource? source,BitmapSource? clipping) { if(ReferenceEquals(comparison,source) && ReferenceEquals(comparisonMask,clipping))return;comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
     public PhotoCanvas()
     {
         SetResourceReference(CanvasBrushProperty,"CanvasSurface");
@@ -72,31 +93,41 @@ public sealed partial class PhotoCanvas : FrameworkElement
         referenceDrawing.Transform=editedDrawing.Transform=imageTransform;
         RenderOptions.SetBitmapScalingMode(this,BitmapScalingMode.LowQuality);
         ClipToBounds=true; Focusable=true; Cursor=Cursors.Hand;
-        MouseWheel+=(_,e)=> { if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2); e.Handled=image!=null; };
+        holdTimer.Interval=TimeSpan.FromMilliseconds(Math.Max(1,SystemParameters.MouseHoverTime.TotalMilliseconds));
+        holdTimer.Tick+=(_,_)=>{holdTimer.Stop();if(drag!=null && !panning && !GeometryEditing && !ComparisonEnabled && Mouse.LeftButton==MouseButtonState.Pressed)HoldStarted?.Invoke();};
+        MouseWheel+=(_,e)=> { CancelHold();if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2);e.Handled=image!=null; };
         MouseLeftButtonDown+=(_,e)=> {
-            Focus();var point=e.GetPosition(this);
+            Focus();var point=e.GetPosition(this);CancelHold();
             if(HandleCropDown(point)){e.Handled=true;return;}
-            draggingDivider=ComparisonEnabled && Math.Abs(point.X-ActualWidth*Divider)<=18;
+            draggingDivider=ComparisonEnabled && VisibleImageBounds.Contains(point) && Math.Abs(point.X-DividerX)<=18;
             if(e.ClickCount==2 && !draggingDivider && image!=null)
-            {
-                drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;
-            }
-            if(!draggingDivider)drag=point;CaptureMouse();
-            e.Handled=true;
+            {drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;}
+            pressOrigin=point;panning=false;
+            if(!draggingDivider){drag=point;if(image!=null && ImageBounds.Contains(point) && !ComparisonEnabled)holdTimer.Start();}
+            CaptureMouse();e.Handled=true;
         };
         MouseMove+=(_,e)=> {
             var next=e.GetPosition(this);
-            if(HandleCropMove(next)){e.Handled=true;return;}
-            Cursor=ComparisonEnabled && (draggingDivider || Math.Abs(next.X-ActualWidth*Divider)<=18) ? Cursors.SizeWE : Cursors.Hand;
-            if(draggingDivider){if(ActualWidth>0)Divider=next.X/ActualWidth;return;}
-            if(drag is not {} point)return;Viewport?.Move(next-point);drag=next;
+            if(HandleCropMove(next)){CancelHold();e.Handled=true;return;}
+            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : Cursors.Hand;
+            if(draggingDivider){if(ImageBounds.Width>0)Divider=(next.X-ImageBounds.X)/ImageBounds.Width;return;}
+            if(drag is not {} point)return;
+            if(!panning && (Math.Abs(next.X-pressOrigin.X)>SystemParameters.MinimumHorizontalDragDistance || Math.Abs(next.Y-pressOrigin.Y)>SystemParameters.MinimumVerticalDragDistance))
+            {panning=true;CancelHold();}
+            if(panning){Viewport?.Move(next-point,ImageBounds.Size);drag=next;}
         };
-        MouseLeftButtonUp+=(_,_)=> { EndCropDrag();drag=null;draggingDivider=false;ReleaseMouseCapture(); };
-        LostMouseCapture+=(_,_)=>{EndCropDrag();drag=null;draggingDivider=false;};
-        KeyDown+=(_,e)=> { if(HandleCropKey(e)){e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
-        SizeChanged+=(_,_)=>{UpdateTransform();UpdateComparison();};
+        MouseLeftButtonUp+=(_,_)=>EndPointer();
+        LostMouseCapture+=(_,_)=>{CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
+        LostKeyboardFocus+=(_,_)=>CancelHold();
+        TouchDown+=(_,_)=>CancelHold();
+        IsVisibleChanged+=(_,_)=>{if(!IsVisible)CancelPointer();};
+        KeyDown+=(_,e)=> { if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        SizeChanged+=(_,_)=>{CancelPointer();UpdateTransform();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
+    internal void CancelHold(){holdTimer.Stop();HoldEnded?.Invoke();}
+    internal void CancelPointer(){CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
+    private void EndPointer(){CancelPointer();}
     protected override int VisualChildrenCount=>layers.Count;
     protected override Visual GetVisualChild(int index)=>layers[index];
     protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi) {base.OnDpiChanged(oldDpi,newDpi);UpdateTransform();}
@@ -124,41 +155,43 @@ public sealed partial class PhotoCanvas : FrameworkElement
         var dpi=VisualTreeHelper.GetDpi(this);
         if(image!=null)
         {
-            var fit=Math.Min(ActualWidth/size.Width,ActualHeight/size.Height);
-            var w=size.Width*(Viewport.ActualPixels ? 1/dpi.DpiScaleX : fit)*Viewport.Zoom;
-            var h=size.Height*(Viewport.ActualPixels ? 1/dpi.DpiScaleY : fit)*Viewport.Zoom;
-            ImageBounds=new Rect((ActualWidth-w)/2+Viewport.Pan.X,(ActualHeight-h)/2+Viewport.Pan.Y,w,h);
+            ImageBounds=Viewport.Project(RenderSize,size,dpi,PhotoMargin ? 16 : 0);
+            var w=ImageBounds.Width;var h=ImageBounds.Height;
             // Keep image drawing commands and bitmap resources resident while panning.
             imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
         }
-        var edge=Viewport.PreviewLongEdge(RenderSize,dpi,size);
+        var demand=PhotoMargin ? new Size(Math.Max(1,ActualWidth-32),Math.Max(1,ActualHeight-32)) : RenderSize;
+        var edge=Viewport.PreviewLongEdge(demand,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
-        DrawCrop();
+        DrawCrop();UpdateComparison();ImageBoundsChanged?.Invoke();
     }
     private void UpdateComparison()
     {
         var wipe=ComparisonEnabled && comparison!=null;
-        referenceLayer.Opacity=wipe ? 1 : 0;
-        wipeClip.Rect=new Rect(ActualWidth*Divider,0,ActualWidth*(1-Divider),ActualHeight);
+        referenceLayer.Opacity=wipe || ShowingBefore && comparison!=null ? 1 : 0;
+        editedLayer.Opacity=ShowingBefore && comparison!=null ? 0 : 1;
+        wipeClip.Rect=ImageBounds.IsEmpty ? Rect.Empty : new Rect(DividerX,ImageBounds.Y,Math.Max(0,ImageBounds.Right-DividerX),ImageBounds.Height);
         editedLayer.Clip=wipe ? wipeClip : null;
         using var dc=overlay.RenderOpen();
-        if(wipe)
+        if(wipe && !VisibleImageBounds.IsEmpty)
         {
-            var x=ActualWidth*Divider;var y=ActualHeight/2;
+            var bounds=VisibleImageBounds;dc.PushClip(new RectangleGeometry(bounds));
+            var x=DividerX;var y=bounds.Y+bounds.Height/2;
             var pen=new Pen(OverlayInk,1.5);
-            dc.DrawLine(new Pen(OverlayPaper,4),new Point(x,0),new Point(x,ActualHeight));
-            dc.DrawLine(pen,new Point(x,0),new Point(x,ActualHeight));
+            dc.DrawLine(new Pen(OverlayPaper,4),new Point(x,ImageBounds.Top),new Point(x,ImageBounds.Bottom));
+            dc.DrawLine(pen,new Point(x,ImageBounds.Top),new Point(x,ImageBounds.Bottom));
             dc.DrawEllipse(OverlayPaper,pen,new Point(x,y),16,16);
             dc.DrawLine(pen,new Point(x-4,y-4),new Point(x-8,y));dc.DrawLine(pen,new Point(x-8,y),new Point(x-4,y+4));
             dc.DrawLine(pen,new Point(x+4,y-4),new Point(x+8,y));dc.DrawLine(pen,new Point(x+8,y),new Point(x+4,y+4));
             if(IsKeyboardFocused){dc.DrawEllipse(null,new Pen(OverlayPaper,4),new Point(x,y),19,19);dc.DrawEllipse(null,new Pen((Brush)GetValue(OverlayAccentProperty),2),new Point(x,y),19,19);}
+            dc.Pop();
         }
     }
     protected override AutomationPeer OnCreateAutomationPeer()=>new ComparisonPeer(this);
     private sealed class ComparisonPeer(PhotoCanvas owner) : FrameworkElementAutomationPeer(owner),IRangeValueProvider
     {
         protected override string GetClassNameCore()=>nameof(PhotoCanvas);
-        protected override string GetNameCore()=>owner.ComparisonEnabled ? Loc.Text("滑动对比，左侧中性，右侧修改后") : Loc.Text("照片预览");
+        protected override string GetNameCore()=>owner.ComparisonEnabled ? Loc.Text("分割位置") : Loc.Text("照片预览");
         public override object? GetPattern(PatternInterface pattern)=>pattern==PatternInterface.RangeValue && owner.ComparisonEnabled ? this : base.GetPattern(pattern);
         public bool IsReadOnly=>false;
         public double LargeChange=>10;

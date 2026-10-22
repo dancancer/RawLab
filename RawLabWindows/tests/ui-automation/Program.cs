@@ -173,7 +173,7 @@ internal static class Program
 
         private void SelectMode(string mode)
         {
-            var compare = FindById(main, "CompareButton") ?? throw new InvalidOperationException("CompareButton UIA control is missing.");
+            var compare = FindById(main, "CompareModeButton") ?? throw new InvalidOperationException("Comparison mode UIA control is missing.");
             Invoke(compare);
             var item = Wait(() => FindById(root, "Compare" + char.ToUpperInvariant(mode[0]) + mode[1..])) ??
                 throw new InvalidOperationException("Comparison mode UIA item is missing: " + mode);
@@ -190,16 +190,16 @@ internal static class Program
 
         private void WaitMode(string mode,bool loaded=true)
         {
-            Wait(() => string.Equals(FindById(main, "CompareButton")?.Current.ItemStatus,
-                mode, StringComparison.OrdinalIgnoreCase));
+            Wait(() => !string.IsNullOrWhiteSpace(FindById(main, "CompareButton")?.Current.ItemStatus));
             if(loaded)
             {
                 var canvas=FindById(main,"ResultCanvas") ?? throw new InvalidOperationException("Result canvas is missing.");
+                Wait(()=>canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _)==(mode=="swipe"));
                 var range=canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _);
                 Check(range==(mode=="swipe"),"Native canvas range support matches "+mode);
                 var neutral=FindById(main,"NeutralCanvas");
                 Check((neutral!=null && !neutral.Current.IsOffscreen)==(mode=="side"),"Native neutral canvas visibility matches "+mode);
-                Invoke(FindById(main,"CompareButton")!);
+                Invoke(FindById(main,"CompareModeButton")!);
                 AutomationElement? selected=null;
                 foreach(var option in new[]{"off","side","swipe"})
                 {
@@ -208,6 +208,7 @@ internal static class Program
                     Check((toggle.Current.ToggleState==ToggleState.On)==(option==mode),"Native comparison menu selection "+option+" in "+mode);
                     if(option==mode)selected=item;
                 }
+                Check(FindById(main,"CompareButton")!.Current.ItemStatus==selected!.Current.Name,"Comparison status uses the selected localized mode label");
                 Invoke(selected!);
             }
             Trace("mode " + mode);

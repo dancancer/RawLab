@@ -40,6 +40,9 @@ static class Program
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length>=1 && args[0]=="--first-preview") { FirstPreviewChecks.Run(args.Skip(1),Check);Console.WriteLine($"PASS {checks} first preview checks");return 0; }
+            if(args.Length==3 && args[0]=="--view-compare") { ViewComparisonChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--view-pointer") { ViewComparisonChecks.Run(args[1],args[2],Check,pointerOnly:true);return 0; }
+            if(args.Length==2 && args[0]=="--view-source-identity") { ViewComparisonChecks.SourceIdentityChecks(args[1],Check);return 0; }
             if(args.Length==3 && args[0]=="--comparison-default") { ComparisonDefaultChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} comparison default checks");return 0; }
             if(args.Length==3 && args[0]=="--comparison-ui-host")return ComparisonDefaultChecks.Host(args[1],args[2]);
             if(args.Length==4 && args[0]=="--raster") { RasterChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} raster checks");return 0; }

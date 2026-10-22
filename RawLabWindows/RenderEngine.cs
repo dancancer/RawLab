@@ -12,7 +12,7 @@ internal sealed partial class RenderEngine : IDisposable
 {
     private Native.Session session = new();
     private int gpuMode;
-    private sealed record Stamp(string Path,long Length,long Time);
+    private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,int DisplayChromaDenoise,
         int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
@@ -20,7 +20,7 @@ internal sealed partial class RenderEngine : IDisposable
     private LensCandidate[] lensCandidates = [];
     private PreviewKey? previewKey;
     private (Stamp Raw,Stamp? Lut)? sourceStamp;
-    private (Stamp Raw,int Edge,GeometrySettings Geometry,ProcessingIdentity Processing,RenderedImage Frame)? original;
+    private (NeutralReferenceKey Key,RenderedImage Frame)? original;
     private readonly Dictionary<int,PreviewFrame> previews=new();
     // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
@@ -53,28 +53,27 @@ internal sealed partial class RenderEngine : IDisposable
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
     {
         settings=PrepareInputSettings(path,settings);
-        static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);}
+        static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks,info.CreationTimeUtc.Ticks);}
         var rawStamp=FileStamp(path);var lutStamp=lut==null ? null : FileStamp(lut);
         // Replaced files must invalidate the native decoded data as well as WPF frames.
         if(sourceStamp is {} previous &&
             ((previous.Raw.Path==rawStamp.Path && previous.Raw!=rawStamp) ||
              (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
-        {session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;}
+        {
+            if(previous.Raw!=rawStamp){Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;}
+            session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
+        }
         sourceStamp=(rawStamp,lutStamp);
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
+        var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
+            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge);
+        if(original?.Key!=referenceKey)original=null;
         var cacheEdge=edge;
-        if(previews.TryGetValue(cacheEdge,out var cached)) {
-            original=compare ? (rawStamp,cacheEdge,settings.Geometry,settings.Processing,cached.Neutral) : null;
-            return cached;
-        }
-        if(original?.Raw!=rawStamp || original?.Geometry!=settings.Geometry || original?.Processing!=settings.Processing)original=null;
-        if(!compare)original=null;
-        var originalEdge=edge==0 || (interactive && original?.Edge==0) ? 0 : 2000;
-        if(compare && (original==null || original.Value.Edge!=originalEdge))
-            original=(rawStamp,originalEdge,settings.Geometry,settings.Processing,
-                Render(path,new Adjustments { Geometry=settings.Geometry, Processing=settings.Processing },null,originalEdge,statistics:false,clipping:false)!);
+        if(previews.TryGetValue(cacheEdge,out var cached))return cached;
+        if(compare && original==null)
+            original=(referenceKey,Render(path,NeutralReference.Settings(path,settings),null,edge,statistics:false,clipping:false,viewportPreview:true)!);
         var neutral=compare ? original!.Value.Frame : null;
         var result=Render(path,settings,lut,edge,interactive,clipping:clipping,viewportPreview:true)!;
         var frame=new PreviewFrame(neutral ?? result,result);

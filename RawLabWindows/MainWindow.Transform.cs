@@ -11,7 +11,7 @@ public partial class MainWindow
     private long transformGeneration;
     private EditorEditSource? transformSource;
     private bool transformSaveFailed;
-    private bool transformPreviewReady,savedTransformCompare,savedTransformSwipe;
+    private bool transformPreviewReady,savedTransformCompare;
     private GeometrySettings PreviewGeometry=>transform.Active ? transform.PreviewGeometry : settings.Geometry;
     private LensSettings PreviewLens=>transform.Active ? transform.Lens : settings.Lens;
     private bool CanApplyTransform=>transform.Dirty && transformPreviewReady && !scheduler.Busy && !previewResize.IsEnabled &&
@@ -19,14 +19,15 @@ public partial class MainWindow
     private void BeginTransform(TransformTool tool)
     {
         if(file==null || exporting || (transform.Active && transform.Tool==tool))return;
+        CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits())return;
         try { transformSource=new(file,openRevision,editRevision,CaptureCurrentEdit(),lut); }
         catch(Exception error) when(error is System.IO.IOException or UnauthorizedAccessException)
         { SetSaveNotice("调整未保存 · 重试",error.Message,true);return; }
         transformSaveFailed=false;
-        savedTransformCompare=compare;savedTransformSwipe=swipe;
+        savedTransformCompare=compare;
         transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
-        compare=swipe=false;NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
+        view.SetEnabled(false);NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
         choosingRecipes=choosingHsl=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
         choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
         if(choosingGeometry){GeometryEditor.Begin(transform.Geometry);ResultCanvas.GeometryEditing=true;}
@@ -83,7 +84,7 @@ public partial class MainWindow
         transformSource=null;transformSaveFailed=false;
         choosingLens=choosingGeometry=false;selectedParameter=Parameter.Exposure;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
-        compare=savedTransformCompare;swipe=savedTransformCompare && savedTransformSwipe;
+        view.SetEnabled(savedTransformCompare);
         RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();
     }
     private bool ResolveTransformDraft()

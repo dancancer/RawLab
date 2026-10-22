@@ -75,7 +75,7 @@ internal static class AppearanceChecks
                 SetState(target,"IsMouseOver",false);
                 Pair(((TextBlock)editor.DenoiseEditor.FindName("Summary")).Foreground,(Brush)app.Resources["Surface"],"denoise summary");
                 Pair(input.SelectionTextBrush,input.SelectionBrush,"input selection");
-                Pair(editor.BusyIndicator.Foreground,editor.BusyIndicator.Background,"busy progress");
+                Pair(editor.BusyAnimation.Foreground,editor.BusyAnimation.Background,"busy progress");
                 var progress=(ProgressBar)batch.FindName("Progress");Pair(progress.Foreground,progress.Background,"batch progress");
                 var slider=editor.ValueSlider;slider.ApplyTemplate();
                 var sliderTrack=(Track)slider.Template.FindName("PART_Track",slider);sliderTrack.Thumb.ApplyTemplate();
