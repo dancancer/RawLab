@@ -184,31 +184,33 @@ internal static class ViewComparisonChecks
         var view=Get<EditorViewState>(window,"view");window.Activate();window.ResultCanvas.Focus();var bounds=window.ResultCanvas.VisibleImageBounds;
         var center=window.ResultCanvas.PointToScreen(new(bounds.X+bounds.Width/2,bounds.Y+bounds.Height/2));
         if(!SetCursorPos((int)center.X,(int)center.Y))throw new InvalidOperationException("S3 native pointer could not reach the input desktop");
+        try {
         mouse_event(2,0,0,0,UIntPtr.Zero);Pump((int)SystemParameters.MouseHoverTime.TotalMilliseconds+100);Capture(window,output,"native-hold");
         check(view.HoldingBefore && window.ResultCanvas.ShowingBefore,"Native mouse press reaches real before after the system hold threshold");
         mouse_event(4,0,0,0,UIntPtr.Zero);Pump(40);check(!view.HoldingBefore,"Native mouse release restores after");
         keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native backslash down temporarily shows before");keybd_event(0xdc,0,2,UIntPtr.Zero);Pump(40);check(!view.HoldingBefore,"Native backslash key-up restores after");
-        mouse_event(2,0,0,0,UIntPtr.Zero);Pump((int)SystemParameters.MouseHoverTime.TotalMilliseconds+100);SetCursorPos((int)center.X+40,(int)center.Y+20);Pump(40);Capture(window,output,"native-pan-cancel");
+        mouse_event(2,0,0,0,UIntPtr.Zero);Pump((int)SystemParameters.MouseHoverTime.TotalMilliseconds+100);check(view.HoldingBefore,"Native before is active before panning");SetCursorPos((int)center.X+40,(int)center.Y+20);Pump(40);Capture(window,output,"native-pan-cancel");
         check(!view.HoldingBefore,"Native pan cancels temporary before before moving the shared photo viewport");mouse_event(4,0,0,0,UIntPtr.Zero);Pump(40);
-        window.ValueText.Focus();var info=Get<PhotoInfoMode>(window,"photoInfoMode");keybd_event(0xdc,0,0,UIntPtr.Zero);keybd_event(0xdc,0,2,UIntPtr.Zero);keybd_event(0x49,0,0,UIntPtr.Zero);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(40);
+        window.ValueText.Focus();var info=Get<PhotoInfoMode>(window,"photoInfoMode");keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(!view.HoldingBefore,"Native backslash down inside numeric text remains text input before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);keybd_event(0x49,0,0,UIntPtr.Zero);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(40);
         check(!view.HoldingBefore && Get<PhotoInfoMode>(window,"photoInfoMode")==info,"Native backslash and I inside a text box remain text input rather than viewing commands");window.OrdinaryParameter.CancelInput();window.ResultCanvas.Focus();
-        keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);window.AutoExposureButton.Focus();Pump(40);keybd_event(0xdc,0,2,UIntPtr.Zero);check(!view.HoldingBefore,"Moving real keyboard focus away from the photo cancels before even before key-up");
+        keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native before is active before moving focus");window.AutoExposureButton.Focus();Pump(40);check(!view.HoldingBefore,"Moving real keyboard focus away from the photo cancels before even before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);
         foreach(var menu in new[]{(ContextMenu)window.ZoomPhotoMargin.Parent,window.ExportButton.ContextMenu!,window.FileTreeContextMenu}) {
             window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native before is active before opening a context menu");
             menu.PlacementTarget=ReferenceEquals(menu,window.FileTreeContextMenu) ? window.Files : window.ResultCanvas;menu.IsOpen=true;Pump(60);
             Capture(window,output,"native-menu-"+(ReferenceEquals(menu,window.FileTreeContextMenu) ? "tree" : ReferenceEquals(menu,window.ExportButton.ContextMenu) ? "export" : "zoom"));
             check(!view.HoldingBefore,"The real context menu Opened event cancels an active before hold");keybd_event(0xdc,0,2,UIntPtr.Zero);
-            var mode=Get<PhotoInfoMode>(window,"photoInfoMode");keybd_event(0xdc,0,0,UIntPtr.Zero);keybd_event(0xdc,0,2,UIntPtr.Zero);keybd_event(0x49,0,0,UIntPtr.Zero);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(60);
+            var mode=Get<PhotoInfoMode>(window,"photoInfoMode");keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(!view.HoldingBefore,"Native backslash down stays excluded inside the open menu before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);keybd_event(0x49,0,0,UIntPtr.Zero);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(60);
             check(menu.IsOpen && !view.HoldingBefore && Get<PhotoInfoMode>(window,"photoInfoMode")==mode,"Native backslash and I remain excluded while a zoom/export/tree menu is active");menu.IsOpen=false;Pump(40);
         }
-        window.ResultCanvas.Focus();SetCursorPos((int)center.X,(int)center.Y);mouse_event(2,0,0,0,UIntPtr.Zero);Pump((int)SystemParameters.MouseHoverTime.TotalMilliseconds+100);Mouse.Capture(null);Pump(40);
+        window.ResultCanvas.Focus();SetCursorPos((int)center.X,(int)center.Y);mouse_event(2,0,0,0,UIntPtr.Zero);Pump((int)SystemParameters.MouseHoverTime.TotalMilliseconds+100);check(view.HoldingBefore,"Native before is active before losing mouse capture");Mouse.Capture(null);Pump(40);
         check(!view.HoldingBefore,"Losing actual photo mouse capture cancels before");mouse_event(4,0,0,0,UIntPtr.Zero);
-        window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);mouse_event(0x800,0,0,120,UIntPtr.Zero);Pump(40);keybd_event(0xdc,0,2,UIntPtr.Zero);
-        check(!view.HoldingBefore,"Native mouse wheel zoom cancels keyboard-held before");Ready(window);
-        window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);var dialog=new Window{Owner=window,Width=240,Height=140,Content=new TextBox()};dialog.Show();Pump(60);Capture(window,output,"native-owned-window-cancel");
+        window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native before is active before wheel zoom");mouse_event(0x800,0,0,120,UIntPtr.Zero);Pump(40);
+        check(!view.HoldingBefore,"Native mouse wheel zoom cancels keyboard-held before before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);Ready(window);
+        window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native before is active before opening an owned window");var dialog=new Window{Owner=window,Width=240,Height=140,Content=new TextBox()};dialog.Show();Pump(60);Capture(window,output,"native-owned-window-cancel");
         check(!view.HoldingBefore,"Opening another owned window cancels before on real deactivation");keybd_event(0xdc,0,2,UIntPtr.Zero);dialog.Close();window.Activate();window.ResultCanvas.Focus();
-        keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);window.WindowState=WindowState.Minimized;Pump(60);check(!view.HoldingBefore,"Minimizing the real window cancels before");keybd_event(0xdc,0,2,UIntPtr.Zero);window.WindowState=WindowState.Normal;window.Activate();Ready(window);
-        window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);window.OpenFile(Get<string>(window,"file"));Ready(window);keybd_event(0xdc,0,2,UIntPtr.Zero);Capture(window,output,"native-source-cancel");
-        check(!view.HoldingBefore && !view.Enabled,"Reopening even the same photo cancels native held-before state");
+        keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native before is active before minimizing");window.WindowState=WindowState.Minimized;Pump(60);check(!view.HoldingBefore,"Minimizing the real window cancels before");keybd_event(0xdc,0,2,UIntPtr.Zero);window.WindowState=WindowState.Normal;window.Activate();Ready(window);
+        window.ResultCanvas.Focus();keybd_event(0xdc,0,0,UIntPtr.Zero);Pump(40);check(view.HoldingBefore,"Native before is active before reopening the source");window.OpenFile(Get<string>(window,"file"));Ready(window);Capture(window,output,"native-source-cancel");
+        check(!view.HoldingBefore && !view.Enabled,"Reopening even the same photo cancels native held-before state before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);
+        } finally {keybd_event(0xdc,0,2,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);Mouse.Capture(null);}
     }
 }
