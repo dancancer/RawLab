@@ -222,11 +222,11 @@ internal fun PhotoCanvas(
             } else pane(Modifier.fillMaxSize())
             }
             if (showOverlays) {
-                BoxWithConstraints(Modifier.fillMaxSize()) { PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight) }
+                BoxWithConstraints(Modifier.fillMaxSize()) { PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp) }
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = bottomOverlayInset)) { bottomOverlay() }
                 if (compare) {
                     var menu by remember { mutableStateOf(false) }
-                    Box(Modifier.align(Alignment.TopEnd)) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(end = 56.dp)) {
                         IconButton(onClick = { menu = true }, Modifier.size(48.dp).testTag("comparison-mode")) {
                             Icon(Icons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
                         }
@@ -238,12 +238,14 @@ internal fun PhotoCanvas(
                     }
                 }
             }
+            RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays,
+                Modifier.align(Alignment.TopEnd).padding(8.dp))
         }
     }
 }
 
 @Composable
-private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp) {
+private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp, endInset: Dp) {
     val modeDescription = when (mode) {
         1 -> stringResource(R.string.info_file)
         2 -> stringResource(R.string.info_capture)
@@ -260,7 +262,7 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
     }
     if (mode != 0 && info != null) {
         Column(
-            Modifier.heightIn(max = availableHeight).padding(start = 60.dp, top = 12.dp).widthIn(max = 360.dp)
+            Modifier.heightIn(max = availableHeight).padding(start = 60.dp, top = 12.dp, end = endInset).widthIn(max = 360.dp)
                 .background(Color.Black.copy(alpha = .72f))
                 .padding(horizontal = 10.dp, vertical = 8.dp)
                 .testTag("photo-info-panel"),

@@ -50,7 +50,7 @@ class PhotoViewLayoutTest {
             fun text(id: Int) = compose.activity.getString(id)
             compose.onNodeWithContentDescription(text(R.string.editor_compare_enable)).performClick()
             val canvas = compose.onNodeWithTag("editor-canvas").fetchSemanticsNode().boundsInRoot
-            for (tag in listOf("comparison-mode", "photo-info-button")) {
+            for (tag in listOf("comparison-mode", "photo-info-button", "rgb-histogram-toggle")) {
                 val rect = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
                 assertTrue("$language $tag is a full 48dp target in the photo: $rect $canvas", rect.width >= 48 * density - 1 && rect.height >= 48 * density - 1 && rect.left >= canvas.left && rect.right <= canvas.right && rect.top >= canvas.top && rect.bottom <= canvas.bottom)
             }
@@ -70,6 +70,32 @@ class PhotoViewLayoutTest {
             val dir = File(compose.activity.getExternalFilesDir(null), "view-layout").apply { mkdirs() }
             File(dir, "$language-320-1.6.png").outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
             android.util.Log.i("RawLabViewLayoutEvidence", "locale=$language font=1.6 width=320 density=$density canvas=$canvas wipe=${compose.onNodeWithTag("comparison-wipe").fetchSemanticsNode().boundsInRoot}")
-        } finally { shell("wm size reset"); shell("settings put system font_scale 1.0"); source.delete() }
+            compose.onNodeWithTag("rgb-histogram-toggle").performClick()
+            for (landscape in listOf(false, true)) {
+                if (landscape) {
+                    compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                    compose.waitUntil(20_000) { compose.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+                }
+                compose.onNodeWithText(text(R.string.editor_rgb_histogram)).performScrollTo().assertIsDisplayed()
+                val layouts = mutableListOf<TextLayoutResult>()
+                compose.onNodeWithText(text(R.string.editor_rgb_histogram)).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                val titleLayout = layouts.single()
+                assertFalse(titleLayout.didOverflowHeight)
+                for (line in 0 until titleLayout.lineCount) assertFalse(titleLayout.isLineEllipsized(line))
+                compose.onNodeWithTag("rgb-histogram-source").performScrollTo().assertTextEquals(text(R.string.result))
+                compose.onNodeWithTag("rgb-histogram-plot").performScrollTo().assertIsDisplayed()
+                compose.onNodeWithTag("rgb-histogram-close").assertIsDisplayed()
+                val bounds = compose.onNodeWithTag("rgb-histogram-popup").fetchSemanticsNode().boundsInWindow
+                val plot = compose.onNodeWithTag("rgb-histogram-plot").fetchSemanticsNode().boundsInWindow
+                assertTrue("Whole plot fits the scrollable popup", bounds.contains(plot.topLeft) && bounds.contains(plot.bottomRight - androidx.compose.ui.geometry.Offset(.1f, .1f)))
+                val screen = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                try { File(dir, "$language-rgb-${if (landscape) "landscape" else "portrait"}.png").outputStream().use { screen.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+                finally { screen.recycle() }
+            }
+            compose.onNodeWithTag("rgb-histogram-close").performClick()
+        } finally {
+            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            shell("wm size reset"); shell("settings put system font_scale 1.0"); source.delete()
+        }
     }
 }

@@ -16,6 +16,7 @@ import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.testing.ForegroundTestRule
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.assertHistogramMatches
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -124,7 +125,9 @@ class PhotoViewRuntimeTest {
         com.rawlab.android.editor.EditorViewModel::class.java.getDeclaredField("previewLongEdge").apply { isAccessible = true }.getInt(model)
     private fun capture(name: String) {
         val dir = File(compose.activity.getExternalFilesDir(null), "view-native").apply { mkdirs() }
-        File(dir, name).outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val screenshot = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        try { File(dir, name).outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        finally { screenshot.recycle() }
     }
     private fun verify(processing: ProcessingIdentity, raster: Boolean = false) {
         val source = File(compose.activity.cacheDir, "view-${UUID.randomUUID()}.${if (raster) "jpg" else "RAW"}")
@@ -162,6 +165,7 @@ class PhotoViewRuntimeTest {
                 ready()
             }
             val neutralBeforeTone = model.state.value.preview!!.neutral
+            val neutralBeforeHistogram = requireNotNull(model.state.value.preview!!.neutralHistogram)
             compose.runOnUiThread {
                 val edit = model.state.value.edits.copy(exposure = .75f)
                 model.edit(if (raster) edit else edit.copy(customWb = true, temperature = 4000f, tint = 5f))
@@ -170,6 +174,9 @@ class PhotoViewRuntimeTest {
             assertSame("User tone and WB cannot replace the neutral reference", neutralBeforeTone, model.state.value.preview!!.neutral)
             val settings = model.state.value.edits
             val accepted = model.state.value.preview!!
+            assertSame(neutralBeforeHistogram, accepted.neutralHistogram)
+            assertHistogramMatches(accepted.neutral, accepted.neutralHistogram)
+            assertHistogramMatches(accepted.result, accepted.resultHistogram)
             NativeProcessor(NativeProcessor.CPU, model.storage.lensDatabase()).use { native ->
                 val expected = native.preview(model.state.value.photo!!.file, null,
                     EditSettings(geometry = settings.geometry, lens = settings.lens, processing = processing),
@@ -187,22 +194,39 @@ class PhotoViewRuntimeTest {
             compose.onNodeWithContentDescription("开启对比").performClick(); ready()
             compose.onNodeWithTag("comparison-before").assertIsDisplayed()
             val label = if (raster) "raster" else if (processing == ProcessingIdentity.LEGACY) "legacy" else "current"
+            compose.onNodeWithTag("rgb-histogram-toggle").performClick()
+            compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整后")
+            compose.onNodeWithTag("rgb-histogram-plot").assertIsDisplayed()
+            capture("$label-rgb.png")
+            compose.onNodeWithTag("rgb-histogram-close").performClick()
             capture("$label-side.png")
             compose.onNodeWithTag("comparison-mode").performClick()
             compose.onNodeWithText("分割线").performClick(); ready()
             compose.onNodeWithTag("comparison-wipe").performTouchInput { swipe(center, androidx.compose.ui.geometry.Offset(width * .7f, centerY), 400) }
             capture("$label-wipe.png")
             compose.onNodeWithContentDescription("关闭对比").performClick(); ready()
-            compose.onNodeWithTag("photo-canvas").performTouchInput { longClick(center, 800) }
+            compose.onNodeWithTag("rgb-histogram-toggle").performClick()
+            compose.onNodeWithTag("photo-canvas").performCustomAccessibilityActionWithLabel("查看调整前")
+            compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整前")
+            compose.onNodeWithTag("photo-canvas").performCustomAccessibilityActionWithLabel("返回调整后")
+            compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整后")
+            compose.onNodeWithTag("photo-canvas").performTouchInput { down(androidx.compose.ui.geometry.Offset(8f, centerY)) }
+            compose.waitUntil(3_000) { compose.onAllNodesWithText("调整前").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整前")
+            compose.onNodeWithTag("photo-canvas").performTouchInput { up() }
+            compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整后")
             compose.onNodeWithTag("adjustment-dock").assertIsDisplayed()
-            compose.onNodeWithTag("photo-canvas").performTouchInput { click(center) }
+            compose.onNodeWithTag("photo-canvas").performTouchInput { click(androidx.compose.ui.geometry.Offset(8f, centerY)) }
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("adjustment-dock").fetchSemanticsNodes().isEmpty() }; ready()
             compose.onNodeWithTag("adjustment-dock").assertDoesNotExist()
+            compose.onNodeWithTag("rgb-histogram-popup").assertDoesNotExist()
             capture("$label-pure.png")
             InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("adjustment-dock").fetchSemanticsNodes().isNotEmpty() }
             ready()
             compose.onNodeWithTag("adjustment-dock").assertIsDisplayed()
+            compose.onNodeWithTag("rgb-histogram-plot").assertIsDisplayed()
+            compose.onNodeWithTag("rgb-histogram-close").performClick()
             assertEquals(settings, model.state.value.edits)
             assertEquals(processing, model.state.value.edits.processing)
             assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino)
