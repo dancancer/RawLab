@@ -37,7 +37,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr uint64_t kMaxDisplayPixels = 64000000ull;
+constexpr uint64_t kMaxDisplayPixels = 128000000ull;
 constexpr size_t kMetadataChunkLimit = 16u * 1024u * 1024u;
 constexpr size_t kAlphaTileBytes = 4u * 1024u * 1024u;
 

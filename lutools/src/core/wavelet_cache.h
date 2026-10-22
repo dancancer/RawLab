@@ -48,6 +48,11 @@ public:
     }
 
     void store(Entry& entry, const ImageData& image, const WaveletDenoiseOptions& options, GpuMode mode) {
+        // 精确输出也受单图预算约束；大图只复用小型分析模型。
+        if (image.pixels.size() * sizeof(RGB) > previewBudget) {
+            entry.image = {}; entry.completed = false;
+            return;
+        }
         ImageData replacement = image;
         entry.image = std::move(replacement);
         entry.options = options; entry.mode = mode; entry.completed = true;

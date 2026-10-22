@@ -548,6 +548,17 @@ void runAppleTests() {
 
     expectEmptyPathClearsBuffer();
 
+    if (const char* large = std::getenv("RAWLAB_TEST_LARGE_RASTER"); large && *large) {
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_load_display_image(large, &buffer);
+        check(status == SONY2FUJI_STATUS_OK, "Medium-format raster imports through ImageIO");
+        if (status == SONY2FUJI_STATUS_OK)
+            check(uint64_t(buffer.width) * buffer.height >= 100000000 &&
+                  buffer.size_bytes == uint64_t(buffer.width) * buffer.height * 4,
+                  "Medium-format raster retains full resolution and RGBA bytes");
+        sony2fuji_release_buffer(&buffer);
+    }
+
     if (const char* photo = std::getenv("RAWLAB_TEST_RASTER"); photo && *photo) {
         sony2fuji_buffer buffer{};
         const auto status = sony2fuji_load_display_image(photo, &buffer);

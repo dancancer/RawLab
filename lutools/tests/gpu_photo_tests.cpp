@@ -2,6 +2,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/lut_parser.h"
 #include "gpu/photo_gpu.h"
+#include "hsl_gpu_boundary.h"
 #ifdef SONY2FUJI_ENABLE_D3D11
 #include "gpu/d3d11_photo.h"
 #endif
@@ -223,6 +224,18 @@ int main() {
         std::cout << "SKIP gpu_photo_tests (set SONY2FUJI_TEST_GPU=1)\n";
         return 0;
     }
+
+    check(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+        const sony2fuji::HslOptions& hsl, sony2fuji::ImageData& output) {
+#ifdef SONY2FUJI_ENABLE_D3D11
+        sony2fuji::D3D11PhotoRenderer renderer;
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
+            input.width, input.height, 0, output, {}, 0, false, hsl);
+#else
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
+            input.width, input.height, output, {}, {}, 0, false, hsl);
+#endif
+    }), "HSL out-of-range boundary and active adjustment");
 
     const auto lutPath = makePhotoLUT();
     const auto lutUtf8 = lutPath.u8string();

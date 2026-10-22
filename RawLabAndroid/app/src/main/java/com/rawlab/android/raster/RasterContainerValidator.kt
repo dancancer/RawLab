@@ -22,7 +22,7 @@ internal data class RasterValidation(val info: RasterContainerInfo?, val error: 
 
 /** Container checks happen before BitmapFactory is allowed to normalize the source. */
 internal object RasterContainerValidator {
-    private const val MAX_PIXELS = 64_000_000L
+    const val MAX_PIXELS = 128_000_000L
     private val gainMapMarkers = listOf("gainmap", "hdrgm", "hdr-gain-map", "android:gainmap",
         "urn:iso:std:iso:ts:21496", "iso:ts:21496")
 

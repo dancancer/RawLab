@@ -8,6 +8,7 @@ struct EffectsParams {
     uint width, height;
     float vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights;
     float grainAmount, grainSize, grainRoughness;
+    uint rowOffset, rows;
 };
 
 float effectsSmooth(float value) {
@@ -48,8 +49,8 @@ kernel void photoEffects(
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
     uint gid [[thread_position_in_grid]]) {
-    if (gid >= params.width * params.height) return;
-    const uint x = gid % params.width, y = gid / params.width;
+    if (gid >= params.width * params.rows) return;
+    const uint x = gid % params.width, y = gid / params.width + params.rowOffset;
     float3 pixel = float3(source[gid]);
     if (params.vignetteAmount != 0) {
         const float circle = max(0.f, params.vignetteRoundness / 100);
