@@ -2217,6 +2217,70 @@
         "{3}"
       ],
       "source": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
+    },
+    "分割位置": {
+      "formats": [],
+      "source": "分割位置"
+    },
+    "分割线": {
+      "formats": [],
+      "source": "分割线"
+    },
+    "对比": {
+      "formats": [],
+      "source": "对比"
+    },
+    "对比方式": {
+      "formats": [],
+      "source": "对比方式"
+    },
+    "并排": {
+      "formats": [],
+      "source": "并排"
+    },
+    "开启对比": {
+      "formats": [],
+      "source": "开启对比"
+    },
+    "查看调整前": {
+      "formats": [],
+      "source": "查看调整前"
+    },
+    "照片四周留白": {
+      "formats": [],
+      "source": "照片四周留白"
+    },
+    "缩放与显示": {
+      "formats": [],
+      "source": "缩放与显示"
+    },
+    "调整前": {
+      "formats": [],
+      "source": "调整前"
+    },
+    "返回调整后": {
+      "formats": [],
+      "source": "返回调整后"
+    },
+    "重置分割线": {
+      "formats": [],
+      "source": "重置分割线"
+    },
+    "预览已更新": {
+      "formats": [],
+      "source": "预览已更新"
+    },
+    "预览未更新": {
+      "formats": [],
+      "source": "预览未更新"
+    },
+    "RGB 直方图": {
+      "source": "RGB 直方图",
+      "formats": []
+    },
+    "统计不可用": {
+      "source": "统计不可用",
+      "formats": []
     }
   },
   "overrides": {
@@ -2433,14 +2497,6 @@
       "fr": "À propos de RawLab / Rechercher des mises à jour",
       "ja": "RawLabについて / 更新を確認",
       "zh-Hans": "关于 RawLab / 检查更新"
-    },
-    "关闭对比": {
-      "de": "Vergleich ausschalten",
-      "en": "Turn off comparison",
-      "es": "Desactivar comparación",
-      "fr": "Désactiver la comparaison",
-      "ja": "比較をオフ",
-      "zh-Hans": "关闭对比"
     },
     "内存不足，请关闭其他大型应用或使用适合窗口预览。": {
       "de": "Nicht genügend Arbeitsspeicher; schließen Sie andere große Anwendungen oder verwenden Sie die Fensteranpassungs-Vorschau.",

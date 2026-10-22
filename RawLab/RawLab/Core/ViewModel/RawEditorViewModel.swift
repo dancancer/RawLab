@@ -17,6 +17,22 @@ final class RawEditorViewModel: ObservableObject {
     @Published var isBusy = false
     @Published var previewRendering = false
     @Published var previewResizePending = false
+    @Published var previewFailed = false
+    var acceptedPreviewFrameID: UUID?
+    var committedPreviewSettings: RawSettings?
+
+    struct ComparisonReferenceKey: Equatable {
+        let sourceRevision: UUID
+        let file: PhotoSourceFile?
+        let identity: PhotoIdentity?
+        let kind: ImageSourceKind?
+        let processing: ProcessingIdentity
+        let geometry: GeometrySettings
+        let lens: LensCorrectionSettings
+        let longEdge: Int
+    }
+    var comparisonReferenceKey: ComparisonReferenceKey?
+    var basePreviewLens = LensCorrectionSettings()
     @Published var histogram: [CGFloat] = []
     @Published var baseHistogram: [CGFloat] = []
     @Published var availableLUTs: [LUTOption] = []

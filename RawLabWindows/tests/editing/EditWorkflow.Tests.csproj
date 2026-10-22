@@ -9,6 +9,7 @@
     <Compile Include="../../EditorAdjustmentRules.cs" Link="EditorAdjustmentRules.cs" />
     <Compile Include="../../EditorResetTransaction.cs" Link="EditorResetTransaction.cs" />
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
+    <Compile Include="../../EditorViewState.cs" Link="EditorViewState.cs" />
     <Compile Include="../../ParameterInteraction.cs" Link="ParameterInteraction.cs" />
     <Compile Include="../../TransformDraft.cs" Link="TransformDraft.cs" />
     <Compile Include="../../CropInteraction.cs" Link="CropInteraction.cs" />

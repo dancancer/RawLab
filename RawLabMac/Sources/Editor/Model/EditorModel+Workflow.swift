@@ -274,7 +274,7 @@ extension EditorModel {
     }
 
     func prepareBatch() -> Bool {
-        guard !busy, !exporting, !lookLibraryBusy, result != nil, !missingFilm, !missingMasterRecipe, geometryDraft == nil, let file else { return false }
+        guard !busy, !previewOutdated, !exporting, !lookLibraryBusy, result != nil, !missingFilm, !missingMasterRecipe, geometryDraft == nil, let file else { return false }
         if batch?.validating == true || batch?.previewing == true { return true }
         if let batch, batch.job.started && batch.job.succeededCount < batch.job.selectedCount {
             let alert = NSAlert()
@@ -314,7 +314,7 @@ extension EditorModel {
     }
     func open(_ url: URL) {
         guard !exporting else { return }
-        if file == url && result != nil { return }
+        if file == url && result != nil, originalCache?.key.source == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
@@ -332,7 +332,8 @@ extension EditorModel {
         cancelViewportResize()
         editRevision = UUID()
         scheduler.setInteracting(false)
-        file = url; neutral = nil; result = nil; error = nil; statusState = .none
+        sourceRevision = UUID()
+        file = url; neutral = nil; result = nil; error = nil; previewOutdated = false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true
         settings = restored?.settings ?? Adjustments()
@@ -471,7 +472,7 @@ extension EditorModel {
     }
 
     func export(format: ExportFormat) {
-        guard !busy, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, geometryDraft == nil, let file else { return }
+        guard !busy, !previewOutdated, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, geometryDraft == nil, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.contentType]
         let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "neutral"

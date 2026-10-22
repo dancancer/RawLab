@@ -99,8 +99,8 @@ internal static class UiDetailChecks
         var settings=(Adjustments)typeof(MainWindow).GetField("settings",PrivateInstance)!.GetValue(window)!;
         var lut=typeof(MainWindow).GetField("lut",PrivateInstance)!;
         settings.ApplyMasterRecipe(recipe);lut.SetValue(window,recipe.LutPath);Refresh(window);
-        check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text(recipe.Name),
-            $"Active look and comparison label show the recipe name in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
+        check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text("调整后"),
+            $"Active look names the recipe while comparison identifies the adjusted image in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
         settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
     }

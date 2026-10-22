@@ -9,8 +9,14 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.alpha
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -32,6 +38,8 @@ import com.rawlab.android.editor.AdjustmentGroup
 import com.rawlab.android.editor.*
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.editor.canvas.PhotoCanvasState
+import com.rawlab.android.editor.canvas.PhotoViewOptions
+import com.rawlab.android.editor.canvas.ComparisonMode
 import com.rawlab.android.editor.controls.AdjustmentHapticGate
 import com.rawlab.android.editor.controls.LocalAdjustmentFocus
 import com.rawlab.android.editor.controls.LocalAdjustmentHapticGate
@@ -71,7 +79,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
     },
     onCommitReset: (PreparedEditorReset) -> Boolean = { false }) {
-    var compare by rememberSaveable { mutableStateOf(false) }
+    var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
+        listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
+    }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
+    val compare = view.comparisonEnabled && state.draft == null
+    var zoomMenu by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
@@ -196,8 +208,35 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             }
             LanguageMenu()
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
-    var infoMode by rememberSaveable(state.photo?.file?.absolutePath) { mutableIntStateOf(0) }
-    val photoCanvas = rememberSaveable(state.photo?.file?.absolutePath, saver = PhotoCanvasState.Saver) { PhotoCanvasState() }
+    val sourceKey = "${state.photo?.identity?.value}:${state.photo?.file?.absolutePath}"
+    var viewSource by rememberSaveable { mutableStateOf(sourceKey) }
+    val photoCanvas = rememberSaveable(sourceKey, saver = PhotoCanvasState.Saver) { PhotoCanvasState() }
+    fun togglePure() {
+        if (view.purePreview) { photoCanvas.exitPure(); view = view.copy(purePreview = false, holdingBefore = false) }
+        else if (state.draft == null && state.controlsEnabled && state.preview != null) {
+            photoCanvas.enterPure(); view = view.enterPure(true)
+        }
+    }
+    val holdBefore: (Boolean) -> Unit = { held -> view = if (held) view.beginHold(state.draft == null && state.controlsEnabled) else view.cancelHold() }
+    LaunchedEffect(sourceKey) {
+        if (viewSource != sourceKey) {
+            view = view.forNewPhoto(); viewSource = sourceKey
+        }
+    }
+    LaunchedEffect(state.draft != null) {
+        if (state.draft != null) { photoCanvas.exitPure(); view = view.copy(purePreview = false, holdingBefore = false) }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) view = view.cancelHold() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold() }
+    }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.operation) {
+        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.operation != Operation.NONE) view = view.cancelHold()
+    }
+    BackHandler(view.purePreview) { togglePure() }
     val photoInfo by produceState<PhotoInfo?>(null, state.photo?.file?.absolutePath) {
         value = null
         val photo = state.photo ?: return@produceState
@@ -218,8 +257,16 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val hapticGate = remember { AdjustmentHapticGate() }
     CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it },
         LocalAdjustmentHapticGate provides hapticGate) {
+    val currentDock by rememberUpdatedState<@Composable (Modifier, Boolean, Boolean) -> Unit>({ modifier, side, compact ->
+        AdjustmentDock(state, modifier, tool, selectTool, expanded, { leave { expanded = !expanded } },
+            compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
+            onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
+            onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, side, !pendingAll, compact)
+    })
+    // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
+    val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }, topBar = {
-        TopAppBar(modifier = Modifier.alpha(surroundingAlpha), title = {
+        if (!view.purePreview) TopAppBar(modifier = Modifier.alpha(surroundingAlpha), title = {
             Column {
                 Text("RawLab", style = MaterialTheme.typography.titleMedium)
                 state.photo?.let { Text(it.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall) }
@@ -227,8 +274,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }, navigationIcon = {
             ToolIcon(Icons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE) { leave(onAlbum) }
         }, actions = {
-            IconToggleButton(checked = compare, onCheckedChange = { compare = it }, enabled = state.preview != null && state.draft == null) {
-                Icon(Icons.Outlined.Compare, stringResource(R.string.compare))
+            IconToggleButton(checked = compare, onCheckedChange = { view = view.toggleComparison() }, enabled = state.preview != null && state.draft == null) {
+                Icon(Icons.Outlined.Compare, stringResource(if (compare) R.string.editor_compare_disable else R.string.editor_compare_enable))
             }
             Box {
                 ToolIcon(Icons.Outlined.MoreVert, R.string.more) { menu = true }
@@ -237,6 +284,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.batch_export)) }, enabled = state.canExport,
                         leadingIcon = { Icon(Icons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) }, enabled = state.preview != null,
+                        leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; view = view.copy(infoMode = (view.infoMode + 1) % 3) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_zoom_display)) }, enabled = state.preview != null && state.draft == null,
+                        leadingIcon = { Icon(Icons.Outlined.ZoomIn, null) }, onClick = { menu = false; zoomMenu = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_settings)) },
                         leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { menu = false; settings = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) },
@@ -245,6 +296,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; leave(onAbout) })
                     if (updateVersion != null) DropdownMenuItem(text = { Text(stringResource(R.string.view_update)) },
                         leadingIcon = { Icon(Icons.Outlined.SystemUpdate, null) }, onClick = { menu = false; leave(onAbout) })
+                }
+                DropdownMenu(zoomMenu, { zoomMenu = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.zoom_fit)) }, onClick = { zoomMenu = false; photoCanvas.view = com.rawlab.android.editor.canvas.PhotoViewTransform() })
+                    DropdownMenuItem(text = { Text("100%") }, onClick = { zoomMenu = false; photoCanvas.zoom = com.rawlab.android.editor.canvas.PhotoZoom(1f) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_margin)) }, onClick = { view = view.copy(margins = !view.margins) },
+                        trailingIcon = { Switch(view.margins, { view = view.copy(margins = it) }) })
                 }
             }
             ToolIcon(Icons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
@@ -268,32 +325,24 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val dockHeight = dockLayout.height.dp
             val sideDockWidth = 320.dp
             Column(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxWidth().height(4.dp)) {
-                    if (state.rendering || state.previewResizePending || state.operation == Operation.EXPORT) LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
+                if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
-                            EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave)
-                            RenderError(state, onRetry)
+                            EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
+                                Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
+                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry)
                         }
-                        VerticalDivider()
-                        AdjustmentDock(state, Modifier.width(sideDockWidth).fillMaxHeight(), tool, selectTool, expanded,
-                            { leave { expanded = !expanded } }, compare, { compare = !compare }, onEdit,
-                            onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, wide, !pendingAll, dockLayout.compactNavigation)
+                        if (!view.purePreview) VerticalDivider()
+                        retainedDock(Modifier.hideForPurePreview(view.purePreview).width(sideDockWidth).fillMaxHeight(), true, dockLayout.compactNavigation)
                     }
                 } else {
-                    EditorCanvas(state, compare, photoCanvas, photoInfo, infoMode, { infoMode = (infoMode + 1) % 3 },
-                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave)
-                    RenderError(state, onRetry)
+                    EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
+                        Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
+                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry)
                     if (state.photo != null) {
-                        HorizontalDivider()
-                        AdjustmentDock(state, Modifier.fillMaxWidth().height(dockHeight), tool, selectTool, expanded,
-                            { leave { expanded = !expanded } }, compare, { compare = !compare }, onEdit,
-                            onImportLook, onRenameLook, onDeleteLook, onAutoExposure, onDraftEdit,
-                            { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 }, onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, wide, !pendingAll, dockLayout.compactNavigation)
+                        if (!view.purePreview) HorizontalDivider()
+                        retainedDock(Modifier.hideForPurePreview(view.purePreview).fillMaxWidth().height(dockHeight), false, dockLayout.compactNavigation)
                     }
                 }
             }
@@ -301,3 +350,6 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     }
 }
+
+private fun Modifier.hideForPurePreview(hidden: Boolean): Modifier = if (!hidden) this else
+    this.clearAndSetSemantics { }.layout { _, _ -> layout(0, 0) { } }

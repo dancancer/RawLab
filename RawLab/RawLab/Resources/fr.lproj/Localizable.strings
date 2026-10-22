@@ -31,6 +31,7 @@
 "Invalid photo effects: %@" = "Effets photo invalides : %@";
 "No image loaded." = "Aucune image chargée.";
 "RAW 照片" = "Photo RAW";
+"RGB 直方图" = "Histogramme RVB";
 "Raster decode failed." = "Échec du décodage de l’image raster.";
 "RawLab 文件" = "Fichiers RawLab";
 "S 曲线" = "Courbe en S";
@@ -51,7 +52,6 @@
 "临时选择" = "Sélection provisoire";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Pour compter les appareils actifs, l’application enregistre sur cet appareil un identifiant d’installation généré aléatoirement. Il ne contient aucune information personnelle et est supprimé lorsque vous désactivez l’analyse.";
 "乡村秋日 · 古典油画" = "Automne rural · peinture à l'huile classique";
-"亮度直方图" = "Histogramme de luminance";
 "亮度降噪" = "Réduction du bruit de luminance";
 "仅在暗角强度为负值时可用。" = "Disponible uniquement lorsque l’intensité du vignettage est négative.";
 "仅用于本次导出，保留各照片原有调整" = "Pour cette exportation uniquement ; les réglages existants de chaque photo sont conservés";
@@ -78,9 +78,12 @@
 "全部调整" = "Tous les réglages";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "La teinte, la saturation et la luminosité des huit couleurs reviendront à 0. Les autres réglages resteront inchangés.";
 "关闭" = "Fermer";
+"关闭对比" = "Désactiver la comparaison";
 "内存不足，无法解码普通图片。" = "Mémoire insuffisante pour décoder l’image.";
 "几何" = "Géométrie";
 "几何与镜头" = "Géométrie et objectif";
+"分割位置" = "Position de la séparation";
+"分割线" = "Ligne de séparation";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Soleil californien mêlé à un film japonais, or urbain diffus et lueur chaude transparente";
 "匹配内嵌预览" = "Adapter à l'aperçu intégré";
 "匹配照片" = "Correspond à la photo";
@@ -108,6 +111,7 @@
 "完成" = "Terminé";
 "对比" = "Comparaison";
 "对比度" = "Contraste";
+"对比方式" = "Mode de comparaison";
 "导入外观" = "Importer un look";
 "导入外观…" = "Importer un look…";
 "导入照片" = "Importer une photo";
@@ -132,6 +136,7 @@
 "尚未选择 RAW" = "Aucune photo RAW sélectionnée";
 "尚未选择照片" = "Aucune photo sélectionnée";
 "展开%@组" = "Développer le groupe %@";
+"展开直方图" = "Développer l'histogramme";
 "展开调整栏" = "Développer les réglages";
 "已保存" = "Enregistré";
 "已保存 %@ 张到照片图库" = "Enregistrées dans Photos : %@";
@@ -154,15 +159,16 @@
 "已生成渲染型 DNG，未另存到所选位置。" = "DNG développé créé, mais non enregistré à l’emplacement choisi.";
 "已调整" = "Ajusté";
 "已选 %@ 张" = "Sélection : %@";
+"并排" = "Côte à côte";
 "应用" = "Appliquer";
 "开启" = "Activé";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions.";
+"开启对比" = "Activer la comparaison";
 "强度" = "Intensité";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude";
 "当前构建未配置使用统计，未采集或上报。" = "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.";
 "当前照片或调整记录无效，无法安全重置。" = "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.";
 "当前配方不可用，无法安全重置外观。" = "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.";
-"当前预览的亮度分布" = "Distribution de luminance de l’aperçu actuel";
 "恢复当前照片的全部调整，不改写原始照片。" = "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.";
 "恢复默认" = "Rétablir la valeur par défaut";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Réussite %@ · Échec %@ · Non traitées %@";
@@ -182,6 +188,7 @@
 "授权核对相册中的保存结果" = "Autoriser l’accès pour vérifier les résultats enregistrés dans Photos";
 "搜索镜头" = "Rechercher un objectif";
 "收起%@组" = "Réduire le groupe %@";
+"收起直方图" = "Réduire l'histogramme";
 "收起调整栏" = "Réduire les réglages";
 "放弃任务" = "Abandonner la tâche";
 "放弃修改" = "Abandonner les modifications";
@@ -247,6 +254,7 @@
 "极简禅意 · 日系街拍" = "Zen minimaliste · photo de rue japonaise";
 "查看批量任务 · %@ 张" = "Afficher la tâche par lots · %@";
 "查看批量任务…" = "Afficher la tâche par lots…";
+"查看调整前" = "Afficher avant";
 "标准显影" = "Développement standard";
 "标准灵敏度" = "Sensibilité standard";
 "核对 DNG 文件" = "Vérifier les fichiers DNG";
@@ -265,6 +273,7 @@
 "正在导入" = "Importation";
 "正在导出" = "Exportation";
 "正在显影" = "Développement";
+"正在显影…" = "Développement…";
 "正在生成效果预览…" = "Génération de l’aperçu…";
 "正在读取镜头信息…" = "Lecture des informations de l’objectif…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
@@ -283,6 +292,7 @@
 "滨田英明" = "Hideaki Hamada";
 "照片" = "Photo";
 "照片信息" = "Informations de la photo";
+"照片四周留白" = "Marge autour de la photo";
 "照片图库" = "Photos";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "La photo a été écrite, mais l’enregistrement de la tâche n’a pas été mis à jour. Vérifiez d’abord le résultat.";
 "照片或调整已变化，请重新确认重置。" = "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.";
@@ -311,12 +321,14 @@
 "纽约电影 · 戏剧光影" = "Cinéma new-yorkais · lumière dramatique";
 "细节" = "Détail";
 "细节优先" = "Priorité aux détails";
+"统计不可用" = "Statistiques indisponibles";
 "统计已停止，请重启应用后再开启。" = "L’analyse est arrêtée. Redémarrez l’application avant de la réactiver.";
 "统计服务未能启动，照片编辑不受影响。" = "Le service d’analyse n’a pas pu démarrer. La retouche photo n’est pas affectée.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "Le réglage d’analyse n’a pas pu être enregistré. La collecte est arrêtée pour ce processus. Vérifiez l’autorisation de stockage avant de redémarrer.";
 "继续未完成的 %@ 张" = "Reprendre les photos restantes (%@)";
 "继续编辑" = "Continuer à modifier";
 "绿" = "Vert";
+"缩放与显示" = "Zoom et affichage";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Les données de balance des blancs à la prise de vue sont manquantes ; le rendu de la recette ne peut donc pas être préservé.";
 "缺少有效相机校准，保留拍摄时白平衡" = "Étalonnage de l’appareil photo invalide ; conservation de la balance des blancs de la prise de vue";
 "羽化" = "Contour progressif";
@@ -356,6 +368,7 @@
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
 "请输入 1–65535 之间的像素数" = "Entrez un nombre de pixels compris entre 1 et 65 535";
 "调整" = "Réglages";
+"调整前" = "Avant";
 "调整后" = "Après";
 "调整已保存" = "Réglages enregistrés";
 "调整未保存 · 重试" = "Ajustements non enregistrés · Réessayez";
@@ -367,6 +380,9 @@
 "跟随系统" = "Suivre le système";
 "输出" = "Sortie";
 "返回" = "Retour";
+"返回调整后" = "Revenir à après";
+"进入纯预览" = "Ouvrir l’aperçu immersif";
+"退出纯预览" = "Quitter l’aperçu immersif";
 "适合窗口" = "Ajuster à la fenêtre";
 "选择" = "Sélectionner";
 "选择镜头" = "Choisir un objectif";
@@ -387,6 +403,7 @@
 "重置全部调整" = "Réinitialiser tous les réglages";
 "重置全部调整…" = "Réinitialiser tous les réglages…";
 "重置全部调整？" = "Réinitialiser tous les réglages ?";
+"重置分割线" = "Réinitialiser la séparation";
 "重置当前颜色" = "Réinitialiser la couleur actuelle";
 "重置当前颜色（%@）" = "Réinitialiser la couleur actuelle (%@)";
 "重置所有调整并返回中性" = "Réinitialiser tous les réglages et revenir au rendu neutre";
@@ -394,6 +411,7 @@
 "重置调整" = "Réinitialiser les réglages";
 "重置镜头校正" = "Réinitialiser la correction optique";
 "重置降噪" = "Réinitialiser la réduction du bruit";
+"重试" = "Réessayer";
 "重试失败的 %@ 张" = "Réessayer les photos en échec (%@)";
 "钨丝电影 · 红灯冷青" = "Cinéma tungstène · lumières rouges et cyan froid";
 "锐化" = "Netteté";
@@ -416,6 +434,8 @@
 "霓虹都市 · 冷青粉紫" = "Ville néon · cyan froid et rose-violet";
 "青" = "Cyan";
 "预览尚未就绪，请稍后重试。" = "L’aperçu n’est pas encore prêt. Réessayez dans un instant.";
+"预览已更新" = "Aperçu actualisé";
+"预览未更新" = "Aperçu non actualisé";
 "预设" = "Préréglage";
 "颗粒" = "Grain";
 "颗粒大小" = "Taille du grain";
