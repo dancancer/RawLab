@@ -26,6 +26,7 @@
     <string name="edit_read_error">"調整レコードを読み取れません: %1$s"</string>
     <string name="edit_unsaved_detail">"調整が保存されませんでした: %1$s"</string>
     <string name="editor_adjusted">"調整済み"</string>
+    <string name="editor_fine_hint">"ドラッグ時の感度は通常の4分の1です。"</string>
     <string name="editor_group_collapse">"「%1$s」グループを折りたたむ"</string>
     <string name="editor_group_color">"カラー"</string>
     <string name="editor_group_detail">"詳細"</string>
@@ -34,6 +35,13 @@
     <string name="editor_group_geometry">"ジオメトリとレンズ"</string>
     <string name="editor_group_light">"ライト"</string>
     <string name="editor_group_looks">"ルック"</string>
+    <string name="editor_hsl_hue_direction">"色相：隣り合う色へ変化します。"</string>
+    <string name="editor_hsl_lightness_direction">"明度：暗い色から明るい色へ変化します。"</string>
+    <string name="editor_hsl_saturation_direction">"彩度：グレーから鮮やかな色へ変化します。"</string>
+    <string name="editor_numeric_help">"デフォルト：%1$s、範囲：%2$s～%3$s、刻み：%4$s。"</string>
+    <string name="editor_numeric_reset_hint">"名前またはトラックをダブルタップすると、デフォルト値に戻ります。"</string>
+    <string name="editor_numeric_step_error">"%1$s刻みで入力してください。"</string>
+    <string name="editor_parameter_pair">"%1$s・%2$s"</string>
     <string name="editor_reset_all">"すべての調整をリセット…"</string>
     <string name="editor_reset_all_message">"現在の写真のすべての調整をリセットします。元の写真は変更されません。"</string>
     <string name="editor_reset_all_title">"すべての調整をリセットしますか？"</string>

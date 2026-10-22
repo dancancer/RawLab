@@ -2519,6 +2519,74 @@
       "formats": [],
       "source": "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。",
       "types": []
+    },
+    "editor_fine_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "拖动灵敏度为普通模式的四分之一。",
+      "types": []
+    },
+    "editor_hsl_hue_direction": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色相：向相邻颜色偏移。",
+      "types": []
+    },
+    "editor_hsl_lightness_direction": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明度：从暗到亮。",
+      "types": []
+    },
+    "editor_hsl_saturation_direction": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度：从灰色到彩色。",
+      "types": []
+    },
+    "editor_numeric_help": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s",
+        "%3$s",
+        "%4$s"
+      ],
+      "source": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。",
+      "types": [
+        "s",
+        "s",
+        "s",
+        "s"
+      ]
+    },
+    "editor_numeric_reset_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "双击名称或轨道恢复默认值。",
+      "types": []
+    },
+    "editor_numeric_step_error": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "请使用 {0} 的步进。",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_parameter_pair": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "{0} · {1}",
+      "types": [
+        "s",
+        "s"
+      ]
     }
   },
   "overrides": {
@@ -2542,6 +2610,17 @@
         "fr": "Galerie photo",
         "ja": "フォトギャラリー",
         "zh-Hans": "照片图库"
+      }
+    },
+    "双击名称或轨道恢复默认值。": {
+      "reason": "移动端使用双击触摸手势，桌面使用鼠标双击；提示仅用于普通输入，不覆盖读屏激活操作。",
+      "values": {
+        "de": "Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen.",
+        "en": "Double-tap the name or track to restore the default.",
+        "es": "Toca dos veces el nombre o la pista para restablecer el valor predeterminado.",
+        "fr": "Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut.",
+        "ja": "名前またはトラックをダブルタップすると、デフォルト値に戻ります。",
+        "zh-Hans": "双击名称或轨道恢复默认值。"
       }
     }
   },

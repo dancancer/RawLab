@@ -26,6 +26,7 @@
     <string name="edit_read_error">"Impossible de lire l\'enregistrement d\'ajustement : %1$s"</string>
     <string name="edit_unsaved_detail">"Ajustements non enregistrés : %1$s"</string>
     <string name="editor_adjusted">"Ajusté"</string>
+    <string name="editor_fine_hint">"La sensibilité du glissement est réduite au quart de la normale."</string>
     <string name="editor_group_collapse">"Réduire le groupe %1$s"</string>
     <string name="editor_group_color">"Couleur"</string>
     <string name="editor_group_detail">"Détail"</string>
@@ -34,6 +35,13 @@
     <string name="editor_group_geometry">"Géométrie et objectif"</string>
     <string name="editor_group_light">"Lumière"</string>
     <string name="editor_group_looks">"Rendus"</string>
+    <string name="editor_hsl_hue_direction">"Teinte : décalage vers les couleurs voisines."</string>
+    <string name="editor_hsl_lightness_direction">"Luminosité : du sombre au clair."</string>
+    <string name="editor_hsl_saturation_direction">"Saturation : du gris à la couleur."</string>
+    <string name="editor_numeric_help">"Valeur par défaut : %1$s ; plage : de %2$s à %3$s ; pas : %4$s."</string>
+    <string name="editor_numeric_reset_hint">"Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut."</string>
+    <string name="editor_numeric_step_error">"Utilisez un pas de %1$s."</string>
+    <string name="editor_parameter_pair">"%1$s · %2$s"</string>
     <string name="editor_reset_all">"Réinitialiser tous les réglages…"</string>
     <string name="editor_reset_all_message">"Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée."</string>
     <string name="editor_reset_all_title">"Réinitialiser tous les réglages ?"</string>

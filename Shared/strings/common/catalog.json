@@ -3622,5 +3622,69 @@
     "fr": "Couleur",
     "ja": "カラー",
     "zh-Hans": "颜色"
+  },
+  "{0} · {1}": {
+    "de": "{0} · {1}",
+    "en": "{0} · {1}",
+    "es": "{0} · {1}",
+    "fr": "{0} · {1}",
+    "ja": "{0}・{1}",
+    "zh-Hans": "{0} · {1}"
+  },
+  "双击名称或轨道恢复默认值。": {
+    "de": "Doppelklicke auf den Namen oder die Spur, um den Standardwert wiederherzustellen.",
+    "en": "Double-click the name or track to restore the default.",
+    "es": "Haz doble clic en el nombre o la pista para restablecer el valor predeterminado.",
+    "fr": "Double-cliquez sur le nom ou la piste pour rétablir la valeur par défaut.",
+    "ja": "名前またはトラックをダブルクリックすると、デフォルト値に戻ります。",
+    "zh-Hans": "双击名称或轨道恢复默认值。"
+  },
+  "拖动灵敏度为普通模式的四分之一。": {
+    "de": "Die Empfindlichkeit beim Ziehen beträgt ein Viertel der normalen Empfindlichkeit.",
+    "en": "Dragging uses one quarter of the normal sensitivity.",
+    "es": "Al arrastrar, la sensibilidad es una cuarta parte de la normal.",
+    "fr": "La sensibilité du glissement est réduite au quart de la normale.",
+    "ja": "ドラッグ時の感度は通常の4分の1です。",
+    "zh-Hans": "拖动灵敏度为普通模式的四分之一。"
+  },
+  "明度：从暗到亮。": {
+    "de": "Helligkeit: von dunkel zu hell.",
+    "en": "Lightness: from dark to light.",
+    "es": "Luminosidad: de oscuro a claro.",
+    "fr": "Luminosité : du sombre au clair.",
+    "ja": "明度：暗い色から明るい色へ変化します。",
+    "zh-Hans": "明度：从暗到亮。"
+  },
+  "色相：向相邻颜色偏移。": {
+    "de": "Farbton: Verschiebung zu benachbarten Farben.",
+    "en": "Hue: shift toward neighboring colors.",
+    "es": "Tono: desplaza hacia los colores adyacentes.",
+    "fr": "Teinte : décalage vers les couleurs voisines.",
+    "ja": "色相：隣り合う色へ変化します。",
+    "zh-Hans": "色相：向相邻颜色偏移。"
+  },
+  "请使用 {0} 的步进。": {
+    "de": "Verwende eine Schrittweite von {0}.",
+    "en": "Use increments of {0}.",
+    "es": "Usa incrementos de {0}.",
+    "fr": "Utilisez un pas de {0}.",
+    "ja": "{0}刻みで入力してください。",
+    "zh-Hans": "请使用 {0} 的步进。"
+  },
+  "饱和度：从灰色到彩色。": {
+    "de": "Sättigung: von Grau zu Farbe.",
+    "en": "Saturation: from gray to color.",
+    "es": "Saturación: de gris a color.",
+    "fr": "Saturation : du gris à la couleur.",
+    "ja": "彩度：グレーから鮮やかな色へ変化します。",
+    "zh-Hans": "饱和度：从灰色到彩色。"
+  },
+  "默认值：{0}；范围：{1} 至 {2}；步进：{3}。": {
+    "de": "Standard: {0}; Bereich: {1} bis {2}; Schrittweite: {3}.",
+    "en": "Default: {0}; range: {1} to {2}; increment: {3}.",
+    "es": "Valor predeterminado: {0}; rango: de {1} a {2}; incremento: {3}.",
+    "fr": "Valeur par défaut : {0} ; plage : de {1} à {2} ; pas : {3}.",
+    "ja": "デフォルト：{0}、範囲：{1}～{2}、刻み：{3}。",
+    "zh-Hans": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
   }
 }

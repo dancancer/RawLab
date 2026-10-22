@@ -207,6 +207,7 @@ jobs:
           fi
           if in_suite model; then
             ci_timed batch-export bash RawLabMac/tests/batch-export.sh
+            ci_timed parameter-value bash RawLabMac/tests/parameter-value.sh
             ci_timed edit-model bash RawLabMac/tests/edit-model.sh
             ci_timed presentation bash RawLabMac/tests/presentation.sh
             ci_timed control-groups bash RawLabMac/tests/control-groups.sh
@@ -447,6 +448,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build-for-testing
           bash RawLab/tests/look-import.sh
           bash RawLab/tests/presentation.sh
+          bash RawLab/tests/adjustment-scale.sh
           bash RawLab/tests/edit-memory.sh
           python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
       - name: Save successful native dependencies

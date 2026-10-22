@@ -26,6 +26,7 @@
     <string name="edit_read_error">"无法读取调整记录：%1$s"</string>
     <string name="edit_unsaved_detail">"调整未保存：%1$s"</string>
     <string name="editor_adjusted">"已调整"</string>
+    <string name="editor_fine_hint">"拖动灵敏度为普通模式的四分之一。"</string>
     <string name="editor_group_collapse">"收起%1$s组"</string>
     <string name="editor_group_color">"颜色"</string>
     <string name="editor_group_detail">"细节"</string>
@@ -34,6 +35,13 @@
     <string name="editor_group_geometry">"几何与镜头"</string>
     <string name="editor_group_light">"光线"</string>
     <string name="editor_group_looks">"外观"</string>
+    <string name="editor_hsl_hue_direction">"色相：向相邻颜色偏移。"</string>
+    <string name="editor_hsl_lightness_direction">"明度：从暗到亮。"</string>
+    <string name="editor_hsl_saturation_direction">"饱和度：从灰色到彩色。"</string>
+    <string name="editor_numeric_help">"默认值：%1$s；范围：%2$s 至 %3$s；步进：%4$s。"</string>
+    <string name="editor_numeric_reset_hint">"双击名称或轨道恢复默认值。"</string>
+    <string name="editor_numeric_step_error">"请使用 %1$s 的步进。"</string>
+    <string name="editor_parameter_pair">"%1$s · %2$s"</string>
     <string name="editor_reset_all">"重置全部调整…"</string>
     <string name="editor_reset_all_message">"恢复当前照片的全部调整，不改写原始照片。"</string>
     <string name="editor_reset_all_title">"重置全部调整？"</string>

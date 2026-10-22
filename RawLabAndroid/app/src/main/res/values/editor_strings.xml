@@ -26,6 +26,7 @@
     <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
     <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_adjusted">"Adjusted"</string>
+    <string name="editor_fine_hint">"Dragging uses one quarter of the normal sensitivity."</string>
     <string name="editor_group_collapse">"Collapse %1$s group"</string>
     <string name="editor_group_color">"Color"</string>
     <string name="editor_group_detail">"Detail"</string>
@@ -34,6 +35,13 @@
     <string name="editor_group_geometry">"Geometry &amp; Lens"</string>
     <string name="editor_group_light">"Light"</string>
     <string name="editor_group_looks">"Looks"</string>
+    <string name="editor_hsl_hue_direction">"Hue: shift toward neighboring colors."</string>
+    <string name="editor_hsl_lightness_direction">"Lightness: from dark to light."</string>
+    <string name="editor_hsl_saturation_direction">"Saturation: from gray to color."</string>
+    <string name="editor_numeric_help">"Default: %1$s; range: %2$s to %3$s; increment: %4$s."</string>
+    <string name="editor_numeric_reset_hint">"Double-tap the name or track to restore the default."</string>
+    <string name="editor_numeric_step_error">"Use increments of %1$s."</string>
+    <string name="editor_parameter_pair">"%1$s · %2$s"</string>
     <string name="editor_reset_all">"Reset all adjustments…"</string>
     <string name="editor_reset_all_message">"Reset all adjustments for the current photo. The original photo will not be modified."</string>
     <string name="editor_reset_all_title">"Reset all adjustments?"</string>

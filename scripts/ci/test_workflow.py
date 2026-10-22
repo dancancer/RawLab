@@ -218,6 +218,16 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("editing", selected)
         self.assertIn("-RawPath $raw -NativeArtifacts $package", invocation)
 
+    def test_parameter_input_models_run_on_their_native_platform_jobs(self):
+        commands = {
+            name: "\n".join(step.get("run", "") for step in job["steps"])
+            for name, job in self.workflow["jobs"].items()
+        }
+        self.assertIn("RawLabMac/tests/parameter-value.sh", commands["macos"])
+        self.assertIn("RawLab/tests/adjustment-scale.sh", commands["ios"])
+        self.assertNotIn("parameter-value.sh", commands["contracts"])
+        self.assertNotIn("adjustment-scale.sh", commands["contracts"])
+
     def test_windows_workspace_navigation_has_runtime_and_visual_evidence(self):
         steps = self.workflow["jobs"]["windows"]["steps"]
         commands = "\n".join(step.get("run", "") for step in steps)
