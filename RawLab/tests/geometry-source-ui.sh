@@ -40,7 +40,7 @@ transforms = {
         "        MainActor.assumeIsolated { GeometrySourceProbe.shared.recordPreview(settings, request: request, source: self.sourceRevision) }\n        lastPreviewRequest = request"),
     "RawLab/RawLab/Core/Persistence/EditPersistence.swift": (
         "        updated[identity.key] = state",
-        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.saveAttempts.append(state) }\n        updated[identity.key] = state")
+        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.saveAttempts.append(state); GeometrySourceProbe.shared.saveReceipts.append([\"identity\": identity.key, \"state\": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))]) }\n        updated[identity.key] = state")
 }
 diffs = []
 for name, (before, after) in transforms.items():
@@ -50,8 +50,11 @@ for name, (before, after) in transforms.items():
         raise SystemExit(f"Expected exactly one marker in {source}")
     changed = text.replace(before, after)
     if name.endswith("ContentView+Panels.swift"):
+        fine_marker = '.accessibilityIdentifier("editor.fine")'
+        assert changed.count(fine_marker) == 1
+        changed = changed.replace(fine_marker, fine_marker + '\n                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["fine"] = [frame.minX, frame.minY, frame.width, frame.height] }')
         text_marker = "Text(group.title).font(.caption).lineLimit(2)"
-        rect_marker = ".contentShape(Rectangle())"
+        rect_marker = "            .contentShape(Rectangle())"
         assert changed.count(text_marker) == 1 and changed.count(rect_marker) == 1
         changed = changed.replace(text_marker, text_marker + '\n                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupTextRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
         changed = changed.replace(rect_marker, rect_marker + '\n            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
@@ -101,9 +104,11 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name GeometrySourceH
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/geometry-source"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
 xcrun simctl install "$DEVICE" "$HARNESS"
+xcrun simctl terminate "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true
+xcrun simctl uninstall "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true
 if xcodebuild -xctestrun "$OUT/geometry-source.xctestrun" \
     -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO \
-    -only-testing:RawLabUITests/EditorV4UITests/testGeometrySourceRestorationUsesUncroppedPreview \
+    -only-testing:"RawLabUITests/EditorV4UITests/${RAWLAB_GEOMETRY_TEST:-testGeometrySourceRestorationUsesUncroppedPreview}" \
     -collect-test-diagnostics never -resultBundlePath "$OUT/geometry-source.xcresult" \
     test-without-building > "$OUT/geometry-source-ui.log" 2>&1; then
     TEST_STATUS=0

@@ -199,50 +199,82 @@ extension ContentView {
 
     var adjustmentPanel: some View {
         VStack(spacing: 8) {
-            HStack {
-                Text(selectedFilmName)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-                Spacer(minLength: 8)
-                editSaveStatus
-                Menu {
-                    if currentEditorTool == .adjustment(.hsl) {
-                        Button(L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[hslChannel]))) {
-                            requestEditorReset(.hslChannel(hslChannel))
-                        }.disabled(!resetModified(.hslChannel(hslChannel)))
-                        Button(L10n.text("重置全部 HSL…")) { requestEditorReset(.allHSL) }
-                            .disabled(!resetModified(.allHSL))
-                    } else {
-                        Button(L10n.format("重置%@", currentEditorTool.title)) { requestEditorReset(.tool(currentEditorTool)) }
-                            .disabled(!resetModified(.tool(currentEditorTool)))
-                    }
-                    Button(L10n.format("重置%@组…", selectedGroup.title)) { requestEditorReset(.group(selectedGroup)) }
-                        .disabled(!resetModified(.group(selectedGroup)))
-                    Button(L10n.text("重置全部调整…"), role: .destructive) { requestEditorReset(.all) }
-                        .disabled(!resetModified(.all))
-                } label: {
-                    // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
-                    HStack(spacing: 1) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
-                    }
-                    .fixedSize()
-                    .frame(minWidth: 44, minHeight: 44)
-                }
-                .accessibilityLabel(L10n.text("重置调整"))
-                .accessibilityIdentifier("editor.reset")
-                .disabled(!viewModel.hasImage || editorBusy || resetDraftSuspended)
-                .layoutPriority(2)
-            }
-            .frame(height: max(44, panelHeaderHeight))
-            .padding(.horizontal, 16)
-            .opacity(rulerFocusOpacity)
+            adjustmentHeader
 
             valuePanel.disabled(resetDraftSuspended)
+                .environment(\.adjustmentFine, adjustmentFine)
+                .environment(\.adjustmentInputContext, parameterInputContext)
         }
         .padding(.bottom, 12)
+    }
+
+    private var adjustmentHeader: some View {
+        GeometryReader { geometry in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    Text(selectedFilmName)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                        .frame(maxWidth: geometry.size.width * 0.5, alignment: .leading)
+                    Spacer(minLength: 8)
+                    editSaveStatus
+                    if currentEditorTool != .film && currentEditorTool != .lens {
+                        Toggle(L10n.text("精细"), isOn: $adjustmentFine)
+                            .toggleStyle(.switch).font(.subheadline).fixedSize()
+                            .frame(minHeight: 44).layoutPriority(2)
+                            .background(Color.clear.contentShape(Rectangle()).onTapGesture { adjustmentFine.toggle() })
+                            .accessibilityHint(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度") + " " + L10n.text("拖动灵敏度为普通模式的四分之一。"))
+                            .accessibilityIdentifier("editor.fine")
+                    }
+                    Menu {
+                        if currentEditorTool == .adjustment(.hsl) {
+                            Button(L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[hslChannel]))) {
+                                requestEditorReset(.hslChannel(hslChannel))
+                            }.disabled(!resetModified(.hslChannel(hslChannel)))
+                            Button(L10n.text("重置全部 HSL…")) { requestEditorReset(.allHSL) }
+                                .disabled(!resetModified(.allHSL))
+                        } else {
+                            Button(L10n.format("重置%@", currentEditorTool.title)) { requestEditorReset(.tool(currentEditorTool)) }
+                                .disabled(!resetModified(.tool(currentEditorTool)))
+                        }
+                        Button(L10n.format("重置%@组…", selectedGroup.title)) { requestEditorReset(.group(selectedGroup)) }
+                            .disabled(!resetModified(.group(selectedGroup)))
+                        Button(L10n.text("重置全部调整…"), role: .destructive) { requestEditorReset(.all) }
+                            .disabled(!resetModified(.all))
+                    } label: {
+                        // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
+                        HStack(spacing: 1) {
+                            Image(systemName: "arrow.counterclockwise")
+                            Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                        }
+                        .fixedSize()
+                        .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel(L10n.text("重置调整"))
+                    .accessibilityIdentifier("editor.reset")
+                    .disabled(!viewModel.hasImage || editorBusy || resetDraftSuspended)
+                    .layoutPriority(2)
+                }
+                .frame(minWidth: geometry.size.width)
+            }
+            .defaultScrollAnchor(.trailing)
+            .accessibilityIdentifier("editor.parameterHeader")
+        }
+        .frame(height: max(44, panelHeaderHeight))
+        .padding(.horizontal, 16)
+        .opacity(rulerFocusOpacity)
+    }
+
+    private var parameterInputContext: AdjustmentInputContext {
+        let source = viewModel.sourceRevision
+        let tool = currentEditorTool
+        let channel = hslChannel
+        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel)", isCurrent: {
+            viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded &&
+                (tool != .adjustment(.hsl) || hslChannel == channel)
+        })
     }
 
     @ViewBuilder

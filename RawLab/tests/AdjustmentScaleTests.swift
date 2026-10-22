@@ -16,7 +16,55 @@ struct AdjustmentScaleTests {
         reciprocalValues()
         movementAndEvents()
         tickResiduals()
+        visibleWindows()
+        completeLegacyValues()
         print("PASS: \(checks) adjustment scale, wheel, intent, event and motion checks")
+    }
+
+    static func visibleWindows() {
+        let fixtures: [(ClosedRange<Double>, Double, Bool)] = [(0...2, 0.01, false), (0...100, 1, false),
+            (-100...100, 1, false), (-4...4, 0.05, false), (2000...50000, 10, true)]
+        for (range, step, reciprocal) in fixtures {
+            let scale = AdjustmentScale(range: range, step: step, reciprocal: reciprocal)
+            for width in [120.0, 320, 768, 2400] {
+                let lower = scale.window(at: 0, width: width)
+                let upper = scale.window(at: 1, width: width)
+                let middle = scale.window(at: 0.5, width: width)
+                check(lower.start == 0 && lower.indicator == 0, "Minimum fills the ruler from its left edge")
+                check(close(upper.start + upper.span, 1) && close(upper.indicator, 1), "Maximum fills through the right edge")
+                check(close(middle.indicator, 0.5), "Middle remains centered at every width")
+                check(lower.span > 0 && lower.span <= 1, "A wide viewport never leaves the legal tape domain")
+            }
+        }
+        let exposure = AdjustmentScale(range: -4...4, step: 0.05)
+        let window = exposure.window(at: 0.5, width: 320)
+        check(close(window.span, 0.25) && close(window.start, 0.375), "320pt of the original1280pt tape uses a quarter-domain window")
+        let singleton = AdjustmentScale(range: 3...3, step: 1).window(at: 0, width: 0)
+        check(singleton.indicator.isFinite && singleton.span > 0, "Collapsed layout and singleton ranges remain finite")
+    }
+
+    static func completeLegacyValues() {
+        let locale = Locale(identifier: "en_US")
+        let hsl = AdjustmentScale(range: -100...100, step: 1)
+        check(hsl.values(including: [0.5]).contains(0.5) && hsl.values(including: [0.5]).count == 202, "The complete wheel includes the stored half without rounding")
+        check(hsl.completeText(0.5, locale: locale, formatter: { String(format: "%+.0f", $0) }) == "+0.5", "Half-step row and wheel do not claim integer0 or1")
+        check(hsl.completeText(-0.05, locale: locale, formatter: { String(format: "%+.0f", $0) }) == "-0.05", "All legal old fractions retain their precision")
+        check(hsl.completeText(0.5, locale: Locale(identifier: "de_DE"), formatter: { _ in "+0" }) == "+0,5", "Legacy digits follow the current locale")
+        let strength = AdjustmentScale(range: 0...2, step: 0.01)
+        check(strength.completeText(0.005, displayScale: 100, locale: locale, formatter: { String(format: "%.0f", $0 * 100) }) == "0.5", "Percent display preserves the old logical value without changing storage")
+        let ev = AdjustmentScale(range: -4...4, step: 0.05)
+        let gridEV = ev.rounded(0.35)
+        let percentText = strength.completeText(0.29, displayScale: 100, locale: locale, formatter: { String(format: "%.0f", $0 * 100) })
+        let evText = ev.completeText(gridEV, locale: locale, formatter: { String(format: "%+.2f", $0) })
+        check(percentText == "29" && evText == "+0.35", "Canonical grid keeps compact digits: percent=\(percentText), EV=\(evText), gridEV=\(gridEV)")
+        check(strength.values().allSatisfy { value in
+            strength.completeText(value, displayScale: 100, locale: locale, formatter: { String(format: "%.0f", $0 * 100) }) == String(format: "%.0f", value * 100)
+        }, "Every strength grid value keeps its integer percent formatter")
+        check(ev.values().allSatisfy { value in
+            ev.completeText(value, locale: locale, formatter: { String(format: "%+.2f", $0) }) == String(format: "%+.2f", value)
+        }, "Every EV grid value keeps its two-decimal formatter")
+        check(ev.completeText(gridEV.nextUp, locale: locale, formatter: { String(format: "%+.2f", $0) }) == "+" + String(gridEV.nextUp), "A distinct legal old value adjacent to the grid remains exact")
+        check(hsl.completeText(25, locale: locale, formatter: { String(format: "%+.0f", $0) }) == "+25", "Grid values keep existing formatting")
     }
 
     static func legalValues() {

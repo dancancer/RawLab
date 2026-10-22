@@ -71,7 +71,7 @@ extension ContentView {
                 AdjustmentControl(title: L10n.text("强度"), value: adjustmentBinding(.strength),
                                   range: RawSettings.lutStrengthRange, step: 0.01, defaultValue: 1,
                                   unit: "%", formatter: { String(format: "%.0f", locale: L10n.locale, $0 * 100) },
-                                  identifier: "masterRecipe.strength", onEditingChanged: setSliderEditing)
+                                  displayScale: 100, identifier: "masterRecipe.strength", onEditingChanged: setSliderEditing)
                     .padding(.horizontal, 16)
                     .disabled(!viewModel.hasImage || editingLocked)
             }

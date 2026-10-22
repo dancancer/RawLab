@@ -17,9 +17,7 @@ extension ContentView {
             masterRecipePanel
         } else if selectedAdjustment == .hsl {
             IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
-                        onEditingChanged: setSliderEditing, channel: $hslChannel,
-                        onResetChannel: { requestEditorReset(.hslChannel(hslChannel)) },
-                        onResetAll: { requestEditorReset(.allHSL) })
+                        onEditingChanged: setSliderEditing, channel: $hslChannel)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, settings: Binding(
@@ -84,7 +82,7 @@ extension ContentView {
                               defaultValue: adjustment.value(from: .default),
                               unit: adjustment.unit,
                               formatter: adjustment.formatted,
-                              reciprocal: adjustment == .temperature,
+                              reciprocal: adjustment == .temperature, displayScale: adjustment == .strength ? 100 : 1,
                               identifier: "adjustment", onEditingChanged: setSliderEditing)
                 .id(adjustment.rawValue)
             if adjustment == .exposure {
