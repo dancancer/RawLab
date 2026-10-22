@@ -22,7 +22,7 @@ struct PhotoEffectsControls: View {
             HStack(spacing: 12) {
                 if isVignette {
                     Button(L10n.text(advanced ? "收起暗角参数" : "展开暗角参数")) {
-                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        ParameterValueField.cancelPendingInputs()
                         advanced.toggle()
                     }
                         .buttonStyle(.borderless).font(.system(size: 11))
@@ -30,7 +30,7 @@ struct PhotoEffectsControls: View {
                 }
                 Spacer(minLength: 0)
                 if !isVignette || advanced { Button {
-                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    ParameterValueField.cancelPendingInputs()
                     onReset()
                 } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28)
@@ -47,8 +47,7 @@ struct PhotoEffectsControls: View {
                     get: { model.settings.effectSettings[keyPath: parameter.keyPath] },
                     set: { model.settings.setEffect(parameter, to: $0) }
                 ), range: parameter.range, defaultValue: parameter.defaultValue,
-                identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting,
-                showsReset: !isVignette || advanced)
+                identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)
                     .disabled(isDisabled(parameter))
             }
             if let reason = disabledReason {

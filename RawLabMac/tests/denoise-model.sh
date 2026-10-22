@@ -8,6 +8,7 @@ OUT="$(mktemp -d /tmp/rawlab-denoise-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     "$ROOT/Shared/BundledLook.swift" \
+  "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \
   "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Looks/Film.swift" "$ROOT/Shared/ExportMetadata.swift" \

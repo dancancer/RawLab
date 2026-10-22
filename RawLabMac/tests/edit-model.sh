@@ -12,6 +12,7 @@ if [ -f "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift" ]; then SOURCES+
 SOURCES+=("$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Lens/MacStraightenPreview.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift")
+SOURCES+=("$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift")
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \

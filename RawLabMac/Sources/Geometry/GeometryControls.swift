@@ -7,6 +7,9 @@ struct GeometryControls: View {
     var tab: MacGeometryTab = .crop
     @State private var showsPreciseCrop = false
     @State private var rotationResetRevision = 0
+    @State private var rotationValidationMessage: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private var textSize: CGFloat { ParameterRow.textSize(for: dynamicTypeSize) }
 
     private var settings: GeometrySettings { model.geometryDraftSettings }
 
@@ -40,13 +43,7 @@ struct GeometryControls: View {
                 gridControl.frame(width: 120, alignment: .leading)
             }
             DisclosureGroup(isExpanded: Binding(get: { showsPreciseCrop }, set: { expanded in
-                if !expanded {
-                    commitFocusedInput()
-                    let hasInvalidCropInput = [GeometryParameter.cropX, .cropY, .cropWidth, .cropHeight].contains {
-                        model.invalidGeometryDraftInputs.contains("geometry.value.\($0.rawValue)")
-                    }
-                    guard !hasInvalidCropInput else { return }
-                }
+                if !expanded { ParameterValueField.cancelPendingInputs() }
                 showsPreciseCrop = expanded
             })) {
                 VStack(spacing: 0) {
@@ -100,31 +97,37 @@ struct GeometryControls: View {
     private var rotationControls: some View {
         VStack(spacing: 3) {
             HStack(spacing: 6) {
+                Text(GeometryParameter.straightenDegrees.title).font(.system(size: textSize))
+                    .modifier(ParameterResetGesture(action: resetRotation))
                 ParameterValueField(value: value(.straightenDegrees), range: -45...45,
                                     precision: .standard, title: GeometryParameter.straightenDegrees.title,
                                     unit: "°", identifier: "geometry.value.straightenDegrees",
+                                    defaultValue: 0, fontSize: textSize,
+                                    onValidationMessage: { rotationValidationMessage = $0 },
                                     resetRevision: model.geometryDraftRevision &+ rotationResetRevision,
                                     onEditingChanged: model.setInteracting,
                                     invalidInputPolicy: .retain,
                                     onValidityChange: { model.setGeometryDraftInputValidity(identifier: "geometry.value.straightenDegrees", isValid: $0) })
-                    .frame(width: 72, height: 26)
+                    .frame(minWidth: 72, minHeight: max(26, textSize + 13))
                 Text("°").font(.system(size: 13)).foregroundStyle(.secondary).accessibilityHidden(true)
-                Button {
-                    commitFocusedInput()
-                    model.setGeometryDraftParameter(.straightenDegrees, to: 0)
-                    rotationResetRevision += 1
-                    model.setGeometryDraftInputValidity(identifier: "geometry.value.straightenDegrees", isValid: true)
-                } label: {
-                    Image(systemName: "arrow.counterclockwise").font(.system(size: 12)).frame(width: 28, height: 28)
-                }
-                .buttonStyle(.borderless)
-                .help(L10n.format("重置%@", GeometryParameter.straightenDegrees.title))
-                .accessibilityLabel(L10n.format("重置%@", GeometryParameter.straightenDegrees.title))
-                .accessibilityIdentifier("geometry.reset.straightenDegrees")
+
             }
             MacRotationRuler(value: value(.straightenDegrees), onEditingChanged: model.setInteracting)
                 .frame(height: 52)
-        }
+                .modifier(ParameterResetGesture(action: resetRotation))
+                .accessibilityAction(named: L10n.format("重置%@", GeometryParameter.straightenDegrees.title), resetRotation)
+            if let rotationValidationMessage {
+                Text(rotationValidationMessage).font(.system(size: textSize)).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }.contextMenu { Button(L10n.format("重置%@", GeometryParameter.straightenDegrees.title), action: resetRotation) }
+    }
+
+    private func resetRotation() {
+        ParameterValueField.cancelPendingInputs()
+        model.setGeometryDraftParameter(.straightenDegrees, to: 0)
+        rotationResetRevision += 1
+        model.setGeometryDraftInputValidity(identifier: "geometry.value.straightenDegrees", isValid: true)
     }
 
     private var gridControl: some View {

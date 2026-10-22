@@ -42,7 +42,7 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
             guard let model else { return previous?.windowShouldClose?(sender) ?? true }
-            NSApp.keyWindow?.makeFirstResponder(nil)
+            ParameterValueField.cancelPendingInputs()
             if model.geometryDraftHasChanges {
                 model.requestLeavingGeometryDraft { [weak self, weak sender] in
                     guard let self, let sender else { return }
@@ -83,7 +83,7 @@ final class RawLabMacDelegate: NSObject, NSApplicationDelegate {
     weak var model: EditorModel?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        sender.keyWindow?.makeFirstResponder(nil)
+        ParameterValueField.cancelPendingInputs()
         guard let model else {
             return finishTermination(sender)
         }

@@ -219,6 +219,11 @@ import SwiftUI
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        if let focus = ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"],
+           ["native-close", "native-terminate", "native-departure"].contains(focus) {
+            runNativeInputDepartureChecks(model, mode: focus)
+            return
+        }
         if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "workspace-reset" {
             try workspaceResetChecks(model, raw: a, edits: edits)
             print("PASS: \(checks) focused workspace reset checks")
@@ -358,6 +363,7 @@ import SwiftUI
                   "the existing batch retains its frozen committed settings across a later draft Apply")
 
         try cancelChecks(model, raw: a, edits: edits)
+        try inputCancellationChecks(model)
         try invalidAndDepartureChecks(model, raw: a, edits: edits)
         try fileSwitchChecks(model, a: a, b: b, edits: edits)
         try saveFailureChecks(model, a: a, b: b, edits: edits, output: output)

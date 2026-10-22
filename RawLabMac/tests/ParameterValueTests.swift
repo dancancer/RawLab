@@ -8,7 +8,7 @@ struct ParameterValueTests {
         guard condition() else { fputs("FAIL: \(name)\n", stderr); exit(1) }
         print("PASS: \(name)")
     }
-    final class ValueBox { var value: Double; init(_ value: Double) { self.value = value } }
+    final class ValueBox { var value: Double; var writes = 0; init(_ value: Double) { self.value = value } }
 
     static func wheel(_ pixels: Int32, time: Double, fine: Bool = false, horizontal: Int32 = 0,
                        line: Bool = false, precise: Bool = true) -> NSEvent {
@@ -23,10 +23,13 @@ struct ParameterValueTests {
     static func fixture(_ value: Double, precision: ParameterPrecision = .exposure,
                         range: ClosedRange<Double> = -4...4,
                         invalidInputPolicy: ParameterInvalidInputPolicy = .restore,
-                        onValidityChange: @escaping (Bool) -> Void = { _ in }) -> (ValueBox, NumericTextField, ParameterValueField.Coordinator) {
+                        onValidityChange: @escaping (Bool) -> Void = { _ in },
+                        onValidationMessage: @escaping (String?) -> Void = { _ in },
+                        onEditingChanged: @escaping (Bool) -> Void = { _ in }) -> (ValueBox, NumericTextField, ParameterValueField.Coordinator) {
         let box = ValueBox(value)
-        let parent = ParameterValueField(value: Binding(get: { box.value }, set: { box.value = $0 }),
+        let parent = ParameterValueField(value: Binding(get: { box.value }, set: { box.writes += 1; box.value = $0 }),
                                          range: range, precision: precision, title: "Exposure", unit: "EV", identifier: "value.exposure",
+                                         onValidationMessage: onValidationMessage, onEditingChanged: onEditingChanged,
                                          invalidInputPolicy: invalidInputPolicy, onValidityChange: onValidityChange)
         let coordinator = ParameterValueField.Coordinator(parent)
         let field = NumericTextField()
@@ -111,6 +114,44 @@ struct ParameterValueTests {
               "The field editor's used text is vertically centered with the drawing rect (used=\(used), origin=\(editor.textContainerOrigin), editor=\(editor.frame), usedCenterY=\(usedCenterY), drawing=\(drawing))")
     }
 
+    static func strictInputChecks() {
+        for (value, precision, range) in [(1.234, ParameterPrecision.exposure, -4.0...4.0),
+                                           (3.27, .standard, -100.0...100.0),
+                                           (12.34, .standard, -100.0...100.0),
+                                           (5274.0, .temperature, 2000.0...50000.0),
+                                           (0.05, .standard, -100.0...100.0)] {
+            let (box, field, coordinator) = fixture(value, precision: precision, range: range)
+            check(precision.parse(precision.text(value)) == value, "An off-grid original is displayed exactly: \(value)")
+            change("+" + String(value), field: field, coordinator: coordinator)
+            blur(field, coordinator: coordinator)
+            check(box.value == value && box.writes == 0 && !field.invalid,
+                  "A format-only edit preserves its off-grid original without invoking the setter: \(value)")
+        }
+        let (box, field, coordinator) = fixture(0.3)
+        for invalid in ["1.234", "1.23000000000001", "4.01", "-4.01", "nan", "inf", "1e308", "abc", "", "1,23"] {
+            change(invalid, field: field, coordinator: coordinator)
+            blur(field, coordinator: coordinator)
+            check(box.value == 0.3 && box.writes == 0 && field.invalid && field.stringValue == invalid,
+                  "Invalid input remains visible without clamping or snapping: \(invalid)")
+        }
+        for endpoint in ["-4", "4"] {
+            change(endpoint, field: field, coordinator: coordinator)
+            blur(field, coordinator: coordinator)
+            check(box.value == Double(endpoint)! && !field.invalid, "An exact range endpoint commits: \(endpoint)")
+        }
+        box.writes = 0
+        change("1.23", field: field, coordinator: coordinator)
+        check(coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))),
+              "Enter handles a valid decimal input")
+        blur(field, coordinator: coordinator)
+        check(box.value == 1.23 && box.writes == 1 && !field.invalid,
+              "Enter commits a legal new value exactly once")
+        change("2.34", field: field, coordinator: coordinator)
+        _ = coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        blur(field, coordinator: coordinator)
+        check(box.value == 1.23 && box.writes == 1 && field.stringValue == "+1.23", "Escape cancels a legal uncommitted value")
+    }
+
     static func main() {
         _ = NSApplication.shared
         if let focus = ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_FOCUS"] {
@@ -118,10 +159,18 @@ struct ParameterValueTests {
             case "shift-horizontal": shiftHorizontalChecks()
             case "line-wheel": discreteLineWheelChecks()
             case "cell-layout": valueFieldLayoutChecks()
+            case "strict-input": strictInputChecks()
+            case "row-layout": rowLayoutChecks()
+            case "validation-race": validationRaceChecks()
+            case "text-no-preview": textNoPreviewChecks()
             default: check(false, "Unknown parameter-value focus: \(focus)")
             }
             return
         }
+        strictInputChecks()
+        cancellationAndFillChecks()
+        validationRaceChecks()
+        textNoPreviewChecks()
         var exposure = 0.0
         for _ in 0..<40 { exposure = ParameterPrecision.exposure.stepped(exposure, direction: 1, fine: false, in: -4...4) }
         check(exposure == 4, "Forty ordinary EV steps reach the exact upper bound")
@@ -187,15 +236,15 @@ struct ParameterValueTests {
         field.stringValue = "+4.00"
         check(coordinator.wheel(wheel(80, time: 12)) && box.value == 4, "An accepted step clamps at the upper bound")
         check(coordinator.wheel(wheel(80, time: 12.2)) && box.value == 4, "Valid wheel events remain consumed at the bound")
-        field.stringValue = "1.234"
+        field.stringValue = "1.23"
         coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
-        check(box.value == 1.23 && field.stringValue == "+1.23", "Blur commits and snaps the numeric draft")
+        check(box.value == 1.23 && field.stringValue == "+1.23", "Blur commits a valid numeric draft")
         field.stringValue = "abc"
         coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
-        check(box.value == 1.23 && field.invalid && field.stringValue == "+1.23", "Invalid blur restores the current value with an error border")
-        check(restoreValidityEvents.isEmpty, "Ordinary fields keep their existing restored-value error behavior without draft validity changes")
+        check(box.value == 1.23 && field.invalid && field.stringValue == "abc", "Invalid blur retains the text with an error border")
+        check(restoreValidityEvents.isEmpty, "Ordinary fields retain invalid text without publishing geometry draft validity")
         check(field.toolTip == L10n.text("请输入有效数字") && field.accessibilityHelp() == field.toolTip,
               "Rejected input exposes a localized tooltip and accessible error explanation")
         field.invalid = false
@@ -241,12 +290,12 @@ struct ParameterValueTests {
         check(!draftCoordinator.wheel(wheel(80, time: 30)) && draftBox.value == 0.3 && draftField.stringValue == "abc",
               "An invalid retained draft passes wheel input without consuming or restoring it")
         draftCoordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: draftField))
-        change("1.234", field: draftField, coordinator: draftCoordinator)
+        change("1.23", field: draftField, coordinator: draftCoordinator)
         check(validityEvents == [false, true] && !draftField.invalid && draftBox.value == 0.3,
               "Correcting the draft clears its invalidity before committing a value")
         blur(draftField, coordinator: draftCoordinator)
         check(draftBox.value == 1.23 && draftField.stringValue == "+1.23" && !draftCoordinator.dirty && draftCoordinator.isValid,
-              "A corrected retained draft commits and snaps normally on blur")
+              "A corrected retained draft commits exactly on blur")
         change("nan", field: draftField, coordinator: draftCoordinator)
         blur(draftField, coordinator: draftCoordinator)
         check(draftCoordinator.control(draftField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))),
@@ -327,20 +376,123 @@ struct ParameterValueTests {
         discreteLineWheelChecks()
         valueFieldLayoutChecks()
         rowAlignmentChecks()
+        rowLayoutChecks()
         check(AdjustmentParameter.exposure.spec.display(0.4) == "+0.40 EV" && AdjustmentParameter.contrast.spec.display(-15) == "-15%" &&
               AdjustmentParameter.temperature.spec.display(5105) == "5105 K" && AdjustmentParameter.strength.spec.display(1) == "100%",
               "Displayed values match the editor field: sign for signed ranges, a space before EV and K, none before %")
         print("PASS: parameter value precision and native field regressions")
     }
 
-    // ------------------------------------------------------------------------
-    //  隐藏重置按钮时保留它的位置：收起的暗角只显示强度一行，数值框不能比其他面板的偏右
-    // ------------------------------------------------------------------------
     static func rowAlignmentChecks() {
-        func width(_ showsReset: Bool) -> CGFloat {
+        func width(_ unit: String) -> CGFloat {
             NSHostingView(rootView: ParameterRow(title: "Amount", value: .constant(0), range: -100...100, defaultValue: 0,
-                                                 identifier: "value.alignment", showsReset: showsReset)).fittingSize.width
+                                                 unit: unit, identifier: "value.alignment")).fittingSize.width
         }
-        check(width(false) == width(true), "A row without its reset button keeps the reset column")
+        check(width("") == width("%"), "Empty and visible unit slots reserve the same row width")
+    }
+
+    static func textNoPreviewChecks() {
+        var interactions: [Bool] = []
+        let (box, field, coordinator) = fixture(0.3, onEditingChanged: { interactions.append($0) })
+        coordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
+        change("+0.30", field: field, coordinator: coordinator)
+        blur(field, coordinator: coordinator)
+        check(interactions.isEmpty && box.writes == 0,
+              "Focus, formatting and blur do not start render interaction or write an unchanged value")
+        coordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
+        change("1.23", field: field, coordinator: coordinator)
+        ParameterValueField.cancelPendingInputs()
+        blur(field, coordinator: coordinator)
+        check(interactions.isEmpty && box.writes == 0,
+              "Canceling legal uncommitted text never starts a render interaction")
+        check(coordinator.wheel(wheel(40, time: 70)) && interactions.isEmpty,
+              "A below-threshold wheel event starts no render interaction")
+        check(coordinator.wheel(wheel(40, time: 70.05)) && box.value == 0.4 && interactions == [true],
+              "Only an accepted changing wheel step starts the interactive burst")
+        ParameterValueField.cancelPendingInputs()
+        check(interactions == [true, false], "Cancel ends an active accepted wheel burst exactly once")
+        var boundInteractions: [Bool] = []
+        let (bound, boundField, boundCoordinator) = fixture(4, onEditingChanged: { boundInteractions.append($0) })
+        withExtendedLifetime(boundField) {
+            check(boundCoordinator.wheel(wheel(80, time: 72)) && bound.writes == 0 && boundInteractions.isEmpty,
+                  "An accepted wheel event at the bound consumes input without a setter or render burst")
+        }
+        var timedInteractions: [Bool] = []
+        let (timed, timedField, timedCoordinator) = fixture(0.3, onEditingChanged: { timedInteractions.append($0) })
+        withExtendedLifetime(timedField) {
+            _ = timedCoordinator.wheel(wheel(80, time: 74))
+            RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+            check(timed.value == 0.4 && timed.writes == 1 && timedInteractions == [true, false],
+                  "A changing wheel burst ends once for its exact pass without scheduling another value")
+        }
+        check(interactions == [true, false], "A canceled wheel burst cannot end again after its timer fires")
+    }
+
+    static func validationRaceChecks() {
+        var messages: [String?] = []
+        let (_, field, coordinator) = fixture(0.3, invalidInputPolicy: .retain,
+            onValidationMessage: { messages.append($0) })
+        change("bad", field: field, coordinator: coordinator)
+        var reset = coordinator.parent
+        reset.resetRevision += 1
+        coordinator.update(reset, isEnabled: true)
+        change("still bad", field: field, coordinator: coordinator)
+        drainDeferredValidity()
+        check(field.invalid && messages.last! == L10n.text("请输入有效数字"),
+              "Deferred reset cleanup cannot erase the visible error of a newer invalid draft")
+    }
+
+    static func rowLayoutChecks() {
+        func fields(_ view: NSView) -> [NumericTextField] {
+            (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap(fields)
+        }
+        var fontSizes: [CGFloat] = []
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            let box = ValueBox(12.34)
+            let host = NSHostingView(rootView: ParameterRow(title: "Luminanz-Rauschreduzierung",
+                value: Binding(get: { box.value }, set: { box.writes += 1; box.value = $0 }),
+                range: -100...100, defaultValue: 20, identifier: "value.layout").dynamicTypeSize(size))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 220), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.contentView = nil; window.close() }
+            host.layoutSubtreeIfNeeded()
+            drainDeferredValidity()
+            host.layoutSubtreeIfNeeded()
+            let native = fields(host)
+            check(native.count == 1, "The real parameter row creates exactly one numeric field")
+            guard let field = native.first, let font = field.font else { return }
+            let textWidth = (field.stringValue as NSString).size(withAttributes: [.font: font]).width
+            check(textWidth <= field.bounds.width - 14 && host.bounds.contains(field.convert(field.bounds, to: host)),
+                  "Exact off-grid text fits inside its native field and row at \(size)")
+            check(box.writes == 0 && field.stringValue == "+12.34", "Row layout and font changes preserve exact values without setters")
+            fontSizes.append(font.pointSize)
+        }
+        check(fontSizes.count == 2 && fontSizes[1] > fontSizes[0], "The accessibility row increases its native numeric font without shrinking text")
+    }
+
+    static func cancellationAndFillChecks() {
+        let (original, field, coordinator) = fixture(0.3)
+        change("1.23", field: field, coordinator: coordinator)
+        ParameterValueField.cancelPendingInputs()
+        blur(field, coordinator: coordinator)
+        check(original.value == 0.3 && original.writes == 0 && !coordinator.dirty,
+              "Explicit navigation cancellation discards a valid uncommitted draft")
+        change("2.34", field: field, coordinator: coordinator)
+        let other = ValueBox(0.3)
+        let next = ParameterValueField(value: Binding(get: { other.value }, set: { other.writes += 1; other.value = $0 }),
+            range: -4...4, precision: .exposure, title: "Exposure", unit: "EV", identifier: "value.exposure",
+            inputScope: "other-source-with-same-value")
+        coordinator.update(next, isEnabled: true)
+        blur(field, coordinator: coordinator)
+        check(original.writes == 0 && other.writes == 0 && field.stringValue == "+0.30",
+              "Changing to a same-valued source cancels the old draft before a new callback can receive it")
+        let negative = ParameterSliderMapping.linear.fill(from: 20, to: -40, in: -100...100)
+        let positive = ParameterSliderMapping.linear.fill(from: 20, to: 60, in: -100...100)
+        check(negative == 0.3...0.6 && positive == 0.6...0.8,
+              "Track fill starts at a nonzero effective default on both sides")
+        let reciprocal = ParameterSliderMapping.reciprocalKelvin.fill(from: 4000, to: 8000, in: 2000...50000)
+        check(abs(reciprocal.lowerBound - 0.5208333333333334) < 1e-12 && abs(reciprocal.upperBound - 0.78125) < 1e-12,
+              "Temperature fill uses the reciprocal positions of both default and current value")
     }
 }

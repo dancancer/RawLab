@@ -105,7 +105,7 @@ extension EditorModel {
     }
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
-        NSApp?.keyWindow?.makeFirstResponder(nil)
+        ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
         let action = { [weak self] in
             guard let self else { return }
@@ -119,7 +119,7 @@ extension EditorModel {
     }
 
     func requestAdjustmentReset(_ scope: EditorResetScope) {
-        NSApp?.keyWindow?.makeFirstResponder(nil)
+        ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
         if scope == .all, geometryDraft != nil {
             if !geometryDraftHasChanges && !isAdjustmentModified(.all) { return }
@@ -305,6 +305,7 @@ extension EditorModel {
     }
 
     func openPanel() {
+        ParameterValueField.cancelPendingInputs()
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         panel.title = L10n.text("打开照片")
@@ -314,6 +315,7 @@ extension EditorModel {
     func open(_ url: URL) {
         guard !exporting else { return }
         if file == url && result != nil { return }
+        ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
             return

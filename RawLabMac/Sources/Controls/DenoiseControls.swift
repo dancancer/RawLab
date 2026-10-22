@@ -41,7 +41,7 @@ struct DenoiseControls: View {
             Toggle(L10n.text("降噪"), isOn: Binding(
                 get: { model.settings.waveletSettings.enabled },
                 set: { enabled in
-                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    ParameterValueField.cancelPendingInputs()
                     model.settings.setDenoiseEnabled(enabled)
                 }
             )).toggleStyle(.switch).controlSize(.mini)
@@ -49,7 +49,7 @@ struct DenoiseControls: View {
             Picker(L10n.text("预设"), selection: Binding(
                 get: { model.settings.waveletSettings.preset },
                 set: { preset in
-                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    ParameterValueField.cancelPendingInputs()
                     model.settings.applyDenoisePreset(preset)
                 }
             )) {
@@ -67,13 +67,13 @@ struct DenoiseControls: View {
     private var groupActions: some View {
         HStack(spacing: 12) {
             Button(L10n.text(advanced ? "收起精细调整" : "展开精细调整")) {
-                NSApp.keyWindow?.makeFirstResponder(nil)
+                ParameterValueField.cancelPendingInputs()
                 advanced.toggle()
             }
                 .buttonStyle(.borderless).font(.system(size: 11))
                 .accessibilityIdentifier("denoise.advanced")
             Button {
-                NSApp.keyWindow?.makeFirstResponder(nil)
+                ParameterValueField.cancelPendingInputs()
                 onReset()
             } label: {
                 Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28)

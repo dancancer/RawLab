@@ -33,6 +33,7 @@ struct AdjustmentDock: View {
                 }
             }
         }.frame(maxWidth: .infinity)
+            .environment(\.parameterInputScope, "\(model.file?.absoluteString ?? "").\(navigation.tool.rawValue)")
             .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
     }
 
@@ -84,7 +85,7 @@ struct AdjustmentDock: View {
         if navigation.tool == .hsl {
             MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
                 channel: $model.adjustmentNavigation.selectedHSLChannel,
-                onEditingChanged: model.setInteracting, onReset: model.requestAdjustmentReset)
+                onEditingChanged: model.setInteracting)
                 .padding(.horizontal, 16).disabled(model.result == nil)
         } else if navigation.tool == .denoise {
             DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) })

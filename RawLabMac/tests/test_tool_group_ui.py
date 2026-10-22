@@ -21,13 +21,16 @@ class ToolGroupUIContracts(unittest.TestCase):
         behavior = (ROOT / "RawLabMac/tests/ControlGroupTests.swift").read_text()
         self.assertIn("Current WB reset restores mode and both camera parameters while preserving color peers", behavior)
 
-    def test_collapsed_vignette_hides_both_reset_controls(self):
+    def test_collapsed_vignette_hides_group_reset_and_rows_use_semantic_reset(self):
         source = (ROOT / "RawLabMac/Sources/Controls/PhotoEffectsControls.swift").read_text()
         self.assertIn("if !isVignette || advanced { Button", source)
-        self.assertIn("showsReset: !isVignette || advanced", source)
+        self.assertNotIn("showsReset", source)
         row = (ROOT / "RawLabMac/Sources/Editor/View/AdjustmentRow.swift").read_text()
-        self.assertIn("var showsReset = true", row)
-        self.assertIn("if showsReset { Button", row)
+        self.assertNotIn("showsReset", row)
+        self.assertNotIn('Image(systemName: "arrow.counterclockwise")', row)
+        self.assertEqual(row.count(".modifier(ParameterResetGesture(action: reset))"), 2)
+        self.assertIn('.accessibilityAction(named: L10n.format("重置%@", title), reset)', row)
+        self.assertIn('.contextMenu { Button(L10n.format("重置%@", title), action: reset) }', row)
 
     def test_group_reset_has_a_distinct_accessibility_identifier(self):
         source = (ROOT / "RawLabMac/Sources/Controls/PhotoEffectsControls.swift").read_text()
