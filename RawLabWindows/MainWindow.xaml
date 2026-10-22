@@ -141,12 +141,12 @@
             <DockPanel x:Name="DockHeader" Grid.Row="1" LastChildFill="True">
               <Button Content="{DynamicResource '收起'}" Click="DockToggle" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}"/>
               <Button x:Name="ResetAllButton" Click="ResetMenuClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '重置调整'}" AutomationProperties.Name="{DynamicResource '重置调整'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
-              <WrapPanel VerticalAlignment="Center"><TextBlock x:Name="ActiveFilm" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
+              <ScrollViewer x:Name="EditorContextScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="ActiveFilm" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
               <ComboBox x:Name="ProcessingVersion" MinWidth="130" Margin="0,0,8,0" SelectedIndex="1" SelectionChanged="ProcessingVersionChanged" VerticalAlignment="Center" ToolTip="{DynamicResource '处理版本'}" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/></ComboBox>
               <TextBlock Text="{DynamicResource '曝光基准'}" VerticalAlignment="Center" Margin="5,0,8,0"/>
               <ComboBox x:Name="ExposureMode" MinWidth="130" SelectedIndex="0" SelectionChanged="ExposureModeChanged" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
               <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="12,0"/>
-              <Button Content="{DynamicResource '拍摄时白平衡'}" x:Name="AsShotButton" Click="AsShotClicked" Padding="8,3" Style="{StaticResource QuietButton}"/></WrapPanel>
+              <Button Content="{DynamicResource '拍摄时白平衡'}" x:Name="AsShotButton" Click="AsShotClicked" Padding="8,3" Style="{StaticResource QuietButton}"/></StackPanel></ScrollViewer>
             </DockPanel>
             <ScrollViewer x:Name="ToolsScroller" Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Tools" Orientation="Horizontal" HorizontalAlignment="Center">
               <Button x:Name="FilmCategory" Click="FilmCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '选择胶片模拟'}" AutomationProperties.Name="{DynamicResource '胶片'}">

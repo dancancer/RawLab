@@ -57,7 +57,7 @@ internal static class WorkspaceGroupChecks
         var previous=Loc.Preference;var originalFont=window.FontSize;
         var preferencePath=Path.Combine(output,"workspace-language.txt");
         try {
-            foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)}) {
+            foreach(var language in new[]{"de","zh-Hans","en","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)}) {
                 // 与设置入口一样触发 Changed，刷新已创建控件；语言偏好只写测试目录。
                 Loc.SetPreference(language,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;
                 window.FontSize=language=="de" ? 26 : originalFont;
@@ -91,7 +91,17 @@ internal static class WorkspaceGroupChecks
                     presenterSize=presenter?.RenderSize,presenterBounds=presenter==null ? (Rect?)null : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize))
                 }));
                 try {
-                    check(last.Y>=0 && last.Y<=window.HslSurface.ActualHeight,"Last HSL action remains reachable through internal scrolling: "+language+"/"+size);
+                    var resetBounds=presenter==null ? Rect.Empty : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize));
+                    check(presenter!=null && presenter.ActualHeight>=reset.ActualHeight && resetBounds.Top>=-.5 && resetBounds.Bottom<=presenter.ActualHeight+.5,
+                        "Complete last HSL action remains reachable through internal scrolling: "+language+"/"+size);
+                    foreach(var control in new FrameworkElement[]{window.ProcessingVersion,window.ExposureMode,window.AsShotButton}) {
+                        control.BringIntoView();window.UpdateLayout();
+                        var contextViewport=PhotoFeatureChecks.Descendants<ScrollContentPresenter>(window.EditorContextScroller).First();
+                        var bounds=control.TransformToAncestor(contextViewport).TransformBounds(new Rect(control.RenderSize));
+                        check(bounds.Left>=-.5 && bounds.Right<=contextViewport.ActualWidth+.5 && bounds.Top>=-.5 && bounds.Bottom<=contextViewport.ActualHeight+.5,
+                            "Context control remains fully reachable: "+control.Name+"/"+language+"/"+size);
+                    }
+                    window.EditorContextScroller.ScrollToLeftEnd();window.UpdateLayout();
                     CheckHistogramStatistics(window,language,size,check);
                 } finally {
                     // 断言失败也保留对应截图，尺寸检查仍在拍摄重排之前执行。
@@ -104,15 +114,17 @@ internal static class WorkspaceGroupChecks
     }
     private static void CheckHistogramStatistics(MainWindow window,string language,Size size,Action<bool,string> check)
     {
-        var text=window.ClipStats;var clipped=new List<string>();
+        var text=window.ClipStats;var clipped=new List<string>();var reachedContent=false;
         for(var parent=VisualTreeHelper.GetParent(text) as FrameworkElement;parent!=null && parent!=window;
             parent=VisualTreeHelper.GetParent(parent) as FrameworkElement) {
             var bounds=text.TransformToAncestor(parent).TransformBounds(new Rect(text.RenderSize));
             if(bounds.Left<-.5 || bounds.Top<-.5 || bounds.Right>parent.ActualWidth+.5 || bounds.Bottom>parent.ActualHeight+.5)
                 clipped.Add($"{parent.Name}/{parent.GetType().Name}: text={bounds}, parent={parent.RenderSize}");
+            // ArrangeLayout 验证的内容可大于 CI 桌面的 HWND；边界止于同一绘制目标。
+            if(ReferenceEquals(parent,window.Content)){reachedContent=true;break;}
         }
-        check(text.IsVisible && text.ActualHeight>0 && text.ActualHeight+.5>=text.DesiredSize.Height &&
+        check(reachedContent && text.IsVisible && text.ActualHeight>0 && text.ActualHeight+.5>=text.DesiredSize.Height &&
             System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && clipped.Count==0,
-            $"Histogram statistics fit every ancestor: {language}/{size}; "+string.Join("; ",clipped));
+            $"Histogram statistics fit every editor-content ancestor: {language}/{size}; "+string.Join("; ",clipped));
     }
 }
