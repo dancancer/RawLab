@@ -44,8 +44,8 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
         var v = Id == Parameter.Temperature ? 1 / (1 / Min - position * (1 / Min - 1 / Max)) : Min + position * (Max - Min);
         return Math.Clamp(Math.Round(v / Step, MidpointRounding.AwayFromZero) * Step, Min, Max);
     }
-    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.GetCultureInfo(Loc.Language), out var value) && double.IsFinite(value)
-        ? Math.Clamp(Math.Round(value / Step, MidpointRounding.AwayFromZero) * Step, Min, Max) : null;
+    public double? Parse(string text) => double.TryParse(text,NumberStyles.Float,CultureInfo.GetCultureInfo(Loc.Language),out var value) && double.IsFinite(value) &&
+        value>=Min && value<=Max && Math.Abs(value/Step-Math.Round(value/Step))<=1e-8*Math.Max(1,Math.Abs(value/Step)) ? value : null;
     public static readonly ParameterSpec[] All = [
         new(Parameter.Strength,"强度","胶片",0,200,.1,"%"), new(Parameter.Exposure,"曝光","输入",-4,4,.01,"EV",2),
         new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,.1,"",1),

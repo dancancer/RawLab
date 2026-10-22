@@ -63,7 +63,7 @@ public partial class PhotoEffectsPanel : UserControl
     {
         var showVignetteResets=tool==PhotoEffectTool.Grain || VignetteDetails.IsExpanded;
         ResetGroupButton.Visibility=showVignetteResets ? Visibility.Visible : Visibility.Collapsed;
-        rows[PhotoEffectParameter.VignetteAmount].ResetButton.Visibility=showVignetteResets ? Visibility.Visible : Visibility.Collapsed;
+
     }
     private void ResetGroupClicked(object sender,RoutedEventArgs e)
     {

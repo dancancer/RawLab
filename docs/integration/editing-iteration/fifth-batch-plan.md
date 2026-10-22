@@ -34,7 +34,7 @@
 - iOS 刻度窗口按实际宽度计算 span，`start=clamp(u-span/2,lower,upper-span)`，indicator=`(u-start)/span`；温度在原 reciprocal 坐标计算。只变可视窗口，不叠加拖动位移，不制造布局引发的值/触觉事件。
 - 固定外框仅取决于窗口、字号、安全区/键盘和既有桌面高度；不得依当前 tool、busy、输入错误或 draft actions 改变。标准手机普通字号 HSL 三轴同时可操作；短窗/大字允许内部滚动，固定操作始终可达。
 - iOS 最小触点 44×44 pt，Android 48×48 dp；八色单行不足时滚动。保留 Reduce Motion、原触觉边界与原生 focus 恢复。
-- 本批实现、评审、验证先本地完成；push/PR/合入仍依根项目授权规则。S2a 的五个 PR 授权不是新批的默认发布授权。
+- 本批实现、评审、验证先本地完成。用户已于 2026-10-22 单独授权 push、建立目标为 `development` 的五个 PR、先合入共享基础，再同步并合入独立复评及各自 CI 通过的消费者，最后核实联合 CI；该授权不包含版本发布。
 
 ## Review Focus
 
@@ -140,6 +140,6 @@ Windows key 使用 Shared source 的 `{n}` 格式。Apple `formats` 依参数顺
 - [x] 八项共享文案和平台映射通过生成/本地化检查，资源合同独立复核；同时补齐 Mac 已有“未调整”来源的遗漏映射。
 - [x] 四端各自严格输入/原值保留/session/布局及本平台专属行为完成，本批相关真实 UI 证据与独立评审闭合；范围外检查缺口在总账保留。
 - [x] Windows 实际 WPF、iPhone/iPad 模拟器、Android 私有模拟器和 Mac 原生界面在本地交付阶段完成；移动真机、真实读屏和硬件 GPU 未覆盖。
-- [x] 当前实现已选择性本地提交；远端交付按单独授权与本编排执行，不提前登记 Hosted CI/合入完成。
+- [x] 当前实现已选择性本地提交；获单独授权后已建立 [#124](https://github.com/dancancer/RawLab/pull/124) 共享基础、[#125](https://github.com/dancancer/RawLab/pull/125) Mac、[#126](https://github.com/dancancer/RawLab/pull/126) iOS、[#127](https://github.com/dancancer/RawLab/pull/127) Android、[#128](https://github.com/dancancer/RawLab/pull/128) Windows。此勾选仅确认交付入口已建立；各自 head/复评/合入与最终同源联合 CI 结果留在 PR 说明，不提前登记成功。
 
 本批完成只关闭 S2b 对应 AC；S3、S4 与整个 ITER-02 的联合验收继续在总账登记。

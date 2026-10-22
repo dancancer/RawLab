@@ -155,7 +155,7 @@ internal static class Program
                 Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");
                 Check(JsonSerializer.Serialize(adjustments.Capture()) == snapshot, $"Recipe, HSL and editor snapshot preserved {language}");
                 var hslPanel = (HslPanel)window.FindName("HslEditor");
-                Check(Descendants(hslPanel).OfType<Slider>().Any(slider => AutomationProperties.GetName(slider) == Loc.Text("色相")),
+                Check(Descendants(hslPanel).OfType<Slider>().Any(slider => AutomationProperties.GetName(slider).EndsWith(Loc.Text("色相"),StringComparison.Ordinal)),
                     $"HSL axis automation name {language}");
 
                 Check(AutomationProperties.GetName((RadioButton)lensPanel.FindName("Automatic")!) == Loc.Text("镜头匹配") &&

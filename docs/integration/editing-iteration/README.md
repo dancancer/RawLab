@@ -9,7 +9,7 @@
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
 - 协作依据：[集成协作规范](../../process/integration-workflow.md)、[根项目约定](../../../AGENTS.md)。
 - 第三批集成基线：`development@1031745c06968fa7d5ea7961f19f0eff002ad462`，已包含 #107～#118；各实现 PR 最新源提交均经独立评审和 CI 验证，远端 ancestry 已核实。[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39617993292)已通过四端及汇总门禁，其范围限于工作流实际执行的套件。
-- 当前开发基线：`development@fcf90f0f2159c08caea55d86652bb82e6c8c46c7`，已包含 #106 的处理版本兼容契约及第四批 #119～#123；该源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39736091998)最终 9 项成功。Android 首轮因 runner shutdown 中断，定向重跑通过，源码未改变。
+- 第五批开发起点：`development@fcf90f0f2159c08caea55d86652bb82e6c8c46c7`，已包含 #106 的处理版本兼容契约及第四批 #119～#123；该源的[联合 CI](https://github.com/dancancer/RawLab/actions/runs/39736091998)最终 9 项成功。Android 首轮因 runner shutdown 中断，定向重跑通过，源码未改变。
 - 批次执行：[首批实现计划](first-batch-plan.md)、[第二批实现计划](second-batch-plan.md)、[第三批实现计划](third-batch-plan.md)、[第四批实现计划](fourth-batch-plan.md)、[第五批 S2b 计划](fifth-batch-plan.md)。第四批六组导航与生产重置已集成并完成对应原生验证；第五批接参数输入、移动精细模式与 iOS 刻度窗口，查看与 RGB 能力仍单独验收。
 
 本文件是跨 PR 的依赖、owner 和验收索引。单个 PR 的命令输出、测量与复现过程写入对应 PR 说明；本轮结束后将总账移入 `docs/archive/`。
@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1 与 S2a 已集成，各自源与联合 CI、四端原生验证及独立复评通过；第五批 S2b 本地实现、相关验证与独立复评完成，尚未远端交付；S3/S4 仍待后续接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1 与 S2a 已集成，各自源与联合 CI、四端原生验证及独立复评通过；第五批 S2b 本地实现、相关验证与独立复评完成，交付见 #124～#128；远端状态以对应 PR/Actions 为准，S3/S4 仍待后续接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -90,17 +90,17 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 
 第四批已按 **#119 → #120 → #121 → #122 → #123** 合入，最终源为 `fcf90f0f`。第五批继续由原四端 owner 负责各自输入 UI，协调者负责共享六语、CI 入口和总账，独占路径见第五批计划。消费者正式 CI 等共享前置合入后再启动；未合入依赖时保持 draft。实际 Windows 验证在本地交付阶段完成，不延迟到远端 CI 才首次验证。原生验证以 source/configuration 为边界，零源码变化的同步只做增量绑定，不重复全套实验。
 
-第五批本地交付状态（2026-10-22）：四端消费同一资源基础 `08e275cb`，以下平台提交均以它为父提交。共享基础及本表尚未 push，不代表远端 CI 或合入完成。
+第五批交付索引（2026-10-22）：四端本地实现消费同一资源基础 `08e275cb`，下表保留已验证的本地实现提交。用户已授权 push、建立五个目标为 `development` 的 PR、依次合入共享基础与各自验证通过的消费者，再核实最终联合 CI。五个 PR 已建立；消费者在基础合入后同步实际目标，源码不变的本地原生证据继续有效。各 PR 的当前 head、独立复评、合入与最终 CI 结果以其说明和 Actions 为准。
 
-| 第五批交付 | 本地提交 | 当前状态与保留边界 |
+| 第五批 PR 与交付 | 本地实现提交 | 已有证据与保留边界 |
 | --- | --- | --- |
-| 共享资源、CI 入口与协调 | `2d8c1f46`、`08e275cb`；本次收口文档随基础分支交付 | 六语生成、占位符与 CI policy/actionlint 本地通过；消费者无共享文件重叠 |
-| Mac 参数输入 | `d15db205` | 本批原生界面、模型/输入与六语布局验证及独立复评完成 |
-| iOS 参数输入 | `f52eac9b` | 本批 iPhone/iPad 模拟器验证及独立复评完成；额外 PhotoWorkflow 停在胶片横屏位置断言，后续返回/导出未到达，未据此判定本批产品回归 |
-| Android 参数输入 | `8f7fef0c` | 本批私有模拟器、实际 RAW、布局/旋转与独立复评完成；真实 TalkBack 与硬件 GPU 未验证 |
-| Windows 参数输入 | `a17d9551` | 本批实际 WPF/鼠标、六语布局与独立复评完成；额外默认 native 套件的镜头候选检查未通过，宽窗包含离屏 composition 验证 |
+| [#124](https://github.com/dancancer/RawLab/pull/124) 共享资源、CI 入口与协调 | `920f874e`，包含 `2d8c1f46`、`08e275cb` | 六语生成、占位符与 CI policy/actionlint 本地通过；消费者无共享文件重叠 |
+| [#125](https://github.com/dancancer/RawLab/pull/125) Mac 参数输入 | `d15db205`；静态 reset 契约补正 `a38f6595` | 本批原生界面、模型/输入与六语布局验证及独立复评完成 |
+| [#126](https://github.com/dancancer/RawLab/pull/126) iOS 参数输入 | `f52eac9b` | 本批 iPhone/iPad 模拟器验证及独立复评完成；额外 PhotoWorkflow 停在胶片横屏位置断言，后续返回/导出未到达，未据此判定本批产品回归 |
+| [#127](https://github.com/dancancer/RawLab/pull/127) Android 参数输入 | `8f7fef0c` | 本批私有模拟器、实际 RAW、布局/旋转与独立复评完成；真实 TalkBack 与硬件 GPU 未验证 |
+| [#128](https://github.com/dancancer/RawLab/pull/128) Windows 参数输入与本交付索引 | `a17d9551` | 本批实际 WPF/鼠标、六语布局与独立复评完成；额外默认 native 套件的镜头候选检查未通过，宽窗包含离屏 composition 验证 |
 
-各平台证据按实际源码、构建和执行批次分别归属，不拼成一个 binary 的全量通过。移动真机、实际读屏和硬件 GPU 仍需后续验收。上表仅关闭 S2b 的本地交付，S3/S4、远端集成及全工作流联合验收继续独立登记。
+各平台证据按实际源码、构建和执行批次分别归属，不拼成一个 binary 的全量通过。移动真机、实际读屏和硬件 GPU 仍需后续验收。上表记录 S2b 的交付与既有验证边界；远端集成结果由链接的 PR/Actions 留存，S3/S4 及全工作流联合验收继续独立登记。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |

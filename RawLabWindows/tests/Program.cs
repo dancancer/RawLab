@@ -83,8 +83,8 @@ static class Program
             Check(settings[Parameter.Strength]==200 && settings.Request("test.arw","test.cube",2000,null).LutStrength==2,
                 "Film strength clamps at 200% and reaches the native renderer");
             var strengthSpec=ParameterSpec.All[(int)Parameter.Strength];
-            Check(strengthSpec.Parse("150")==150 && strengthSpec.Parse("201")==200 && strengthSpec.Value(.5)==100,
-                "Film slider and numeric input support 0-200%");
+            Check(strengthSpec.Parse("150")==150 && strengthSpec.Parse("201")==null && strengthSpec.Value(.5)==100,
+                "Film slider supports 0-200% and numeric input rejects out-of-range text");
             settings.Reset(Parameter.Strength); Check(settings[Parameter.Strength]==100,"Film strength resets to 100%");
             ExportMetadataChecks.Run(output,Check);
             var wb=(Temperature:4870.0,Tint:17.0);settings.ResolveWhiteBalance(wb);

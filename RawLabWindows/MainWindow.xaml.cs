@@ -102,6 +102,9 @@ public partial class MainWindow : Window
         updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
         RefreshUpdateNotice();
         Closed += (_, _) => updateCancellation.Cancel();
+        foreach(var navigation in new UIElement[]{Groups,Tools,Files,OpenPhoto,AdjustToggleButton,MainMenu})
+            navigation.AddHandler(PreviewMouseDownEvent,new MouseButtonEventHandler(ParameterNavigationPressed),true);
+        PreviewKeyDown+=(_,e)=>{if(e.Key==Key.System && e.SystemKey is Key.F or Key.F4)CancelParameterInputs();};
         Files.ItemsSource=library.Roots;
         Files.PreviewKeyDown+=FilesContextKeyDown;
         AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Collapsed;DockRow.MinHeight=0;DockRow.Height=new(0);SplitterRow.Height=new(0);

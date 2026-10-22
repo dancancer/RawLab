@@ -72,6 +72,7 @@ public partial class MainWindow
     private void DockToggle(object sender,RoutedEventArgs e)
     {
         if(file==null || pendingAllReset!=null)return;
+        CancelParameterInputs();
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
         if(visible) {
             var previousTool=transform.Active ? CurrentTool : (EditorAdjustmentTool?)null;
@@ -205,6 +206,7 @@ public partial class MainWindow
         Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
+        CancelParameterInputs();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
         previewResize.Stop();

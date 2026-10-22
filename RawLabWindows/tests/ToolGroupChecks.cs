@@ -133,7 +133,8 @@ internal static class ToolGroupChecks
         grainAmount.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
             System.Windows.Input.Keyboard.PrimaryDevice, Environment.TickCount, grainAmount, grainAmount)
             { RoutedEvent = UIElement.LostKeyboardFocusEvent });
-        check(grainAmount.Text == "100", "Clamped photo effect input normalizes its numeric field");
+        check(grainAmount.Text == "1000", "Out-of-range effect input retains its invalid draft");
+        ((ParameterRow)grainAmount.Parent).CancelInput();
         PhotoFeatureChecks.Screenshot(window, Path.Combine(output, "grain.png"));
         grainAmountSlider.Value = 0;
         InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
@@ -150,8 +151,8 @@ internal static class ToolGroupChecks
             "Collapsed vignette keeps only intensity, value and the fine-adjustment entry");
         vignetteDetails.IsExpanded = true; window.UpdateLayout();
         check(vignetteGroupReset.Visibility == Visibility.Visible &&
-              collapsedVignetteAmountReset.Visibility == Visibility.Visible,
-            "Expanded vignette restores group and per-parameter reset actions");
+              collapsedVignetteAmountReset.Visibility == Visibility.Collapsed,
+            "Expanded vignette keeps the group action while single-value resets stay in semantic menus");
         var vignetteAmount = PhotoFeatureChecks.Descendants<Slider>(window).Single(slider =>
             AutomationProperties.GetName(slider) == "暗角强度");
         var vignetteHighlights = PhotoFeatureChecks.Descendants<Slider>(window).Single(slider =>
@@ -161,7 +162,7 @@ internal static class ToolGroupChecks
         check(vignetteHighlights.IsEnabled, "Negative vignette enables highlights protection");
         PhotoFeatureChecks.Screenshot(window, Path.Combine(output, "vignette.png"));
         var labels = PhotoFeatureChecks.Descendants<TextBlock>(window.PhotoEffectsEditor).Where(label => label.IsVisible &&
-            new[] { "强度", "中点", "圆度", "羽化", "高光保护" }.Contains(label.Text)).ToArray();
+            new[] { "强度", "中点", "圆度", "羽化", "高光保护" }.Contains(label.Text.TrimEnd(' ','•'))).ToArray();
         check(labels.Length == 5, "All vignette parameter labels are visible in the narrow editor");
         foreach (var label in labels)
         {
