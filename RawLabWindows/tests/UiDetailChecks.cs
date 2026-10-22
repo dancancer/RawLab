@@ -250,14 +250,31 @@ internal static class UiDetailChecks
     // 工具条：说明文字只在空格或连字符处换行，不把一个词拆成两行；图标保持同一高度
     private static void ToolCaptions(MainWindow window,string language,Action<bool,string> check)
     {
-        BuildTools(window);window.AdjustmentPanel.Visibility=Visibility.Visible;window.DockRow.Height=new GridLength(288);window.UpdateLayout();
-        var buttons=window.Tools.Children.OfType<Button>().ToList();
-        var broken=buttons.Select(button=>Descendants(button).OfType<TextBlock>().Last()).Where(caption=>
-            caption.ActualHeight>LineHeight(caption)*1.5 && !caption.Text.Any(c=>c is ' ' or '-'))
-            .Select(caption=>"\n  "+caption.Text).ToList();
-        check(broken.Count==0,"Tool captions never break inside a word: "+language+string.Concat(broken));
-        var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
-        check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language})");
+        BuildTools(window);Refresh(window);
+        var expanded=typeof(MainWindow).GetField("expandedGroup",PrivateInstance)!;
+        var previous=expanded.GetValue(window);var checkedTools=new HashSet<string>();
+        try {
+            foreach(var group in Enum.GetValues<EditorAdjustmentGroup>()) {
+                // 无 RAW 的布局检查只建立组会话；真实导航与草稿守卫由 WorkspaceGroupChecks 覆盖。
+                expanded.SetValue(window,group);Refresh(window);
+                window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
+                var buttons=window.Tools.Children.OfType<Button>().Where(button=>button.IsVisible).ToList();
+                var ids=buttons.Select(AutomationProperties.GetAutomationId).ToArray();
+                var expected=EditorAdjustmentRules.Tools(group).Select(tool=>tool.ToString()).ToArray();
+                check(buttons.Count>0 && ids.SequenceEqual(expected) && buttons.All(button=>button.ActualWidth>0 && button.ActualHeight>0),
+                    $"Caption fixture lays out every tool in descriptor order: {language}/{group}");
+                checkedTools.UnionWith(ids);
+                if(buttons.Count==0)continue;
+                var broken=buttons.Select(button=>Descendants(button).OfType<TextBlock>().Last()).Where(caption=>
+                    caption.ActualHeight>LineHeight(caption)*1.5 && !caption.Text.Any(c=>c is ' ' or '-'))
+                    .Select(caption=>"\n  "+caption.Text).ToList();
+                check(broken.Count==0,$"Tool captions never break inside a word: {language}/{group}"+string.Concat(broken));
+                var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
+                check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language}/{group})");
+            }
+            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Select(tool=>tool.ToString())),
+                "Caption alignment covers all 17 tools while visible: "+language);
+        } finally {expanded.SetValue(window,previous);Refresh(window);}
     }
     private static double LineHeight(TextBlock text)=>new System.Windows.Media.FormattedText("Ag",System.Globalization.CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight,new System.Windows.Media.Typeface(text.FontFamily,text.FontStyle,text.FontWeight,text.FontStretch),text.FontSize,

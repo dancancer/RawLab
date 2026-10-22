@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media;
 using RawLab.Windows;
 
 internal static class WorkspaceGroupChecks
@@ -53,9 +54,11 @@ internal static class WorkspaceGroupChecks
         check(Get<long>(window,"editRevision")==channelRevision+1,"Repeated production color reset is a zero-edit NoChange");
         InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
         var previous=Loc.Preference;var originalFont=window.FontSize;
+        var preferencePath=Path.Combine(output,"workspace-language.txt");
         try {
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)}) {
-                Loc.Initialize(language);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;
+                // 与设置入口一样触发 Changed，刷新已创建控件；语言偏好只写测试目录。
+                Loc.SetPreference(language,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;
                 window.FontSize=language=="de" ? 26 : originalFont;
                 EditorShellChecks.ArrangeLayout(window,size);window.UpdateLayout();
                 var boundary=window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).Y;
@@ -77,8 +80,22 @@ internal static class WorkspaceGroupChecks
                 check(last.Y>=0 && last.Y<=window.HslSurface.ActualHeight,"Last HSL action remains reachable through internal scrolling: "+language+"/"+size);
                 var surface=EditorShellChecks.ArrangeLayout(window,size);
                 EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}.png"));
+                CheckHistogramStatistics(window,language,size,check);
             }
-        } finally {window.FontSize=originalFont;Loc.Initialize(previous);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;}
+        } finally {window.FontSize=originalFont;Loc.SetPreference(previous,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;}
         Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);
+    }
+    private static void CheckHistogramStatistics(MainWindow window,string language,Size size,Action<bool,string> check)
+    {
+        var text=window.ClipStats;var clipped=new List<string>();
+        for(var parent=VisualTreeHelper.GetParent(text) as FrameworkElement;parent!=null && parent!=window;
+            parent=VisualTreeHelper.GetParent(parent) as FrameworkElement) {
+            var bounds=text.TransformToAncestor(parent).TransformBounds(new Rect(text.RenderSize));
+            if(bounds.Left<-.5 || bounds.Top<-.5 || bounds.Right>parent.ActualWidth+.5 || bounds.Bottom>parent.ActualHeight+.5)
+                clipped.Add($"{parent.Name}/{parent.GetType().Name}: text={bounds}, parent={parent.RenderSize}");
+        }
+        check(text.IsVisible && text.ActualHeight>0 && text.ActualHeight+.5>=text.DesiredSize.Height &&
+            System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && clipped.Count==0,
+            $"Histogram statistics fit every ancestor: {language}/{size}; "+string.Join("; ",clipped));
     }
 }
