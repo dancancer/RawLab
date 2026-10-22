@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
@@ -27,7 +28,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import com.rawlab.android.R
-import com.rawlab.android.editor.EditorState
+import com.rawlab.android.editor.*
 import com.rawlab.android.editor.controls.AdjustmentScale
 import com.rawlab.android.editor.controls.formatAdjustment
 import com.rawlab.android.format.PhotoInputKind
@@ -35,7 +36,7 @@ import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
 
-internal val editorToolOrder = listOf(0, 15) + (1..8).toList() + (10..14).toList() + listOf(17, 16)
+internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjustmentRules::tools)
 
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
     R.string.shadows, R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.white_balance,
@@ -55,21 +56,21 @@ internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, s
 }
 
 @Composable
-internal fun EditorToolStrip(state: EditorState, selected: Int, select: (Int) -> Unit) {
-    val list = rememberLazyListState()
+internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int> = editorToolOrder, list: LazyListState = rememberLazyListState(),
+    navigationEnabled: Boolean = true, inlineLabels: Boolean = false, modifier: Modifier = Modifier, select: (Int) -> Unit) {
     LaunchedEffect(selected) {
-        val index = editorToolOrder.indexOf(selected)
+        val index = tools.indexOf(selected)
         if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
-            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem((index - 2).coerceAtLeast(0))
+            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(if (inlineLabels) index.coerceAtLeast(0) else (index - 2).coerceAtLeast(0))
     }
-    LazyRow(Modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
+    LazyRow(modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = if (inlineLabels) 0.dp else 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(editorToolOrder, key = { it }) { index -> EditorTool(state, index, selected == index) { select(index) } }
+        items(tools, key = { it }) { index -> EditorTool(state, index, selected == index, navigationEnabled, inlineLabels) { select(index) } }
     }
 }
 
 @Composable
-internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onClick: () -> Unit) {
+internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navigationEnabled: Boolean = true, inlineLabels: Boolean = false, onClick: () -> Unit) {
     val edits = state.visibleEdits
     val rawOnly = state.photo?.inputKind == PhotoInputKind.RAW
     val scalar = when (index) {
@@ -85,20 +86,7 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
         10 -> Triple(edits.sharpening * 100f, 0f, 0f..200f)
         else -> null
     }
-    val changed = when (index) {
-        8 -> whiteBalanceChanged(edits, state.preview?.temperature, state.preview?.tint)
-        else -> scalar?.let { abs(it.first - it.second) > .0001f } ?: when (index) {
-            0 -> edits.film != "neutral"
-            15 -> edits.recipeID != null
-            11 -> edits.denoise != DenoiseSettings()
-            12 -> !edits.effects.isEffectDefault(true)
-            13 -> !edits.effects.isEffectDefault(false)
-            14 -> !edits.hsl.isIdentity
-            16 -> edits.lens != LensSettings()
-            17 -> !edits.geometry.isIdentity
-            else -> false
-        }
-    }
+    val changed = EditorAdjustmentRules.isModified(EditorResetScope.Tool(index), edits, state.resetContext())
     val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val color = if (selected) primary else muted
@@ -108,13 +96,13 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
     val valueDescription = if (index == 8) listOf(
         "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
     ).joinToString(" · ") else number
-    Column(Modifier.width(80.dp).heightIn(min = 88.dp).selectable(selected,
-        enabled = state.controlsEnabled && (index != 8 || rawOnly) && (index != 16 || rawOnly),
+    val selectable = (if (inlineLabels) Modifier else if (LocalDensity.current.fontScale < 1.3f) Modifier.width(80.dp) else Modifier.widthIn(min = 80.dp)).selectable(selected,
+        enabled = navigationEnabled && state.controlsEnabled && (index != 8 || rawOnly) && (index != 16 || rawOnly),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
-    }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    }
+    val ring: @Composable () -> Unit = {
         Box(Modifier.size(48.dp).testTag("editor-tool-ring-$index"), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 val inset = 1.dp.toPx()
@@ -129,9 +117,82 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, onCli
                 Text(number, style = MaterialTheme.typography.labelSmall, color = primary)
             } else Icon(editorToolIcons[index], null, Modifier.size(24.dp), tint = color)
         }
-        Text(title, style = MaterialTheme.typography.labelSmall, color = color)
-        // 与 Mac、iOS 相同：“已调整”是工具名下方单独的小圆点；没调整时透明但仍占位，切换时工具条不跳动
-        Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index")
-            .background(if (changed) primary else Color.Transparent, CircleShape))
     }
+    val label: @Composable () -> Unit = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelSmall, color = color)
+            Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index")
+                .background(if (changed) primary else Color.Transparent, CircleShape))
+        }
+    }
+    if (inlineLabels) Row(selectable.heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
+    else Column(selectable.heightIn(min = 88.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
+
+}
+
+internal fun groupTitle(group: EditorAdjustmentGroup): Int = when (group) {
+    EditorAdjustmentGroup.LOOKS -> R.string.editor_group_looks
+    EditorAdjustmentGroup.LIGHT -> R.string.editor_group_light
+    EditorAdjustmentGroup.COLOR -> R.string.editor_group_color
+    EditorAdjustmentGroup.EFFECTS -> R.string.editor_group_effects
+    EditorAdjustmentGroup.DETAIL -> R.string.editor_group_detail
+    EditorAdjustmentGroup.GEOMETRY -> R.string.editor_group_geometry
+}
+
+@Composable
+internal fun EditorGroupStrip(state: EditorState, expanded: Boolean, tool: Int,
+    compact: Boolean = false, list: LazyListState = rememberLazyListState(),
+    navigationEnabled: Boolean = true, inlineLabels: Boolean = false, modifier: Modifier = Modifier, select: (EditorAdjustmentGroup) -> Unit) {
+    if (compact && !expanded) {
+        Column(modifier.fillMaxWidth().testTag("editor-groups")) {
+            EditorAdjustmentGroup.entries.chunked(3).forEach { row ->
+                Row(Modifier.fillMaxWidth()) {
+                    row.forEach { group -> EditorGroupButton(state, group, false, Modifier.weight(1f), true, navigationEnabled) { select(group) } }
+                }
+            }
+        }
+    } else {
+        LazyRow(modifier.fillMaxWidth().testTag("editor-groups"), state = list, contentPadding = PaddingValues(horizontal = if (inlineLabels) 0.dp else 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 8.dp)) {
+            items(EditorAdjustmentGroup.entries, key = { it.id }) { group ->
+                EditorGroupButton(state, group, expanded && EditorAdjustmentRules.groupFor(tool) == group,
+                    if (inlineLabels) Modifier else if (compact) Modifier.width((320.dp - 16.dp) / 6) else if (LocalDensity.current.fontScale < 1.3f) Modifier.width(80.dp) else Modifier.widthIn(min = 80.dp), compact, navigationEnabled, inlineLabels) { select(group) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorGroupButton(state: EditorState, group: EditorAdjustmentGroup, active: Boolean,
+    modifier: Modifier, compact: Boolean, navigationEnabled: Boolean, inlineLabels: Boolean = false, onClick: () -> Unit) {
+    val title = stringResource(groupTitle(group))
+    val changed = EditorAdjustmentRules.isModified(EditorResetScope.Group(group), state.visibleEdits, state.resetContext())
+    val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
+    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val selectable = modifier.selectable(active, enabled = state.controlsEnabled && navigationEnabled, role = Role.Tab, onClick = onClick)
+        .testTag("editor-group-${group.id}").semantics(mergeDescendants = true) {
+            contentDescription = title; stateDescription = status
+        }
+    val ring: @Composable () -> Unit = {
+        Box(Modifier.size(if (compact) 24.dp else 48.dp).testTag("editor-group-ring-${group.id}"), contentAlignment = Alignment.Center) {
+            if (!compact) Canvas(Modifier.fillMaxSize()) {
+                if (active) drawCircle(tint.copy(alpha = .14f))
+                drawCircle(tint, style = Stroke(1.dp.toPx()))
+            }
+            Icon(editorToolIcons[EditorAdjustmentRules.defaultTool(group)], null, Modifier.size(24.dp).testTag("editor-group-icon-${group.id}"), tint = tint)
+        }
+    }
+    val label: @Composable () -> Unit = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, Modifier.testTag("editor-group-label-${group.id}"), style = MaterialTheme.typography.labelMedium, color = tint)
+            Box(Modifier.size(3.dp).background(if (changed) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape))
+        }
+    }
+    if (inlineLabels) Row(selectable.heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
+    else Column(selectable.heightIn(min = if (compact) 64.dp else 88.dp)
+        .padding(horizontal = if (compact) 4.dp else 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
 }

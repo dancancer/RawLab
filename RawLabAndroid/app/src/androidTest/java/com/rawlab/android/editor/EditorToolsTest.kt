@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -76,15 +77,19 @@ class EditorToolsTest {
                         preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
                         exact = true,
                     ),
-                    onAlbum = {}, onFile = {}, onEdit = { next, _ -> edits = next }, onReset = {}, onRetry = {},
+                    onAlbum = {}, onFile = {}, onEdit = { next, _ -> edits = next }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
+                    onPrepareReset = { scope -> EditorResetTransaction.prepare(scope, EditorResetSession(
+                        com.rawlab.android.settings.PhotoIdentity("fixture"), "fixture", 1, 1, edits, null, 0,
+                        EditorResetContext(com.rawlab.android.format.PhotoInputKind.RAW, EditSettings(), AsShotWhiteBalance(6500f, 0f)))) },
+                    onCommitReset = { prepared -> edits = prepared.result.candidate; true },
                 )
             }
         }
         compose.onNodeWithContentDescription("全部工具").performClick()
         compose.onNodeWithContentDescription("白平衡").performClick()
         compose.onNodeWithText("色温").assertIsDisplayed()
-        compose.onNodeWithText("色调").assertIsDisplayed()
+        compose.onNodeWithText("色调").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("拍摄时设置").performClick()
         compose.runOnIdle {
             assertFalse(edits.customWb)
@@ -97,7 +102,7 @@ class EditorToolsTest {
     @Test fun moreMenuItemsShareOneTextColumn() {
         compose.setContent {
             RawLabTheme {
-                EditorScreen(state = EditorState(), onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onReset = {}, onRetry = {},
+                EditorScreen(state = EditorState(), onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {}, updateVersion = "9.9.9")
             }
         }
@@ -120,12 +125,12 @@ class EditorToolsTest {
                         preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
                         exact = true,
                     ),
-                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onReset = {}, onRetry = {},
+                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
                 )
             }
         }
-        compose.onNodeWithTag("editor-tool-2").performClick()
+        compose.onNodeWithTag("editor-group-light").performClick()
         val header = compose.onNodeWithContentDescription("重置调整").captureToImage().asAndroidBitmap()
         val parameter = compose.onNodeWithContentDescription("重置此项").captureToImage().asAndroidBitmap()
         // 只比较字形：按亮度二值化后逐点比，颜色或启用态的深浅不算区别
@@ -145,7 +150,7 @@ class EditorToolsTest {
             edits = EditSettings(exposure = .5f),
             preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
         )
-        compose.setContent { RawLabTheme { Surface { EditorToolStrip(state, selected = 0) {} } } }
+        compose.setContent { RawLabTheme { Surface { EditorToolStrip(state, selected = 2, tools = EditorAdjustmentRules.tools(EditorAdjustmentGroup.LIGHT)) {} } } }
         fun bounds(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val ring = bounds("editor-tool-ring-2")
         val marker = bounds("editor-tool-marker-2")

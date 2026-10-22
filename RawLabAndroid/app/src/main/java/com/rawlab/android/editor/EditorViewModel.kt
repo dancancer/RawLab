@@ -55,6 +55,8 @@ class EditorViewModel @JvmOverloads constructor(
     private var draftRevision = 0L
     private var durablePreview: EditorDurablePreview? = null
     private var failedDraftSave = false
+    private var draftSaveBaseline: Pair<EditSaveState, String?>? = null
+    private var navigationPreview: EditorDurablePreview? = null
     private var previewLongEdge = 1600
     private var requestedPreviewLongEdge = 1600
     private var previewResizeJob: Job? = null
@@ -116,8 +118,12 @@ class EditorViewModel @JvmOverloads constructor(
                     val alreadyDurable = durablePreview?.matches(request.photo.identity,
                         request.photo.file.absolutePath, sourceRevision, currentRevision, settings) == true
                     durablePreview = null
+                    val navigationOnly = navigationPreview?.matches(request.photo.identity,
+                        request.photo.file.absolutePath, sourceRevision, currentRevision, settings) == true
+                    navigationPreview = null
                     if (settings != mutable.value.edits) editRevision += 1
                     val saved = when {
+                        navigationOnly -> null
                         alreadyDurable -> EditSaveResult(EditSaveState.SAVED)
                         request.importing -> if (!editStore.available) editStore.initialResult else
                             EditSaveResult(if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE)
@@ -296,7 +302,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (edge == previewLongEdge) return
         if (!current.edits.denoise.enabled) {
             previewLongEdge = edge
-            edit(mutable.value.edits)
+            renderCommittedForNavigation()
             return
         }
         mutable.value = mutable.value.copy(previewResizePending = true)
@@ -306,7 +312,7 @@ class EditorViewModel @JvmOverloads constructor(
             mutable.value = mutable.value.copy(previewResizePending = false)
             if (!mutable.value.controlsEnabled) return@launch
             previewLongEdge = requestedPreviewLongEdge
-            edit(mutable.value.edits)
+            renderCommittedForNavigation()
         }
     }
 
@@ -318,6 +324,7 @@ class EditorViewModel @JvmOverloads constructor(
         val pair = current.preview ?: return
         draftRevision += 1
         failedDraftSave = false
+        draftSaveBaseline = current.saveState to current.saveError
         mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits, pair.originalAspect,
             pair.comparisonWidth / pair.comparisonHeight), previewResizePending = false, error = null)
         if (group == AdjustmentGroup.GEOMETRY && current.edits.geometry != current.edits.geometry.uncropped()) renderDraft(false)
@@ -372,6 +379,7 @@ class EditorViewModel @JvmOverloads constructor(
             return false
         }
         failedDraftSave = false
+        draftSaveBaseline = null
         editRevision += 1
         draftRevision += 1
         mutable.value = current.copy(edits = edits, draft = null, rendering = true, exact = false,
@@ -383,11 +391,29 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun discardDraft() {
         val current = mutable.value
-        if (current.draft == null) return
+        val draft = current.draft ?: return
+        val saved = draftSaveBaseline.takeIf { failedDraftSave }
         failedDraftSave = false
+        draftSaveBaseline = null
         draftRevision += 1
-        mutable.value = current.copy(draft = null)
-        edit(current.edits)
+        val committed = current.copy(draft = null, saveState = saved?.first ?: current.saveState,
+            saveError = if (saved != null) saved.second else current.saveError)
+        mutable.value = committed
+        val shown = draft.project(current.edits).let {
+            if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
+        }
+        // 草稿的裁切框可能只改覆盖层；只有实际预览不同或尚未收敛时才恢复提交预览。
+        if (shown == current.edits && current.exact && !current.rendering && current.error == null) return
+        renderCommittedForNavigation()
+    }
+
+    private fun renderCommittedForNavigation() {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        mutable.value = current.copy(rendering = true, exact = false, error = null)
+        currentRevision = queue.submit(Work.Preview(photo, current.edits, false, gpuMode(), edge = previewLongEdge))
+        navigationPreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision,
+            currentRevision, current.edits)
     }
 
     fun retry() { if (mutable.value.draft != null) renderDraft(false) else edit(mutable.value.edits) }
@@ -449,7 +475,6 @@ class EditorViewModel @JvmOverloads constructor(
             current.edits, current.draft, draftRevision, context)
     }
 
-    fun reset() { edit(mutable.value.edits.reset()) }
 
     private var saveNotice: kotlinx.coroutines.Job? = null
     private fun fadeSaveNotice() {

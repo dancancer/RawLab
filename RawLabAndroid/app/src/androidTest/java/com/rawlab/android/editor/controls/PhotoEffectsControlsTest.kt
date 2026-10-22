@@ -36,7 +36,7 @@ class PhotoEffectsControlsTest {
         compose.setContent {
             RawLabTheme {
                 Surface(Modifier.width(360.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
-                    PhotoEffectsControls(value, vignette = true, enabled = true) { next, _ -> value = next }
+                    PhotoEffectsControls(value, vignette = true, enabled = true, onReset = { value = value.resetEffects(true) }) { next, _ -> value = next }
                 }
             }
         }
@@ -56,7 +56,7 @@ class PhotoEffectsControlsTest {
         compose.setContent {
             RawLabTheme {
                 Surface(Modifier.width(360.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
-                    PhotoEffectsControls(value, vignette = true, enabled = true) { next, _ -> value = next }
+                    PhotoEffectsControls(value, vignette = true, enabled = true, onReset = { value = value.resetEffects(true) }) { next, _ -> value = next }
                 }
             }
         }

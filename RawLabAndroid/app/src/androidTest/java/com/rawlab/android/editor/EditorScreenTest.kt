@@ -86,16 +86,14 @@ class EditorScreenTest {
         compose.onNodeWithTag("adjustment-slider").assertDoesNotExist()
         capture("editor-collapsed.png")
         compose.onNodeWithContentDescription("展开调整栏").performClick()
-        val adjustments = compose.onAllNodes(hasScrollToIndexAction() and
-            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)).onLast()
-        // 色温与色调自 e2edc19 起同在“白平衡”分组：先选中分组，两条轴各自的滑杆都要可见
-        adjustments.performScrollToNode(hasContentDescription("白平衡"))
+        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-color"))
+        compose.onNodeWithTag("editor-group-color").performClick()
         compose.onNodeWithContentDescription("白平衡").performClick()
         compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色温")).performScrollTo().assertIsDisplayed()
         compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色调")).performScrollTo().assertIsDisplayed()
         capture("editor-tint.png")
-        adjustments.performScrollToNode(hasText("胶片"))
-        compose.onNodeWithText("胶片").performClick()
+        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-looks"))
+        compose.onNodeWithTag("editor-group-looks").performClick()
         compose.waitForIdle()
         capture("editor-comparison.png")
         val empty = File(instrumentation.targetContext.cacheDir, "empty-test.dng").apply { writeBytes(byteArrayOf()) }

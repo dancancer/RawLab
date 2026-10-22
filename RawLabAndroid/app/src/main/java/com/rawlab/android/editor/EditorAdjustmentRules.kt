@@ -50,6 +50,7 @@ object EditorAdjustmentRules {
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
     )
+    fun defaultTool(group: EditorAdjustmentGroup): Int = tools(group).first()
     fun tools(group: EditorAdjustmentGroup): List<Int> = toolGroups.getValue(group)
     fun groupFor(tool: Int): EditorAdjustmentGroup? = if (tool == 9) EditorAdjustmentGroup.COLOR
         else toolGroups.entries.firstOrNull { tool in it.value }?.key
@@ -59,23 +60,27 @@ object EditorAdjustmentRules {
             markerSnapshot(resetStored(scope, snapshot, defaults(scope, snapshot, context)), context)
 
     fun prepareReset(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): EditorResetResult {
+        if (scope != EditorResetScope.All && snapshot.recipeID != null && snapshot.recipeID !in context.knownRecipeIds)
+            return EditorResetResult.Blocked("Unknown recipe")
         if (!valid(scope, snapshot, context)) return EditorResetResult.Blocked("Invalid scope, recipe or white balance defaults")
         if (!isModified(scope, snapshot, context)) return EditorResetResult.NoChange
         val clearsRecipe = snapshot.recipeID != null && (scope == EditorResetScope.Group(EditorAdjustmentGroup.LOOKS) ||
             scope == EditorResetScope.Tool(15) || scope == EditorResetScope.Tool(0))
         val independent = if (clearsRecipe) snapshot.independentForReset(context.input,
             context.asShot?.temperature, context.asShot?.tint)
-            ?: return EditorResetResult.Blocked("Recipe values cannot be represented without loss or RAW white balance calibration")
+            ?: return EditorResetResult.Blocked(if (context.input == PhotoInputKind.RAW && context.asShot == null &&
+                (snapshot.customWb || snapshot.tint != 0f)) "Missing white balance calibration"
+                else "Recipe values cannot be represented without loss")
         else snapshot
         val candidate = if (clearsRecipe) independent else resetStored(scope, snapshot, defaults(scope, snapshot, context))
         val converted = if (clearsRecipe) changedFields(snapshot, candidate) else emptySet()
         return EditorResetResult.Ready(candidate,
-            scope is EditorResetScope.Group || scope == EditorResetScope.All || scope == EditorResetScope.AllHsl ||
+            scope is EditorResetScope.Group || scope == EditorResetScope.All || scope == EditorResetScope.AllHsl || scope == EditorResetScope.Tool(14) ||
                 converted.isNotEmpty(), converted)
     }
 
     private fun valid(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): Boolean =
-        (snapshot.recipeID == null || snapshot.recipeID in context.knownRecipeIds) &&
+        (scope == EditorResetScope.All || snapshot.recipeID == null || snapshot.recipeID in context.knownRecipeIds) &&
             (context.input != PhotoInputKind.RAW || !includesWhiteBalance(scope) || context.asShot == null ||
                 (context.asShot.temperature.isFinite() && context.asShot.temperature in 2000f..50000f &&
                     context.asShot.tint.isFinite() && context.asShot.tint in -150f..150f)) &&

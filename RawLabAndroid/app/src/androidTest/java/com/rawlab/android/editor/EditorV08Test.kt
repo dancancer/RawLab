@@ -321,12 +321,13 @@ class EditorV08DraftTest {
             assertNull(model.state.value.error)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("film-artwork-provia", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             capture("film")
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-2"))
-            compose.onNodeWithTag("editor-tool-2").performClick()
+            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
+            compose.onNodeWithTag("editor-group-light").performClick()
             val photo = compose.onNodeWithTag("photo-canvas").fetchSemanticsNode().boundsInRoot
             val ruler = compose.onNodeWithTag("adjustment-slider").fetchSemanticsNode().boundsInRoot
             val configuration = compose.activity.resources.configuration
-            if (configuration.screenWidthDp <= configuration.screenHeightDp) assertTrue(photo.bottom <= ruler.top)
+            val dock = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
+            if (dock.top >= photo.bottom) assertTrue(photo.bottom <= ruler.top)
             else assertTrue(photo.right <= ruler.left)
             capture("exposure")
             compose.onNodeWithContentDescription("全部工具").performClick()
@@ -340,7 +341,8 @@ class EditorV08DraftTest {
             capture("geometry")
             compose.onNodeWithTag("draft.cancel").performClick()
             ready()
-            compose.onNodeWithContentDescription("导出").performClick()
+            compose.onNodeWithContentDescription("导出").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("export-format-DNG").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("export-format-DNG").performScrollTo().performClick()
             compose.onNodeWithText("保存到相册").assertDoesNotExist()
             capture("dng")

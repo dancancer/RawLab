@@ -70,15 +70,15 @@ class SaveFeedbackLayoutTest {
                     .consumeWindowInsets(WindowInsets.safeDrawing).testTag("save-layout-fixture")) {
                     RawLabTheme {
                         key(viewport, language, fontScale) {
-                            EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, {}, onSaveRetry = { retries++ })
+                            EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, onSaveRetry = { retries++ })
                         }
                     }
                 }
             }
         }
-        for (size in listOf(360 to 720, 960 to 600)) {
+        for (size in listOf(320 to 720, 360 to 720, 960 to 600)) {
             for (locale in languages) {
-                for (scale in if (locale == "en") listOf(1f, 1.6f) else listOf(1.6f)) {
+                for (scale in listOf(1f, 1.6f)) {
                     compose.runOnIdle { viewport = size; language = locale; fontScale = scale; editor = editor.copy(saveState = EditSaveState.NONE) }
                     val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
                         setLocale(Locale.forLanguageTag(locale))
@@ -88,8 +88,8 @@ class SaveFeedbackLayoutTest {
                     val fixture = compose.onNodeWithTag("save-layout-fixture").fetchSemanticsNode().boundsInRoot
                     assertEquals("The requested viewport must really be measured", size.first.toFloat(), fixture.width, 1f)
                     assertEquals(size.second.toFloat(), fixture.height, 1f)
-                    compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-2"))
-                    compose.onNodeWithTag("editor-tool-2").performClick()
+                    compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
+                    compose.onNodeWithTag("editor-group-light").performClick()
                     compose.onNodeWithTag("adjustment-slider").performScrollTo()
                     compose.onNodeWithContentDescription(localized.getString(R.string.compare)).performClick()
                     compose.onNodeWithTag("photo-info-button").performClick()
@@ -100,10 +100,15 @@ class SaveFeedbackLayoutTest {
                         val before = tags.associateWith { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }
                         val canvasBounds = before.getValue("editor-canvas")
                         val dockBounds = before.getValue("adjustment-dock")
-                        if (size.first > size.second) {
-                            assertTrue("The side-dock branch must be reached", canvasBounds.right <= dockBounds.left)
-                            assertEquals(340f, dockBounds.width, 1f)
-                        } else assertTrue("The bottom-dock branch must be reached", canvasBounds.bottom <= dockBounds.top)
+                        if (size.first > size.second && scale == 1f && locale == "zh-Hans") {
+                            assertTrue("Six measured Chinese labels fit the side dock", canvasBounds.right <= dockBounds.left)
+                            assertEquals(320f, dockBounds.width, 1f)
+                        } else if (scale >= 1.3f || size.first <= size.second) {
+                            assertTrue("Narrow and accessibility layouts use the bottom dock", canvasBounds.bottom <= dockBounds.top)
+                        } else {
+                            assertTrue("Measured-label fallback must keep photo and controls separate",
+                                canvasBounds.right <= dockBounds.left || canvasBounds.bottom <= dockBounds.top)
+                        }
                         for (save in listOf(EditSaveState.SAVED, EditSaveState.RESTORED, EditSaveState.FAILED, EditSaveState.NONE)) {
                             val detail = if (failureDetails && save == EditSaveState.FAILED)
                                 localized.getString(R.string.edit_unsaved_detail, "edits.properties: permission denied") else null
@@ -149,8 +154,8 @@ class SaveFeedbackLayoutTest {
                                     compose.runOnIdle { assertEquals(previous + 1, retries) }
                                 }
                                 if (expanded && save in listOf(EditSaveState.SAVED, EditSaveState.FAILED) &&
-                                    ((size.first == 360 && locale in listOf("zh-Hans", "en")) || (size.first == 960 && locale == "en"))) {
-                                    capture("${size.first}-$locale-$save.png")
+                                    ((size.first in listOf(320, 360) && locale in listOf("zh-Hans", "en")) || (size.first == 960 && locale in listOf("en", "zh-Hans")))) {
+                                    capture("${size.first}-$locale-$scale-$save.png")
                                 }
                             }
                         }
@@ -171,9 +176,14 @@ class SaveFeedbackLayoutTest {
         panel.performTouchInput { swipeUp() }
         compose.runOnIdle { assertTrue("Capture information must remain reachable by touch", scroll.value() > beforeScroll) }
         for (group in listOf(AdjustmentGroup.LENS, AdjustmentGroup.GEOMETRY)) {
+            val draftBounds = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
             for (save in listOf(EditSaveState.SAVED, EditSaveState.RESTORED, EditSaveState.FAILED)) {
                 compose.runOnIdle { editor = editor.copy(saveState = save, draft = AdjustmentDraft.begin(group, editor.edits)) }
-                compose.onNodeWithTag("edit-save-notice").assertDoesNotExist()
+                if (save == EditSaveState.FAILED) {
+                    compose.onNodeWithTag("edit-save-notice").assertIsDisplayed()
+                    compose.onNodeWithTag("edit-save-retry").assertIsDisplayed().assertHasClickAction()
+                } else compose.onNodeWithTag("edit-save-notice").assertDoesNotExist()
+                assertBounds("draft/$group/$save", draftBounds, compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot)
             }
         }
         compose.runOnIdle { editor = editor.copy(draft = null, preview = null) }

@@ -207,6 +207,155 @@ class EditorViewModelRaceInstrumentedTest {
         }
     }
 
+    @Test fun restoredViewportDemandPreservesSaveStateAndDoesNotWriteTheCommittedRecord() = restoredViewport(false)
+    @Test fun restoredDenoiseViewportDemandPreservesSaveStateAndDoesNotWriteTheCommittedRecord() = restoredViewport(true)
+    private fun restoredViewport(denoise: Boolean) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val raw = File(context.cacheDir, "restore-viewport-${UUID.randomUUID()}.RAW")
+        copyFixture(raw)
+        val owner = ViewModelStore()
+        try {
+            lateinit var model: EditorViewModel
+            instrumentation.runOnMainSync {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("restore-viewport", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(raw))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = .5f,
+                denoise = model.state.value.edits.denoise.copy(enabled = denoise))) }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.importPhoto(Uri.fromFile(raw)) }
+            awaitState(model) { it.canExport }
+            assertEquals(EditSaveState.RESTORED, model.state.value.saveState)
+            val record = File(context.filesDir, "edits/edits.properties")
+            val bytes = record.readBytes()
+            val committed = model.state.value.edits
+            val inode = android.system.Os.stat(record.absolutePath).st_ino
+            val writes = AtomicInteger()
+            val observer = object : FileObserver(record.parentFile!!.absolutePath, FileObserver.MOVED_TO) {
+                override fun onEvent(event: Int, path: String?) { if (path == record.name) writes.incrementAndGet() }
+            }
+            observer.startWatching()
+            try {
+                instrumentation.runOnMainSync {
+                    model.updatePreviewSize(320)
+                    assertEquals(EditSaveState.RESTORED, model.state.value.saveState)
+                    assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino)
+                    assertArrayEquals(bytes, record.readBytes())
+                }
+                awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 320 }
+                assertEquals(committed, model.state.value.edits)
+                assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino)
+                assertArrayEquals(bytes, record.readBytes())
+                assertTrue(model.state.value.saveState in setOf(EditSaveState.RESTORED, EditSaveState.NONE))
+                assertEquals(0, writes.get())
+            } finally { observer.stopWatching() }
+        } finally {
+            instrumentation.runOnMainSync { owner.clear() }
+            raw.delete()
+        }
+    }
+
+    @Test fun viewportDemandCannotTurnAnUnsavedFailureIntoASuccessfulWrite() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val raw = File(context.cacheDir, "failed-viewport-${UUID.randomUUID()}.RAW")
+        copyFixture(raw)
+        val owner = ViewModelStore()
+        val record = File(context.filesDir, "edits/edits.properties")
+        val backup = File(context.cacheDir, "failed-viewport-${UUID.randomUUID()}.properties")
+        try {
+            lateinit var model: EditorViewModel
+            instrumentation.runOnMainSync {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("failed-viewport", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(raw))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = .5f)) }
+            awaitState(model) { it.canExport }
+            assertTrue(record.renameTo(backup)); assertTrue(record.mkdir())
+            File(record, "occupied").writeText("keep")
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = 1f)) }
+            awaitState(model) { it.exact && !it.rendering }
+            assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            assertTrue(record.deleteRecursively()); assertTrue(backup.renameTo(record))
+            val bytes = record.readBytes()
+            val inode = android.system.Os.stat(record.absolutePath).st_ino
+            instrumentation.runOnMainSync {
+                model.updatePreviewSize(320)
+                assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            }
+            awaitState(model) { it.exact && !it.rendering && maxOf(it.preview!!.result.width, it.preview.result.height) == 320 }
+            assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino)
+            assertArrayEquals(bytes, record.readBytes())
+            assertEquals(1f, model.state.value.edits.exposure)
+        } finally {
+            if (backup.exists()) { record.deleteRecursively(); backup.renameTo(record) }
+            instrumentation.runOnMainSync { owner.clear() }
+            raw.delete()
+        }
+    }
+
+    @Test fun unchangedLensNavigationAndNeutralLegacyAllResetHaveNoWritesOrPreviewRequests() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val raw = File(context.cacheDir, "navigation-${UUID.randomUUID()}.RAW")
+        copyFixture(raw)
+        val owner = ViewModelStore()
+        try {
+            lateinit var model: EditorViewModel
+            instrumentation.runOnMainSync {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("navigation", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(raw))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync {
+                model.edit(model.state.value.edits.copy(processing = com.rawlab.android.settings.ProcessingIdentity.LEGACY))
+            }
+            awaitState(model) { it.canExport }
+            val revision = EditorViewModel::class.java.getDeclaredField("currentRevision").apply { isAccessible = true }
+            val beforeRequest = revision.getLong(model)
+            val record = File(context.filesDir, "edits/edits.properties")
+            val beforeRecord = record.readBytes()
+            val beforePreview = model.state.value.preview
+            instrumentation.runOnMainSync {
+                assertTrue(model.prepareReset(EditorResetScope.All).result is EditorResetResult.NoChange)
+                model.beginDraft(AdjustmentGroup.LENS)
+                assertFalse(model.state.value.draft!!.changed)
+                model.discardDraft()
+            }
+            awaitState(model) { it.canExport }
+            assertEquals(beforeRequest, revision.getLong(model))
+            assertSame(beforePreview, model.state.value.preview)
+            assertArrayEquals(beforeRecord, record.readBytes())
+            assertEquals(com.rawlab.android.settings.ProcessingIdentity.LEGACY, model.state.value.edits.processing)
+            instrumentation.runOnMainSync {
+                model.edit(model.state.value.edits.copy(geometry = GeometrySettings(cropWidth = .8f)))
+            }
+            awaitState(model) { it.canExport }
+            val croppedRecord = record.readBytes()
+            instrumentation.runOnMainSync { model.beginDraft(AdjustmentGroup.GEOMETRY) }
+            awaitState(model) { it.draftReady }
+            val uncroppedRequest = revision.getLong(model)
+            instrumentation.runOnMainSync { model.discardDraft() }
+            awaitState(model) { it.canExport }
+            assertEquals(uncroppedRequest + 1, revision.getLong(model))
+            assertArrayEquals(croppedRecord, record.readBytes())
+            assertEquals(.8f, model.state.value.edits.geometry.cropWidth)
+        } finally {
+            instrumentation.runOnMainSync { owner.clear() }
+            raw.delete()
+        }
+    }
+
     @Test fun resetCommitRejectsStaleEditsAndOnlySkipsIdenticalDurablePreviewWrites() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

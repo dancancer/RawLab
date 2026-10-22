@@ -105,3 +105,12 @@ internal object EditorStateReducer {
         return EditorMutation(state, edits.takeIf { rerender })
     }
 }
+
+/** 界面查询不触发保存或渲染；忙状态只影响动作可用性。 */
+internal fun EditorState.resetContext(): EditorResetContext = EditorResetContext(
+    photo?.inputKind ?: com.rawlab.android.format.PhotoInputKind.RAW,
+    EditSettings(),
+    preview?.takeIf { it.temperature.isFinite() && it.tint.isFinite() }
+        ?.let { AsShotWhiteBalance(it.temperature, it.tint) },
+    edits.recipeID?.let(::setOf) ?: emptySet(),
+)

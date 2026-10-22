@@ -22,13 +22,16 @@ import com.rawlab.android.geometry.uncropped
 internal fun GeometryControls(value: GeometrySettings, enabled: Boolean,
     ratio: GeometryRatio = GeometryRatio.FREE, portrait: Boolean = false, ratioEnabled: Boolean = enabled,
     onRatioChange: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
+    onReset: (() -> Unit)? = null,
     onChange: (GeometrySettings, Boolean) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.geometry), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
             ToolIcon(Icons.Outlined.RestartAlt, R.string.geometry_reset, enabled) {
-                onRatioChange(GeometryRatio.FREE, portrait)
-                onChange(GeometrySettings(), false)
+                if (onReset != null) onReset() else {
+                    onRatioChange(GeometryRatio.FREE, portrait)
+                    onChange(GeometrySettings(), false)
+                }
             }
         }
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

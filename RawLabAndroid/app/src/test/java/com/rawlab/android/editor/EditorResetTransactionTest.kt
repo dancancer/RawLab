@@ -24,6 +24,7 @@ class EditorResetTransactionTest {
             initial.copy(sourcePath = "/private/source-b.RAW"),
             initial.copy(sourceRevision = 4), initial.copy(editRevision = 6),
             initial.copy(edits = original.copy(temperature = 5300f)),
+            initial.copy(edits = original.copy(processing = com.rawlab.android.settings.ProcessingIdentity.LEGACY)),
             initial.copy(draftRevision = 8),
             initial.copy(draft = AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, original)),
             initial.copy(context = initial.context.copy(asShot = AsShotWhiteBalance(5300f, 8f))),
@@ -61,6 +62,21 @@ class EditorResetTransactionTest {
             if (group == AdjustmentGroup.GEOMETRY) assertEquals(LensSettings(), edited.project(original).lens)
             else assertEquals(GeometrySettings(), edited.project(original).geometry)
             assertEquals(original, draft.project(original))
+        }
+    }
+
+    @Test fun currentGeometryAndLensResetOnlyTheMatchingDraftObjectAndRetainProcessingIdentity() {
+        for (group in AdjustmentGroup.entries) {
+            val source = original.copy(processing = com.rawlab.android.settings.ProcessingIdentity.LEGACY)
+            val initial = session(AdjustmentDraft.begin(group, source)).copy(edits = source)
+            val tool = if (group == AdjustmentGroup.GEOMETRY) 17 else 16
+            val prepared = EditorResetTransaction.prepare(EditorResetScope.Tool(tool), initial).prepared!!
+            val reset = prepared.draftCandidate!!.project(source)
+            assertEquals(source.processing, reset.processing)
+            assertEquals(source.exposure, reset.exposure)
+            if (tool == 17) { assertEquals(GeometrySettings(), reset.geometry); assertEquals(source.lens, reset.lens) }
+            else { assertEquals(LensSettings(), reset.lens); assertEquals(source.geometry, reset.geometry) }
+            assertEquals(source, initial.edits)
         }
     }
 

@@ -135,7 +135,7 @@ class PhotoCanvasTest {
         var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.parse("content://rawlab.test/photo-a"), "photo-a", File("photo-a")), preview = pair))
         restoration.setContent {
             MaterialTheme {
-                EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, {})
+                EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {})
             }
         }
         val canvas = compose.onNodeWithTag("photo-canvas")

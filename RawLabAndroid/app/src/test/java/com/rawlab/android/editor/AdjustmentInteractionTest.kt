@@ -99,6 +99,12 @@ class AdjustmentInteractionTest {
         assertTrue(square.cropY + square.cropHeight <= 1.000001f)
     }
 
+    @Test fun sideDockFallsBackWhenFontOrSixLabelsCannotFit() {
+        assertFalse(editorUsesSideDock(1280f, 800f, fontScale = 1.3f))
+        assertFalse(editorUsesSideDock(1280f, 800f, requiredGroupWidth = 321f))
+        assertTrue(editorUsesSideDock(1280f, 800f, requiredGroupWidth = 320f))
+    }
+
     @Test fun portraitTabletNeverUsesLandscapeInspector() {
         assertFalse(editorUsesSideDock(800f, 1280f))
         assertFalse(editorUsesSideDock(360f, 800f))

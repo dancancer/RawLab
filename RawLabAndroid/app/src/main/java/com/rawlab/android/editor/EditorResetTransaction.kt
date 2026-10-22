@@ -4,7 +4,7 @@ import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 
-/** 只用于已经成功落盘的提交；渲染返回不同的 WB 元数据时仍需保存。 */
+/** 绑定源、请求和快照的收据；调用方区分已落盘提交与纯导航预览。WB 元数据不匹配时仍需保存。 */
 internal data class EditorDurablePreview(
     val identity: PhotoIdentity,
     val sourcePath: String,
