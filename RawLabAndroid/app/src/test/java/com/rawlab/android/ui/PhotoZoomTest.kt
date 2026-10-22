@@ -50,9 +50,9 @@ class PhotoZoomTest {
         assertEquals(1f, PhotoZoom(huge.fitScale).doubleTap(huge, 600f, 900f).scale, .0001f)
     }
 
-    @Test fun resizeKeepsFitOrNativeScaleAndReclampsPan() {
+    @Test fun resizeKeepsRelativeFitAndReclampsTheProjectedPhotoFocus() {
         val landscape = PhotoViewport(2400f, 1600f, 1800f, 600f)
         assertEquals(PhotoZoom(.375f), PhotoZoom(.5f).resize(viewport, landscape))
-        assertEquals(PhotoZoom(1f, 300f, 0f), PhotoZoom(1f, 600f, 0f).resize(viewport, landscape))
+        assertEquals(PhotoZoom(.75f), PhotoZoom(1f, 600f, 0f).resize(viewport, landscape))
     }
 }
