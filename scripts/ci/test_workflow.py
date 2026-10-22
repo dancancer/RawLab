@@ -1,5 +1,6 @@
 """Regression guards for the hosted verification boundary, not a YAML linter."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -64,7 +65,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("if", jobs["contracts"])
         self.assertNotIn("needs", jobs["contracts"])
         selection = jobs["changes"]
-        self.assertEqual(set(selection["outputs"]), {*PLATFORM_JOBS, "cold", "draft"})
+        self.assertEqual(set(selection["outputs"]), {*PLATFORM_JOBS, "cold", "draft", "windows_runner"})
         self.assertIn("python3 scripts/ci/affected_platforms.py select",
                       "\n".join(step.get("run", "") for step in selection["steps"]))
         result = jobs["result"]
@@ -82,6 +83,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(mac["strategy"]["matrix"]["include"], [
             {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6", "suite": "all"},
             {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "core"},
+            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "agent"},
             {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "render"},
         ])
         self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
@@ -193,17 +195,21 @@ class WorkflowContractTests(unittest.TestCase):
                     report = ET.parse(root / 'build/ci/macos-ctest.xml')
                     self.assertEqual({case.attrib['name'] for case in report.iter('testcase')}, expected)
 
-    def test_windows_uses_a_dedicated_runner_and_data_volume(self):
+    def test_windows_consumes_the_selected_runner_and_prepares_its_environment_first(self):
         windows = self.workflow["jobs"]["windows"]
-        self.assertEqual(windows["runs-on"], ["self-hosted", "windows", "x64", "rawlab-windows"])
-        self.assertEqual(windows["env"]["DOTNET_INSTALL_DIR"], "E:\\RawLabCI\\dotnet")
-        self.assertEqual(windows["env"]["RAWLAB_LENS_SOURCE_CACHE"], "E:\\RawLabCI\\cache\\lens-sources")
-        self.assertEqual(windows["env"]["JOBS"], "16")
-        self.assertEqual(windows["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "16")
-        # File-level MSVC parallelism stays bounded by one cross-project process count.
+        self.assertEqual(windows["runs-on"], "${{ fromJSON(needs.changes.outputs.windows_runner) }}")
+        self.assertEqual(self.workflow["jobs"]["changes"]["outputs"]["windows_runner"],
+                         "${{ steps.select.outputs.windows_runner }}")
+        steps = windows["steps"]
+        configure = next(step for step in steps if step.get("id") == "windows-env")
+        self.assertEqual(configure["env"]["CI_RUNNER_ENVIRONMENT"], "${{ runner.environment }}")
+        self.assertNotIn("if", configure)
+        for step in steps:
+            if step.get("id") == "native-key" or step.get("uses", "").startswith("actions/setup-dotnet@"):
+                self.assertLess(steps.index(configure), steps.index(step))
         self.assertEqual({name: windows["env"][name] for name in
-                          ("UseMultiToolTask", "EnforceProcessCountAcrossBuilds", "CL_MPCount")},
-                         {"UseMultiToolTask": "true", "EnforceProcessCountAcrossBuilds": "true", "CL_MPCount": "24"})
+                          ("UseMultiToolTask", "EnforceProcessCountAcrossBuilds")},
+                         {"UseMultiToolTask": "true", "EnforceProcessCountAcrossBuilds": "true"})
 
     def test_existing_default_builds_are_not_feature_reduced(self):
         for command in ("RawLabMac/build.sh", "RawLabWindows/build.ps1", "testDebugUnitTest",
@@ -337,7 +343,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("restore-keys", restore["with"])
                 self.assertEqual(restore["with"]["key"], "${{ steps.native-key.outputs.key }}")
                 self.assertEqual(save["with"], {key: restore["with"][key] for key in ("key", "path")})
-                shard = "matrix.suite != 'render' && " if name == "macos" else ""
+                shard = "(matrix.suite == 'all' || matrix.suite == 'core') && " if name == "macos" else ""
                 self.assertEqual(save["if"], f"success() && {shard}steps.native-cache.outcome == 'success' && "
                                              "steps.native-cache.outputs.cache-hit != 'true'")
                 self.assertLess(steps.index(restore), steps.index(save))
@@ -365,14 +371,15 @@ class WorkflowContractTests(unittest.TestCase):
                 current = None
             else:
                 groups[current].append(line)
-        self.assertEqual(set(groups), {None, "core", "render", "model"})
+        self.assertEqual(set(groups), {None, "core", "agent", "render", "model"})
         always = "\n".join(groups[None])
         for command in ("ci_timed app-build bash RawLabMac/build.sh", "native_cache.py inventory"):
             self.assertIn(command, always, "Every shard builds the app and records its cache inventory")
         expected = {
             "core": ("test_photo_copy.py", "horizontal-picker-native.sh", "dcp-compiler.sh",
                      "look-library.sh", "look-import-model.sh", "ctest --test-dir lutools/build-macos"),
-            "render": ("mac-straighten-preview.sh", "agent-recipe-render.sh", "raster-render.sh"),
+            "agent": ("agent-recipe-render.sh",),
+            "render": ("mac-straighten-preview.sh", "raster-render.sh", "test_real_cli.py"),
             "model": ("batch-export.sh", "edit-model.sh", "presentation.sh", "control-groups.sh",
                       "usage-analytics.sh", "usage-transport.sh", "usage-model.sh", "usage-termination.sh",
                       "rum-configuration.sh", "localization.sh"),
@@ -386,7 +393,41 @@ class WorkflowContractTests(unittest.TestCase):
         suites = {row["arch"]: [] for row in self.workflow["jobs"]["macos"]["strategy"]["matrix"]["include"]}
         for row in self.workflow["jobs"]["macos"]["strategy"]["matrix"]["include"]:
             suites[row["arch"]].append(row["suite"])
-        self.assertEqual(suites, {"arm64": ["all"], "x86_64": ["core", "render"]})
+        self.assertEqual(suites, {"arm64": ["all"], "x86_64": ["core", "agent", "render"]})
+
+    def test_macos_shard_dispatch_preserves_every_render_check_once(self):
+        run = next(step["run"] for step in self.workflow["jobs"]["macos"]["steps"]
+                   if "bash RawLabMac/build.sh" in step.get("run", ""))
+        expected = {
+            "core": set(),
+            "agent": {"agent-recipe-render"},
+            "render": {"straighten-preview", "raster-render", "mcp-cli-parity"},
+            "all": {"agent-recipe-render", "straighten-preview", "raster-render", "mcp-cli-parity"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / "bin"
+            tools.mkdir()
+            # Replace only platform tools; execute the actual workflow's shell control flow.
+            for name in ("git", "sw_vers", "xcodebuild", "sysctl", "xcode-select", "xcrun",
+                         "python", "bash", "ctest", "uv"):
+                tool = tools / name
+                tool.write_text('#!/bin/sh\ncase "${0##*/}" in xcode-select|xcrun) echo /test/sdk;; esac\n')
+                tool.chmod(0o755)
+            for suite, want in expected.items():
+                with self.subTest(suite=suite):
+                    timings = root / "build/ci/macos-timings.log"
+                    timings.unlink(missing_ok=True)
+                    env = {**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                           "RAWLAB_MAC_SUITE": suite, "RAWLAB_ARCH": "x86_64", "RUNNER_TEMP": str(root)}
+                    result = subprocess.run(["/bin/bash", "-euc", run], cwd=root, env=env,
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    labels = [line.split("\t")[0] for line in timings.read_text().splitlines()]
+                    self.assertEqual(labels.count("app-build"), 1)
+                    render = [label for label in labels if label in expected["all"]]
+                    self.assertEqual(set(render), want)
+                    self.assertEqual(len(render), len(want), "A shard must not duplicate a render check")
 
     def test_pr_cache_cleanup_only_deletes_its_own_merge_ref(self):
         cleanup = yaml.load(CLEANUP.read_text(), Loader=yaml.BaseLoader)

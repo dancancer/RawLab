@@ -1,7 +1,10 @@
 """Platform selection and result-gate regressions."""
 import importlib.util
+import json
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 
@@ -106,6 +109,42 @@ class SelectionTests(unittest.TestCase):
             raise OSError("API unavailable")
         self.assertEqual(selection.select("schedule", {}, "s", unavailable, offline)[:2], (EVERY, True))
         self.assertEqual(selection.select("workflow_dispatch", {}, "s", unavailable, unavailable)[:2], (EVERY, True))
+
+
+class WindowsSchedulingTests(unittest.TestCase):
+    def test_only_warm_pull_requests_use_standard_hosted_windows(self):
+        dedicated = ["self-hosted", "windows", "x64", "rawlab-windows"]
+        for event, cold, want in (
+            ("pull_request", False, "windows-2022"),
+            ("pull_request", True, dedicated),
+            ("push", False, dedicated),
+            ("schedule", True, dedicated),
+            ("workflow_dispatch", True, dedicated),
+        ):
+            with self.subTest(event=event, cold=cold):
+                self.assertEqual(selection.windows_runner(event, cold), want)
+
+    def test_selection_cli_emits_a_json_runner_for_the_workflow(self):
+        for event_name, event, want in (
+            ("pull_request", pull(), "windows-2022"),
+            ("pull_request", pull("main", "release/0.9.0"),
+             ["self-hosted", "windows", "x64", "rawlab-windows"]),
+            ("workflow_dispatch", {}, ["self-hosted", "windows", "x64", "rawlab-windows"]),
+        ):
+            with self.subTest(event=event_name, payload=event), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                payload, output = root / "event.json", root / "output"
+                payload.write_text(json.dumps(event))
+                result = subprocess.run(
+                    [os.sys.executable, str(ROOT / "scripts/ci/affected_platforms.py"), "select"],
+                    cwd=ROOT, env={**os.environ, "GITHUB_EVENT_NAME": event_name,
+                                   "GITHUB_EVENT_PATH": str(payload), "GITHUB_OUTPUT": str(output),
+                                   "GITHUB_SHA": "current", "GITHUB_STEP_SUMMARY": ""},
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                self.assertIn("windows_runner", values)
+                self.assertEqual(json.loads(values["windows_runner"]), want)
 
 
 class VerifyTests(unittest.TestCase):

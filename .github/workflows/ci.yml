@@ -40,6 +40,7 @@ jobs:
       ios: ${{ steps.select.outputs.ios }}
       cold: ${{ steps.select.outputs.cold }}
       draft: ${{ steps.select.outputs.draft }}
+      windows_runner: ${{ steps.select.outputs.windows_runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -109,12 +110,16 @@ jobs:
             arch: arm64
             jobs: '6'
             suite: all
-          # Both Intel shards build the full app; together they run every native x86_64 suite.
+          # All Intel shards build the full app; together they run every native x86_64 suite.
           # Architecture-independent Swift model suites run on arm64 only.
           - runner: macos-26-intel
             arch: x86_64
             jobs: '4'
             suite: core
+          - runner: macos-26-intel
+            arch: x86_64
+            jobs: '4'
+            suite: agent
           - runner: macos-26-intel
             arch: x86_64
             jobs: '4'
@@ -174,7 +179,7 @@ jobs:
           export DEVELOPER_DIR
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
-          # "all" runs every group; Intel shards run core or render. Only "all" runs model.
+          # "all" runs every group; Intel shards run core, agent or render. Only "all" runs model.
           in_suite() { [[ "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" ]]; }
           python -m pip install -r lutools/requirements-lutprep.txt
           if in_suite core; then
@@ -199,10 +204,12 @@ jobs:
           fi
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
           cli="$PWD/lutools/build-macos/sony2fuji"
+          if in_suite agent; then
+            ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
+          fi
           if in_suite render; then
             RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR="$RUNNER_TEMP/rawlab-straighten-preview" \
               ci_timed straighten-preview bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
-            ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
             ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
             python -m pip install uv==0.9.5
             ci_timed mcp-cli-parity env RAWLAB_MCP_CLI="$cli" uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -p test_real_cli.py -v
@@ -222,8 +229,8 @@ jobs:
           fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
       - name: Save successful native dependencies
-        # Both Intel shards share one key; the core shard alone saves it.
-        if: success() && matrix.suite != 'render' && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        # Intel shards share one key; the core shard alone saves it.
+        if: success() && (matrix.suite == 'all' || matrix.suite == 'core') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
@@ -242,22 +249,39 @@ jobs:
     name: Windows build and parity
     needs: changes
     if: needs.changes.outputs.windows == 'true'
-    runs-on: [self-hosted, windows, x64, rawlab-windows]
+    runs-on: ${{ fromJSON(needs.changes.outputs.windows_runner) }}
     timeout-minutes: 120
     env:
-      DOTNET_INSTALL_DIR: 'E:\RawLabCI\dotnet'
-      RAWLAB_LENS_SOURCE_CACHE: 'E:\RawLabCI\cache\lens-sources'
-      JOBS: '16'
-      CMAKE_BUILD_PARALLEL_LEVEL: '16'
       # MSBuild otherwise compiles each project's sources one at a time. The multi-tool task
-      # schedules individual cl.exe processes across projects, capped in total for 32 GiB.
+      # schedules cl.exe across projects; the setup step caps processes for each runner type.
       UseMultiToolTask: 'true'
       EnforceProcessCountAcrossBuilds: 'true'
-      CL_MPCount: '24'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Configure Windows runner limits and cache paths
+        id: windows-env
+        shell: pwsh
+        env:
+          CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:CI_RUNNER_ENVIRONMENT -notin @('github-hosted', 'self-hosted')) {
+            throw 'Unknown Windows runner environment.'
+          }
+          $dedicated = $env:CI_RUNNER_ENVIRONMENT -eq 'self-hosted'
+          if (!$dedicated -and !$env:RUNNER_TEMP) { throw 'Hosted Windows requires RUNNER_TEMP.' }
+          $ciRoot = if ($dedicated) { 'E:\RawLabCI' } else { "$env:RUNNER_TEMP\rawlab-ci" }
+          $jobs = if ($dedicated) { 16 } else { 4 }
+          $compilerProcesses = if ($dedicated) { 24 } else { 4 }
+          @(
+            "DOTNET_INSTALL_DIR=$ciRoot\dotnet"
+            "RAWLAB_LENS_SOURCE_CACHE=$ciRoot\cache\lens-sources"
+            "JOBS=$jobs"
+            "CMAKE_BUILD_PARALLEL_LEVEL=$jobs"
+            "CL_MPCount=$compilerProcesses"
+          ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
