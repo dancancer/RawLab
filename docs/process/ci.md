@@ -15,8 +15,8 @@ credentials. A workflow run is not release authorization.
 | Select affected platforms | Ubuntu 24.04 | Chooses the platform checks and cold/warm dependency mode for this event |
 | Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, platform selection rules, single-preview source contracts, whitespace |
 | macOS build and parity (arm64, all) | Dedicated Apple Silicon Mac; deployment target 14.0 | Default app/bundle and full-feature native build; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
-| macOS build and parity (x86_64, core / render) | Two parallel hosted macOS 26 Intel jobs; deployment target 14.0 | Each builds the default app/bundle. `core`: build/photo-copy/picker checks, DCP suites and CPU-safe CTest. `render`: straighten, Agent recipe and raster render parity |
-| Windows build and parity | Dedicated Windows 11 x64 KVM / VS 2022 | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
+| macOS build and parity (x86_64, core / agent / render) | Three parallel hosted macOS 26 Intel jobs; deployment target 14.0 | Each builds the default app/bundle. `core`: build/photo-copy/picker checks, DCP suites and CPU-safe CTest. `agent`: Agent recipe render parity. `render`: straighten, raster render and real CLI/MCP parity |
+| Windows build and parity | Hosted Windows Server 2022 for ordinary PRs; dedicated Windows 11 x64 KVM for integration and cold builds; VS 2022 on both | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
 | Android build and JVM tests | Dedicated Ubuntu 24.04 KVM / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
 | iOS framework and unsigned app | Apple Silicon runner pool / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
 | CI result | Ubuntu 24.04 | Fails unless every selected check succeeded and every unselected check was skipped |
@@ -151,13 +151,31 @@ parallelism, and update the matching workflow-policy test. Do not skip the check
 or weaken branch protection. Keep device/GLES acceptance separate from this
 build-only runner.
 
-## Local Windows Runner
+## Windows Runner Scheduling
 
-Windows selects `[self-hosted, windows, x64, rawlab-windows]` in a dedicated
-Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and
-the Windows SDK. This
-changes the verification host from hosted Windows Server 2022 to Windows 11;
-it does not establish physical GPU or interactive-desktop acceptance.
+Ordinary non-draft PRs targeting `development` use the standard hosted
+`windows-2022` runner. They can run concurrently without occupying the dedicated
+integration runner. `development` pushes, release/hotfix PRs, nightly cold builds
+and manual runs select `[self-hosted, windows, x64, rawlab-windows]` in the dedicated
+Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and the
+Windows SDK. Drafts still skip all platform jobs. This is event-based routing,
+not a busy-runner probe or an automatic fallback when the dedicated runner is
+offline. Hosted jobs remain subject to GitHub's account concurrency limits.
+
+Both routes run the same complete build, CPU-safe CTest/schema, Python DCP parity
+and selected WPF/managed suites, and retain the same result/artifact gate. A PR's
+Windows Server result does not replace the exact-merge Windows 11 push check.
+Neither route establishes physical GPU or interactive-desktop acceptance.
+
+The first Windows setup step uses `runner.environment` to select paths and limits.
+Hosted jobs keep .NET and lens source downloads under `RUNNER_TEMP\rawlab-ci`,
+with four CMake workers and a four-process cross-project MSVC cap for the standard
+four-core, 16 GiB runner. Dedicated jobs keep `E:\RawLabCI` and the existing
+16-worker/24-process limits. The native dependency key includes workspace, host,
+image and compiler identities, so these hosts cannot restore each other's build
+trees. Product outputs and test results are always rebuilt.
+
+### Dedicated Windows Runner
 
 Use a separate 120 GiB NTFS data volume for `E:\RawLabCI`: runner installation, `_work`,
 toolcache, SDK downloads, NuGet/Python caches, temporary files and build output
@@ -189,7 +207,7 @@ Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
 directory. The cache action selects Git's GNU tar, which must also find `gzip`;
 a missing compressor can leave the job green while silently losing its cache.
 
-The Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
+The dedicated Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
 which otherwise leaves each project's sources compiling one at a time. A single
 cross-project cap of 24 `cl.exe` processes (`CL_MPCount` with
 `EnforceProcessCountAcrossBuilds`) keeps memory within the guest's 32 GiB. These
@@ -198,9 +216,9 @@ are CI environment settings; `build.ps1` and local builds are unchanged.
 Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
 exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
 requires physical GPU/external-RAW evidence. Service-session results do not
-cover real Explorer/UIA interaction. To roll back, restore `windows-2022`, its
-previous parallelism and matching policy/actionlint declarations rather than
-skipping required checks.
+cover real Explorer/UIA interaction. To route every event back to the dedicated
+runner, change `windows_runner` in `affected_platforms.py` and its scheduling
+regressions; do not skip required checks or remove the runner environment setup.
 
 ## Local Apple Runners
 
@@ -209,9 +227,16 @@ Each Mac runs one runner, so the two Apple jobs can execute concurrently without
 sharing memory or build directories. When the developer laptop is offline, the
 always-on Mac can execute both jobs sequentially instead of waiting indefinitely
 for a role-specific runner. Either host must have both complete toolchains.
-Their initial build parallelism is six. The Intel matrix
-entry remains on `macos-26-intel` with four workers; neither cross-compilation
+Their initial build parallelism is six. The three Intel matrix
+entries remain on `macos-26-intel` with four workers each; neither cross-compilation
 nor Rosetta substitutes for its native x86_64 runtime checks.
+
+The Intel `agent` shard isolates Agent recipe rendering from the remaining
+`render` checks. Every Intel shard still builds the complete app and executes
+its assigned suites; arm64 `all` executes every group once. Only Intel `core`
+saves their shared dependency key, while the arm64 job saves its own key.
+An additional shard uses another hosted macOS execution slot, so concurrent
+PRs may still queue at the account's macOS concurrency limit.
 
 Both Mac architectures (the Intel `core` shard) run the existing CPU-safe CTest selection with at most
 two test processes. This limit is separate from build parallelism because RAW
@@ -291,7 +316,7 @@ using an exact cache key. **Cold builds never restore native caches**: the night
 run, manual runs and release/hotfix PRs build all dependencies from source. They
 look up the exact key without downloading its contents and skip saving when that
 accessible cache already exists. Any miss builds from source and saves only after
-the full job succeeds; of the two Intel shards, only `core` saves their shared key.
+the full job succeeds; of the three Intel shards, only `core` saves their shared key.
 Cache lookup/restore failures leave builds enabled and suppress the cache save.
 A cache miss or cache-service outage is not permission to skip a build. Keys hash
 every dependency input and toolchain, so a push restore is as exact as a PR
@@ -377,7 +402,8 @@ Do not widen this allowlist to photos, RAW inputs, screenshots, user profiles,
 app bundles, native binaries, APKs or entire build directories. Build packages
 are ephemeral verification outputs, not versioned release candidates.
 
-Local workflow-policy regression tests:
+Local workflow-policy regression tests (PowerShell, when available, also executes
+both Windows environment branches without installing tools or writing to `E:`):
 
 ```sh
 python3 -m venv /tmp/rawlab-ci-venv

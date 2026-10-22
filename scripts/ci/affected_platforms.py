@@ -123,9 +123,17 @@ def verify(needs):
     return errors
 
 
-def write_selection(platforms, cold, draft, reason):
+def windows_runner(event_name, cold):
+    """Keep ordinary PRs out of the dedicated integration/release runner's queue."""
+    if event_name == "pull_request" and not cold:
+        return "windows-2022"
+    return ["self-hosted", "windows", "x64", "rawlab-windows"]
+
+
+def write_selection(platforms, cold, draft, reason, event_name):
     flags = {**{platform: platform in platforms for platform in PLATFORMS}, "cold": cold, "draft": draft}
     lines = [f"{name}={'true' if value else 'false'}" for name, value in flags.items()]
+    lines.append("windows_runner=" + json.dumps(windows_runner(event_name, cold)))
     print(reason)
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):
@@ -157,7 +165,7 @@ def main():
     with open(os.environ["GITHUB_EVENT_PATH"]) as stream:
         event = json.load(stream)
     write_selection(*select(event_name, event, os.environ["GITHUB_SHA"],
-                            git_changed_files, github_last_success))
+                            git_changed_files, github_last_success), event_name)
     return 0
 
 
