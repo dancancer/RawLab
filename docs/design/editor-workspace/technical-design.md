@@ -173,7 +173,7 @@ HSL 保存/核心数据依然 axis-major：0～7 hue，8～15 saturation，16～
 - iOS：在 `EditorLayout` 移除按 HSL/几何/镜头加高的分支；`EditorDrafts.selectEditorTool/commitEditorDraft/discardEditorDraft` 仍是唯一草稿入口，保留 sourceRevision、uncropped 预览和 Apply 门控。 分组按钮与横滑容器采用同一实际文字排版高度，并将该高度计入窗口预算。无障碍字号的短横窗可将组内工具放入参数区内部滚动，分组与草稿操作仍固定可达；末项和组内工具都必须能通过滚动完整到达，不缩小文字或触点。此适配由窗口和字号统一决定，不依所选工具或草稿状态改变外框。
 - Mac：`AdjustmentPanelLayout` 改为用户/窗口预算，取消工具选择时自动拉高；复用 `MacGeometryWorkspace` 和 `MacCropOverlay`，保留 draft epoch 与精确结果后的提交展示。
 - Android：`EditorScreen` 的 expanded/tool 状态接入组导航；`EditorState.canApplyDraft` 加 changed 且保留 exact/rendering 门控，更新当前依赖 unchanged draft 可应用的旧测试。保留 beginDraft 对 resize 的现有互斥，不另造并发草稿状态。 常规工具保持 80dp 项宽、48dp 圆环和 24dp 图标；短屏或大字号下，由窗口和字号统一决定是否采用图文同行、合并导航操作行，保留文字自然宽度、横向滚动与至少 48dp 点击区域。预算须包含分隔线、固定草稿操作和完整参数控件，不能等切入某个工具才改变外框。
-- Windows：收口 choosing 布尔量为一致的组/工具状态投影；仍用 `TransformDraft` / `ResolveTransformDraft`，菜单或快捷键不能绕开 `ApplyDraftButton` 的精确结果条件。
+- Windows：收口 choosing 布尔量为一致的组/工具状态投影；仍用 `TransformDraft` / `ResolveTransformDraft`，菜单或快捷键不能绕开 `ApplyDraftButton` 的精确结果条件。 处理版本、曝光基准和拍摄时白平衡等辅助控件采用单行横向滚动，重置与收起固定在旁，避免长语言和大字号换行吞掉参数视口；参数末项和辅助控件均须完整可达。直方图在照片区可用高度内压缩图形，保留统计文字的完整显示。
 
 原生已有裁切手柄继续使用各自 geometry/crop controller，r4 的直接拖动不引入另一套几何计算。手柄、画布点按、对比和长按互斥；照片/窗口变化后取消旧 pointer capture。
 

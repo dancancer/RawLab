@@ -181,10 +181,9 @@ internal static class UiDetailChecks
     }
     private static void Selection(MainWindow window,string language,Action<bool,string> check)
     {
-        Click(window.MasterRecipeCategory);
-        check(Equals(window.MasterRecipeCategory.Tag,"selected") && window.FilmCategory.Tag==null,"Master recipe tool shows the selected state: "+language);
-        Click(window.FilmCategory);
-        check(window.MasterRecipeCategory.Tag==null && Equals(window.FilmCategory.Tag,"selected"),"Leaving master recipes clears its selected state: "+language);
+        Click(window.MasterRecipeCategory);Click(window.FilmCategory);
+        check(window.AdjustmentPanel.Visibility==Visibility.Collapsed && window.MasterRecipeCategory.Tag==null && window.FilmCategory.Tag==null,
+            "No-photo tool actions keep the adjustment workspace hidden: "+language);
     }
     // 工具栏下拉菜单贴着按钮弹出；键盘打开时不跟着鼠标跑到别处
     private static void MenuPlacement(MainWindow window,Action<bool,string> check)
@@ -201,14 +200,17 @@ internal static class UiDetailChecks
     // 编辑菜单与调整栏重置菜单：分组重置写成“重置…”，两处叫法一致
     private static void ResetMenus(MainWindow window,string language,Action<bool,string> check)
     {
+        typeof(MainWindow).GetMethod("BuildResetMenu",PrivateInstance)!.Invoke(window,null);
         var edit=(MenuItem)window.MainMenu.Items[1];
-        var editLabels=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(Group:(string)item.Tag,Header:(string)item.Header)).ToList();
-        var unnamed=editLabels.Where(item=>item.Header!=Loc.Format("重置{0}",Loc.Text(item.Group=="输入" ? "输入调整" : item.Group))).Select(item=>"\n  "+item.Header).ToList();
-        check(editLabels.Count==6 && unnamed.Count==0,"Edit menu names each group reset as a reset action: "+language+string.Concat(unnamed));
+        var editItems=edit.Items.OfType<MenuItem>().ToArray();
+        check(editItems.Select(item=>((EditorResetScope)item.Tag).Kind).SequenceEqual(new[]{EditorResetKind.Tool,EditorResetKind.Group,EditorResetKind.All}),
+            "Edit menu exposes current tool, current group and All scopes: "+language);
+        check(editItems[1].Header.ToString()==Loc.Format("重置{0}组…",Loc.Text("光线")) && editItems.All(item=>!item.IsEnabled),
+            "Empty editor names its current group and disables reset scopes: "+language);
         Click(window.ResetAllButton);
         var reset=window.ResetAllButton.ContextMenu;
-        var resetLabels=reset?.Items.OfType<MenuItem>().Where(item=>item.Tag is string).Select(item=>(string)item.Header).ToList() ?? [];
-        check(resetLabels.SequenceEqual(editLabels.Select(item=>item.Header)),"Dock reset menu and Edit menu use the same group names: "+language);
+        check(reset!=null && reset.Items.OfType<MenuItem>().Select(item=>item.Header.ToString()).SequenceEqual(editItems.Select(item=>item.Header.ToString())),
+            "Dock and Edit menus use the same ordered reset labels: "+language);
         if(reset!=null)reset.IsOpen=false;
     }
     // 启动时从磁盘恢复的目录同样显示右键提示
@@ -248,14 +250,31 @@ internal static class UiDetailChecks
     // 工具条：说明文字只在空格或连字符处换行，不把一个词拆成两行；图标保持同一高度
     private static void ToolCaptions(MainWindow window,string language,Action<bool,string> check)
     {
-        BuildTools(window);window.AdjustmentPanel.Visibility=Visibility.Visible;window.DockRow.Height=new GridLength(288);window.UpdateLayout();
-        var buttons=window.Tools.Children.OfType<Button>().ToList();
-        var broken=buttons.Select(button=>Descendants(button).OfType<TextBlock>().Last()).Where(caption=>
-            caption.ActualHeight>LineHeight(caption)*1.5 && !caption.Text.Any(c=>c is ' ' or '-'))
-            .Select(caption=>"\n  "+caption.Text).ToList();
-        check(broken.Count==0,"Tool captions never break inside a word: "+language+string.Concat(broken));
-        var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
-        check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language})");
+        BuildTools(window);Refresh(window);
+        var expanded=typeof(MainWindow).GetField("expandedGroup",PrivateInstance)!;
+        var previous=expanded.GetValue(window);var checkedTools=new HashSet<string>();
+        try {
+            foreach(var group in Enum.GetValues<EditorAdjustmentGroup>()) {
+                // 无 RAW 的布局检查只建立组会话；真实导航与草稿守卫由 WorkspaceGroupChecks 覆盖。
+                expanded.SetValue(window,group);Refresh(window);
+                window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
+                var buttons=window.Tools.Children.OfType<Button>().Where(button=>button.IsVisible).ToList();
+                var ids=buttons.Select(AutomationProperties.GetAutomationId).ToArray();
+                var expected=EditorAdjustmentRules.Tools(group).Select(tool=>tool.ToString()).ToArray();
+                check(buttons.Count>0 && ids.SequenceEqual(expected) && buttons.All(button=>button.ActualWidth>0 && button.ActualHeight>0),
+                    $"Caption fixture lays out every tool in descriptor order: {language}/{group}");
+                checkedTools.UnionWith(ids);
+                if(buttons.Count==0)continue;
+                var broken=buttons.Select(button=>Descendants(button).OfType<TextBlock>().Last()).Where(caption=>
+                    caption.ActualHeight>LineHeight(caption)*1.5 && !caption.Text.Any(c=>c is ' ' or '-'))
+                    .Select(caption=>"\n  "+caption.Text).ToList();
+                check(broken.Count==0,$"Tool captions never break inside a word: {language}/{group}"+string.Concat(broken));
+                var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
+                check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language}/{group})");
+            }
+            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Select(tool=>tool.ToString())),
+                "Caption alignment covers all 17 tools while visible: "+language);
+        } finally {expanded.SetValue(window,previous);Refresh(window);}
     }
     private static double LineHeight(TextBlock text)=>new System.Windows.Media.FormattedText("Ag",System.Globalization.CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight,new System.Windows.Media.Typeface(text.FontFamily,text.FontStyle,text.FontWeight,text.FontStretch),text.FontSize,

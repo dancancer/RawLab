@@ -102,9 +102,9 @@ internal static class UiPanelChecks
         });
         var hsl=new HslPanel();
         Host(hsl,()=>{
-            var clipped=UiDetailChecks.Descendants(hsl).OfType<Button>().Select(button=>button.Content).OfType<Ellipse>()
-                .Count(swatch=>VisualTreeHelper.GetParent(swatch) is FrameworkElement slot && slot.ActualWidth+.5<swatch.Width);
-            check(clipped==0,$"HSL color swatches are not clipped: {clipped} of 8 ({language})");
+            var swatches=UiDetailChecks.Descendants(hsl).OfType<Ellipse>().Where(swatch=>swatch.Width==20 && swatch.Height==20).ToArray();
+            var clipped=swatches.Count(swatch=>VisualTreeHelper.GetParent(swatch) is FrameworkElement slot && slot.ActualWidth+.5<swatch.Width);
+            check(swatches.Length==8 && clipped==0,$"Eight HSL color swatches are not clipped: {clipped} of {swatches.Length} ({language})");
         });
         var owner=new Window{Width=400,Height=300,ShowInTaskbar=false};owner.Show();
         var dialog=(Window)Activator.CreateInstance(typeof(LongEdgeDialog),BindingFlags.Instance|BindingFlags.NonPublic,null,new object?[]{null,owner},null)!;

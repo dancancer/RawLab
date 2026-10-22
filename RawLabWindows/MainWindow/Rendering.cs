@@ -179,7 +179,7 @@ public partial class MainWindow
         }
         // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
         if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
-        UpdateBusy(); Pump();
+        UpdateBusy(); Pump();QueuePendingReset();
     }
     private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting || transform.Active)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
     private void ProcessingVersionChanged(object sender,SelectionChangedEventArgs e)
@@ -189,8 +189,8 @@ public partial class MainWindow
         MarkEdited();Schedule();
     }
     private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !syncing && !exporting)Schedule(); }
-    private void ResetGroupClicked(object sender,RoutedEventArgs e) { if(exporting || !ResolveTransformDraft())return;var group=ParameterSpec.All[(int)selectedParameter].Group;if(group=="胶片" && settings.MasterRecipeID!=null){settings.ClearMasterRecipe();lut=null;}settings.ResetGroup(group);MarkEdited();RefreshControls();Schedule(); }
-    private void ResetAllClicked(object sender,RoutedEventArgs e) { if(file==null || exporting || !ResolveTransformDraft())return;if(settings.MasterRecipeID!=null)lut=null;settings.ResetAll();MarkEdited();RefreshControls();Schedule(); }
+    private void ResetGroupClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.Group,EditorAdjustmentRules.GroupFor(CurrentTool)));
+    private void ResetAllClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.All));
     private async void AutoExposureClicked(object sender,RoutedEventArgs e)
     {
         if(file==null || result==null || autoExposing || exporting || transform.Active)return;
@@ -205,5 +205,5 @@ public partial class MainWindow
         catch(Exception error) {if(!closing && file==path && openRevision==photoRevision && editRevision==revision)Report(error);}
         finally {autoExposing=false;if(!closing)RefreshControls();}
     }
-    private void AsShotClicked(object sender,RoutedEventArgs e) { if(transform.Active || exporting)return;settings.ResetWhiteBalance();MarkEdited();RefreshControls();Schedule(); }
+    private void AsShotClicked(object sender,RoutedEventArgs e) { if(transform.Active || exporting)return;RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.WhiteBalance)); }
 }

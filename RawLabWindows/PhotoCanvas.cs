@@ -174,6 +174,8 @@ public sealed class HistogramView : FrameworkElement
 {
     private static readonly DependencyProperty OutlineBrushProperty=DependencyProperty.Register("OutlineBrush",typeof(Brush),typeof(HistogramView),new FrameworkPropertyMetadata(Brushes.Transparent,FrameworkPropertyMetadataOptions.AffectsRender));
     public HistogramView()=>SetResourceReference(OutlineBrushProperty,"HistogramOutline");
+    // 高度不足时由 Grid 收缩图形区域，给下方统计文字保留完整行。
+    protected override Size MeasureOverride(Size availableSize)=>new(Math.Min(200,availableSize.Width),Math.Min(105,availableSize.Height));
     public uint[]? Bins { get; set; }
     protected override void OnRender(DrawingContext dc)
     {

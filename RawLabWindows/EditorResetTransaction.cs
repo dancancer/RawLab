@@ -32,12 +32,13 @@ public sealed class EditorResetTransaction
     public EditorResetStatus Status { get; }
     public bool RequiresConfirmation { get; }
     public string? Reason { get; }
+    public IReadOnlyList<string> MaterializedFields { get; }
     public bool TargetsDraft => context.Draft!=null;
     public SavedEdit? Candidate => candidate is {} value ? value with{Settings=value.Settings.Copy()} : null;
 
     private EditorResetTransaction(EditorEditSource source, EditorResetContext context, EditorResetCandidate prepared)
     {
-        this.source=source;this.context=context;Status=prepared.Status;RequiresConfirmation=prepared.RequiresConfirmation;Reason=prepared.Reason;
+        this.source=source;this.context=context;Status=prepared.Status;RequiresConfirmation=prepared.RequiresConfirmation;Reason=prepared.Reason;MaterializedFields=prepared.MaterializedFields ?? Array.Empty<string>();
         candidate=prepared.Candidate is {} value ? value with{Settings=value.Settings.Copy()} : null;
     }
 
@@ -45,7 +46,11 @@ public sealed class EditorResetTransaction
         SavedEdit committed, EditorResetContext context)
     {
         var source=new EditorEditSource(file,openRevision,editRevision,committed,context.Lut);
-        var geometry=scope.Kind==EditorResetKind.Group && scope.Group==EditorAdjustmentGroup.Geometry;
+        var geometry=scope.Kind==EditorResetKind.Group && scope.Group==EditorAdjustmentGroup.Geometry ||
+            scope.Kind==EditorResetKind.Tool && scope.Tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens;
+        if (scope.Kind==EditorResetKind.Tool && geometry && context.Draft is {} currentDraft &&
+            (scope.Tool==EditorAdjustmentTool.Geometry) != (currentDraft.Tool==TransformTool.Geometry))
+            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Geometry reset requires a matching active draft."));
         if(context.Draft!=null && !geometry)
             return new(source,context,new(EditorResetStatus.Blocked,Reason:"Resolve the active draft before preparing this reset."));
         if(geometry && context.Draft==null)

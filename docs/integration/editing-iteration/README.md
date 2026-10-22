@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 已集成；ARM/Intel Mac 当前 CLI 对照通过，Windows MCP 实测待验收 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1、重置提交与草稿事务已集成；第四批 S2a 本地实现及独立复评完成，Mac/iOS/Android 原生验证通过，Windows 实际 WPF 与远端 CI 待验；其余工作区 UI 分批接入 | AC-01～21、IT-02/16 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | 四端 S1、重置提交与草稿事务已集成；第四批 S2a 本地实现及独立复评完成，Mac/iOS/Android 原生验证通过，Windows 实际 WPF 与六语布局/截图通过；五个 PR 的源 CI 与集成门禁见下表，其余工作区 UI 分批接入 | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -86,7 +86,7 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 
 第三批复用干净独立 worktree，从 `bff2b860` 创建四个分支，已按 **#115 → #116 → #117 → #118** 合入。iOS 真实 simulator、Android 标准素材 instrumentation、Windows 实际 WPF/native 回归已通过；对应源与最终集成源 CI 均已通过。验证细节留在各 PR，设备/GPU缺口继续保留。
 
-第四批从最新 `0fd52624` 创建基础资源分支及四端消费者分支，复用同一批干净 worktree。协调者独占共享六语/CI/总账，平台 worker 各自拥有第四批计划列出的UI和窄模型接线，默认代理独立评审。各消费者显式合入同一基础资源提交；远端先合入基础PR，再更新消费者并核验受影响组合。四端本地实现与独立复评已完成，Mac/iOS/Android 的实际界面及事务验证通过；Windows managed/crossbuild 已通过，实际 WPF 与截图等待其 PR 的最新源 CI。用户已于 2026-10-22 授权按基础资源→四端消费者顺序 push、创建五个 PR；各 PR 最新源提交的独立评审和 CI 全部通过（包括 Windows 实际 WPF 与截图）后，按顺序合入 development 并核实联合 CI。五个分支及 PR 说明已准备，远端验收正在执行。
+第四批从最新 `0fd52624` 创建基础资源分支及四端消费者分支，复用同一批干净 worktree。协调者独占共享六语/CI/总账，平台 worker 各自拥有第四批计划列出的UI和窄模型接线，默认代理独立评审。各消费者显式合入同一基础资源提交；远端先合入基础PR，再更新消费者并核验受影响组合。四端本地实现与独立复评已完成，Mac/iOS/Android 的实际界面及事务验证通过；Windows managed/WPF 构建、实际重置/草稿回归及六语两尺寸布局/截图已通过；长语言大字号下的零参数视口和窄窗直方图文字裁切已修复并独立复评。用户已于 2026-10-22 授权按基础资源→四端消费者顺序 push、创建五个 PR；各 PR 最新源提交的独立评审和 CI 全部通过（包括 Windows 实际 WPF 与截图）后，按顺序合入 development 并核实联合 CI。五个 PR 已建立；最新源的检查、合入和目标分支联合 CI 记录以对应 PR 与 Actions 为准。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
@@ -108,6 +108,14 @@ owner 是当前阶段的唯一写入责任。未分派项由协调者保留写�
 | [#116](https://github.com/dancancer/RawLab/pull/116) | iOS reset/draft/source 事务 | 已集成，merge `d81ee6db` |
 | [#117](https://github.com/dancancer/RawLab/pull/117) | Android reset/draft/receipt 事务 | 已集成，merge `9ec25efd` |
 | [#118](https://github.com/dancancer/RawLab/pull/118) | Windows reset/draft 事务与实际 WPF 门禁 | 已集成，merge `1031745c` |
+
+| 第四批 PR | 交付范围 | 验收边界 |
+| --- | --- | --- |
+| [#119](https://github.com/dancancer/RawLab/pull/119) | 六语资源、CI 入口与协作契约 | 基础资源先集成，消费者显式更新基线 |
+| [#120](https://github.com/dancancer/RawLab/pull/120) | Mac 六组与范围重置 | 原生交互、模型、固定布局与六语截图通过 |
+| [#121](https://github.com/dancancer/RawLab/pull/121) | iOS 六组与范围重置 | iPhone/iPad 模拟器交互及草稿回归通过，真机另列 |
+| [#122](https://github.com/dancancer/RawLab/pull/122) | Android 六组与范围重置 | 实际 Compose/VM 回归、长语言/大字与末项可达性通过 |
+| [#123](https://github.com/dancancer/RawLab/pull/123) | Windows 六组与范围重置 | 实际 WPF 与六语布局/截图通过；1440 宽窗为离屏内容合成，DPI/无障碍服务/硬件 GPU 另列 |
 
 ## 集成门槛
 

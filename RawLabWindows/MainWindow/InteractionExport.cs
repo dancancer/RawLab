@@ -68,21 +68,33 @@ public partial class MainWindow
             Loc.Text(HistogramPanel.Visibility==Visibility.Visible ? "收起直方图" : "展开直方图") : null;
         AdjustToggleButton.ToolTip=Loc.Text(AdjustmentPanel.Visibility==Visibility.Visible ? "收起调整栏" : "展开调整栏");
     }
+    private EditorAdjustmentTool? hiddenTransformTool;
     private void DockToggle(object sender,RoutedEventArgs e)
     {
-        if(file==null)return;
+        if(file==null || pendingAllReset!=null)return;
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
-        if(visible)dockHeight=DockRow.ActualHeight;
+        if(visible) {
+            var previousTool=transform.Active ? CurrentTool : (EditorAdjustmentTool?)null;
+            var previousGroup=expandedGroup;
+            if(!ResolveTransformDraft())return;
+            hiddenTransformTool=previousTool;expandedGroup=previousGroup;
+        } else if(hiddenTransformTool is {} tool) {
+            hiddenTransformTool=null;SelectTool(tool);
+        }
+        if(visible && expandedGroup!=null)dockHeight=DockRow.ActualHeight;
         AdjustmentPanel.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
         AdjustmentSplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
-        DockRow.MinHeight=visible ? 0 : 216; DockRow.Height=new(visible ? 0 : dockHeight);SplitterRow.Height=new(visible ? 0 : 6);
+        DockRow.MinHeight=visible || expandedGroup==null ? 0 : 216;
+        DockRow.Height=visible ? new(0) : expandedGroup==null ? GridLength.Auto : new(dockHeight);
+        AdjustmentSplitter.Visibility=visible || expandedGroup==null ? Visibility.Collapsed : Visibility.Visible;
+        SplitterRow.Height=new(visible || expandedGroup==null ? 0 : 6);
         RefreshControls();
         RefreshStateToolTips();
         UpdateDockMinimum();
     }
     private void UpdateDockMinimum()
     {
-        if(AdjustmentPanel.Visibility==Visibility.Visible && EditorArea.ActualHeight>0)
+        if(AdjustmentPanel.Visibility==Visibility.Visible && expandedGroup!=null && EditorArea.ActualHeight>0)
         {
             DockRow.MinHeight=216;
             DockRow.MaxHeight=Math.Max(216,EditorArea.ActualHeight-166);

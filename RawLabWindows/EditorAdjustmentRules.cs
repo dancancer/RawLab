@@ -2,11 +2,11 @@ namespace RawLab.Windows;
 
 public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry }
 public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens }
-public enum EditorResetKind { Group, HslChannel, AllHsl, All }
-public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0);
+public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool }
+public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film);
 public enum EditorResetStatus { Ready, NoChange, Invalid, Blocked }
 public sealed record EditorResetCandidate(EditorResetStatus Status, SavedEdit? Candidate = null,
-    bool RequiresConfirmation = false, string? Reason = null);
+    bool RequiresConfirmation = false, string? Reason = null, IReadOnlyList<string>? MaterializedFields = null);
 
 // 候选只负责纯模型转换；调用方确认和保存成功后才能替换当前编辑。
 public static class EditorAdjustmentRules
@@ -32,6 +32,27 @@ public static class EditorAdjustmentRules
         EditorAdjustmentGroup.Color => "color", EditorAdjustmentGroup.Effects => "effects",
         EditorAdjustmentGroup.Detail => "detail", EditorAdjustmentGroup.Geometry => "geometry",
         _ => throw new ArgumentOutOfRangeException(nameof(group))
+    };
+    public static EditorAdjustmentTool DefaultTool(EditorAdjustmentGroup group) => Tools(group)[0];
+    public static string Title(EditorAdjustmentGroup group) => group switch {
+        EditorAdjustmentGroup.Looks => "外观", EditorAdjustmentGroup.Light => "光线",
+        EditorAdjustmentGroup.Color => "颜色", EditorAdjustmentGroup.Effects => "效果",
+        EditorAdjustmentGroup.Detail => "细节", EditorAdjustmentGroup.Geometry => "几何与镜头",
+        _ => throw new ArgumentOutOfRangeException(nameof(group))
+    };
+    public static string Title(EditorAdjustmentTool tool) => tool switch {
+        EditorAdjustmentTool.Film => "胶片", EditorAdjustmentTool.MasterRecipe => "大师配方",
+        EditorAdjustmentTool.WhiteBalance => "白平衡", EditorAdjustmentTool.Hsl => "HSL",
+        EditorAdjustmentTool.Vignette => "暗角", EditorAdjustmentTool.Grain => "颗粒",
+        EditorAdjustmentTool.Denoise => "降噪", EditorAdjustmentTool.Geometry => "几何",
+        EditorAdjustmentTool.Lens => "镜头", _ => ParameterSpec.All[(int)ParameterFor(tool)].Title
+    };
+    public static Parameter ParameterFor(EditorAdjustmentTool tool) => tool switch {
+        EditorAdjustmentTool.Strength => Parameter.Strength, EditorAdjustmentTool.Exposure => Parameter.Exposure,
+        EditorAdjustmentTool.Highlights => Parameter.Highlights, EditorAdjustmentTool.Shadows => Parameter.Shadows,
+        EditorAdjustmentTool.Contrast => Parameter.Contrast, EditorAdjustmentTool.ToneCurve => Parameter.ToneCurve,
+        EditorAdjustmentTool.Saturation => Parameter.Saturation, EditorAdjustmentTool.Sharpening => Parameter.Sharpening,
+        _ => throw new ArgumentOutOfRangeException(nameof(tool))
     };
     public static bool IsModified(EditorResetScope scope, SavedEdit edit)
     {
@@ -59,7 +80,9 @@ public static class EditorAdjustmentRules
             for (var axis = 0; axis < 3; axis++) hsl = hsl.WithValue(axis, scope.Channel, 0);
             candidate = candidate with { Hsl = hsl };
         }
-        else if (scope.Group == EditorAdjustmentGroup.Looks) {
+        else if (scope.Kind == EditorResetKind.Tool && scope.Tool is not (EditorAdjustmentTool.Film or EditorAdjustmentTool.MasterRecipe))
+            candidate = ResetTool(scope.Tool, candidate, defaults.Settings);
+        else if (scope.Kind == EditorResetKind.Tool || scope.Group == EditorAdjustmentGroup.Looks) {
             if (source.MasterRecipeID != null) {
                 var state = source.Restore();
                 var scale = state[Parameter.Strength] / 100;
@@ -82,7 +105,7 @@ public static class EditorAdjustmentRules
                     AsShotTint = PhotoInput.IsRaster(edit.Identity.Path) ? null : candidate.AsShotTint };
                 detached = true;
             }
-            candidate.Values[(int)Parameter.Strength] = 100;
+            if (detached || scope.Kind != EditorResetKind.Tool) candidate.Values[(int)Parameter.Strength] = 100;
             look = null;
         }
         else candidate = ResetGroup(scope.Group, candidate, defaults.Settings);
@@ -93,8 +116,18 @@ public static class EditorAdjustmentRules
         }
         if (detached && !SameEffective(edit, result))
             return new(EditorResetStatus.Blocked, Reason: "Independent settings cannot preserve final core Float values.");
-        return new(EditorResetStatus.Ready, result, scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.Group,
-            detached ? "Recipe values and white balance are materialized as independent adjustments." : null);
+        var materialized = new List<string>();
+        if (detached) {
+            foreach (var parameter in Enum.GetValues<Parameter>())
+                if (parameter != Parameter.Strength && source.Values[(int)parameter] != candidate.Values[(int)parameter])
+                    materialized.Add(ParameterSpec.All[(int)parameter].Title);
+            if (!(source.Hsl ?? new()).Equals(candidate.Hsl ?? new())) materialized.Add("HSL");
+            if (source.CameraWhiteBalance != candidate.CameraWhiteBalance) materialized.Add("白平衡");
+        }
+        return new(EditorResetStatus.Ready, result,
+            scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.Group ||
+            scope.Kind == EditorResetKind.Tool && scope.Tool == EditorAdjustmentTool.Hsl || materialized.Count > 0,
+            detached ? "Recipe values and white balance are materialized as independent adjustments." : null, materialized);
     }
     private static readonly Parameter[] ScaledParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.Saturation];
     private static readonly Parameter[] LightParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.ToneCurve];
@@ -124,6 +157,39 @@ public static class EditorAdjustmentRules
             _ => value
         };
     }
+    private static AdjustmentSnapshot ResetTool(EditorAdjustmentTool tool, AdjustmentSnapshot value, AdjustmentSnapshot defaults)
+    {
+        switch (tool) {
+            case EditorAdjustmentTool.WhiteBalance:
+                value.Values[(int)Parameter.Temperature] = defaults.Values[(int)Parameter.Temperature];
+                value.Values[(int)Parameter.Tint] = value.MasterRecipeID != null ? 0 : defaults.Values[(int)Parameter.Tint];
+                return value with { CameraWhiteBalance = defaults.CameraWhiteBalance };
+            case EditorAdjustmentTool.Hsl: return value with { Hsl = new() };
+            case EditorAdjustmentTool.Vignette:
+            case EditorAdjustmentTool.Grain:
+                var effects = value.Effects ?? new();
+                foreach (var spec in PhotoEffectSpec.All.Where(spec => spec.IsVignette == (tool == EditorAdjustmentTool.Vignette)))
+                    effects = SetEffectDefault(effects, spec.Id);
+                return value with { Effects = effects };
+            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise };
+            case EditorAdjustmentTool.Geometry: return value with { Geometry = defaults.Geometry };
+            case EditorAdjustmentTool.Lens: return value with { Lens = defaults.Lens };
+            default:
+                var parameter = ParameterFor(tool); value.Values[(int)parameter] = defaults.Values[(int)parameter];
+                return tool == EditorAdjustmentTool.Exposure ? value with { ExposureMode = defaults.ExposureMode } : value;
+        }
+    }
+    private static PhotoEffectsSettings SetEffectDefault(PhotoEffectsSettings effects, PhotoEffectParameter parameter) => parameter switch {
+        PhotoEffectParameter.VignetteAmount => effects with { VignetteAmount = 0 },
+        PhotoEffectParameter.VignetteMidpoint => effects with { VignetteMidpoint = 50 },
+        PhotoEffectParameter.VignetteRoundness => effects with { VignetteRoundness = 0 },
+        PhotoEffectParameter.VignetteFeather => effects with { VignetteFeather = 50 },
+        PhotoEffectParameter.VignetteHighlights => effects with { VignetteHighlights = 0 },
+        PhotoEffectParameter.GrainAmount => effects with { GrainAmount = 0 },
+        PhotoEffectParameter.GrainSize => effects with { GrainSize = 25 },
+        PhotoEffectParameter.GrainRoughness => effects with { GrainRoughness = 50 },
+        _ => throw new ArgumentOutOfRangeException(nameof(parameter))
+    };
     private static bool SameScope(EditorResetScope scope, SavedEdit value, SavedEdit defaults)
     {
         if (PhotoInput.IsRaster(value.Identity.Path)) {
@@ -141,6 +207,11 @@ public static class EditorAdjustmentRules
         if (scope.Kind == EditorResetKind.All) return value.Look == null && value.Settings.SameAs(defaults.Settings);
         if (scope.Kind == EditorResetKind.AllHsl) return (value.Settings.Hsl ?? new()).IsIdentity;
         if (scope.Kind == EditorResetKind.HslChannel) return Enumerable.Range(0, 3).All(axis => (value.Settings.Hsl ?? new()).Value(axis, scope.Channel) == 0);
+        if (scope.Kind == EditorResetKind.Tool) {
+            if (scope.Tool == EditorAdjustmentTool.Film) return value.Look == null && value.Settings.MasterRecipeID == null;
+            if (scope.Tool == EditorAdjustmentTool.MasterRecipe) return value.Settings.MasterRecipeID == null;
+            return value.Settings.SameAs(ResetTool(scope.Tool, value.Settings.Copy(), defaults.Settings));
+        }
         if (scope.Group == EditorAdjustmentGroup.Looks) return value.Look == null && value.Settings.MasterRecipeID == null && value.Settings.Values[0] == 100;
         // 配方 tint 是相对偏移，默认 0；不能与相机绝对 tint 比较。
         var groupDefaults = defaults.Settings.Copy();
@@ -149,7 +220,7 @@ public static class EditorAdjustmentRules
     }
     private static void Validate(EditorResetScope scope, SavedEdit edit)
     {
-        if (!Enum.IsDefined(scope.Kind) || !Enum.IsDefined(scope.Group) || scope.Kind == EditorResetKind.HslChannel && scope.Channel is < 0 or > 7)
+        if (!Enum.IsDefined(scope.Kind) || !Enum.IsDefined(scope.Group) || !Enum.IsDefined(scope.Tool) || scope.Kind == EditorResetKind.HslChannel && scope.Channel is < 0 or > 7)
             throw new ArgumentOutOfRangeException(nameof(scope));
         if (string.IsNullOrWhiteSpace(edit.Identity.Path) || !PhotoInput.IsRaw(edit.Identity.Path) && !PhotoInput.IsRaster(edit.Identity.Path))
             throw new System.IO.InvalidDataException("Unsupported photo identity.");

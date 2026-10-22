@@ -27,7 +27,7 @@ internal static class EditorShellChecks
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
                 window=new MainWindow();TestWindowState.Isolate(window,output);window.Show();
-                foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
+                foreach(var size in new[]{new Size(1024,720),new Size(1440,920)})
                 {
                     var surface=ArrangeLayout(window,size);
                     var menu=window.FindName("MainMenu") as Menu;
@@ -36,6 +36,7 @@ internal static class EditorShellChecks
                     check(window.FontSize==(double)app.Resources["EditorBodySize"],"Editor uses the shared Windows text scale");
                     check(window.ResultCanvas.ActualHeight>=160,"Canvas retains 160 DIP at "+size);
                     check(!window.ExportButton.IsEnabled,"Empty editor cannot export");
+                    check(window.AdjustmentPanel.Visibility==Visibility.Collapsed && !window.Groups.IsVisible,"No photo hides all adjustment groups and parameters");
                     check(window.NeutralCanvas.Visibility==Visibility.Collapsed && window.NeutralColumn.ActualWidth==0,"Empty editor has a single unbroken canvas");
                     check(window.ResultCanvas.ToolTip==null,"Empty canvas has no zoom instructions");
                     check(Descendants(window.Welcome).OfType<TextBlock>().Any(t=>t.Text==Loc.Text("打开照片")),"Exact approved empty-state heading");

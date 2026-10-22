@@ -10,6 +10,7 @@ public partial class LensPanel : UserControl
     private LensSettings value = new();
     private LensInfo? info;
     private bool syncing = true;
+    public event Action? ResetRequested;
     public event Action<LensSettings>? Changed;
     public LensPanel()
     {
@@ -50,7 +51,7 @@ public partial class LensPanel : UserControl
     private void ModeChanged(object sender, RoutedEventArgs e) => Publish(value with { Manual = ReferenceEquals(sender, Manual) });
     private void SwitchChanged(object sender, RoutedEventArgs e) => Publish(value with {
         Distortion = Distortion.IsChecked == true, Tca = Tca.IsChecked == true, AutoCrop = AutoCrop.IsChecked == true });
-    private void ResetClicked(object sender, RoutedEventArgs e) => Publish(new());
+    private void ResetClicked(object sender, RoutedEventArgs e) { if (!syncing && IsEnabled) ResetRequested?.Invoke(); }
     private void ChooseClicked(object sender, RoutedEventArgs e) { Chooser.IsOpen = true; Search.Focus(); }
     private void SearchChanged(object sender, TextChangedEventArgs e) { if (!syncing) FilterProfiles(); }
     private void FilterProfiles() {
