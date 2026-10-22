@@ -259,6 +259,11 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   "reset commits once through the normal edit scheduler")
         try check(!model.commitReset(light), "a consumed revision cannot overwrite a new edit")
         model.settings.exposure = 2
+        let processing = try prepared(.tool(.exposure))
+        let originalProcessing = model.settings.processing
+        model.settings.processing = originalProcessing == .legacy ? .current : .legacy
+        try check(!model.commitReset(processing), "processing identity change invalidates a prepared current-tool reset")
+        model.settings.processing = originalProcessing
         let stale = try prepared(.group(.light))
         model.settings.saturation = 11
         try check(!model.commitReset(stale) && model.settings.exposure == 2,

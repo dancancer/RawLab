@@ -400,6 +400,21 @@ enum EditorAdjustmentRules {
     static func isModified(scope: EditorResetScope, snapshot: PhotoEditState, context: EditorAdjustmentContext) -> Bool {
         let settings = snapshot.settings
         switch scope {
+        case .tool(let tool):
+            switch tool {
+            case .film: return snapshot.filmID != context.neutralFilmID || snapshot.masterRecipeID != nil || settings.masterRecipeID != nil
+            case .recipe: return snapshot.masterRecipeID != nil || settings.masterRecipeID != nil
+            case .strength: return settings.strength != 1
+            case .exposure: return settings.exposure != 0 || (context.isRaw && settings.exposureMode != context.defaultExposureMode)
+            case .whiteBalance: return (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) || (settings.masterRecipe != nil && settings.tint != 0)
+            case .hsl: return !settings.hslSettings.isIdentity
+            case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
+            case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
+            case .denoise: return settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+            case .geometry: return !settings.geometrySettings.isIdentity
+            case .lens: return settings.lensSettings != LensCorrectionSettings()
+            default: return settings[keyPath: tool.parameter!.spec.keyPath] != tool.parameter!.spec.defaultValue
+            }
         case .all:
             return EditorAdjustmentGroup.allCases.contains { isModified(scope: .group($0), snapshot: snapshot, context: context) }
         case .hslAll: return !settings.hslSettings.isIdentity
@@ -434,6 +449,26 @@ enum EditorAdjustmentRules {
             }
             guard isModified(scope: scope, snapshot: snapshot, context: context) else { return .unchanged }
             switch scope {
+            case .tool(let tool):
+                switch tool {
+                case .film, .recipe:
+                    if snapshot.masterRecipeID != nil || snapshot.settings.masterRecipeID != nil {
+                        guard snapshot.masterRecipeID == snapshot.settings.masterRecipeID else { throw EditorResetBlockedReason.invalidSnapshot("masterRecipeID") }
+                        result.settings = try result.settings.detachingRecipeForReset(context: context)
+                        result.masterRecipeID = nil
+                    }
+                    result.filmID = context.neutralFilmID
+                case .exposure: result.settings.exposure = 0; result.settings.exposureMode = context.defaultExposureMode
+                case .whiteBalance: result.settings.resetWhiteBalance()
+                case .hsl: result.settings.hsl = nil
+                case .vignette: result.settings.resetEffect(.vignetteAmount)
+                case .grain: result.settings.resetEffect(.grainAmount)
+                case .denoise:
+                    result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
+                case .geometry: result.settings.geometry = nil
+                case .lens: result.settings.lensCorrection = nil
+                default: result.settings[keyPath: tool.parameter!.spec.keyPath] = tool.parameter!.spec.defaultValue
+                }
             case .all:
                 result.settings.resetAll()
                 result.settings.exposureMode = context.defaultExposureMode

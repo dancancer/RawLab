@@ -100,6 +100,7 @@ import SwiftUI
     }
 
     static func cropApplyPublicationChecks(_ model: EditorModel) throws {
+        if !model.geometryDraftHasChanges { model.updateGeometryDraft { $0.cropWidth = 0.9 } }
         try check(model.geometryDraftCanApply, "crop publication starts with an applicable draft")
         model.setGeometryCropInteracting(true)
         var observed: [Bool] = []
@@ -218,6 +219,11 @@ import SwiftUI
         model.updatePreviewLongEdge(240)
         model.open(a)
         try wait(model, "initial real DNG")
+        if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "workspace-reset" {
+            try workspaceResetChecks(model, raw: a, edits: edits)
+            print("PASS: \(checks) focused workspace reset checks")
+            return
+        }
         if ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_DRAFT_FOCUS"] == "crop-aspect-boundary" {
             try cropAspectBoundaryChecks(model, raw: a, edits: edits)
             print("PASS: \(checks) focused crop aspect boundary checks")
@@ -243,6 +249,7 @@ import SwiftUI
             try cropApplyPublicationChecks(model)
             return
         }
+        try workspaceResetChecks(model, raw: a, edits: edits)
         try cropAspectBoundaryChecks(model, raw: a, edits: edits)
         try cropInputRoutingChecks(model)
         try straightenPreviewChecks(model)

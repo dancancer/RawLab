@@ -69,12 +69,14 @@ struct EditorView: View {
                         }
                         return true
                     }
+                  if model.file != nil {
                   panelResizeHandle(available: geometry.size.height)
                       .frame(height: adjustmentPanel.collapsed ? 0 : 13).clipped()
                       .allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
                   bottomControls
-                      .frame(height: adjustmentPanel.collapsed ? 0 : adjustmentPanel.height(available: geometry.size.height) - 13)
+                      .frame(height: adjustmentPanel.collapsed ? 0 : (model.adjustmentNavigation.expandedGroup == nil ? 86 : adjustmentPanel.height(available: geometry.size.height)) - 13)
                       .clipped().allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
+                  }
                   Divider()
                   statusBar
                 }
@@ -87,9 +89,8 @@ struct EditorView: View {
             fit()
         }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
-        .onChange(of: model.geometryDraftTab) { _, tab in
-            if geometryViewState != nil { adjustmentPanel.selectHeight(tab == .lens ? 330 : 252) }
-        }
+        .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
+        .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.settings.geometrySettings) { _, _ in pan = .zero }
         .task(id: model.file) {
             photoInformation = nil
@@ -104,6 +105,13 @@ struct EditorView: View {
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }
+        .alert(resetConfirmationTitle, isPresented: Binding(get: { model.resetConfirmation != nil }, set: { if !$0 && model.resetConfirmation != nil { model.finishAdjustmentReset(confirm: false) } })) {
+            Button(L10n.text("取消"), role: .cancel) { model.finishAdjustmentReset(confirm: false) }
+            Button(L10n.text("重置"), role: .destructive) { model.finishAdjustmentReset(confirm: true); resetVersion += 1 }
+        } message: { Text(resetConfirmationMessage) }
+        .alert(L10n.text("无法重置调整"), isPresented: Binding(get: { model.resetBlockedMessage != nil }, set: { if !$0 { model.resetBlockedMessage = nil } })) {
+            Button(L10n.text("关闭"), role: .cancel) { model.resetBlockedMessage = nil }
+        } message: { Text(model.resetBlockedMessage ?? "") }
         .onAppear {
             let args = CommandLine.arguments
             if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
@@ -144,30 +152,21 @@ struct EditorView: View {
                     Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
                 }.labelsHidden().fixedSize().id(localizationLocale.identifier)
                     .help(L10n.text("处理版本")).accessibilityLabel(L10n.text("处理版本"))
-                    .accessibilityIdentifier("processing.version")
+                    .accessibilityIdentifier("processing.version").disabled(model.geometryDraft != nil)
                 Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                     ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().fixedSize()
                     .id(localizationLocale.identifier)
-                    .disabled(RenderEngine.isRasterInput(model.file))
+                    .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil)
                     .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
                 Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
                     .font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 66)
                     .help(L10n.text("基础曝光偏移"))
-                Menu {
-                    Button(L10n.text("重置全部调整")) { reset() }
-                    Divider()
-                    ForEach(AdjustmentGroup.allCases) { group in
-                        Button(L10n.format("重置%@", String(describing: group.title))) { reset(group) }.disabled(model.settings.isDefault(group))
-                    }
-                } label: { Image(systemName: "arrow.counterclockwise") }
-                .menuStyle(.borderlessButton).fixedSize().help(L10n.text("重置调整")).accessibilityLabel(L10n.text("重置调整"))
-                    .disabled(model.settings.isDefault)
+                resetMenu
+
             }.padding(.horizontal, 16).font(.system(size: 11))
-                .frame(height: model.geometryDraft == nil ? 31 : 0).clipped().controlSize(.small)
-                .allowsHitTesting(model.geometryDraft == nil).accessibilityHidden(model.geometryDraft != nil)
-            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion,
-                           onPreferredHeight: { adjustmentPanel.selectHeight($0) })
+                .frame(height: 31).controlSize(.small)
+            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion)
         }.background(Color(nsColor: .windowBackgroundColor))
             .disabled(model.file == nil || model.exporting)
     }
@@ -308,12 +307,53 @@ struct EditorView: View {
         }
     }
 
-    private func reset(_ group: AdjustmentGroup? = nil) {
-        guard model.geometryDraft == nil else { return }
-        NSApp.keyWindow?.makeFirstResponder(nil)
-        if let group { model.settings.reset(group) } else { model.settings.resetAll() }
-        resetVersion += 1
+    private var resetMenu: some View {
+        Menu {
+            let tool = model.adjustmentNavigation.tool
+            if tool == .hsl {
+                resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),
+                    title: L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[model.adjustmentNavigation.selectedHSLChannel])))
+                resetButton(.hslAll, title: L10n.text("重置全部 HSL…"))
+            } else {
+                resetButton(.tool(tool), title: L10n.format("重置%@", tool.title))
+            }
+            resetButton(.group(tool.group), title: L10n.format("重置%@组…", tool.group.title))
+            resetButton(.all, title: L10n.text("重置全部调整…"))
+        } label: { Image(systemName: "arrow.counterclockwise") }
+            .menuStyle(.borderlessButton).fixedSize().help(L10n.text("重置调整"))
+            .accessibilityLabel(L10n.text("重置调整")).accessibilityIdentifier("editor.reset.menu")
+            .disabled(model.busy || model.exporting || model.geometryDraftDeparturePending || model.resetReturnTool != nil)
     }
+
+    private func resetButton(_ scope: EditorResetScope, title: String) -> some View {
+        Button(title) { model.requestAdjustmentReset(scope) }
+            .disabled(!model.isAdjustmentModified(scope))
+    }
+
+    private var resetConfirmationTitle: String {
+        switch model.resetConfirmationScope {
+        case .all: return L10n.text("重置全部调整？")
+        case .group(let group): return L10n.format("重置%@组？", group.title)
+        case .hslAll, .tool(.hsl): return L10n.text("重置全部 HSL？")
+        default: return L10n.text("重置调整")
+        }
+    }
+
+    private var resetConfirmationMessage: String {
+        var message: String
+        switch model.resetConfirmationScope {
+        case .all: message = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
+        case .hslAll, .tool(.hsl): message = L10n.text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。")
+        case .group(let group): message = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)
+        default: message = ""
+        }
+        if model.resetConfirmationScope != .all, let prepared = model.resetConfirmation {
+            let conversions = model.resetConversions(prepared)
+            if !conversions.isEmpty { message += "\n" + L10n.format("将以下项目转为独立调整，以保留其他分组的当前效果：%@", conversions.joined(separator: "、")) }
+        }
+        return message
+    }
+
     private func fit() {
         viewport.fit(); pan = .zero
         if model.fullResolution { model.fullResolution = false }
@@ -357,13 +397,9 @@ struct EditorView: View {
             geometryViewState = GeometryViewState(file: model.file, viewport: viewport, pan: pan,
                 fullResolution: model.fullResolution, panel: adjustmentPanel)
             adjustmentPanel.collapsed = false
-            adjustmentPanel.selectHeight(model.geometryDraftTab == .lens ? 330 : 252)
             fit()
         } else if let previous = geometryViewState {
             geometryViewState = nil
-            let requestedCollapse = adjustmentPanel.collapsed
-            adjustmentPanel = previous.panel
-            if requestedCollapse { adjustmentPanel.collapsed = true }
             if previous.file == model.file {
                 viewport = previous.viewport; pan = previous.pan
                 if model.fullResolution != previous.fullResolution { model.fullResolution = previous.fullResolution }

@@ -205,8 +205,8 @@ extension MacGeometryDraftTests {
         try check(stays == 1 && leaves == 0 && !model.geometryDraftDeparturePending && model.geometryDraft != nil &&
                   !model.invalidGeometryDraftInputs.isEmpty, "Stay runs once and preserves an invalid draft for correction")
         model.setGeometryDraftInputValidity(identifier: "geometry.value.cropWidth", isValid: true)
-        try check(model.geometryDraftCanApply && model.selectGeometryDraftTab(.lens),
-                  "correcting invalid text restores Apply and tab switching without restarting the transaction")
+        try check(!model.geometryDraftCanApply && model.selectGeometryDraftTab(.lens),
+                  "correcting invalid text restores tab switching while an unchanged draft keeps Apply disabled")
         model.setGeometryDraftInputValidity(identifier: "geometry.value.cropWidth", isValid: false)
         model.requestLeavingGeometryDraft({ leaves += 1 })
         model.resolveGeometryDraftDeparture(.discard); model.resolveGeometryDraftDeparture(.discard)
@@ -371,14 +371,21 @@ extension MacGeometryDraftTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let registry = directory.appendingPathComponent("edits.json")
         let corruptRecord = Data("unreadable edit registry".utf8)
-        try corruptRecord.write(to: registry)
         let model = EditorModel(lookDirectory: output.appendingPathComponent("read-error-looks"), editDirectory: directory,
                                 batchDirectory: output.appendingPathComponent("read-error-batch"))
         model.films = []; model.selectedFilmID = ""
         model.updatePreviewLongEdge(240)
-        guard let entryError = model.saveError else { throw Failure(description: "missing preexisting registry read error") }
         model.open(raw)
-        try wait(model, "preexisting read-error source")
+        try wait(model, "preexisting read-error source initially loads")
+        let loaded = model.result
+        try corruptRecord.write(to: registry)
+        let other = directory.appendingPathComponent("other-read-error.DNG")
+        try FileManager.default.copyItem(at: raw, to: other)
+        model.open(other)
+        guard let entryError = model.saveError else { throw Failure(description: "missing registry restore error") }
+        try check(model.file == raw && model.result?.image === loaded?.image && !model.dirty &&
+                  Data(contentsOf: registry) == corruptRecord,
+                  "opening a corrupt registry preserves the successfully loaded source, pixels and damaged record")
         let committed = model.settings
         try check(model.saveError == entryError && model.beginGeometryDraft(tab: .crop),
                   "a dirty-false source enters a draft while retaining its preexisting registry read error")

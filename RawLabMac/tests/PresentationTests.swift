@@ -68,14 +68,12 @@ struct PresentationTests {
         check(sameWhiteBalance.wb_mode == SONY2FUJI_WB_CAMERA,
               "Choosing Custom at the displayed as-shot values does not shift the image")
         var panel = AdjustmentPanelLayout()
-        check(panel.height(available: 800) == 252, "Adjustment panel starts at its default height")
-        panel.selectHeight(288)
-        check(panel.height(available: 800) == 288, "Grouped tools request their readable editor height")
-        check(AdjustmentPanelLayout.effectsHeight(rows: 1) == 252, "A single effect row keeps the default height")
-        check(AdjustmentPanelLayout.effectsHeight(rows: 3) > 252, "Grain rows and their hint get more than the default height")
-        panel.selectHeight(AdjustmentPanelLayout.effectsHeight(rows: 5))
-        check(panel.height(available: 700) == AdjustmentPanelLayout.effectsHeight(rows: 5),
-              "Advanced vignette and its hint fit in a default-size window")
+        check(panel.height(available: 800) == 320 && panel.height(available: 620) == 310,
+              "One panel budget follows available window space")
+        let stable = panel.height(available: 800)
+        for group in EditorAdjustmentGroup.allCases {
+            for _ in group.tools { check(panel.height(available: 800) == stable, "Tool contents never change the panel boundary") }
+        }
         panel.resize(to: 340, available: 800)
         check(panel.height(available: 800) == 340, "Adjustment panel accepts a dragged height")
         panel.collapsed = true
