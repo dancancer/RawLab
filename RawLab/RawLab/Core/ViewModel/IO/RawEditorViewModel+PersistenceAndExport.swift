@@ -245,10 +245,7 @@ extension RawEditorViewModel {
                         from: previewResult.buffer,
                         orientation: previewResult.orientation ?? rawPreview.orientation
                     )
-                    let previewHistogram = self.processor.computeHistogram(
-                        from: previewResult.buffer,
-                        bins: self.histogramBins
-                    )
+                    let previewHistogram = self.processor.computeRGBHistogram(from: previewResult.buffer)
 
                     let fullResult = try self.processor.processRaw(
                         url: url,
@@ -306,8 +303,8 @@ extension RawEditorViewModel {
                         self.rawLUTApplied = false
                         self.hasImage = false
                         self.lensInfo = nil
-                        self.histogram = []
-                        self.baseHistogram = []
+                        self.histogram = nil
+                        self.baseHistogram = nil
                         self.sourceRevision = UUID()
                         self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
                     }

@@ -12,6 +12,48 @@ final class ViewingEditorProbe {
     var previews: [[String: Any]] = []
     var readEditor: (() -> [String: Any])?
     var clearReference: (() -> Void)?
+    var clearStatistics: (() -> Void)?
+    var histogramTransitions: [[String: Any]] = []
+    var histogramDrawing: [String: [Int]] = [:]
+
+    func histogramInfo(_ histogram: Sony2FujiProcessor.RGBHistogram?) -> [String: Any] {
+        guard let histogram else { return [:] }
+        let bytes = try! JSONEncoder().encode(histogram.counts)
+        return ["size": [histogram.width, histogram.height], "peak": histogram.peak,
+                "hash": SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+                "sums": (0..<3).map { channel in
+                    histogram.counts[(channel * 256)..<((channel + 1) * 256)].reduce(UInt64(0)) { $0 + UInt64($1) }
+                }]
+    }
+
+    func recordHistogram(_ histogram: Sony2FujiProcessor.RGBHistogram?, showingBefore: Bool) {
+        var sample = histogramInfo(histogram)
+        sample["before"] = showingBefore
+        histogramTransitions.append(sample)
+    }
+
+    func sampleHistogramDrawing() {
+        var counts = [UInt32](repeating: 0, count: 768)
+        for (bin, mask, count) in [(10, 1, 4), (20, 2, 4), (30, 4, 4),
+                                   (40, 3, 2), (50, 5, 2), (60, 6, 2), (70, 7, 2)] {
+            for channel in 0..<3 where mask & (1 << channel) != 0 { counts[channel * 256 + bin] = UInt32(count) }
+        }
+        let histogram = Sony2FujiProcessor.RGBHistogram(width: 10, height: 1, counts: counts)!
+        let renderer = ImageRenderer(content: HistogramView(histogram: histogram).frame(width: 1024, height: 80).background(.black))
+        renderer.scale = 1
+        guard let image = renderer.cgImage else { return }
+        var bytes = [UInt8](repeating: 0, count: 1024 * 80 * 4)
+        bytes.withUnsafeMutableBytes { memory in
+            let context = CGContext(data: memory.baseAddress, width: 1024, height: 80, bitsPerComponent: 8,
+                bytesPerRow: 4096, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1024, height: 80))
+        }
+        for bin in [10, 20, 30, 40, 50, 60, 70] {
+            let offset = (76 * 1024 + bin * 4 + 2) * 4
+            histogramDrawing[String(bin)] = bytes[offset..<(offset + 4)].map(Int.init)
+        }
+    }
 
     func settingsText(_ settings: RawSettings) -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -34,6 +76,8 @@ final class ViewingEditorProbe {
         value["saves"] = saves
         value["previews"] = previews
         value["failNextSave"] = failNextSave
+        value["histogramTransitions"] = histogramTransitions
+        value["histogramDrawing"] = histogramDrawing
         func all(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(all) }
         func rect(_ frame: CGRect) -> [Double] { [frame.minX, frame.minY, frame.width, frame.height] }
         if let window {
@@ -86,6 +130,7 @@ extension ContentView {
         let probe = ViewingEditorProbe.shared
         guard !probe.started else { return }
         probe.started = true
+        probe.sampleHistogramDrawing()
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
             Task { @MainActor in ViewingEditorProbe.shared.failNextSave = true }
@@ -93,7 +138,11 @@ extension ContentView {
         CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
             Task { @MainActor in ViewingEditorProbe.shared.clearReference?() }
         }, "com.rawlab.s3.clear-reference" as CFString, nil, .deliverImmediately)
-        probe.clearReference = { viewModel.basePreviewImage = nil; viewModel.baseHistogram = [] }
+        CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
+            Task { @MainActor in ViewingEditorProbe.shared.clearStatistics?() }
+        }, "com.rawlab.s4.clear-statistics" as CFString, nil, .deliverImmediately)
+        probe.clearReference = { viewModel.basePreviewImage = nil; viewModel.baseHistogram = nil }
+        probe.clearStatistics = { viewModel.histogram = nil; viewModel.baseHistogram = nil }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("viewing-editor-\(UUID().uuidString)")
         try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -133,6 +182,10 @@ extension ContentView {
              "group": selectedGroup.rawValue, "tool": currentEditorTool.stableID,
              "fine": adjustmentFine, "expanded": adjustmentsExpanded,
              "previewSize": viewModel.previewImage.map { [$0.size.width, $0.size.height] } ?? [],
+             "histogramExpanded": histogramExpanded,
+             "shownHistogram": probe.histogramInfo(currentHistogram),
+             "afterHistogram": probe.histogramInfo(viewModel.histogram),
+             "beforeHistogram": probe.histogramInfo(viewModel.baseHistogram),
              "referenceSize": viewModel.basePreviewImage.map { [$0.size.width, $0.size.height] } ?? []]
         }
     }

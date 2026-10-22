@@ -125,7 +125,7 @@ extension RawEditorViewModel {
                             }
                             self.previewImage = previewImage
                             self.acceptedPreviewFrameID = renderID
-                            self.histogram = []
+                            self.histogram = nil
                             self.nativeImageSize = result.buffer.nativeSize
                             if let comparison {
                                 self.applyComparison(comparison, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
@@ -168,7 +168,7 @@ extension RawEditorViewModel {
             }
 
             let outputBuffer: Sony2FujiProcessor.Buffer
-            let comparison: (UIImage?, [CGFloat])?
+            let comparison: (UIImage?, Sony2FujiProcessor.RGBHistogram?)?
             do {
                 comparison = comparisonChanged ? try self.renderComparison(
                     url: nil, buffer: inputBuffer, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
@@ -200,7 +200,7 @@ extension RawEditorViewModel {
                 }
                 self.previewImage = previewImage
                 self.acceptedPreviewFrameID = renderID
-                self.histogram = []
+                self.histogram = nil
                 self.nativeImageSize = outputBuffer.nativeSize
                 if let comparison {
                     self.applyComparison(comparison, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
@@ -224,7 +224,7 @@ extension RawEditorViewModel {
 
     func renderComparison(url: URL?, buffer: Sony2FujiProcessor.Buffer?,
                           geometry: GeometrySettings, processing: ProcessingIdentity,
-                          lens: LensCorrectionSettings = LensCorrectionSettings(), longEdge: Int? = nil) throws -> (UIImage?, [CGFloat]) {
+                          lens: LensCorrectionSettings = LensCorrectionSettings(), longEdge: Int? = nil) throws -> (UIImage?, Sony2FujiProcessor.RGBHistogram?) {
         var neutral = RawSettings.default
         neutral.geometry = geometry
         neutral.processing = processing
@@ -238,10 +238,10 @@ extension RawEditorViewModel {
                 previewLongEdge: CGFloat(longEdge ?? Int(previewMaxDimension)), lutURL: nil, viewportPreview: true)
         } else { throw EditorError.noImageLoaded }
         return (processor.makeUIImage(from: output, orientation: .up),
-                processor.computeHistogram(from: output, bins: histogramBins))
+                processor.computeRGBHistogram(from: output))
     }
 
-    func applyComparison(_ comparison: (UIImage?, [CGFloat]), geometry: GeometrySettings, processing: ProcessingIdentity,
+    func applyComparison(_ comparison: (UIImage?, Sony2FujiProcessor.RGBHistogram?), geometry: GeometrySettings, processing: ProcessingIdentity,
                          lens: LensCorrectionSettings = LensCorrectionSettings(), key: ComparisonReferenceKey? = nil) {
         basePreviewImage = comparison.0
         baseHistogram = comparison.1
@@ -358,7 +358,7 @@ extension RawEditorViewModel {
                 return
             }
 
-            let histogram = self.computeHistogram(from: buffer, bins: self.histogramBins)
+            let histogram = self.processor.computeRGBHistogram(from: buffer)
             self.resultDelivery {
                 guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID),
                       self.acceptedPreviewFrameID == renderID else {
@@ -375,9 +375,5 @@ extension RawEditorViewModel {
         } else {
             renderQueue.async(execute: workItem)
         }
-    }
-
-    func computeHistogram(from buffer: Sony2FujiProcessor.Buffer, bins: Int) -> [CGFloat] {
-        processor.computeHistogram(from: buffer, bins: bins)
     }
 }

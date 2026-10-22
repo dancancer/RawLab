@@ -8,6 +8,7 @@ struct ProcessorExportTests {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try checkNativeBufferOwnership()
+        checkRGBHistogram()
         try checkRasterLensDatabase(root: root, output: output)
         let lensDatabase = root.appendingPathComponent("lutools/third_party/lensfun/version_1")
         let processor = Sony2FujiProcessor(lensDatabaseURL: lensDatabase)
@@ -227,6 +228,10 @@ struct ProcessorExportTests {
         let hslExport = try processor.processBuffer(buffer: buffer, settings: hsl, previewLongEdge: nil, lutURL: nil)
         check(hslPreview.data == hslExport.data && hslExport.data != neutral.data,
               "iOS HSL reaches native processing with preview/export parity")
+        let previewRGB = processor.computeRGBHistogram(from: hslPreview)
+        let exportRGB = processor.computeRGBHistogram(from: hslExport)
+        check(previewRGB != nil && previewRGB == exportRGB,
+              "same settings and dimensions produce identical preview/FINAL RGB counts")
         let hslCPU = try cpuProcessor.processBuffer(buffer: buffer, settings: hsl, previewLongEdge: nil, lutURL: nil)
         let hslGPU = try forcedProcessor.processBuffer(buffer: buffer, settings: hsl, previewLongEdge: nil, lutURL: nil)
         check(Self.maximumDifference(hslGPU.data, hslCPU.data) <= 2,

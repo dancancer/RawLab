@@ -17,7 +17,7 @@ for name in [old,old+'.debug.dylib']:
  (app/name).unlink(missing_ok=True)
 info.update(CFBundleIdentifier='com.rawlab.tests.viewing-editor',CFBundleExecutable='viewing-editor',UIApplicationSceneManifest={'UIApplicationSupportsMultipleScenes':False});plistlib.dump(info,(app/'Info.plist').open('wb'))
 transforms={
- 'RawLab/RawLab/UI/Editor/ContentView.swift':('        .onAppear {\n            viewModel.loadLUTsIfNeeded()', '        .onAppear {\n            Task { await prepareViewingReview() }\n            viewModel.loadLUTsIfNeeded()'),
+ 'RawLab/RawLab/UI/Editor/ContentView.swift':('        .onAppear {\n            viewModel.loadLUTsIfNeeded()', '        .onChange(of: photoViewing.holdingBefore) { _, _ in ViewingEditorProbe.shared.recordHistogram(currentHistogram, showingBefore: showingBefore) }\n        .onAppear {\n            Task { await prepareViewingReview() }\n            viewModel.loadLUTsIfNeeded()'),
  'RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift':('        lastPreviewRequest = request','        MainActor.assumeIsolated { ViewingEditorProbe.shared.recordPreview(request, source: sourceRevision) }\n        lastPreviewRequest = request'),
  'RawLab/RawLab/Core/Persistence/EditPersistence.swift':('        updated[identity.key] = state','        try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state) }\n        updated[identity.key] = state'),
  'RawLab/RawLab/UI/Editor/ContentView+Panels.swift':('onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }','onPreviewSizeChange: { ViewingEditorProbe.shared.resizing = true; defer { ViewingEditorProbe.shared.resizing = false }; viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }')}

@@ -119,6 +119,44 @@ struct Sony2FujiProcessor {
         var lensInfo: LensInfo? = nil
     }
 
+    struct RGBHistogram: Equatable {
+        let width: Int
+        let height: Int
+        let counts: [UInt32]
+        let peak: UInt32
+
+        init?(width: Int, height: Int, counts: [UInt32]) {
+            guard width > 0, height > 0, width <= UInt32.max, height <= UInt32.max,
+                  counts.count == 768 else { return nil }
+            let pixels = UInt64(width) * UInt64(height)
+            guard pixels <= UInt32.max, (0..<3).allSatisfy({ channel in
+                counts[(channel * 256)..<((channel + 1) * 256)].reduce(UInt64(0)) { $0 + UInt64($1) } == pixels
+            }) else { return nil }
+            self.width = width
+            self.height = height
+            self.counts = counts
+            peak = counts.max()!
+        }
+
+        struct Segment: Equatable {
+            let lower: Double
+            let upper: Double
+            let channels: Int
+        }
+
+        func segments(at bin: Int) -> [Segment] {
+            guard (0..<256).contains(bin) else { return [] }
+            let heights = (0..<3).map { Double(counts[$0 * 256 + bin]) / Double(peak) }
+            let thresholds = Set(heights.filter { $0 > 0 }).sorted()
+            var lower = 0.0
+            return thresholds.map { upper in
+                let channels = (0..<3).reduce(0) { $0 | (heights[$1] >= upper ? 1 << $1 : 0) }
+                defer { lower = upper }
+                return Segment(lower: lower, upper: upper, channels: channels)
+            }
+        }
+    }
+
     struct RawWhiteBalance: Codable, Equatable {
         let temperature: Double
         let tint: Double
@@ -383,19 +421,20 @@ struct Sony2FujiProcessor {
                                           orientation: orientation ?? .up, quality: quality)
     }
 
-    func computeHistogram(from buffer: Buffer, bins: Int) -> [CGFloat] {
-        guard bins > 0 else {
-            return []
-        }
-        var histogram = [Float](repeating: 0, count: bins)
+    func computeRGBHistogram(from buffer: Buffer) -> RGBHistogram? {
+        guard buffer.width > 0, buffer.height > 0, buffer.stride > 0,
+              buffer.width <= UInt32.max, buffer.height <= UInt32.max,
+              buffer.stride <= UInt32.max else { return nil }
+        var counts = [UInt32](repeating: 0, count: 768)
+        var shadows: UInt32 = 0, highlights: UInt32 = 0
+        // Data 在闭包内持有显示像素；统计独立于照片 GPU 模式，不上传或读取截图。
         let status = buffer.withCBuffer { cBuffer in
-            histogram.withUnsafeMutableBufferPointer { pointer in
-                sony2fuji_compute_histogram(&cBuffer, UInt32(bins), pointer.baseAddress)
+            counts.withUnsafeMutableBufferPointer { pointer in
+                sony2fuji_analyze_image(&cBuffer, SONY2FUJI_GPU_OFF, pointer.baseAddress,
+                                       &shadows, &highlights, nil)
             }
         }
-        guard status == SONY2FUJI_STATUS_OK else {
-            return []
-        }
-        return histogram.map { CGFloat($0) }
+        guard status == SONY2FUJI_STATUS_OK else { return nil }
+        return RGBHistogram(width: buffer.width, height: buffer.height, counts: counts)
     }
 }

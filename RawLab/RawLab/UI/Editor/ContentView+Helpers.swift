@@ -14,7 +14,7 @@ extension ContentView {
 
     var currentPreviewImage: UIImage? { viewModel.previewImage ?? viewModel.basePreviewImage }
 
-    var currentHistogram: [CGFloat] {
+    var currentHistogram: Sony2FujiProcessor.RGBHistogram? {
         showingBefore ? viewModel.baseHistogram : viewModel.histogram
     }
 

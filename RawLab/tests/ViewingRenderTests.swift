@@ -52,13 +52,16 @@ struct ViewingRenderTests {
             previewLongEdge: 1280, lutURL: nil, viewportPreview: true)
         check(before.pngData() == model.processor.makeUIImage(from: neutral, orientation: .up)?.pngData(),
                      "reference pixels must be default neutral, not current exposure")
+        check(model.baseHistogram == model.processor.computeRGBHistogram(from: neutral),
+              "neutral RGB belongs to the actual committed crop/reference buffer")
         draft.exposure = 2
-        model.histogram = [0.5]
+        model.histogram = model.processor.computeRGBHistogram(from: buffer)
+        check(model.histogram != nil)
         model.updatePreview(settings: draft, includeHistogram: false, quality: .interactive)
         wait(model)
         check(model.basePreviewImage === before, "user exposure must reuse unchanged neutral")
-        check(model.histogram.isEmpty, "accepted no-statistics frame must not keep prior bins")
-        check(!model.baseHistogram.isEmpty)
+        check(model.histogram == nil, "accepted no-statistics frame must not keep prior bins")
+        check(model.baseHistogram != nil)
         model.committedPreviewSettings = draft
         model.updatePreview(settings: draft, includeHistogram: false, quality: .interactive)
         wait(model)
@@ -77,6 +80,14 @@ struct ViewingRenderTests {
         model.updatePreviewSize(256, settings: committed)
         wait(model)
         check(model.comparisonReferenceKey?.longEdge == 256 && model.comparisonReferenceKey != key)
+        let statisticsDeadline = Date().addingTimeInterval(4)
+        while model.histogram == nil && Date() < statisticsDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        for (histogram, image) in [(model.histogram, model.previewImage), (model.baseHistogram, model.basePreviewImage)] {
+            check(histogram != nil && histogram?.width == image?.cgImage?.width && histogram?.height == image?.cgImage?.height,
+                  "viewport resize binds neutral and after RGB to each actual displayed frame")
+        }
         print("PASS: neutral pixels and key follow committed crop/lens/demand, not draft crop or user exposure; empty stats remain empty")
         let accepted = model.previewImage!
         model.draftBuffer = nil
@@ -133,6 +144,8 @@ struct ViewingRenderTests {
                 previewLongEdge: 320, lutURL: nil, viewportPreview: true)
             check(rawModel.basePreviewImage?.pngData() == rawModel.processor.makeUIImage(from: expected.buffer, orientation: .up)?.pngData(),
                   "actual RAW neutral uses camera WB/default exposure, no user exposure/WB/HSL, same geometry/lens/processing/demand")
+            check(rawModel.baseHistogram == rawModel.processor.computeRGBHistogram(from: expected.buffer),
+                  "RAW neutral RGB counts match the shown reference at the requested preview dimensions")
             print("PASS: RAW matched native pixel oracle; lens report=\(rawModel.lensInfo?.message ?? "none")")
         }
 

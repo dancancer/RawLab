@@ -28,10 +28,10 @@ final class ViewingEditorUITests: XCTestCase {
     }
     func capture(_ app: XCUIApplication, _ name: String) {
         print("VIEWING_EDITOR \(name) \(receipt(app))")
-        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
         var snapshot = receipt(app)
         var bounds: [String: [Double]] = [:]
-        for id in ["editor.photo", "editor.photo.before", "editor.compare.before", "editor.compare.after", "editor.compare.mode", "editor.preview.exit", "editor.panel", "editor.compare", "editor.reset"] {
+        for id in ["editor.photo", "editor.photo.before", "editor.compare.before", "editor.compare.after", "editor.compare.mode", "editor.preview.exit", "editor.panel", "editor.compare", "editor.reset", "editor.histogram"] {
             let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
             if element.exists {
                 let frame = element.frame
@@ -47,6 +47,148 @@ final class ViewingEditorUITests: XCTestCase {
         app.buttons["editor.group.geometry"].tap()
         if !app.buttons["tool.geometry"].isSelected { app.buttons["tool.geometry"].tap() }
         wait(app) { $0["ready"] as? Bool == true && $0["draftActive"] as? Bool == true }
+    }
+    func histogramPlot(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "editor.histogram.plot").firstMatch
+    }
+    func assertVisibleHistogram(_ app: XCUIApplication) {
+        let plot = histogramPlot(app)
+        XCTAssertTrue(plot.waitForExistence(timeout: 5))
+        let popover = app.descendants(matching: .any).matching(identifier: "editor.histogram.popover").firstMatch
+        if popover.exists {
+            if !popover.frame.contains(plot.frame) {
+                let frame = app.scrollViews["editor.histogram.scroll"].frame
+                XCTAssertTrue(app.frame.contains(frame) && frame.height >= 80)
+                // 部分系统 SwiftUI popover 的 AX 包装层为零尺寸；以实际 ScrollView frame 派发触摸。
+                let origin = app.coordinate(withNormalizedOffset: .zero)
+                origin.withOffset(CGVector(dx: frame.midX, dy: frame.maxY - 20)).press(forDuration: 0.05,
+                    thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + 20)))
+            }
+            XCTAssertTrue(app.frame.contains(popover.frame), "Histogram popover stays inside the window")
+            XCTAssertTrue(popover.frame.contains(plot.frame), "Complete plot/status remains reachable inside its popover")
+            XCTAssertTrue(app.buttons["editor.histogram.close"].isHittable)
+        } else {
+            XCTAssertTrue(app.images["editor.photo"].frame.contains(plot.frame), "Inline RGB plot must not be clipped by the parameter panel")
+        }
+    }
+    func testRGBHistogramSourcesAndUnavailableState() {
+        let app = launch(language: "en")
+        wait(app) { !($0["afterHistogram"] as! [String: Any]).isEmpty }
+        let initial = receipt(app)
+        let after = initial["afterHistogram"] as! [String: Any]
+        let before = initial["beforeHistogram"] as! [String: Any]
+        XCTAssertNotEqual(after["hash"] as? String, before["hash"] as? String)
+        for (histogram, key) in [(after, "previewSize"), (before, "referenceSize")] {
+            XCTAssertEqual(histogram["size"] as? [Int], (initial[key] as! [Double]).map(Int.init))
+            let size = histogram["size"] as! [Int]
+            XCTAssertEqual(histogram["sums"] as? [Int], Array(repeating: size[0] * size[1], count: 3))
+        }
+        let drawing = initial["histogramDrawing"] as! [String: [Int]]
+        for (bin, expected) in ["10": [255, 0, 0], "20": [0, 255, 0], "30": [0, 0, 255],
+                                "40": [255, 255, 0], "50": [255, 0, 255], "60": [0, 255, 255], "70": [191, 191, 191]] {
+            let actual = drawing[bin] ?? []
+            XCTAssertEqual(actual.count, 4, "Actual SwiftUI Canvas sample for bin \(bin)")
+            for channel in 0..<3 { XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 2) }
+            XCTAssertEqual(actual[3], 255)
+        }
+        let histogram = app.buttons["editor.histogram"]
+        XCTAssertEqual(histogram.label, "RGB Histogram")
+        histogram.tap()
+        wait(app) { $0["histogramExpanded"] as? Bool == true }
+        assertVisibleHistogram(app)
+        XCTAssertTrue((histogram.value as? String ?? "").contains("After"))
+        capture(app, "rgb-after")
+        app.images["editor.photo"].press(forDuration: 0.8)
+        let transitions = receipt(app)["histogramTransitions"] as! [[String: Any]]
+        XCTAssertTrue(transitions.contains { $0["before"] as? Bool == true && $0["hash"] as? String == before["hash"] as? String })
+        XCTAssertEqual(transitions.last?["before"] as? Bool, false)
+        XCTAssertEqual(transitions.last?["hash"] as? String, after["hash"] as? String)
+        app.buttons["editor.compare"].tap()
+        wait(app) { $0["compare"] as? Bool == true && $0["ready"] as? Bool == true }
+        XCTAssertEqual((receipt(app)["shownHistogram"] as! [String: Any])["hash"] as? String,
+                       (receipt(app)["afterHistogram"] as! [String: Any])["hash"] as? String)
+        app.buttons["editor.compare"].tap()
+        app.images["editor.photo"].tap()
+        wait(app) { $0["previewOnly"] as? Bool == true }
+        XCTAssertFalse(app.buttons["editor.histogram"].exists)
+        app.buttons["editor.preview.exit"].tap()
+        wait(app) { $0["previewOnly"] as? Bool == false && $0["ready"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["histogramExpanded"] as? Bool, true)
+        assertVisibleHistogram(app)
+        histogram.tap()
+        wait(app) { $0["histogramExpanded"] as? Bool == false }
+        app.images["editor.photo"].tap()
+        wait(app) { $0["previewOnly"] as? Bool == true }
+        XCTAssertFalse(app.buttons["editor.histogram"].exists)
+        app.buttons["editor.preview.exit"].tap()
+        wait(app) { $0["previewOnly"] as? Bool == false && $0["ready"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["histogramExpanded"] as? Bool, false)
+        histogram.tap()
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.s4.clear-statistics" as CFString), nil, nil, true)
+        wait(app) { ($0["shownHistogram"] as! [String: Any]).isEmpty }
+        XCTAssertTrue((histogram.value as? String ?? "").contains("Statistics unavailable"))
+        XCTAssertTrue(app.images["editor.photo"].exists)
+        XCTAssertFalse(receipt(app)["previewFailed"] as! Bool)
+        capture(app, "rgb-unavailable")
+        XCTAssertEqual(receipt(app)["settings"] as? String, initial["settings"] as? String)
+        XCTAssertEqual((receipt(app)["saves"] as! [[String: Any]]).count, (initial["saves"] as! [[String: Any]]).count)
+    }
+
+    func testRGBHistogramAcrossSixLanguagesAndLargeText() {
+        checkRGBHistogramLanguages()
+    }
+    func testRGBHistogramGermanLargeText() {
+        checkRGBHistogramLanguages(only: "de")
+    }
+    func testRGBHistogramRotationAndExpansion() {
+        checkRGBHistogramLanguages(only: "en")
+    }
+    private func checkRGBHistogramLanguages(only requestedLanguage: String? = nil) {
+        for (language, title, after, unavailable) in [
+            ("zh-Hans", "RGB 直方图", "调整后", "统计不可用"),
+            ("en", "RGB Histogram", "After", "Statistics unavailable"),
+            ("de", "RGB-Histogramm", "Nachher", "Statistik nicht verfügbar"),
+            ("fr", "Histogramme RVB", "Après", "Statistiques indisponibles"),
+            ("ja", "RGB ヒストグラム", "補正後", "統計を利用できません"),
+            ("es", "Histograma RGB", "Después", "Estadísticas no disponibles")
+        ] {
+            if let requestedLanguage, language != requestedLanguage { continue }
+            let app = launch(language: language, textCategory: language == "de" ? "UICTContentSizeCategoryAccessibilityXXXL" : nil)
+            wait(app) { !($0["afterHistogram"] as! [String: Any]).isEmpty }
+            let initial = receipt(app)
+            let histogram = app.buttons["editor.histogram"]
+            XCTAssertEqual(histogram.label, title)
+            XCTAssertGreaterThanOrEqual(histogram.frame.height, 44)
+            XCTAssertGreaterThanOrEqual(histogram.frame.width, 44)
+            histogram.tap()
+            wait(app) { $0["histogramExpanded"] as? Bool == true }
+            assertVisibleHistogram(app)
+            XCTAssertEqual(histogramPlot(app).label, after)
+            capture(app, "rgb-\(language)-expanded")
+            XCUIDevice.shared.orientation = .landscapeLeft
+            wait(app) { $0["ready"] as? Bool == true && app.frame.width > app.frame.height }
+            assertVisibleHistogram(app)
+            capture(app, "rgb-\(language)-landscape")
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.s4.clear-statistics" as CFString), nil, nil, true)
+            wait(app) { ($0["shownHistogram"] as! [String: Any]).isEmpty }
+            assertVisibleHistogram(app)
+            XCTAssertEqual(histogramPlot(app).value as? String, unavailable)
+            capture(app, "rgb-\(language)-unavailable")
+            XCUIDevice.shared.orientation = .portrait
+            wait(app) { $0["ready"] as? Bool == true && app.frame.width < app.frame.height }
+            XCTAssertEqual(receipt(app)["histogramExpanded"] as? Bool, true,
+                           "Rotation between inline and popover must preserve the expanded preference")
+            assertVisibleHistogram(app)
+            if app.buttons["editor.histogram.close"].exists {
+                app.buttons["editor.histogram.close"].tap()
+                wait(app) { $0["histogramExpanded"] as? Bool == false }
+                XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "editor.histogram.popover").firstMatch.exists)
+            }
+            XCTAssertEqual(receipt(app)["settings"] as? String, initial["settings"] as? String)
+            XCTAssertEqual((receipt(app)["saves"] as! [[String: Any]]).count, (initial["saves"] as! [[String: Any]]).count)
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
     }
     func testNewViewingControlsAcrossSixLanguages() {
         let samples = [

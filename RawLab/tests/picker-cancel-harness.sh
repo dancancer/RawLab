@@ -30,8 +30,8 @@ transforms = {
     "RawLab/RawLab/UI/Editor/ContentView.swift": [
         ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
          "        .onAppear {\n            PickerCancelHarnessState.shared.readEditor = { self.pickerCancelSnapshot() }\n            viewModel.loadLUTsIfNeeded()"),
-        ("        .onDisappear { cancelRulerFocus(); cancelPhotoImport() }",
-         "        .onDisappear { cancelRulerFocus(); cancelPhotoImport(); PickerCancelHarnessState.shared.disappearances += 1 }")
+        ("        .onDisappear { photoViewing.endTemporaryViewing(); cancelRulerFocus(); cancelPhotoImport() }",
+         "        .onDisappear { photoViewing.endTemporaryViewing(); cancelRulerFocus(); cancelPhotoImport(); PickerCancelHarnessState.shared.disappearances += 1 }")
     ],
     "RawLab/RawLab/UI/Editor/ContentView+Helpers.swift": [
         ("try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }",

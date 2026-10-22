@@ -159,7 +159,8 @@ extension ContentView {
             }
             .overlay(alignment: .topTrailing) {
                 if viewModel.hasImage && !photoViewing.previewOnly {
-                    FloatingHistogram(values: currentHistogram, expanded: $histogramExpanded)
+                    FloatingHistogram(histogram: currentHistogram, showingBefore: showingBefore,
+                                      availableSize: geometry.size, expanded: $histogramExpanded)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
                         .opacity(rulerFocusOpacity)
