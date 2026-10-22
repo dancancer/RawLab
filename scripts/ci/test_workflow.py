@@ -1,8 +1,10 @@
 """Regression guards for the hosted verification boundary, not a YAML linter."""
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 import yaml
 
@@ -149,7 +151,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(macos['env']['CMAKE_BUILD_PARALLEL_LEVEL'], '${{ matrix.jobs }}')
         run = '\n'.join(step.get('run', '') for step in macos['steps'])
         self.assertIn('ctest --test-dir lutools/build-macos --parallel 2', run)
-        self.assertIn("-E '^(native_dcp_metal|gpu_photo|metal_denoise)$'", run)
 
     def test_macos_timing_records_success_without_masking_command_failure(self):
         build = next(step for step in self.workflow['jobs']['macos']['steps']
@@ -168,6 +169,29 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertFalse((root / 'should-not-exist').exists())
             self.assertRegex((root / 'build/ci/macos-timings.log').read_text(),
                              r'^passed\t\d+\t0\nfailed\t\d+\t7\n$')
+
+    def test_metal_workspace_runs_on_physical_apple_runner_only(self):
+        run = next(step['run'] for step in self.workflow['jobs']['macos']['steps']
+                   if 'bash RawLabMac/build.sh' in step.get('run', ''))
+        ctest = run.split('ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh\n', 1)[1]
+        ctest = ctest.split('\nfi', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build = root / 'lutools/build-macos'
+            build.mkdir(parents=True)
+            (root / 'build/ci').mkdir(parents=True)
+            names = ('wavelet_denoise', 'metal_workspace', 'native_dcp_metal', 'gpu_photo', 'metal_denoise')
+            (build / 'CTestTestfile.cmake').write_text(''.join(
+                f'add_test({name} "{sys.executable}" "-c" "pass")\n' for name in names))
+            for arch, expected in (('x86_64', {'wavelet_denoise'}),
+                                   ('arm64', {'wavelet_denoise', 'metal_workspace'})):
+                with self.subTest(arch=arch):
+                    result = subprocess.run(['bash', '-euc',
+                        f'RAWLAB_ARCH={arch}\nci_timed() {{ shift; "$@"; }}\n' + ctest],
+                        cwd=root, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    report = ET.parse(root / 'build/ci/macos-ctest.xml')
+                    self.assertEqual({case.attrib['name'] for case in report.iter('testcase')}, expected)
 
     def test_windows_uses_a_dedicated_runner_and_data_volume(self):
         windows = self.workflow["jobs"]["windows"]

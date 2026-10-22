@@ -329,8 +329,9 @@ void checkAnalysisReuse() {
     assert(!info.analysisReused);
 }
 
-void checkImmutableSourceReload() {
-    ImageData source(256,256);
+void checkImmutableSourceReload(ProcessingVersion version) {
+    ImageData source(version == ProcessingVersion::Legacy ? 1031 : 256,
+                     version == ProcessingVersion::Legacy ? 1043 : 256);
     std::mt19937 rng(7381);
     std::normal_distribution<float> noise(.18f,.014f);
     for (auto& p:source.pixels) p={noise(rng),noise(rng),noise(rng)};
@@ -339,13 +340,13 @@ void checkImmutableSourceReload() {
     assert(ColorConverter().convertImage(converted,ColorSpace::AdobeRGB,ColorSpace::sRGB)==ErrorCode::Success);
     WaveletDenoiseAnalysisCache cache;
     int index=0;
-    for (const auto& options : {WaveletDenoiseOptions{true,10,72,0}, {true,10,72,100}, {true,25,60,80}}) {
+    for (const auto& options : {WaveletDenoiseOptions{true,10,72,0,version}, {true,10,72,100,version}, {true,25,60,80,version}}) {
         auto retained=converted,reloaded=converted;
         WaveletDenoiseDiagnostics info;
         assert(applyWaveletDenoise(retained,options)==ErrorCode::Success);
         assert(applyWaveletDenoise(reloaded,options,&info,GpuMode::Off,&cache,"immutable-a",&source,
             ColorSpace::AdobeRGB)==ErrorCode::Success);
-        assert(info.applied && info.analysisReused==(index>0) && info.coarseAnalysisReused==(index>0));
+        assert(info.applied && info.analysisReused==(index>0) && info.coarseAnalysisReused==(index>(version == ProcessingVersion::Legacy ? 1 : 0)));
         assert(reloaded.width==retained.width && reloaded.height==retained.height);
         assert(std::memcmp(retained.pixels.data(),reloaded.pixels.data(),retained.pixels.size()*sizeof(RGB))==0);
         assert(std::memcmp(source.pixels.data(),original.pixels.data(),source.pixels.size()*sizeof(RGB))==0);
@@ -403,7 +404,8 @@ int main(int argc, char** argv) {
     checkReflectedTilePlanes();
     checkParallelTiles();
     checkAnalysisReuse();
-    checkImmutableSourceReload();
+    checkImmutableSourceReload(ProcessingVersion::C5V2);
+    checkImmutableSourceReload(ProcessingVersion::Legacy);
     checkInversePhases();
     checkFineLumaTexture();
     checkNeutralColorBands();

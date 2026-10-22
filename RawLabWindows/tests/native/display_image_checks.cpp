@@ -647,8 +647,8 @@ int main(int argc, char** argv) {
         auto gain = read(jpeg); gain.insert(gain.begin() + 2, {255,226,0,6,'M','P','F',0});
         write(root / "gain-map.jpg", gain); reject(root / "gain-map.jpg", SONY2FUJI_STATUS_UNSUPPORTED);
 
-        const auto oversized = root / "over-64m.png";
-        writePngHeader(oversized, 8001, 8000);
+        const auto oversized = root / "over-128m.png";
+        writePngHeader(oversized, 16001, 8000);
         reject(oversized, SONY2FUJI_STATUS_UNSUPPORTED);
 
         write(root / "corrupt.png", {137,80,78,71}); reject(root / "corrupt.png", SONY2FUJI_STATUS_PROCESSING_ERROR);

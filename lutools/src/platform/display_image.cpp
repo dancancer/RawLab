@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr uint64_t kMaxDisplayPixels = 64000000ull;
+constexpr uint64_t kMaxDisplayPixels = 128000000ull;
 
 void clearBuffer(sony2fuji_buffer* buffer) {
     if (!buffer) return;

@@ -106,6 +106,11 @@ vec3 applyHsl(vec3 pixel) {
     if (dh == 0.0 && ds == 0.0 && dl == 0.0) return pixel;
     float lightness = clamp((maximum + minimum) * 0.5, 0.0, 1.0);
     float saturation = delta / max(1e-6, 1.0 - abs(2.0 * lightness - 1.0));
+    vec3 residual = vec3(0.0);
+    if (minimum < 0.0 || maximum > 1.0) {
+        float baseChroma = (1.0 - abs(2.0 * lightness - 1.0)) * clamp(saturation, 0.0, 1.0);
+        residual = pixel - ((pixel - minimum) * (baseChroma / delta) + (lightness - baseChroma * 0.5));
+    }
     hue = mod(hue + dh * 0.3 + 360.0, 360.0);
     saturation = clamp(saturation * (1.0 + ds * 0.01), 0.0, 1.0);
     lightness = clamp(lightness + dl * 0.005, 0.0, 1.0);
@@ -114,7 +119,7 @@ vec3 applyHsl(vec3 pixel) {
     vec3 rgb = hue < 60.0 ? vec3(chroma,x,0) : hue < 120.0 ? vec3(x,chroma,0) :
         hue < 180.0 ? vec3(0,chroma,x) : hue < 240.0 ? vec3(0,x,chroma) :
         hue < 300.0 ? vec3(x,0,chroma) : vec3(chroma,0,x);
-    return rgb + (lightness - chroma * 0.5);
+    return rgb + (lightness - chroma * 0.5) + residual;
 }
 
 vec3 evaluate(vec3 inputColor) {
