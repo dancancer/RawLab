@@ -15,3 +15,6 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/presentation"
 "$OUT/presentation" "${RAWLAB_FILM_ASSETS:-$ROOT/RawLabMac/Resources/FilmIcons}"
+
+bash "$ROOT/RawLabMac/tests/mac-viewing.sh"
+bash "$ROOT/RawLabMac/tests/mac-canvas-input.sh"

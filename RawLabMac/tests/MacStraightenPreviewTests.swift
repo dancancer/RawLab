@@ -287,7 +287,12 @@ struct MacStraightenPreviewTests {
     private static func captureCanvas(frame: RenderedImage, geometry: GeometrySettings,
                                       source: CGSize, pan: CGSize = .zero, size: CGSize,
                                       mode: CaptureMode = .pending) throws -> CGImage {
-        var currentPan = pan
+        var currentViewport = PhotoViewport()
+        let preview = MacStraightenPreview(source: source, degrees: geometry.straightenDegrees)
+        let safe = preview.safeRenderedSize(CGSize(width: frame.image.width, height: frame.image.height))
+        let fitSize = mode == .pending ? CGSize(width: safe.width * geometry.cropWidth, height: safe.height * geometry.cropHeight) : preview.rotatedSize(CGSize(width: frame.image.width, height: frame.image.height))
+        let factor = max(0.001, min((size.width - 24) / fitSize.width, (size.height - 24) / fitSize.height))
+        currentViewport.focus = CGPoint(x: 0.5 - pan.width / (safe.width * factor), y: 0.5 - pan.height / (safe.height * factor))
         let pendingGeometry = mode == .pending ? geometry : nil
         var cropSettings: GeometrySettings? = mode == .pending ? nil : geometry
         /* 全画布选区保留相同旋转和缩放，让参考采样区域没有遮罩或网格。 */
@@ -295,8 +300,7 @@ struct MacStraightenPreviewTests {
             cropSettings?.cropX = 0; cropSettings?.cropY = 0
             cropSettings?.cropWidth = 1; cropSettings?.cropHeight = 1
         }
-        let view = PhotoCanvas(frame: frame, viewport: PhotoViewport(), sourceWidth: Int(source.width),
-            pan: Binding(get: { currentPan }, set: { currentPan = $0 }), clipping: false,
+        let view = PhotoCanvas(frame: frame, viewport: Binding(get: { currentViewport }, set: { currentViewport = $0 }), sourceWidth: Int(source.width), clipping: false,
             sourceHeight: Int(source.height), cropSettings: cropSettings, pendingGeometry: pendingGeometry,
             cropGrid: mode != .plain)
             .frame(width: size.width, height: size.height)
