@@ -191,12 +191,16 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
             alias.symlink_to(nested, target_is_directory=True)
             source = allowed / "photo.dng"
             shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
-            (physical / "edit.json").write_text(json.dumps({
+            document = {
                 "schema_version": 4,
                 "input": {"path": source.name},
                 "edits": {"exposure": {"mode": "scene", "ev": 0.0}},
                 "output": {"path": "out.png", "format": "png"},
-            }), encoding="utf-8")
+            }
+            (physical / "edit.json").write_text(json.dumps(document), encoding="utf-8")
+            # Win32 在打开文件前归一化 ..；POSIX 先跟随目录软链接。
+            document["edits"]["exposure"]["ev"] = 0.5
+            (allowed / "edit.json").write_text(json.dumps(document), encoding="utf-8")
             recipe = allowed / "alias" / ".." / "edit.json"
 
             direct = subprocess.run(
@@ -205,6 +209,7 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(direct.returncode, 0, direct.stderr)
             direct_result = json.loads(direct.stdout)["result"]
+            self.assertEqual(direct_result["edits"]["exposure"]["ev"], 0.5 if os.name == "nt" else 0.0)
 
             params = StdioServerParameters(command=sys.executable, args=[
                 "-m", "rawlab_mcp", "--cli", CLI,
