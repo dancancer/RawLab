@@ -330,6 +330,8 @@ if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY
 endif()
 
 if(BUILD_TESTING AND NOT IOS)
+    add_executable(hsl_boundary_tests tests/hsl_boundary_tests.cpp src/core/photo_color.cpp src/core/color_converter.cpp)
+    add_test(NAME hsl_boundary COMMAND hsl_boundary_tests)
     foreach(contract default off fast)
         set(look_test look_exactness)
         if(NOT contract STREQUAL default)
@@ -352,6 +354,17 @@ if(BUILD_TESTING AND NOT IOS)
 endif()
 
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    add_executable(cpu_workspace_tests tests/cpu_workspace_tests.cpp)
+    target_link_libraries(cpu_workspace_tests PRIVATE sony2fuji_core)
+    add_test(NAME cpu_workspace COMMAND cpu_workspace_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/flog-2-new/FLog2_to_Velvia_65grid_V.1.00.cube")
+    if(APPLE AND SONY2FUJI_ENABLE_GPU)
+        add_executable(metal_workspace_tests tests/metal_workspace_tests.mm)
+        target_link_libraries(metal_workspace_tests PRIVATE sony2fuji_core "-framework Metal" "-framework Foundation")
+        add_test(NAME metal_workspace COMMAND metal_workspace_tests)
+        set_tests_properties(metal_workspace PROPERTIES ENVIRONMENT
+            "MTL_SHADER_VALIDATION=1;MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1;MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1")
+    endif()
     add_executable(raw_format_tests tests/raw_format_tests.cpp)
     target_include_directories(raw_format_tests PRIVATE ${LIBRAW_INCLUDE_DIRS} src)
     target_link_libraries(raw_format_tests PRIVATE ${LIBRAW_LIBRARY} ${DNGSDK_LIBRARY})

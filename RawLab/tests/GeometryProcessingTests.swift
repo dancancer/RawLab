@@ -102,7 +102,7 @@ struct GeometryProcessingTests {
             check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL,
                   "identity Force confirms Metal hardware is available")
         }
-        var result = try processor.copyBuffer(output)
+        var result = try processor.takeBuffer(&output)
         result.nativeSize = processor.geometrySize(session)
         return result
     }

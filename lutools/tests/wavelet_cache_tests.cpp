@@ -97,6 +97,11 @@ int main(int argc, char** argv) {
     assert(small.previewBytes()<=256 && a.image.pixels.empty() && !b.image.pixels.empty());
     auto& exact=small.select("exact",false);
     small.store(exact,pixels,options,GpuMode::Off);
+    ImageData oversized(9,9);
+    auto& tooLarge = small.select("oversized",false);
+    small.store(tooLarge,oversized,options,GpuMode::Off);
+    assert(tooLarge.image.pixels.empty() && !tooLarge.completed);
+    small.store(small.select("exact",false),pixels,options,GpuMode::Off);
     small.select("c",true);
     assert(!small.select("exact",false).image.pixels.empty());
 

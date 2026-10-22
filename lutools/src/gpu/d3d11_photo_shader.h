@@ -78,6 +78,11 @@ float3 applyHsl(float3 pixel) {
     if (dh == 0.0 && ds == 0.0 && dl == 0.0) return pixel;
     float lightness = saturate((maximum + minimum) * 0.5);
     float saturation = delta / max(1e-6, 1.0 - abs(2.0 * lightness - 1.0));
+    float3 residual = float3(0.0, 0.0, 0.0);
+    if (minimum < 0.0 || maximum > 1.0) {
+        float baseChroma = (1.0 - abs(2.0 * lightness - 1.0)) * clamp(saturation, 0.0, 1.0);
+        residual = pixel - ((pixel - minimum) * (baseChroma / delta) + (lightness - baseChroma * 0.5));
+    }
     hue = fmod(hue + dh * 0.3 + 360.0, 360.0);
     saturation = saturate(saturation * (1.0 + ds * 0.01));
     lightness = saturate(lightness + dl * 0.005);
@@ -86,7 +91,7 @@ float3 applyHsl(float3 pixel) {
     float3 rgb = hue < 60.0 ? float3(chroma,x,0) : hue < 120.0 ? float3(x,chroma,0) :
         hue < 180.0 ? float3(0,chroma,x) : hue < 240.0 ? float3(0,x,chroma) :
         hue < 300.0 ? float3(x,0,chroma) : float3(chroma,0,x);
-    return rgb + (lightness - chroma * 0.5);
+    return rgb + (lightness - chroma * 0.5) + residual;
 }
 
 float3 evaluate(float3 inputColor) {

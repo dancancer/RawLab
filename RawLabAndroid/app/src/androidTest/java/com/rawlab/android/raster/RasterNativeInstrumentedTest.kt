@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -28,6 +29,52 @@ import com.rawlab.android.settings.PhotoEffectsSettings
 
 @RunWith(AndroidJUnit4::class)
 class RasterNativeInstrumentedTest {
+    @Test
+    fun mediumFormatImportPreviewAndExportPreserveAdjustments() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("largeRasterImport") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val root = testRoot(instrumentation.targetContext, "medium-format-raster")
+        val input = File(root, "input.jpg")
+        val cpuFile = File(root, "cpu.png")
+        val gpuFile = File(root, "gpu.png")
+        try {
+            instrumentation.context.assets.open("sample.jpg").use { source -> input.outputStream().use { source.copyTo(it) } }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(input.path, bounds)
+            assertTrue(bounds.outWidth.toLong() * bounds.outHeight >= 100_000_000)
+            PhotoStorage(instrumentation.targetContext).use { storage ->
+                val recipe = MasterRecipe.load(instrumentation.targetContext).first { it.id == "samalive_vintage" }
+                val settings = EditSettings().applyRecipe(recipe)
+                val look = checkNotNull(storage.lookPath(settings))
+                NativeProcessor(NativeProcessor.CPU).use { processor ->
+                    val cpu = processor.preview(input, look, settings, 1600, false, PhotoInputKind.RASTER)
+                    processor.export(input, look, settings, cpuFile, ExportFormat.PNG, null, PhotoInputKind.RASTER)
+                    processor.setGpuMode(NativeProcessor.AUTO)
+                    val gpu = processor.preview(input, look, settings, 1600, false, PhotoInputKind.RASTER)
+                    assertFramesClose(cpu, gpu, 2)
+                    processor.export(input, look, settings, gpuFile, ExportFormat.PNG, null, PhotoInputKind.RASTER)
+                }
+            }
+            val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            val cpu = checkNotNull(BitmapFactory.decodeFile(cpuFile.path, options))
+            val gpu = checkNotNull(BitmapFactory.decodeFile(gpuFile.path, options))
+            try {
+                assertEquals(bounds.outWidth, cpu.width); assertEquals(bounds.outHeight, cpu.height)
+                assertEquals(cpu.width, gpu.width); assertEquals(cpu.height, gpu.height)
+                val a = IntArray(cpu.width); val b = IntArray(gpu.width)
+                val shifts = intArrayOf(0, 8, 16)
+                var maximum = 0
+                for (y in 0 until cpu.height) {
+                    cpu.getPixels(a, 0, cpu.width, 0, y, cpu.width, 1)
+                    gpu.getPixels(b, 0, gpu.width, 0, y, gpu.width, 1)
+                    for (x in a.indices) for (shift in shifts)
+                        maximum = max(maximum, kotlin.math.abs((a[x] ushr shift and 255) - (b[x] ushr shift and 255)))
+                }
+                assertTrue("Full-resolution CPU/Auto PNG maxDN=$maximum", maximum <= 2)
+            } finally { cpu.recycle(); gpu.recycle() }
+        } finally { root.deleteRecursively() }
+    }
+
     @Test
     fun sdrCicpPngPreservesNeutralPixelsAndFinalExport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -103,6 +150,9 @@ class RasterNativeInstrumentedTest {
                 val jpegPreview = processor.preview(jpeg, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
                 assertEquals(3, jpegPreview.width)
                 assertEquals(2, jpegPreview.height)
+                assertTrue(processor.autoExposure(jpeg, EditSettings(), PhotoInputKind.RASTER).isFinite())
+                assertFramesClose(jpegPreview,
+                    processor.preview(jpeg, null, EditSettings(), 1600, false, PhotoInputKind.RASTER), 0)
                 assertEquals(0, processor.export(input, null, EditSettings(), output, ExportFormat.PNG, null, PhotoInputKind.RASTER))
             }
             val exported = checkNotNull(BitmapFactory.decodeFile(output.path))

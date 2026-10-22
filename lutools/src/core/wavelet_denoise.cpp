@@ -307,19 +307,15 @@ void calibrateCoarseBands(NoiseModel& model,const cv::Mat& transformed,const std
     for (auto& channel:measurements) for (auto& scale:channel) for (auto& direction:scale) direction.resize(count);
     for (auto& scale:sharedNoise) for (auto& direction:scale) direction.resize(count);
     const int width=std::min(128,transformed.cols/64*64),height=std::min(128,transformed.rows/64*64);
-    cv::Mat padded;
-    cv::copyMakeBorder(transformed,padded,coarseHalo,coarseHalo,coarseHalo,coarseHalo,cv::BORDER_REFLECT_101);
     cv::parallel_for_(cv::Range(0,count),[&](const cv::Range& range) {
         for (int i=range.start;i<range.end;++i) {
             const auto& sample=samples[static_cast<size_t>(double(i)*(samples.size()-1)/(count-1))];
             const int x=std::clamp(sample.x+32-width/2,0,transformed.cols-width);
             const int y=std::clamp(sample.y+32-height/2,0,transformed.rows-height);
             // 粗层读取真实邻域，不能靠重复反射 64 像素样块来估计更大色斑。
-            const auto patch=padded(cv::Rect(x,y,width+2*coarseHalo,height+2*coarseHalo));
             CoarseCoefficients coefficients;
             for (int c=1;c<3;++c) {
-                cv::Mat plane;
-                cv::extractChannel(patch,plane,c);
+                const auto plane=sony2fuji::waveletTilePlane(transformed,{x,y,width,height},coarseHalo,1,c);
                 StationaryWavelet transform(plane,coarseLevels);
                 for (int scale=0;scale<extraLevels;++scale) for (int direction=0;direction<3;++direction) {
                     const auto band=transform.band(scale,direction);
@@ -365,15 +361,12 @@ void calibrateLumaCoarseBands(NoiseModel& model,const cv::Mat& transformed,const
     const int count=std::min(16,static_cast<int>(samples.size()));
     for (auto& scale:measurements) for (auto& direction:scale) direction.resize(count);
     const int width=std::min(128,transformed.cols/64*64),height=std::min(128,transformed.rows/64*64);
-    cv::Mat padded;
-    cv::copyMakeBorder(transformed,padded,coarseHalo,coarseHalo,coarseHalo,coarseHalo,cv::BORDER_REFLECT_101);
     cv::parallel_for_(cv::Range(0,count),[&](const cv::Range& range) {
         for (int i=range.start;i<range.end;++i) {
             const auto& sample=samples[static_cast<size_t>(double(i)*(samples.size()-1)/(count-1))];
             const int x=std::clamp(sample.x+32-width/2,0,transformed.cols-width);
             const int y=std::clamp(sample.y+32-height/2,0,transformed.rows-height);
-            cv::Mat plane;
-            cv::extractChannel(padded(cv::Rect(x,y,width+2*coarseHalo,height+2*coarseHalo)),plane,0);
+            const auto plane=sony2fuji::waveletTilePlane(transformed,{x,y,width,height},coarseHalo,1,0);
             StationaryWavelet transform(plane,coarseLevels);
             for (int scale=0;scale<extraLevels;++scale) for (int direction=0;direction<3;++direction) {
                 const auto band=transform.band(scale,direction);
@@ -490,6 +483,45 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
     return output;
 }
 
+void filterWorking(cv::Mat& transformed,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
+                   const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,
+                   sony2fuji::GpuMode gpuMode,std::atomic<bool>& gpuUsed) {
+    const bool coarseChroma=options.chroma>0 && options.coarse>0;
+    const bool coarseLuma=options.processingVersion!=sony2fuji::ProcessingVersion::Legacy && options.luma>0;
+    const bool coarse=coarseLuma || coarseChroma;
+    const int centerSize=coarse ? 1024 : tileSize;
+    const int margin=coarse ? coarseHalo : halo,alignment=1<<(coarse ? coarseLevels : levels);
+    for (int y=0;y<transformed.rows;y+=centerSize) for (int x=0;x<transformed.cols;x+=centerSize) {
+        const int w=std::min(centerSize,transformed.cols-x),h=std::min(centerSize,transformed.rows-y);
+        // 从不可变 RAW 重建当前 tile，避免保留跨越整图宽度的原始行带。
+        // 反射与对齐均按整张源图计算，与 waveletTilePlane 的边界完全一致。
+        sony2fuji::ImageData original((w+alignment-1)/alignment*alignment+2*margin,
+            (h+alignment-1)/alignment*alignment+2*margin);
+        for (int py=0;py<original.height;++py) {
+            const int sy=cv::borderInterpolate(y-margin+py,source.height,cv::BORDER_REFLECT_101);
+            for (int px=0;px<original.width;++px) {
+                const int sx=cv::borderInterpolate(x-margin+px,source.width,cv::BORDER_REFLECT_101);
+                original.at(px,py)=source.at(sx,sy);
+            }
+        }
+        if (sony2fuji::ColorConverter().convertImage(original,space,sony2fuji::ColorSpace::sRGB)!=sony2fuji::ErrorCode::Success)
+            throw std::runtime_error("Cannot reload wavelet source color space");
+        cv::Mat tile(original.height,original.width,CV_32FC3,original.pixels.data());
+        {
+            const auto normalized=normalize(tile,model);
+            cv::transform(normalized,tile,opponent());
+        }
+        for (int c=0;c<3;++c) {
+            const bool extended=c==0 ? coarseLuma : coarseChroma;
+            const int radius=extended ? coarseHalo : halo,divisor=extended ? 1<<coarseLevels : 1<<levels;
+            const auto plane=sony2fuji::waveletTilePlane(tile,{margin,margin,w,h},radius,divisor,c);
+            const auto filtered=filterPlane(plane,model,options,c,gpuMode,gpuUsed);
+            for (int py=0;py<h;++py) for (int px=0;px<w;++px)
+                transformed.at<cv::Vec3f>(y+py,x+px)[c]=filtered.at<float>(radius+py,radius+px);
+        }
+    }
+}
+
 void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     cv::Mat normalized;
@@ -522,6 +554,29 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
         }
     });
 }
+void restoreWorking(cv::Mat& filtered,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
+                    const NoiseModel& model,sony2fuji::ProcessingVersion version) {
+    constexpr int rowsPerBand=128,margin=12;
+    cv::Mat previous;
+    int previousFirst=0,previousEnd=0;
+    for (int y=0;y<filtered.rows;y+=rowsPerBand) {
+        const int end=std::min(filtered.rows,y+rowsPerBand);
+        const int top=std::max(0,y-margin),bottom=std::min(filtered.rows,end+margin);
+        cv::Mat band=filtered.rowRange(top,bottom).clone();
+        if (top<previousEnd)
+            previous.rowRange(top-previousFirst,previousEnd-previousFirst).copyTo(band.rowRange(0,previousEnd-top));
+        previousEnd=end;previousFirst=std::max(0,end-margin);
+        previous=band.rowRange(previousFirst-top,previousEnd-top).clone();
+        sony2fuji::ImageData original(source.width,bottom-top);
+        std::copy_n(source.pixels.data()+size_t(top)*source.width,original.pixels.size(),original.pixels.data());
+        if (sony2fuji::ColorConverter().convertImage(original,space,sony2fuji::ColorSpace::sRGB)!=sony2fuji::ErrorCode::Success)
+            throw std::runtime_error("Cannot restore wavelet source color space");
+        cv::Mat rgb(original.height,original.width,CV_32FC3,original.pixels.data());
+        restore(rgb,std::move(band),model,version);
+        rgb.rowRange(y-top,end-top).copyTo(filtered.rowRange(y,end));
+    }
+}
+
 #include "eaw_denoise_impl.h"
 } // namespace
 #endif
@@ -673,12 +728,17 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
         }
         cv::Mat transformed;
-        {
+        if (reloadable) {
+            transformed=rgb;
+            for (int y=0;y<rgb.rows;y+=64) {
+                auto band=rgb.rowRange(y,std::min(rgb.rows,y+64));
+                const auto normalized=normalize(band,model);
+                cv::transform(normalized,band,opponent());
+            }
+        } else {
             const cv::Mat normalized=normalize(rgb,model);
             cv::transform(normalized,transformed,opponent());
         }
-        // 校准和滤波只读系数；恢复阶段再从不可变源按同一矩阵重建工作图。
-        if (reloadable) { rgb.release(); image = {}; }
         if (!reused) calibrateBands(model,transformed,samples);
         state->ready=true;
         const bool needLumaCoarse=options.processingVersion!=ProcessingVersion::Legacy && options.luma>0;
@@ -697,16 +757,20 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             }
         }
         std::atomic<bool> gpuUsed{false};
-        cv::Mat filtered;
-        try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
-        catch (const WaveletGpuFailure&) { return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError); }
-        transformed.release();
         if (reloadable) {
-            const auto result = reload();
-            if (result != ErrorCode::Success) return finish(WaveletDenoiseOutcome::ProcessingFailure, result);
-            rgb = cv::Mat(image.height,image.width,CV_32FC3,image.pixels.data());
+            try { filterWorking(transformed,*immutableSource,sourceSpace,model,options,gpuMode,gpuUsed); }
+            catch (const WaveletGpuFailure&) {
+                transformed.release(); rgb.release(); image={};
+                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            }
+            restoreWorking(transformed,*immutableSource,sourceSpace,model,options.processingVersion);
+        } else {
+            cv::Mat filtered;
+            try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
+            catch (const WaveletGpuFailure&) { return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError); }
+            transformed.release();
+            restore(rgb,std::move(filtered),model,options.processingVersion);
         }
-        restore(rgb,std::move(filtered),model,options.processingVersion);
         if (diagnostics) {
             diagnostics->applied=true;
             diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);

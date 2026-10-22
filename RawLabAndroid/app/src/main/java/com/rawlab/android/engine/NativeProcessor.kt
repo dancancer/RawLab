@@ -78,7 +78,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        val frame = checkNotNull(nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
+        val frame = checkNotNull(nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
             effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
@@ -107,7 +107,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
         val backend = intArrayOf(-1)
-        nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+        nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, lut?.path, output.path, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
             effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
@@ -130,7 +130,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        return nativeAutoExposure(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+        return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
             effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version)
     }
@@ -138,15 +138,23 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     override fun close() {
         if (handle != 0L) { nativeDestroy(handle); handle = 0L }
+        raster?.close()
         raster = null
         rasterKey = null
     }
 
     private fun rasterInput(input: File, kind: PhotoInputKind): DecodedRaster? {
-        if (kind != PhotoInputKind.RASTER) return null
+        if (kind != PhotoInputKind.RASTER) {
+            raster?.close()
+            raster = null
+            rasterKey = null
+            return null
+        }
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
         if (key != rasterKey) {
-            raster = RasterImageDecoder.decode(input)
+            val decoded = RasterImageDecoder.decode(input)
+            raster?.close()
+            raster = decoded
             rasterKey = key
         }
         return checkNotNull(raster)
@@ -184,10 +192,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
     private external fun nativeDestroy(handle: Long)
-    private external fun nativeAutoExposure(handle: Long, input: String, pixels: ByteArray?, width: Int, height: Int,
+    private external fun nativeAutoExposure(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int): Float
-    private external fun nativeProcess(handle: Long, input: String, pixels: ByteArray?, width: Int, height: Int,
+    private external fun nativeProcess(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
         pixelFormat: Int, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
         highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
