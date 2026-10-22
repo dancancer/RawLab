@@ -28,8 +28,15 @@ internal static class UsageIntegrationChecks
                 "RUM records one successful photo open, not proxy/exact or parameter redraws");
             var films=window.FilmStrip.Children.OfType<Button>().ToArray();
             var neutral=films[0];neutral.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready();
+            check(Get<string?>(window,"lut")==null && !transport.Events.OfType<FilmSelectedEvent>().Any(),
+                "The fresh neutral photo ignores an unchanged neutral selection");
+            films[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready();
+            check(Get<string?>(window,"lut")!=null && transport.Events.OfType<FilmSelectedEvent>().Count()==1 &&
+                transport.Events.OfType<FilmSelectedEvent>().Single().Kind!=FilmKind.None,
+                "Usage fixture selects a non-neutral look through the production click handler");
+            neutral.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready();
             neutral.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(transport.Events.OfType<FilmSelectedEvent>().Count()==1 && transport.Events.OfType<FilmSelectedEvent>().Single().Kind==FilmKind.None,
+            check(transport.Events.OfType<FilmSelectedEvent>().Count()==2 && transport.Events.OfType<FilmSelectedEvent>().Last().Kind==FilmKind.None,
                 "RUM records a changed film click once and ignores the repeated selection");
             Invoke(window,"AboutClicked",window,new RoutedEventArgs());
             var about=Get<AboutWindow>(window,"aboutWindow");var toggle=(CheckBox)about.FindName("UsageConsent");
