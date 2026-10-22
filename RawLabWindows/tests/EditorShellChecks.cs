@@ -63,6 +63,7 @@ internal static class EditorShellChecks
                 ReferenceEquals(checkbox.Foreground,app.Resources["Foreground"]) && ReferenceEquals(radio.Foreground,app.Resources["Foreground"]),
                 "Native expanders and binary controls retain readable editor foreground");
             host.Close();
+            ParameterInputUiChecks.Run(output,check);
         }
         finally{window?.Close();Loc.Initialize(previous);app.Shutdown();}
     }

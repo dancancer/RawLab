@@ -113,7 +113,7 @@ public partial class MainWindow
     {
         if(file==null || exporting || pendingAllReset!=null)return;
         if(expandedGroup==group) {
-            if(!ResolveTransformDraft())return;
+            CancelParameterInputs();if(!ResolveTransformDraft())return;
             dockHeight=DockRow.ActualHeight;expandedGroup=null;RefreshWorkspaceNavigation();
             DockRow.MinHeight=0;DockRow.Height=GridLength.Auto;AdjustmentSplitter.Visibility=Visibility.Collapsed;SplitterRow.Height=new(0);
             return;
@@ -123,7 +123,7 @@ public partial class MainWindow
     private void SelectTool(EditorAdjustmentTool tool)
     {
         if(file==null || exporting || pendingAllReset!=null)return;
-        OrdinaryParameter.RestoreText();
+        CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
             BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
             if(!transform.Active || (transform.Tool==TransformTool.Geometry)!=(tool==EditorAdjustmentTool.Geometry))return;
@@ -140,6 +140,14 @@ public partial class MainWindow
         if(wasCollapsed){DockRow.Height=new(dockHeight);DockRow.MinHeight=216;AdjustmentSplitter.Visibility=Visibility.Visible;SplitterRow.Height=new(6);UpdateDockMinimum();}
         RefreshControls();
     }
+    private static IEnumerable<ParameterRow> ParameterRows(DependencyObject root)
+    {
+        if(root is ParameterRow row){yield return row;yield break;}
+        foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+            foreach(var nested in ParameterRows(child))yield return nested;
+    }
+    private void CancelParameterInputs(){foreach(var row in ParameterRows(AdjustmentPanel))row.CancelInput();}
+    private void ParameterNavigationPressed(object sender,MouseButtonEventArgs e)=>CancelParameterInputs();
     private SavedEdit? WorkspaceEdit()
     {
         if(file==null)return null;
@@ -214,6 +222,7 @@ public partial class MainWindow
         syncing=true;
         try
         {
+            foreach(var row in ParameterRows(AdjustmentPanel))row.SourceIdentity=(file,openRevision);
             var raster=file!=null && LibraryEntry.IsRaster(file);
             if(raster)settings=RenderEngine.PrepareInputSettings(file!,settings);
             if(raster)
@@ -224,7 +233,7 @@ public partial class MainWindow
             else if(rasterPreviousGpuMode is {} previousMode)
             {rasterPreviousGpuMode=null;GpuMode.SelectedIndex=previousMode;}
             var spec=ParameterSpec.All[(int)selectedParameter];
-            OrdinaryParameter.Refresh(Loc.Text(spec.Title),NumericRange.For(spec),settings[selectedParameter],settings.Default(selectedParameter),spec.Unit);
+            OrdinaryParameter.Refresh(Loc.Text(spec.Title),NumericRange.For(spec),settings[selectedParameter],settings.Default(selectedParameter),spec.Unit,inputScope:selectedParameter);
             AutomationProperties.SetName(ValueSlider,Loc.Text(spec.Title));
             AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(spec.Title),spec.Unit));
             var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);

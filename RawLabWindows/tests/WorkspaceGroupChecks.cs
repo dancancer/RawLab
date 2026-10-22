@@ -57,10 +57,10 @@ internal static class WorkspaceGroupChecks
         var previous=Loc.Preference;var originalFont=window.FontSize;
         var preferencePath=Path.Combine(output,"workspace-language.txt");
         try {
-            foreach(var language in new[]{"de","zh-Hans","en","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)}) {
+            foreach(var language in new[]{"de","zh-Hans","en","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)})foreach(var font in new[]{13.0,26.0}) {
                 // 与设置入口一样触发 Changed，刷新已创建控件；语言偏好只写测试目录。
                 Loc.SetPreference(language,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;
-                window.FontSize=language=="de" ? 26 : originalFont;
+                window.FontSize=font;
                 EditorShellChecks.ArrangeLayout(window,size);window.UpdateLayout();
                 var boundary=window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).Y;
                 var height=window.AdjustmentPanel.ActualHeight;
@@ -90,6 +90,9 @@ internal static class WorkspaceGroupChecks
                     resetBounds=reset.TransformToAncestor(window.HslSurface).TransformBounds(new Rect(reset.RenderSize)),resetCenter=last.Y,
                     presenterSize=presenter?.RenderSize,presenterBounds=presenter==null ? (Rect?)null : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize))
                 }));
+                var before=EditorShellChecks.ArrangeLayout(window,size);
+                EditorShellChecks.CaptureLayout(window,before,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}-{font}.png"));
+                EditorShellChecks.ArrangeLayout(window,size);window.HslSurface.ScrollToBottom();window.UpdateLayout();
                 try {
                     var resetBounds=presenter==null ? Rect.Empty : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize));
                     check(presenter!=null && presenter.ActualHeight>=reset.ActualHeight && resetBounds.Top>=-.5 && resetBounds.Bottom<=presenter.ActualHeight+.5,
@@ -106,11 +109,12 @@ internal static class WorkspaceGroupChecks
                 } finally {
                     // 断言失败也保留对应截图，尺寸检查仍在拍摄重排之前执行。
                     var surface=EditorShellChecks.ArrangeLayout(window,size);
-                    EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}.png"));
+                    EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}-{font}.png"));
                 }
             }
         } finally {window.FontSize=originalFont;Loc.SetPreference(previous,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;}
         Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);
+        WorkspaceParameterChecks.Run(window,output,check);
     }
     private static void CheckHistogramStatistics(MainWindow window,string language,Size size,Action<bool,string> check)
     {

@@ -423,8 +423,28 @@ try
     var temperatureRange = NumericRange.For(ParameterSpec.All[(int)Parameter.Temperature]);
     Check(temperatureRange.Position(50000) == 1 && temperatureRange.Position(2000) == 0 &&
           temperatureRange.Value(temperatureRange.Position(5200)) == 5200, "inverse temperature warms to the right and roundtrips");
-    Check(new NumericRange(-100,100).Parse("999") == 100 && new NumericRange(-100,100).Parse("NaN") == null,
-        "numeric commit clamps finite values and rejects invalid input");
+    Check(new NumericRange(-100,100).Parse("999") == null && new NumericRange(-100,100).Parse("NaN") == null,
+        "numeric UI commit rejects out-of-range and nonfinite input without clamping");
+    var strictRange=new NumericRange(-100,100);
+    Check(strictRange.Parse("0.05")==null && strictRange.Parse("0.05",.05)==.05 && strictRange.Parse("0.050",.05)==.05,
+        "Only the exact original off-grid value survives manual confirmation or formatting changes");
+    Check(strictRange.Parse("100")==100 && strictRange.Parse("-100")==-100 && strictRange.Parse("")==null && strictRange.Parse("Infinity")==null,
+        "Strict UI parser accepts exact boundaries and rejects empty or infinite values");
+    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Format(.005)=="0.005", "Old off-grid exposure is displayed without F2 quantization");
+    var inputSession=new NumericInputSession();
+    inputSession.Bind("source-a","exposure",strictRange,.05);inputSession.Edit("12.3");
+    inputSession.Bind("source-b","exposure",strictRange,.05);
+    Check(!inputSession.Dirty && inputSession.Text=="0.05" && inputSession.Commit()==null,
+        "Source replacement invalidates pending text even when tool and original value are equal");
+    inputSession.Edit("12.3");Check(inputSession.Commit()==12.3 && !inputSession.Dirty,"A valid changed blur/Enter returns exactly one commit");
+    inputSession.Edit("999");Check(inputSession.Commit()==null && inputSession.Dirty && inputSession.Error==NumericInputError.Range && inputSession.Text=="999",
+        "Invalid text and its error survive commit without producing a candidate");
+    inputSession.Cancel();Check(!inputSession.Dirty && inputSession.Error==NumericInputError.None,"Escape/navigation cancel clears only the local draft");
+    inputSession.Bind("source-b","hsl-blue",strictRange,.05);inputSession.Edit("0.050");
+    Check(inputSession.Commit()==null && inputSession.Original==.05,"Unchanged old value does not return a setter candidate");
+    Check(new NumericRange(2000,50000,10,Reciprocal:true).Fill(5200,8000) is var fill && fill.Start>0 && fill.End>fill.Start,
+        "Warm-temperature fill starts at the real as-shot default on reciprocal coordinates");
+    Check(new NumericRange(-4,4).Fill(0,-2)==(.25,.5),"Negative fill joins current to default rather than beginning at the minimum");
     Loc.Initialize("de");Check(new NumericRange(-100,100).Parse("1,2") is {} localized && Math.Abs(localized-1.2)<1e-10 && new NumericRange(-100,100).Format(1.2)=="1,2","German numeric display and commit share one locale");Loc.Initialize("en");
     var fineEffects=new Adjustments();fineEffects.SetEffect(PhotoEffectParameter.GrainAmount,12.3);
     Check(Math.Abs(fineEffects.Effects.GrainAmount-12.3)<1e-10,"effect model preserves the v08 tenth-unit grid");
