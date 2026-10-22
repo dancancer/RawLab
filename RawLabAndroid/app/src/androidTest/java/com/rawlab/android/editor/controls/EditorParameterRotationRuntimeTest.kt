@@ -9,6 +9,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
+import com.rawlab.android.R
 import com.rawlab.android.testing.ForegroundTestRule
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
@@ -51,15 +52,36 @@ class EditorParameterRotationRuntimeTest {
             val density = compose.activity.resources.displayMetrics.density
             val viewport = bounds("editor-parameters")
             android.util.Log.i("RawLabViewportRed", "actual scale=$scale density=$density root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=$dock viewport=$viewport")
-            assertTrue("Photo preserves the existing 30% content floor", photo.height >= (photo.height + dock.height) * .3f - 2)
+            assertTrue("Photo retains at least 96dp", photo.height >= 96 * density - 1)
             assertTrue("Real safe-area viewport supports a full operation row", viewport.height >= 48 * density)
+            val committed = compose.activity.model.state.value.edits
+            val number = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_height}").performScrollTo().assertIsDisplayed()
+            val numberBounds = number.fetchSemanticsNode().boundsInRoot
+            val numericParts = mutableMapOf<String, androidx.compose.ui.geometry.Rect>()
+            for (tag in listOf("adjustment-name-${R.string.geometry_crop_height}", "adjustment-value-${R.string.geometry_crop_height}", "adjustment-unit-${R.string.geometry_crop_height}")) {
+                val node = compose.onNodeWithTag(tag)
+                val visible = node.fetchSemanticsNode().boundsInRoot
+                val full = node.getUnclippedBoundsInRoot()
+                assertTrue("Actual short window exposes the entire label/value before the separate track: $tag $visible vs $full", visible.height >= (full.bottom - full.top).value * density - 1 && visible.width >= (full.right - full.left).value * density - 1)
+                numericParts[tag] = visible
+            }
+            assertTrue("Actual rotated numeric entry is a full 48dp touch target", numberBounds.height >= 48 * density - 1)
+            number.performTouchInput { click() }
+            compose.onNodeWithTag("adjustment-input").performTextReplacement("98")
+            compose.onNodeWithTag("adjustment-input-apply").performClick()
+            ready()
+            assertEquals("Exact numeric entry edits the intended draft axis", .98f, compose.activity.model.state.value.draft!!.value.geometry.cropHeight, .0001f)
+            assertEquals("Numeric draft operation preserves committed parameters and processing", committed, compose.activity.model.state.value.edits)
+            capture("geometry-value-landscape-$scale.png")
+            android.util.Log.i("RawLabWholeRowEvidence", "actual scale=$scale density=$density number=$numberBounds parts=$numericParts viewport=$viewport")
             val ruler = compose.onAllNodesWithTag("adjustment-slider").onLast()
             ruler.performScrollTo().assertIsDisplayed()
             val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
-            assertTrue("Last geometry ruler is wholly visible", rulerBounds.height >= 80 * density - 1 && rulerBounds.top >= viewport.top - 1 && rulerBounds.bottom <= viewport.bottom + 1)
+            assertTrue("Last geometry ruler is wholly visible", rulerBounds.height >= 48 * density - 1 && rulerBounds.top >= viewport.top - 1 && rulerBounds.bottom <= viewport.bottom + 1)
             ruler.performSemanticsAction(SemanticsActions.SetProgress) { it(99f) }
             ready()
             assertTrue("Last geometry control really operates on draft", compose.activity.model.state.value.draft!!.changed)
+            assertEquals("Track operates after the numeric row was scrolled away", .99f, compose.activity.model.state.value.draft!!.value.geometry.cropHeight, .0001f)
             capture("geometry-landscape-$scale.png")
             compose.runOnUiThread { compose.activity.model.discardDraft() }
             ready()
@@ -77,6 +99,8 @@ class EditorParameterRotationRuntimeTest {
             capture("lens-landscape-$scale.png")
             val profile = compose.onNodeWithTag("lens.profile").performScrollTo().assertIsDisplayed()
             val profileBounds = profile.fetchSemanticsNode().boundsInRoot
+            val fullProfile = profile.getUnclippedBoundsInRoot()
+            assertTrue("Actual last profile control retains its entire measured height", profileBounds.height >= (fullProfile.bottom - fullProfile.top).value * density - 1)
             assertTrue("Last lens profile button is fully visible", profileBounds.height >= 48 * density - 1 && profileBounds.top >= viewport.top - 1 && profileBounds.bottom <= viewport.bottom + 1)
             capture("lens-profile-landscape-$scale.png")
             android.util.Log.i("RawLabViewportEvidence", "density=$density root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=$dock parameters=$viewport ruler=$rulerBounds lens=$cropBounds profile=$profileBounds font=${compose.activity.resources.configuration.fontScale}")

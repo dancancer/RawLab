@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -39,6 +40,8 @@ import com.rawlab.android.editor.Operation
 import com.rawlab.android.editor.controls.DenoiseControls
 import com.rawlab.android.editor.controls.HslControls
 import com.rawlab.android.editor.controls.NumericControl
+import com.rawlab.android.editor.controls.LocalAdjustmentSession
+import com.rawlab.android.editor.controls.LocalAdjustmentFine
 import com.rawlab.android.editor.geometry.GeometryControls
 import com.rawlab.android.editor.panels.LensControls
 import com.rawlab.android.editor.panels.PhotoEffectsControls
@@ -88,6 +91,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val groupList = rememberLazyListState()
     val toolList = rememberLazyListState()
     val parameterScroll = rememberScrollState()
+    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool)
+    // 仅实际导航后的工具身份变化会复位；离开草稿的 Stay 不改变这个 key。
+    var fine by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath, tool) { mutableStateOf(false) }
     val navigationWidths = if (compactNavigation && !sideDock) {
         val measurer = rememberTextMeasurer()
         val density = LocalDensity.current
@@ -132,7 +138,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         }
     }
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
-        if (!compactNavigation) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!compactNavigation) Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (expanded && tool == 8) {
                 TextButton(onClick = { onResetScope(EditorResetScope.Tool(8)) }, enabled = state.controlsEnabled && calibrated,
                     modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
@@ -143,7 +149,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 Text(displayLook, Modifier.weight(1f),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
             }
-            if (state.draft != null) Text(stringResource(R.string.adjustment_draft), Modifier.weight(.8f), style = MaterialTheme.typography.labelSmall)
+            if (state.draft != null) Text(stringResource(R.string.adjustment_draft),
+                Modifier.weight(.8f).testTag("adjustment-draft-title").height(48.dp).horizontalScroll(rememberScrollState()).wrapContentHeight(Alignment.CenterVertically), maxLines = 1, style = MaterialTheme.typography.labelSmall)
             dockActions()
         }
         if (!expanded) {
@@ -156,6 +163,16 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         if (compactNavigation && sideDock) compactNavigationRow()
         else if (!compactNavigation) toolStrip()
         Box(Modifier.weight(1f).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
+        CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine) {
+        Column(Modifier.fillMaxWidth()) {
+            val fineHint = stringResource(R.string.editor_fine_hint)
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelMedium)
+                Switch(checked = fine, onCheckedChange = { fine = it },
+                    enabled = state.controlsEnabled && tool !in listOf(0, 9, 15, 16),
+                    modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
+            }
         when (tool) {
             0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(key = "import-look") {
@@ -289,13 +306,15 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> onEdit(edits.copy(sharpening = value / 100), dragging) }, { onEdit(edits.copy(sharpening = 0f), false) })
         }
         }
+        }
+        }
         // 这块空间属于面板预算；非草稿工具也预留，切工具时不挤压参数视口。
         Box(Modifier.fillMaxWidth().height(65.dp)) {
             if (state.draft != null) Column {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDiscardDraft, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.cancel")) { Text(stringResource(R.string.cancel)) }
-                    Button(onClick = onApplyDraft, enabled = state.canApplyDraft, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.apply")) { Text(stringResource(R.string.adjustment_apply)) }
+                    OutlinedButton(onClick = onDiscardDraft, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.cancel")) { Text(stringResource(R.string.cancel)) }
+                    Button(onClick = onApplyDraft, enabled = state.canApplyDraft, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.apply")) { Text(stringResource(R.string.adjustment_apply)) }
                 }
             }
         }

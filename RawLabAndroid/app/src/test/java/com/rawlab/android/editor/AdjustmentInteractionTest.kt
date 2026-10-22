@@ -50,11 +50,11 @@ class AdjustmentInteractionTest {
     @Test fun exactDraftRejectsInvalidValuesAndKeepsCameraKelvinOffGrid() {
         val exposure = AdjustmentScale(-4f..4f, .05f, 0f)
         listOf("", "NaN", "Infinity", "4.1", "-4.01").forEach { assertNull(exposure.parse(it)) }
-        assertEquals(.35f, exposure.parse("0.36")!!, .00001f)
+        assertNull(exposure.parse("0.36"))
         val kelvin = AdjustmentScale(2000f..50000f, 10f, 5237f, reciprocal = true)
-        assertEquals(5237f, kelvin.parse("5237")!!, 0f)
+        assertEquals(5237f, kelvin.parse("5237", current = 5237f)!!, 0f)
         assertEquals(5437f, kelvin.parse("5437", Locale.ROOT, 5437f)!!, 0f)
-        assertEquals(5500f, kelvin.parse("5503")!!, 0f)
+        assertNull(kelvin.parse("5503"))
     }
 
     @Test fun rulerMovesOppositeToFingerAndFineUsesQuarterSensitivity() {
