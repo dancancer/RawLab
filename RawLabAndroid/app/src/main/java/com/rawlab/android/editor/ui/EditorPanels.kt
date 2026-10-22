@@ -15,6 +15,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import com.rawlab.android.editor.canvas.PhotoViewOptions
+import com.rawlab.android.editor.canvas.ComparisonMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,7 +40,9 @@ import com.rawlab.android.settings.EditSettings
 internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, photoInfo: PhotoInfo?, infoMode: Int,
     onInfoClick: () -> Unit, modifier: Modifier,
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
-    onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit) {
+    onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
+    view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
+    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -47,22 +52,44 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 enabled = state.draftReady, physicalAspect = state.draft.geometryAspect) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
-            else PhotoCanvas(it, compare, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
+            else PhotoCanvas(it, compare && state.draft == null, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
+                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft == null,
+                showOverlays = !view.purePreview, margins = view.margins,
+                onCanvasTap = { if (state.draft == null) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft == null) },
+                onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft == null && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
                 })
         } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE)
-        val status = when {
-            state.operation == Operation.EXPORT -> stringResource(R.string.exporting)
-            state.operation == Operation.IMPORT -> stringResource(R.string.importing)
-            state.operation == Operation.IMPORT_LOOK -> stringResource(R.string.look_importing)
-            state.rendering || state.previewResizePending -> stringResource(R.string.rendering)
-            else -> null
+        val busy = state.rendering || state.previewResizePending
+        val previewStatus = stringResource(when {
+            busy -> R.string.rendering
+            state.error != null -> R.string.editor_preview_outdated
+            else -> R.string.editor_preview_updated
+        })
+        val context = LocalContext.current
+        val reduceMotion = android.provider.Settings.Global.getFloat(context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+        if (state.preview != null) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp)
+            .testTag("preview-progress").semantics { stateDescription = previewStatus; liveRegion = LiveRegionMode.Polite }) {
+            if (busy) {
+                if (reduceMotion) Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary))
+                else LinearProgressIndicator(Modifier.fillMaxSize())
+            }
         }
-        status?.let { Text(it, Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f)).padding(6.dp),
-            color = Color.White, style = MaterialTheme.typography.labelSmall) }
+        if (!view.purePreview) {
+            val operation = when (state.operation) {
+                Operation.EXPORT -> R.string.exporting
+                Operation.IMPORT -> R.string.importing
+                Operation.IMPORT_LOOK -> R.string.look_importing
+                else -> null
+            }
+            operation?.let { Text(stringResource(it), Modifier.align(Alignment.TopStart).padding(12.dp)
+                .background(Color.Black.copy(alpha = .6f)).padding(6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
+            if (state.error != null) RenderError(state, onRetry, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
+        }
         if (state.preview == null || (state.draft?.group == AdjustmentGroup.GEOMETRY && state.saveState == EditSaveState.FAILED)) EditorSaveNotice(state, onSaveRetry, Modifier.align(Alignment.BottomCenter)
             .padding(start = 12.dp, end = 12.dp, bottom = comparisonInset))
     }
@@ -91,11 +118,11 @@ internal fun EditorSaveNotice(state: EditorState, onRetry: () -> Unit, modifier:
 }
 
 @Composable
-internal fun RenderError(state: EditorState, onRetry: () -> Unit) {
+internal fun RenderError(state: EditorState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     state.error?.let { error ->
-        Row(Modifier.fillMaxWidth().heightIn(max = 96.dp).background(MaterialTheme.colorScheme.errorContainer)
+        Row(modifier.fillMaxWidth().heightIn(max = 96.dp).background(MaterialTheme.colorScheme.errorContainer)
             .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(error, Modifier.weight(1f).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall,
+            Text("${stringResource(R.string.editor_preview_outdated)}\n$error", Modifier.weight(1f).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer)
             if (state.photo != null) TextButton(onClick = onRetry, enabled = state.operation == Operation.NONE) { Text(stringResource(R.string.retry)) }
         }

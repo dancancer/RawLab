@@ -75,7 +75,7 @@ internal static class AppearanceChecks
                 SetState(target,"IsMouseOver",false);
                 Pair(((TextBlock)editor.DenoiseEditor.FindName("Summary")).Foreground,(Brush)app.Resources["Surface"],"denoise summary");
                 Pair(input.SelectionTextBrush,input.SelectionBrush,"input selection");
-                Pair(editor.BusyIndicator.Foreground,editor.BusyIndicator.Background,"busy progress");
+                Pair(editor.BusyAnimation.Foreground,editor.BusyAnimation.Background,"busy progress");
                 var progress=(ProgressBar)batch.FindName("Progress");Pair(progress.Foreground,progress.Background,"batch progress");
                 var slider=editor.ValueSlider;slider.ApplyTemplate();
                 var sliderTrack=(Track)slider.Template.FindName("PART_Track",slider);sliderTrack.Thumb.ApplyTemplate();
@@ -87,7 +87,9 @@ internal static class AppearanceChecks
                 tip.PlacementTarget=button;tip.IsOpen=true;tip.ApplyTemplate();tip.UpdateLayout();Pair(tip.Foreground,tip.Background,"tooltip");
                 combo.IsDropDownOpen=true;combo.ApplyTemplate();combo.UpdateLayout();
                 var popup=(Popup)combo.Template.FindName("PART_Popup",combo);
-                Pair(combo.Foreground,((Border)popup.Child).Background,"GPU popup");
+                var popupItem=(ComboBoxItem)combo.ItemContainerGenerator.ContainerFromIndex(1);popupItem.ApplyTemplate();
+                var popupItemSurface=((Border)popupItem.Template.FindName("Item",popupItem)).Background;
+                Pair(popupItem.Foreground,popupItemSurface is SolidColorBrush popupBrush && popupBrush.Color.A==0 ? ((Border)popup.Child).Background : popupItemSurface,"GPU popup item");
                 var option=(ComboBoxItem)combo.ItemContainerGenerator.ContainerFromIndex(0);option.ApplyTemplate();
                 Pair(option.Foreground,((Border)option.Template.FindName("Item",option)).Background,"selected GPU option");combo.IsDropDownOpen=false;
                 SetState(combo,"IsMouseOver",true);Pair(combo.Foreground,combo.Background,"GPU hover");SetState(combo,"IsMouseOver",false);

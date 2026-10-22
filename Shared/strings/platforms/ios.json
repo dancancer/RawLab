@@ -219,10 +219,6 @@
       "formats": [],
       "source": "乡村秋日 · 古典油画"
     },
-    "亮度直方图": {
-      "formats": [],
-      "source": "亮度直方图"
-    },
     "亮度降噪": {
       "formats": [],
       "source": "亮度降噪"
@@ -621,10 +617,6 @@
     "当前构建未配置使用统计，未采集或上报。": {
       "formats": [],
       "source": "当前构建未配置使用统计，未采集或上报。"
-    },
-    "当前预览的亮度分布": {
-      "formats": [],
-      "source": "当前预览的亮度分布"
     },
     "恢复默认": {
       "formats": [],
@@ -1841,6 +1833,94 @@
         "%@"
       ],
       "source": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
+    },
+    "关闭对比": {
+      "formats": [],
+      "source": "关闭对比"
+    },
+    "分割位置": {
+      "formats": [],
+      "source": "分割位置"
+    },
+    "分割线": {
+      "formats": [],
+      "source": "分割线"
+    },
+    "对比方式": {
+      "formats": [],
+      "source": "对比方式"
+    },
+    "并排": {
+      "formats": [],
+      "source": "并排"
+    },
+    "开启对比": {
+      "formats": [],
+      "source": "开启对比"
+    },
+    "查看调整前": {
+      "formats": [],
+      "source": "查看调整前"
+    },
+    "正在显影…": {
+      "formats": [],
+      "source": "正在显影…"
+    },
+    "照片四周留白": {
+      "formats": [],
+      "source": "照片四周留白"
+    },
+    "缩放与显示": {
+      "formats": [],
+      "source": "缩放与显示"
+    },
+    "调整前": {
+      "formats": [],
+      "source": "调整前"
+    },
+    "返回调整后": {
+      "formats": [],
+      "source": "返回调整后"
+    },
+    "进入纯预览": {
+      "formats": [],
+      "source": "进入纯预览"
+    },
+    "退出纯预览": {
+      "formats": [],
+      "source": "退出纯预览"
+    },
+    "重置分割线": {
+      "formats": [],
+      "source": "重置分割线"
+    },
+    "重试": {
+      "formats": [],
+      "source": "重试"
+    },
+    "预览已更新": {
+      "formats": [],
+      "source": "预览已更新"
+    },
+    "预览未更新": {
+      "formats": [],
+      "source": "预览未更新"
+    },
+    "RGB 直方图": {
+      "source": "RGB 直方图",
+      "formats": []
+    },
+    "统计不可用": {
+      "source": "统计不可用",
+      "formats": []
+    },
+    "展开直方图": {
+      "source": "展开直方图",
+      "formats": []
+    },
+    "收起直方图": {
+      "source": "收起直方图",
+      "formats": []
     }
   },
   "overrides": {
@@ -1984,14 +2064,6 @@
       "fr": "Sélection provisoire",
       "ja": "仮の選択",
       "zh-Hans": "临时选择"
-    },
-    "亮度直方图": {
-      "de": "Luminanzhistogramm",
-      "en": "Luma Histogram",
-      "es": "Histograma de luminancia",
-      "fr": "Histogramme de luminance",
-      "ja": "輝度ヒストグラム",
-      "zh-Hans": "亮度直方图"
     },
     "从照片图库导入": {
       "de": "Aus Fotos importieren",
@@ -2152,14 +2224,6 @@
       "fr": "Traités : {0} / {1}",
       "ja": "処理済み {0} / {1}",
       "zh-Hans": "已处理 {0} / {1}"
-    },
-    "当前预览的亮度分布": {
-      "de": "Aktuelle Luminanzverteilung der Vorschau",
-      "en": "Current Preview Luminance Distribution",
-      "es": "Distribución de luminancia de la vista previa actual",
-      "fr": "Distribution de luminance de l’aperçu actuel",
-      "ja": "現在のプレビューの輝度分布",
-      "zh-Hans": "当前预览的亮度分布"
     },
     "恢复默认": {
       "de": "Standard wiederherstellen",

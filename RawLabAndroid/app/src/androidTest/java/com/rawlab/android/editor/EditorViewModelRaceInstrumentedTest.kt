@@ -259,6 +259,73 @@ class EditorViewModelRaceInstrumentedTest {
         }
     }
 
+    @Test fun previewRetryKeepsUnsavedEditsFailedAndNeverWritesTheRecord() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val id = UUID.randomUUID()
+        val raw = File(context.cacheDir, "view-retry-$id.RAW")
+        val cube = File(context.cacheDir, "view-retry-$id.cube").apply { writeText(syntheticCube()) }
+        copyFixture(raw)
+        val owner = ViewModelStore()
+        val record = File(context.filesDir, "edits/edits.properties")
+        val recordBackup = File(context.cacheDir, "view-retry-$id.properties")
+        var lut: File? = null
+        var lutBackup: File? = null
+        var observer: FileObserver? = null
+        val writes = AtomicInteger()
+        try {
+            lateinit var model: EditorViewModel
+            instrumentation.runOnMainSync {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("view-retry", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(raw))
+            }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.importLook(Uri.fromFile(cube)) }
+            awaitState(model) { it.canExport && it.edits.film != "neutral" }
+            // 单独完成相机 metadata 归一化；零写窗口使用明确的自定义 WB，不混入首次补元数据。
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(customWb = true, temperature = 4000f, tint = 5f, exposure = .5f)) }
+            awaitState(model) { it.canExport }
+            assertTrue(record.renameTo(recordBackup)); assertTrue(record.mkdir())
+            File(record, "occupied").writeText("keep")
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = 1f)) }
+            awaitState(model) { it.exact && !it.rendering }
+            assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            assertTrue(record.deleteRecursively()); assertTrue(recordBackup.renameTo(record))
+            val committedRecord = record.readBytes()
+            val inode = android.system.Os.stat(record.absolutePath).st_ino
+            val unsaved = model.state.value.edits
+            val lastFrame = model.state.value.preview
+            lut = model.storage.lookPath(unsaved)!!
+            lutBackup = File(lut!!.parentFile, "view-retry-$id.backup")
+            assertTrue(lut!!.renameTo(lutBackup!!))
+            instrumentation.runOnMainSync { model.updatePreviewSize(320) }
+            awaitState(model) { !it.rendering && it.error != null }
+            assertSame("Preview failure retains the last accepted pair", lastFrame, model.state.value.preview)
+            assertFalse(model.state.value.exact)
+            assertTrue(lutBackup!!.renameTo(lut!!))
+            observer = object : FileObserver(record.parentFile!!.absolutePath, FileObserver.MOVED_TO) {
+                override fun onEvent(event: Int, path: String?) { if (path == record.name) writes.incrementAndGet() }
+            }.also { it.startWatching() }
+            instrumentation.runOnMainSync { model.retry() }
+            awaitState(model) { it.exact && !it.rendering && !it.previewResizePending && it.error == null }
+            android.util.Log.i("RawLabViewRetryEvidence", "save=${model.state.value.saveState} writes=${writes.get()} wb=${model.state.value.edits.temperature} exact=${model.state.value.exact}")
+            assertEquals("Preview recovery must not turn an unrelated failed save into success", EditSaveState.FAILED, model.state.value.saveState)
+            assertEquals(unsaved, model.state.value.edits)
+            assertFalse(model.state.value.canExport)
+            assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino)
+            assertArrayEquals(committedRecord, record.readBytes())
+            assertEquals("Pure preview retry has zero record writes", 0, writes.get())
+        } finally {
+            observer?.stopWatching()
+            if (lutBackup?.exists() == true) { lut?.delete(); lutBackup!!.renameTo(lut!!) }
+            if (recordBackup.exists()) { record.deleteRecursively(); recordBackup.renameTo(record) }
+            instrumentation.runOnMainSync { owner.clear() }
+            raw.delete(); cube.delete()
+        }
+    }
+
     @Test fun viewportDemandCannotTurnAnUnsavedFailureIntoASuccessfulWrite() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

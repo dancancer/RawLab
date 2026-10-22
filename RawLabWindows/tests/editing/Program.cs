@@ -55,6 +55,7 @@ static void ProcessingChecks()
     }
     Console.WriteLine("PASS: processing identity defaults, legacy restore, reset, snapshot equality and rejection");
 }
+ViewChecks.Run(Check);
 ProcessingChecks();
 static void ProtectedProcessingChecks(string root)
 {

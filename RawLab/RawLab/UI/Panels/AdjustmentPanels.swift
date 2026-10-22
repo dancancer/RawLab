@@ -70,7 +70,7 @@ extension ContentView {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .buttonStyle(.borderedProminent)
                 .foregroundStyle(.black)
-                .disabled(!isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || isAdjustingSlider)
+                .disabled(!isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider)
                 .accessibilityIdentifier("editor.draft.apply")
         }
     }

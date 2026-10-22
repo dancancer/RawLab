@@ -143,6 +143,8 @@ internal static class ComparisonDefaultChecks
             WaitBusyThenReady(window, () => window.OpenFile(raw));
             check(IsMode(window, "off") && Math.Abs(window.ValueSlider.Value - .75) < .001,
                 "Reopening the same RAW restores history without comparison state");
+            window.Close();
+            ViewComparisonChecks.Run(repo,raw,check,app);
         }
         finally
         {
@@ -386,7 +388,9 @@ internal static class ComparisonDefaultChecks
     private static string Mode(MainWindow window)
     {
         var status = AutomationProperties.GetItemStatus(window.CompareButton);
-        if (!string.IsNullOrWhiteSpace(status)) return status;
+        if(status==Loc.Text("关闭对比"))return "off";
+        if(status==Loc.Text("并排"))return "side";
+        if(status==Loc.Text("分割线"))return "swipe";
         if (window.CompareOff.IsChecked == true) return "off";
         if (window.CompareSwipe.IsChecked == true) return "swipe";
         if (window.CompareSide.IsChecked == true) return "side";
