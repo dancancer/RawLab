@@ -11,6 +11,7 @@
 ## 基线与范围
 
 - 开发基线 `origin/development@8f40dbcc688b87d7b05ee30092de3183aa4678c6` 已包含第五批 #124～#128；[联合 CI 39774419810](https://github.com/dancancer/RawLab/actions/runs/39774419810) 的 9 项检查成功。此证据属于既有基线，不是 S3 验证。
+- 本轮进行中 `development` 合入 #129，推进到 `4dfa8b3eb6e3de5d08f2afdbdfbbf15800a9e9ca`。收尾同步该基线：共享核心由 `bfab4b90` 变为 `97f2a079`，并更新 iOS buffer 所有权及 Android raster 适配层。保留未变化的 UI 交互证据，新核心及适配层另做受影响增量验证，不能将旧 native artifact 标记为新源通过。
 - 五个分支为 `feature/editing-view-compare-coordination`、`feature/editing-mac-view-compare`、`feature/editing-ios-view-compare`、`feature/editing-android-view-compare`、`feature/editing-windows-view-compare`。复用已核实干净的隔离 worktree，保留旧分支和主工作区改动。
 - 用户已授权本批实现、独立复评和原生验证。push、PR、合入及发布按各自明确授权执行。
 - 不重做 S2b 全量输入矩阵，不进入 S4 的 iOS RGB 桥接、Android JNI 或新统计算法，不改参数格式、Agent v4、共享核心、复制/配方/导出快照。
@@ -81,6 +82,13 @@
 - Mac/Android 旧编译产物已清理：如没有完整匹配的其他缓存，只构建一次 core，之后同源增量复用；不能把旧 App 当作 S3 证据。Windows native DLL 同样需 source/config/dependency hashes 一致，复制到任务私有目录；不修改共享 runner 输出。
 - Mac/iOS 重型编译错峰；Android 使用任务私有 ADB/AVD、限制编译并发；Windows 使用独立输出和测试时段。启动前检查占用，不影响其他任务或用户设备。
 - 一次性日志、截图和构建绑定放主工作区 `.cache/tmp/editing-view-compare/`；依赖/只读素材按版本或 hash 共用 `.cache/shared/`。任务结束审计后清理不再需要的自有产物，保留复用价值明确的 native 缓存。
+
+## 本地收尾状态
+
+- 四端均已正常合入 `5eaff75c`，包含 `development@4dfa8b3e`；实现及后续生产增量均已独立复评。最终提交见[总账交付索引](README.md)。
+- Mac、iOS、Android 的本批原生增量与证据绑定已完成；Windows 主验收、六语、标签及 Transform 完成，最后真实输入/外观与外部 UIA 补充检查仍待共享 VM 空闲后收尾。为避免持续等待，本次已保存最终源码、构建绑定和待验项目，并移除自有临时运行任务；本批尚未整体验收通过。
+- 旧核心 `bfab4b90` 的 UI 证据保留原归属；当前核心 `97f2a079` 的 source、配置与 artifact hashes 单独核对，并补跑受影响 RAW/raster/所有权路径。没有以旧二进制证明新核心通过。
+- S3 未 push、未建立 PR；真机、真实读屏、硬件 GPU、校准镜头样片及 S4 RGB 保留明确缺口，不改整体 ITER 的验收状态。
 
 ## 后续交付方案待定
 
