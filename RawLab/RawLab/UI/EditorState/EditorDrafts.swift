@@ -104,9 +104,11 @@ extension ContentView {
     }
 
     func commitEditorDraft() -> Bool {
-        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !isAdjustingSlider,
+        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !viewModel.previewFailed, !isAdjustingSlider,
               let prepared = viewModel.prepareDraft(settings: settings, revision: settingsRevision, draft: editorDraftSnapshot),
               viewModel.saveDraft(prepared, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot) else { return false }
+        // 退出草稿会立即请求预览，不能等待 settings observer 才更新参考构图。
+        viewModel.committedPreviewSettings = prepared.candidate.settings
         settings = prepared.candidate.settings
         geometryDraft = nil
         lensDraft = nil
@@ -130,6 +132,11 @@ extension ContentView {
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
+        if pendingFileImport || pendingPhotoImport {
+            activateEditorTool(.adjustment(.exposure))
+            continueEditorImport()
+            return
+        }
         if resetRestoreTool != nil {
             resetDraftSuspended = true
             resetWaitingForReady = true
@@ -150,8 +157,10 @@ extension ContentView {
 
     func retryEditorSave() {
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
+        } else if pendingFileImport || pendingPhotoImport {
+            continueEditorImport()
         } else { viewModel.retrySave(settings: settings) }
     }
 
@@ -236,6 +245,8 @@ extension ContentView {
     }
 
     func cancelDraftNavigation() {
+        pendingFileImport = false
+        pendingPhotoImport = false
         pendingToolSelection = nil
         pendingAdjustmentExpansion = nil
         resetRestoreTool = nil

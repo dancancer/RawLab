@@ -12,3 +12,5 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/tests/EditorPresentationTests.swift" \
     -o "$OUT/presentation"
 "$OUT/presentation"
+
+bash "$ROOT/RawLab/tests/viewing-state.sh"

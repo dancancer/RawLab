@@ -6,14 +6,20 @@ extension ContentView {
     var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             Menu {
+                Button { photoInfoMode = photoInfoMode.next } label: {
+                    Label(L10n.text("照片信息"), systemImage: "info.circle")
+                }.disabled(!viewModel.hasImage)
+                Menu(L10n.text("缩放与显示")) {
+                    Toggle(L10n.text("照片四周留白"), isOn: $photoViewing.photoMargin)
+                }.disabled(!viewModel.hasImage)
                 Button { showingPrivacy = true } label: {
                     Label(L10n.text("隐私设置"), systemImage: "gearshape")
                 }
                 .accessibilityIdentifier("editor.privacy.open")
-                Button { showingFileImporter = true } label: {
+                Button { requestEditorImport(file: true) } label: {
                     Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
                 }
-                .disabled(editorBusy || isEditorDraftChanged)
+                .disabled(editorBusy)
                 .accessibilityIdentifier("editor.import.file")
                 Button { showingLookImporter = true } label: {
                     Label(L10n.text("导入外观"), systemImage: "camera.filters")
@@ -26,7 +32,7 @@ extension ContentView {
             // 菜单里不止隐私设置（还有"从文件导入"），读屏名称按通用的"更多"
             .accessibilityLabel(L10n.text("更多")).help(L10n.text("更多"))
             .accessibilityIdentifier("editor.privacy")
-            photoImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
+            photoImportButton(isEnabled: !editorBusy)
                 .opacity(rulerFocusOpacity)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -40,14 +46,15 @@ extension ContentView {
                 .accessibilityLabel(L10n.text("语言"))
                 .accessibilityIdentifier("settings.language")
                 .opacity(rulerFocusOpacity)
-            Button { showingBefore.toggle() } label: {
-                Image(systemName: "circle.lefthalf.filled")
-                    .foregroundStyle(!viewModel.hasImage ? Color.secondary : showingBefore ? .yellow : .primary)
+            Button { photoViewing.toggleComparison() } label: {
+                Image(systemName: "rectangle.split.2x1")
+                    .foregroundStyle(photoViewing.enabled ? Color.yellow : .primary)
             }
-            .accessibilityLabel(L10n.text("对比"))
-            .accessibilityValue(showingBefore ? L10n.text("中性显影") : L10n.text("调整后"))
-            .help(L10n.text("中性显影与调整后对比"))
-            .disabled(!viewModel.hasImage)
+            .accessibilityLabel(L10n.text(photoViewing.enabled ? "关闭对比" : "开启对比"))
+            .accessibilityValue(L10n.text(photoViewing.preferredMode == .sideBySide ? "并排" : "分割线"))
+            .help(L10n.text("对比"))
+            .disabled(!viewModel.hasImage || isEditorDraftActive || editorBusy || (viewModel.basePreviewImage == nil && !photoViewing.enabled))
+            .contextMenu { comparisonModeMenu }
             .accessibilityIdentifier("editor.compare")
             .opacity(rulerFocusOpacity)
 
@@ -67,17 +74,17 @@ extension ContentView {
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                 Button(L10n.text("导出渲染型 DNG…")) {
                     singleExportFormat = .renderedDNG
                     exportLongEdge = nil
                     showingExportSize = true
                 }
-                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                 // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
                 if batchModel == nil {
                     Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                        .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || !viewModel.isLookAvailable(for: settings))
+                        .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         .accessibilityIdentifier("editor.batchExport")
                 } else {
                     Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
@@ -98,19 +105,24 @@ extension ContentView {
             ZStack {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
-                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage ?? image,
-                                  label: showingBefore ? L10n.text("中性显影") : L10n.text("调整后"),
+                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
+                                  label: L10n.text("调整后"), viewing: $photoViewing, viewport: $photoViewport,
+                                  isDraft: isEditorDraftActive,
+                                  interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingFileImporter && !showingLookImporter,
+                                  overlayAvoidanceRect: photoComparisonControlBounds,
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
-                        .id(viewModel.basePreviewImage)
+                        .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .allowsHitTesting(!geometrySelected)
                         .overlay {
-                            if geometrySelected && !showingBefore {
+                            if geometrySelected {
                                 EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,
                                                   aspectRatio: geometryDraftAspectRatio,
                                                   isEnabled: !editorBusy && viewModel.hasImage,
                                                   sourceRevision: viewModel.sourceRevision,
                                                   onEditingChanged: setSliderEditing)
+                                    .padding(PhotoZoomGeometry.marginInset(viewport: geometry.size,
+                                        margin: photoViewing.photoMargin ? PhotoZoomGeometry.defaultMargin : 0))
                                     .id(viewModel.sourceRevision)
                             }
                         }
@@ -146,7 +158,7 @@ extension ContentView {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if viewModel.hasImage {
+                if viewModel.hasImage && !photoViewing.previewOnly {
                     FloatingHistogram(values: currentHistogram, expanded: $histogramExpanded)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
@@ -161,40 +173,87 @@ extension ContentView {
                         max(80, geometry.size.width - min(180, geometry.size.width * 0.48) - 56)
                     )
                 ))
-                .opacity(rulerFocusOpacity)
+                .opacity(photoViewing.previewOnly ? 0 : rulerFocusOpacity)
+                .allowsHitTesting(!photoViewing.previewOnly)
+                .accessibilityHidden(photoViewing.previewOnly)
             }
-            .overlay(alignment: .bottomLeading) {
-                if showingBefore && viewModel.hasImage {
-                    Text(L10n.text("中性显影")).font(.caption)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
-                        .padding(12)
-                        .allowsHitTesting(false)
+            .overlay(alignment: .top) {
+                if viewModel.hasImage && (editorBusy || viewModel.previewRendering || viewModel.previewResizePending) {
+                    previewProgressLine
                 }
             }
-            .overlay(alignment: viewModel.hasImage ? .topLeading : .center) {
-                if editorBusy {
-                    ProgressView(isImporting ? L10n.text("正在导入") : isSaving ? L10n.text("正在保存") : L10n.text("正在处理"))
-                        .font(.caption)
-                        .padding(12)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        .padding(12)
-                        .allowsHitTesting(false)
+            .overlay(alignment: .bottomLeading) {
+                if viewModel.previewFailed {
+                    Button { viewModel.retryPreview(settings: draftPreviewSettings) } label: {
+                        Label(L10n.text("预览未更新") + " · " + L10n.text("重试"), systemImage: "arrow.clockwise")
+                            .font(.caption).padding(8).frame(minHeight: 44)
+                    }
+                    .background(.regularMaterial)
+                    .padding(12)
+                    .accessibilityIdentifier("editor.preview.retry")
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if photoViewing.previewOnly {
+                    Button { photoViewing.togglePreview(isDraft: false) } label: {
+                        Image(systemName: "chevron.backward").frame(minWidth: 44, minHeight: 44)
+                    }
+                    .background(.regularMaterial, in: Circle())
+                    .padding(12)
+                    .accessibilityLabel(L10n.text("退出纯预览"))
+                    .accessibilityIdentifier("editor.preview.exit")
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if viewModel.hasImage && !editorBusy && (viewModel.previewRendering || viewModel.previewResizePending) {
-                    ProgressView(L10n.text("正在生成效果预览…"))
-                        .font(.caption)
-                        .padding(8)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        .padding(12)
-                        .allowsHitTesting(false)
-                        .accessibilityIdentifier("editor.preview.updating")
+                if photoViewing.enabled && !photoViewing.previewOnly && !isEditorDraftActive {
+                    Menu { comparisonModeMenu } label: {
+                        Image(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 22)).frame(minWidth: 44, minHeight: 44)
+                    }
+                    .background(.regularMaterial, in: Circle())
+                    .background {
+                        GeometryReader { control in
+                            Color.clear.preference(key: PhotoComparisonControlBoundsKey.self,
+                                value: control.frame(in: .named("editor.photo.canvas")))
+                        }
+                    }
+                    .padding(12)
+                    .accessibilityLabel(L10n.text("对比方式"))
+                    .accessibilityIdentifier("editor.compare.mode")
                 }
             }
+            .coordinateSpace(name: "editor.photo.canvas")
+            .onPreferenceChange(PhotoComparisonControlBoundsKey.self) { photoComparisonControlBounds = $0 }
             .clipped()
         }
+    }
+
+    @ViewBuilder
+    var comparisonModeMenu: some View {
+        Button(L10n.text("并排")) { photoViewing.selectMode(.sideBySide) }
+            .accessibilityIdentifier("editor.compare.sideBySide")
+            .disabled(viewModel.basePreviewImage == nil || isEditorDraftActive)
+        Button(L10n.text("分割线")) { photoViewing.selectMode(.wipe) }
+            .accessibilityIdentifier("editor.compare.wipe")
+            .disabled(viewModel.basePreviewImage == nil || isEditorDraftActive)
+        Button(L10n.text("重置分割线")) { photoViewing.setSplit(0.5) }
+        Button(L10n.text("关闭对比")) { if photoViewing.enabled { photoViewing.toggleComparison() } }
+            .accessibilityIdentifier("editor.compare.close")
+    }
+
+    var previewProgressLine: some View {
+        GeometryReader { geometry in
+            if reduceMotion {
+                Rectangle().fill(Color.yellow).frame(height: 2)
+            } else {
+                ProgressView().progressViewStyle(.linear)
+                    .frame(width: geometry.size.width, height: 2).clipped()
+            }
+        }
+        .frame(height: 2)
+        .allowsHitTesting(false)
+        .accessibilityLabel(L10n.text("正在显影…"))
+        .accessibilityIdentifier("editor.preview.updating")
     }
 
     var adjustmentPanel: some View {
@@ -448,4 +507,9 @@ extension EditorToolSelection {
         case .adjustment(let kind): return kind.iconName
         }
     }
+}
+
+private struct PhotoComparisonControlBoundsKey: PreferenceKey {
+    static var defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
