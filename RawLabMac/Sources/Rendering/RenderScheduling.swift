@@ -28,12 +28,19 @@ struct RenderScheduler<Value: Equatable> {
     private(set) var inFlight: RenderRequest<Value>?
     private var nextID = 0
     private var publishedExactID = 0
+    private var invalidatedThroughID = 0
 
     var isBusy: Bool { interacting || pending != nil || inFlight != nil }
     var hasPending: Bool { pending != nil }
 
     mutating func setInteracting(_ value: Bool) {
         interacting = value
+    }
+
+    mutating func invalidatePending() {
+        invalidatedThroughID = nextID
+        latest = nil
+        pending = nil
     }
 
     mutating func submit(_ value: Value, fileID: String) -> RenderRequest<Value> {
@@ -59,7 +66,7 @@ struct RenderScheduler<Value: Equatable> {
         guard inFlight?.id == request.id else { return .ignored }
         inFlight = nil
 
-        guard latest?.fileID == request.fileID else { return .discard }
+        guard request.id > invalidatedThroughID, latest?.fileID == request.fileID else { return .discard }
         switch request.pass {
         case .interactive:
             guard publishedExactID < request.id else { return .discard }

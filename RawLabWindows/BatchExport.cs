@@ -26,6 +26,7 @@ public sealed class BatchJob
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Source { get; set; } = "";
     public AdjustmentSnapshot Settings { get; set; } = new Adjustments().Capture();
+    public int AIBackend { get; set; } = 2;
     public string? Look { get; set; }
     public string LookName { get; set; } = "中性";
     public string? OutputDirectory { get; set; }
@@ -56,7 +57,7 @@ public sealed class BatchJob
         Source = source, Settings = settings.Copy(), Look = look, LookName = name
     };
     public BatchJob Copy() => new() {
-        Version=Version, Id=Id, Source=Source, Settings=Settings.Copy(), Look=Look, LookName=LookName,
+        Version=Version, Id=Id, Source=Source, Settings=Settings.Copy(), AIBackend=AIBackend, Look=Look, LookName=LookName,
         OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
         Error=Error, Items=Items.Select(x => x with { }).ToList()
     };
@@ -88,6 +89,7 @@ public sealed class BatchJournal
     private static void Validate(BatchJob job)
     {
         if (job.Version is < 1 or > 2) throw new InvalidDataException(Loc.Text("无法读取此版本的批量任务。"));
+        if(job.AIBackend is not (0 or 2 or 3))throw new InvalidDataException("Invalid Windows AI backend in batch journal.");
         _ = job.Settings.Restore();
     }
 

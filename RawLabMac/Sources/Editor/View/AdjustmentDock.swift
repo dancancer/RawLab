@@ -75,7 +75,8 @@ struct AdjustmentDock: View {
             .accessibilityIdentifier("tool.\(tool.rawValue)")
             .accessibilityLabel(tool.title).accessibilityValue(changed ? L10n.text("已调整") : "")
             .accessibilityAddTraits(active ? .isSelected : [])
-            .disabled(model.result == nil || (tool == .lens && RenderEngine.isRasterInput(model.file)))
+            .disabled((model.result == nil && !(tool == .denoise && model.file != nil && model.aiControlsVisible)) ||
+                      (tool == .lens && RenderEngine.isRasterInput(model.file)))
             .contextMenu {
                 Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
                     .disabled(!changed)
@@ -90,7 +91,7 @@ struct AdjustmentDock: View {
                 .padding(.horizontal, 16).disabled(model.result == nil)
         } else if navigation.tool == .denoise {
             DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) })
-                .id(resetVersion).frame(maxWidth: 720).padding(.horizontal, 16).disabled(model.result == nil)
+                .id(resetVersion).frame(maxWidth: 720).padding(.horizontal, 16)
         } else if let parameter = navigation.tool.parameter, parameter.isPhotoEffect {
             PhotoEffectsControls(model: model, tool: parameter, onReset: { model.requestAdjustmentReset(.tool(navigation.tool)) })
                 .id("\(parameter.rawValue).\(resetVersion)").disabled(model.result == nil)

@@ -13,7 +13,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 function Record-CheckResult([string]$Name,$Result) {
     $script:summary+=@{name=$Name;exitCode=$Result.exitCode;log=($Name+'.log');timedOut=$Result.timedOut;durationSeconds=$Result.durationSeconds;pid=$Result.pid}
@@ -52,6 +52,10 @@ Get-ChildItem -LiteralPath $NativeArtifacts -File -Filter '*.dll' |
     Where-Object {$_.Name -match '^(vcruntime|msvcp|vcomp|concrt)'} |
     Copy-Item -Destination $destination -Force
 Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $destination -Recurse -Force
+if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
+    foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) { Copy-Item (Join-Path $NativeArtifacts $name) $destination -Force }
+    Copy-Item (Join-Path $NativeArtifacts 'AI') $destination -Recurse -Force
+}
 }
 $runner=Join-Path $target 'RawLabWindows.Tests.dll'
 $localizationRunner=Join-Path $uiTarget 'LocalizationUiChecks.dll'
@@ -67,6 +71,10 @@ Invoke-Check 'profile-isolation' @($runner,'--profile-isolation',"$results/profi
 Invoke-Check 'localization-ui' @($localizationRunner)
 Invoke-Check 'status-layout' @($runner,'--status-layout',"$results/status-layout")
 Invoke-Check 'appearance' @($runner,'--appearance',"$results/appearance")
+Invoke-Check 'ai-panel' @($runner,'--ai-panel',"$results/ai-panel")
+if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
+    Invoke-Check 'ai-window' @($runner,'--ai-window',"$repo/lutools/tests/fixtures/bayer-demosaic.dng","$results/ai-window")
+}
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
 Invoke-Check 'ui-details' @($runner,'--ui-details',"$results/ui-details")
 foreach($name in @('geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){

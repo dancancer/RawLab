@@ -6,6 +6,18 @@ source "$ROOT/RawLabMac/build-env.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
 DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
+AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=OFF)
+AI_LINK_FLAGS=()
+if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
+    : "${RAWLAB_ONNXRUNTIME_ROOT:?Set RAWLAB_ONNXRUNTIME_ROOT to ONNX Runtime 1.23.2}"
+    : "${RAWLAB_DUALDN_MODEL_DIR:?Set RAWLAB_DUALDN_MODEL_DIR to the validated 640-pixel model package}"
+    if [ "$(cat "$RAWLAB_ONNXRUNTIME_ROOT/VERSION_NUMBER")" != 1.23.2 ]; then
+        echo "DualDn currently requires ONNX Runtime 1.23.2." >&2; exit 2
+    fi
+    AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=ON -DONNXRUNTIME_ROOT="$RAWLAB_ONNXRUNTIME_ROOT"
+        -DRAWLAB_DUALDN_TEST_PACKAGE="$RAWLAB_DUALDN_MODEL_DIR")
+    AI_LINK_FLAGS=("$BUILD/librawlab_dualdn_runtime.a" "$BUILD/librawlab_dualdn_core.a" -L "$RAWLAB_ONNXRUNTIME_ROOT/lib" -lonnxruntime -framework CoreML)
+fi
 # ----------------------------------------------------------------------------
 #  使用统计 SDK：正式构建默认带上，上报正式环境；RAWLAB_RUM=0 显式出不带 SDK 的包
 #  RAWLAB_RUM_LOCAL=1 是本地验证构建：环境变量配置、独立包名，产物只许放在 .cache/tmp/
@@ -45,7 +57,7 @@ fi
 RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
 pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
     'wavelib >= 1.0.0' 'lensfun >= 0.3.4' 'libtiff-4 >= 4.7.1'
-cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON
+cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "${AI_CMAKE_FLAGS[@]}"
 cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
 "$BUILD/dng_jxl_tests"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/MasterRecipes" "$APP/Contents/Resources/MasterRecipeIcons" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
@@ -53,6 +65,33 @@ mkdir -p "$APP/Contents/Resources/Licenses"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/RawLab-GPL-3.0.txt"
 cp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
 cp "$ROOT/docs/reference/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
+if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
+    "$BUILD/dualdn_probe" --validate "$RAWLAB_DUALDN_MODEL_DIR"
+    rm -rf "$APP/Contents/Resources/AI/DualDn"
+    mkdir -p "$APP/Contents/Resources/AI/DualDn" "$APP/Contents/Resources/Licenses/DualDn"
+    for resource in manifest.json raw.onnx isp.onnx rgb.onnx DualDn-LICENSE.txt; do
+        cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+    done
+    for resource in blind_rgb.onnx Restormer-LICENSE.txt; do
+        if [ -f "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
+            cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+        fi
+    done
+    for resource in raw.mlmodelc rgb.mlmodelc blind_rgb.mlmodelc; do
+        if [ -d "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
+            cp -R "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+        fi
+    done
+    "$BUILD/dualdn_probe" --validate "$APP/Contents/Resources/AI/DualDn"
+    cp "$RAWLAB_DUALDN_MODEL_DIR/DualDn-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/LICENSE"
+    if [ -f "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" ]; then
+        cp "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/"
+    fi
+    cp "$RAWLAB_ONNXRUNTIME_ROOT/LICENSE" "$APP/Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE"
+    cp "$RAWLAB_ONNXRUNTIME_ROOT/ThirdPartyNotices.txt" "$APP/Contents/Resources/Licenses/DualDn/ONNX-Runtime-ThirdPartyNotices.txt"
+else
+    rm -rf "$APP/Contents/Resources/AI/DualDn" "$APP/Contents/Resources/Licenses/DualDn"
+fi
 cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resources/Licenses/"
 cp "$ROOT/lutools/third_party/nlohmann/LICENSE.MIT" "$APP/Contents/Resources/Licenses/nlohmann-JSON-MIT.txt"
 cp -R "$ROOT/RawLabMac/Resources/Licenses/." "$APP/Contents/Resources/Licenses/"
@@ -82,7 +121,7 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
     "${RUM_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" "${AI_LINK_FLAGS[@]}" \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"
@@ -127,6 +166,7 @@ embed_dependency() {
                 source="$RAW_LIB/${dependency#@rpath/}"
                 if [ ! -f "$source" ]; then source="$OPENCV_PREFIX/lib/${dependency#@rpath/}"; fi
                 if [ ! -f "$source" ]; then source="$LENS_PREFIX/lib/${dependency#@rpath/}"; fi
+                if [ ! -f "$source" ] && [ "${RAWLAB_DUALDN:-0}" = 1 ]; then source="$RAWLAB_ONNXRUNTIME_ROOT/lib/${dependency#@rpath/}"; fi
                 if [ ! -f "$source" ] && [ -n "$RUM_LIB" ]; then source="$RUM_LIB/${dependency#@rpath/}"; fi
                 ;;
             @loader_path/*)

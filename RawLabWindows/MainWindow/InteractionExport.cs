@@ -165,7 +165,7 @@ public partial class MainWindow
     }
     private async void Export(ExportFormat format)
     {
-        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
+        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
         var suffix=format.Suffix();
         var dialog=new SaveFileDialog{Title=Loc.Text("导出"),Filter=format switch {
                 ExportFormat.Jpeg => format.Title()+"|*.jpg;*.jpeg",
@@ -187,7 +187,7 @@ public partial class MainWindow
     }
     internal async Task ExportPhoto(ExportFormat format,string destination)
     {
-        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
+        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
         if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始文件。"),true);return;}
         var input=file;var adjustment=settings.Clone();var film=lut;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
@@ -213,7 +213,7 @@ public partial class MainWindow
             lastExportedPath=destination;ExportRevealButton.Visibility=Visibility.Visible;
             SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
-        catch(Exception ex){Report(ex);}
+        catch(Exception ex){if(!HandleAIFailure(ex))Report(ex);}
         finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
     }
     private static bool IsBuiltInLook(string path) => StringComparer.OrdinalIgnoreCase.Equals(
@@ -223,6 +223,7 @@ public partial class MainWindow
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
+        ResetAITask();
         previewResize.Stop();
         if(batchWindow is {} batch)
         {
@@ -230,14 +231,14 @@ public partial class MainWindow
             if(batch.IsVisible && !batch.Busy){e.Cancel=true;RecoverFailedClose(batch);return;}
         }
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
-        if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
+        if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         e.Cancel = true;
         Dispatcher.BeginInvoke(new Action(FinishClose));
     }
     private async void FinishClose()
     {
         // 关闭时不再启动排队预览，只等待实际运行的 worker 释放引擎。
-        if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting) return;
+        if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting || !aiJob.Completion.IsCompleted) return;
         analyticsDisposed = true;
         IsEnabled = false;
         // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出

@@ -191,7 +191,7 @@ extension EditorModel {
         dirty = false; saveError = nil; saveStatusKey = "调整已保存"
         // 精确渲染完成前沿用同一底图的已裁切显示，避免闪回未旋转画面。
         pendingGeometryPresentation = draft.geometry
-        clearSaveStatusLater(); endGeometryDraft(); schedule(forceExact: true)
+        clearSaveStatusLater(); endGeometryDraft(); synchronizeAI(); schedule(forceExact: true)
         return true
     }
 

@@ -13,6 +13,13 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "Le débruitage IA est actif. Les réglages habituels sont conservés. Modifier la balance des blancs nécessite un nouveau traitement.";
+"AI 降噪" = "Débruitage IA";
+"AI 降噪仅支持 RAW 照片。" = "Le débruitage IA prend uniquement en charge les photos RAW.";
+"AI 降噪失败" = "Échec du débruitage IA";
+"AI 降噪失败：%@" = "Échec du débruitage IA : %@";
+"AI 降噪已取消。" = "Débruitage IA annulé.";
+"AI 降噪（实验）" = "Débruitage IA (expérimental)";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Le DCP utilise une HueSatMap à trois illuminants, qui n’est pas encore prise en charge pour la conversion.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Le DCP contient des gains spatiaux, un traitement HDR ou des tables RGB non pris en charge et ne peut pas être converti.";
 "DCP 文件或外观数据超过安全大小限制。" = "Le fichier DCP ou les données du look dépassent la limite de taille sûre.";
@@ -91,6 +98,7 @@
 "关于 RawLab" = "À propos de RawLab";
 "关于 RawLab…" = "À propos de RawLab…";
 "关闭" = "Fermer";
+"关闭 AI 降噪" = "Désactiver le débruitage IA";
 "关闭对比" = "Désactiver la comparaison";
 "关闭提示" = "Fermer l’alerte";
 "关闭镜头选择" = "Fermer la sélection d’objectif";
@@ -190,6 +198,7 @@
 "已将当前设置应用到 %@ 张照片" = "Réglages actuels appliqués (photos : %@)";
 "已展开" = "Développé";
 "已应用" = "Appliqué";
+"已应用 AI 降噪；曝光和外观调整复用结果。" = "Débruitage IA appliqué. Les réglages d’exposition et de rendu réutilisent le résultat.";
 "已开启" = "Activé";
 "已恢复上次调整" = "Réglages précédents restaurés";
 "已收起" = "Réduit";
@@ -239,6 +248,7 @@
 "按每张照片" = "Par photo";
 "搜索镜头" = "Rechercher un objectif";
 "操作失败" = "L'opération a échoué";
+"支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Prend en charge plusieurs formats RAW. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.";
 "收起%@组" = "Réduire le groupe %@";
 "收起暗角参数" = "Masquer les réglages du vignettage";
 "收起直方图" = "Réduire l'histogramme";
@@ -301,6 +311,7 @@
 "显示裁剪三分网格" = "Afficher la grille des tiers du recadrage";
 "显示输出高光与黑位裁切" = "Afficher l'écrêtage des hautes lumières et du niveau de noir de la sortie";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.";
+"普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Les réglages habituels de débruitage sont conservés. Désactivez le débruitage IA pour les rétablir.";
 "暖调日系 · 漫射金光" = "Style japonais chaud · lumière dorée diffuse";
 "暖金光影 · 质感人像" = "Lumière dorée chaude · portrait texturé";
 "暗角" = "Vignettage";
@@ -339,8 +350,12 @@
 "横向色差标定" = "Étalonnage de l’aberration chromatique latérale";
 "横向色差标定不可用" = "Étalonnage de l’aberration chromatique latérale indisponible";
 "橙" = "Orange";
+"正在保存 AI 结果" = "Enregistrement du résultat IA";
 "正在停止…" = "Arrêt…";
+"正在准备 AI 降噪" = "Préparation du débruitage IA";
 "正在准备编辑画布…" = "Préparation du canevas de retouche…";
+"正在处理 RAW 噪声" = "Traitement du bruit RAW";
+"正在处理颜色噪声" = "Traitement du bruit chromatique";
 "正在导出" = "Exportation";
 "正在导出…" = "Exportation…";
 "正在显影…" = "Développement…";
@@ -352,6 +367,8 @@
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
+"此构建未安装 AI 降噪模型。" = "Cette version ne contient pas le modèle de débruitage IA.";
+"此照片或构建尚不能使用 AI 降噪。" = "Le débruitage IA est indisponible pour cette photo ou cette version.";
 "此目录没有 RAW 照片。" = "Ce dossier ne contient aucune photo RAW.";
 "此目录没有照片。" = "Ce dossier ne contient aucune photo.";
 "此输入不支持镜头校正" = "Correction optique non prise en charge pour cette image";
@@ -374,6 +391,7 @@
 "照片信息" = "Informations de la photo";
 "照片四周留白" = "Marge autour de la photo";
 "照片处理设置" = "Réglages de traitement photo";
+"照片或白平衡已变化，请重新准备 AI 降噪。" = "La photo ou la balance des blancs a changé. Préparez à nouveau le débruitage IA.";
 "照片或调整已变化，请重新确认重置。" = "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.";
 "照片缺少有效焦距，未应用校正" = "Distance focale invalide ; correction non appliquée";
 "版本 %@" = "Version %@";
@@ -462,6 +480,7 @@
 "裁边 %@%%" = "Recadrage %@%%";
 "语言" = "Langue";
 "请使用 %@ 的步进。" = "Utilisez un pas de %@.";
+"请先完成此照片的 AI 降噪，再预览或导出。" = "Terminez le débruitage IA de cette photo avant de la prévisualiser ou de l’exporter.";
 "请先纠正无效数值" = "Corrigez d’abord les valeurs non valides";
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
 "请至少选择一张 RAW 照片。" = "Veuillez sélectionner au moins une photo RAW.";

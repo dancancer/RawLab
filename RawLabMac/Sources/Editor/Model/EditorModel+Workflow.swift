@@ -32,7 +32,7 @@ extension EditorModel {
         case .unchanged: return .unchanged
         case .blocked(let reason): return .blocked(.adjustment(reason))
         case .candidate(let candidate):
-            return .prepared(PreparedReset(source: file, identity: identity, revision: editRevision,
+            return .prepared(PreparedReset(scope: scope, source: file, identity: identity, revision: editRevision,
                                            original: original, candidate: candidate,
                                            selectedFilmID: selectedFilmID, draft: geometryDraft))
         }
@@ -58,6 +58,7 @@ extension EditorModel {
             }
         } else {
             guard prepared.candidate != prepared.original else { return true }
+            if [.all, .group(.detail), .tool(.denoise)].contains(prepared.scope) { resetAITask() }
             updatingMetadata = true
             settings = prepared.candidate.settings
             // 普通组保留 UI selection；存储 ID 可能是 builtin:<filename>。
@@ -134,7 +135,13 @@ extension EditorModel {
 
     private func prepareAdjustmentReset(_ scope: EditorResetScope) {
         switch prepareReset(scope: scope) {
-        case .unchanged: resumeResetToolIfReady()
+        case .unchanged:
+            if [.all, .group(.detail), .tool(.denoise)].contains(scope) {
+                let wasPreparing = aiManuallyRequested
+                resetAITask()
+                if wasPreparing { schedule() }
+            }
+            resumeResetToolIfReady()
         case .blocked(let reason): resetBlockedMessage = resetMessage(reason); resumeResetToolIfReady()
         case .prepared(let prepared):
             let needsConfirmation: Bool
@@ -215,6 +222,7 @@ extension EditorModel {
     func edited() {
         editRevision = UUID()
         guard file != nil else { return }
+        synchronizeAI()
         dirty = true
         saveStatusKey = ""
         saveWork?.cancel()
@@ -247,7 +255,7 @@ extension EditorModel {
     }
 
     @discardableResult func applyCurrentSettings(to urls: [URL]) throws -> Int {
-        guard file != nil, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, geometryDraft == nil else {
+        guard file != nil, !exporting, !aiState.isRunning, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, geometryDraft == nil else {
             throw RenderError.failed(L10n.text("当前照片的设置尚不可用。"))
         }
         let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL }))
@@ -274,7 +282,7 @@ extension EditorModel {
     }
 
     func prepareBatch() -> Bool {
-        guard !busy, !previewOutdated, !exporting, !lookLibraryBusy, result != nil, !missingFilm, !missingMasterRecipe, geometryDraft == nil, let file else { return false }
+        guard canExport, let file else { return false }
         if batch?.validating == true || batch?.previewing == true { return true }
         if let batch, batch.job.started && batch.job.succeededCount < batch.job.selectedCount {
             let alert = NSAlert()
@@ -329,6 +337,7 @@ extension EditorModel {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
         }
+        resetAITask()
         cancelViewportResize()
         editRevision = UUID()
         scheduler.setInteracting(false)
@@ -472,7 +481,7 @@ extension EditorModel {
     }
 
     func export(format: ExportFormat) {
-        guard !busy, !previewOutdated, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, geometryDraft == nil, let file else { return }
+        guard canExport, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.contentType]
         let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "neutral"
@@ -482,8 +491,14 @@ extension EditorModel {
         sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
         panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
+        export(to: output)
+    }
+
+    func export(to output: URL) {
+        guard canExport, let file else { return }
         exporting = true
         let settings = settings, lut = settings.masterRecipe?.lutURL() ?? selectedFilm?.url, longEdge = exportLongEdge
+        let generation = aiGeneration
         queue.async { [weak self] in
             guard let self else { return }
             do {
@@ -495,7 +510,12 @@ extension EditorModel {
                     self.onUsage(.exportCompleted)
                 }
             } catch {
-                DispatchQueue.main.async { self.exporting = false; self.error = error.localizedDescription }
+                DispatchQueue.main.async {
+                    self.exporting = false; self.error = error.localizedDescription
+                    if self.file == file, self.settings == settings, self.aiGeneration == generation {
+                        self.handleAIFailure(error)
+                    }
+                }
             }
         }
     }

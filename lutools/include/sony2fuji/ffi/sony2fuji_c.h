@@ -13,6 +13,7 @@ extern "C" {
 
 #define SONY2FUJI_REQUEST_VERSION 2u
 #define SONY2FUJI_GPU_CONFIG_VERSION 1u
+#define SONY2FUJI_AI_DENOISE_CONFIG_VERSION 1u
 
 // ============================================================================
 // Status
@@ -25,7 +26,9 @@ typedef enum sony2fuji_status {
     SONY2FUJI_STATUS_IO_ERROR = 3,
     SONY2FUJI_STATUS_PROCESSING_ERROR = 4,
     SONY2FUJI_STATUS_OUT_OF_MEMORY = 5,
-    SONY2FUJI_STATUS_OUTPUT_IO_ERROR = 6
+    SONY2FUJI_STATUS_OUTPUT_IO_ERROR = 6,
+    SONY2FUJI_STATUS_CANCELLED = 7,
+    SONY2FUJI_STATUS_AI_NOT_READY = 8
 } sony2fuji_status;
 
 // ============================================================================
@@ -303,6 +306,26 @@ typedef struct sony2fuji_lens_report {
 
 typedef struct sony2fuji_session sony2fuji_session;
 
+typedef enum sony2fuji_ai_backend {
+    SONY2FUJI_AI_CPU = 0,
+    SONY2FUJI_AI_COREML = 1,
+    SONY2FUJI_AI_AUTO = 2,
+    SONY2FUJI_AI_DIRECTML = 3
+} sony2fuji_ai_backend;
+
+typedef struct sony2fuji_ai_denoise_config {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t enabled;
+    sony2fuji_ai_backend backend;
+    const char* model_directory;
+    const char* cache_directory;
+} sony2fuji_ai_denoise_config;
+
+// Phase: 1 loading, 2 RAW network, 3 RGB network, 4 saving. Return 0 to cancel.
+// Called synchronously on the prepare worker, never on a UI thread implicitly.
+typedef int32_t (*sony2fuji_ai_progress_callback)(void* context, int32_t phase, uint64_t completed, uint64_t total);
+
 typedef enum sony2fuji_render_backend {
     SONY2FUJI_BACKEND_CPU = 0,
     SONY2FUJI_BACKEND_METAL = 1,
@@ -383,6 +406,22 @@ sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
 // Enabled FBDD requires a three-color Bayer RAW and disables half-size decoding.
 // Unsupported inputs return UNSUPPORTED at processing time, never a silent no-op.
 sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* session, int32_t level);
+
+// Additive desktop experiment; old requests and clients remain AI-off by default.
+// Copies the directory strings. Configuration does not start inference.
+// Active AI bypasses FBDD, wavelet and display chroma denoising while preserving their settings.
+int32_t sony2fuji_ai_available(void);
+sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config);
+// Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
+// Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.
+// Missing/corrupt results make process/export return AI_NOT_READY; process never starts inference or silently disables AI.
+sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const sony2fuji_request* request,
+    sony2fuji_ai_progress_callback progress, void* context);
+// Valid until the next AI operation on this session. Always returns a non-null string.
+const char* sony2fuji_session_get_ai_error(const sony2fuji_session* session);
+// Actual producers of the last prepared/loaded result, including cache hits; empty before completion.
+// CoreML describes the native CPU/GPU runtime, not exclusive GPU execution. ISP remains CPU.
+const char* sony2fuji_session_get_ai_backend(const sony2fuji_session* session);
 
 // Display-sRGB chroma denoising after tone/LUT, before sharpening and resizing.
 // 0 off (default), 1 detail priority, 2 noise priority. Does not change request v2.

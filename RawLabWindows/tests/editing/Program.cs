@@ -4,6 +4,41 @@ using System.Text.Json.Nodes;
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
+static void AIDenoisePersistenceChecks()
+{
+    var original = new Adjustments { Denoise = DenoiseSettings.Clean, DisplayChromaDenoise = 2 };
+    var enabled = JsonSerializer.SerializeToNode(original.Capture())!.AsObject();
+    enabled["AIDenoiseEnabled"] = true;
+    var snapshot = enabled.Deserialize<AdjustmentSnapshot>()!;
+    var restored = snapshot.Restore();
+    Check(JsonSerializer.SerializeToNode(restored.Capture())!["AIDenoiseEnabled"]?.GetValue<bool>() == true,
+        "AI denoise survives saved-edit restore and capture");
+    Check(!snapshot.SameAs(original.Capture()), "AI-only change is an effective edit");
+    Check(restored.Denoise == DenoiseSettings.Clean && restored.DisplayChromaDenoise == 2,
+        "AI retains ordinary denoise parameters");
+    enabled.Remove("AIDenoiseEnabled");
+    var legacy = enabled.Deserialize<AdjustmentSnapshot>()!.Restore();
+    Check(JsonSerializer.SerializeToNode(legacy.Capture())!["AIDenoiseEnabled"]?.GetValue<bool>() == false,
+        "Old edits restore with AI disabled");
+    foreach (var scope in new[] { new EditorResetScope(EditorResetKind.Group, EditorAdjustmentGroup.Detail),
+        new EditorResetScope(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Denoise), new EditorResetScope(EditorResetKind.All) }) {
+        var candidate = EditorAdjustmentRules.PrepareReset(scope, new(new("photo.arw", 1, 2, 3), snapshot, null));
+        Check(candidate.Status == EditorResetStatus.Ready &&
+            JsonSerializer.SerializeToNode(candidate.Candidate!.Settings)!["AIDenoiseEnabled"]?.GetValue<bool>() == false,
+            "Detail/tool/all reset clears AI enable state");
+    }
+    var frozen = BatchJob.Create("photo.arw", snapshot, null, "Neutral");
+    Check(JsonSerializer.SerializeToNode(frozen.Copy().Settings)!["AIDenoiseEnabled"]?.GetValue<bool>() == true,
+        "Batch snapshot preserves requested AI appearance");
+    frozen.AIBackend=3;
+    Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(frozen.Copy()))!.AIBackend==3,
+        "Frozen batch preserves requested AI backend through copy and JSON");
+    restored.ResetAll();
+    Check(JsonSerializer.SerializeToNode(restored.Capture())!["AIDenoiseEnabled"]?.GetValue<bool>() == false,
+        "Direct full reset clears AI");
+}
+AIDenoisePersistenceChecks();
+await AIDenoiseJobChecks.Run();
 static void ProcessingChecks()
 {
     Check(Processing(new Adjustments())?["version"]?.GetValue<int>() == 2,

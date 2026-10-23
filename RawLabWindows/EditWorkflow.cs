@@ -83,6 +83,7 @@ public partial class MainWindow
                 RefreshCropDraft();RefreshControls();Schedule();return;
             }
             settings=candidate.Settings.Restore();
+            if(ResetsAI(prepared.Scope))ResetAITask();
             // 身份未变时保留已解析的 LUT 路径及界面映射，避免把保存身份当成路径。
             if(candidate.Look!=current.Look)
             {
@@ -150,7 +151,7 @@ public partial class MainWindow
 
     private void BatchExportClicked(object sender, RoutedEventArgs e)
     {
-        if (file == null || !exactReady || scheduler.Busy || exporting || batchWindow?.Busy==true || !LookAvailable) return;
+        if (file == null || AIBlocksOutput || !exactReady || scheduler.Busy || exporting || batchWindow?.Busy==true || !LookAvailable) return;
         var previous = CurrentBatch;
         if (previous is { Started: true } && previous.SucceededCount < previous.SelectedCount)
         {
@@ -164,6 +165,7 @@ public partial class MainWindow
             if (batchWindow != null) { batchWindow.Close();if(batchWindow?.IsVisible==true)return;batchWindow=null; }
             if (previous != null) batchJournal.Discard(previous);
             var job = BatchJob.Create(file, settings.Capture(), lut, LookTitle);
+            job.AIBackend=RequestedAIBackend;
             batchJournal.FreezeLook(job); batchJournal.Save(job); previousBatch = job;
             ShowBatch(job);
         }

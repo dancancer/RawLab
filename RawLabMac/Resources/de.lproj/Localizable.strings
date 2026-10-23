@@ -13,6 +13,13 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "KI-Entrauschen ist aktiv. Die üblichen Einstellungen bleiben erhalten. Änderungen am Weißabgleich erfordern eine erneute Verarbeitung.";
+"AI 降噪" = "KI-Entrauschen";
+"AI 降噪仅支持 RAW 照片。" = "KI-Entrauschen unterstützt nur RAW-Fotos.";
+"AI 降噪失败" = "KI-Entrauschen fehlgeschlagen";
+"AI 降噪失败：%@" = "KI-Entrauschen fehlgeschlagen: %@";
+"AI 降噪已取消。" = "KI-Entrauschen abgebrochen.";
+"AI 降噪（实验）" = "KI-Entrauschen (experimentell)";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Das DCP enthält nicht unterstützte räumliche Verstärkungen, HDR- oder RGB-Tabellenverarbeitung und kann nicht konvertiert werden.";
 "DCP 文件或外观数据超过安全大小限制。" = "Die DCP-Datei oder die Look-Daten überschreiten die sichere Größenbegrenzung.";
@@ -91,6 +98,7 @@
 "关于 RawLab" = "Über RawLab";
 "关于 RawLab…" = "Über RawLab…";
 "关闭" = "Schließen";
+"关闭 AI 降噪" = "KI-Entrauschen deaktivieren";
 "关闭对比" = "Vergleich ausschalten";
 "关闭提示" = "Hinweis schließen";
 "关闭镜头选择" = "Objektivauswahl schließen";
@@ -190,6 +198,7 @@
 "已将当前设置应用到 %@ 张照片" = "Aktuelle Einstellungen angewendet (Fotos: %@)";
 "已展开" = "Aufgeklappt";
 "已应用" = "Angewendet";
+"已应用 AI 降噪；曝光和外观调整复用结果。" = "KI-Entrauschen angewendet. Belichtungs- und Look-Anpassungen verwenden das Ergebnis erneut.";
 "已开启" = "Ein";
 "已恢复上次调整" = "Vorherige Anpassungen wiederhergestellt";
 "已收起" = "Eingeklappt";
@@ -239,6 +248,7 @@
 "按每张照片" = "Pro Foto";
 "搜索镜头" = "Objektive suchen";
 "操作失败" = "Der Vorgang ist fehlgeschlagen";
+"支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Unterstützt verschiedene RAW-Formate. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.";
 "收起%@组" = "Gruppe „%@“ zuklappen";
 "收起暗角参数" = "Vignetteneinstellungen einklappen";
 "收起直方图" = "Histogramm ausblenden";
@@ -301,6 +311,7 @@
 "显示裁剪三分网格" = "Drittelraster für den Zuschnitt anzeigen";
 "显示输出高光与黑位裁切" = "Clipping der Ausgabe-Lichter und des Schwarzwerts anzeigen";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Rasterbilder müssen undurchsichtige 8-Bit-SDR-Bilder im Format JPEG, PNG, TIFF oder HEIF sein.";
+"普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Die üblichen Entrauschungseinstellungen bleiben erhalten. Deaktivieren Sie KI-Entrauschen, um sie wieder zu verwenden.";
 "暖调日系 · 漫射金光" = "Warmer Japan-Look · diffuses goldenes Licht";
 "暖金光影 · 质感人像" = "Warmgoldenes Licht · charaktervolles Porträt";
 "暗角" = "Vignettierung";
@@ -339,8 +350,12 @@
 "横向色差标定" = "Kalibrierung der lateralen chromatischen Aberration";
 "横向色差标定不可用" = "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar";
 "橙" = "Orange";
+"正在保存 AI 结果" = "KI-Ergebnis wird gespeichert";
 "正在停止…" = "Wird angehalten…";
+"正在准备 AI 降噪" = "KI-Entrauschen wird vorbereitet";
 "正在准备编辑画布…" = "Bearbeitungsfläche wird vorbereitet…";
+"正在处理 RAW 噪声" = "RAW-Rauschen wird verarbeitet";
+"正在处理颜色噪声" = "Farbrauschen wird verarbeitet";
 "正在导出" = "Wird exportiert";
 "正在导出…" = "Wird exportiert…";
 "正在显影…" = "Wird entwickelt…";
@@ -352,6 +367,8 @@
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
+"此构建未安装 AI 降噪模型。" = "Dieses Build enthält kein KI-Entrauschungsmodell.";
+"此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";
 "此目录没有 RAW 照片。" = "Dieser Ordner enthält keine RAW-Fotos.";
 "此目录没有照片。" = "Dieser Ordner enthält keine Fotos.";
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
@@ -374,6 +391,7 @@
 "照片信息" = "Fotoinformationen";
 "照片四周留白" = "Abstand um das Foto";
 "照片处理设置" = "Fotoverarbeitung";
+"照片或白平衡已变化，请重新准备 AI 降噪。" = "Foto oder Weißabgleich haben sich geändert. Bereite die KI-Entrauschung erneut vor.";
 "照片或调整已变化，请重新确认重置。" = "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.";
 "照片缺少有效焦距，未应用校正" = "Keine gültige Brennweite; Korrektur nicht angewendet";
 "版本 %@" = "Version %@";
@@ -462,6 +480,7 @@
 "裁边 %@%%" = "Beschnitt %@%%";
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
+"请先完成此照片的 AI 降噪，再预览或导出。" = "Schließe die KI-Entrauschung dieses Fotos vor Vorschau oder Export ab.";
 "请先纠正无效数值" = "Ungültige Werte zuerst korrigieren";
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
 "请至少选择一张 RAW 照片。" = "Bitte wählen Sie mindestens ein RAW-Foto aus.";

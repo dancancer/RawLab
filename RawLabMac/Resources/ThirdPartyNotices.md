@@ -9,6 +9,8 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 | Component | Version | Source | Notices |
 | --- | --- | --- | --- |
 | JSON for Modern C++ | Vendored header | https://github.com/nlohmann/json | nlohmann-JSON-MIT.txt |
+| DualDn Big (optional AI experiment) | 7ec5f6a21c04321beb0d3297d6e9ac5f50635555 | https://github.com/OpenImagingLab/DualDn | DualDn/LICENSE (CC BY-NC 4.0, OpenImagingLab 2024) |
+| ONNX Runtime (optional AI experiment) | 1.23.2 | https://github.com/microsoft/onnxruntime/tree/v1.23.2 | DualDn/ONNX-Runtime-LICENSE, DualDn/ONNX-Runtime-ThirdPartyNotices.txt |
 | LibRaw | 0.22.2 | https://github.com/LibRaw/LibRaw/tree/0.22.2 | LibRaw-LICENSE.CDDL, LibRaw-LICENSE.LGPL, LibRaw-COPYRIGHT |
 | Nikon HE decoder | Local C++ adaptation of dnglab 0f044c2c and LibRaw PR 826 | https://github.com/dnglab/dnglab/pull/835 | nikon-he/README.md, nikon-he/LICENSE.LGPL-2.1 |
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
@@ -54,6 +56,13 @@ filter's BSD notice and the installed third-party notices are included in
 `OpenCV/`. No darktable denoising implementation or executable is bundled.
 
 This software is based in part on the work of the Independent JPEG Group.
+
+The optional DualDn package retains the original trained weights. Local changes
+split the model into fixed-size RAW, ISP and RGB ONNX graphs and add tiled execution
+and a scene-linear bridge in RawLab. The model manifest records source and weight
+checksums. DualDn and its converted model retain their upstream license; they are
+not relicensed under RawLab's license. The normal build does not bundle these
+optional components.
 
 This product includes DNG technology under license by Adobe.
 JPEG XL DNG decoding uses the DNG SDK only for the JPEG XL decoder path.
