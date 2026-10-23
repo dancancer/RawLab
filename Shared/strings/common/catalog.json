@@ -3862,5 +3862,13 @@
     "fr": "Verrouiller le rapport actuel",
     "ja": "現在の縦横比を固定",
     "zh-Hans": "锁定当前比例"
+  },
+  "已停用": {
+    "de": "Deaktiviert",
+    "en": "Disabled",
+    "es": "Desactivado",
+    "fr": "Désactivé",
+    "ja": "無効",
+    "zh-Hans": "已停用"
   }
 }

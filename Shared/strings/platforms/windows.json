@@ -2293,6 +2293,14 @@
     "锁定当前比例": {
       "formats": [],
       "source": "锁定当前比例"
+    },
+    "已启用": {
+      "source": "已启用",
+      "formats": []
+    },
+    "已停用": {
+      "source": "已停用",
+      "formats": []
     }
   },
   "overrides": {
