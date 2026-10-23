@@ -17,6 +17,9 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-ai-tests-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        if CommandLine.arguments.count == 1 {
+            try AIDenoiseRecoveryChecks.firstPreparation(root: root.appendingPathComponent("first-recovery"))
+        }
         let first = root.appendingPathComponent("first.dng"), second = root.appendingPathComponent("second.dng")
         try Data([1,2,3]).write(to: first); try Data([4,5,6]).write(to: second)
         var identitySettings = Adjustments()
@@ -234,6 +237,34 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
             wait("Explicit retry accepts the repaired model") { retryCount == 1 && failureEditor.aiState == .ready }
             failureEditor.launchNextRender()
             wait("Repaired AI publishes a current preview and restores export") { failureEditor.canExport && !failureEditor.workerActive }
+            try bytes.write(to: resource)
+            let failedOutput = root.appendingPathComponent("model-failure.png")
+            failureEditor.exportLongEdge = 512
+            failureEditor.export(to: failedOutput)
+            wait("Corrupt model reaches the single-photo export completion") { failureEditor.error != nil && !failureEditor.exporting }
+            guard case .failed(let exportMessage) = failureEditor.aiState else { fatalError("Single export left corrupt AI model ready") }
+            check(exportMessage.contains("Invalid AI model package") && failureEditor.aiRequiresExplicitRetry &&
+                  failureEditor.previewOutdated && !failureEditor.canExport && failureEditor.settings.aiDenoiseEnabled,
+                  "Single export model failure exposes explicit retry and blocks stale export")
+            check(!FileManager.default.fileExists(atPath: failedOutput.path), "Failed model export does not write stale pixels")
+            try originalBytes.write(to: resource)
+            failureEditor.requestAIDenoise()
+            wait("Explicit retry after export failure prepares repaired model") { retryCount == 2 && failureEditor.aiState == .ready }
+            failureEditor.launchNextRender()
+            wait("Preview after export retry becomes current") { failureEditor.canExport && !failureEditor.workerActive }
+            let recoveredOutput = root.appendingPathComponent("model-recovered.png")
+            failureEditor.export(to: recoveredOutput)
+            wait("Single export succeeds after model repair and retry") {
+                !failureEditor.exporting && FileManager.default.fileExists(atPath: recoveredOutput.path)
+            }
+            check(failureEditor.aiState == .ready && failureEditor.canExport,
+                  "Successful export retains ready AI and current preview")
+            failureEditor.export(to: root.appendingPathComponent("missing-directory/editor-output.png"))
+            wait("Ordinary single-photo output error reaches export completion") {
+                !failureEditor.exporting && failureEditor.error != nil
+            }
+            check(failureEditor.aiState == .ready && !failureEditor.previewOutdated && failureEditor.canExport,
+                  "Ordinary output error does not invalidate prepared AI")
             do {
                 _ = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128,
                     output: root.appendingPathComponent("missing-directory/output.png"))

@@ -136,7 +136,11 @@ extension EditorModel {
     private func prepareAdjustmentReset(_ scope: EditorResetScope) {
         switch prepareReset(scope: scope) {
         case .unchanged:
-            if [.all, .group(.detail), .tool(.denoise)].contains(scope) { resetAITask() }
+            if [.all, .group(.detail), .tool(.denoise)].contains(scope) {
+                let wasPreparing = aiManuallyRequested
+                resetAITask()
+                if wasPreparing { schedule() }
+            }
             resumeResetToolIfReady()
         case .blocked(let reason): resetBlockedMessage = resetMessage(reason); resumeResetToolIfReady()
         case .prepared(let prepared):
@@ -487,8 +491,14 @@ extension EditorModel {
         sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
         panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
+        export(to: output)
+    }
+
+    func export(to output: URL) {
+        guard canExport, let file else { return }
         exporting = true
         let settings = settings, lut = settings.masterRecipe?.lutURL() ?? selectedFilm?.url, longEdge = exportLongEdge
+        let generation = aiGeneration
         queue.async { [weak self] in
             guard let self else { return }
             do {
@@ -500,7 +510,12 @@ extension EditorModel {
                     self.onUsage(.exportCompleted)
                 }
             } catch {
-                DispatchQueue.main.async { self.exporting = false; self.error = error.localizedDescription }
+                DispatchQueue.main.async {
+                    self.exporting = false; self.error = error.localizedDescription
+                    if self.file == file, self.settings == settings, self.aiGeneration == generation {
+                        self.handleAIFailure(error)
+                    }
+                }
             }
         }
     }

@@ -157,12 +157,7 @@ extension EditorModel {
                 if completion == .publishExact || scheduler.latest?.id == request.id {
                     self.previewOutdated = true
                     self.error = failure.localizedDescription
-                    if case RenderError.aiNotReady = failure, self.settings.aiDenoiseEnabled {
-                        self.aiResultUnavailable()
-                    } else if case RenderError.aiFailed(let message) = failure, self.settings.aiDenoiseEnabled {
-                        self.aiRequiresExplicitRetry = true
-                        self.aiState = .failed(message)
-                    }
+                    self.handleAIFailure(failure)
                 }
             } else if let neutral, let result {
                 let previousCanvas = geometryCanvasSize

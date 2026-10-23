@@ -247,6 +247,19 @@ final class EditorModel: ObservableObject {
 }
 
 extension EditorModel {
+    func handleAIFailure(_ failure: Error) {
+        guard settings.aiDenoiseEnabled else { return }
+        if case RenderError.aiNotReady = failure {
+            aiResultUnavailable()
+        } else if case RenderError.aiFailed(let message) = failure {
+            aiRequiresExplicitRetry = true
+            aiState = .failed(message)
+        } else { return }
+        previewOutdated = true
+        scheduler.invalidatePending()
+        refreshBusy()
+    }
+
     func aiResultUnavailable() {
         // 已发布结果被删掉或淘汰后需重新准备；失败/取消则等待用户明确重试。
         if aiState == .ready { aiIdentity = nil; aiState = .idle }
@@ -263,7 +276,11 @@ extension EditorModel {
 
     func setAIEnabled(_ enabled: Bool) {
         if enabled { requestAIDenoise() }
-        else { resetAITask(); settings.aiDenoiseEnabled = false }
+        else {
+            let wasEnabled = settings.aiDenoiseEnabled
+            resetAITask(); settings.aiDenoiseEnabled = false
+            if !wasEnabled { schedule() }
+        }
     }
 
     func cancelAIDenoise() {
@@ -272,6 +289,14 @@ extension EditorModel {
         aiPreparation?.cancel(); aiPreparation = nil
         aiManuallyRequested = false; aiState = .cancelled
         // 已保存的 AI 外观不静默关闭；取消重建后，导出继续报告结果未就绪。
+        resumeOrdinaryPreviewAfterAI()
+    }
+
+    private func resumeOrdinaryPreviewAfterAI() {
+        guard !settings.aiDenoiseEnabled else { return }
+        // 首次准备尚未改变外观；重绘当前普通参数，同时保留失败或取消提示。
+        aiIdentity = nil
+        schedule()
     }
 
     func requestAIDenoise() {
@@ -322,6 +347,7 @@ extension EditorModel {
                               (try? AIWorkIdentity(file, settings: self.geometryPreviewSettings)) == identity else {
                             self.aiManuallyRequested = false
                             self.aiState = .failed(L10n.text("照片或白平衡已变化，请重新准备 AI 降噪。"))
+                            self.resumeOrdinaryPreviewAfterAI()
                             return
                         }
                         self.aiManuallyRequested = false
@@ -335,6 +361,7 @@ extension EditorModel {
                             if !progress.isCancelled, case RenderError.aiFailed = failure {
                                 self.aiRequiresExplicitRetry = true
                             }
+                            self.resumeOrdinaryPreviewAfterAI()
                         }
                     }
                 }
@@ -347,6 +374,7 @@ extension EditorModel {
             aiPreparation?.cancel(); aiPreparation = nil
             aiManuallyRequested = false
             aiState = .failed(error.localizedDescription)
+            resumeOrdinaryPreviewAfterAI()
         }
     }
 }
