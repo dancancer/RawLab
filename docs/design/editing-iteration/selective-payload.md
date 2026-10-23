@@ -5,8 +5,8 @@
 `Shared/fixtures/adjustment-transfer-v1.json`。其他端接入时消费同一向量，不能直接复制
 Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 
-当前仅 Mac adapter 和真实本机存储事务已有实现；原生编辑入口、其余三端和联合验收仍需
-按[实施计划](../../integration/editing-iteration/selective-transactions-plan.md)接入。
+Mac 已实现 adapter、真实本机存储事务、编辑入口和普通手势历史；其余三端与联合验收仍按
+[实施计划](../../integration/editing-iteration/selective-transactions-plan.md)推进。
 
 ## 编码与范围
 
@@ -96,6 +96,10 @@ recipe 固定贡献按来源强度物化一次；旧 HSL settings version 2 不�
 validator 必须确认目标的匹配/标定状态；缺少 validator 直接 blocked。不把相机自动匹配
 结果写进 payload，也不在纯模型 adapter 里假装完成原生标定。
 
+Mac 原生预检按需要通过当前 core 解析目标 RAW 的 WB/降噪能力，并验证镜头实际应用结果。
+解析只补充候选所需的目标 metadata；条件保存仍比较原 registry 的完整记录与 revision。
+检查目标本身不保存，关闭预检也不延续异步提交。
+
 ## 保存、重试和历史
 
 每次操作有独立 ID、冻结 payload/目标/候选。全部目标先 prepare，存在阻挡时默认不写；
@@ -110,3 +114,8 @@ history；保存失败没有成功历史。undo/redo 同时检查存储 revision
 Mac registry 仍为 version 1，只增加 optional `revisions` 映射；读取旧记录不迁移。
 删除一张记录也保留其 revision tombstone，避免删除后重建绕过条件保存。会话结束只释放
 clipboard/history，已保存的 native records 继续供重启恢复。
+
+单张键盘 undo/redo 的失败恢复冻结原 transaction、照片和方向；不能在重试时选择新产生的
+历史，也不能扩展成整批撤销。批量冲突只标记实际被拒绝的目标，其他等待项不进入 skip
+集合。界面显示历史操作错误，不把它写成当前照片未保存；同一操作的缓存成功回执也不能
+覆盖随后发生的未保存编辑或几何草稿。

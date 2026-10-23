@@ -31,6 +31,7 @@ struct AdjustmentTransferSessionTests {
         try preflight(root: root, a: a, b: b)
         try historyOrder(root: root, a: a)
         try historyFailureAndSkip(root: root, a: a, b: b)
+        try historyRace(root: root, a: a)
         try storageFailures(root: root, a: a, b: b)
         try clipboardAndEmptyTargets(root: root, a: a)
     }
@@ -161,6 +162,7 @@ struct AdjustmentTransferSessionTests {
         _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(2))
         let blocked = session.undoTransaction(operation.id)
         check(blocked.map(\.status) == [.conflict, .blocked], "Later photo edit blocks whole transaction before any write")
+        check(blocked.map(\.requiresHistoryDecision) == [true, false], "Conflict UI skips only rejected targets, not the compatible waiting targets")
         check((try store.state(for: b)) == state(1), "Conflict preflight preserves other target until explicit skip")
         check(session.undoTransaction(operation.id, skipping: [a.resolvingSymlinksInPath().path]).map(\.status) == [.skipped, .applied],
               "Explicit history skip undoes only conflict-free photo")
@@ -202,6 +204,20 @@ struct AdjustmentTransferSessionTests {
         }
         check(errors.isEmpty, "Concurrent independent store writers finish without error")
         check(try store.state(for: a) == state(2) && store.state(for: b) == state(2), "Locked registry writes preserve both photos across instances")
+    }
+
+    static func historyRace(root: URL, a: URL) throws {
+        let store = try EditPersistence(directory: root.appendingPathComponent("history-race"))
+        let session = AdjustmentTransferSession(store: store)
+        _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(1))
+        var calls = 0
+        let results = session.undoPhoto(a, isCurrent: { _ in
+            calls += 1
+            if calls == 2 { try! store.save(a, state: state(2)) }
+            return true
+        })
+        check(results.first?.status == .conflict && results.first?.requiresHistoryDecision == true,
+            "A write-time history race keeps the conflict decision available")
     }
 
     static func clipboardAndEmptyTargets(root: URL, a: URL) throws {

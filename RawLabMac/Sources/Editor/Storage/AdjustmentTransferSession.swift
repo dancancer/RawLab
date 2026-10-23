@@ -5,6 +5,7 @@ struct AdjustmentTransferTarget {
     let defaultState: PhotoEditState
     var context: MacAdjustmentTransferContext
     var isCurrent: (() -> Bool)? = nil
+    var resolveMetadata: ((PhotoEditState) throws -> PhotoEditState)? = nil
 }
 
 enum AdjustmentTransferStatus { case applied, unchanged, skipped, blocked, conflict, failed }
@@ -14,6 +15,7 @@ struct AdjustmentTransferOutcome {
     let status: AdjustmentTransferStatus
     let saved: VersionedPhotoEdit?
     let error: Error?
+    var requiresHistoryDecision = false
 }
 
 struct PreparedAdjustmentTransfer {
@@ -75,7 +77,8 @@ final class AdjustmentTransferSession {
             do {
                 guard target.isCurrent?() != false else { throw AdjustmentTransferError.draftRequiresPreflight }
                 let original = try store.versionedState(for: target.url)
-                let effective = original.state ?? target.defaultState
+                let stored = original.state ?? target.defaultState
+                let effective = try target.resolveMetadata?(stored) ?? stored
                 let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: effective, context: target.context)
                 prepared.append(.init(id: id, original: original, candidate: candidate, unchanged: candidate == effective,
                     isCurrent: target.isCurrent, error: nil))
@@ -135,11 +138,17 @@ final class AdjustmentTransferSession {
         catch { return outcome(id, .failed, error: error) }
     }
 
-    func undoPhoto(_ url: URL, isCurrent: (String) -> Bool = { _ in true }) -> [AdjustmentTransferOutcome] {
-        historyPhoto(url, undo: true, isCurrent: isCurrent)
+    func undoPhoto(_ url: URL, transactionID: UUID? = nil, isCurrent: (String) -> Bool = { _ in true }) -> [AdjustmentTransferOutcome] {
+        historyPhoto(url, transactionID: transactionID, undo: true, isCurrent: isCurrent)
     }
-    func redoPhoto(_ url: URL, isCurrent: (String) -> Bool = { _ in true }) -> [AdjustmentTransferOutcome] {
-        historyPhoto(url, undo: false, isCurrent: isCurrent)
+    func canUndoPhoto(_ url: URL) -> Bool { hasHistory(url, state: .applied) }
+    func canRedoPhoto(_ url: URL) -> Bool { hasHistory(url, state: .undone) }
+    private func hasHistory(_ url: URL, state: AdjustmentHistoryTransaction.State) -> Bool {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return transactions.contains { $0.parts.contains { $0.identity.path == path && $0.state == state } }
+    }
+    func redoPhoto(_ url: URL, transactionID: UUID? = nil, isCurrent: (String) -> Bool = { _ in true }) -> [AdjustmentTransferOutcome] {
+        historyPhoto(url, transactionID: transactionID, undo: false, isCurrent: isCurrent)
     }
     func undoTransaction(_ id: UUID, skipping: Set<String> = [], isCurrent: (String) -> Bool = { _ in true }) -> [AdjustmentTransferOutcome] {
         history(id: id, photo: nil, undo: true, skipping: skipping, isCurrent: isCurrent)
@@ -148,12 +157,18 @@ final class AdjustmentTransferSession {
         history(id: id, photo: nil, undo: false, skipping: skipping, isCurrent: isCurrent)
     }
 
-    private func historyPhoto(_ url: URL, undo: Bool, isCurrent: (String) -> Bool) -> [AdjustmentTransferOutcome] {
+    func photoHistoryID(_ url: URL, undo: Bool) -> UUID? {
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
         let desired: AdjustmentHistoryTransaction.State = undo ? .applied : .undone
         let indexes = undo ? Array(transactions.indices.reversed()) : Array(transactions.indices)
-        guard let index = indexes.first(where: { transactions[$0].parts.contains { $0.identity.path == path && $0.state == desired } }) else { return [] }
-        return history(id: transactions[index].id, photo: path, undo: undo, skipping: [], isCurrent: isCurrent)
+        return indexes.first(where: { transactions[$0].parts.contains { $0.identity.path == path && $0.state == desired } })
+            .map { transactions[$0].id }
+    }
+
+    private func historyPhoto(_ url: URL, transactionID: UUID?, undo: Bool, isCurrent: (String) -> Bool) -> [AdjustmentTransferOutcome] {
+        guard let id = transactionID ?? photoHistoryID(url, undo: undo) else { return [] }
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return history(id: id, photo: path, undo: undo, skipping: [], isCurrent: isCurrent)
     }
 
     private func history(id: UUID, photo: String?, undo: Bool, skipping: Set<String>,
@@ -177,8 +192,8 @@ final class AdjustmentTransferSession {
                       historyHeads[path] == (undo ? part.id : part.priorHead),
                       current.state == (undo ? part.after : part.before) else { throw EditPersistenceConflict.changed }
                 prepared[index] = current
-            } catch is EditPersistenceConflict { rejected[index] = outcome(path, .conflict, error: EditPersistenceConflict.changed) }
-            catch { rejected[index] = outcome(path, .blocked, error: error) }
+            } catch is EditPersistenceConflict { rejected[index] = outcome(path, .conflict, error: EditPersistenceConflict.changed, requiresHistoryDecision: true) }
+            catch { rejected[index] = outcome(path, .blocked, error: error, requiresHistoryDecision: true) }
         }
         guard rejected.isEmpty else {
             return selected.map { index in
@@ -191,14 +206,14 @@ final class AdjustmentTransferSession {
             let part = transactions[transaction].parts[index]
             let path = part.identity.path
             guard let current = prepared[index] else { return outcome(path, .skipped) }
-            guard isCurrent(path) else { return outcome(path, .blocked, error: AdjustmentTransferError.draftRequiresPreflight) }
+            guard isCurrent(path) else { return outcome(path, .blocked, error: AdjustmentTransferError.draftRequiresPreflight, requiresHistoryDecision: true) }
             do {
                 let saved = try store.compareAndSave(expected: current, state: undo ? part.before : part.after)
                 knownRecords[path] = saved
                 historyHeads[path] = undo ? part.priorHead : part.id
                 transactions[transaction].parts[index].state = undo ? .undone : .applied
                 return outcome(path, .applied, saved: saved)
-            } catch is EditPersistenceConflict { return outcome(path, .conflict, error: EditPersistenceConflict.changed) }
+            } catch is EditPersistenceConflict { return outcome(path, .conflict, error: EditPersistenceConflict.changed, requiresHistoryDecision: true) }
             catch { return outcome(path, .failed, error: error) }
         }
     }
@@ -223,7 +238,8 @@ final class AdjustmentTransferSession {
     }
 
     private func outcome(_ path: String, _ status: AdjustmentTransferStatus, saved: VersionedPhotoEdit? = nil,
-                         error: Error? = nil) -> AdjustmentTransferOutcome {
-        AdjustmentTransferOutcome(targetID: path, status: status, saved: saved, error: error)
+                         error: Error? = nil, requiresHistoryDecision: Bool = false) -> AdjustmentTransferOutcome {
+        AdjustmentTransferOutcome(targetID: path, status: status, saved: saved, error: error,
+            requiresHistoryDecision: requiresHistoryDecision)
     }
 }

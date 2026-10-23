@@ -2201,14 +2201,6 @@
       "ja": "未保存です。再書き出しを許可",
       "zh-Hans": "尚未保存，允许重新导出"
     },
-    "已保存": {
-      "de": "Gespeichert",
-      "en": "Saved",
-      "es": "Guardado",
-      "fr": "Enregistré",
-      "ja": "保存済み",
-      "zh-Hans": "已保存"
-    },
     "已保存 {0} 张到照片图库": {
       "de": "In Fotos gespeichert: {0}",
       "en": "Saved to Photos: {0}",

@@ -81,6 +81,7 @@ struct RawLabMacApp: App {
         }
             .defaultSize(width: 1320, height: 850)
             .commands {
+                AdjustmentCommands(model: model)
                 CommandGroup(replacing: .appSettings) {
                     Picker(L10n.text("语言"), selection: $languagePreference) {
                         ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }

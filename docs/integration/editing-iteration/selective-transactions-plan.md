@@ -22,10 +22,11 @@
 - 分支 `feature/editing-selective-transactions`；首批协调/黑白场参考已通过
   [draft PR #133](https://github.com/dancancer/RawLab/pull/133) 提交，尚未合入；本实现无其代码依赖。
 - 主代理写本计划、共享 payload、Mac adapter、条件保存与 history、对应测试；默认代理只读核验。
-- `feature/editor-compact-controls` 当前持有四端紧凑控件、EditorModel/Geometry/Inputs 与六语资源。
-  用户已授权联系“复核 RawLab PR 105 设计方案”chat 协调；主代理已发出具体接入要求，等待其
-  可交接 source SHA 和未完成项。此阶段不同时改写这些共享入口。
-- 当前用户已授权 #133 push/draft PR，以及继续本轮开发；未授权合入或发布。
+- 紧凑控件 owner 已从 `feature/editor-compact-controls` 交接
+  `1071b74c776cab23d74c39aa4b66b42eafe6630f`；本分支通过 merge 保留该提交历史，
+  Mac EditorModel/Geometry/Inputs 与六语资源的后续 ITER-03 接线由本任务负责。
+- 用户已授权继续 Mac ITER-03、原生验证、提交和更新
+  [draft PR #134](https://github.com/dancancer/RawLab/pull/134)；未授权合入或发布。
 
 ## Global Constraints
 
@@ -91,17 +92,22 @@ session 的 prepare/apply/retry、undoPhoto/undoTransaction/redoPhoto/redoTransa
 ## Task 3: 独立复核与原生消费者
 
 - [x] 默认代理对合同、adapter、真实存储/history 做独立复核；主代理核实关键调用链并修复。
-- [ ] 本批后台基础达到稳定测试后，按本接口接 Mac UI 与普通手势提交入口，补原生 UI 验证；
-  iOS/Android/Windows 逐端适配同一字段语义与失败向量，不重新设计另一套 payload。
-- [ ] 未接 UI、普通手势或其他平台时明确保留缺口，不把本批后端测试当 ITER-03 整项验收。
+- [x] Mac 菜单、复制范围、逐目标预检/结果、会话历史与普通手势接入统一提交入口。
+- [x] Mac 接入后的原生 UI 验证及交付记录完成；具体通过范围和未覆盖项见 PR #134。
+- [ ] iOS/Android/Windows 逐端适配同一字段语义与失败向量，不重新设计另一套 payload。
+- [ ] 四端联合验收；Mac 完成不代表 ITER-03 整项完成。
 
 ## 下一阶段接入边界
 
-- Mac 的 `EditorModel` 保存当前完整 versioned record；open/普通保存/geometry Apply/undo/redo
+- Mac 的 `EditorModel` 已保存完整 versioned record；open/普通保存/geometry Apply/undo/redo
   统一使用该记录和 session。metadata 解析、导航和文本草稿不建立 history；一次拖动只在结束
-  时提交一次。五个显式列出 EditorModel 的 native runner 需同步加入新源码。
-- 当前菜单/编辑器尚未消费 session；`recipe-lut:<id>` 尚需接入恢复、预览和单张/批量导出
-  的现有 look resolver。完成这些接线并跑原生 UI 回归后，才能声称 Mac ITER-03 可用。
+  时提交一次。显式 native runner 已同步源码，新 history 模型 runner 进入按需 Mac model CI 组。
+- `recipe-lut:<id>` 已接入恢复、可重新选择的独立外观、预览及单张/批量导出 resolver。
+  它不重新执行完整 recipe，不提供用户导入外观的重命名/删除操作。
+- 文件树“应用当前设置”冻结自己的 payload，排除来源且不改写剪贴板；普通粘贴可主动粘回
+  来源照片。关闭或重新选择清理操作上下文，保留剪贴板与会话历史。
+- 键盘历史失败保留原 transaction/photo/direction 后进入恢复界面；重试不能从单张扩大到
+  整批。历史冲突/目标失败独立于当前照片的 autosave error，成功回执不覆盖之后的脏编辑。
 - iOS 使用 core multiplier 和独立运行时 WB 校准，不能直接复用 Mac native DTO。它没有
   Mac 的 recipe settings version 或 FBDD 存储字段；旧 HSL 和降噪差异必须由真实 adapter
   映射/明确阻挡。iOS 旧 `noiseReduction` 是 post-RGB request 值，不能冒充 raw FBDD；其

@@ -19,7 +19,16 @@ done
 for name in Localization GeometrySettings HSLSettings HSLNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
-swiftc -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+TRANSFER_SOURCES=(
+  "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+)
+swiftc "${TRANSFER_SOURCES[@]}" -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT/RawLabMac/tests/Geometry/"*.swift \
     "$BUILD/libsony2fuji_core.a" $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \

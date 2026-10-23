@@ -3862,5 +3862,13 @@
     "fr": "Verrouiller le rapport actuel",
     "ja": "現在の縦横比を固定",
     "zh-Hans": "锁定当前比例"
+  },
+  "已保存": {
+    "de": "Gespeichert",
+    "en": "Saved",
+    "es": "Guardado",
+    "fr": "Enregistré",
+    "ja": "保存済み",
+    "zh-Hans": "已保存"
   }
 }

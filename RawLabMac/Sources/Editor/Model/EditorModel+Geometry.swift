@@ -174,16 +174,12 @@ extension EditorModel {
     }
 
     @discardableResult func applyGeometryDraft() -> Bool {
-        guard geometryDraftCanApply, let draft = geometryDraft, let file else { return false }
+        guard geometryDraftCanApply, let draft = geometryDraft, file != nil else { return false }
         var committed = settings
         committed.geometry = draft.geometry.isIdentity ? nil : draft.geometry
         committed.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
-        do {
-            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-            try editStore!.save(file, state: editState(settings: committed))
-        } catch {
+        guard commitAdjustment(editState(settings: committed)) else {
             geometryDraftSaveFailed = true
-            saveError = L10n.format("调整未保存：%@", error.localizedDescription)
             return false
         }
         saveWork?.cancel()

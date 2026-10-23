@@ -207,7 +207,7 @@ extension EditorModel {
 
     func selectFilm(_ id: String) {
         guard (id != selectedFilmID || settings.masterRecipeID != nil),
-              id.isEmpty || films.contains(where: { $0.id == id }) else { return }
+              id.isEmpty || filmChoices.contains(where: { $0.id == id }) else { return }
         selectedFilmID = id
         onUsage(.filmSelected(id.isEmpty ? .none : selectedFilm?.managedID == nil ? .builtIn : .custom))
     }
@@ -218,25 +218,21 @@ extension EditorModel {
         dirty = true
         saveStatusKey = ""
         saveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
-        saveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        if !scheduler.interacting {
+            // 同一个原生事件的联动 setter 合为一次；拖动由 begin/end 明确提交。
+            let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
+            saveWork = work
+            DispatchQueue.main.async(execute: work)
+        }
         schedule()
     }
 
     @discardableResult func saveEdits() -> Bool {
         saveWork?.cancel()
-        guard let file, dirty else { return true }
-        do {
-            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-            try editStore!.save(file, state: editState(settings: settings))
-            dirty = false; saveError = nil; saveStatusKey = "调整已保存"
-            clearSaveStatusLater()
-            return true
-        } catch {
-            saveError = L10n.format("调整未保存：%@", String(describing: error.localizedDescription))
-            return false
-        }
+        guard file != nil, dirty else { return true }
+        guard !scheduler.interacting, commitAdjustment(editState(settings: settings)) else { return false }
+        dirty = false
+        return true
     }
 
     func clearSaveStatusLater() {
@@ -250,26 +246,36 @@ extension EditorModel {
         guard file != nil, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, geometryDraft == nil else {
             throw RenderError.failed(L10n.text("当前照片的设置尚不可用。"))
         }
-        let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL }))
+        let sourcePath = file!.resolvingSymlinksInPath().standardizedFileURL.path
+        let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL })).filter { $0.path != sourcePath }
         guard !targets.isEmpty else { return 0 }
-        let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
-        if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-        try editStore!.save(targets, state: PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID))
-        statusState = .applied(targets.count)
-        return targets.count
+        guard saveEdits(), let file else { throw AdjustmentTransferError.draftRequiresPreflight }
+        let payload = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: editState(settings: settings),
+            context: adjustmentTransferContext(for: file))
+        let operation = try prepareAdjustmentPaste(payload: payload, targets: targets, excludingSource: sourcePath)
+        applyAdjustmentPaste(operation)
+        if let failure = adjustmentOutcomes.first(where: { [.blocked, .failed, .conflict].contains($0.status) }) {
+            throw failure.error ?? AdjustmentTransferError.incompatible("target")
+        }
+        let count = adjustmentOutcomes.filter { $0.status == .applied || $0.status == .unchanged }.count
+        statusState = .applied(count)
+        return count
     }
 
     func confirmApplySettings(to url: URL, directory: Bool) {
-        guard canApplySettings else { return }
+        guard canApplySettings, adjustmentSheet == nil, let file else { return }
         do {
-            let targets = directory ? try DirectoryContents.read(url).photos : [url]
-            guard !targets.isEmpty else { throw RenderError.failed(L10n.text("此目录没有照片。")) }
-            let alert = NSAlert()
-            alert.messageText = L10n.format("应用当前设置到 %@ 张照片？", String(describing: targets.count))
-            alert.informativeText = L10n.text("将替换目标照片的本机调整记录，不改写原始文件。") +
-                (directory ? L10n.text("仅包含此目录中的照片，不包含子目录。") : "")
-            alert.addButton(withTitle: L10n.text("应用当前设置")); alert.addButton(withTitle: L10n.text("取消"))
-            if alert.runModal() == .alertFirstButtonReturn { try applyCurrentSettings(to: targets) }
+            let sourcePath = file.resolvingSymlinksInPath().standardizedFileURL.path
+            let targets = (directory ? try DirectoryContents.read(url).photos : [url])
+                .filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != sourcePath }
+            guard !targets.isEmpty else { throw RenderError.failed(L10n.text("没有可处理目标，请重新选择照片。")) }
+            guard ParameterValueField.resolvePendingInputs(), saveEdits() else { return }
+            adjustmentSheetPayload = try MacAdjustmentTransfer.capture(scope: .standard,
+                snapshot: editState(settings: settings), context: adjustmentTransferContext(for: file))
+            adjustmentSheetTargets = targets
+            adjustmentSheetExcludedSource = sourcePath
+            pendingAdjustmentHistory = nil
+            adjustmentSheet = .paste
         } catch { self.error = error.localizedDescription }
     }
 
@@ -320,16 +326,19 @@ extension EditorModel {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
             return
         }
+        if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
-        let restored: PhotoEditState?
+        let restoredRecord: VersionedPhotoEdit
         do {
-            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-            restored = try editStore!.state(for: url)
+            _ = try requireAdjustmentSession()
+            restoredRecord = try editStore!.versionedState(for: url)
         } catch {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
         }
         cancelViewportResize()
+        committedEdit = restoredRecord
+        let restored = restoredRecord.state
         editRevision = UUID()
         scheduler.setInteracting(false)
         sourceRevision = UUID()
@@ -337,6 +346,7 @@ extension EditorModel {
         pendingImportEvent = true
         updatingMetadata = true
         settings = restored?.settings ?? Adjustments()
+        if restored == nil && RenderEngine.isRasterInput(url) { settings.exposureMode = .sensor }
         if let masterRecipeID = restored?.masterRecipeID {
             settings.masterRecipeID = masterRecipeID
         }

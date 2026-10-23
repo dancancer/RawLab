@@ -5,6 +5,12 @@ struct Film: Identifiable, Hashable {
     let name: String
     let url: URL
     var managedID: String? = nil
+    var isIndependentRecipe: Bool { id.hasPrefix("recipe-lut:") }
+    static func independentRecipe(_ id: String) -> Film? {
+        guard id.hasPrefix("recipe-lut:"), let recipe = MasterRecipe.recipe(for: String(id.dropFirst(11))),
+              let url = recipe.lutURL() else { return nil }
+        return Film(name: L10n.format("%@ · 独立外观", recipe.title), url: url, managedID: id)
+    }
     var group: FilmGroup {
         managedID == nil ? FilmGroup.builtIn(url.lastPathComponent) : .other
     }
