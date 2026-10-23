@@ -467,7 +467,9 @@ reported in the PR, not mixed into this same-source comparison.
 
 ## Results
 
-Only `build/ci/*.log`, `*.json` and `*.xml` are uploaded, retained for seven days.
+Verification logs and metadata under `build/ci/` are retained for seven days.
+The allowlist includes top-level `*.log`, `*.json` and `*.xml`, plus the explicit
+Windows model/process/runner subdirectories and runner `*.jsonl` call traces.
 Mac artifacts are named `macos-<arch>-<suite>-results`.
 Do not widen this allowlist to photos, RAW inputs, screenshots, user profiles,
 app bundles, native binaries, APKs or entire build directories. Build packages
