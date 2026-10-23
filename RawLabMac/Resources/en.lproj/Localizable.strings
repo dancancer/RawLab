@@ -65,6 +65,7 @@
 "任务使用的外观文件不可用，请重新创建任务。" = "The look file used by this task is unavailable. Create the task again.";
 "任务未保存：%@" = "Task not saved: %@";
 "传感器基准" = "Sensor reference";
+"位置与尺寸" = "Position and size";
 "作者的小红书主页" = "Author on Xiaohongshu (RED)";
 "使用可调降噪" = "Use adjustable noise reduction";
 "使用当前调整批量导出…" = "Batch Export with Current Adjustments…";
@@ -372,6 +373,7 @@
 "照片" = "Photo";
 "照片信息" = "Photo Information";
 "照片四周留白" = "Space around photo";
+"照片处理设置" = "Photo processing settings";
 "照片或调整已变化，请重新确认重置。" = "The photo or its adjustments have changed. Confirm the reset again.";
 "照片缺少有效焦距，未应用校正" = "No Valid Focal Length; Correction Not Applied";
 "版本 %@" = "Version %@";
@@ -526,6 +528,7 @@
 "重试" = "Try again";
 "重试失败的 %@ 张" = "Retry Failed Photos (%@)";
 "钨丝电影 · 红灯冷青" = "Tungsten cinema · red lights and cool cyan";
+"锁定当前比例" = "Lock current aspect ratio";
 "锐化" = "Sharpening";
 "镜头" = "Lens";
 "镜头信息尚未就绪" = "Lens Information Not Ready";

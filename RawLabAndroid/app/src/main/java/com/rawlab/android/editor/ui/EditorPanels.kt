@@ -49,7 +49,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
             if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
-                enabled = state.draftReady, physicalAspect = state.draft.geometryAspect) { value ->
+                enabled = state.draftReady, physicalAspect = state.draft.geometryAspect, showsGrid = state.draft.geometryGrid) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare && state.draft == null, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,

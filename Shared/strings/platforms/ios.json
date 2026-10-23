@@ -1921,6 +1921,38 @@
     "收起直方图": {
       "source": "收起直方图",
       "formats": []
+    },
+    "三分网格": {
+      "formats": [],
+      "source": "三分网格"
+    },
+    "交换横纵比例": {
+      "formats": [],
+      "source": "交换横纵比例"
+    },
+    "位置与尺寸": {
+      "formats": [],
+      "source": "位置与尺寸"
+    },
+    "已启用": {
+      "formats": [],
+      "source": "已启用"
+    },
+    "照片处理设置": {
+      "formats": [],
+      "source": "照片处理设置"
+    },
+    "裁切": {
+      "formats": [],
+      "source": "裁切"
+    },
+    "透视": {
+      "formats": [],
+      "source": "透视"
+    },
+    "锁定当前比例": {
+      "formats": [],
+      "source": "锁定当前比例"
     }
   },
   "overrides": {

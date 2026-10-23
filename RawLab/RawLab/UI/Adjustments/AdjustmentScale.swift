@@ -6,11 +6,13 @@ struct AdjustmentScale: Equatable {
     let range: ClosedRange<Double>
     let step: Double
     let reciprocal: Bool
+    let compactDecimals: Int?
 
-    init(range: ClosedRange<Double>, step: Double, reciprocal: Bool = false) {
+    init(range: ClosedRange<Double>, step: Double, reciprocal: Bool = false, compactDecimals: Int? = nil) {
         self.range = range
         self.step = step.isFinite && step > 0 ? step : 1
         self.reciprocal = reciprocal && range.lowerBound > 0
+        self.compactDecimals = compactDecimals
     }
 
     var span: Double { range.upperBound - range.lowerBound }
@@ -27,6 +29,7 @@ struct AdjustmentScale: Equatable {
     func completeText(_ value: Double, displayScale: Double = 1, locale: Locale,
                       formatter: (Double) -> String) -> String {
         let ordinary = formatter(value)
+        if compactDecimals != nil { return ordinary }
         let parser = NumberFormatter()
         parser.locale = locale
         parser.numberStyle = .decimal
@@ -75,6 +78,24 @@ struct AdjustmentScale: Equatable {
     }
 
     func values(including extras: [Double] = []) -> [Double] {
+        if let compactDecimals {
+            let factor = pow(10, Double(compactDecimals))
+            var labels = Set<Double>()
+            var values = [Double]()
+            // 原值优先，不能让同一显示值的网格点或默认值替换它。
+            for value in extras.filter(contains) {
+                if labels.insert((value * factor).rounded()).inserted { values.append(value) }
+            }
+            let first = Int(ceil(range.lowerBound / step - 1e-8))
+            let last = Int(floor(range.upperBound / step + 1e-8))
+            if first <= last {
+                for index in first...last {
+                    let value = Double(index) * step
+                    if labels.insert((value * factor).rounded()).inserted { values.append(value) }
+                }
+            }
+            return values.sorted()
+        }
         var values = (0...intervalCount).map { range.lowerBound + Double($0) * step }
         values.append(range.upperBound)
         values.append(contentsOf: extras.filter(contains))
@@ -89,6 +110,11 @@ struct AdjustmentScale: Equatable {
     }
 
     func increment(_ value: Double, direction: Int) -> Double {
+        if compactDecimals != nil {
+            let index = direction > 0 ? floor(value / step + 1e-8) + 1 : ceil(value / step - 1e-8) - 1
+            let next = index * step
+            return range.contains(next) ? next : value
+        }
         let relative = (clamped(value) - range.lowerBound) / step
         let index = direction > 0 ? floor(relative + 1e-8) + 1 : ceil(relative - 1e-8) - 1
         return clamped(range.lowerBound + index * step)

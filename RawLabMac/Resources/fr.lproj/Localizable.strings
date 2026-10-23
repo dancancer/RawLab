@@ -65,6 +65,7 @@
 "任务使用的外观文件不可用，请重新创建任务。" = "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.";
 "任务未保存：%@" = "Tâche non enregistrée : %@";
 "传感器基准" = "Référence du capteur";
+"位置与尺寸" = "Position et dimensions";
 "作者的小红书主页" = "L’auteur sur Xiaohongshu (RED)";
 "使用可调降噪" = "Utiliser une réduction de bruit réglable";
 "使用当前调整批量导出…" = "Exporter par lots avec les réglages actuels…";
@@ -372,6 +373,7 @@
 "照片" = "Photo";
 "照片信息" = "Informations de la photo";
 "照片四周留白" = "Marge autour de la photo";
+"照片处理设置" = "Réglages de traitement photo";
 "照片或调整已变化，请重新确认重置。" = "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.";
 "照片缺少有效焦距，未应用校正" = "Distance focale invalide ; correction non appliquée";
 "版本 %@" = "Version %@";
@@ -526,6 +528,7 @@
 "重试" = "Réessayer";
 "重试失败的 %@ 张" = "Réessayer les photos en échec (%@)";
 "钨丝电影 · 红灯冷青" = "Cinéma tungstène · lumières rouges et cyan froid";
+"锁定当前比例" = "Verrouiller le rapport actuel";
 "锐化" = "Netteté";
 "镜头" = "Objectif";
 "镜头信息尚未就绪" = "Informations de l’objectif indisponibles";

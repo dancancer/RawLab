@@ -7,16 +7,16 @@ struct MacGeometryWorkspace: View {
 
     var body: some View {
         let _ = localizationLocale
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             HStack(spacing: 12) {
-                Text(L10n.text("几何编辑")).font(.system(size: 13, weight: .semibold))
                 ForEach(MacGeometryTab.allCases, id: \.self) { tab in
                     Button {
                         ParameterValueField.cancelPendingInputs()
                         model.selectAdjustmentGeometryTab(tab)
                     } label: {
-                        Text(tab.title).font(.system(size: 13))
-                            .padding(.vertical, 7)
+                        Label(tab.title, systemImage: tab == .crop ? "crop.rotate" : tab == .perspective ? "perspective" : "camera.filters")
+                            .font(.system(size: 12)).fixedSize()
+                            .padding(.vertical, 5)
                             .overlay(alignment: .bottom) {
                                 if model.geometryDraftTab == tab { Capsule().fill(.yellow).frame(height: 2) }
                             }
@@ -41,7 +41,7 @@ struct MacGeometryWorkspace: View {
                     .disabled(!model.geometryDraftCanApply)
                     .accessibilityLabel(L10n.text("应用几何和镜头编辑"))
                     .accessibilityIdentifier("geometry.draft.apply")
-            }.controlSize(.small).padding(.horizontal, 16).frame(minHeight: 38)
+            }.controlSize(.small).padding(.horizontal, 16).frame(minHeight: 32)
             ScrollView(.vertical) {
                 if model.geometryDraftTab == .lens { LensControls(model: model) }
                 else { GeometryControls(model: model, tab: model.geometryDraftTab) }

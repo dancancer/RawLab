@@ -15,6 +15,11 @@ internal static class ParameterInputUiChecks
         var content=new StackPanel{Margin=new Thickness(16)};content.Children.Add(row);content.Children.Add(blur);
         var host=new Window{Content=content,Width=760,Height=380};host.Show();
         try {
+            row.Refresh("Crop X",new(0,0,.01,.1,.01,CompactPercent:true),0,0,"%");
+            check(ReferenceEquals(row.Number.Background,Application.Current.Resources["InputSurface"]),
+                "Native numeric subclass inherits the editor input background instead of system white");
+            check(double.IsFinite(row.Slider.Value) && row.Slider.SmallChange==0 && row.Slider.LargeChange==0,
+                "A full-width crop has a valid stationary native X control");
             var changes=new List<double>();row.Changed+=(value,_)=>changes.Add(value);
             row.SourceIdentity="source-a";row.Refresh("Exposure",new(-4,4,.01,.1,.01,false,2),.005,0,"EV",inputScope:"exposure");host.UpdateLayout();
             check(row.Number.Text=="0.005","Native input shows a legal original off-grid exposure without F2 rounding");
@@ -45,7 +50,7 @@ internal static class ParameterInputUiChecks
             }
             var drawing=new DrawingGroup();using(var dc=drawing.Open())row.Slider.DrawTrack(dc,new Size(216,32));
             var fill=(LineGeometry)((GeometryDrawing)drawing.Children[1]).Geometry;
-            check(fill.StartPoint.X==58 && fill.EndPoint.X==108,"Rendered negative fill runs from -2 to the actual zero default on the native track");
+            check(fill.StartPoint.X==57.5 && fill.EndPoint.X==108,"Rendered negative fill runs from -2 to the actual zero default on the native track");
             if(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1") {
             host.Activate();row.Number.Focus();row.Number.Select(0,0);
             var character=row.Number.GetRectFromCharacterIndex(1);

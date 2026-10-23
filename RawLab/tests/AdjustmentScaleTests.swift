@@ -18,7 +18,28 @@ struct AdjustmentScaleTests {
         tickResiduals()
         visibleWindows()
         completeLegacyValues()
+        compactCropValues()
         print("PASS: \(checks) adjustment scale, wheel, intent, event and motion checks")
+    }
+
+    static func compactCropValues() {
+        let original = 33.33333333333333
+        let crop = AdjustmentScale(range: 0...100, step: 0.01, compactDecimals: 2)
+        let format: (Double) -> String = { String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), $0) }
+        check(crop.completeText(original, locale: Locale(identifier: "en"), formatter: format) == "33.33",
+              "Crop presents two decimals without exposing the drag's binary tail")
+        let values = crop.values(including: [original, 100])
+        check(values.contains(original) && values.filter { format($0) == "33.33" }.count == 1,
+              "The complete-value wheel retains its exact original without duplicate rounded rows")
+        check(close(crop.increment(original, direction: 1), 33.34) && close(crop.increment(original, direction: -1), 33.33),
+              "Crop accessibility moves to neighboring hundredth-percent grid points")
+        let boundary = 99.99999999
+        let boundaryValues = crop.values(including: [boundary, 100])
+        check(boundaryValues.contains(boundary) && boundaryValues.filter { format($0) == "100.00" }.count == 1,
+              "The exact original wins over a default with the same rounded label")
+        let bounded = AdjustmentScale(range: 0...original, step: 0.01, compactDecimals: 2)
+        check(bounded.increment(original, direction: 1) == original && bounded.values(including: [original]).contains(original),
+              "An off-grid crop boundary remains unchanged when incremented at its limit")
     }
 
     static func visibleWindows() {

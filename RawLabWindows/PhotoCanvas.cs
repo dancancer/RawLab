@@ -245,10 +245,15 @@ public sealed class AdjustmentRing : FrameworkElement
     private static readonly DependencyProperty TrackBrushProperty=DependencyProperty.Register("TrackBrush",typeof(Brush),typeof(AdjustmentRing),new FrameworkPropertyMetadata(Brushes.Gray,FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly DependencyProperty ProgressBrushProperty=DependencyProperty.Register("ProgressBrush",typeof(Brush),typeof(AdjustmentRing),new FrameworkPropertyMetadata(Brushes.Gold,FrameworkPropertyMetadataOptions.AffectsRender));
     public AdjustmentRing(){SetResourceReference(TrackBrushProperty,"Outline");SetResourceReference(ProgressBrushProperty,"Indicator");}
+    public bool Compact { get; set; }
     public double Progress { get; set; }
     public bool Selected { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
+        if(Compact) {
+            if(Math.Abs(Progress)>=.001)dc.DrawEllipse((Brush)GetValue(ProgressBrushProperty),null,new Point(ActualWidth-1,ActualHeight-1),2,2);
+            return;
+        }
         var center=new Point(ActualWidth/2,ActualHeight/2); var radius=Math.Min(ActualWidth,ActualHeight)/2-3;
         var active=Selected ? System.Windows.Documents.TextElement.GetForeground(this) : (Brush)GetValue(ProgressBrushProperty);
         dc.DrawEllipse(null,new Pen(Selected ? active : (Brush)GetValue(TrackBrushProperty),1),center,radius,radius);

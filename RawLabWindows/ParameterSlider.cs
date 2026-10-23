@@ -20,7 +20,7 @@ public sealed class ParameterSlider : Slider
     {var owner=(ParameterSlider)sender;(owner.GetTemplateChild("ValueTrack") as UIElement)?.InvalidateVisual();}
     internal void DrawTrack(DrawingContext drawing,Size size)
     {
-        var left=8.0;var width=Math.Max(0,size.Width-16);var y=size.Height/2;
+        var left=7.0;var width=Math.Max(0,size.Width-14);var y=size.Height/2;
         drawing.DrawLine(new Pen(DirectionBrush ?? (Brush)FindResource("Track"),3),new(left,y),new(left+width,y));
         var fill=NumericRange.Fill(DefaultValue,ActualValue);
         if(fill.Start!=fill.End)drawing.DrawLine(new Pen((Brush)FindResource("Indicator"),3),new(left+width*fill.Start,y),new(left+width*fill.End,y));
