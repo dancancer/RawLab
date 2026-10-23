@@ -1,0 +1,274 @@
+import Foundation
+
+enum AdjustmentTransferError: Error, Equatable {
+    case invalidPayload(String)
+    case unsupportedVersion
+    case emptyScope
+    case draftRequiresPreflight
+    case incompatible(String)
+    case missingLook(String)
+    case unrepresentable(String)
+}
+
+enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
+    case look = "looks.reference", strength = "looks.strength"
+    case exposure = "light.exposure", exposureMode = "light.exposure_mode"
+    case contrast = "light.contrast", highlights = "light.highlights", shadows = "light.shadows", sCurve = "light.s_curve"
+    case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
+    case tint = "color.white_balance.tint", saturation = "color.saturation"
+    case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
+    case hslHueGreen = "color.hsl.hue.green", hslHueAqua = "color.hsl.hue.aqua", hslHueBlue = "color.hsl.hue.blue"
+    case hslHuePurple = "color.hsl.hue.purple", hslHueMagenta = "color.hsl.hue.magenta"
+    case hslSaturationRed = "color.hsl.saturation.red", hslSaturationOrange = "color.hsl.saturation.orange"
+    case hslSaturationYellow = "color.hsl.saturation.yellow", hslSaturationGreen = "color.hsl.saturation.green"
+    case hslSaturationAqua = "color.hsl.saturation.aqua", hslSaturationBlue = "color.hsl.saturation.blue"
+    case hslSaturationPurple = "color.hsl.saturation.purple", hslSaturationMagenta = "color.hsl.saturation.magenta"
+    case hslLightnessRed = "color.hsl.lightness.red", hslLightnessOrange = "color.hsl.lightness.orange"
+    case hslLightnessYellow = "color.hsl.lightness.yellow", hslLightnessGreen = "color.hsl.lightness.green"
+    case hslLightnessAqua = "color.hsl.lightness.aqua", hslLightnessBlue = "color.hsl.lightness.blue"
+    case hslLightnessPurple = "color.hsl.lightness.purple", hslLightnessMagenta = "color.hsl.lightness.magenta"
+    case vignetteAmount = "effects.vignette.amount", vignetteMidpoint = "effects.vignette.midpoint"
+    case vignetteRoundness = "effects.vignette.roundness", vignetteFeather = "effects.vignette.feather"
+    case vignetteHighlights = "effects.vignette.highlights", grainAmount = "effects.grain.amount"
+    case grainSize = "effects.grain.size", grainRoughness = "effects.grain.roughness"
+    case sharpening = "detail.sharpening", rawDenoise = "detail.denoise.raw_level"
+    case postRGBDenoise = "detail.denoise.post_rgb"
+    case chromaDenoise = "detail.denoise.chroma_mode", waveletDenoise = "detail.denoise.wavelet"
+    case cropX = "geometry.crop.x", cropY = "geometry.crop.y"
+    case cropWidth = "geometry.crop.width", cropHeight = "geometry.crop.height", quarterTurns = "geometry.quarter_turns"
+    case flipHorizontal = "geometry.flip_horizontal", flipVertical = "geometry.flip_vertical"
+    case straighten = "geometry.straighten_degrees"
+    case perspectiveHorizontal = "geometry.perspective.horizontal", perspectiveVertical = "geometry.perspective.vertical"
+    case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
+    case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
+
+    var group: String { String(rawValue.split(separator: ".")[0]) }
+    static var common: Set<Self> { Set(allCases.filter { $0.group != "geometry" }) }
+    static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
+    static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
+    static let denoiseFields: Set<Self> = [.rawDenoise, .postRGBDenoise, .chromaDenoise, .waveletDenoise]
+    static var recipeDependencies: Set<Self> {
+        Set([.look, .strength, .exposure, .contrast, .highlights, .shadows, .saturation]).union(whiteBalanceFields)
+            .union(allCases.filter { $0.hslLocation != nil })
+    }
+    var hslLocation: (axis: String, channel: Int)? {
+        let parts = rawValue.split(separator: ".").map(String.init)
+        guard parts.count == 4, parts[1] == "hsl",
+              let channel = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"].firstIndex(of: parts[3]) else { return nil }
+        return (parts[2], channel)
+    }
+    var scalarRange: ClosedRange<Double>? {
+        if hslLocation != nil { return -100...100 }
+        switch self {
+        case .strength, .contrast, .saturation, .sharpening: return 0...2
+        case .exposure: return -20...20
+        case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
+        case .vignetteAmount, .vignetteRoundness: return -100...100
+        case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
+        case .quarterTurns: return 0...3
+        case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1
+        case .postRGBDenoise: return 0...1
+        case .straighten: return -45...45
+        default: return nil
+        }
+    }
+}
+
+enum AdjustmentTransferScope {
+    case all, modified, custom(Set<AdjustmentTransferField>)
+    static var standard: Self { .custom(AdjustmentTransferField.common) }
+}
+
+// 这是逻辑 payload 的 JSON 值，不是 native snapshot 或渲染 recipe。
+enum AdjustmentTransferValue: Codable, Equatable {
+    case number(Double), string(String), boolean(Bool), object([String: Self]), null
+
+    var number: Double? { if case .number(let value) = self { return value }; return nil }
+    var string: String? { if case .string(let value) = self { return value }; return nil }
+    var boolean: Bool? { if case .boolean(let value) = self { return value }; return nil }
+    var object: [String: Self]? { if case .object(let value) = self { return value }; return nil }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let bool = try? value.decode(Bool.self) { self = .boolean(bool) }
+        else if let number = try? value.decode(Double.self), number.isFinite { self = .number(number) }
+        else if let string = try? value.decode(String.self) { self = .string(string) }
+        else { self = .object(try value.decode([String: Self].self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .number(let number): try value.encode(number)
+        case .string(let string): try value.encode(string)
+        case .boolean(let bool): try value.encode(bool)
+        case .object(let object): try value.encode(object)
+        case .null: try value.encodeNil()
+        }
+    }
+}
+
+struct AdjustmentRecipeContext: Codable, Equatable {
+    let id: String
+    let strength: Double
+    let settingsVersion: Int
+    enum CodingKeys: String, CodingKey { case id, strength; case settingsVersion = "settings_version" }
+    init(id: String, strength: Double, settingsVersion: Int) {
+        self.id = id; self.strength = strength; self.settingsVersion = settingsVersion
+    }
+    init(from decoder: Decoder) throws {
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["id", "strength", "settings_version"])
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        strength = try values.decode(Double.self, forKey: .strength)
+        settingsVersion = try values.decode(Int.self, forKey: .settingsVersion)
+    }
+}
+
+struct AdjustmentTransferSource: Codable, Equatable {
+    let identifier: String
+    let isRaw: Bool
+    let processingVersion: Int
+    let recipe: AdjustmentRecipeContext?
+    enum CodingKeys: String, CodingKey {
+        case identifier, recipe
+        case isRaw = "is_raw", processingVersion = "processing_version"
+    }
+    init(identifier: String, isRaw: Bool, processingVersion: Int, recipe: AdjustmentRecipeContext?) {
+        self.identifier = identifier; self.isRaw = isRaw
+        self.processingVersion = processingVersion; self.recipe = recipe
+    }
+    init(from decoder: Decoder) throws {
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["identifier", "is_raw", "processing_version", "recipe"])
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        identifier = try values.decode(String.self, forKey: .identifier)
+        isRaw = try values.decode(Bool.self, forKey: .isRaw)
+        processingVersion = try values.decode(Int.self, forKey: .processingVersion)
+        recipe = try values.decodeIfPresent(AdjustmentRecipeContext.self, forKey: .recipe)
+    }
+}
+
+struct AdjustmentTransferPayload: Codable, Equatable {
+    let payloadVersion: Int
+    let scopeVersion: Int
+    let source: AdjustmentTransferSource
+    let values: [String: AdjustmentTransferValue]
+    var fields: Set<AdjustmentTransferField> { Set(values.keys.compactMap(AdjustmentTransferField.init(rawValue:))) }
+    subscript(_ field: AdjustmentTransferField) -> AdjustmentTransferValue? { values[field.rawValue] }
+    enum CodingKeys: String, CodingKey {
+        case payloadVersion = "payload_version", scopeVersion = "scope_version", source, values
+    }
+
+    init(source: AdjustmentTransferSource, values: [String: AdjustmentTransferValue]) throws {
+        payloadVersion = 1; scopeVersion = 1; self.source = source; self.values = values
+        try validate()
+    }
+
+    init(from decoder: Decoder) throws {
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["payload_version", "scope_version", "source", "values"])
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        payloadVersion = try container.decode(Int.self, forKey: .payloadVersion)
+        scopeVersion = try container.decode(Int.self, forKey: .scopeVersion)
+        source = try container.decode(AdjustmentTransferSource.self, forKey: .source)
+        values = try container.decode([String: AdjustmentTransferValue].self, forKey: .values)
+        try validate()
+    }
+
+    func validate() throws {
+        guard payloadVersion == 1, scopeVersion == 1 else { throw AdjustmentTransferError.unsupportedVersion }
+        guard !values.isEmpty else { throw AdjustmentTransferError.emptyScope }
+        guard !source.identifier.isEmpty, [1, 2].contains(source.processingVersion) else {
+            throw AdjustmentTransferError.invalidPayload("source")
+        }
+        if let recipe = source.recipe {
+            guard !recipe.id.isEmpty, recipe.strength.isFinite, (0...2).contains(recipe.strength),
+                  [2, 3].contains(recipe.settingsVersion) else { throw AdjustmentTransferError.invalidPayload("recipe") }
+            if let strength = self[.strength]?.number, strength != recipe.strength {
+                throw AdjustmentTransferError.invalidPayload("recipe.strength")
+            }
+        }
+        for (id, value) in values {
+            guard let field = AdjustmentTransferField(rawValue: id), Self.valid(value, for: field) else {
+                throw AdjustmentTransferError.invalidPayload(id)
+            }
+        }
+        if let look = self[.look]?.object, look["kind"]?.string == "recipe" {
+            guard look["id"]?.string == source.recipe?.id else { throw AdjustmentTransferError.invalidPayload("recipe.look") }
+        }
+        try validateWhiteBalance()
+        if !source.isRaw {
+            guard self[.exposureMode] == nil || self[.exposureMode] == .string("sensor"),
+                  self[.rawDenoise] == nil || self[.rawDenoise] == .number(0),
+                  self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0),
+                  self[.lensDistortion] != .boolean(true), self[.lensTCA] != .boolean(true) else {
+                throw AdjustmentTransferError.invalidPayload("raster request")
+            }
+        }
+    }
+
+    private func validateWhiteBalance() throws {
+        let mode = self[.whiteBalanceMode]?.string
+        if let mode, source.isRaw ? mode == "none" : mode != "none" {
+            throw AdjustmentTransferError.invalidPayload("white_balance.mode")
+        }
+        if !source.isRaw && (self[.temperature]?.number != nil || source.recipe == nil && self[.tint]?.number != nil) {
+            throw AdjustmentTransferError.invalidPayload("raster.white_balance")
+        }
+        if source.recipe != nil && self[.tint] == .null {
+            throw AdjustmentTransferError.invalidPayload("recipe.white_balance.tint")
+        }
+        if mode == "camera" && (self[.temperature]?.number != nil || source.recipe == nil && self[.tint]?.number != nil)
+            || mode == "temperature" && (self[.temperature] == .null || self[.tint] == .null) {
+            throw AdjustmentTransferError.invalidPayload("white_balance values conflict with mode")
+        }
+    }
+
+    private static func valid(_ value: AdjustmentTransferValue, for field: AdjustmentTransferField) -> Bool {
+        if let range = field.scalarRange {
+            guard let number = value.number, number.isFinite, range.contains(number) else { return false }
+            if field == .quarterTurns { return number.rounded() == number }
+            return ![.cropWidth, .cropHeight].contains(field) || number > 0
+        }
+        switch field {
+        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensAutoCrop: return value.boolean != nil
+        case .exposureMode: return value.string.map { ["scene", "preview", "sensor"].contains($0) } ?? false
+        case .whiteBalanceMode: return value.string.map { ["camera", "temperature", "none"].contains($0) } ?? false
+        case .temperature: return value == .null || value.number.map { $0.isFinite && (2000...50000).contains($0) } == true
+        case .tint: return value == .null || value.number.map { $0.isFinite && (-150...150).contains($0) } == true
+        case .look:
+            guard let object = value.object, Set(object.keys) == ["kind", "id"], let kind = object["kind"]?.string else { return false }
+            if kind == "neutral" { return object["id"] == .null }
+            guard ["builtin", "managed", "recipe", "recipe_lut"].contains(kind), let id = object["id"]?.string,
+                  !id.isEmpty, !id.contains("/"), !id.contains("\\"), id != ".", id != ".." else { return false }
+            return true
+        case .lensProfile: return value == .null || value.string.map { !$0.isEmpty } == true
+        case .rawDenoise: return value.number.map { [0, 1, 2].contains($0) } == true
+        case .chromaDenoise: return value == .null || value.number.map { [0, 1, 2].contains($0) } == true
+        case .waveletDenoise: return validWavelet(value)
+        default: return false
+        }
+    }
+
+    private static func validWavelet(_ value: AdjustmentTransferValue) -> Bool {
+        if value == .null { return true }
+        guard let wavelet = value.object,
+              Set(wavelet.keys) == ["enabled", "luma", "chroma", "coarse", "preset"],
+              wavelet["enabled"]?.boolean != nil,
+              ["detail", "clean", "custom"].contains(wavelet["preset"]?.string ?? "") else { return false }
+        return ["luma", "chroma", "coarse"].allSatisfy { wavelet[$0]?.number.map { $0.isFinite && (0...100).contains($0) } == true }
+    }
+}
+
+private struct TransferCodingKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+    static func rejectUnknown(_ decoder: Decoder, allowed: Set<String>) throws {
+        let values = try decoder.container(keyedBy: Self.self)
+        guard values.allKeys.allSatisfy({ allowed.contains($0.stringValue) }) else {
+            throw AdjustmentTransferError.invalidPayload("unknown field")
+        }
+    }
+}

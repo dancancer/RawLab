@@ -45,6 +45,9 @@ struct ContentView: View {
     @State var geometryGrid = true
     @State var geometryPerspective = false
     @State var showingProcessingContext = false
+    @State var adjustmentSheet: IOSAdjustmentSheet?
+    @State var pendingAdjustmentAction: IOSAdjustmentAction?
+    @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
@@ -163,6 +166,12 @@ struct ContentView: View {
             if viewModel.consumePersistedEditorSettings(newValue) { return }
             queueEditorSettingsChange(newValue)
         }
+        .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
+            guard let restored else { return }
+            settings = restored
+            viewModel.adjustmentRestoredSettings = nil
+            viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
+        }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
             photoImportTask?.cancel()
@@ -175,6 +184,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background || phase == .inactive {
+                cancelSliderInteraction()
                 viewModel.saveCurrentSettings(settings)
             }
             if phase == .background { batchModel?.cancel(forBackground: true) }
@@ -185,6 +195,7 @@ struct ContentView: View {
     private func applyEditorDraftObservers<Content: View>(to content: Content) -> some View {
         content
         .onChange(of: editorDraftSnapshot) { old, draft in
+            viewModel.hasAdjustmentDraft = draft.isActive
             if (old.geometry != draft.geometry || old.lens != draft.lens),
                draft.geometry != nil || draft.lens != nil {
                 if suppressNextDraftPreview { suppressNextDraftPreview = false }
@@ -197,6 +208,7 @@ struct ContentView: View {
             photoViewport = PhotoViewport()
             pendingFileImport = false
             pendingPhotoImport = false
+            pendingAdjustmentAction = nil
             adjustmentFine = false
             geometryDraft = nil
             lensDraft = nil
@@ -253,9 +265,11 @@ struct ContentView: View {
             if active { photoViewing.sourceChanged() }
         }
         .onChange(of: selectedAdjustment) { _, _ in
-            if isAdjustingSlider { setSliderEditing(false) }
+            if isAdjustingSlider { cancelSliderInteraction() }
             cancelRulerFocus()
         }
+        .onChange(of: hslChannel) { _, _ in cancelSliderInteraction() }
+        .onChange(of: adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
             handleEditorAppear()
@@ -264,6 +278,9 @@ struct ContentView: View {
 
     private func applyEditorSheets<Content: View>(to content: Content) -> some View {
         content
+        .sheet(item: $adjustmentSheet) { kind in
+            IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
+        }
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {
                 BatchExportView(model: batchModel)
@@ -300,7 +317,22 @@ struct ContentView: View {
             Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
             Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
         } message: { Text(resetConfirmationMessage) }
-        .onDisappear { photoViewing.endTemporaryViewing(); cancelRulerFocus(); cancelPhotoImport() }
+        .alert(L10n.text("重新载入已保存调整"), isPresented: $adjustmentReloadPresented) {
+            Button(L10n.text("重新载入已保存调整"), role: .destructive) {
+                guard viewModel.reloadSavedAdjustments() else { return }
+                if let restored = viewModel.adjustmentRestoredSettings { settings = restored }
+                cancelDraftNavigation()
+                discardEditorDraft()
+                activateEditorTool(.adjustment(.exposure))
+            }
+            Button(L10n.text("继续编辑"), role: .cancel) {}
+        } message: { Text(L10n.text("重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。")) }
+        .onDisappear {
+            cancelSliderInteraction()
+            viewModel.saveCurrentSettings(settings)
+            photoViewing.endTemporaryViewing()
+            cancelPhotoImport()
+        }
     }
 
     private func handleEditorAppear() {

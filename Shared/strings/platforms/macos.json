@@ -2419,6 +2419,331 @@
       "source": "统计不可用",
       "formats": []
     },
+    "位置与尺寸": {
+      "formats": [],
+      "source": "位置与尺寸"
+    },
+    "照片处理设置": {
+      "formats": [],
+      "source": "照片处理设置"
+    },
+    "锁定当前比例": {
+      "formats": [],
+      "source": "锁定当前比例"
+    },
+    "仅已修改": {
+      "formats": [],
+      "source": "仅已修改"
+    },
+    "保存失败": {
+      "formats": [],
+      "source": "保存失败"
+    },
+    "全部": {
+      "formats": [],
+      "source": "全部"
+    },
+    "几何与镜头仅在“全部”或显式选择时包含。": {
+      "formats": [],
+      "source": "几何与镜头仅在“全部”或显式选择时包含。"
+    },
+    "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。": {
+      "formats": [],
+      "source": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。"
+    },
+    "垂直位置": {
+      "formats": [],
+      "source": "垂直位置"
+    },
+    "复制范围": {
+      "formats": [],
+      "source": "复制范围"
+    },
+    "复制调整": {
+      "formats": [],
+      "source": "复制调整"
+    },
+    "复制调整…": {
+      "formats": [],
+      "source": "复制调整…"
+    },
+    "宽度": {
+      "formats": [],
+      "source": "宽度"
+    },
+    "尚未复制调整。请先从一张照片复制所需范围。": {
+      "formats": [],
+      "source": "尚未复制调整。请先从一张照片复制所需范围。"
+    },
+    "已保存": {
+      "formats": [],
+      "source": "已保存"
+    },
+    "已跳过": {
+      "formats": [],
+      "source": "已跳过"
+    },
+    "应用并保存": {
+      "formats": [],
+      "source": "应用并保存"
+    },
+    "应用有效输入、放弃输入，或返回继续编辑。": {
+      "formats": [],
+      "source": "应用有效输入、放弃输入，或返回继续编辑。"
+    },
+    "应用草稿": {
+      "formats": [],
+      "source": "应用草稿"
+    },
+    "应用输入": {
+      "formats": [],
+      "source": "应用输入"
+    },
+    "待处理": {
+      "formats": [],
+      "source": "待处理"
+    },
+    "所选调整与目标不兼容，请调整范围或跳过目标。": {
+      "formats": [],
+      "source": "所选调整与目标不兼容，请调整范围或跳过目标。"
+    },
+    "按实际生效值应用，已包含配方强度。": {
+      "formats": [],
+      "source": "按实际生效值应用，已包含配方强度。"
+    },
+    "撤销": {
+      "formats": [],
+      "source": "撤销"
+    },
+    "撤销 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "撤销 {0} 张"
+    },
+    "操作未完成，请重试。": {
+      "formats": [],
+      "source": "操作未完成，请重试。"
+    },
+    "放弃草稿": {
+      "formats": [],
+      "source": "放弃草稿"
+    },
+    "放弃输入": {
+      "formats": [],
+      "source": "放弃输入"
+    },
+    "数值输入尚未提交": {
+      "formats": [],
+      "source": "数值输入尚未提交"
+    },
+    "旋转": {
+      "formats": [],
+      "source": "旋转"
+    },
+    "暂无编辑历史。": {
+      "formats": [],
+      "source": "暂无编辑历史。"
+    },
+    "曝光模式": {
+      "formats": [],
+      "source": "曝光模式"
+    },
+    "更多编辑操作": {
+      "formats": [],
+      "source": "更多编辑操作"
+    },
+    "未变化": {
+      "formats": [],
+      "source": "未变化"
+    },
+    "本次会话历史": {
+      "formats": [],
+      "source": "本次会话历史"
+    },
+    "本次会话历史…": {
+      "formats": [],
+      "source": "本次会话历史…"
+    },
+    "来源：%@ · %@ 项调整": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "来源：{0} · {1} 项调整"
+    },
+    "查看调整范围": {
+      "formats": [],
+      "source": "查看调整范围"
+    },
+    "检查目标": {
+      "formats": [],
+      "source": "检查目标"
+    },
+    "正在检查目标…": {
+      "formats": [],
+      "source": "正在检查目标…"
+    },
+    "此照片有未应用的几何或镜头草稿。": {
+      "formats": [],
+      "source": "此照片有未应用的几何或镜头草稿。"
+    },
+    "水平位置": {
+      "formats": [],
+      "source": "水平位置"
+    },
+    "没有可处理目标，请重新选择照片。": {
+      "formats": [],
+      "source": "没有可处理目标，请重新选择照片。"
+    },
+    "没有可复制的调整，请选择其他范围。": {
+      "formats": [],
+      "source": "没有可复制的调整，请选择其他范围。"
+    },
+    "照片或调整已变化，请重新检查目标。": {
+      "formats": [],
+      "source": "照片或调整已变化，请重新检查目标。"
+    },
+    "畸变校正": {
+      "formats": [],
+      "source": "畸变校正"
+    },
+    "白平衡模式": {
+      "formats": [],
+      "source": "白平衡模式"
+    },
+    "目标所需的外观不可用，请先导入外观。": {
+      "formats": [],
+      "source": "目标所需的外观不可用，请先导入外观。"
+    },
+    "目标无法保留未选参数，请调整复制范围。": {
+      "formats": [],
+      "source": "目标无法保留未选参数，请调整复制范围。"
+    },
+    "目标：%@ 张照片": {
+      "formats": [
+        "%@"
+      ],
+      "source": "目标：{0} 张照片"
+    },
+    "粘贴调整": {
+      "formats": [],
+      "source": "粘贴调整"
+    },
+    "粘贴调整…": {
+      "formats": [],
+      "source": "粘贴调整…"
+    },
+    "自动裁切": {
+      "formats": [],
+      "source": "自动裁切"
+    },
+    "请先应用或放弃未完成的输入和几何草稿。": {
+      "formats": [],
+      "source": "请先应用或放弃未完成的输入和几何草稿。"
+    },
+    "调整内容无法读取，请重新复制。": {
+      "formats": [],
+      "source": "调整内容无法读取，请重新复制。"
+    },
+    "调整已变化": {
+      "formats": [],
+      "source": "调整已变化"
+    },
+    "调整照片": {
+      "formats": [],
+      "source": "调整照片"
+    },
+    "跳过": {
+      "formats": [],
+      "source": "跳过"
+    },
+    "选择此组": {
+      "formats": [],
+      "source": "选择此组"
+    },
+    "重做": {
+      "formats": [],
+      "source": "重做"
+    },
+    "重做 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重做 {0} 张"
+    },
+    "重试未完成项": {
+      "formats": [],
+      "source": "重试未完成项"
+    },
+    "降噪参数": {
+      "formats": [],
+      "source": "降噪参数"
+    },
+    "高度": {
+      "formats": [],
+      "source": "高度"
+    },
+    "%@ · 独立外观": {
+      "formats": [
+        "%@"
+      ],
+      "source": "{0} · 独立外观"
+    },
+    "已选 %@ 项": {
+      "formats": [
+        "%@"
+      ],
+      "source": "已选 {0} 项"
+    },
+    "清空选择": {
+      "formats": [],
+      "source": "清空选择"
+    },
+    "跳过以上目标后重试": {
+      "formats": [],
+      "source": "跳过以上目标后重试"
+    },
+    "已撤销": {
+      "formats": [],
+      "source": "已撤销"
+    },
+    "已撤销 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已撤销 {0} 张 · 未完成 {1} 张"
+    },
+    "已重做 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已重做 {0} 张 · 未完成 {1} 张"
+    },
+    "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@",
+        "%@",
+        "%@",
+        "%@"
+      ],
+      "source": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张"
+    },
+    "以下目标尚未完成本次历史操作，请检查原因后重试。": {
+      "formats": [],
+      "source": "以下目标尚未完成本次历史操作，请检查原因后重试。"
+    },
+    "完成": {
+      "formats": [],
+      "source": "完成"
+    },
+    "旧版降噪": {
+      "formats": [],
+      "source": "旧版降噪"
+    },
     "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。": {
       "formats": [],
       "source": "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"
@@ -2497,17 +2822,13 @@
       "formats": [],
       "source": "请先完成此照片的 AI 降噪，再预览或导出。"
     },
-    "位置与尺寸": {
+    "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。": {
       "formats": [],
-      "source": "位置与尺寸"
+      "source": "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。"
     },
-    "照片处理设置": {
+    "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。": {
       "formats": [],
-      "source": "照片处理设置"
-    },
-    "锁定当前比例": {
-      "formats": [],
-      "source": "锁定当前比例"
+      "source": "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。"
     }
   },
   "overrides": {},
@@ -2519,14 +2840,6 @@
       "fr": "0 à 100",
       "ja": "0～100",
       "zh-Hans": "0 至 100"
-    },
-    "RAW 降噪": {
-      "de": "RAW-Rauschreduzierung",
-      "en": "RAW noise reduction",
-      "es": "Reducción de ruido RAW",
-      "fr": "Réduction du bruit RAW",
-      "ja": "RAW ノイズ低減",
-      "zh-Hans": "RAW 降噪"
     },
     "RGB 输出直方图": {
       "de": "RGB-Ausgabehistogramm",
@@ -3256,14 +3569,6 @@
       "ja": "フィルムシミュレーション",
       "zh-Hans": "胶片模拟"
     },
-    "色度降噪": {
-      "de": "Reduzierung des Chroma-Rauschens",
-      "en": "Chroma noise reduction",
-      "es": "Reducción de ruido cromático",
-      "fr": "Réduction du bruit chroma",
-      "ja": "クロマノイズ低減",
-      "zh-Hans": "色度降噪"
-    },
     "色相、饱和度和明度": {
       "de": "Farbton, Sättigung und Helligkeit",
       "en": "Hue, saturation, and lightness",
@@ -3424,6 +3729,86 @@
       "ja": "黒レベル {0}",
       "zh-Hans": "黑位 {0}"
     },
+    "应用有效输入、放弃输入，或返回继续编辑。": {
+      "de": "Gültige Eingaben anwenden, verwerfen oder weiter bearbeiten.",
+      "en": "Apply valid input, discard it, or return to editing.",
+      "es": "Aplica la entrada válida, descártala o vuelve a editar.",
+      "fr": "Appliquez la saisie valide, abandonnez-la ou reprenez la modification.",
+      "ja": "有効な入力を適用するか、破棄するか、編集に戻ってください。",
+      "zh-Hans": "应用有效输入、放弃输入，或返回继续编辑。"
+    },
+    "应用草稿": {
+      "de": "Entwurf anwenden",
+      "en": "Apply Draft",
+      "es": "Aplicar borrador",
+      "fr": "Appliquer le brouillon",
+      "ja": "下書きを適用",
+      "zh-Hans": "应用草稿"
+    },
+    "应用输入": {
+      "de": "Eingabe anwenden",
+      "en": "Apply Input",
+      "es": "Aplicar entrada",
+      "fr": "Appliquer la saisie",
+      "ja": "入力を適用",
+      "zh-Hans": "应用输入"
+    },
+    "按实际生效值应用，已包含配方强度。": {
+      "de": "Anwendung mit wirksamen Werten einschließlich Rezeptstärke.",
+      "en": "Applied at effective values, including recipe strength.",
+      "es": "Se aplican los valores efectivos, incluida la intensidad de la receta.",
+      "fr": "Application des valeurs effectives, intensité de la recette comprise.",
+      "ja": "レシピの強度を含む実効値で適用します。",
+      "zh-Hans": "按实际生效值应用，已包含配方强度。"
+    },
+    "放弃草稿": {
+      "de": "Entwurf verwerfen",
+      "en": "Discard Draft",
+      "es": "Descartar borrador",
+      "fr": "Abandonner le brouillon",
+      "ja": "下書きを破棄",
+      "zh-Hans": "放弃草稿"
+    },
+    "放弃输入": {
+      "de": "Eingabe verwerfen",
+      "en": "Discard Input",
+      "es": "Descartar entrada",
+      "fr": "Abandonner la saisie",
+      "ja": "入力を破棄",
+      "zh-Hans": "放弃输入"
+    },
+    "数值输入尚未提交": {
+      "de": "Nicht übernommene Zahleneingabe",
+      "en": "Uncommitted Number Input",
+      "es": "Entrada numérica sin confirmar",
+      "fr": "Valeur non validée",
+      "ja": "数値入力が未確定です",
+      "zh-Hans": "数值输入尚未提交"
+    },
+    "更多编辑操作": {
+      "de": "Weitere Bearbeitungsaktionen",
+      "en": "More Editing Actions",
+      "es": "Más acciones de edición",
+      "fr": "Autres actions de modification",
+      "ja": "その他の編集操作",
+      "zh-Hans": "更多编辑操作"
+    },
+    "此照片有未应用的几何或镜头草稿。": {
+      "de": "Dieses Foto hat einen nicht angewendeten Geometrie- oder Objektiventwurf.",
+      "en": "This photo has an unapplied geometry or lens draft.",
+      "es": "Esta foto tiene un borrador de geometría u objetivo sin aplicar.",
+      "fr": "Cette photo a un brouillon de géométrie ou d’objectif non appliqué.",
+      "ja": "この写真には未適用のジオメトリまたはレンズの下書きがあります。",
+      "zh-Hans": "此照片有未应用的几何或镜头草稿。"
+    },
+    "{0} · 独立外观": {
+      "en": "{0} · Independent Look",
+      "de": "{0} · Eigenständiger Look",
+      "fr": "{0} · Rendu indépendant",
+      "ja": "{0} · 独立した外観",
+      "es": "{0} · Aspecto independiente",
+      "zh-Hans": "{0} · 独立外观"
+    },
     "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。": {
       "de": "KI-Entrauschen ist aktiv. Die üblichen Einstellungen bleiben erhalten. Änderungen am Weißabgleich erfordern eine erneute Verarbeitung.",
       "en": "AI denoising is active. Standard denoise settings are retained. White balance changes require reprocessing.",
@@ -3439,6 +3824,22 @@
       "fr": "La photo ou la balance des blancs a changé. Préparez à nouveau le débruitage IA.",
       "ja": "写真またはホワイトバランスが変更されました。AI ノイズ除去を再度準備してください。",
       "zh-Hans": "照片或白平衡已变化，请重新准备 AI 降噪。"
+    },
+    "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。": {
+      "en": "AI denoising cannot be copied yet. Choose Custom to copy other adjustments.",
+      "de": "KI-Entrauschen kann noch nicht kopiert werden. Wähle Benutzerdefiniert, um andere Anpassungen zu kopieren.",
+      "es": "La reducción de ruido con IA aún no se puede copiar. Elige Personalizado para copiar otros ajustes.",
+      "fr": "Le débruitage IA ne peut pas encore être copié. Choisissez Personnalisé pour copier les autres réglages.",
+      "ja": "AI ノイズ除去はまだコピーできません。カスタム範囲で他の調整を選択してください。",
+      "zh-Hans": "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。"
+    },
+    "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。": {
+      "en": "AI denoising is enabled on the target. Turn it off first, or deselect the standard denoise fields.",
+      "de": "KI-Entrauschen ist für das Zielfoto aktiviert. Deaktiviere es zuerst oder wähle die normalen Entrauschungsfelder ab.",
+      "es": "La reducción de ruido con IA está activada en el destino. Desactívala primero o desmarca los campos de reducción de ruido normal.",
+      "fr": "Le débruitage IA est activé sur la photo cible. Désactivez-le ou désélectionnez les réglages de débruitage standard.",
+      "ja": "対象の写真で AI ノイズ除去が有効です。先に無効にするか、通常のノイズ除去項目を選択解除してください。",
+      "zh-Hans": "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。"
     }
   }
 }

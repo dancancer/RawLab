@@ -65,7 +65,7 @@ struct PreparedEditorDraft {
 
 // 只保留原记录的附加信息；当前参数始终来自 ContentView。
 struct EditorRecordMetadata {
-    let source: EditorEditSource
+    var source: EditorEditSource
     let filmID: String?
     let updatedAt: Date
     let lutID: String?

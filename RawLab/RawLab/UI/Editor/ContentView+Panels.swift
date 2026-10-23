@@ -6,6 +6,7 @@ extension ContentView {
     var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             Menu {
+                Section { adjustmentTransferMenu }.disabled(!viewModel.hasImage || editorBusy)
                 Button { photoInfoMode = photoInfoMode.next } label: {
                     Label(L10n.text("照片信息"), systemImage: "info.circle")
                 }.disabled(!viewModel.hasImage)
@@ -337,6 +338,12 @@ extension ContentView {
             viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
                 (tool != .geometry || geometryPerspective == perspective)
+        }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
+            if viewModel.sourceRevision == source && currentEditorTool == tool &&
+                (tool != .adjustment(.hsl) || hslChannel == channel) &&
+                (tool != .geometry || geometryPerspective == perspective) {
+                cancelSliderInteraction()
+            }
         })
     }
 

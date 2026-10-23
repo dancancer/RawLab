@@ -7,7 +7,16 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d /tmp/rawlab-look-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
+TRANSFER_SOURCES=(
+  "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+)
+swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
     "$ROOT/Shared/BundledLook.swift" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \
     "$ROOT/RawLabMac/Sources/Presentation/MacNeutralReference.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \

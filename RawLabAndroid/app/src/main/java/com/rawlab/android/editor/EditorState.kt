@@ -43,6 +43,7 @@ data class EditorState(
     val lookImportReport: String? = null,
     val gpuEnabled: Boolean = true,
     val draft: AdjustmentDraft? = null,
+    val adjustmentRevision: Long = 0,
 ) {
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
         operation == Operation.NONE && draft == null && saveState != EditSaveState.FAILED

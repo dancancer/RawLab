@@ -2,11 +2,21 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/tests/native-env.sh"
+BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-denoise-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+TRANSFER_SOURCES=(
+  "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+)
+swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     "$ROOT/Shared/BundledLook.swift" \
   "$ROOT/RawLabMac/Sources/Presentation/MacNeutralReference.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
@@ -20,6 +30,6 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target
   "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
   "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" \
   "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/RawLabMac/tests/DenoiseModelTests.swift" \
-  "$ROOT/lutools/build-macos/libsony2fuji_core.a" $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
+  "$BUILD/libsony2fuji_core.a" $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "${1:?Pass a RAW fixture}"

@@ -6,6 +6,7 @@ import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.VersionedPhotoEdit
 
 // ============================================================================
 //  编辑器的渲染执行：只在渲染队列的线程上调用
@@ -14,7 +15,7 @@ import com.rawlab.android.settings.PhotoIdentity
 
 internal class EditorRenderer(
     private val storage: PhotoStorage,
-    private val restore: (PhotoIdentity) -> EditSettings?,
+    private val restore: (PhotoIdentity) -> VersionedPhotoEdit?,
     private val debuggable: Boolean,
 ) {
     private var processor: NativeProcessor? = null
@@ -31,17 +32,18 @@ internal class EditorRenderer(
     fun perform(work: Work): WorkResult = synchronized(storage) { when (work) {
         is Work.Import -> {
             val photo = storage.import(work.uri)
-            val restored = restore(photo.identity)
             try {
+                val record = restore(photo.identity)
+                val restored = record?.settings
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
                     native.setGpuMode(work.gpuMode)
                     val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind)
                     if (debuggable)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
-                    WorkResult.MissingLook(photo, restored)
+                    WorkResult.MissingLook(photo, restored, record)
                 } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
-                    importing = true, restored = restored != null))
+                    importing = true, restored = restored != null, importedRecord = record))
             }
             catch (error: Throwable) { photo.file.delete(); throw error }
         }

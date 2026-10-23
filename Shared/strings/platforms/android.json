@@ -2749,6 +2749,670 @@
       "formats": [],
       "file": "editor_strings.xml",
       "types": []
+    },
+    "transfer_copy": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "复制调整",
+      "types": []
+    },
+    "transfer_paste": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "粘贴调整",
+      "types": []
+    },
+    "transfer_history": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "本次会话历史",
+      "types": []
+    },
+    "transfer_undo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "撤销",
+      "types": []
+    },
+    "transfer_redo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重做",
+      "types": []
+    },
+    "transfer_scope": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "复制范围",
+      "types": []
+    },
+    "transfer_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全部",
+      "types": []
+    },
+    "transfer_modified": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅已修改",
+      "types": []
+    },
+    "transfer_custom": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自定义",
+      "types": []
+    },
+    "transfer_geometry_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "几何与镜头仅在“全部”或显式选择时包含。",
+      "types": []
+    },
+    "transfer_selected": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "已选 {0} 项",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_clear": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清空选择",
+      "types": []
+    },
+    "transfer_select_group": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择此组",
+      "types": []
+    },
+    "transfer_source": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "来源：{0} · {1} 项调整",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "transfer_targets": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "目标：{0} 张照片",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看调整范围",
+      "types": []
+    },
+    "transfer_choose_files": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "从文件导入",
+      "types": []
+    },
+    "transfer_preflight": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "检查目标",
+      "types": []
+    },
+    "transfer_preparing": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在检查目标…",
+      "types": []
+    },
+    "transfer_empty_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有可处理目标，请重新选择照片。",
+      "types": []
+    },
+    "transfer_apply": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用并保存",
+      "types": []
+    },
+    "transfer_retry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重试未完成项",
+      "types": []
+    },
+    "transfer_no_clipboard": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "尚未复制调整。请先从一张照片复制所需范围。",
+      "types": []
+    },
+    "transfer_skip": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "跳过",
+      "types": []
+    },
+    "transfer_history_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。",
+      "types": []
+    },
+    "transfer_no_history": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "暂无编辑历史。",
+      "types": []
+    },
+    "transfer_edit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整照片",
+      "types": []
+    },
+    "transfer_undo_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "撤销 {0} 张",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_redo_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重做 {0} 张",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_history_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "以下目标尚未完成本次历史操作，请检查原因后重试。",
+      "types": []
+    },
+    "transfer_history_skip": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "跳过以上目标后重试",
+      "types": []
+    },
+    "transfer_applied": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已保存",
+      "types": []
+    },
+    "transfer_unchanged": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未变化",
+      "types": []
+    },
+    "transfer_skipped": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已跳过",
+      "types": []
+    },
+    "transfer_blocked": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "待处理",
+      "types": []
+    },
+    "transfer_conflict": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整已变化",
+      "types": []
+    },
+    "transfer_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存失败",
+      "types": []
+    },
+    "transfer_undone": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已撤销",
+      "types": []
+    },
+    "transfer_conflict_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片或调整已变化，请重新检查目标。",
+      "types": []
+    },
+    "transfer_empty_scope": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有可复制的调整，请选择其他范围。",
+      "types": []
+    },
+    "transfer_draft_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请先应用或放弃未完成的输入和几何草稿。",
+      "types": []
+    },
+    "transfer_missing_look": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "目标所需的外观不可用，请先导入外观。",
+      "types": []
+    },
+    "transfer_unrepresentable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "目标无法保留未选参数，请调整复制范围。",
+      "types": []
+    },
+    "transfer_incompatible": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "所选调整与目标不兼容，请调整范围或跳过目标。",
+      "types": []
+    },
+    "transfer_invalid_payload": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整内容无法读取，请重新复制。",
+      "types": []
+    },
+    "transfer_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "操作未完成，请重试。",
+      "types": []
+    },
+    "transfer_reload": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新载入已保存调整",
+      "types": []
+    },
+    "transfer_reload_body": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。",
+      "types": []
+    },
+    "transfer_summary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s",
+        "%3$s",
+        "%4$s",
+        "%5$s"
+      ],
+      "source": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张",
+      "types": [
+        "s",
+        "s",
+        "s",
+        "s",
+        "s"
+      ]
+    },
+    "transfer_field_look": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观",
+      "types": []
+    },
+    "transfer_field_strength": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "强度",
+      "types": []
+    },
+    "transfer_field_exposure": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "曝光",
+      "types": []
+    },
+    "transfer_field_exposure_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "曝光模式",
+      "types": []
+    },
+    "transfer_field_contrast": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "对比度",
+      "types": []
+    },
+    "transfer_field_highlights": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高光",
+      "types": []
+    },
+    "transfer_field_shadows": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "阴影",
+      "types": []
+    },
+    "transfer_field_s_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "S 曲线",
+      "types": []
+    },
+    "transfer_field_white_balance_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "白平衡模式",
+      "types": []
+    },
+    "transfer_field_temperature": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色温",
+      "types": []
+    },
+    "transfer_field_tint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色调",
+      "types": []
+    },
+    "transfer_field_saturation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度",
+      "types": []
+    },
+    "transfer_field_vignette_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "暗角",
+      "types": []
+    },
+    "transfer_field_vignette_midpoint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "中点",
+      "types": []
+    },
+    "transfer_field_vignette_roundness": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "圆度",
+      "types": []
+    },
+    "transfer_field_vignette_feather": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "羽化",
+      "types": []
+    },
+    "transfer_field_vignette_highlights": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高光保护",
+      "types": []
+    },
+    "transfer_field_grain_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颗粒",
+      "types": []
+    },
+    "transfer_field_grain_size": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "大小",
+      "types": []
+    },
+    "transfer_field_grain_roughness": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "粗糙度",
+      "types": []
+    },
+    "transfer_field_sharpening": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锐化",
+      "types": []
+    },
+    "transfer_field_raw_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "RAW 降噪",
+      "types": []
+    },
+    "transfer_field_post_rgb_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "旧版降噪",
+      "types": []
+    },
+    "transfer_field_chroma_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色度降噪",
+      "types": []
+    },
+    "transfer_field_wavelet_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "降噪参数",
+      "types": []
+    },
+    "transfer_field_crop_x": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "水平位置",
+      "types": []
+    },
+    "transfer_field_crop_y": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "垂直位置",
+      "types": []
+    },
+    "transfer_field_crop_width": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "宽度",
+      "types": []
+    },
+    "transfer_field_crop_height": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高度",
+      "types": []
+    },
+    "transfer_field_quarter_turns": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "旋转",
+      "types": []
+    },
+    "transfer_field_flip_horizontal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "水平翻转",
+      "types": []
+    },
+    "transfer_field_flip_vertical": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "垂直翻转",
+      "types": []
+    },
+    "transfer_field_straighten": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "拉直",
+      "types": []
+    },
+    "transfer_field_perspective_horizontal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "水平透视",
+      "types": []
+    },
+    "transfer_field_perspective_vertical": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "垂直透视",
+      "types": []
+    },
+    "transfer_field_lens_distortion": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "畸变校正",
+      "types": []
+    },
+    "transfer_field_lens_tca": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "横向色差",
+      "types": []
+    },
+    "transfer_field_lens_auto_crop": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自动裁切",
+      "types": []
+    },
+    "transfer_field_lens_profile": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "镜头配置",
+      "types": []
+    },
+    "transfer_group_looks": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观",
+      "types": []
+    },
+    "transfer_group_light": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光线",
+      "types": []
+    },
+    "transfer_group_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颜色",
+      "types": []
+    },
+    "transfer_group_effects": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "效果",
+      "types": []
+    },
+    "transfer_group_detail": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "细节",
+      "types": []
+    },
+    "transfer_group_geometry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "几何与镜头",
+      "types": []
+    },
+    "transfer_channel_0": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "红",
+      "types": []
+    },
+    "transfer_channel_1": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "橙",
+      "types": []
+    },
+    "transfer_channel_2": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黄",
+      "types": []
+    },
+    "transfer_channel_3": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿",
+      "types": []
+    },
+    "transfer_channel_4": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "青",
+      "types": []
+    },
+    "transfer_channel_5": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蓝",
+      "types": []
+    },
+    "transfer_channel_6": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "紫",
+      "types": []
+    },
+    "transfer_channel_7": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "洋红",
+      "types": []
+    },
+    "transfer_axis_0": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色相",
+      "types": []
+    },
+    "transfer_axis_1": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度",
+      "types": []
+    },
+    "transfer_axis_2": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明度",
+      "types": []
     }
   },
   "overrides": {

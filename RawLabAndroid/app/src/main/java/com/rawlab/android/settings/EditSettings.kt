@@ -261,7 +261,7 @@ internal fun EditSettings.resetRenderValues(
 }
 
 // Float 上先加 0.5 会把 0.49999997 提前进位；转成 Double 后再取整才能对应 std::round(float)。
-private fun nativeRound(value: Float): Float =
+internal fun nativeRound(value: Float): Float =
     (if (value >= 0f) floor(value.toDouble() + .5) else ceil(value.toDouble() - .5)).toFloat()
 
 /** 无法用现有字段精确表示时返回 null；不夹紧物化后的普通调整值。 */

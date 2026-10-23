@@ -336,7 +336,9 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let failed = try prepared(.group(.light))
         let oldSaveWork = model.saveWork
         let directory = root.appendingPathComponent("reset-edits")
-        try FileManager.default.removeItem(at: directory)
+        let backup = root.appendingPathComponent("reset-edits-backup")
+        // 模拟暂时不可写，恢复时保留原 revision；删除整个 registry 属于外部修改冲突。
+        try FileManager.default.moveItem(at: directory, to: backup)
         try Data().write(to: directory)
         try check(model.commitReset(failed) && !model.saveEdits() && model.dirty && model.saveError != nil &&
                   model.settings.exposure == 0,
@@ -345,6 +347,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(model.settings.exposure == 0 && model.dirty,
                   "older queued save cannot restore pre-reset state")
         try FileManager.default.removeItem(at: directory)
+        try FileManager.default.moveItem(at: backup, to: directory)
         try check(model.saveEdits() && !model.dirty && model.saveError == nil &&
                   EditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
                   "failed reset save can retry the candidate")

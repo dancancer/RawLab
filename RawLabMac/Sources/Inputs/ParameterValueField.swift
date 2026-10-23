@@ -36,6 +36,32 @@ struct ParameterValueField: NSViewRepresentable {
         NSApp?.keyWindow?.makeFirstResponder(nil)
     }
 
+    static func resolvePendingInputs() -> Bool {
+        let pending = Coordinator.instances.allObjects.filter { $0.dirty }
+        guard !pending.isEmpty else { return true }
+        pending.forEach { $0.preflightPending = true }
+        defer { pending.forEach { $0.preflightPending = false } }
+        let alert = NSAlert()
+        alert.messageText = L10n.text("数值输入尚未提交")
+        alert.informativeText = L10n.text("应用有效输入、放弃输入，或返回继续编辑。")
+        alert.addButton(withTitle: L10n.text("应用输入"))
+        alert.addButton(withTitle: L10n.text("放弃输入"))
+        alert.addButton(withTitle: L10n.text("继续编辑"))
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            guard pending.allSatisfy({ $0.commit() }) else {
+                if let field = pending.first(where: { $0.dirty })?.field { field.window?.makeFirstResponder(field) }
+                return false
+            }
+            NSApp?.keyWindow?.makeFirstResponder(nil)
+            return true
+        case .alertSecondButtonReturn: cancelPendingInputs(); return true
+        default:
+            if let field = pending.first?.field { field.window?.makeFirstResponder(field) }
+            return false
+        }
+    }
+
     @discardableResult static func commitPendingInputs() -> Bool {
         let valid = Coordinator.instances.allObjects.map { $0.commit() }.allSatisfy { $0 }
         if valid { NSApp?.keyWindow?.makeFirstResponder(nil) }
@@ -89,6 +115,7 @@ struct ParameterValueField: NSViewRepresentable {
         weak var field: NumericTextField?
         var editing = false
         var dirty = false
+        var preflightPending = false
         var lastValue: Double
         var resetRevision: Int
         private(set) var isValid = true
@@ -223,7 +250,7 @@ struct ParameterValueField: NSViewRepresentable {
         }
 
         func controlTextDidEndEditing(_ notification: Notification) {
-            commit()
+            if !preflightPending { commit() }
             editing = false
             field?.editing = false
             field?.needsDisplay = true
@@ -412,6 +439,7 @@ final class NumericTextFieldCell: NSTextFieldCell {
     override func fieldEditor(for controlView: NSView) -> NSTextView? {
         editor.owner = controlView as? NumericTextField
         editor.isFieldEditor = true
+        editor.allowsUndo = true
         editor.isRichText = false
         editor.drawsBackground = false
         editor.insertionPointColor = .systemYellow

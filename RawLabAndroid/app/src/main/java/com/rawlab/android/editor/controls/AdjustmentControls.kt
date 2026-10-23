@@ -47,6 +47,7 @@ import com.rawlab.android.R
 import com.rawlab.android.ui.ToolIcon
 
 internal val LocalEditorHaptics = staticCompositionLocalOf { true }
+internal val LocalAdjustmentCancellation = staticCompositionLocalOf<(() -> Unit) -> Unit> { { restore -> restore() } }
 internal val LocalAdjustmentFocus = staticCompositionLocalOf<(Boolean) -> Unit> { {} }
 internal val LocalAdjustmentHapticGate = staticCompositionLocalOf { AdjustmentHapticGate() }
 
@@ -198,6 +199,7 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
     val current by rememberUpdatedState(value)
     val scope = LocalAdjustmentSession.current
     val liveScope by rememberUpdatedState(scope)
+    val cancel = LocalAdjustmentCancellation.current
     val update by rememberUpdatedState(onValue)
     val view = LocalView.current
     val context = LocalContext.current
@@ -232,6 +234,9 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
             val start = current
             var latest = start
             var changedDuringGesture = false
+            var released = false
+            val updateAtStart = update
+            val cancelAtStart = cancel
             var boundary = false
             val captured = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                 ?: return@awaitEachGesture
@@ -261,10 +266,14 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
                     val event = awaitPointerEvent()
                     change = event.changes.firstOrNull { it.id == down.id } ?: break
                 } while (change.pressed && !change.isConsumed)
+                released = !change.pressed && !change.isConsumed
             } finally {
                 active = false
                 focus(false)
-                if (liveScope == scope && changedDuringGesture) update(latest, false)
+                if (changedDuringGesture) {
+                    if (released && liveScope == scope) updateAtStart(latest, false)
+                    else cancelAtStart { if (liveScope == scope) updateAtStart(start, false) }
+                }
             }
         }
     }) {

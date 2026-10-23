@@ -99,6 +99,7 @@ extension ContentView {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let persistence = try EditPersistence(directory: directory.appendingPathComponent("edits"))
                 viewModel.editPersistence = persistence
+                viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: persistence)
                 let url = directory.appendingPathComponent("workspace-ui.png")
                 try geometryReviewImage(url, color: .systemBlue)
                 let identity = PhotoIdentity(resourceIdentifier: "workspace-ui")
@@ -133,6 +134,7 @@ extension ContentView {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let persistence = try EditPersistence(directory: directory.appendingPathComponent("edits"))
             viewModel.editPersistence = persistence
+            viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: persistence)
             let aURL = directory.appendingPathComponent("A.png")
             let bURL = directory.appendingPathComponent("B.png")
             try geometryReviewImage(aURL, color: .systemRed)

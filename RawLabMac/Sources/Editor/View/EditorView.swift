@@ -125,6 +125,8 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
+        .sheet(item: $model.adjustmentSheet) { kind in AdjustmentTransferView(model: model, kind: kind) }
+        .onExitCommand { model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
@@ -339,6 +341,16 @@ struct EditorView: View {
                 .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
         }
         ToolbarItemGroup {
+            Menu {
+                Button(L10n.text("复制调整…")) { model.requestAdjustmentSheet(.copy) }.disabled(model.file == nil)
+                Button(L10n.text("粘贴调整…")) { model.requestAdjustmentSheet(.paste) }.disabled(model.adjustmentClipboard == nil)
+                Divider()
+                Button(L10n.text("撤销"), action: model.undoAdjustment).disabled(!model.canUndoAdjustment)
+                Button(L10n.text("重做"), action: model.redoAdjustment).disabled(!model.canRedoAdjustment)
+                Button(L10n.text("本次会话历史…")) { model.requestAdjustmentSheet(.history) }
+            } label: { Image(systemName: "ellipsis.circle") }
+                .help(L10n.text("更多编辑操作")).accessibilityLabel(L10n.text("更多编辑操作"))
+                .accessibilityIdentifier("adjustment.more").disabled(model.exporting)
             Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))

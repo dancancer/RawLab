@@ -14,6 +14,7 @@ extension RawEditorViewModel {
         retainEditMetadata(currentEditState(settings: settings))
         pendingSettings = settings
         cancelQueuedSettingsSave()
+        guard adjustmentInteraction == nil else { return }
         let revision = settingsSaveRevision
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.editorEditSource == source, self.settingsSaveRevision == revision else { return }
@@ -25,6 +26,7 @@ extension RawEditorViewModel {
 
     @discardableResult func saveCurrentSettings(_ settings: RawSettings) -> Bool {
         cancelQueuedSettingsSave()
+        guard adjustmentInteraction == nil else { return false }
         guard !hasFailedDraftSave else { return false }
         guard let source = editorEditSource, pendingSettings != nil else { return true }
         return persistEditCandidate(currentEditState(settings: settings), source: source)
@@ -38,19 +40,26 @@ extension RawEditorViewModel {
 
     func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
         guard editorEditSource == source else { return false }
-        do {
-            if editPersistence == nil { editPersistence = try EditPersistence.appStore() }
-            let saved = PhotoEditState(settings: candidate.settings)
-                .replacing(settings: candidate.settings, preservingFilmID: candidate.filmID)
-            try editPersistence!.save(source.identity, state: saved)
-            retainEditMetadata(saved)
-            pendingSettings = nil
-            setEditNotice(.saved)
-            return true
-        } catch {
-            editSaveState = .failed(error.localizedDescription)
+        guard let expected = loadedEditRecord, expected.identity == source.identity, let session = adjustmentSession else {
+            adjustmentReloadRequired = true
+            editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
             return false
         }
+        let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
+            defaultState: PhotoEditState(settings: .default), isCurrent: { self.editorEditSource == source },
+            validateSource: adjustmentSourceValidator)
+        if let saved = outcome.saved {
+            adjustmentReloadRequired = false
+            loadedEditRecord = saved
+            retainEditMetadata(saved.state ?? candidate)
+            pendingSettings = nil
+            adjustmentHistoryRevision = UUID()
+            if outcome.status == .applied { setEditNotice(.saved) }
+            return true
+        }
+        adjustmentReloadRequired = outcome.status == .conflict
+        editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
+        return false
     }
 
     func setEditNotice(_ state: EditSaveState) {
@@ -67,6 +76,7 @@ extension RawEditorViewModel {
         if editPersistence == nil && pendingSettings == nil {
             do {
                 editPersistence = try EditPersistence.appStore()
+                adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
                 editSaveState = .idle
                 statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
             } catch { editSaveState = .failed(error.localizedDescription) }
