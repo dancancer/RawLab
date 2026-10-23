@@ -41,6 +41,17 @@ struct HSLSettings: Codable, Equatable, Hashable {
         }
     }
 
+    // 数据迁移/选择性应用保留已有小数，不经过面向手势的整数步进。
+    @discardableResult mutating func setExact(_ axis: HSLAxis, channel: Int, value: Double) -> Bool {
+        guard (0..<8).contains(channel), value.isFinite, (-100...100).contains(value) else { return false }
+        switch axis {
+        case .hue: hue[channel] = value
+        case .saturation: saturation[channel] = value
+        case .lightness: lightness[channel] = value
+        }
+        return true
+    }
+
     mutating func reset(channel: Int? = nil) {
         if let channel {
             for axis in HSLAxis.allCases { set(axis, channel: channel, value: 0) }
