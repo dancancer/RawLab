@@ -3,6 +3,12 @@
 状态：现有字段来源与版本边界已复核；selective payload 编码及逐端 adapter 尚待冻结。基线为
 `development@12cda1c67ddd1c58095831ff12a112fc1356da78`。带源码行号的链接固定到该提交，避免后续实现改变行号后混淆历史依据。
 
+2026-10-23 状态补正：`development@57e4cf77` 已支持含 processing identity 的 Agent v5；
+下文固定到 `12cda1c6` 的 v1～v4 引用保留为历史字段来源，不代表当前能力上限。
+新调色字段尚未接入，拟用新 schema（v6），不能扩展已发布 v5 的允许字段。
+当前事实见 [Edit JSON v5](../../../lutools/docs/edit-json.md#v5-processing-identity) 和
+[剩余交付计划](../../integration/editing-iteration/remaining-delivery-plan.md)。
+
 本文只登记稳定字段语义、现有来源和格式边界，不新增通用 native DTO，不修改现有
 snapshot/Agent/C ABI，也不把尚未接通或尚未完成数值合同的新算法写成已支持。I0 目录完成
 不等于四端 adapter、UI、保存、历史或导出已经实现。批次状态和 owner 以
@@ -17,13 +23,13 @@ snapshot/Agent/C ABI，也不把尚未接通或尚未完成数值合同的新算
 | --- | --- | --- |
 | 本端照片记录（native record） | 恢复一张照片的完整编辑、自动模式、配方上下文和照片身份 | iOS `PhotoEditState`、macOS `PhotoEditState`、Android `EditSettings`、Windows `AdjustmentSnapshot`；缺失新 optional 应按本端兼容规则解析为 identity，不在读取时批量改写旧记录。 |
 | 选择性调整 payload | 剪贴板、用户预设、批量同步 | I0 只定义稳定字段 ID、选中集合、逻辑值/模式、外观引用和来源上下文；`payload_version=1` 与 `scope_version=1` 是独立版本，当前代码尚无该 payload 实现。 |
-| Agent render recipe | CLI/MCP/处理验收 | 当前 Edit JSON v1～v4 保存解析到目标后的最终 core 值；不能直接作为跨照片 selective payload。 |
+| Agent render recipe | CLI/MCP/处理验收 | Edit JSON v1～v5 保存解析到目标后的最终 core 值；v5 另含 processing identity，仍不能直接作为跨照片 selective payload。 |
 
 版本彼此独立：`payload_version/scope_version` 不等于 Agent `schema_version`、native
 record version 或 batch journal version。该分层和版本规则来自
 [总技术方案第 2 节](technical-design.md#2-字段与格式兼容先区分三类数据)。
 
-当前 Agent 事实如下：`EditRecipe` 的 JSON schema 独立于 binary request v2，结构包含输入、
+原 I0 基线的 Agent 事实如下：`EditRecipe` 的 JSON schema 独立于 binary request v2，结构包含输入、
 曝光/WB/look、tone/detail/HSL/effects/denoise/lens、geometry/perspective 和输出：
 [edit_recipe.h](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/include/sony2fuji/edit_recipe.h#L8)。解析器只接受
 `schema_version` 1～4，旧版本拒绝 v4 组和未知字段：
@@ -168,7 +174,7 @@ payload 或 native record 的编辑参数部分。六组是 UI/reset 归属；�
   配置是独立 v1 additive ABI：[sony2fuji_c.h](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/include/sony2fuji/ffi/sony2fuji_c.h#L134)。
 - 新配置必须有独立 `version/struct_size` 和 setter；setter 先校验全部值，错误版本、size、非有限、越界、非法曲线或不支持能力时保留旧 session 状态。新 session 从 identity 开始，复用 session 时请求必须显式设置或清零，不能泄漏上一张照片参数。
 - 当前 setter 的 `struct_size` 兼容规则存在 exact/min 差异，新增 ABI 不得自行假定旧规则：wavelet 实现接受 `>= sizeof`，effects/HSL/geometry/perspective/lens 实现要求 exact size，详见 [sony2fuji_c.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/ffi/sony2fuji_c.cpp#L1083)。
-- Agent v1～v4 的未知字段/旧版本拒绝行为保持；只有 v5 parser、serializer、CLI capability、native preview/export、Mac/Windows AgentRecipe 和实际核心全部接通，才能宣告 v5。当前能力查询仍报告 recipe versions `[1,2,3,4]`：[agent_commands.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/cli/agent_commands.cpp#L133)。
+- Agent v1～v5 的未知字段/旧版本拒绝行为保持；当前能力查询报告 recipe versions `[1,2,3,4,5]`，v5 仅新增 processing identity：[agent_commands.cpp](https://github.com/dancancer/RawLab/blob/57e4cf7787ac0fdf74dcf40224fc16406d981994/lutools/src/cli/agent_commands.cpp#L133)。新调色 schema（拟 v6）只有在 parser、serializer、CLI capability、native preview/export、Mac/Windows AgentRecipe 和实际核心接通后才宣告支持。
 - 新算法候选 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 目前只是技术方案候选，未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
 
 ## 7. 未来版本、缺字段和失败处理
