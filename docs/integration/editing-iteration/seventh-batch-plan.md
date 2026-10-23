@@ -1,6 +1,6 @@
 # 第七批：S4 RGB 与工作区联合回归
 
-状态：四端实现、独立复评及约定原生回归已完成，已进入本地集成；尚未 push、创建 PR 或远端合入。范围来自 [工作区需求 REQ-10/11、AC-16/17/20/21](../../design/editor-workspace/requirements.md) 和 [技术方案 8.2、10](../../design/editor-workspace/technical-design.md)。本批承接 S3，不改整体迭代的审批或验收状态。
+状态：四端实现、独立复评及约定原生回归已完成，已进入本地集成；用户已授权从阶段汇总分支统一向 `development` 提 PR，远端合入另行按门禁执行。范围来自 [工作区需求 REQ-10/11、AC-16/17/20/21](../../design/editor-workspace/requirements.md) 和 [技术方案 8.2、10](../../design/editor-workspace/technical-design.md)。本批承接 S3，不改整体迭代的审批或验收状态。
 
 ## 基线与责任
 
@@ -47,4 +47,4 @@
 
 跨批次的完整设备、读屏及 GPU 验收仍按总账保留；不把语义树、模拟器或 Windows 软件后端当成对应硬件证据。
 
-本批不包含 push、创建 PR、远端合并或发布授权；完成本地交付后如需这些动作，针对实际提交另行取得授权。S4 本地完成不自动关闭 I1 的 Windows MCP 实测或其他 ITER 项。
+用户于 2026-10-23 授权汇总本轮已完成工作并向 `development` 提 PR，交付方式见[第六批汇总 PR 说明](sixth-batch-plan.md#汇总-pr-交付)。远端合入及发布不在本次交付授权内。S4 本地完成不自动关闭设备验收或其他 ITER 项；Windows MCP 的独立补充验证见总账。

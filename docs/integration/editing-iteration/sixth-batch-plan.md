@@ -88,10 +88,12 @@
 - 四端均已正常合入 `5eaff75c`，包含 `development@4dfa8b3e`；实现及后续生产增量均已独立复评。最终提交见[总账交付索引](README.md)。
 - 四端本批原生增量与证据绑定已完成。Windows 在共享 VM 空闲后补齐外观、真实输入及 UIA 切图/重开/重启链，并修复 IME 与窗口外松键后的恢复问题；最后生产和测试增量已独立复评。约定的本地交付没有剩余阻塞，远端集成和下列设备边界继续单独登记。
 - 旧核心 `bfab4b90` 的 UI 证据保留原归属；当前核心 `97f2a079` 的 source、配置与 artifact hashes 单独核对，并补跑受影响 RAW/raster/所有权路径。没有以旧二进制证明新核心通过。
-- S3 未 push、未建立 PR；真机、真实读屏、硬件 GPU、校准镜头样片及 S4 RGB 保留明确缺口，不改整体 ITER 的验收状态。
+- S3 随下述阶段汇总 PR 交付；真机、真实读屏、硬件 GPU 和校准镜头样片仍保留明确缺口。S4 RGB 的后续本地交付见[第七批索引](seventh-batch-plan.md#本地交付索引)，不改整体 ITER 的验收状态。
 
-## 后续交付方案待定
+## 汇总 PR 交付
 
-用户提出先将五个 PR 集成到阶段分支、再统一向 `development` 提 PR。此方式可减少中间 `development` push 引发的重型 CI，但当前 workflow 的 PR base filter 只有 `development`、`release/**`、`main`；只改 PR 目标会漏掉现有检查。
+用户于 2026-10-23 确认先将已完成工作合入阶段开发分支，再统一向 `development` 提 PR。本轮复用 `feature/editing-rgb-integration`，已包含四端 S3/S4、共享资源和 MCP 平台补充的最终提交。
 
-可选方案为阶段子 PR 运行轻量契约检查，全部就绪后聚合 PR 运行一次完整矩阵，合入后的实际 `development` 再运行联合矩阵。需同时明确 workflow filter、保护规则、评审与合入授权；不能以减少次数绕过 required checks。本批先完成本地实现与证据，未据此建议修改远端或 CI 策略。
+仅推送这一汇总分支并创建目标为 `development` 的聚合 PR，使用现有 PR 触发条件及受影响平台矩阵；不另外创建指向阶段分支、但未覆盖现有 CI filter 的子 PR。独立复评和原生验证保留各自源码归属，聚合 PR 的实际 head/base 与 CI 结果在 PR 登记。
+
+本次授权覆盖阶段汇总、push 和创建 PR；聚合 PR 合入 `development` 以及后续发布仍按各自授权和门禁执行。

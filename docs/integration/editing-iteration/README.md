@@ -27,8 +27,8 @@
 | 批次 | 迭代项与交付 | 前置 | 当前状态 | 验收 |
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
-| I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 基础功能已集成；Mac/Windows 当前 CLI 本地对照与 Windows native 生命周期通过，补充实现 `b5d226d` 已本地集成；未 push | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1/S2a/S2b 已集成，相关原生验证、独立复评和最终源联合 CI 完成，边界见对应批次；S3 四端实现、独立复评及约定原生增量已完成；S3/S4 本地交付见第六、七批索引，尚未远端集成 | AC-01～21、IT-02/16 |
+| I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 基础功能已集成；Mac/Windows 当前 CLI 本地对照与 Windows native 生命周期通过，补充实现 `b5d226d` 已本地集成，随阶段汇总 PR 交付 | IT-01，真实 CLI/MCP 输出对照 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1/S2a/S2b 已集成，相关原生验证、独立复评和最终源联合 CI 完成，边界见对应批次；S3 四端实现、独立复评及约定原生增量已完成；S3/S4 本地交付见第六、七批索引，通过阶段汇总 PR 交付，尚未合入 `development` | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
@@ -118,12 +118,14 @@ S3 的本地交付不等于 S4 RGB、四端真机/读屏/GPU 或整项 ITER 的�
 
 第七批 S4 交付索引（2026-10-23）：四端 RGB 统计及受影响工作流已完成本地实现、独立复评和原生回归，已合入 `feature/editing-rgb-integration`；具体提交和平台边界见[第七批计划](seventh-batch-plan.md#本地交付索引)。Windows MCP 平台验证也已补齐并本地集成，见下段；I2 及后续批次仍按依赖排队。
 
+远端交付方式（2026-10-23）：用户已授权先汇总全部已完成提交，再由 `feature/editing-rgb-integration` 统一向 `development` 提 PR。四端 S3/S4、共享资源和 MCP 补充均已进入该分支；仅此聚合 PR 运行现有受影响平台矩阵。PR 的实时 head/base、检查和后续合入状态以 GitHub 为准；本次授权不包含聚合 PR 合入或发布。
+
 MCP 平台补充交付（2026-10-23）：`feature/editing-mcp-windows-validation@b5d226d` 已本地集成。Windows 与 Mac 均以当前 CLI 运行完整 43 项测试且无跳过，Windows 另验证真实 RAW 处理中的取消与超时。最小生产修复使未配对 Unicode 代理字符跨平台统一返回 `invalid_argument`；测试夹具保留直接子进程语义，符号链接路径按实际系统与 CLI 对照。独立复评无遗留问题；运行证据按当前源码、CLI 和配置绑定，本地结果不称为 Hosted CI 通过。
 
 | 首批 PR | 交付范围 | 集成状态 |
 | --- | --- | --- |
 | [#107](https://github.com/dancancer/RawLab/pull/107) | 本总账、字段目录与首批计划 | 已集成；payload 编码与逐端 adapter 另行冻结 |
-| [#108](https://github.com/dancancer/RawLab/pull/108) | MCP v4 五工具与本地兼容验证 | 基础功能已集成；Windows 补充实现与本地实测见 `b5d226d`，尚未远端交付 |
+| [#108](https://github.com/dancancer/RawLab/pull/108) | MCP v4 五工具与本地兼容验证 | 基础功能已集成；Windows 补充实现与本地实测见 `b5d226d`，随阶段汇总 PR 交付 |
 | [#109](https://github.com/dancancer/RawLab/pull/109) | Mac S1 规则、完整重置候选与配方独立化 | 已集成；第二批接提交事务，UI 仍待接入 |
 
 | 第二批 PR | 交付范围 | 集成状态 |
@@ -176,7 +178,7 @@ MCP 平台补充交付（2026-10-23）：`feature/editing-mcp-windows-validation
 
 ITER-02 及后续项尚未完成整项四端联合验收。MCP 已有 macOS 本地及 ARM/Intel Hosted CI 证据；本轮补齐 Windows 本地验证并对当前 Mac CLI 复验，Hosted CI 证据仍以对应远端源为准。下列验收项按已执行范围和保留缺口分别登记：
 
-- IT-01：Mac/Windows 五工具真实 stdio、v4/v5 配方及像素等价、路径边界和无覆盖发布已本地验证；Windows native 取消/超时、进程退出及清理已补齐。Windows Hosted CI 尚未接入 MCP，当前补充提交尚未 push。
+- IT-01：Mac/Windows 五工具真实 stdio、v4/v5 配方及像素等价、路径边界和无覆盖发布已本地验证；Windows native 取消/超时、进程退出及清理已补齐。Windows Hosted CI 尚未接入 MCP，当前补充提交随阶段汇总 PR 交付。
 - IT-02：AC-01～21 四端分列；模型、UI、RGB/图像与设备证据不能混为一类。
 - IT-03～05、09～10：保存失败、部分成功、草稿、同名异身份、后续修改冲突、旧任务兼容。
 - IT-06～08、11～12：数值合同/fixture hash、CPU reference、GPU Auto/Force、固定质量样本及 preview/FINAL 对照。
