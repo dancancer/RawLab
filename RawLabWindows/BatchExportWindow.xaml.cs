@@ -149,7 +149,7 @@ public partial class BatchExportWindow : Window
         try
         {
             var checkedItems=await Task.Run(()=>{
-                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0);
+                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend);
                 foreach(var input in inputs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     if(closeRequested)break;
@@ -292,7 +292,7 @@ public partial class BatchExportWindow : Window
         {
             await Task.Run(() => {
                 if (work.Format != ExportFormat.RenderedDng) ExportMetadata.VerifyAvailable();
-                using var engine = new RenderEngine();
+                using var engine = new RenderEngine(aiBackend:work.AIBackend);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -337,7 +337,7 @@ public partial class BatchExportWindow : Window
             var frame = await Task.Run(() => {
                 if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
                 if (snapshot.Look != null && !File.Exists(snapshot.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
-                using var engine = new RenderEngine();
+                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend);
                 var settings=RenderEngine.PrepareBatchSettings(snapshot.Source,row.Input,snapshot.Settings.Restore());
                 return engine.Render(row.Input, settings, snapshot.Look, 1600, statistics: false, clipping: false);
             });

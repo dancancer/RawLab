@@ -150,6 +150,9 @@ extension EditorModel {
                 if completion == .publishExact || scheduler.latest?.id == request.id {
                     self.previewOutdated = true
                     self.error = failure.localizedDescription
+                    if case RenderError.aiNotReady = failure, self.settings.aiDenoiseEnabled {
+                        self.aiResultUnavailable()
+                    }
                 }
             } else if let neutral, let result {
                 let previousCanvas = geometryCanvasSize
@@ -157,6 +160,10 @@ extension EditorModel {
                 self.neutral = neutral
                 self.result = result
                 if completion == .publishExact { previewOutdated = false }
+                if request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
+                    self.aiState = .ready
+                    self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: self.settings)
+                }
                 if let draft = geometryDraft,
                    request.value.settings.geometrySettings == draft.previewGeometry,
                    request.value.settings.lensSettings == draft.lens {

@@ -20,6 +20,7 @@ struct Adjustments: Equatable, Codable {
     var chromaNoiseReduction: Double?
     // nil 保留旧算法语义，显式启用或选择预设后才迁移。
     var waveletNoiseReduction: WaveletDenoiseSettings?
+    var aiDenoiseEnabled = false
     var photoEffects: PhotoEffectsSettings?
     var hsl: HSLSettings?
     var lensCorrection: LensCorrectionSettings?
@@ -118,8 +119,9 @@ struct Adjustments: Equatable, Codable {
 
     var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
     var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
-    var isDenoiseEnabled: Bool { waveletNoiseReduction?.enabled ?? (denoiseMode > 0) }
+    var isDenoiseEnabled: Bool { aiDenoiseEnabled || (waveletNoiseReduction?.enabled ?? (denoiseMode > 0)) }
     var denoiseSummary: String {
+        if aiDenoiseEnabled { return L10n.text("AI 降噪") }
         if let settings = waveletNoiseReduction {
             return settings.enabled ? settings.preset.title : L10n.text("停用")
         }
@@ -170,6 +172,12 @@ struct Adjustments: Equatable, Codable {
     var usesAsShotWhiteBalance: Bool {
         whiteBalanceMode == .asShot ||
             (masterRecipe == nil && temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint)
+    }
+
+    var aiWhiteBalanceSignature: [Float] {
+        var request = sony2fuji_request()
+        apply(to: &request)
+        return [Float(request.wb_mode.rawValue), request.temperature, request.tint]
     }
 
     mutating func applyMasterRecipe(_ recipe: MasterRecipe) {
@@ -228,6 +236,7 @@ struct Adjustments: Equatable, Codable {
         if group == .film { clearMasterRecipe() }
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
         if group == .color { hsl = nil }
+        if group == .detail { aiDenoiseEnabled = false }
         if group == .effects { photoEffects = nil }
         if group == .lens { lensCorrection = nil }
         if group == .geometry { geometry = nil }
@@ -410,7 +419,7 @@ enum EditorAdjustmentRules {
             case .hsl: return !settings.hslSettings.isIdentity
             case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
             case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
-            case .denoise: return settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+            case .denoise: return settings.aiDenoiseEnabled || settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
             case .geometry: return !settings.geometrySettings.isIdentity
             case .lens: return settings.lensSettings != LensCorrectionSettings()
             default: return settings[keyPath: tool.parameter!.spec.keyPath] != tool.parameter!.spec.defaultValue
@@ -433,7 +442,7 @@ enum EditorAdjustmentRules {
                 (settings.masterRecipe != nil && settings.tint != 0)
         case .group(.effects): return settings.effectSettings != PhotoEffectsSettings()
         case .group(.detail):
-            return settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
+            return settings.aiDenoiseEnabled || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
                 (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
         case .group(.geometry):
             return !settings.geometrySettings.isIdentity || settings.lensSettings != LensCorrectionSettings()
@@ -464,6 +473,7 @@ enum EditorAdjustmentRules {
                 case .vignette: result.settings.resetEffect(.vignetteAmount)
                 case .grain: result.settings.resetEffect(.grainAmount)
                 case .denoise:
+                    result.settings.aiDenoiseEnabled = false
                     result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
                 case .geometry: result.settings.geometry = nil
                 case .lens: result.settings.lensCorrection = nil
@@ -492,6 +502,7 @@ enum EditorAdjustmentRules {
                 result.settings.hsl = nil
             case .group(.effects): result.settings.photoEffects = nil
             case .group(.detail):
+                result.settings.aiDenoiseEnabled = false
                 result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
                 result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
             case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
@@ -533,6 +544,7 @@ extension Adjustments {
         rawNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .rawNoiseReduction) ?? 0
         chromaNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .chromaNoiseReduction)
         waveletNoiseReduction = try values.decodeIfPresent(WaveletDenoiseSettings.self, forKey: .waveletNoiseReduction)
+        aiDenoiseEnabled = try values.decodeIfPresent(Bool.self, forKey: .aiDenoiseEnabled) ?? false
         photoEffects = try values.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects)
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl)
         lensCorrection = try values.decodeIfPresent(LensCorrectionSettings.self, forKey: .lensCorrection)

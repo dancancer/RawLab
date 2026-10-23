@@ -140,6 +140,18 @@ the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 
 ## Rendering Order
 
+The optional desktop DualDn experiment replaces the normalized Bayer input before
+native demosaic and supplies an exposure-independent camera-space RGB correction.
+It retains the current processing version's demosaic, native color conversion,
+highlight handling and exposure anchoring. The correction is derived from the
+difference between inverse-Rec.709 model output and its official ISP skip image;
+it is zero in protected highlight regions and is applied only once, before the
+existing lens/orientation/display path. Negative and super-white linear values
+remain representable. AI bypasses FBDD, wavelet and display-chroma denoising;
+sharpening and later edits keep their existing order. Full protocol and cache
+identity rules are in [the DualDn contract](../../docs/architecture/dualdn-inline-denoise.md).
+
+
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.

@@ -100,12 +100,12 @@ struct RawLabMacApp: App {
                     Divider()
                     Button(L10n.text("导出 JPEG…")) { model.export(png: false) }
                         .keyboardShortcut("e", modifiers: [.command, .shift])
-                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                        .disabled(!model.canExport)
                     Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }
-                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                        .disabled(!model.canExport)
                     Button(L10n.text("使用当前调整批量导出…")) {
                         if model.prepareBatch() { openWindow(id: "batch-export") }
-                    }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                    }.disabled(!model.canExport)
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }.disabled(model.batch == nil)
                 }
             }

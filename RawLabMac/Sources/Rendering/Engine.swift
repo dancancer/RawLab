@@ -99,6 +99,20 @@ struct RawWhiteBalanceCacheKey: Equatable {
     }
 }
 
+final class AIPreparation {
+    private let lock = NSLock()
+    private var cancelled = false
+    let progress: (Int, UInt64, UInt64) -> Void
+    init(progress: @escaping (Int, UInt64, UInt64) -> Void) { self.progress = progress }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    func report(phase: Int, completed: UInt64, total: UInt64) -> Int32 {
+        guard !isCancelled else { return 0 }
+        progress(phase, completed, total)
+        return isCancelled ? 0 : 1
+    }
+}
+
 final class RenderEngine {
     private final class DisplayImage {
         var buffer = sony2fuji_buffer()
@@ -137,6 +151,11 @@ final class RenderEngine {
         }
     }
     private var session: OpaquePointer?
+    private let aiModelDirectory: URL?
+    private let aiCacheDirectory: URL
+    private let aiBackend: sony2fuji_ai_backend
+    static var aiAvailable: Bool { sony2fuji_ai_available() != 0 }
+    static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
     private let gpuMode: sony2fuji_gpu_mode
     private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
     private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, value: WhiteBalance?)?
@@ -149,10 +168,16 @@ final class RenderEngine {
     private var lensCatalogKey: LensCatalogKey?
     private var lensCandidates: [LensCandidate] = []
     init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil,
-         statisticsProvider: @escaping (inout sony2fuji_buffer) -> PreviewStatistics? = PreviewStatistics.analyze) throws {
+         statisticsProvider: @escaping (inout sony2fuji_buffer) -> PreviewStatistics? = PreviewStatistics.analyze,
+         aiModelDirectory: URL? = RenderEngine.bundledAIModel, aiCacheDirectory: URL? = nil,
+         aiBackend: sony2fuji_ai_backend = SONY2FUJI_AI_AUTO) throws {
         self.gpuMode = gpuMode
         self.statisticsProvider = statisticsProvider
         self.lensDatabaseURL = lensDatabaseURL
+        self.aiModelDirectory = aiModelDirectory
+        self.aiBackend = aiBackend
+        self.aiCacheDirectory = aiCacheDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RawLab/DualDn", isDirectory: true)
         try resetSession()
     }
 
@@ -180,6 +205,7 @@ final class RenderEngine {
     deinit { sony2fuji_session_destroy(session) }
 
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
+    var lastAIBackend: String { String(cString: sony2fuji_session_get_ai_backend(session)) }
 
     private func configureProcessing(_ identity: ProcessingIdentity) throws {
         guard sony2fuji_session_set_processing_version(session, identity.core) == SONY2FUJI_STATUS_OK else {
@@ -187,9 +213,63 @@ final class RenderEngine {
         }
     }
 
+    private func configureAI(enabled: Bool) throws {
+        if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
+            throw RenderError.aiNotReady(L10n.text("此构建未安装 AI 降噪模型。"))
+        }
+        var config = sony2fuji_ai_denoise_config()
+        config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_ai_denoise_config>.size)
+        config.enabled = enabled ? 1 : 0
+        config.backend = aiBackend
+        let status = (aiModelDirectory?.path ?? "").withCString { model in
+            aiCacheDirectory.path.withCString { cache in
+                config.model_directory = model; config.cache_directory = cache
+                return sony2fuji_session_set_ai_denoise(session, &config)
+            }
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+    }
+
+    private func aiError(_ status: sony2fuji_status) -> RenderError {
+        if status == SONY2FUJI_STATUS_CANCELLED { return .aiCancelled }
+        let detail = String(cString: sony2fuji_session_get_ai_error(session))
+        let message = detail.isEmpty ? String(cString: sony2fuji_status_message(status)) : detail
+        if status == SONY2FUJI_STATUS_AI_NOT_READY {
+            return .aiNotReady(L10n.text("请先完成此照片的 AI 降噪，再预览或导出。") + "\n" + message)
+        }
+        return .failed(L10n.format("AI 降噪失败：%@", message))
+    }
+
+    func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {
+        guard !progress.isCancelled else { throw RenderError.aiCancelled }
+        guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持已标定的 Bayer RAW。")) }
+        let settings = try resolvedSettings(url, settings: settings)
+        try configureProcessing(settings.processing)
+        try configureAI(enabled: true)
+        var request = sony2fuji_request()
+        request.version = SONY2FUJI_REQUEST_VERSION
+        request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
+        request.input_type = SONY2FUJI_INPUT_RAW
+        request.wb_mul = (1,1,1,1)
+        settings.apply(to: &request)
+        let context = Unmanaged.passUnretained(progress).toOpaque()
+        let status = url.path.withCString { path in
+            request.input_path = path
+            return sony2fuji_session_prepare_ai(session, &request, { context, phase, done, total in
+                guard let context else { return 0 }
+                return Unmanaged<AIPreparation>.fromOpaque(context).takeUnretainedValue()
+                    .report(phase: Int(phase), completed: done, total: total)
+            }, context)
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+        guard !progress.isCancelled else { throw RenderError.aiCancelled }
+    }
+
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureAI(enabled: settings.aiDenoiseEnabled)
         try configureLens(settings.lensSettings)
         try configureGeometry(settings.geometrySettings)
         guard sony2fuji_session_set_raw_exposure_mode(session, settings.exposureMode.core) == SONY2FUJI_STATUS_OK else {
@@ -207,6 +287,7 @@ final class RenderEngine {
         let status = try withInput(url, request: &request) { input in
             sony2fuji_session_estimate_auto_exposure(session, &input, &ev)
         }
+        if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
         guard status == SONY2FUJI_STATUS_OK else { throw RenderError.failed(L10n.format("无法自动调整曝光：%@", String(describing: String(cString: sony2fuji_status_message(status))))) }
         return Double(ev)
     }
@@ -246,6 +327,10 @@ final class RenderEngine {
         }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
+            throw RenderError.failed(L10n.text("AI 降噪仅支持已标定的 Bayer RAW。"))
+        }
+        try configureAI(enabled: settings.aiDenoiseEnabled)
         let key = try? RawWhiteBalanceCacheKey(url)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
@@ -321,6 +406,7 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {
+            if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
             throw RenderError.processing(status, input: url, look: lut, output: output)
         }
         if let output {

@@ -16,7 +16,7 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
@@ -30,10 +30,13 @@ internal sealed partial class RenderEngine : IDisposable
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
-    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null)
+    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null)
     {
         this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
+        this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
+        this.aiCacheDirectory=aiCacheDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Cache","DualDn");
+        aiBackendOverride=aiBackend;
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
     }
@@ -45,12 +48,14 @@ internal sealed partial class RenderEngine : IDisposable
         settings = PrepareRecipe(path, settings);
         SetProcessing(settings.Processing);
         EnsureInput(path);
+        ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         var request=settings.Request(path,null,0,null);
         SetInput(ref request,path);
-        Native.Check(Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev));
+        var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
+        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
         return ev;
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
@@ -68,13 +73,14 @@ internal sealed partial class RenderEngine : IDisposable
         }
         sourceStamp=(rawStamp,lutStamp);
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,gpuMode,compare,clipping,rawStamp,lutStamp);
+            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
             PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge);
         if(original?.Key!=referenceKey)original=null;
         var cacheEdge=edge;
-        if(previews.TryGetValue(cacheEdge,out var cached))return cached;
+        // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
+        if(!settings.AIDenoiseEnabled && previews.TryGetValue(cacheEdge,out var cached))return cached;
         var neutral=compare ? original?.Frame : null;
         if(compare && neutral==null)
         {
@@ -83,7 +89,7 @@ internal sealed partial class RenderEngine : IDisposable
         }
         var result=Render(path,settings,lut,edge,interactive,clipping:clipping,viewportPreview:true)!;
         var frame=new PreviewFrame(neutral ?? result,result);
-        if(!interactive && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
+        if(!interactive && !settings.AIDenoiseEnabled && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
         {
             const long budget=256L*1024*1024;
             var bytes=FrameBytes(frame);
@@ -100,6 +106,7 @@ internal sealed partial class RenderEngine : IDisposable
         settings = PrepareRecipe(path, settings);
         SetProcessing(settings.Processing);
         EnsureInput(path);
+        ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
@@ -121,7 +128,7 @@ internal sealed partial class RenderEngine : IDisposable
             var status = Native.sony2fuji_process(session,ref request,out buffer);
             if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
-            Native.Check(status);
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
             if (output != null) {
                 if (format != ExportFormat.RenderedDng)
                 {

@@ -2418,6 +2418,84 @@
     "统计不可用": {
       "source": "统计不可用",
       "formats": []
+    },
+    "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。": {
+      "formats": [],
+      "source": "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"
+    },
+    "AI 降噪": {
+      "formats": [],
+      "source": "AI 降噪"
+    },
+    "AI 降噪仅支持已标定的 Bayer RAW。": {
+      "formats": [],
+      "source": "AI 降噪仅支持已标定的 Bayer RAW。"
+    },
+    "AI 降噪失败": {
+      "formats": [],
+      "source": "AI 降噪失败"
+    },
+    "AI 降噪失败：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "AI 降噪失败：{0}"
+    },
+    "AI 降噪已取消。": {
+      "formats": [],
+      "source": "AI 降噪已取消。"
+    },
+    "AI 降噪（实验）": {
+      "formats": [],
+      "source": "AI 降噪（实验）"
+    },
+    "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。": {
+      "formats": [],
+      "source": "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。"
+    },
+    "关闭 AI 降噪": {
+      "formats": [],
+      "source": "关闭 AI 降噪"
+    },
+    "已应用 AI 降噪；曝光和外观调整复用结果。": {
+      "formats": [],
+      "source": "已应用 AI 降噪；曝光和外观调整复用结果。"
+    },
+    "普通降噪参数已保留，关闭 AI 降噪即可恢复。": {
+      "formats": [],
+      "source": "普通降噪参数已保留，关闭 AI 降噪即可恢复。"
+    },
+    "正在保存 AI 结果": {
+      "formats": [],
+      "source": "正在保存 AI 结果"
+    },
+    "正在准备 AI 降噪": {
+      "formats": [],
+      "source": "正在准备 AI 降噪"
+    },
+    "正在处理 RAW 噪声": {
+      "formats": [],
+      "source": "正在处理 RAW 噪声"
+    },
+    "正在处理颜色噪声": {
+      "formats": [],
+      "source": "正在处理颜色噪声"
+    },
+    "此构建未安装 AI 降噪模型。": {
+      "formats": [],
+      "source": "此构建未安装 AI 降噪模型。"
+    },
+    "此照片或构建尚不能使用 AI 降噪。": {
+      "formats": [],
+      "source": "此照片或构建尚不能使用 AI 降噪。"
+    },
+    "照片或白平衡已变化，请重新准备 AI 降噪。": {
+      "formats": [],
+      "source": "照片或白平衡已变化，请重新准备 AI 降噪。"
+    },
+    "请先完成此照片的 AI 降噪，再预览或导出。": {
+      "formats": [],
+      "source": "请先完成此照片的 AI 降噪，再预览或导出。"
     }
   },
   "overrides": {},
@@ -2557,14 +2635,6 @@
       "fr": "Utiliser cet objectif",
       "ja": "このレンズを使用",
       "zh-Hans": "使用此镜头"
-    },
-    "保存": {
-      "de": "Speichern",
-      "en": "Save",
-      "es": "Guardar",
-      "fr": "Enregistrer",
-      "ja": "保存",
-      "zh-Hans": "保存"
     },
     "保留旧编辑记录的降噪算法": {
       "de": "Behält die Rauschreduzierung früherer Bearbeitungen bei",
@@ -2781,14 +2851,6 @@
       "fr": "Exporté : {0}",
       "ja": "書き出し済み: {0}",
       "zh-Hans": "已导出：{0}"
-    },
-    "已应用": {
-      "de": "Angewendet",
-      "en": "Applied",
-      "es": "Aplicado",
-      "fr": "Appliqué",
-      "ja": "適用済み",
-      "zh-Hans": "已应用"
     },
     "已开启": {
       "de": "Ein",
@@ -3365,6 +3427,22 @@
       "fr": "Niveau de noir {0}",
       "ja": "黒レベル {0}",
       "zh-Hans": "黑位 {0}"
+    },
+    "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。": {
+      "de": "KI-Entrauschen ist aktiv. Die üblichen Einstellungen bleiben erhalten. Änderungen am Weißabgleich erfordern eine erneute Verarbeitung.",
+      "en": "AI denoising is active. Standard denoise settings are retained. White balance changes require reprocessing.",
+      "es": "La reducción de ruido con IA está activa. Los ajustes normales se conservan. Cambiar el balance de blancos requiere volver a procesar.",
+      "fr": "Le débruitage IA est actif. Les réglages habituels sont conservés. Modifier la balance des blancs nécessite un nouveau traitement.",
+      "ja": "AI ノイズ除去が有効です。通常の設定は保持されます。ホワイトバランスを変更すると再処理が必要です。",
+      "zh-Hans": "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"
+    },
+    "照片或白平衡已变化，请重新准备 AI 降噪。": {
+      "de": "Foto oder Weißabgleich haben sich geändert. Bereite die KI-Entrauschung erneut vor.",
+      "en": "The photo or white balance changed. Prepare AI denoising again.",
+      "es": "La foto o el balance de blancos han cambiado. Prepara de nuevo la reducción de ruido con IA.",
+      "fr": "La photo ou la balance des blancs a changé. Préparez à nouveau le débruitage IA.",
+      "ja": "写真またはホワイトバランスが変更されました。AI ノイズ除去を再度準備してください。",
+      "zh-Hans": "照片或白平衡已变化，请重新准备 AI 降噪。"
     }
   }
 }

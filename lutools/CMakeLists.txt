@@ -897,6 +897,8 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
 endif()
 
+include(cmake/ai-denoise.cmake)
+
 # 安装规则
 install(TARGETS sony2fuji_core
     ARCHIVE DESTINATION lib

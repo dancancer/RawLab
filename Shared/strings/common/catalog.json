@@ -3830,5 +3830,157 @@
     "fr": "Statistiques indisponibles",
     "ja": "統計を利用できません",
     "zh-Hans": "统计不可用"
+  },
+  "AI 降噪": {
+    "de": "KI-Entrauschen",
+    "en": "AI denoise",
+    "es": "Reducción de ruido con IA",
+    "fr": "Débruitage IA",
+    "ja": "AI ノイズ除去",
+    "zh-Hans": "AI 降噪"
+  },
+  "AI 降噪仅支持已标定的 Bayer RAW。": {
+    "de": "KI-Entrauschen unterstützt nur kalibrierte Bayer-RAW-Dateien.",
+    "en": "AI denoising only supports calibrated Bayer RAW files.",
+    "es": "La reducción de ruido con IA solo admite archivos Bayer RAW calibrados.",
+    "fr": "Le débruitage IA prend uniquement en charge les fichiers Bayer RAW étalonnés.",
+    "ja": "AI ノイズ除去はキャリブレーション済みの Bayer RAW のみ対応しています。",
+    "zh-Hans": "AI 降噪仅支持已标定的 Bayer RAW。"
+  },
+  "AI 降噪失败": {
+    "de": "KI-Entrauschen fehlgeschlagen",
+    "en": "AI denoising failed",
+    "es": "La reducción de ruido con IA falló",
+    "fr": "Échec du débruitage IA",
+    "ja": "AI ノイズ除去に失敗しました",
+    "zh-Hans": "AI 降噪失败"
+  },
+  "AI 降噪失败：{0}": {
+    "de": "KI-Entrauschen fehlgeschlagen: {0}",
+    "en": "AI denoising failed: {0}",
+    "es": "Error en la reducción de ruido con IA: {0}",
+    "fr": "Échec du débruitage IA : {0}",
+    "ja": "AI ノイズ除去に失敗しました：{0}",
+    "zh-Hans": "AI 降噪失败：{0}"
+  },
+  "AI 降噪已取消。": {
+    "de": "KI-Entrauschen abgebrochen.",
+    "en": "AI denoising cancelled.",
+    "es": "Reducción de ruido con IA cancelada.",
+    "fr": "Débruitage IA annulé.",
+    "ja": "AI ノイズ除去をキャンセルしました。",
+    "zh-Hans": "AI 降噪已取消。"
+  },
+  "AI 降噪（实验）": {
+    "de": "KI-Entrauschen (experimentell)",
+    "en": "AI denoise (experimental)",
+    "es": "Reducción de ruido con IA (experimental)",
+    "fr": "Débruitage IA (expérimental)",
+    "ja": "AI ノイズ除去（実験的）",
+    "zh-Hans": "AI 降噪（实验）"
+  },
+  "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。": {
+    "de": "Unterstützt verlustfreies A7C II RAW in voller Größe bei ISO 100–12800. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.",
+    "en": "Supports A7C II full-size lossless RAW at ISO 100–12800. Initial processing time depends on your device; completed results can be reused.",
+    "es": "Admite RAW sin pérdida de tamaño completo de A7C II a ISO 100–12800. El tiempo inicial depende del dispositivo; los resultados se pueden reutilizar.",
+    "fr": "Prend en charge le RAW sans perte pleine taille de l’A7C II à ISO 100–12800. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.",
+    "ja": "A7C II のフルサイズロスレス RAW（ISO 100～12800）に対応。初回の処理時間はデバイスによって異なり、完了後は結果を再利用できます。",
+    "zh-Hans": "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。"
+  },
+  "保存": {
+    "de": "Speichern",
+    "en": "Save",
+    "es": "Guardar",
+    "fr": "Enregistrer",
+    "ja": "保存",
+    "zh-Hans": "保存"
+  },
+  "关闭 AI 降噪": {
+    "de": "KI-Entrauschen deaktivieren",
+    "en": "Turn off AI denoise",
+    "es": "Desactivar reducción de ruido con IA",
+    "fr": "Désactiver le débruitage IA",
+    "ja": "AI ノイズ除去を無効にする",
+    "zh-Hans": "关闭 AI 降噪"
+  },
+  "已应用": {
+    "de": "Angewendet",
+    "en": "Applied",
+    "es": "Aplicado",
+    "fr": "Appliqué",
+    "ja": "適用済み",
+    "zh-Hans": "已应用"
+  },
+  "已应用 AI 降噪；曝光和外观调整复用结果。": {
+    "de": "KI-Entrauschen angewendet. Belichtungs- und Look-Anpassungen verwenden das Ergebnis erneut.",
+    "en": "AI denoise applied. Exposure and look adjustments reuse the result.",
+    "es": "Reducción de ruido con IA aplicada. Los ajustes de exposición y apariencia reutilizan el resultado.",
+    "fr": "Débruitage IA appliqué. Les réglages d’exposition et de rendu réutilisent le résultat.",
+    "ja": "AI ノイズ除去を適用しました。露出やルックの調整では結果を再利用します。",
+    "zh-Hans": "已应用 AI 降噪；曝光和外观调整复用结果。"
+  },
+  "普通降噪参数已保留，关闭 AI 降噪即可恢复。": {
+    "de": "Die üblichen Entrauschungseinstellungen bleiben erhalten. Deaktivieren Sie KI-Entrauschen, um sie wieder zu verwenden.",
+    "en": "Standard denoise settings are retained. Turn off AI denoise to restore them.",
+    "es": "Los ajustes normales de reducción de ruido se conservan. Desactiva la IA para restaurarlos.",
+    "fr": "Les réglages habituels de débruitage sont conservés. Désactivez le débruitage IA pour les rétablir.",
+    "ja": "通常のノイズ除去設定は保持されています。AI ノイズ除去をオフにすると元に戻ります。",
+    "zh-Hans": "普通降噪参数已保留，关闭 AI 降噪即可恢复。"
+  },
+  "正在保存 AI 结果": {
+    "de": "KI-Ergebnis wird gespeichert",
+    "en": "Saving AI result",
+    "es": "Guardando resultado de IA",
+    "fr": "Enregistrement du résultat IA",
+    "ja": "AI 処理結果を保存中",
+    "zh-Hans": "正在保存 AI 结果"
+  },
+  "正在准备 AI 降噪": {
+    "de": "KI-Entrauschen wird vorbereitet",
+    "en": "Preparing AI denoise",
+    "es": "Preparando reducción de ruido con IA",
+    "fr": "Préparation du débruitage IA",
+    "ja": "AI ノイズ除去を準備中",
+    "zh-Hans": "正在准备 AI 降噪"
+  },
+  "正在处理 RAW 噪声": {
+    "de": "RAW-Rauschen wird verarbeitet",
+    "en": "Processing RAW noise",
+    "es": "Procesando ruido RAW",
+    "fr": "Traitement du bruit RAW",
+    "ja": "RAW ノイズを処理中",
+    "zh-Hans": "正在处理 RAW 噪声"
+  },
+  "正在处理颜色噪声": {
+    "de": "Farbrauschen wird verarbeitet",
+    "en": "Processing color noise",
+    "es": "Procesando ruido de color",
+    "fr": "Traitement du bruit chromatique",
+    "ja": "カラーノイズを処理中",
+    "zh-Hans": "正在处理颜色噪声"
+  },
+  "此构建未安装 AI 降噪模型。": {
+    "de": "Dieses Build enthält kein KI-Entrauschungsmodell.",
+    "en": "This build does not include the AI denoise model.",
+    "es": "Esta compilación no incluye el modelo de reducción de ruido con IA.",
+    "fr": "Cette version ne contient pas le modèle de débruitage IA.",
+    "ja": "このビルドには AI ノイズ除去モデルが含まれていません。",
+    "zh-Hans": "此构建未安装 AI 降噪模型。"
+  },
+  "此照片或构建尚不能使用 AI 降噪。": {
+    "de": "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.",
+    "en": "AI denoising is unavailable for this photo or build.",
+    "es": "La reducción de ruido con IA no está disponible para esta foto o compilación.",
+    "fr": "Le débruitage IA est indisponible pour cette photo ou cette version.",
+    "ja": "この写真またはビルドでは AI ノイズ除去を使用できません。",
+    "zh-Hans": "此照片或构建尚不能使用 AI 降噪。"
+  },
+  "请先完成此照片的 AI 降噪，再预览或导出。": {
+    "de": "Schließe die KI-Entrauschung dieses Fotos vor Vorschau oder Export ab.",
+    "en": "Complete AI denoising for this photo before previewing or exporting.",
+    "es": "Completa la reducción de ruido con IA de esta foto antes de previsualizarla o exportarla.",
+    "fr": "Terminez le débruitage IA de cette photo avant de la prévisualiser ou de l’exporter.",
+    "ja": "プレビューや書き出しの前に、この写真の AI ノイズ除去を完了してください。",
+    "zh-Hans": "请先完成此照片的 AI 降噪，再预览或导出。"
   }
 }

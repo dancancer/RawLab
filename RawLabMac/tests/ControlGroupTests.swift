@@ -10,11 +10,37 @@ struct ControlGroupTests {
     static func main() throws {
         try hsl()
         try denoise()
+        try aiDenoise()
         try effects()
         try editorGroups()
         try currentTools()
         try recipeReset()
         try invalidResetSources()
+    }
+
+    private static func aiDenoise() throws {
+        let old = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        check(!old.aiDenoiseEnabled && !Adjustments().aiDenoiseEnabled, "Missing AI state preserves ordinary rendering")
+        var source = Adjustments()
+        source.waveletNoiseReduction = WaveletDenoiseSettings(luma: 23, preset: .custom)
+        let ordinary = source.waveletNoiseReduction
+        source.aiDenoiseEnabled = true
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
+        check(restored == source && restored.isDenoiseEnabled, "AI enabled state persists with ordinary settings retained")
+        check(!source.neutralSettings.aiDenoiseEnabled, "Original comparison excludes AI")
+        var exposure = source; exposure.exposure = 2; exposure.contrast = 20
+        check(exposure.aiWhiteBalanceSignature == source.aiWhiteBalanceSignature, "Exposure and tone reuse AI results")
+        exposure.whiteBalanceMode = .custom; exposure.temperature = 4500
+        check(exposure.aiWhiteBalanceSignature != source.aiWhiteBalanceSignature, "Effective WB invalidates RGB results")
+        source.aiDenoiseEnabled = false
+        check(source.waveletNoiseReduction == ordinary, "Disabling AI restores retained ordinary settings")
+        source.aiDenoiseEnabled = true
+        let reset = candidate(.tool(.denoise), state(source))
+        check(!reset.settings.aiDenoiseEnabled, "Denoise reset clears AI")
+        let detail = candidate(.group(.detail), state(source))
+        check(!detail.settings.aiDenoiseEnabled, "Detail reset clears AI")
+        source.reset(.detail)
+        check(!source.aiDenoiseEnabled, "Legacy detail reset clears AI")
     }
 
     private static func currentTools() throws {

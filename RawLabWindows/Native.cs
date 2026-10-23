@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
 namespace RawLab.Windows;
-internal static class Native
+internal static partial class Native
 {
     private const string Dll = "sony2fuji.dll";
     [StructLayout(LayoutKind.Sequential)]

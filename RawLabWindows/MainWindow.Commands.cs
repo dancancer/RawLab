@@ -48,7 +48,7 @@ public partial class MainWindow
             var prepared=PrepareReset(scope);
             var item=new MenuItem { Header=title,Tag=scope,
                 IsEnabled=file!=null && !exporting && pendingAllReset==null &&
-                    (scope.Kind==EditorResetKind.All && transform.Active ? WorkspaceEdit() is {} edit && EditorAdjustmentRules.IsModified(scope,edit) || GeometryEditor.HasInvalidInput : prepared is { Status: EditorResetStatus.Ready or EditorResetStatus.Blocked }) };
+                    (scope.Kind==EditorResetKind.All && transform.Active ? WorkspaceEdit() is {} edit && EditorAdjustmentRules.IsModified(scope,edit) || GeometryEditor.HasInvalidInput : prepared is { Status: EditorResetStatus.Ready or EditorResetStatus.Blocked } || HasPendingAIReset(scope)) };
             item.Click+=(_,_)=>RequestReset(scope);items.Add(item);
         }
         if(CurrentTool==EditorAdjustmentTool.Hsl) {
@@ -101,6 +101,7 @@ public partial class MainWindow
     {
         var prepared=PrepareReset(scope);if(prepared==null)return;
         if(prepared.Status==EditorResetStatus.NoChange) {
+            if(HasPendingAIReset(scope)) {ResetAITask();RefreshControls();Schedule();}
             if(transform.Active && transform.Tool==TransformTool.Geometry && GeometryEditor.HasInvalidInput &&
                 (scope.Kind==EditorResetKind.Group && scope.Group==EditorAdjustmentGroup.Geometry || scope.Kind==EditorResetKind.Tool && scope.Tool==EditorAdjustmentTool.Geometry))
                 GeometryEditor.Begin(transform.Geometry);
