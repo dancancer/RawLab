@@ -39,6 +39,7 @@
 "Selected item is not a supported image." = "El elemento seleccionado no es una imagen compatible.";
 "Sony2Fuji output copy failed." = "Error al copiar la salida de Sony2Fuji.";
 "Sony2Fuji session create failed: %@" = "Error al crear la sesión de Sony2Fuji: %@";
+"三分网格" = "Cuadrícula de tercios";
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Esta foto, look o modo de procesamiento no es compatible. Comprueba la compatibilidad de los archivos y los ajustes de procesamiento.";
 "不能覆盖原始文件。" = "No se puede sobrescribir el archivo original.";
@@ -52,6 +53,7 @@
 "临时选择" = "Selección provisional";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Para contar los dispositivos activos, la aplicación guarda en este dispositivo un identificador de instalación generado al azar. No contiene información personal y se elimina al desactivar el análisis.";
 "乡村秋日 · 古典油画" = "Otoño rural · óleo clásico";
+"交换横纵比例" = "Intercambiar la orientación del formato";
 "亮度降噪" = "Reducción de ruido de luminancia";
 "仅在暗角强度为负值时可用。" = "Disponible solo cuando la intensidad de la viñeta es negativa.";
 "仅用于本次导出，保留各照片原有调整" = "Solo para esta exportación; se conservan los ajustes existentes de cada foto";
@@ -61,6 +63,7 @@
 "任务操作" = "Acciones de la tarea";
 "任务未保存：%@" = "Tarea no guardada: %@";
 "传感器基准" = "Referencia del sensor";
+"位置与尺寸" = "Posición y tamaño";
 "使用当前调整批量导出…" = "Exportar por lotes con los ajustes actuales…";
 "使用统计已关闭。" = "El análisis de uso está desactivado.";
 "保井崇志" = "Takashi Yasui";
@@ -145,6 +148,7 @@
 "已到上限" = "Límite superior alcanzado";
 "已到下限" = "Límite inferior alcanzado";
 "已匹配镜头" = "Lente identificada";
+"已启用" = "Activado";
 "已在照片图库中确认保存" = "Confirmado guardado en Fotos";
 "已处理 %@ / %@" = "Procesadas %@ / %@";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importados: %@; archivos no importados: %@\n";
@@ -294,6 +298,7 @@
 "照片信息" = "Información de la foto";
 "照片四周留白" = "Espacio alrededor de la foto";
 "照片图库" = "Fotos";
+"照片处理设置" = "Ajustes de procesamiento";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "La foto se escribió, pero no se actualizó el registro de la tarea. Comprueba primero el resultado guardado.";
 "照片或调整已变化，请重新确认重置。" = "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.";
 "照片缺少有效焦距，未应用校正" = "No hay distancia focal válida; corrección no aplicada";
@@ -349,6 +354,7 @@
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "Estilo de óleo otoñal de la campiña británica, tonos tierra densos, hierba dorada y verde bosque profundo";
 "范围" = "Intervalo";
 "蓝" = "Azul";
+"裁切" = "Recorte";
 "裁切上边" = "Borde superior";
 "裁切与旋转" = "Recortar y girar";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "La posición y el tamaño del recorte se expresan como porcentaje del lienzo tras girarlo, voltearlo y enderezarlo.";
@@ -388,6 +394,7 @@
 "选择镜头" = "Elegir lente";
 "选择镜头…" = "Elegir lente…";
 "选择镜头配置文件" = "Elegir perfil de lente";
+"透视" = "Perspectiva";
 "部分照片导出失败" = "No se pudieron exportar algunas fotos";
 "配方会调整多个参数。" = "La receta ajusta varios parámetros.";
 "酒井贵弘" = "Takahiro Sakai";
@@ -414,6 +421,7 @@
 "重试" = "Reintentar";
 "重试失败的 %@ 张" = "Reintentar las fotos fallidas (%@)";
 "钨丝电影 · 红灯冷青" = "Cine de tungsteno · luces rojas y cian frío";
+"锁定当前比例" = "Bloquear la proporción actual";
 "锐化" = "Enfoque";
 "镜头" = "Objetivo";
 "镜头信息尚未就绪" = "Información de lente no disponible";

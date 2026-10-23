@@ -26,6 +26,10 @@ extension ContentView {
         return max(44, ceil(textHeight) + 8)
     }
 
+    var singleLineGroupNavigationHeight: CGFloat {
+        max(44, ceil(UIFont.preferredFont(forTextStyle: .caption1).lineHeight) + 8)
+    }
+
     private func groupTextMetrics(_ title: String, width: CGFloat, font: UIFont,
                                   lineLimit: Int = 0) -> (lines: Int, height: CGFloat) {
         let storage = NSTextStorage(string: title, attributes: [.font: font])
@@ -54,10 +58,10 @@ extension ContentView {
 
     func editorWorkspace(size: CGSize, accessibility: Bool) -> some View {
         let scrollTools = scrollsToolsWithParameters(size: size, accessibility: accessibility)
-        let requiredWidth = groupNavigationButtonWidth * (adjustmentsExpanded ? 6 : 3) + 16
-        let sideWidth = min(320, size.width * 0.48)
+        let singleLineGroups = accessibility && size.width > size.height
+        let sideWidth = min(336, size.width * 0.48)
         let side = EditorLayoutPolicy.usesSidePanel(width: size.width, height: size.height,
-            accessibility: accessibility) && requiredWidth <= sideWidth
+            accessibility: accessibility)
         let layout = side ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
         return layout {
             previewSection.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,7 +69,7 @@ extension ContentView {
                 Divider().opacity(photoViewing.previewOnly ? 0 : 1)
                     .frame(width: side && photoViewing.previewOnly ? 0 : nil, height: !side && photoViewing.previewOnly ? 0 : nil)
                 VStack(spacing: 0) {
-                    if side { groupNavigation(side: true) }
+                    if side { groupNavigation(side: true, singleLine: singleLineGroups) }
                     if adjustmentsExpanded {
                         if side { Divider() }
                         if !scrollTools { toolStrip; Divider() }
@@ -76,7 +80,7 @@ extension ContentView {
                                     adjustmentPanel
                                 }
                             }
-                                .id(currentEditorTool)
+                                .id("\(currentEditorTool.stableID).\(geometryPerspective)")
                                 .accessibilityIdentifier("editor.panel")
                             if geometrySelected || lensSelected {
                                 Divider()
@@ -87,7 +91,7 @@ extension ContentView {
                     }
                     if !side {
                         Divider()
-                        groupNavigation(side: false)
+                        groupNavigation(side: false, singleLine: singleLineGroups)
                     }
                 }
                 .frame(width: side ? (photoViewing.previewOnly ? 0 : sideWidth) : nil,
@@ -104,7 +108,8 @@ extension ContentView {
 
     private func adjustmentRegionHeight(size: CGSize, accessibility: Bool) -> CGFloat {
         let preferred = min(panelHeight, size.height * (accessibility ? 0.64 : 0.52))
-        let navigationHeight = groupNavigationButtonHeight
+        let navigationHeight = accessibility && size.width > size.height
+            ? singleLineGroupNavigationHeight : groupNavigationButtonHeight
         let scrollTools = scrollsToolsWithParameters(size: size, accessibility: accessibility)
         let available = max(0, size.height - (scrollTools ? 0 : editorToolHeight) - navigationHeight - 3)
         // 即使工具与参数一起滚动，也保留 44pt 照片叠层触点及上下留白。

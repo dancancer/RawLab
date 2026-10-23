@@ -7,24 +7,28 @@ struct AdjustmentDock: View {
     @Binding var selected: AdjustmentParameter?
     let resetVersion: Int
     var onPreferredHeight: (CGFloat) -> Void = { _ in }
+    var headerAccessory = AnyView(EmptyView())
     private var navigation: EditorAdjustmentNavigation { model.adjustmentNavigation }
 
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
-            HorizontalPicker(selectedID: navigation.expandedGroup?.rawValue ?? "", name: L10n.text("调整工具"), showsScrollIndicators: true) {
-                HStack(spacing: 8) {
-                    ForEach(EditorAdjustmentGroup.allCases) { group in groupButton(group) }
-                }.padding(.horizontal, 12)
-            }.frame(height: 42)
+            HStack(spacing: 4) {
+                HorizontalPicker(selectedID: navigation.expandedGroup?.rawValue ?? "", name: L10n.text("调整工具"), showsScrollIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(EditorAdjustmentGroup.allCases) { group in groupButton(group) }
+                    }.padding(.horizontal, 8)
+                }
+                headerAccessory.padding(.trailing, 12)
+            }.frame(height: 36)
             if let group = navigation.expandedGroup {
-                HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
-                    HStack(spacing: 6) { ForEach(group.tools) { toolButton($0) } }
-                        .scrollTargetLayout().padding(.horizontal, 12)
-                }.frame(height: 72).fixedSize(horizontal: false, vertical: true)
                 if model.geometryDraft != nil {
                     MacGeometryWorkspace(model: model)
                 } else {
+                    HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
+                        HStack(spacing: 6) { ForEach(group.tools) { toolButton($0) } }
+                            .scrollTargetLayout().padding(.horizontal, 12)
+                    }.frame(height: 32).fixedSize(horizontal: false, vertical: true)
                     GeometryReader { editor in
                         ScrollView(.vertical) {
                             editorContent.frame(maxWidth: .infinity, minHeight: editor.size.height)
@@ -60,15 +64,12 @@ struct AdjustmentDock: View {
         let active = navigation.tool == tool
         let changed = model.isAdjustmentModified(.tool(tool))
         return Button { model.selectAdjustmentTool(tool) } label: {
-            VStack(spacing: 0) {
-                Image(systemName: tool.symbol).font(.system(size: 19))
-                    .frame(width: 40, height: 40)
-                    .background(active ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04), in: Circle())
-                    .overlay { Circle().strokeBorder(active ? Color.yellow : Color.white.opacity(0.25), lineWidth: 1) }
-                Text(tool.title).font(.system(size: 11)).lineLimit(2)
-                    .multilineTextAlignment(.center).frame(height: 27, alignment: .top)
+            HStack(spacing: 6) {
+                Image(systemName: tool.symbol).font(.system(size: 13)).frame(width: 18)
+                Text(tool.title).font(.system(size: 12)).fixedSize()
                 Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 3, height: 3)
-            }.frame(width: 80, height: 70)
+            }.padding(.horizontal, 10).frame(height: 28)
+                .background(active ? Color.yellow.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 .foregroundStyle(active ? Color.yellow : Color.primary)
         }.buttonStyle(.plain).id(tool.rawValue)
             .accessibilityIdentifier("tool.\(tool.rawValue)")

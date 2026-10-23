@@ -3982,5 +3982,45 @@
     "fr": "Terminez le débruitage IA de cette photo avant de la prévisualiser ou de l’exporter.",
     "ja": "プレビューや書き出しの前に、この写真の AI ノイズ除去を完了してください。",
     "zh-Hans": "请先完成此照片的 AI 降噪，再预览或导出。"
+  },
+  "位置与尺寸": {
+    "de": "Position und Größe",
+    "en": "Position and size",
+    "es": "Posición y tamaño",
+    "fr": "Position et dimensions",
+    "ja": "位置とサイズ",
+    "zh-Hans": "位置与尺寸"
+  },
+  "已启用": {
+    "de": "Aktiviert",
+    "en": "Enabled",
+    "es": "Activado",
+    "fr": "Activé",
+    "ja": "有効",
+    "zh-Hans": "已启用"
+  },
+  "照片处理设置": {
+    "de": "Fotoverarbeitung",
+    "en": "Photo processing settings",
+    "es": "Ajustes de procesamiento",
+    "fr": "Réglages de traitement photo",
+    "ja": "写真の処理設定",
+    "zh-Hans": "照片处理设置"
+  },
+  "锁定当前比例": {
+    "de": "Aktuelles Seitenverhältnis sperren",
+    "en": "Lock current aspect ratio",
+    "es": "Bloquear la proporción actual",
+    "fr": "Verrouiller le rapport actuel",
+    "ja": "現在の縦横比を固定",
+    "zh-Hans": "锁定当前比例"
+  },
+  "已停用": {
+    "de": "Deaktiviert",
+    "en": "Disabled",
+    "es": "Desactivado",
+    "fr": "Désactivé",
+    "ja": "無効",
+    "zh-Hans": "已停用"
   }
 }

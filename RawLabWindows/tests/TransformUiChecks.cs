@@ -52,6 +52,16 @@ internal static class TransformUiChecks
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var draft=Get<TransformDraft>(window,"transform");
             check(draft.Active && !window.ExportPng.IsEnabled,"Real WPF geometry workspace gates export");
+            check(ReferenceEquals(((CheckBox)window.GeometryEditor.FindName("HorizontalFlip")).Foreground,
+                Application.Current.Resources["Foreground"]),"Native crop flip icons retain the editor foreground");
+            window.UpdateLayout();
+            var geometryBounds=window.GeometrySurface.TransformToAncestor(window.AdjustmentPanel)
+                .TransformBounds(new Rect(window.GeometrySurface.RenderSize));
+            var actionBounds=window.DraftActions.TransformToAncestor(window.AdjustmentPanel)
+                .TransformBounds(new Rect(window.DraftActions.RenderSize));
+            check(geometryBounds.Height>40 && actionBounds.Top>=geometryBounds.Bottom-.5 &&
+                actionBounds.Bottom<=window.AdjustmentPanel.ActualHeight,
+                "Crop parameters and fixed draft actions occupy separate visible regions");
             window.SetComparisonMode(true,true);window.BeforeViewMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check(draft.Active && !Get<EditorViewState>(window,"view").Enabled && !Get<EditorViewState>(window,"view").HoldingBefore,
                 "Comparison commands and before action cannot exit or bypass an active geometry draft");

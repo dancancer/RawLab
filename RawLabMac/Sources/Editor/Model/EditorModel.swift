@@ -78,6 +78,7 @@ final class EditorModel: ObservableObject {
     @Published var geometryDraftTab = MacGeometryTab.crop
     @Published var cropAspectPreset = CropAspectPreset.free
     @Published var cropAspectSwapped = false
+    @Published var cropLockedRatio: Double?
     @Published var cropGridEnabled = true
     @Published var geometryDraftDeparturePending = false
     @Published var invalidGeometryDraftInputs = Set<String>()
@@ -108,7 +109,10 @@ final class EditorModel: ObservableObject {
         guard let draft = geometryDraft else { return source }
         return MacStraightenPreview(source: source, degrees: draft.geometry.straightenDegrees).safeCanvas
     }
-    var cropAspectRatio: Double? { cropAspectPreset.ratio(for: geometryCanvasSize, swapped: cropAspectSwapped) }
+    var cropAspectRatio: Double? {
+        if let cropLockedRatio { return cropAspectSwapped ? 1 / cropLockedRatio : cropLockedRatio }
+        return cropAspectPreset.ratio(for: geometryCanvasSize, swapped: cropAspectSwapped)
+    }
     var geometryPreviewSettings: Adjustments {
         guard let draft = geometryDraft else { return settings }
         var preview = settings

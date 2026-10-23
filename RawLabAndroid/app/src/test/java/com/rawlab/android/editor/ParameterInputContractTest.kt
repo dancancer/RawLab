@@ -34,14 +34,15 @@ class ParameterInputContractTest {
     @Test fun standardPortraitReservesThreeAxesAndPhotoWithoutChangingForTool() {
         val layout = editorDockLayout(652f, 1f, false, true)
         assertFalse(layout.compactNavigation)
-        assertTrue(layout.height >= 48f + 88f * 2 + 65f + 240f)
+        assertEquals(332f, layout.height, 0f)
+        assertTrue(layout.height - 48f * 2 >= 48f * 4)
         assertTrue(652f - layout.height >= 96f)
     }
 
     @Test fun largePortraitKeepsFullNavigationAndScrollsParametersWithinOneWindowBudget() {
         val layout = editorDockLayout(652f, 1.6f, false, true)
         assertFalse("A standard narrow portrait must not split long labels into tiny inline viewports", layout.compactNavigation)
-        assertTrue(layout.height >= 48f + 102.4f * 2 + 65f + 144f)
+        assertTrue(layout.height >= 332f && layout.height <= 440f)
         assertTrue(652f - layout.height >= 96f)
     }
 

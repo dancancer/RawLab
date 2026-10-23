@@ -12,6 +12,7 @@ struct EditorView: View {
     @State private var clipping = false
     @State private var histogramExpanded = true
     @State private var showFiles = true
+    @State private var showsProcessingSettings = false
     @State private var selectedParameter: AdjustmentParameter? = .exposure
     @State private var viewport = PhotoViewport()
     @State private var dropTarget = false
@@ -167,33 +168,37 @@ struct EditorView: View {
     }
 
     private var bottomControls: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性")).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 8)
-                Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
-                    Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
-                    Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
-                }.labelsHidden().fixedSize().id(localizationLocale.identifier)
-                    .help(L10n.text("处理版本")).accessibilityLabel(L10n.text("处理版本"))
-                    .accessibilityIdentifier("processing.version").disabled(model.geometryDraft != nil)
-                Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
-                    ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().fixedSize()
-                    .id(localizationLocale.identifier)
-                    .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil)
-                    .help(L10n.text("曝光基准")).accessibilityLabel(L10n.text("曝光基准"))
-                Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
-                    .font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 66)
-                    .help(L10n.text("基础曝光偏移"))
+        AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion,
+            headerAccessory: AnyView(HStack(spacing: 8) {
+                Button { showsProcessingSettings.toggle() } label: {
+                    Image(systemName: "slider.horizontal.3").frame(width: 28, height: 28)
+                }.buttonStyle(.plain).help(L10n.text("照片处理设置"))
+                    .accessibilityLabel(L10n.text("照片处理设置"))
+                    .accessibilityIdentifier("processing.settings")
+                    .popover(isPresented: $showsProcessingSettings) { processingSettings }
                 resetMenu
-
-            }.padding(.horizontal, 16).font(.system(size: 11))
-                .frame(height: 31).controlSize(.small)
-            AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion)
-        }.background(Color(nsColor: .windowBackgroundColor))
+            }.controlSize(.small)))
+            .background(Color(nsColor: .windowBackgroundColor))
             .disabled(model.file == nil || model.exporting)
+    }
+
+    private var processingSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(L10n.text("照片处理设置")).font(.headline)
+            Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性"))
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
+                Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
+                Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
+            }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
+                .disabled(model.geometryDraft != nil)
+            Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
+                ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
+            }.id(localizationLocale.identifier)
+                .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil)
+            Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
+                .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
+        }.padding(18).frame(width: 320)
     }
 
     private func panelResizeHandle(available: CGFloat) -> some View {
@@ -461,7 +466,10 @@ struct EditorView: View {
                     pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,
                     cropAspectRatio: model.cropAspectRatio, cropGrid: model.cropGridEnabled,
                     onCropChange: model.geometryCropInputEnabled ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
-                    onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil)
+                    onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil,
+                    prepareCropInteraction: { before in
+                        ParameterValueField.commitPendingInputs() && model.geometryDraftSettings == before
+                    })
             .accessibilityElement(children: .contain).accessibilityLabel(title)
             .accessibilityActions {
                 if canHoldBefore {

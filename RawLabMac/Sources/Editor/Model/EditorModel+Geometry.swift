@@ -44,7 +44,7 @@ extension EditorModel {
         geometryDraft = MacGeometryDraft(geometry: settings.geometrySettings, lens: settings.lensSettings)
         geometryDraftTab = tab; geometryDraftPreviewReady = false
         adjustmentNavigation.selectTool(tab == .lens ? .lens : .geometry)
-        cropAspectPreset = .free; cropAspectSwapped = false
+        cropAspectPreset = .free; cropAspectSwapped = false; cropLockedRatio = nil
         invalidGeometryDraftInputs.removeAll()
         batch?.sourceEditingGeometry = true
         scheduler.setInteracting(false)
@@ -88,19 +88,32 @@ extension EditorModel {
         schedule()
     }
 
+    func geometryDraftParameterRange(_ parameter: GeometryParameter) -> ClosedRange<Double> {
+        let geometry = geometryDraftSettings
+        let base = parameter.range(for: geometry)
+        guard parameter == .cropWidth || parameter == .cropHeight,
+              let ratio = cropAspectRatio, geometryCanvasSize.width > 0, geometryCanvasSize.height > 0 else { return base }
+        let normalized = ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width)
+        if parameter == .cropWidth {
+            let upper = min(base.upperBound, (1 - geometry.cropY) * normalized)
+            let lower = max(base.lowerBound, GeometryParameter.cropHeight.range(for: geometry).lowerBound * normalized)
+            return min(lower, upper)...upper
+        }
+        let upper = min(base.upperBound, (1 - geometry.cropX) / normalized)
+        let lower = max(base.lowerBound, GeometryParameter.cropWidth.range(for: geometry).lowerBound / normalized)
+        return min(lower, upper)...upper
+    }
+
     func setGeometryDraftParameter(_ parameter: GeometryParameter, to value: Double) {
         guard value.isFinite else { return }
+        let range = geometryDraftParameterRange(parameter)
+        guard range.contains(value) else { return }
         updateGeometryDraft { geometry in
-            let range = parameter.range(for: geometry)
-            geometry[keyPath: parameter.keyPath] = min(range.upperBound, max(range.lowerBound, value))
-            if (parameter == .cropWidth || parameter == .cropHeight), let ratio = cropAspectRatio {
-                if parameter == .cropHeight {
-                    geometry.cropWidth = min(1 - geometry.cropX,
-                        geometry.cropHeight * ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width))
-                }
-                let rect = CropInteraction.dragging(CropInteraction.rect(from: geometry), handle: .bottomRight,
-                    translation: .zero, canvasSize: geometryCanvasSize, ratio: ratio)
-                geometry = CropInteraction.applying(rect: rect, to: geometry)
+            geometry[keyPath: parameter.keyPath] = value
+            if let ratio = cropAspectRatio, geometryCanvasSize.width > 0 {
+                let normalized = ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width)
+                if parameter == .cropWidth { geometry.cropHeight = value / normalized }
+                if parameter == .cropHeight { geometry.cropWidth = value * normalized }
             }
         }
     }
@@ -120,8 +133,21 @@ extension EditorModel {
 
     func selectCropAspect(_ preset: CropAspectPreset) {
         guard geometryDraftPreviewReady else { return }
+        cropLockedRatio = nil
         cropAspectPreset = preset
         fitDraftCropAspect()
+    }
+
+    func toggleCropAspectLock() {
+        guard geometryDraftPreviewReady else { return }
+        if cropAspectRatio != nil {
+            cropAspectPreset = .free; cropAspectSwapped = false; cropLockedRatio = nil
+        } else {
+            let crop = geometryDraftSettings
+            cropAspectSwapped = false
+            cropLockedRatio = crop.cropWidth * Double(geometryCanvasSize.width) /
+                (crop.cropHeight * Double(geometryCanvasSize.height))
+        }
     }
 
     func swapCropAspect() {
@@ -136,7 +162,7 @@ extension EditorModel {
     }
 
     func resetGeometryDraft() {
-        cropAspectPreset = .free; cropAspectSwapped = false
+        cropAspectPreset = .free; cropAspectSwapped = false; cropLockedRatio = nil
         geometryDraftRevision &+= 1
         invalidGeometryDraftInputs.removeAll()
         updateGeometryDraft { $0 = GeometrySettings() }

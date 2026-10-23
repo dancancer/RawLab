@@ -188,6 +188,7 @@ public partial class MainWindow : Window
         GeometryEditor.Changed+=UpdateGeometryDraft;
         GeometryEditor.OverlayChanged+=RefreshCropDraft;
         ResultCanvas.CropChanged+=UpdateGeometryDraft;
+        ResultCanvas.PrepareCropInteraction=GeometryEditor.CommitInputs;
         OrdinaryParameter.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();

@@ -36,6 +36,64 @@ class PhotoViewRuntimeTest {
     @Test fun actualRotationNormalKeepsSharedViewAndZeroWrites() = rotate(1f)
     @Test fun actualRotationLargeKeepsSharedViewAndZeroWrites() = rotate(1.6f)
 
+    @Test fun compactCropControlsKeepFixedActionsWithLargeTextAndRotation() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val source = File(compose.activity.cacheDir, "compact-crop-${UUID.randomUUID()}.RAW")
+        instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
+        val originalScale = compose.activity.resources.configuration.fontScale
+        fun font(scale: Float) {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation
+                .executeShellCommand("settings put system font_scale $scale")).use { it.readBytes() }
+            compose.waitUntil(20_000) { compose.activity.resources.configuration.fontScale == scale }
+        }
+        fun draftReady() {
+            compose.waitForIdle()
+            compose.waitUntil(180_000) { compose.activity.model.state.value.let { it.draftReady || it.error != null } }
+            assertNull(compose.activity.model.state.value.error)
+        }
+        fun fixedActions() {
+            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            for (tag in listOf("draft.cancel", "draft.apply")) {
+                val node = compose.onNodeWithTag(tag).assertIsDisplayed().fetchSemanticsNode()
+                assertTrue("$tag fully inside native window: ${node.boundsInRoot} / $root",
+                    node.boundsInRoot.top >= root.top && node.boundsInRoot.bottom <= root.bottom &&
+                        node.boundsInRoot.left >= root.left && node.boundsInRoot.right <= root.right)
+            }
+        }
+        try {
+            font(1f)
+            compose.runOnUiThread { compose.activity.model.setGpuEnabled(false); compose.activity.model.importPhoto(Uri.fromFile(source)) }
+            ready()
+            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
+            compose.onNodeWithTag("editor-group-geometry").performClick(); draftReady()
+            compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.geometry_crop_width}").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-input").performTextReplacement("75.01")
+            compose.onNodeWithTag("adjustment-input-apply").performClick(); draftReady()
+            assertEquals(.7501f, compose.activity.model.state.value.draft!!.value.geometry.cropWidth, .000001f)
+            fixedActions(); capture("compact-crop-portrait.png")
+            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            compose.waitUntil(20_000) { compose.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+            draftReady(); fixedActions(); capture("compact-crop-landscape.png")
+            compose.onNodeWithTag("draft.apply").performClick(); ready()
+            assertEquals(.7501f, compose.activity.model.state.value.edits.geometry.cropWidth, .000001f)
+            font(1.6f)
+            compose.runOnUiThread { com.rawlab.android.i18n.AppStrings.setPreference(compose.activity, "de") }
+            compose.waitForIdle()
+            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
+            compose.onNodeWithTag("editor-group-geometry").performClick(); draftReady()
+            fixedActions(); capture("compact-german-large-landscape.png")
+            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            compose.waitUntil(20_000) { compose.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT }
+            draftReady(); fixedActions(); capture("compact-german-large-portrait.png")
+            compose.onNodeWithTag("draft.cancel").performClick(); ready()
+        } finally {
+            font(originalScale)
+            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+            source.delete()
+        }
+    }
+
     private fun rotate(scale: Float) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val source = File(compose.activity.cacheDir, "view-rotation-${UUID.randomUUID()}.RAW")

@@ -3,6 +3,7 @@ package com.rawlab.android.editor.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
@@ -57,16 +58,26 @@ internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, s
 
 @Composable
 internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int> = editorToolOrder, list: LazyListState = rememberLazyListState(),
-    navigationEnabled: Boolean = true, inlineLabels: Boolean = false, modifier: Modifier = Modifier, select: (Int) -> Unit) {
-    LaunchedEffect(selected) {
-        val index = tools.indexOf(selected)
+    navigationEnabled: Boolean = true, inlineLabels: Boolean = true, modifier: Modifier = Modifier,
+    perspective: Boolean = false, onPerspective: (() -> Unit)? = null, select: (Int) -> Unit) {
+    val entries = tools.flatMap { if (it == 17 && onPerspective != null) listOf(it, -1) else listOf(it) }
+    val active = if (selected == 17 && perspective) -1 else selected
+    LaunchedEffect(active) {
+        val index = entries.indexOf(active).coerceAtLeast(0)
         if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
-            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(if (inlineLabels) index.coerceAtLeast(0) else (index - 2).coerceAtLeast(0))
+            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(index)
     }
-    LazyRow(modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = if (inlineLabels) 0.dp else 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(tools, key = { it }) { index -> EditorTool(state, index, selected == index, navigationEnabled, inlineLabels) { select(index) } }
+    LazyRow(modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        items(entries, key = { it }) { index ->
+            if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("editor-tool-perspective").semantics { this.selected = active == -1 }) {
+                Icon(Icons.Outlined.Transform, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
+            } else EditorTool(state, index, active == index, navigationEnabled, true) { select(index) }
+        }
     }
+
 }
 
 @Composable
@@ -96,39 +107,19 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     val valueDescription = if (index == 8) listOf(
         "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
     ).joinToString(" · ") else number
-    val selectable = (if (inlineLabels) Modifier else if (LocalDensity.current.fontScale < 1.3f) Modifier.width(80.dp) else Modifier.widthIn(min = 80.dp)).selectable(selected,
+    val selectable = Modifier.selectable(selected,
         enabled = navigationEnabled && state.controlsEnabled && (index != 8 || rawOnly) && (index != 16 || rawOnly),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
     }
-    val ring: @Composable () -> Unit = {
-        Box(Modifier.size(48.dp).testTag("editor-tool-ring-$index"), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()) {
-                val inset = 1.dp.toPx()
-                drawCircle(if (selected) primary else muted.copy(alpha = .6f), style = Stroke(1.dp.toPx()))
-                scalar?.let {
-                    val sweep = AdjustmentScale(it.third, 1f, it.second).sweep(it.first)
-                    if (sweep != 0f) drawArc(primary, -90f, sweep, false, Offset(inset, inset),
-                        Size(size.width - inset * 2, size.height - inset * 2), style = Stroke(2.5.dp.toPx()))
-                }
-            }
-            if (selected && number != null && number.length <= 5 && LocalDensity.current.fontScale <= 1.3f) {
-                Text(number, style = MaterialTheme.typography.labelSmall, color = primary)
-            } else Icon(editorToolIcons[index], null, Modifier.size(24.dp), tint = color)
-        }
+    Row(selectable.heightIn(min = 48.dp).background(if (selected) primary.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(5.dp))
+        .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(editorToolIcons[index], null, Modifier.size(18.dp).testTag("editor-tool-ring-$index"), tint = color)
+        Text(if (index == 17) stringResource(R.string.geometry_crop_tool) else title,
+            Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelMedium, color = color)
+        Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index").background(if (changed) primary else Color.Transparent, CircleShape))
     }
-    val label: @Composable () -> Unit = {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelSmall, color = color)
-            Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index")
-                .background(if (changed) primary else Color.Transparent, CircleShape))
-        }
-    }
-    if (inlineLabels) Row(selectable.heightIn(min = 48.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
-    else Column(selectable.heightIn(min = 88.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
 
 }
 
@@ -145,23 +136,14 @@ internal fun groupTitle(group: EditorAdjustmentGroup): Int = when (group) {
 internal fun EditorGroupStrip(state: EditorState, expanded: Boolean, tool: Int,
     compact: Boolean = false, list: LazyListState = rememberLazyListState(),
     navigationEnabled: Boolean = true, inlineLabels: Boolean = false, modifier: Modifier = Modifier, select: (EditorAdjustmentGroup) -> Unit) {
-    if (compact && !expanded) {
-        Column(modifier.fillMaxWidth().testTag("editor-groups")) {
-            EditorAdjustmentGroup.entries.chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth()) {
-                    row.forEach { group -> EditorGroupButton(state, group, false, Modifier.weight(1f), true, navigationEnabled) { select(group) } }
-                }
-            }
-        }
-    } else {
-        LazyRow(modifier.fillMaxWidth().testTag("editor-groups"), state = list, contentPadding = PaddingValues(horizontal = if (inlineLabels) 0.dp else 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 8.dp)) {
-            items(EditorAdjustmentGroup.entries, key = { it.id }) { group ->
-                EditorGroupButton(state, group, expanded && EditorAdjustmentRules.groupFor(tool) == group,
-                    if (inlineLabels) Modifier else if (compact) Modifier.width((320.dp - 16.dp) / 6) else if (LocalDensity.current.fontScale < 1.3f) Modifier.width(80.dp) else Modifier.widthIn(min = 80.dp), compact, navigationEnabled, inlineLabels) { select(group) }
-            }
+    LazyRow(modifier.fillMaxWidth().testTag("editor-groups"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+        items(EditorAdjustmentGroup.entries, key = { it.id }) { group ->
+            EditorGroupButton(state, group, expanded && EditorAdjustmentRules.groupFor(tool) == group,
+                Modifier.widthIn(min = 48.dp), compact = true, navigationEnabled = navigationEnabled, inlineLabels = true) { select(group) }
         }
     }
+
 }
 
 @Composable
@@ -175,24 +157,11 @@ private fun EditorGroupButton(state: EditorState, group: EditorAdjustmentGroup, 
         .testTag("editor-group-${group.id}").semantics(mergeDescendants = true) {
             contentDescription = title; stateDescription = status
         }
-    val ring: @Composable () -> Unit = {
-        Box(Modifier.size(if (compact) 24.dp else 48.dp).testTag("editor-group-ring-${group.id}"), contentAlignment = Alignment.Center) {
-            if (!compact) Canvas(Modifier.fillMaxSize()) {
-                if (active) drawCircle(tint.copy(alpha = .14f))
-                drawCircle(tint, style = Stroke(1.dp.toPx()))
-            }
-            Icon(editorToolIcons[EditorAdjustmentRules.defaultTool(group)], null, Modifier.size(24.dp).testTag("editor-group-icon-${group.id}"), tint = tint)
-        }
-    }
-    val label: @Composable () -> Unit = {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Box(selectable.heightIn(min = 48.dp).background(if (active) tint.copy(alpha = .12f) else Color.Transparent)
+        .padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, Modifier.testTag("editor-group-label-${group.id}"), style = MaterialTheme.typography.labelMedium, color = tint)
             Box(Modifier.size(3.dp).background(if (changed) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape))
         }
     }
-    if (inlineLabels) Row(selectable.heightIn(min = 48.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
-    else Column(selectable.heightIn(min = if (compact) 64.dp else 88.dp)
-        .padding(horizontal = if (compact) 4.dp else 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)) { ring(); label() }
 }

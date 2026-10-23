@@ -21,11 +21,14 @@ internal data class AdjustmentScale(
     val step: Float,
     val default: Float,
     val reciprocal: Boolean = false,
+    val compactPercent: Boolean = false,
 ) {
     fun quantize(value: Float): Float = (round(value / step) * step).coerceIn(range)
 
     fun parse(text: String, locale: Locale = Locale.ROOT, current: Float? = null): Float? {
-        return parseAdjustmentNumber(text, locale)?.takeIf { it.isFinite() && it in range }
+        val parsed = parseAdjustmentNumber(text, locale)
+        if (compactPercent && current != null && parsed == parseAdjustmentNumber(formatCropPercent(current, locale), locale)) return current
+        return parsed?.takeIf { it.isFinite() && it in range }
             ?.takeIf { it == current || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
     }
 
@@ -52,22 +55,23 @@ internal data class AdjustmentScale(
     }
 }
 
-internal fun editorUsesSideDock(width: Float, height: Float, fontScale: Float = 1f,
-    requiredGroupWidth: Float = 0f, dockWidth: Float = 320f): Boolean =
-    width >= 600f && width > height && fontScale < 1.3f && requiredGroupWidth <= dockWidth
+internal fun formatCropPercent(value: Float, locale: Locale = Locale.ROOT): String =
+    NumberFormat.getNumberInstance(locale).apply {
+        isGroupingUsed = false; minimumFractionDigits = 0; maximumFractionDigits = 2
+    }.format(value)
+
+internal fun editorUsesSideDock(width: Float, height: Float, fontScale: Float = 1f): Boolean =
+    width >= 600f && width > height && fontScale < 1.3f
 
 internal data class EditorDockLayout(val height: Float, val compactNavigation: Boolean)
 
 internal fun editorDockLayout(availableHeight: Float, fontScale: Float, sideDock: Boolean, expanded: Boolean): EditorDockLayout {
-    val strip = 88f + 24f * (fontScale - 1f).coerceAtLeast(0f)
-    // 唯一 fine 行、单行八色和三条48dp轴统一预留；工具、草稿状态不参与预算。
-    val parameterHeight = if (fontScale > 1.3f) 144f else 240f
-    val regular = 48f + strip * 2f + 65f + parameterHeight
-    // 底部面板至少留96dp照片；短窗依靠原compact导航及参数内部滚动保留完整触点。
+    val regular = 332f + 96f * (fontScale - 1f).coerceAtLeast(0f)
+    // 普通竖屏容纳两行导航和 HSL 三轴；短窗将工具行纳入参数滚动。
     val maximum = if (sideDock) availableHeight else (availableHeight - 96f).coerceAtLeast(0f)
     val compact = maximum < regular
     return EditorDockLayout(if (sideDock) availableHeight else if (!expanded) {
-        if (compact) 48f else 160f * fontScale
+        48f * fontScale.coerceAtLeast(1f)
     } else regular.coerceAtMost(maximum), compact)
 }
 

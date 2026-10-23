@@ -3,10 +3,10 @@ using System.Globalization;
 namespace RawLab.Windows;
 
 public sealed record NumericRange(double Min, double Max, double Grid = .1, double Wheel = 1,
-    double FineWheel = .1, bool Reciprocal = false, int FixedDecimals = -1)
+    double FineWheel = .1, bool Reciprocal = false, int FixedDecimals = -1, bool CompactPercent = false)
 {
     public double Clamp(double value) => Math.Clamp(Math.Round(value / Grid, MidpointRounding.AwayFromZero) * Grid, Min, Max);
-    public double Position(double value) => Reciprocal
+    public double Position(double value) => Max<=Min ? 0 : Reciprocal
         ? (1 / Min - 1 / value) / (1 / Min - 1 / Max) : (value - Min) / (Max - Min);
     public double Value(double position) => Clamp(Reciprocal
         ? 1 / (1 / Min - Math.Clamp(position, 0, 1) * (1 / Min - 1 / Max))
@@ -14,6 +14,9 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
     public NumericInputError Validate(string text, double? original, out double value)
     {
         if(!double.TryParse(text,NumberStyles.Float,CultureInfo.GetCultureInfo(Loc.Language),out value) || !double.IsFinite(value))return NumericInputError.Invalid;
+        if(CompactPercent && original is {} current && double.TryParse(Format(current),NumberStyles.Float,
+            CultureInfo.GetCultureInfo(Loc.Language),out var displayed) && value==displayed)
+        {value=current;return NumericInputError.None;}
         if(value<Min || value>Max)return NumericInputError.Range;
         if(value==original)return NumericInputError.None;
         var units=value/Grid;
@@ -23,6 +26,7 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
     public string Format(double value)
     {
         var culture=CultureInfo.GetCultureInfo(Loc.Language);
+        if(CompactPercent)return value.ToString("0.##",culture);
         var text=value.ToString(FixedDecimals>=0 ? "F"+FixedDecimals : "G",culture);
         return double.TryParse(text,NumberStyles.Float,culture,out var shown) && shown==value ? text : value.ToString("G",culture);
     }
@@ -73,7 +77,8 @@ public sealed class NumericInputSession
     public NumericInputError Error { get; private set; }
     public bool Bind(object? nextSource,object? nextScope,NumericRange limits,double current)
     {
-        var changed=!bound || !Equals(source,nextSource) || !Equals(scope,nextScope) || range!=limits || Original!=current;
+        var changed=!bound || !Equals(source,nextSource) || !Equals(scope,nextScope) ||
+            (range!=limits && !(limits.CompactPercent && Dirty)) || Original!=current;
         source=nextSource;scope=nextScope;range=limits;bound=true;
         if(changed){Original=current;Cancel();}
         return changed;

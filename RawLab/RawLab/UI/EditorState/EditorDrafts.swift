@@ -91,7 +91,10 @@ extension ContentView {
         selectedGroup = EditorAdjustmentRules.groupFor(selection)
         if case .adjustment(let adjustment) = selection { selectedAdjustment = adjustment }
         else { selectedAdjustment = nil }
-        if geometrySelected { geometryAspectPreset = .free; geometryDraft = settings.geometry }
+        if geometrySelected {
+            geometryAspectPreset = .free; geometryLockedRatio = nil; geometryAspectSwapped = false
+            geometryDraft = settings.geometry
+        }
         if lensSelected { lensDraft = settings }
         if leavingDraft && !geometrySelected && !lensSelected {
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)

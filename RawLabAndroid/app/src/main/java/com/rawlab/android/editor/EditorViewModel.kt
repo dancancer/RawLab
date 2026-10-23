@@ -365,6 +365,20 @@ class EditorViewModel @JvmOverloads constructor(
         mutable.value = current.copy(draft = next)
     }
 
+    fun toggleGeometryLock() = updateGeometrySelection { it.toggleGeometryLock() }
+    fun swapGeometryRatio() = updateGeometrySelection { it.swapGeometryRatio() }
+    fun toggleGeometryGrid() = updateGeometrySelection { it.copy(geometryGrid = !it.geometryGrid) }
+
+    private fun updateGeometrySelection(edit: (AdjustmentDraft) -> AdjustmentDraft) {
+        val current = mutable.value
+        val draft = current.draft ?: return
+        if (!current.controlsEnabled || !current.draftReady || draft.group != AdjustmentGroup.GEOMETRY) return
+        val next = edit(draft)
+        if (next == draft) return
+        draftRevision += 1
+        mutable.value = current.copy(draft = next)
+    }
+
     fun applyDraft(): Boolean {
         val current = mutable.value
         if (disposed || !current.canApplyDraft) return false

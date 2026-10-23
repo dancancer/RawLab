@@ -72,6 +72,7 @@
 "任务使用的外观文件不可用，请重新创建任务。" = "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.";
 "任务未保存：%@" = "Tarea no guardada: %@";
 "传感器基准" = "Referencia del sensor";
+"位置与尺寸" = "Posición y tamaño";
 "作者的小红书主页" = "El autor en Xiaohongshu (RED)";
 "使用可调降噪" = "Usar reducción de ruido ajustable";
 "使用当前调整批量导出…" = "Exportar por lotes con los ajustes actuales…";
@@ -389,6 +390,7 @@
 "照片" = "Foto";
 "照片信息" = "Información de la foto";
 "照片四周留白" = "Espacio alrededor de la foto";
+"照片处理设置" = "Ajustes de procesamiento";
 "照片或白平衡已变化，请重新准备 AI 降噪。" = "La foto o el balance de blancos han cambiado. Prepara de nuevo la reducción de ruido con IA.";
 "照片或调整已变化，请重新确认重置。" = "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.";
 "照片缺少有效焦距，未应用校正" = "No hay distancia focal válida; corrección no aplicada";
@@ -545,6 +547,7 @@
 "重试" = "Reintentar";
 "重试失败的 %@ 张" = "Reintentar las fotos fallidas (%@)";
 "钨丝电影 · 红灯冷青" = "Cine de tungsteno · luces rojas y cian frío";
+"锁定当前比例" = "Bloquear la proporción actual";
 "锐化" = "Enfoque";
 "镜头" = "Objetivo";
 "镜头信息尚未就绪" = "Información de lente no disponible";

@@ -2,72 +2,25 @@ import SwiftUI
 import UIKit
 
 struct AdjustmentToolLabel: View {
-    @Environment(\.locale) private var localizationLocale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .title3) private var diameter = 48.0
     let title: String
     let symbol: String
     let selected: Bool
     let progress: Double
     let width: CGFloat
     let height: CGFloat
-    var currentValue: String? = nil
 
     var body: some View {
-        let _ = localizationLocale
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                HStack(spacing: 8) {
-                    symbolCircle(size: 44, compact: true)
-                    Text(title).font(.body)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .padding(.horizontal, 8)
-                .frame(minWidth: 44, minHeight: 44)
-                .frame(height: height)
-            } else {
-                VStack(spacing: 5) {
-                    symbolCircle(size: diameter, compact: false)
-                    Text(title).font(.caption).lineLimit(2)
-                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    Circle().fill(progress != 0 ? Color.yellow : Color.clear).frame(width: 3, height: 3)
-                }
-                .frame(width: width, height: height)
-            }
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.body).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            Text(title).font(dynamicTypeSize.isAccessibilitySize ? .body : .subheadline)
+                .fixedSize(horizontal: true, vertical: false)
+            Circle().fill(progress != 0 ? Color.yellow : .clear).frame(width: 3, height: 3)
         }
+        .padding(.horizontal, 8).frame(minWidth: 44, minHeight: max(44, height))
         .foregroundStyle(selected ? Color.yellow : Color.primary)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-    }
-
-    private func symbolCircle(size: CGFloat, compact: Bool) -> some View {
-        ZStack {
-            Circle().fill(selected ? Color.yellow.opacity(0.12) : Color.white.opacity(0.04))
-            Circle().strokeBorder(selected ? Color.yellow.opacity(0.5) : Color.white.opacity(0.25), lineWidth: 1)
-            if progress != 0 {
-                Circle().trim(from: 0, to: min(1, abs(progress)) * 0.75)
-                    .stroke(Color.yellow, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .scaleEffect(x: progress < 0 ? -1 : 1, y: 1)
-            }
-            if let badgeValue {
-                Text(badgeValue).font(.caption.monospacedDigit().weight(.medium))
-            } else if compact {
-                Image(systemName: symbol).font(.title3)
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            } else {
-                Image(systemName: symbol).font(.title3)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-
-    private var badgeValue: String? {
-        guard selected, !dynamicTypeSize.isAccessibilitySize, let currentValue else { return nil }
-        let font = UIFont.preferredFont(forTextStyle: .caption1)
-        let width = (currentValue as NSString).size(withAttributes: [.font: font]).width
-        return width <= diameter - 8 ? currentValue : nil
+        .background(selected ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .contentShape(Rectangle()).accessibilityElement(children: .ignore).accessibilityLabel(title)
     }
 }
 

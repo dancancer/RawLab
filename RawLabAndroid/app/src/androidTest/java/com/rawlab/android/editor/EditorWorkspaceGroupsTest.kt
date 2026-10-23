@@ -80,7 +80,7 @@ class EditorWorkspaceGroupsTest {
     @Test fun onePanelFineResetsOnlyAfterActualToolOrGroupNavigation() {
         show(); group("color"); tool(14)
         compose.onAllNodesWithTag("adjustment-fine").assertCountEquals(1)
-        compose.onNodeWithTag("adjustment-fine").performScrollTo().performClick().assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsOn()
         compose.onNodeWithTag("hsl-channel-1").performClick()
         compose.onNodeWithTag("adjustment-fine").assertIsOn()
         tool(7)
@@ -93,7 +93,7 @@ class EditorWorkspaceGroupsTest {
     @Test fun stayingInChangedGeometryRetainsFineWithoutCallbacks() {
         show(); group("geometry")
         compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.edits.copy(geometry = GeometrySettings(quarterTurns = 1)))) }
-        compose.onNodeWithTag("adjustment-fine").performScrollTo().performClick().assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsOn()
         val draft = state.draft
         group("color"); dialog("继续编辑").performClick()
         compose.onNodeWithTag("editor-tool-17").assertIsSelected()
@@ -150,7 +150,7 @@ class EditorWorkspaceGroupsTest {
         compose.onNodeWithTag("editor-reset-confirm").assertDoesNotExist()
         compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
         compose.onNodeWithTag("editor-group-light").assertIsNotEnabled().performClick()
-        compose.onNodeWithContentDescription("收起调整栏").assertIsNotEnabled().performClick()
+        compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("adjustment-dock"))).assertIsNotEnabled().performClick()
         compose.onNodeWithContentDescription("重置调整").assertIsNotEnabled().performClick()
         compose.onNodeWithTag("editor-tool-17").assertIsSelected()
         compose.runOnIdle { state = state.copy(exact = true, rendering = false) }

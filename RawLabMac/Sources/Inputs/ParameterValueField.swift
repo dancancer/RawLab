@@ -36,6 +36,12 @@ struct ParameterValueField: NSViewRepresentable {
         NSApp?.keyWindow?.makeFirstResponder(nil)
     }
 
+    @discardableResult static func commitPendingInputs() -> Bool {
+        let valid = Coordinator.instances.allObjects.map { $0.commit() }.allSatisfy { $0 }
+        if valid { NSApp?.keyWindow?.makeFirstResponder(nil) }
+        return valid
+    }
+
     static func dismantleNSView(_ field: NumericTextField, coordinator: Coordinator) {
         coordinator.cancel(deferred: true)
     }
@@ -182,6 +188,7 @@ struct ParameterValueField: NSViewRepresentable {
         }
 
         private func validationMessage(_ text: String) -> String? {
+            if parent.precision.isUnchangedDisplay(text, original: parent.value) { return nil }
             guard let value = parent.precision.parse(text) else { return L10n.text("请输入有效数字") }
             guard parent.range.contains(value) else { return L10n.text("请输入范围内的有效数字") }
             guard parent.precision.accepts(value, original: parent.value, in: parent.range) else {
@@ -224,6 +231,13 @@ struct ParameterValueField: NSViewRepresentable {
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if parent.precision == .cropPercent {
+                if commandSelector == #selector(NSResponder.moveUp(_:)) || commandSelector == #selector(NSResponder.moveDown(_:)) {
+                    _ = step(commandSelector == #selector(NSResponder.moveUp(_:)) ? 1 : -1,
+                             fine: NSApp.currentEvent?.modifierFlags.contains(.shift) == true)
+                    return true
+                }
+            }
             if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
                 cancel()
                 field?.window?.makeFirstResponder(nil)
@@ -236,7 +250,7 @@ struct ParameterValueField: NSViewRepresentable {
             return false
         }
 
-        @discardableResult private func commit() -> Bool {
+        @discardableResult func commit() -> Bool {
             guard let field else { return true }
             if dirty {
                 let draft = field.currentEditor()?.string ?? field.stringValue
@@ -253,7 +267,8 @@ struct ParameterValueField: NSViewRepresentable {
                     }
                     return false
                 }
-                if let parsed = parent.precision.parse(draft), parsed != parent.value {
+                if !parent.precision.isUnchangedDisplay(draft, original: parent.value),
+                   let parsed = parent.precision.parse(draft), parsed != parent.value {
                     parent.value = parsed
                     lastValue = parent.value
                 }
@@ -266,6 +281,15 @@ struct ParameterValueField: NSViewRepresentable {
             write(parent.precision.text(parent.value, signed: parent.signed))
             dirty = false
             field.needsDisplay = true
+            return true
+        }
+
+        @discardableResult func step(_ direction: Int, fine: Bool) -> Bool {
+            guard let field, field.isEnabled, field.isEditable, commit() else { return false }
+            let next = parent.precision.stepped(parent.value, direction: direction, fine: fine, in: parent.range)
+            if next != parent.value { parent.value = next }
+            lastValue = parent.value
+            write(parent.precision.text(parent.value, signed: parent.signed))
             return true
         }
 
@@ -297,7 +321,8 @@ struct ParameterValueField: NSViewRepresentable {
             let result = wheelState.handle(verticalPixels: delta,
                                            timestamp: event.timestamp, fine: fine,
                                            editable: field.isEnabled && field.isEditable,
-                                           validValue: parent.value.isFinite && starting != nil,
+                                           validValue: parent.value.isFinite && starting != nil &&
+                                               (parent.precision != .cropPercent || validationMessage(draft) == nil),
                                            momentum: event.momentumPhase != [], discrete: !event.hasPreciseScrollingDeltas)
             switch result {
             case .pass: return false

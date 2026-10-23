@@ -41,11 +41,11 @@ public partial class MainWindow
                 Tools.Children.Add(DenoiseCategory);
             }
             var spec=ParameterSpec.All[(int)id];
-            var ring=new AdjustmentRing{Width=40,Height=40};
-            var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=20,Height=20});
-            var caption=new TextBlock{Text=Loc.Text(spec.Title),MaxWidth=70,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)};
+            var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
+            var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=16,Height=16});
+            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
-            var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
+            var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
             AutomationProperties.SetName(button,Loc.Text(spec.Title));
             button.Click+=(_,_)=>SelectTool(ToolFor(spec.Id));
@@ -55,11 +55,11 @@ public partial class MainWindow
             (PhotoEffectTool.Vignette,Loc.Text("暗角"),"Vignette"), (PhotoEffectTool.Grain,Loc.Text("颗粒"),"Grain")
         })
         {
-            var ring=new AdjustmentRing{Width=40,Height=40};
-            var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=icon,Width=20,Height=20});
-            var caption=new TextBlock{Text=title,MaxWidth=70,TextWrapping=TextWrapping.Wrap,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,4,0,0)};
+            var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
+            var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=icon,Width=16,Height=16});
+            var caption=new TextBlock{Text=title,TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
-            var stack=new StackPanel();stack.Children.Add(grid);stack.Children.Add(caption);
+            var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=title};
             AutomationProperties.SetName(button,title);
             AutomationProperties.SetAutomationId(button,tool.ToString());
@@ -73,7 +73,9 @@ public partial class MainWindow
     private void HslCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Hsl);
     private void WhiteBalanceCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.WhiteBalance);
     private void LensCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Lens);
-    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Geometry);
+    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) {SelectTool(EditorAdjustmentTool.Geometry);if(choosingGeometry){GeometryEditor.ShowPerspective=false;RefreshControls();}}
+    private void PerspectiveCategoryClicked(object sender,RoutedEventArgs e) {SelectTool(EditorAdjustmentTool.Geometry);if(choosingGeometry){GeometryEditor.ShowPerspective=true;RefreshControls();}}
+    private void ProcessingSettingsClicked(object sender,RoutedEventArgs e)=>ProcessingPopup.IsOpen=!ProcessingPopup.IsOpen;
 
     private EditorAdjustmentGroup? expandedGroup = EditorAdjustmentGroup.Light;
     private readonly Dictionary<EditorAdjustmentGroup,Button> groupButtons = [];
@@ -92,7 +94,7 @@ public partial class MainWindow
     {
         Groups.Children.Clear();groupButtons.Clear();workspaceTools.Clear();
         foreach(var group in Enum.GetValues<EditorAdjustmentGroup>()) {
-            var button=new Button { Content=Loc.Text(EditorAdjustmentRules.Title(group)),MinHeight=36,MinWidth=80,Padding=new Thickness(12,5,12,5) };
+            var button=new Button { Content=Loc.Text(EditorAdjustmentRules.Title(group)),MinHeight=32,Padding=new Thickness(10,3,10,3) };
             AutomationProperties.SetAutomationId(button,"editor.group."+EditorAdjustmentRules.Id(group));
             button.Click+=(_,_)=>SelectGroup(group);groupButtons[group]=button;Groups.Children.Add(button);
         }
@@ -107,7 +109,10 @@ public partial class MainWindow
         foreach(var (tool,controls) in effectToolButtons)workspaceTools[tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain]=controls;
         foreach(var (tool,controls) in workspaceTools)AutomationProperties.SetAutomationId(controls.Button,tool.ToString());
         // 同一描述表决定工具顺序、默认工具与重置范围。
-        Tools.Children.Clear();foreach(var group in Enum.GetValues<EditorAdjustmentGroup>())foreach(var tool in EditorAdjustmentRules.Tools(group))Tools.Children.Add(workspaceTools[tool].Button);
+        Tools.Children.Clear();foreach(var group in Enum.GetValues<EditorAdjustmentGroup>())foreach(var tool in EditorAdjustmentRules.Tools(group)) {
+            Tools.Children.Add(workspaceTools[tool].Button);
+            if(tool==EditorAdjustmentTool.Geometry)Tools.Children.Add(PerspectiveCategory);
+        }
     }
     private void SelectGroup(EditorAdjustmentGroup group)
     {
@@ -173,7 +178,8 @@ public partial class MainWindow
             AutomationProperties.SetItemStatus(controls.Button,string.Join(" · ",new[]{CurrentTool==tool ? Loc.Text("当前工具") : "",modified ? Loc.Text("已调整") : ""}.Where(value=>value.Length>0)));
         }
         var expanded=expandedGroup!=null;
-        DockHeader.Visibility=ToolsScroller.Visibility=expanded ? Visibility.Visible : Visibility.Collapsed;
+        ToolsScroller.Visibility=expanded ? Visibility.Visible : Visibility.Collapsed;
+        PerspectiveCategory.Visibility=expandedGroup==EditorAdjustmentGroup.Geometry ? Visibility.Visible : Visibility.Collapsed;
         if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
     }
     private void BuildFilms()
@@ -251,8 +257,10 @@ public partial class MainWindow
             LensCategoryRing.Selected=choosingLens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
             GeometrySurface.Visibility=choosingGeometry ? Visibility.Visible : Visibility.Collapsed;
             GeometryEditor.IsEnabled=file!=null && !exporting;GeometryEditor.Refresh(transform.Active ? transform.Geometry : settings.Geometry);
-            GeometryCategory.IsEnabled=file!=null && !exporting;GeometryCategory.Tag=choosingGeometry ? "selected" : null;
-            GeometryCategoryRing.Selected=choosingGeometry;GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
+            GeometryCategory.IsEnabled=PerspectiveCategory.IsEnabled=file!=null && !exporting;
+            GeometryCategory.Tag=choosingGeometry && !GeometryEditor.ShowPerspective ? "selected" : null;
+            PerspectiveCategory.Tag=choosingGeometry && GeometryEditor.ShowPerspective ? "selected" : null;
+            GeometryCategoryRing.Selected=choosingGeometry && !GeometryEditor.ShowPerspective;GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
             HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
             HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);
             HslCategory.Tag=choosingHsl ? "selected" : null;
