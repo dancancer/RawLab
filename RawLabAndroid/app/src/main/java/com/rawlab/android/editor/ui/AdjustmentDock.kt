@@ -74,7 +74,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onApplyDraft: () -> Unit, onDiscardDraft: () -> Unit,
     onFilmSelected: (UsageFilmKind) -> Unit, onGeometryRatio: (GeometryRatio, Boolean) -> Unit,
     selectGroup: (EditorAdjustmentGroup) -> Unit, channel: Int, onChannelChange: (Int) -> Unit,
-    onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean) {
+    onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
+    onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {}) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -88,91 +89,62 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     var renameText by remember { mutableStateOf("") }
     var allTools by rememberSaveable { mutableStateOf(false) }
     var reset by rememberSaveable { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
+    var processingContext by remember { mutableStateOf(false) }
+    var perspective by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     val groupList = rememberLazyListState()
     val toolList = rememberLazyListState()
     val parameterScroll = rememberScrollState()
-    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool)
+    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective)
     // 仅实际导航后的工具身份变化会复位；离开草稿的 Stay 不改变这个 key。
     var fine by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath, tool) { mutableStateOf(false) }
-    val navigationWidths = if (compactNavigation && !sideDock) {
-        val measurer = rememberTextMeasurer()
-        val density = LocalDensity.current
-        val groupStyle = MaterialTheme.typography.labelMedium
-        val toolStyle = MaterialTheme.typography.labelSmall
-        val groupLabels = EditorAdjustmentGroup.entries.map { stringResource(groupTitle(it)) }
-        val toolLabels = editorToolOrder.map { stringResource(editorToolTitles[it]) }
-        remember(measurer, density, groupStyle, toolStyle, groupLabels, toolLabels) {
-            val ringAndGap = with(density) { 52.dp.toPx() }
-            (ringAndGap + groupLabels.maxOf { measurer.measure(AnnotatedString(it), groupStyle).size.width }) to
-                (ringAndGap + toolLabels.maxOf { measurer.measure(AnnotatedString(it), toolStyle).size.width })
-        }
-    } else 1f to 1f
+    val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
+        ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
+        else state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film
     @Composable fun dockActions() {
-            // 全部重置用另一个图标，免得和下方参数行的“重置此项”看成同一个按钮
-            Box {
-                ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.controlsEnabled && navigationEnabled) { reset = true }
-                if (reset) EditorResetMenu(state, tool, channel, onDismiss = { reset = false }) {
-                    reset = false; onResetScope(it)
-                }
+        Box {
+            ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.controlsEnabled && navigationEnabled) { reset = true }
+            if (reset) EditorResetMenu(state, tool, channel, onDismiss = { reset = false }) { reset = false; onResetScope(it) }
+        }
+        Box {
+            ToolIcon(Icons.Outlined.MoreHoriz, R.string.more, navigationEnabled) { more = true }
+            DropdownMenu(more, { more = false }) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) }, onClick = { more = false; processingContext = true })
+                DropdownMenuItem(text = { Text(stringResource(R.string.all_tools)) }, onClick = { more = false; allTools = true })
+                DropdownMenuItem(text = { Text(stringResource(if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments)) },
+                    onClick = { more = false; toggleExpanded() })
             }
-            ToolIcon(Icons.Outlined.GridView, R.string.all_tools, navigationEnabled) { allTools = true }
-            ToolIcon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
-                if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments, enabled = navigationEnabled, onClick = toggleExpanded)
+        }
     }
     @Composable fun toolStrip(modifier: Modifier = Modifier) {
         EditorToolStrip(state, tool, EditorAdjustmentRules.tools(EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
-            toolList, navigationEnabled, compactNavigation, modifier, selectTool)
+            toolList, navigationEnabled, true, modifier, perspective = perspective,
+            onPerspective = { perspective = true; selectTool(17) }, select = { if (it == 17) perspective = false; selectTool(it) })
     }
-    @Composable fun groupStrip(modifier: Modifier = Modifier) {
-        EditorGroupStrip(state, expanded, tool, sideDock, groupList, navigationEnabled,
-            compactNavigation && !sideDock, modifier, selectGroup)
+    @Composable fun groupStrip() {
+        EditorGroupStrip(state, expanded, tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
-    @Composable fun compactNavigationRow() {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (sideDock) toolStrip(Modifier.weight(1f))
-            else {
-                groupStrip(Modifier.weight(navigationWidths.first))
-                if (expanded) { VerticalDivider(Modifier.height(48.dp)); toolStrip(Modifier.weight(navigationWidths.second)) }
+    @Composable fun toolRow() {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            toolStrip(Modifier.weight(1f))
+            if (tool !in listOf(0, 9, 15, 16)) {
+                val fineHint = stringResource(R.string.editor_fine_hint)
+                Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelSmall)
+                Switch(checked = fine, onCheckedChange = { fine = it }, enabled = state.controlsEnabled,
+                    modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
             }
             dockActions()
         }
     }
+    val scrollTools = compactNavigation && !sideDock
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
-        if (!compactNavigation) Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (expanded && tool == 8) {
-                TextButton(onClick = { onResetScope(EditorResetScope.Tool(8)) }, enabled = state.controlsEnabled && calibrated,
-                    modifier = Modifier.weight(1f)) { Text(stringResource(R.string.as_shot), maxLines = 1) }
-            } else {
-                val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
-                    ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
-                    else state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film
-                Text(displayLook, Modifier.weight(1f),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
-            }
-            if (state.draft != null) Text(stringResource(R.string.adjustment_draft),
-                Modifier.weight(.8f).testTag("adjustment-draft-title").height(48.dp).horizontalScroll(rememberScrollState()).wrapContentHeight(Alignment.CenterVertically), maxLines = 1, style = MaterialTheme.typography.labelSmall)
-            dockActions()
-        }
-        if (!expanded) {
-            if (compactNavigation && sideDock) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { dockActions() }
-                groupStrip()
-            } else if (compactNavigation) compactNavigationRow() else groupStrip()
-            return@Column
-        }
-        if (compactNavigation && sideDock) compactNavigationRow()
-        else if (!compactNavigation) toolStrip()
+        if (sideDock) groupStrip()
+        if (!expanded) { if (!sideDock) groupStrip(); return@Column }
+        if (!scrollTools) toolRow()
         Box(Modifier.weight(1f).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
         CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine) {
         Column(Modifier.fillMaxWidth()) {
-            val fineHint = stringResource(R.string.editor_fine_hint)
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelMedium)
-                Switch(checked = fine, onCheckedChange = { fine = it },
-                    enabled = state.controlsEnabled && tool !in listOf(0, 9, 15, 16),
-                    modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
-            }
+            if (scrollTools) toolRow()
         when (tool) {
             0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(key = "import-look") {
@@ -296,7 +268,10 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
                 ratio = state.draft?.geometryRatio ?: GeometryRatio.FREE,
                 portrait = state.draft?.geometryPortrait ?: false,
-                ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio, onReset = { onResetScope(EditorResetScope.Tool(17)) }) { value, dragging ->
+                ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio, onReset = { onResetScope(EditorResetScope.Tool(17)) },
+                lockedRatio = state.draft?.geometryLockedRatio, physicalAspect = state.draft?.geometryAspect,
+                canvasAspect = state.draft?.geometryCanvasAspect ?: 1f, onLock = onGeometryLock, onSwap = onGeometrySwap,
+                showsGrid = state.draft?.geometryGrid ?: true, onGrid = onGeometryGrid, perspective = perspective) { value, dragging ->
                 onDraftEdit(edits.copy(geometry = value), dragging)
             }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
@@ -308,9 +283,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         }
         }
         }
-        // 这块空间属于面板预算；非草稿工具也预留，切工具时不挤压参数视口。
-        Box(Modifier.fillMaxWidth().height(65.dp)) {
-            if (state.draft != null) Column {
+        if (state.draft != null) {
+            Column {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDiscardDraft, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.cancel")) { Text(stringResource(R.string.cancel)) }
@@ -318,9 +292,12 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 }
             }
         }
-        if (compactNavigation && !sideDock) compactNavigationRow() else groupStrip()
+        if (!sideDock) groupStrip()
 
     }
+    if (processingContext) AlertDialog(onDismissRequest = { processingContext = false },
+        title = { Text(stringResource(R.string.photo_processing_settings)) },
+        text = { Text(displayLook) }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()

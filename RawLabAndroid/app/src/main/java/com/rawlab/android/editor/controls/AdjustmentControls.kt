@@ -57,12 +57,14 @@ internal val LocalAdjustmentFine = staticCompositionLocalOf { false }
 internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
     enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false,
     defaultValue: Float = 0f, resetEnabled: Boolean = enabled, showReset: Boolean = true,
-    trackColors: List<Color>? = null, axisDescription: String? = null) {
+    trackColors: List<Color>? = null, axisDescription: String? = null,
+    compactNumber: Boolean = false, modifier: Modifier = Modifier) {
     val step = when (label) {
         R.string.exposure -> .05f
         R.string.temperature -> 10f
-        R.string.geometry_straighten, R.string.geometry_crop_x, R.string.geometry_crop_y,
-        R.string.geometry_crop_width, R.string.geometry_crop_height -> .1f
+        R.string.geometry_straighten -> .1f
+        R.string.geometry_crop_x, R.string.geometry_crop_y,
+        R.string.geometry_crop_width, R.string.geometry_crop_height -> .01f
         else -> 1f
     }
     val baseline = when (label) {
@@ -72,7 +74,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
         R.string.grain_size -> 25f
         else -> defaultValue
     }.coerceIn(range)
-    val scale = AdjustmentScale(range, step, baseline, reciprocal)
+    val scale = AdjustmentScale(range, step, baseline, reciprocal, compactPercent = compactNumber)
     val scope = LocalAdjustmentSession.current
     // 未提交文本只属于打开时的照片、工具、轴、色域和原值；重绑定必须先销毁它。
     val session = remember(scope, label, value, enabled) { Any() }
@@ -81,7 +83,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     var editing by remember(session) { mutableStateOf(false) }
     var input by remember(session) { mutableStateOf("") }
     val locale = LocalConfiguration.current.locales[0]
-    val formatted = formatAdjustment(value, step, locale)
+    val formatted = if (compactNumber) formatCropPercent(value, locale) else formatAdjustment(value, step, locale)
     val title = stringResource(label)
     val parsed = scale.parse(input, locale, value)
     val raw = parseAdjustmentNumber(input, locale)
@@ -118,7 +120,20 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
         TextButton(onClick = { input = formatted; editing = true }, enabled = enabled,
             contentPadding = PaddingValues(horizontal = 4.dp),
             modifier = Modifier.heightIn(min = 48.dp).focusRequester(requester).testTag("adjustment-value-$label")
-                .semantics { stateDescription = status }) {
+                .semantics {
+                    stateDescription = status
+                    if (compactNumber) {
+                        contentDescription = "$title, $formatted $unit"
+                        progressBarRangeInfo = ProgressBarRangeInfo(value, range)
+                        customActions = if (canReset) listOf(CustomAccessibilityAction(resetLabel) { reset(); true }) else emptyList()
+                        if (enabled) setProgress { next ->
+                            if (!next.isFinite()) false else {
+                                if (next != value) update(scale.quantize(next), false)
+                                true
+                            }
+                        }
+                    }
+                }) {
             Box(Modifier.widthIn(max = 104.dp).horizontalScroll(rememberScrollState())) {
                 Text(formatted, color = color, fontFamily = FontFamily.Monospace)
             }
@@ -132,8 +147,13 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                 enabled, onValue, resetModifier, trackColors)
         }
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("adjustment-row-$label")) {
-        if (large) {
+    Column(modifier.fillMaxWidth().padding(horizontal = if (compactNumber) 4.dp else 12.dp).testTag("adjustment-row-$label")) {
+        if (compactNumber) {
+            if (large) {
+                name(Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) { number() }
+            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { name(Modifier.weight(1f)); number() }
+        } else if (large) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { name(Modifier.weight(1f)); number() }
             track(Modifier.fillMaxWidth())
         } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

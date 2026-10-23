@@ -3830,5 +3830,37 @@
     "fr": "Statistiques indisponibles",
     "ja": "統計を利用できません",
     "zh-Hans": "统计不可用"
+  },
+  "位置与尺寸": {
+    "de": "Position und Größe",
+    "en": "Position and size",
+    "es": "Posición y tamaño",
+    "fr": "Position et dimensions",
+    "ja": "位置とサイズ",
+    "zh-Hans": "位置与尺寸"
+  },
+  "已启用": {
+    "de": "Aktiviert",
+    "en": "Enabled",
+    "es": "Activado",
+    "fr": "Activé",
+    "ja": "有効",
+    "zh-Hans": "已启用"
+  },
+  "照片处理设置": {
+    "de": "Fotoverarbeitung",
+    "en": "Photo processing settings",
+    "es": "Ajustes de procesamiento",
+    "fr": "Réglages de traitement photo",
+    "ja": "写真の処理設定",
+    "zh-Hans": "照片处理设置"
+  },
+  "锁定当前比例": {
+    "de": "Aktuelles Seitenverhältnis sperren",
+    "en": "Lock current aspect ratio",
+    "es": "Bloquear la proporción actual",
+    "fr": "Verrouiller le rapport actuel",
+    "ja": "現在の縦横比を固定",
+    "zh-Hans": "锁定当前比例"
   }
 }

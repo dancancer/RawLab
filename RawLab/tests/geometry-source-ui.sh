@@ -53,7 +53,7 @@ for name, (before, after) in transforms.items():
         fine_marker = '.accessibilityIdentifier("editor.fine")'
         assert changed.count(fine_marker) == 1
         changed = changed.replace(fine_marker, fine_marker + '\n                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["fine"] = [frame.minX, frame.minY, frame.width, frame.height] }')
-        text_marker = "Text(group.title).font(.caption).lineLimit(2)"
+        text_marker = "Text(group.title).font(.caption).lineLimit(singleLine ? 1 : 2)"
         rect_marker = "            .contentShape(Rectangle())"
         assert changed.count(text_marker) == 1 and changed.count(rect_marker) == 1
         changed = changed.replace(text_marker, text_marker + '\n                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupTextRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')

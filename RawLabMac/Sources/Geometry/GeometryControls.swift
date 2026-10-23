@@ -6,8 +6,6 @@ struct GeometryControls: View {
     @ObservedObject var model: EditorModel
     var tab: MacGeometryTab = .crop
     @State private var showsPreciseCrop = false
-    @State private var rotationResetRevision = 0
-    @State private var rotationValidationMessage: String?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var textSize: CGFloat { ParameterRow.textSize(for: dynamicTypeSize) }
 
@@ -37,97 +35,69 @@ struct GeometryControls: View {
 
     private var cropControls: some View {
         VStack(spacing: 8) {
-            HStack(alignment: .center, spacing: 16) {
-                aspectControls.frame(width: 160)
-                rotationControls.frame(minWidth: 220, maxWidth: .infinity)
-                gridControl.frame(width: 120, alignment: .leading)
-            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) { aspectControls; transformControls; gridControl }
+                VStack(alignment: .leading, spacing: 6) {
+                    aspectControls
+                    HStack(spacing: 14) { transformControls; gridControl }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            parameterRow(.straightenDegrees)
             DisclosureGroup(isExpanded: Binding(get: { showsPreciseCrop }, set: { expanded in
-                if !expanded { ParameterValueField.cancelPendingInputs() }
+                if !expanded && !ParameterValueField.commitPendingInputs() { return }
                 showsPreciseCrop = expanded
             })) {
-                VStack(spacing: 0) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 270), spacing: 16)], spacing: 8) {
                     ForEach([GeometryParameter.cropX, .cropY, .cropWidth, .cropHeight]) { parameter in
-                        parameterRow(parameter).disabled(!model.geometryDraftPreviewReady)
+                        CropDimensionField(model: model, parameter: parameter)
+                            .disabled(!model.geometryDraftPreviewReady)
                     }
-                }.padding(.top, 4)
+                }.padding(.top, 6)
             } label: {
-                Text(L10n.text("精确调整")).font(.system(size: 13))
+                Text(L10n.text("位置与尺寸")).font(.system(size: textSize))
                     .accessibilityIdentifier("geometry.preciseCrop")
             }
         }
     }
 
     private var aspectControls: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(L10n.text("画面比例")).font(.system(size: 13)).foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                Picker(L10n.text("画面比例"), selection: Binding(get: { model.cropAspectPreset }, set: {
-                    commitFocusedInput()
-                    model.selectCropAspect($0)
-                })) {
-                    ForEach(CropAspectPreset.allCases, id: \.self) { preset in
-                        Text(L10n.text(preset.titleKey)).tag(preset)
-                    }
+        HStack(spacing: 6) {
+            Picker(L10n.text("画面比例"), selection: Binding(get: {
+                model.cropLockedRatio == nil ? model.cropAspectPreset.rawValue : "current"
+            }, set: { raw in
+                guard commitFocusedInput(), let preset = CropAspectPreset(rawValue: raw) else { return }
+                model.selectCropAspect(preset)
+            })) {
+                if model.cropLockedRatio != nil { Text(L10n.text("锁定当前比例")).tag("current") }
+                ForEach(CropAspectPreset.allCases, id: \.self) { preset in
+                    Text(L10n.text(preset.titleKey)).tag(preset.rawValue)
                 }
-                .labelsHidden().controlSize(.small)
-                .accessibilityLabel(L10n.text("画面比例"))
-                .accessibilityIdentifier("geometry.cropAspect")
-                Button {
-                    commitFocusedInput()
-                    model.swapCropAspect()
-                } label: {
-                    Image(systemName: "arrow.left.arrow.right").frame(width: 24, height: 24)
-                }
-                .buttonStyle(.borderless)
-                .disabled(model.cropAspectPreset == .free || model.cropAspectPreset == .square)
+            }.labelsHidden().controlSize(.small).frame(minWidth: 100, maxWidth: 200)
+                .accessibilityLabel(L10n.text("画面比例")).accessibilityIdentifier("geometry.cropAspect")
+            Button {
+                guard commitFocusedInput() else { return }
+                model.toggleCropAspectLock()
+            } label: { Image(systemName: model.cropAspectRatio == nil ? "lock.open" : "lock").frame(width: 28, height: 28) }
+                .buttonStyle(.borderless).help(L10n.text("锁定当前比例"))
+                .accessibilityLabel(L10n.text("锁定当前比例"))
+                .accessibilityValue(L10n.text(model.cropAspectRatio == nil ? "已停用" : "已启用"))
+                .accessibilityIdentifier("geometry.lockCropAspect")
+            Button {
+                guard commitFocusedInput() else { return }
+                model.swapCropAspect()
+            } label: { Image(systemName: "arrow.left.arrow.right").frame(width: 28, height: 28) }
+                .buttonStyle(.borderless).disabled(model.cropAspectRatio == nil || model.cropAspectRatio == 1)
                 .help(L10n.text("交换横纵比例"))
                 .accessibilityLabel(L10n.text("交换横纵比例"))
                 .accessibilityIdentifier("geometry.swapCropAspect")
-            }.disabled(!model.geometryDraftPreviewReady)
-            HStack(spacing: 8) {
-                flipButton(horizontal: true)
-                flipButton(horizontal: false)
-                rotationButton(clockwise: false)
-                rotationButton(clockwise: true)
-            }
+        }.disabled(!model.geometryDraftPreviewReady)
+    }
+
+    private var transformControls: some View {
+        HStack(spacing: 6) {
+            rotationButton(clockwise: false); rotationButton(clockwise: true)
+            flipButton(horizontal: true); flipButton(horizontal: false)
         }
-    }
-
-    private var rotationControls: some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                Text(GeometryParameter.straightenDegrees.title).font(.system(size: textSize))
-                    .modifier(ParameterResetGesture(action: resetRotation))
-                ParameterValueField(value: value(.straightenDegrees), range: -45...45,
-                                    precision: .standard, title: GeometryParameter.straightenDegrees.title,
-                                    unit: "°", identifier: "geometry.value.straightenDegrees",
-                                    defaultValue: 0, fontSize: textSize,
-                                    onValidationMessage: { rotationValidationMessage = $0 },
-                                    resetRevision: model.geometryDraftRevision &+ rotationResetRevision,
-                                    onEditingChanged: model.setInteracting,
-                                    invalidInputPolicy: .retain,
-                                    onValidityChange: { model.setGeometryDraftInputValidity(identifier: "geometry.value.straightenDegrees", isValid: $0) })
-                    .frame(minWidth: 72, minHeight: max(26, textSize + 13))
-                Text("°").font(.system(size: 13)).foregroundStyle(.secondary).accessibilityHidden(true)
-
-            }
-            MacRotationRuler(value: value(.straightenDegrees), onEditingChanged: model.setInteracting)
-                .frame(height: 52)
-                .modifier(ParameterResetGesture(action: resetRotation))
-                .accessibilityAction(named: L10n.format("重置%@", GeometryParameter.straightenDegrees.title), resetRotation)
-            if let rotationValidationMessage {
-                Text(rotationValidationMessage).font(.system(size: textSize)).foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }.contextMenu { Button(L10n.format("重置%@", GeometryParameter.straightenDegrees.title), action: resetRotation) }
-    }
-
-    private func resetRotation() {
-        ParameterValueField.cancelPendingInputs()
-        model.setGeometryDraftParameter(.straightenDegrees, to: 0)
-        rotationResetRevision += 1
-        model.setGeometryDraftInputValidity(identifier: "geometry.value.straightenDegrees", isValid: true)
     }
 
     private var gridControl: some View {
@@ -144,7 +114,7 @@ struct GeometryControls: View {
     private func rotationButton(clockwise: Bool) -> some View {
         let title = L10n.text(clockwise ? "向右旋转 90°" : "向左旋转 90°")
         return Button {
-            commitFocusedInput()
+            guard commitFocusedInput() else { return }
             model.updateGeometryDraft { $0.quarterTurns = ($0.quarterTurns + (clockwise ? 1 : 3)) % 4 }
         } label: {
             Image(systemName: clockwise ? "rotate.right" : "rotate.left").frame(width: 28, height: 28)
@@ -158,7 +128,7 @@ struct GeometryControls: View {
         let title = L10n.text(horizontal ? "水平翻转" : "垂直翻转")
         let enabled = horizontal ? settings.flipHorizontal : settings.flipVertical
         return Button {
-            commitFocusedInput()
+            guard commitFocusedInput() else { return }
             model.updateGeometryDraft {
                 if horizontal { $0.flipHorizontal.toggle() } else { $0.flipVertical.toggle() }
             }
@@ -192,5 +162,64 @@ struct GeometryControls: View {
                             externalResetRevision: model.geometryDraftRevision)
     }
 
-    private func commitFocusedInput() { NSApp.keyWindow?.makeFirstResponder(nil) }
+    private func commitFocusedInput() -> Bool { ParameterValueField.commitPendingInputs() }
+}
+
+private struct CropDimensionField: View {
+    @ObservedObject var model: EditorModel
+    let parameter: GeometryParameter
+    @State private var error: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private var settings: GeometrySettings { model.geometryDraftSettings }
+    private var identifier: String { "geometry.value.\(parameter.rawValue)" }
+    private var value: Binding<Double> {
+        Binding(get: { settings[keyPath: parameter.keyPath] * 100 }, set: {
+            model.setGeometryDraftParameter(parameter, to: $0 / 100)
+        })
+    }
+    private func reset() {
+        guard model.geometryDraftParameterRange(parameter).contains(parameter.defaultValue) else { return }
+        ParameterValueField.cancelPendingInputs()
+        model.setGeometryDraftParameter(parameter, to: parameter.defaultValue)
+        model.geometryDraftRevision &+= 1
+    }
+    var body: some View {
+        let range = model.geometryDraftParameterRange(parameter)
+        let size = ParameterRow.textSize(for: dynamicTypeSize)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(parameter.title).font(.system(size: size)).fixedSize(horizontal: false, vertical: true)
+                    .modifier(ParameterResetGesture(action: reset))
+                Spacer(minLength: 0)
+                ParameterValueField(value: value, range: (range.lowerBound * 100)...(range.upperBound * 100),
+                    precision: .cropPercent, title: parameter.title, unit: "%", identifier: identifier,
+                    defaultValue: parameter.defaultValue * 100, fontSize: size,
+                    onValidationMessage: { error = $0 }, resetRevision: model.geometryDraftRevision,
+                    onEditingChanged: model.setInteracting, invalidInputPolicy: .retain,
+                    onValidityChange: { model.setGeometryDraftInputValidity(identifier: identifier, isValid: $0) })
+                    .frame(width: max(72, size * 5), height: max(28, size + 13))
+                Text("%").font(.system(size: size)).foregroundStyle(.secondary).accessibilityHidden(true)
+            }
+            if let error { Text(error).font(.system(size: size)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+        }.contextMenu {
+            Button(L10n.format("重置%@", parameter.title), action: reset)
+                .disabled(!range.contains(parameter.defaultValue))
+        }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(parameter.title)
+            .accessibilityValue(ParameterPrecision.cropPercent.text(value.wrappedValue) + "%")
+            .accessibilityIdentifier("geometry.adjustment.\(parameter.rawValue)")
+            .accessibilityAdjustableAction { direction in
+                guard ParameterValueField.commitPendingInputs() else { return }
+                let step: Int
+                switch direction {
+                case .increment: step = 1
+                case .decrement: step = -1
+                @unknown default: return
+                }
+                value.wrappedValue = ParameterPrecision.cropPercent.stepped(value.wrappedValue,
+                    direction: step, fine: true, in: (range.lowerBound * 100)...(range.upperBound * 100))
+            }
+            .accessibilityAction(named: L10n.format("重置%@", parameter.title), reset)
+    }
 }

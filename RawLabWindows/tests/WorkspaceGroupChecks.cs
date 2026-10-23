@@ -25,11 +25,13 @@ internal static class WorkspaceGroupChecks
         foreach(var (group,index) in Enum.GetValues<EditorAdjustmentGroup>().Select((group,index)=>(group,index))) {
             // Repeated group clicks collapse; the next click selects the descriptor default.
             Invoke(window,"SelectTool",defaults[index]);Invoke(window,"SelectGroup",group);window.UpdateLayout();
-            check(window.DockHeader.Visibility==Visibility.Collapsed && window.Groups.IsVisible,"Repeated click collapses content but retains group navigation: "+group);
+            check(window.ToolsScroller.Visibility==Visibility.Collapsed && window.Groups.IsVisible,"Repeated click collapses content but retains group navigation: "+group);
             Invoke(window,"SelectGroup",group);window.UpdateLayout();
             check((EditorAdjustmentTool)typeof(MainWindow).GetProperty("CurrentTool",Private)!.GetValue(window)! ==defaults[index],"Group opens its default tool: "+group);
+            var expectedTools=group==EditorAdjustmentGroup.Geometry ? new[]{"Geometry","Perspective","Lens"}
+                : EditorAdjustmentRules.Tools(group).Select(tool=>tool.ToString());
             check(window.Tools.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible)
-                .Select(AutomationProperties.GetAutomationId).SequenceEqual(EditorAdjustmentRules.Tools(group).Select(tool=>tool.ToString())),
+                .Select(AutomationProperties.GetAutomationId).SequenceEqual(expectedTools),
                 "Group renders only its own tools in descriptor order: "+group);
         }
         Invoke(window,"SelectTool",EditorAdjustmentTool.Hsl);
@@ -97,6 +99,8 @@ internal static class WorkspaceGroupChecks
                     var resetBounds=presenter==null ? Rect.Empty : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize));
                     check(presenter!=null && presenter.ActualHeight>=reset.ActualHeight && resetBounds.Top>=-.5 && resetBounds.Bottom<=presenter.ActualHeight+.5,
                         "Complete last HSL action remains reachable through internal scrolling: "+language+"/"+size);
+                    PhotoFeatureChecks.Click(window.ProcessingSettingsButton);
+                    InteractionChecks.PumpUntil(()=>window.EditorContextScroller.IsVisible);
                     foreach(var control in new FrameworkElement[]{window.ProcessingVersion,window.ExposureMode,window.AsShotButton}) {
                         control.BringIntoView();window.UpdateLayout();
                         var contextViewport=PhotoFeatureChecks.Descendants<ScrollContentPresenter>(window.EditorContextScroller).First();
@@ -104,7 +108,7 @@ internal static class WorkspaceGroupChecks
                         check(bounds.Left>=-.5 && bounds.Right<=contextViewport.ActualWidth+.5 && bounds.Top>=-.5 && bounds.Bottom<=contextViewport.ActualHeight+.5,
                             "Context control remains fully reachable: "+control.Name+"/"+language+"/"+size);
                     }
-                    window.EditorContextScroller.ScrollToLeftEnd();window.UpdateLayout();
+                    window.EditorContextScroller.ScrollToTop();window.ProcessingPopup.IsOpen=false;window.UpdateLayout();
                     CheckHistogramStatistics(window,language,size,check);
                 } finally {
                     // 断言失败也保留对应截图，尺寸检查仍在拍摄重排之前执行。

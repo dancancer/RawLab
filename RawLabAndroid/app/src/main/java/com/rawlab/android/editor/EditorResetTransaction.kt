@@ -63,7 +63,7 @@ object EditorResetTransaction {
             val next = draft?.let { current ->
                 if (pair) current.resetPair(it.candidate)
                 else current.update(it.candidate).let { updated ->
-                    if (current.group == AdjustmentGroup.GEOMETRY) updated.copy(geometryRatio = GeometryRatio.FREE)
+                    if (current.group == AdjustmentGroup.GEOMETRY) updated.copy(geometryRatio = GeometryRatio.FREE, geometryLockedRatio = null)
                     else updated
                 }
             }

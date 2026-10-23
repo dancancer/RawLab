@@ -211,6 +211,12 @@ extension EditorV4UITests {
     }
 
     func openWheel(_ identifier: String, in app: XCUIApplication) throws {
+        if identifier.hasPrefix("geometry.perspective") {
+            try selectTool("perspective", in: app)
+        } else if identifier.hasPrefix("geometry.") {
+            try selectTool("geometry", in: app)
+            if identifier.hasPrefix("geometry.crop") { try expandCropDimensions(in: app) }
+        }
         let button = app.buttons[identifier]
         try revealInPanel(button, in: app, fully: true)
         button.tap()
@@ -222,6 +228,14 @@ extension EditorV4UITests {
         assertWheelContextVisible(in: app)
         XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].isHittable)
         XCTAssertTrue(app.buttons["adjustment.wheel.apply"].isHittable)
+    }
+
+    func expandCropDimensions(in app: XCUIApplication) throws {
+        let dimensions = app.buttons["geometry.dimensions"]
+        if !dimensions.isSelected {
+            try revealInPanel(dimensions, in: app)
+            dimensions.tap()
+        }
     }
 
     func selectWheelValue(_ formatted: String, title: String, unit: String = "", in app: XCUIApplication) throws {

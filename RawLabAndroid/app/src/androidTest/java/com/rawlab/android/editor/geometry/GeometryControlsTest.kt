@@ -26,11 +26,14 @@ class GeometryControlsTest {
 
     @Test fun perspectiveAndCompleteRatiosUseTheGenericDraft() {
         var draft by mutableStateOf(AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, EditSettings(), 2f / 3f, 2f / 3f))
+        var perspective by mutableStateOf(true)
         compose.setContent {
             MaterialTheme {
                 Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
                     GeometryControls(draft.value.geometry, true, draft.geometryRatio, draft.geometryPortrait,
-                        onRatioChange = { ratio, portrait -> draft = draft.selectGeometryRatio(ratio, portrait) }) { next, _ ->
+                        onRatioChange = { ratio, portrait -> draft = draft.selectGeometryRatio(ratio, portrait) },
+                        physicalAspect = draft.geometryAspect, canvasAspect = draft.geometryCanvasAspect,
+                        perspective = perspective) { next, _ ->
                         draft = draft.update(draft.value.copy(geometry = next))
                     }
                 }
@@ -44,11 +47,11 @@ class GeometryControlsTest {
         compose.runOnIdle {
             assertEquals(.25f, draft.value.geometry.perspectiveHorizontal, 0f)
             assertEquals(-.4f, draft.value.geometry.perspectiveVertical, 0f)
+            perspective = false
         }
-        compose.onNodeWithTag("geometry.ratios").performScrollTo()
         for (ratio in GeometryRatio.entries) {
-            compose.onNodeWithTag("geometry.ratios").performScrollToNode(hasTestTag("geometry.ratio-${ratio.name}"))
-            compose.onNodeWithTag("geometry.ratio-${ratio.name}").performClick().assertIsSelected()
+            compose.onNodeWithTag("geometry.ratios").performScrollTo().performClick()
+            compose.onNodeWithTag("geometry.ratio-${ratio.name}").performClick()
             compose.runOnIdle {
                 assertEquals(ratio, draft.geometryRatio)
                 draft.geometryAspect?.let {
@@ -56,8 +59,7 @@ class GeometryControlsTest {
                 }
             }
         }
-        compose.onNodeWithTag("geometry.ratios").performScrollToNode(hasTestTag("geometry.swap-ratio"))
-        compose.onNodeWithTag("geometry.swap-ratio").performClick()
+        compose.onNodeWithTag("geometry.swap-ratio").performScrollTo().performClick()
         compose.runOnIdle {
             assertFalse(draft.geometryPortrait)
             assertEquals(16f / 9f, draft.geometryAspect!!, .00001f)
@@ -77,6 +79,7 @@ class GeometryControlsTest {
         compose.onNodeWithTag("geometry.rotate-right").performScrollTo().performClick()
         compose.onNodeWithTag("geometry.flip-horizontal").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, value.quarterTurns); assertTrue(value.flipHorizontal) }
+        compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
         compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").performScrollTo().performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("110")
         compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
@@ -88,5 +91,45 @@ class GeometryControlsTest {
         compose.runOnIdle { assertEquals(.2f, value.cropX); assertEquals(.75f, value.cropWidth) }
         compose.onNodeWithContentDescription(context.getString(R.string.geometry_reset)).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(GeometrySettings(), value) }
+    }
+
+    @Test fun cropDialogPreservesUnchangedPrecisionAndLinksLockedDimensions() {
+        val original = GeometrySettings(cropWidth = .7123456f, cropHeight = .6123456f)
+        var draft by mutableStateOf(AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY,
+            EditSettings(geometry = original), canvasAspect = 1.5f))
+        compose.setContent {
+            MaterialTheme {
+                Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
+                    GeometryControls(draft.value.geometry, true, draft.geometryRatio, draft.geometryPortrait,
+                        lockedRatio = draft.geometryLockedRatio, physicalAspect = draft.geometryAspect,
+                        canvasAspect = draft.geometryCanvasAspect, onLock = { draft = draft.toggleGeometryLock() },
+                        onSwap = { draft = draft.swapGeometryRatio() }) { next, _ ->
+                        draft = draft.update(draft.value.copy(geometry = next))
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
+        fun openWidth() = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").performScrollTo().performClick()
+        openWidth()
+        compose.onNodeWithTag("adjustment-input").assertTextEquals("71.23")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(original, draft.value.geometry); assertFalse(draft.changed) }
+        compose.onNodeWithTag("geometry.lock-ratio").performScrollTo().performClick()
+        openWidth()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("60.015")
+        compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("60.01")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle {
+            assertEquals(.6001f, draft.value.geometry.cropWidth, .000001f)
+            assertEquals(original.cropWidth * 1.5f / original.cropHeight,
+                draft.value.geometry.cropWidth * 1.5f / draft.value.geometry.cropHeight, .000001f)
+            assertNotNull(draft.geometryLockedRatio)
+        }
+        compose.onNodeWithTag("geometry.swap-ratio").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(1f / (original.cropWidth * 1.5f / original.cropHeight), draft.geometryAspect!!, .000001f)
+        }
     }
 }

@@ -64,10 +64,17 @@ extension MacGeometryDraftTests {
                     context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!)
             }
             try await Task.sleep(for: .milliseconds(200))
-            try check(!nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" },
-                      "hiding precise controls removes the native field for either valid or invalid uncommitted text")
-            try check(!model.busy && model.geometryDraftSettings.cropWidth == 1 && model.invalidGeometryDraftInputs.isEmpty,
-                      "hiding precise controls cancels only field text and ends native interaction")
+            let widthStillVisible = nativeFields(host).contains { $0.accessibilityIdentifier() == "geometry.value.cropWidth" }
+            if text == "80" {
+                try check(!widthStillVisible && model.geometryDraftSettings.cropWidth == 0.8,
+                          "collapsing numeric details commits valid crop text into the draft")
+                try check(model.invalidGeometryDraftInputs.isEmpty && model.settings.geometrySettings.cropWidth == 1,
+                          "collapsing details does not apply the crop to the saved photo")
+            } else {
+                try check(widthStillVisible && model.geometryDraftSettings.cropWidth == 1 &&
+                          !model.invalidGeometryDraftInputs.isEmpty && field.stringValue == "invalid",
+                          "invalid crop text keeps details expanded and preserves the draft")
+            }
 
         }
     }

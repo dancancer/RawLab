@@ -66,6 +66,33 @@ import SwiftUI
         try check(model.beginGeometryDraft(tab: .crop), "aspect-boundary draft opens")
         try wait(model, draft: true, "aspect-boundary reference")
         let reference = model.result!.image
+        model.updateGeometryDraft { $0.cropX = 0.1; $0.cropY = 0.1; $0.cropWidth = 0.7123456789; $0.cropHeight = 0.6123456789 }
+        let locked = model.geometryDraftSettings
+        let lockedRatio = physicalRatio(model)
+        model.toggleCropAspectLock()
+        try check(model.cropAspectRatio == lockedRatio && model.geometryDraftSettings == locked,
+                  "locking the current crop preserves full precision without refitting")
+        model.setGeometryDraftParameter(.cropWidth, to: 0.5)
+        try check(abs(physicalRatio(model) - lockedRatio) < 1e-9 &&
+                  model.geometryDraftSettings.cropX == locked.cropX && model.geometryDraftSettings.cropY == locked.cropY,
+                  "locked width links height around the unchanged top-left anchor")
+        model.swapCropAspect()
+        try check(abs(physicalRatio(model) - 1 / lockedRatio) < 1e-9,
+                  "swapping a custom locked ratio uses the exact reciprocal")
+        model.toggleCropAspectLock()
+        try check(model.cropAspectRatio == nil && model.cropLockedRatio == nil && model.cropAspectPreset == .free,
+                  "unlocking returns to one free-ratio authority")
+        model.updateGeometryDraft { $0.cropX = 0.1; $0.cropY = 0.1; $0.cropWidth = 0.4; $0.cropHeight = 0.8 }
+        model.toggleCropAspectLock()
+        let bounded = model.geometryDraftSettings
+        model.setGeometryDraftParameter(.cropWidth, to: 0.6)
+        try check(model.geometryDraftSettings == bounded,
+                  "locked numeric width rejects values whose linked height would leave the canvas")
+        model.setGeometryDraftParameter(.cropWidth, to: 0.002)
+        try check(abs(model.geometryDraftSettings.cropWidth - 0.002) < 1e-12 &&
+                  abs(model.geometryDraftSettings.cropHeight - 0.004) < 1e-12,
+                  "locked precise numeric input preserves the native numeric minimum rather than the drag minimum")
+        model.toggleCropAspectLock()
         for y in [0.01, 0.84] {
             model.selectCropAspect(.free)
             model.updateGeometryDraft {

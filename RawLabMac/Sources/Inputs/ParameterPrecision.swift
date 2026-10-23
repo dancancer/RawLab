@@ -2,19 +2,19 @@ import Foundation
 
 /// Precision is expressed in the units shown in the editor, not engine units.
 enum ParameterPrecision {
-    case standard, exposure, temperature
+    case standard, exposure, temperature, cropPercent
 
     var scale: Double {
         switch self {
         case .standard: return 10
-        case .exposure: return 100
+        case .exposure, .cropPercent: return 100
         case .temperature: return 0.1
         }
     }
     var normalStep: Double {
         switch self {
         case .standard: return 1
-        case .exposure: return 0.1
+        case .exposure, .cropPercent: return 0.1
         case .temperature: return 100
         }
     }
@@ -40,11 +40,15 @@ enum ParameterPrecision {
         let clean = value == 0 ? 0 : value
         let decimals: Int
         switch self {
-        case .exposure: decimals = 2
+        case .exposure, .cropPercent: decimals = 2
         case .temperature: decimals = 0
         case .standard: decimals = abs(clean - clean.rounded()) < 0.0000001 ? 0 : 1
         }
         let roundedText = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
+        if self == .cropPercent {
+            let compact = roundedText.replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+            return signed && clean > 0 ? "+" + compact : compact
+        }
         // Existing values may predate the editing grid, including camera white balance.
         let result = Double(roundedText) == clean ? roundedText : String(clean)
         return signed && clean > 0 ? "+" + result : result
@@ -60,6 +64,10 @@ enum ParameterPrecision {
     func parse(_ draft: String) -> Double? {
         guard let value = Double(draft.trimmingCharacters(in: .whitespacesAndNewlines)), value.isFinite else { return nil }
         return value
+    }
+
+    func isUnchangedDisplay(_ draft: String, original: Double) -> Bool {
+        self == .cropPercent && parse(draft) == parse(text(original))
     }
 }
 

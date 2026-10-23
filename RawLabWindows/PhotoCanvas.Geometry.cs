@@ -14,6 +14,7 @@ public sealed partial class PhotoCanvas
     private CropRect originalCrop;
     public bool GeometryEditing { get; set; }
     public event Action<GeometrySettings,bool>? CropChanged;
+    public Func<bool>? PrepareCropInteraction { get; set; }
     public void SetCropDraft(GeometrySettings? value,double? aspect,bool grid)
     {cropDraft=value;cropRatio=aspect;cropGrid=grid;DrawCrop();}
     private Rect CropBounds=>cropDraft==null || ImageBounds.IsEmpty ? Rect.Empty : new(
@@ -32,6 +33,7 @@ public sealed partial class PhotoCanvas
     private bool HandleCropDown(Point point)
     {
         if(!GeometryEditing)return false;
+        if(PrepareCropInteraction?.Invoke()==false)return true;
         if(cropDraft!=null && HitCrop(point) is {} handle){cropHandle=handle;cropStart=point;originalCrop=CropInteraction.FromGeometry(cropDraft);CaptureMouse();}
         return true;
     }
@@ -59,6 +61,7 @@ public sealed partial class PhotoCanvas
     private bool HandleCropKey(KeyEventArgs e)
     {
         if(!GeometryEditing || cropDraft==null || e.Key is not(Key.Left or Key.Right or Key.Up or Key.Down))return false;
+        if(PrepareCropInteraction?.Invoke()==false){e.Handled=true;return true;}
         var step=(Keyboard.Modifiers&ModifierKeys.Shift)!=0 ? .01 : .001;
         var x=e.Key==Key.Left ? -step : e.Key==Key.Right ? step : 0;
         var y=e.Key==Key.Up ? -step : e.Key==Key.Down ? step : 0;

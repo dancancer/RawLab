@@ -40,6 +40,11 @@ struct ContentView: View {
     @State var rulerFocusTask: Task<Void, Never>?
     @State var geometryDraft: GeometrySettings?
     @State var geometryAspectPreset: CropAspectPreset = .free
+    @State var geometryLockedRatio: Double?
+    @State var geometryAspectSwapped = false
+    @State var geometryGrid = true
+    @State var geometryPerspective = false
+    @State var showingProcessingContext = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
@@ -75,9 +80,9 @@ struct ContentView: View {
     @State var singleExportFormat: BatchOutputFormat = .jpeg
     @State var fileExportRequest: FileExportRequest?
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
-    @ScaledMetric(relativeTo: .caption) var toolHeight = 92.0
+    @ScaledMetric(relativeTo: .caption) var toolHeight = 44.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
-    @ScaledMetric(relativeTo: .body) var panelHeight = 256.0
+    @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
     @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
 
     var body: some View {
@@ -88,6 +93,7 @@ struct ContentView: View {
         let draftObserved = applyEditorDraftObservers(to: dataObserved)
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
+            .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
     }
 
     private var editorNavigation: some View {
