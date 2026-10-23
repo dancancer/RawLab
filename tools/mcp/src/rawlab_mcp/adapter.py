@@ -198,6 +198,8 @@ class CliAdapter:
             raise AdapterError(f"Expected a nonempty {description}")
         text = str(value)
         try:
+            # JSON/CLI 路径必须是有效 Unicode；文件系统编码可能放行未配对代理项。
+            text.encode("utf-8")
             encoded = os.fsencode(text)
         except (TypeError, UnicodeError, ValueError) as e:
             raise AdapterError(f"{description.capitalize()} contains an invalid path") from e

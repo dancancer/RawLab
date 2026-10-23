@@ -33,12 +33,26 @@ data class PhotoZoom(val scale: Float, val x: Float = 0f, val y: Float = 0f) {
         else PhotoZoom(viewport.fitScale)
 
     fun resize(previous: PhotoViewport, next: PhotoViewport): PhotoZoom =
-        if (previous.isFit(scale)) PhotoZoom(next.fitScale) else constrained(next)
+        PhotoViewTransform.from(this, previous).project(next)
 
     fun constrained(viewport: PhotoViewport): PhotoZoom {
         val next = scale.coerceIn(viewport.minimumScale, viewport.maximumScale)
         val maxX = max(0f, (viewport.imageWidth * next - viewport.width) / 2)
         val maxY = max(0f, (viewport.imageHeight * next - viewport.height) / 2)
         return PhotoZoom(next, x.coerceIn(-maxX, maxX), y.coerceIn(-maxY, maxY))
+    }
+}
+
+/** 一份照片焦点可投影到不同大小的 pane，不能复用屏幕像素 pan。 */
+data class PhotoViewTransform(val magnification: Float = 1f, val focusX: Float = .5f, val focusY: Float = .5f) {
+    fun project(viewport: PhotoViewport): PhotoZoom {
+        val scale = (viewport.fitScale * magnification).coerceIn(viewport.minimumScale, viewport.maximumScale)
+        return PhotoZoom(scale, (.5f - focusX) * viewport.imageWidth * scale,
+            (.5f - focusY) * viewport.imageHeight * scale).constrained(viewport)
+    }
+
+    companion object {
+        fun from(zoom: PhotoZoom, viewport: PhotoViewport) = PhotoViewTransform(zoom.scale / viewport.fitScale,
+            .5f - zoom.x / (viewport.imageWidth * zoom.scale), .5f - zoom.y / (viewport.imageHeight * zoom.scale))
     }
 }

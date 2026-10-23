@@ -40,7 +40,9 @@ class NativeProcessingException(val status: Int, message: String) : IOException(
     }
 }
 
-class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int) {
+class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int,
+    histogram: IntArray? = null) {
+    val histogram: RgbHistogram? = RgbHistogram.fromNative(width, height, histogram)
     var lens: LensInfo? = null
         internal set
     var geometryWidth: Int = width

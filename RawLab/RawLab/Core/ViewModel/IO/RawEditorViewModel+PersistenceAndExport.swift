@@ -94,7 +94,7 @@ extension RawEditorViewModel {
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
                     completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard !previewRendering, !previewResizePending, !isBusy else {
+        guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
             return
         }
@@ -234,7 +234,7 @@ extension RawEditorViewModel {
         DispatchQueue.global(qos: .userInitiated).async {
             sourceFile.withReadAccess { url in
                 do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing)
+                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, lens: settings.lensSettings)
                     let previewResult = try self.processor.processRaw(
                         url: url,
                         settings: settings,
@@ -245,10 +245,7 @@ extension RawEditorViewModel {
                         from: previewResult.buffer,
                         orientation: previewResult.orientation ?? rawPreview.orientation
                     )
-                    let previewHistogram = self.processor.computeHistogram(
-                        from: previewResult.buffer,
-                        bins: self.histogramBins
-                    )
+                    let previewHistogram = self.processor.computeRGBHistogram(from: previewResult.buffer)
 
                     let fullResult = try self.processor.processRaw(
                         url: url,
@@ -283,6 +280,7 @@ extension RawEditorViewModel {
                         self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
                         self.isBusy = false
                         self.sourceRevision = UUID()
+                        self.recordImportedComparison(settings: settings)
                         let sizeKB = Double(data.count) / 1024.0
                         let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
                         self.statusMessage = message
@@ -305,8 +303,8 @@ extension RawEditorViewModel {
                         self.rawLUTApplied = false
                         self.hasImage = false
                         self.lensInfo = nil
-                        self.histogram = []
-                        self.baseHistogram = []
+                        self.histogram = nil
+                        self.baseHistogram = nil
                         self.sourceRevision = UUID()
                         self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
                     }

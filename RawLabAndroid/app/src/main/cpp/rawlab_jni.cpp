@@ -493,6 +493,21 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
                 reinterpret_cast<const jbyte*>(b.data) + y * b.stride_bytes);
         }
         if (env->ExceptionCheck()) return nullptr;
+        jintArray histogram = nullptr;
+        if (!interactive) {
+            uint32_t counts[768]{};
+            uint32_t shadows = 0, highlights = 0;
+            // 统计当前 CPU 显示 buffer，独立于照片渲染 backend；失败仍交付像素。
+            if (sony2fuji_analyze_image(&b, SONY2FUJI_GPU_OFF, counts, &shadows, &highlights, nullptr) == SONY2FUJI_STATUS_OK) {
+                jint signedCounts[768];
+                static_assert(sizeof(signedCounts) == sizeof(counts));
+                std::memcpy(signedCounts, counts, sizeof(counts));
+                histogram = env->NewIntArray(768);
+                if (!histogram) return nullptr;
+                env->SetIntArrayRegion(histogram, 0, 768, signedCounts);
+                if (env->ExceptionCheck()) return nullptr;
+            }
+        }
         float kelvin = NAN, wbTint = NAN;
         if (!displayInput) {
             sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);
@@ -500,10 +515,10 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         }
         auto type = env->FindClass("com/rawlab/android/engine/NativeFrame");
         if (!type) return nullptr;
-        auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI)V");
+        auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI[I)V");
         if (!constructor) return nullptr;
         return env->NewObject(type, constructor, static_cast<jint>(b.width),
-            static_cast<jint>(b.height), pixels, kelvin, wbTint, static_cast<jint>(sony2fuji_session_get_last_backend(session)));
+            static_cast<jint>(b.height), pixels, kelvin, wbTint, static_cast<jint>(sony2fuji_session_get_last_backend(session)), histogram);
     } catch (const NativeStatusError& error) {
         throwNativeStatus(env, error);
     } catch (const std::bad_alloc&) {

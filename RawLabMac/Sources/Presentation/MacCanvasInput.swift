@@ -1,0 +1,116 @@
+import AppKit
+import SwiftUI
+
+// Native press recognition keeps the system movement/press thresholds. Crop overlays
+// retain their own input path; this view exists only outside geometry editing.
+struct MacCanvasInput: NSViewRepresentable {
+    var imageRect: CGRect
+    var canHold: Bool
+    var onHold: (Bool) -> Void
+    var onPan: (CGSize) -> Void
+    var onPanEnd: () -> Void
+    var onDoubleClick: () -> Void
+    func makeNSView(context: Context) -> InputView { InputView() }
+    func updateNSView(_ view: InputView, context: Context) {
+        view.owner = self
+    }
+    static func dismantleNSView(_ view: InputView, coordinator: ()) { view.cancelInput() }
+    final class InputView: NSView {
+        var owner: MacCanvasInput?
+        private var observers: [NSObjectProtocol] = []
+        override var isFlipped: Bool { true }
+        override var acceptsFirstResponder: Bool { true }
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            let press = NSPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
+            press.buttonMask = 1
+            addGestureRecognizer(press)
+            let pan = NSPanGestureRecognizer(target: self, action: #selector(panned(_:)))
+            pan.buttonMask = 1
+            addGestureRecognizer(pan)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
+            cancelInput()
+            guard let window else { return }
+            for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.cancelInput() })
+            }
+            observers.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.cancelInput() })
+        }
+        func cancelInput() {
+            owner?.onHold(false); owner?.onPanEnd()
+            for recognizer in gestureRecognizers { recognizer.isEnabled = false; recognizer.isEnabled = true }
+        }
+        override func cancelOperation(_ sender: Any?) { cancelInput() }
+        override func keyDown(with event: NSEvent) {
+            if event.keyCode == 53 { cancelInput() } else { super.keyDown(with: event) }
+        }
+        override func viewDidHide() { super.viewDidHide(); cancelInput() }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+        @objc private func pressed(_ gesture: NSPressGestureRecognizer) {
+            let point = gesture.location(in: self)
+            owner?.onHold(gesture.state == .began && owner?.canHold == true && owner?.imageRect.contains(point) == true)
+        }
+        override func mouseDown(with event: NSEvent) {
+            window?.makeFirstResponder(self)
+            owner?.onHold(false)
+            if event.clickCount == 2 { owner?.onDoubleClick() }
+        }
+        @objc private func panned(_ gesture: NSPanGestureRecognizer) {
+            if gesture.state == .began || gesture.state == .changed {
+                owner?.onHold(false)
+                let translation = gesture.translation(in: self)
+                owner?.onPan(CGSize(width: translation.x, height: translation.y))
+            } else { owner?.onPanEnd() }
+        }
+        override func mouseUp(with event: NSEvent) {
+            owner?.onHold(false); owner?.onPanEnd()
+        }
+    }
+}
+
+struct MacViewingKeyboard: NSViewRepresentable {
+    var canHold: Bool
+    var onHold: (Bool) -> Void
+    var onInformation: () -> Void
+    func makeNSView(context: Context) -> KeyboardView { KeyboardView() }
+    func updateNSView(_ view: KeyboardView, context: Context) { view.owner = self }
+    static func dismantleNSView(_ view: KeyboardView, coordinator: ()) { view.stop() }
+    final class KeyboardView: NSView {
+        var owner: MacViewingKeyboard?
+        private var monitor: Any?
+        private var observers: [NSObjectProtocol] = []
+        private var menuActive = false
+        private var heldKeyCode: UInt16?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow(); stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                guard let self, let owner = self.owner else { return event }
+                if event.type == .keyUp && event.keyCode == self.heldKeyCode { self.heldKeyCode = nil; owner.onHold(false); return event }
+                guard event.type == .keyDown else { return event }
+                guard event.window === self.window, self.window?.isKeyWindow == true, NSApp.isActive,
+                      self.window?.attachedSheet == nil, !self.menuActive,
+                      !(self.window?.firstResponder is NSTextView), !(self.window?.firstResponder is NSTextField),
+                      event.modifierFlags.intersection([.command, .control]).isEmpty else { return event }
+                if event.characters == "\\", owner.canHold { self.heldKeyCode = event.keyCode; owner.onHold(true); return nil }
+                if event.modifierFlags.intersection(.option).isEmpty, event.charactersIgnoringModifiers?.lowercased() == "i", !event.isARepeat { owner.onInformation(); return nil }
+                return event
+            }
+            for name in [NSApplication.willResignActiveNotification, NSWindow.didResignKeyNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.owner?.onHold(false) })
+            }
+            observers.append(NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in self?.menuActive = true; self?.owner?.onHold(false) })
+            observers.append(NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in self?.menuActive = false })
+        }
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
+            observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
+            menuActive = false; heldKeyCode = nil; owner?.onHold(false)
+        }
+        deinit { stop() }
+    }
+}

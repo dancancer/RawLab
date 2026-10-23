@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+export SDKROOT
+case "${1:-}" in
+    macos)
+        python3 RawLabMac/tests/test_photo_copy.py
+        python3 RawLabMac/tests/test_build_environment.py
+        python3 lutools/tests/test_lens_dependencies.py
+        suites=(RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
+            RawLabMac/tests/control-groups.sh Shared/tests/usage-analytics.sh
+            Shared/tests/usage-transport.sh RawLabMac/tests/rum-configuration.sh
+            RawLabMac/tests/localization.sh)
+        ;;
+    ios)
+        suites=(RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh)
+        ;;
+    *) echo "Usage: $0 macos|ios" >&2; exit 2 ;;
+esac
+for suite in "${suites[@]}"; do
+    printf '[model] %s\n' "$suite"
+    bash "$suite"
+done

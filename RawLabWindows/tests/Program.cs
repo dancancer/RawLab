@@ -37,9 +37,14 @@ static class Program
         try
         {
             if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
+            if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length>=1 && args[0]=="--first-preview") { FirstPreviewChecks.Run(args.Skip(1),Check);Console.WriteLine($"PASS {checks} first preview checks");return 0; }
+            if(args.Length==3 && args[0]=="--view-compare") { ViewComparisonChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--view-pointer") { ViewComparisonChecks.Run(args[1],args[2],Check,pointerOnly:true);return 0; }
+            if(args.Length==3 && args[0]=="--view-labels") { ViewComparisonChecks.Run(args[1],args[2],Check,labelsOnly:true);return 0; }
+            if(args.Length==2 && args[0]=="--view-source-identity") { ViewComparisonChecks.SourceIdentityChecks(args[1],Check);return 0; }
             if(args.Length==3 && args[0]=="--comparison-default") { ComparisonDefaultChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} comparison default checks");return 0; }
             if(args.Length==3 && args[0]=="--comparison-ui-host")return ComparisonDefaultChecks.Host(args[1],args[2]);
             if(args.Length==4 && args[0]=="--raster") { RasterChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} raster checks");return 0; }
@@ -126,7 +131,7 @@ static class Program
                 settings.Reset(Parameter.Strength);
                 Check(float.IsFinite(rendered.Baseline) && rendered.WhiteBalance!=null,"Selected exposure baseline and calibrated as-shot WB");
                 Check(Math.Abs(engine.Render(unicodeRaw,new Adjustments { ExposureMode=0 },null,32,statistics:false,clipping:false)!.Baseline-.7)<.001,"Explicit scene mode keeps the declared baseline");
-                Check(rendered.Histogram.Take(256).Sum(x=>(long)x)==rendered.Image.PixelWidth*rendered.Image.PixelHeight,"Native histogram counts each pixel");
+                ViewComparisonChecks.CheckHistogram(rendered,Check,"rendered output");
                 var lean=engine.Render(unicodeRaw,settings,unicodeLut,800,clipping:false)!;
                 Check(lean.Clipping==null && lean.Histogram.SequenceEqual(rendered.Histogram) && lean.Shadows==rendered.Shadows && lean.Highlights==rendered.Highlights && Pixels(lean.Image).SequenceEqual(Pixels(rendered.Image)),"Optional clipping mask preserves pixels and exact statistics");
                 var referenceOnly=engine.Render(unicodeRaw,settings,null,800,statistics:false,clipping:false)!;

@@ -37,7 +37,7 @@ uv sync --project tools/mcp --frozen
 | `render_preview` | `recipe_path`、`output_path`、可选 `long_edge`（默认 1280） | `--recipe PATH --preview PATH --long-edge N --json` |
 | `export_photo` | `recipe_path` | `--recipe PATH --json` |
 
-工具参数中的路径必须为绝对路径，且不能包含 NUL 或当前文件系统不能编码的字符。recipe 源文件本身保留调用方传入的 lexical path 交给 CLI 打开并确定相对目录；只有 recipe 内的 input/look/output 引用按 CLI 的 lexical `normpath` 规则处理，包括 recipe 本身为符号链接的情况。适配层保留 CLI 使用的 lexical absolute path 作为参数和返回字段，同时解析 canonical path 检查允许根、保护身份和创建同卷暂存目录；同一允许根内的输入符号链接与 output parent 符号链接会保留这种字段语义，leaf output 符号链接仍会拒绝。引用路径不能借软链接逃逸。`long_edge` 必须为正 uint32，多余参数会被拒绝。
+工具参数中的路径必须为绝对路径、有效 Unicode，且不能包含 NUL 或当前文件系统不能编码的字符；未配对的 Unicode 代理字符统一返回 `invalid_argument`。recipe 源文件本身保留调用方传入的 lexical path 交给 CLI 打开并确定相对目录；只有 recipe 内的 input/look/output 引用按 CLI 的 lexical `normpath` 规则处理，包括 recipe 本身为符号链接的情况。适配层保留 CLI 使用的 lexical absolute path 作为参数和返回字段，同时解析 canonical path 检查允许根、保护身份和创建同卷暂存目录；同一允许根内的输入符号链接与 output parent 符号链接会保留这种字段语义，leaf output 符号链接仍会拒绝。引用路径不能借软链接逃逸。`long_edge` 必须为正 uint32，多余参数会被拒绝。
 
 `validate_recipe` 只读取 recipe，保留 CLI 标准化结果中的相对路径；不要求引用的源图、外观或输出目录已存在。引用路径仍须位于配置的允许根内。校验原 JSON 的重复键、未知字段、范围、版本和类型由原 CLI 完成，不能通过 Python 重写绕过原 parser。
 
@@ -64,4 +64,6 @@ RAWLAB_MCP_CLI='/absolute/RawLab CLI/bin/sony2fuji' \
 
 Hosted CI 的 contracts job 使用锁文件运行协议和 adapter 回归；Mac render suite 在构建后，把同一 checkout 生成的 CLI 传入真实对照测试。两项均接入现有 `CI result` 门槛。Linux contracts 中没有原生 CLI，真实对照用例明确跳过；Mac 对照必须设置 `RAWLAB_MCP_CLI`，不能把跳过当成通过。
 
-macOS 已覆盖真实 stdio、取消、并发目标保护和 v0.8.1 发布 CLI 对照。Windows 配置样例尚未在 Windows 执行；其进程终止、NTFS hard link、Unicode 路径和真实 CLI 对照仍是平台验收项。当前受信任 CLI 不应启动外部子进程；POSIX 回收进程组，Windows 当前只回收直接 CLI 子进程。
+macOS 和 Windows 本地已覆盖真实 stdio 五工具、并发目标保护、Unicode/符号链接路径、hard link 无覆盖发布，以及当前 CLI 的 v4/v5 配方和像素对照；Windows 另以真实 RAW 验证 native CLI 取消与超时、进程退出、暂存清理和后续调用。跨批次状态见[验收总账](../../docs/integration/editing-iteration/README.md)。这些本地结果不代表 Windows Hosted CI 已接入 MCP 检查。
+
+Windows 测试中的 Python fake CLI 通过测试专用启动入口作为直接子进程执行；真实 CLI 对照仍使用未替换的生产入口。符号链接测试要求当前测试账户具备创建符号链接的权限，不修改系统策略或自动跳过。当前受信任 CLI 不应启动外部子进程；POSIX 回收进程组，Windows 当前只回收直接 CLI 子进程。

@@ -153,7 +153,9 @@ extension ContentView {
             "sourceIdentity": viewModel.sourceIdentity?.resourceIdentifier ?? "nil",
             "sourceRevision": viewModel.sourceRevision.uuidString,
             "image": PickerCancelJSON.digest(viewModel.previewImage?.pngData()),
-            "histogram": PickerCancelJSON.digest(PickerCancelJSON.encode(viewModel.histogram.map(Double.init)).data(using: .utf8)),
+            "histogram": PickerCancelJSON.digest(viewModel.histogram.map {
+                "\($0.width)x\($0.height):\(PickerCancelJSON.encode($0.counts))"
+            }?.data(using: .utf8)),
             "settings": PickerCancelJSON.encode(settings),
             "geometryDraft": geometryDraft.map(PickerCancelJSON.encode) ?? "nil",
             "lensDraft": lensDraft.map(PickerCancelJSON.encode) ?? "nil",

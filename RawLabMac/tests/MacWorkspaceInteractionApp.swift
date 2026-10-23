@@ -18,6 +18,9 @@ struct MacWorkspaceInteractionApp {
         let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
                                 editDirectory: directory.appendingPathComponent("edits"),
                                 batchDirectory: directory.appendingPathComponent("batch"))
+        if environment["RAWLAB_HISTOGRAM_UNAVAILABLE"] == "1" {
+            model.engine = try! RenderEngine(statisticsProvider: { _ in nil })
+        }
         let geometryEvents = model.$geometryDraft.sink { draft in
             if let geometry = draft?.geometry {
                 print("GEOMETRY_STATE straighten=\(geometry.straightenDegrees) width=\(geometry.cropWidth) horizontal=\(geometry.perspectiveHorizontal)")
@@ -27,9 +30,31 @@ struct MacWorkspaceInteractionApp {
             print("SETTING_STATE exposure=\($0.exposure) redHue=\($0.hslSettings.value(.hue, channel: 0))")
         }
         let textSize: DynamicTypeSize = environment["RAWLAB_PARAMETER_LARGE_TEXT"] == "1" ? .accessibility3 : .large
-        let host = NSHostingView(rootView: EditorView(model: model).dynamicTypeSize(textSize))
+        let panFixture = environment["RAWLAB_VIEWING_PAN_FIXTURE"] == "1"
+        let panState = MacViewingPanFixtureState()
+        let panInterruptionWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        panInterruptionWindow.title = "Pan focus interruption"
+        weak var panWindow: NSWindow?
+        var interrupted = false
+        let panEvents = panState.$viewport.dropFirst().sink { value in
+            print("VIEWPORT focus=\(value.focus.x),\(value.focus.y)")
+            if panFixture && !interrupted {
+                interrupted = true
+                print("NATIVE_PAN_CANCEL_BEGIN key=\(panWindow?.isKeyWindow == true)")
+                panInterruptionWindow.makeKeyAndOrderFront(nil)
+                print("NATIVE_PAN_CANCEL publishedFocus=\(value.focus.x),\(value.focus.y)")
+                DispatchQueue.main.async {
+                    panWindow?.makeKeyAndOrderFront(nil)
+                    panInterruptionWindow.orderOut(nil)
+                    print("NATIVE_PAN_RESUME key=\(panWindow?.isKeyWindow == true)")
+                }
+            }
+        }
+        let root = panFixture ? AnyView(MacViewingPanFixture(state: panState)) : AnyView(EditorView(model: model))
+        let host = NSHostingView(rootView: root.dynamicTypeSize(textSize))
         var initialLoad: AnyCancellable?
-        if let source = environment["RAWLAB_PARAMETER_SOURCE"] {
+        if !panFixture, let source = environment["RAWLAB_PARAMETER_SOURCE"] {
             if environment["RAWLAB_PARAMETER_LEGACY_HSL"] == "1" {
                 initialLoad = model.$result.first(where: { $0 != nil }).sink { _ in
                     // A valid persisted, off-grid desktop value must survive real UI navigation.
@@ -42,10 +67,16 @@ struct MacWorkspaceInteractionApp {
         }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Double(environment["RAWLAB_PARAMETER_WIDTH"] ?? "950") ?? 950, height: Double(environment["RAWLAB_PARAMETER_HEIGHT"] ?? "620") ?? 620),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "RawLab Workspace Acceptance"
+        window.title = panFixture ? "RawLab Viewing Pan Acceptance" : "RawLab Workspace Acceptance"
+        panWindow = window
+        let pointerEvents = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { event in
+            if panFixture { print("POINTER type=\(event.type.rawValue) point=\(event.locationInWindow) key=\(window.isKeyWindow)") }
+            return event
+        }
         window.contentView = host; window.center(); window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
-        withExtendedLifetime((model, window, initialLoad, geometryEvents, settingEvents)) { app.run() }
+        withExtendedLifetime((model, window, panInterruptionWindow, initialLoad, geometryEvents, settingEvents, panEvents, pointerEvents)) { app.run() }
+        if let pointerEvents { NSEvent.removeMonitor(pointerEvents) }
         try? FileManager.default.removeItem(at: directory)
     }
 }

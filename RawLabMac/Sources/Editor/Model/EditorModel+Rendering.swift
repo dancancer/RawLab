@@ -52,14 +52,14 @@ extension EditorModel {
         guard let file else { return }
         if !settings.isDenoiseEnabled { cancelViewportResize() }
         guard !missingFilm, !missingMasterRecipe else {
-            result = nil
+            previewOutdated = true
             error = missingMasterRecipe ? L10n.text("大师配方外观文件不可用。") : L10n.text("上次使用的外观不可用，请重新选择或导入外观。")
             return
         }
         let preview = geometryPreviewSettings
         let interactive = geometryDraft == nil && scheduler.interacting && !forceExact && preview.geometrySettings.isIdentity
         let effectiveLUT = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
-        let work = RenderWork(file: file, settings: preview, lut: effectiveLUT,
+        let work = RenderWork(file: file, settings: preview, source: MacReferenceSource(file, raster: RenderEngine.isRasterInput(file)), lut: effectiveLUT,
                               edge: interactive || !fullResolution ? renderPreviewLongEdge : nil,
                               pass: interactive ? .interactive : .exact,
                               draftEpoch: geometryDraftEpoch, editingGeometry: geometryDraft != nil)
@@ -85,27 +85,34 @@ extension EditorModel {
         queue.async { [weak self] in
             guard let self else { return }
             do {
+                if let previous = self.originalCache?.key.source,
+                   previous.url == work.source.url, previous != work.source {
+                    // The core RAW cache omits inode. A same-path replacement must
+                    // cross a client session boundary even when size/mtime agree.
+                    self.engine = try RenderEngine()
+                }
                 if self.engine == nil { self.engine = try RenderEngine() }
-                if self.originalCache?.file != work.file || self.originalCache?.processing != work.settings.processing {
+                // nil edge explicitly requests the existing immutable full-native baseline.
+                let originalKey = MacNeutralReferenceKey(source: work.source, settings: work.settings.neutralSettings, edge: nil)
+                if self.originalCache?.key != originalKey || self.originalCache?.frame.histogram.count != 3 {
                     self.originalCache = nil
                     self.geometryReferenceCache = nil
                     if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil) {
-                        self.originalCache = (work.file, work.settings.processing, original)
+                        self.originalCache = (originalKey, original)
                     }
                 }
                 let neutral: RenderedImage?
-                if work.editingGeometry || work.settings.geometrySettings.isIdentity {
+                let key = MacNeutralReferenceKey(source: work.source, settings: work.settings, edge: work.edge)
+                if work.editingGeometry || key.usesOriginal {
                     neutral = self.originalCache?.frame
-                } else if let cached = self.geometryReferenceCache, cached.file == work.file,
-                          cached.processing == work.settings.processing,
-                          cached.geometry == work.settings.geometrySettings, cached.lens == work.settings.lensSettings {
+                } else if let cached = self.geometryReferenceCache, cached.frame.histogram.count == 3,
+                          cached.key.canServe(key, fullResolution: cached.frame.isFullResolution) {
                     neutral = cached.frame
+                    self.geometryReferenceCache = (key, cached.frame)
                 } else {
                     neutral = try self.engine!.render(work.file, settings: work.settings.neutralGeometrySettings,
                                                       lut: nil, edge: nil)
-                    if let neutral {
-                        self.geometryReferenceCache = (work.file, work.settings.processing, work.settings.geometrySettings, work.settings.lensSettings, neutral)
-                    }
+                    if let neutral { self.geometryReferenceCache = (key, neutral) }
                 }
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
                                                      edge: work.edge, output: nil,
@@ -129,13 +136,19 @@ extension EditorModel {
         let sameFile = request.value.file.standardizedFileURL == file?.standardizedFileURL
         switch completion {
         case .publishInteractive, .publishExact:
+            if sameFile, request.value.source != file.map({ MacReferenceSource($0, raster: RenderEngine.isRasterInput($0)) }) {
+                if scheduler.latest?.id == request.id {
+                    previewOutdated = true; error = L10n.text("预览未更新")
+                }
+                break
+            }
             guard sameFile, request.value.draftEpoch == geometryDraftEpoch,
                   !missingFilm, !missingMasterRecipe else { break }
             // 拖动仍可显示较早参数，但窗口尺寸变化后不能发布旧尺寸。
             if completion == .publishInteractive && request.value.edge != renderPreviewLongEdge { break }
             if let failure {
                 if completion == .publishExact || scheduler.latest?.id == request.id {
-                    self.result = nil
+                    self.previewOutdated = true
                     self.error = failure.localizedDescription
                 }
             } else if let neutral, let result {
@@ -143,6 +156,7 @@ extension EditorModel {
                 if !request.value.editingGeometry { pendingGeometryPresentation = nil }
                 self.neutral = neutral
                 self.result = result
+                if completion == .publishExact { previewOutdated = false }
                 if let draft = geometryDraft,
                    request.value.settings.geometrySettings == draft.previewGeometry,
                    request.value.settings.lensSettings == draft.lens {

@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+case "${1:-}" in
+    ''|--models-only) ;;
+    *) echo "Usage: $0 [--models-only]" >&2; exit 2 ;;
+esac
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
@@ -15,3 +19,8 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/presentation"
 "$OUT/presentation" "${RAWLAB_FILM_ASSETS:-$ROOT/RawLabMac/Resources/FilmIcons}"
+
+bash "$ROOT/RawLabMac/tests/mac-viewing.sh"
+if [[ "${1:-}" != --models-only ]]; then
+    bash "$ROOT/RawLabMac/tests/mac-canvas-input.sh"
+fi

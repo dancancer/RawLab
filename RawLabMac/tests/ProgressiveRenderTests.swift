@@ -21,14 +21,15 @@ struct ProgressiveRenderTests {
                                 editDirectory: root.appendingPathComponent("edits"),
                                 batchDirectory: root.appendingPathComponent("batch"))
         model.films = [Film(name: "PROVIA", url: lut)]
-        model.selectedFilmID = lut.path
         model.updatePreviewLongEdge(1600)
         model.open(raw)
+        model.selectedFilmID = lut.path
 
         try wait(for: "initial settled viewport preview", timeout: 120) {
             guard !model.busy, let result = model.result else { return false }
             return model.status.hasPrefix("预览 ") && max(result.image.width, result.image.height) == 1600
         }
+        check(model.selectedFilm?.url == lut, "opening the photo is followed by the intended test look selection")
 
         model.setInteracting(true)
         model.settings.set(.temperature, to: 6000)
@@ -53,7 +54,7 @@ struct ProgressiveRenderTests {
         }
         check(final.image.width == expected.image.width && final.image.height == expected.image.height,
               "model and direct settled renders use the same viewport dimensions")
-        check(final.histogram == expected.histogram,
+        check((final.image.dataProvider!.data! as Data) == (expected.image.dataProvider!.data! as Data),
               "model settled result matches a direct viewport render with the final settings")
     }
 

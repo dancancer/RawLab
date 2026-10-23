@@ -117,7 +117,7 @@ Use continuous surfaces and separators, not floating section cards. The histogra
 
 Continuous semantic backgrounds and dividers separate the photo, tool strip and parameter surface. System sheets and popovers supply task presentation; progress feedback uses system `.regularMaterial` near the photo edge. Do not obscure the imported photograph's center with a processing overlay.
 
-The floating luminance histogram uses a translucent black surface (opacity 0.65), a quiet white border (opacity 0.12) and rounded corners. Film selection uses a restrained yellow fill (opacity 0.08) and outline. Tool circles use a subtle selected yellow fill (opacity 0.12) and border (opacity 0.5), with low-opacity white fill/border for unselected tools. These overlays do not establish a decorative shadow vocabulary.
+The floating RGB histogram uses a translucent black surface (opacity 0.65), a quiet white border (opacity 0.12) and rounded corners. Its title and before/after source remain explicit. A short photo area or accessibility text size uses a scrollable system popover with a 44-point close target. Film selection uses a restrained yellow fill (opacity 0.08) and outline. Tool circles use a subtle selected yellow fill (opacity 0.12) and border (opacity 0.5), with low-opacity white fill/border for unselected tools. These overlays do not establish a decorative shadow vocabulary.
 <!-- END RAWLAB IOS IPADOS ELEVATION -->
 
 ## Shapes
@@ -189,7 +189,7 @@ Single-photo JPEG and rendered DNG export are available for both supported RAW a
 - Keep both the file tree and floating histogram collapsible so the photo can occupy the workspace.
 - Do not restore a right adjustment sidebar or a separate film-mode switch.
 - RAW white balance starts at the per-photo as-shot calibration estimate. Kelvin increases toward warm; positive tint adds magenta. Use the camera baseline for reset and the signed ring. The slider uses reciprocal Kelvin; numeric input remains Kelvin. Do not claim Lightroom profile parity or that the estimate is a literal EXIF Kelvin tag.
-- Histograms use shared linear pixel-count scaling with RGB/CMY/neutral-gray filled overlaps. The horizontal axis is the current sRGB output, not RAW sensor saturation or Adobe's internal working space.
+- Histograms use 256 bins per channel, shared linear pixel-count scaling and RGB/CMY/neutral-gray filled overlaps. The horizontal axis is the current sRGB output, not RAW sensor saturation or Adobe's internal working space. Ordinary and comparison views show after-frame statistics; temporary before view shows the matching neutral frame. Unavailable statistics clear the graph, retain its layout and show a localized status while preserving the photo.
 
 <!-- BEGIN RAWLAB IOS IPADOS DOS -->
 ### iOS / iPadOS

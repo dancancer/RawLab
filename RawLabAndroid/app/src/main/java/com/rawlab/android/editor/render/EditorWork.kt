@@ -3,7 +3,9 @@ package com.rawlab.android.editor.render
 import android.graphics.Bitmap
 import android.net.Uri
 import com.rawlab.android.engine.LensInfo
+import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.DcpCompilationException
@@ -12,6 +14,7 @@ import com.rawlab.android.looks.InvalidLookException
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.ProcessingIdentity
+import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
@@ -23,12 +26,17 @@ import com.rawlab.android.settings.LookChoice
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
     val comparisonHeight: Float = neutral.height.toFloat(),
-    val originalAspect: Float = neutral.width.toFloat() / neutral.height)
+    val originalAspect: Float = neutral.width.toFloat() / neutral.height,
+    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null)
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,
     val lens: LensSettings, val edge: Int, val interactive: Boolean,
-    val processing: ProcessingIdentity = ProcessingIdentity.CURRENT)
+    val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
+    val sourceIdentity: PhotoIdentity = PhotoIdentity(inputPath), val inputKind: PhotoInputKind = PhotoInputKind.RAW)
+
+internal data class NeutralSourceKey(val sourceIdentity: PhotoIdentity, val inputPath: String,
+    val inputKind: PhotoInputKind, val processing: ProcessingIdentity)
 
 /** Mobile 100% remains the fixed comparison-preview pixels, independent of current render demand. */
 internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {

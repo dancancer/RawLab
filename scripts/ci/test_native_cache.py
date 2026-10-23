@@ -89,6 +89,7 @@ class NativeCacheTests(unittest.TestCase):
 
     def test_mac_matrix_rows_have_separate_workflow_identities(self):
         workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        workflow['jobs']['macos']['strategy']['matrix']['include'] = self.cache.macos_matrix('full')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / '.github/workflows/ci.yml'
@@ -104,6 +105,13 @@ class NativeCacheTests(unittest.TestCase):
             self.assertNotEqual(before['x86_64'], self.cache.workflow_identity(root, 'macos', 'x86_64'))
             with self.assertRaises(ValueError):
                 self.cache.workflow_identity(root, 'macos', 'unsupported')
+
+    def test_dynamic_mac_matrix_hashes_resolved_architecture_configuration(self):
+        before = self.cache.workflow_identity(ROOT, 'macos', 'arm64')
+        rows = self.cache.macos_matrix('full')
+        rows[0]['jobs'] = '3'
+        with mock.patch.object(self.cache, 'macos_matrix', return_value=rows):
+            self.assertNotEqual(before, self.cache.workflow_identity(ROOT, 'macos', 'arm64'))
 
     def test_content_not_file_timestamp_controls_dependency_hash(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -30,6 +30,7 @@ final class EditorModel: ObservableObject {
     struct RenderWork: Equatable {
         let file: URL
         let settings: Adjustments
+        let source: MacReferenceSource
         let lut: URL?
         let edge: Int?
         let pass: RenderPass
@@ -70,7 +71,7 @@ final class EditorModel: ObservableObject {
     var geometryCropInputEnabled: Bool { geometryDraft != nil && geometryDraftTab == .crop }
     var geometryDraftCanApply: Bool {
         geometryDraft?.hasChanges == true && geometryDraftSettings.isValid && invalidGeometryDraftInputs.isEmpty &&
-            geometryDraftPreviewReady && !busy && !geometryCropInteracting && !exporting
+            geometryDraftPreviewReady && !busy && !previewOutdated && !geometryCropInteracting && !exporting
     }
     var lensDraftPreviewIsCurrent: Bool { geometryDraftPreviewReady && !busy }
     var canComparePreview: Bool { geometryDraft == nil && pendingGeometryPresentation == nil }
@@ -109,6 +110,7 @@ final class EditorModel: ObservableObject {
     }
     var previewLongEdge = 2000
     var renderPreviewLongEdge = 2000
+    @Published var sourceRevision = UUID()
     @Published var file: URL?
     @Published var neutral: RenderedImage?
     @Published var result: RenderedImage?
@@ -117,6 +119,7 @@ final class EditorModel: ObservableObject {
     var editRevision = UUID()
     @Published var exporting = false
     @Published var lookLibraryBusy = false
+    @Published var previewOutdated = false
     @Published var error: String?
     @Published var lookImportReport: String?
     enum Status {
@@ -145,8 +148,8 @@ final class EditorModel: ObservableObject {
     var viewportResizeWork: DispatchWorkItem?
     var workerActive = false
     var engine: RenderEngine?
-    var originalCache: (file: URL, processing: ProcessingIdentity, frame: RenderedImage)?
-    var geometryReferenceCache: (file: URL, processing: ProcessingIdentity, geometry: GeometrySettings, lens: LensCorrectionSettings, frame: RenderedImage)?
+    var originalCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
+    var geometryReferenceCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
     var editStore: EditPersistence?
     let editDirectory: URL
     let batchJournal: BatchJournal
@@ -162,7 +165,7 @@ final class EditorModel: ObservableObject {
         guard let recipe = selectedMasterRecipe else { return false }
         return recipe.lutURL() == nil
     }
-    var canApplySettings: Bool { file != nil && result != nil && !busy && !exporting && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
+    var canApplySettings: Bool { file != nil && result != nil && !busy && !previewOutdated && !exporting && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
 
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,

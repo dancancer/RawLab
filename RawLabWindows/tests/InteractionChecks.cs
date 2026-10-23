@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -9,12 +10,12 @@ using RawLab.Windows;
 
 internal static class InteractionChecks
 {
-    internal static void PumpUntil(Func<bool> done)
+    internal static void PumpUntil(Func<bool> done,[CallerArgumentExpression(nameof(done))] string condition="",[CallerMemberName] string caller="")
     {
         var clock=Stopwatch.StartNew();
         while(!done())
         {
-            if(clock.Elapsed>TimeSpan.FromMinutes(2))throw new TimeoutException("Interaction did not complete");
+            if(clock.Elapsed>TimeSpan.FromMinutes(2))throw new TimeoutException($"{caller} did not complete within 120s: {condition}");
             var frame=new DispatcherFrame();
             var timer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(5)};
             timer.Tick+=(_,_)=>{timer.Stop();frame.Continue=false;};timer.Start();Dispatcher.PushFrame(frame);

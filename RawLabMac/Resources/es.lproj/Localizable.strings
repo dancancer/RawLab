@@ -32,6 +32,7 @@
 "PNG · 16-bit…" = "PNG · 16 bits…";
 "RAW 照片" = "Foto RAW";
 "RAW 降噪" = "Reducción de ruido RAW";
+"RGB 直方图" = "Histograma RGB";
 "RGB 输出直方图" = "Histograma de salida RGB";
 "RawLab %@ 已发布" = "RawLab %@ ya está disponible";
 "RawLab 文件" = "Archivos RawLab";
@@ -89,6 +90,7 @@
 "关于 RawLab" = "Acerca de RawLab";
 "关于 RawLab…" = "Acerca de RawLab...";
 "关闭" = "Cerrar";
+"关闭对比" = "Desactivar comparación";
 "关闭提示" = "Cerrar mensaje";
 "关闭镜头选择" = "Cerrar la selección de objetivo";
 "内存不足，无法解码普通图片。" = "No hay memoria suficiente para decodificar la imagen.";
@@ -97,6 +99,8 @@
 "几何与镜头" = "Geometría y objetivo";
 "几何与镜头草稿" = "Borrador de geometría y objetivo";
 "几何编辑" = "Edición de geometría";
+"分割位置" = "Posición de la división";
+"分割线" = "Línea divisoria";
 "前往下载 %@" = "Descargar %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Luz solar de California fusionada con película japonesa, dorado urbano difuso y brillo cálido transparente";
 "匹配内嵌预览" = "Coincidir con la vista previa incrustada";
@@ -139,6 +143,7 @@
 "实际像素 · 100%" = "Píxeles reales · 100%";
 "对比" = "Comparación";
 "对比度" = "Contraste";
+"对比方式" = "Modo de comparación";
 "导入外观" = "Importar look";
 "导入外观…" = "Importar look…";
 "导入结果" = "Resultado de la importación";
@@ -196,6 +201,7 @@
 "已选中" = "Seleccionado";
 "常用导出尺寸" = "Tamaños de exportación más utilizados";
 "常用尺寸" = "Tamaños comunes";
+"并排" = "En paralelo";
 "应用" = "Aplicar";
 "应用几何和镜头编辑" = "Aplicar cambios de geometría y objetivo";
 "应用并离开" = "Aplicar y salir";
@@ -203,6 +209,7 @@
 "应用当前设置到 %@ 张照片？" = "¿Aplicar los ajustes actuales (fotos: %@)?";
 "开启" = "Activado";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión.";
+"开启对比" = "Activar comparación";
 "强度" = "Intensidad";
 "强度为 0，其他参数会保留。" = "La intensidad es 0. Los demás ajustes se conservan.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste fuerte, sombras profundas cian frío, negros contenidos y toques de luz cálida";
@@ -316,6 +323,7 @@
 "查看应用后的效果" = "Ver el resultado con los ajustes aplicados";
 "查看批量任务…" = "Ver tarea por lotes…";
 "查看更新" = "Ver actualizaciones";
+"查看调整前" = "Ver antes";
 "标准显影" = "Revelado estándar";
 "校正后裁去空白边缘" = "Recortar los bordes vacíos tras la corrección";
 "核对 DNG 文件" = "Verificar archivos DNG";
@@ -363,6 +371,7 @@
 "滨田英明" = "Hideaki Hamada";
 "照片" = "Foto";
 "照片信息" = "Información de la foto";
+"照片四周留白" = "Espacio alrededor de la foto";
 "照片或调整已变化，请重新确认重置。" = "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.";
 "照片缺少有效焦距，未应用校正" = "No hay distancia focal válida; corrección no aplicada";
 "版本 %@" = "Versión %@";
@@ -395,6 +404,7 @@
 "纽约电影 · 戏剧光影" = "Cine neoyorquino · luz dramática";
 "细节" = "Detalle";
 "细节优先" = "Prioridad al detalle";
+"统计不可用" = "Estadísticas no disponibles";
 "统计已停止，请重启应用后再开启。" = "El análisis se ha detenido. Reinicie la aplicación antes de volver a activarlo.";
 "统计服务未能启动，照片编辑不受影响。" = "No se pudo iniciar el servicio de análisis. La edición de fotos no se ve afectada.";
 "统计设置未能保存，当前进程已停止统计；重启前请检查存储权限。" = "No se pudo guardar el ajuste de análisis; la recopilación se ha detenido para este proceso. Compruebe el permiso de almacenamiento antes de reiniciar.";
@@ -405,6 +415,7 @@
 "绿" = "Verde";
 "缩小" = "Alejar";
 "缩放" = "Ampliar";
+"缩放与显示" = "Zoom y visualización";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Faltan los datos del balance de blancos de la toma, por lo que no se puede conservar el aspecto de la receta.";
 "羽化" = "Desvanecimiento";
 "胶片" = "Película";
@@ -457,6 +468,7 @@
 "请输入有效数字" = "Introduce un número válido";
 "请输入范围内的有效数字" = "Por favor ingresa un número válido dentro del rango";
 "调整亮度、色彩和粗色斑降噪" = "Ajustar la reducción de ruido de luminancia, color y manchas";
+"调整前" = "Antes";
 "调整后" = "Después";
 "调整工具" = "Herramientas de ajuste";
 "调整已保存" = "Ajustes guardados";
@@ -472,6 +484,7 @@
 "载入照片后可用" = "Disponible después de cargar fotos";
 "输入调整" = "Ajustes de entrada";
 "输出" = "Salida";
+"返回调整后" = "Volver a después";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "Estos cambios aún no se han aplicado. Aplícalos y sal, descártalos o sigue editando.";
 "适合窗口" = "Ajustar a la ventana";
 "选择 %@" = "Seleccionar %@";
@@ -503,6 +516,7 @@
 "重置全部调整…" = "Restablecer todos los ajustes…";
 "重置全部调整？" = "¿Restablecer todos los ajustes?";
 "重置几何编辑" = "Restablecer geometría";
+"重置分割线" = "Restablecer división";
 "重置当前颜色" = "Restablecer color actual";
 "重置当前颜色（%@）" = "Restablecer el color actual (%@)";
 "重置本工具" = "Restablecer esta herramienta";
@@ -537,6 +551,8 @@
 "项目与作者" = "Proyecto y autor";
 "预览" = "Vista previa";
 "预览尚未就绪，请稍后重试。" = "La vista previa aún no está lista. Vuelve a intentarlo en breve.";
+"预览已更新" = "Vista previa actualizada";
+"预览未更新" = "Vista previa sin actualizar";
 "预设" = "Preajuste";
 "颗粒" = "Grano";
 "颗粒强度" = "Intensidad del grano";

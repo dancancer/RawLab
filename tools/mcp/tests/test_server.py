@@ -7,6 +7,11 @@ import unittest
 from mcp import Client, StdioServerParameters
 
 import test_adapter
+from subprocess_support import process_exited
+
+
+SERVER_MODULE = "mcp_test_server_runner" if os.name == "nt" else "rawlab_mcp"
+TEST_PYTHONPATH = os.pathsep.join((str(test_adapter.SRC), str(Path(__file__).parent)))
 
 
 class StdioTests(unittest.IsolatedAsyncioTestCase):
@@ -20,9 +25,10 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
         pid_log = f.root / "pid"
         params = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "rawlab_mcp", "--cli", str(f.cli),
+            args=["-m", SERVER_MODULE, "--cli", str(f.cli),
                   "--read-root", str(f.read_root), "--write-root", str(f.write_root)],
-            env={**os.environ, "PYTHONPATH": str(test_adapter.SRC), "FAKE_SLEEP": "5",
+            env={**os.environ, "PYTHONPATH": TEST_PYTHONPATH, "FAKE_SLEEP": "5",
+                 "RAWLAB_MCP_TEST_CLI_SCRIPT": str(f.cli),
                  "FAKE_PID_LOG": str(pid_log), "FAKE_ARGV_LOG": str(f.argv_log), "FAKE_RECIPE_LOG": str(f.recipe_log)},
         )
         async with Client(params) as client:
@@ -37,8 +43,7 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
             async with asyncio.timeout(3):
                 while list(f.write_root.glob(".rawlab-mcp-*")):
                     await asyncio.sleep(0.01)
-            with self.assertRaises(ProcessLookupError):
-                os.kill(pid, 0)
+            self.assertTrue(process_exited(pid), "Cancelled CLI process is still alive")
             self.assertFalse((f.write_root / "export.jpg").exists())
             result = await client.call_tool("image_info", {"image_path": str(f.input_path)})
             self.assertFalse(result.is_error)
@@ -47,9 +52,10 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
         f = self.fixture
         params = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "rawlab_mcp", "--cli", str(f.cli),
+            args=["-m", SERVER_MODULE, "--cli", str(f.cli),
                   "--read-root", str(f.read_root), "--write-root", str(f.write_root)],
-            env={**os.environ, "PYTHONPATH": str(test_adapter.SRC),
+            env={**os.environ, "PYTHONPATH": TEST_PYTHONPATH,
+                 "RAWLAB_MCP_TEST_CLI_SCRIPT": str(f.cli),
                  "FAKE_ARGV_LOG": str(f.argv_log), "FAKE_RECIPE_LOG": str(f.recipe_log)},
         )
         async with Client(params) as client:
@@ -86,9 +92,10 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
         f = self.fixture
         params = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "rawlab_mcp", "--cli", str(f.cli),
+            args=["-m", SERVER_MODULE, "--cli", str(f.cli),
                   "--read-root", str(f.read_root), "--write-root", str(f.write_root)],
-            env={**os.environ, "PYTHONPATH": str(test_adapter.SRC),
+            env={**os.environ, "PYTHONPATH": TEST_PYTHONPATH,
+                 "RAWLAB_MCP_TEST_CLI_SCRIPT": str(f.cli),
                  "FAKE_ARGV_LOG": str(f.argv_log), "FAKE_RECIPE_LOG": str(f.recipe_log)},
         )
         async with Client(params) as client:

@@ -10,9 +10,11 @@ internal sealed record PreviewFrame(RenderedImage Neutral,RenderedImage Result);
 internal sealed record EmbeddedPreview(BitmapSource? Image,int Width,int Height);
 internal sealed partial class RenderEngine : IDisposable
 {
+    internal delegate int StatisticsAnalyzer(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask);
     private Native.Session session = new();
     private int gpuMode;
-    private sealed record Stamp(string Path,long Length,long Time);
+    private readonly StatisticsAnalyzer statisticsAnalyzer;
+    private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,int DisplayChromaDenoise,
         int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
@@ -20,7 +22,7 @@ internal sealed partial class RenderEngine : IDisposable
     private LensCandidate[] lensCandidates = [];
     private PreviewKey? previewKey;
     private (Stamp Raw,Stamp? Lut)? sourceStamp;
-    private (Stamp Raw,int Edge,GeometrySettings Geometry,ProcessingIdentity Processing,RenderedImage Frame)? original;
+    private (NeutralReferenceKey Key,RenderedImage Frame)? original;
     private readonly Dictionary<int,PreviewFrame> previews=new();
     // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
@@ -28,8 +30,9 @@ internal sealed partial class RenderEngine : IDisposable
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
-    public RenderEngine(int gpuMode=1, string? lensDatabase=null)
+    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null)
     {
+        this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
@@ -53,32 +56,34 @@ internal sealed partial class RenderEngine : IDisposable
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
     {
         settings=PrepareInputSettings(path,settings);
-        static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);}
+        static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks,info.CreationTimeUtc.Ticks);}
         var rawStamp=FileStamp(path);var lutStamp=lut==null ? null : FileStamp(lut);
         // Replaced files must invalidate the native decoded data as well as WPF frames.
         if(sourceStamp is {} previous &&
             ((previous.Raw.Path==rawStamp.Path && previous.Raw!=rawStamp) ||
              (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
-        {session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;}
+        {
+            if(previous.Raw!=rawStamp){Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;}
+            session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
+        }
         sourceStamp=(rawStamp,lutStamp);
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
+        var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
+            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge);
+        if(original?.Key!=referenceKey)original=null;
         var cacheEdge=edge;
-        if(previews.TryGetValue(cacheEdge,out var cached)) {
-            original=compare ? (rawStamp,cacheEdge,settings.Geometry,settings.Processing,cached.Neutral) : null;
-            return cached;
+        if(previews.TryGetValue(cacheEdge,out var cached))return cached;
+        var neutral=compare ? original?.Frame : null;
+        if(compare && neutral==null)
+        {
+            neutral=Render(path,NeutralReference.Settings(path,settings),null,edge,clipping:false,viewportPreview:true)!;
+            if(neutral.Histogram.Length==768)original=(referenceKey,neutral);
         }
-        if(original?.Raw!=rawStamp || original?.Geometry!=settings.Geometry || original?.Processing!=settings.Processing)original=null;
-        if(!compare)original=null;
-        var originalEdge=edge==0 || (interactive && original?.Edge==0) ? 0 : 2000;
-        if(compare && (original==null || original.Value.Edge!=originalEdge))
-            original=(rawStamp,originalEdge,settings.Geometry,settings.Processing,
-                Render(path,new Adjustments { Geometry=settings.Geometry, Processing=settings.Processing },null,originalEdge,statistics:false,clipping:false)!);
-        var neutral=compare ? original!.Value.Frame : null;
         var result=Render(path,settings,lut,edge,interactive,clipping:clipping,viewportPreview:true)!;
         var frame=new PreviewFrame(neutral ?? result,result);
-        if(!interactive)
+        if(!interactive && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
         {
             const long budget=256L*1024*1024;
             var bytes=FrameBytes(frame);
@@ -128,18 +133,30 @@ internal sealed partial class RenderEngine : IDisposable
             Native.Check(Native.sony2fuji_session_get_geometry_size(session,out var nativeWidth,out var nativeHeight));
             var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>();
             uint shadows=0,highlights=0;
-            if(clipping) Native.Check(Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask));
-            else if(statistics) Native.Check(Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero));
+            var statisticsAvailable=false;
+            if(statistics || clipping)
+            {
+                // 显示像素已在 CPU；统计失败只清空统计，不丢弃成功的照片或改变照片 GPU 模式。
+                var analysis=statisticsAnalyzer(ref buffer,clipping,bins,out shadows,out highlights,out mask);
+                statisticsAvailable=analysis==0 && Enumerable.Range(0,3).All(c=>bins.Skip(c*256).Take(256).Sum(v=>(long)v)==(long)buffer.Width*buffer.Height);
+                if(!statisticsAvailable){bins=Array.Empty<uint>();shadows=highlights=0;}
+            }
             float baseline=0,temperature=6500,tint=0;
             var raster=LibraryEntry.IsRaster(path);
             if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
             var calibrated = !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
             var count = (double)buffer.Width * buffer.Height;
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
-            return new(Bitmap(buffer),mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
+            return new(Bitmap(buffer),!statisticsAvailable || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
                 calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
+    }
+    internal static int AnalyzeStatistics(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask)
+    {
+        if(clipping)return Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask);
+        mask=default;
+        return Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero);
     }
     internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
         (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));

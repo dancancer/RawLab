@@ -47,8 +47,8 @@ struct PublishedContent: Equatable {
     let preview: Data?
     let comparison: Data?
     let nativeSize: CGSize?
-    let histogram: [CGFloat]
-    let baseHistogram: [CGFloat]
+    let histogram: Sony2FujiProcessor.RGBHistogram?
+    let baseHistogram: Sony2FujiProcessor.RGBHistogram?
     let geometry: GeometrySettings
     let restored: RawSettings?
     let hasImage: Bool

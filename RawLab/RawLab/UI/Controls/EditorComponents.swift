@@ -144,8 +144,15 @@ struct DefaultValueMarker: View {
 
 struct FloatingHistogram: View {
     @Environment(\.locale) private var localizationLocale
-    let values: [CGFloat]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let histogram: Sony2FujiProcessor.RGBHistogram?
+    let showingBefore: Bool
+    let availableSize: CGSize
     @Binding var expanded: Bool
+
+    private var source: String { L10n.text(showingBefore ? "调整前" : "调整后") }
+    private var usesPopover: Bool { dynamicTypeSize.isAccessibilitySize || availableSize.height < 160 }
+    private var inlineExpanded: Bool { expanded && !usesPopover }
 
     var body: some View {
         let _ = localizationLocale
@@ -153,7 +160,7 @@ struct FloatingHistogram: View {
             Button { expanded.toggle() } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "chart.bar.xaxis")
-                    if expanded { Spacer(minLength: 0) }
+                    if inlineExpanded { Spacer(minLength: 0) }
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                 }
                 .font(.caption)
@@ -163,39 +170,86 @@ struct FloatingHistogram: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L10n.text("亮度直方图"))
-            .accessibilityValue(expanded ? L10n.text("已展开") : L10n.text("已收起"))
+            .accessibilityLabel(L10n.text("RGB 直方图"))
+            .accessibilityValue(([expanded ? L10n.text("已展开") : L10n.text("已收起"), source]
+                + (histogram == nil ? [L10n.text("统计不可用")] : [])).joined(separator: ", "))
+            .accessibilityHint(L10n.text(expanded ? "收起直方图" : "展开直方图"))
             .accessibilityIdentifier("editor.histogram")
-            if expanded {
-                HistogramView(values: values)
-                    .frame(height: 54)
-                    .padding(.horizontal, 12).padding(.bottom, 12)
-                    .accessibilityLabel(L10n.text("当前预览的亮度分布"))
+            if inlineExpanded {
+                contents(graphHeight: 54).padding(.horizontal, 12).padding(.bottom, 12)
             }
         }
-        .frame(width: expanded ? nil : 76)
+        .frame(width: inlineExpanded ? nil : 76)
         .foregroundStyle(.white)
         .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.12), lineWidth: 1) }
+        // 短画布或辅助字号无法容纳图表时，完整内容在原生浮层中展开。
+        .popover(isPresented: Binding(get: { expanded && usesPopover }, set: { expanded = $0 }),
+                 attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+            VStack(spacing: 12) {
+                Button { expanded = false } label: {
+                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityLabel(L10n.text("收起直方图"))
+                .accessibilityIdentifier("editor.histogram.close")
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Text(L10n.text("RGB 直方图")).font(.headline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        contents(graphHeight: 80)
+                    }
+                }
+                .accessibilityIdentifier("editor.histogram.scroll")
+            }
+            .padding(16)
+            .frame(width: min(320, availableSize.width - 24), height: 300)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("editor.histogram.popover")
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func contents(graphHeight: CGFloat) -> some View {
+        VStack(spacing: 6) {
+            Text(source).font(.caption).fixedSize(horizontal: false, vertical: true)
+            Group {
+                if let histogram {
+                    HistogramView(histogram: histogram).frame(height: graphHeight)
+                } else {
+                    Text(L10n.text("统计不可用")).font(.caption)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: graphHeight)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(source)
+            .accessibilityValue(histogram == nil ? L10n.text("统计不可用") : "R, G, B")
+            .accessibilityIdentifier("editor.histogram.plot")
+        }
     }
 }
 
 struct HistogramView: View {
-    @Environment(\.locale) private var localizationLocale
-    let values: [CGFloat]
+    let histogram: Sony2FujiProcessor.RGBHistogram
 
     var body: some View {
-        let _ = localizationLocale
         Canvas { context, size in
-            guard let peak = values.max(), peak > 0 else { return }
-            let barWidth = size.width / CGFloat(values.count)
-            var path = Path()
-            for (index, value) in values.enumerated() {
-                let height = (value / peak) * size.height
-                path.addRect(CGRect(x: CGFloat(index) * barWidth, y: size.height - height,
-                                    width: barWidth, height: height))
+            let barWidth = size.width / 256
+            for bin in 0..<256 {
+                for segment in histogram.segments(at: bin) {
+                    let channels = segment.channels
+                    let color = channels == 7 ? Color(white: 0.75) : Color(
+                        red: channels & 1 == 0 ? 0 : 1,
+                        green: channels & 2 == 0 ? 0 : 1,
+                        blue: channels & 4 == 0 ? 0 : 1)
+                    let rect = CGRect(x: CGFloat(bin) * barWidth, y: (1 - segment.upper) * size.height,
+                                      width: barWidth, height: (segment.upper - segment.lower) * size.height)
+                    context.fill(Path(rect), with: .color(color))
+                }
             }
-            context.fill(path, with: .color(.white.opacity(0.75)))
         }
     }
 }

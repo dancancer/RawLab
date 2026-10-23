@@ -17,8 +17,24 @@ final class RawEditorViewModel: ObservableObject {
     @Published var isBusy = false
     @Published var previewRendering = false
     @Published var previewResizePending = false
-    @Published var histogram: [CGFloat] = []
-    @Published var baseHistogram: [CGFloat] = []
+    @Published var previewFailed = false
+    var acceptedPreviewFrameID: UUID?
+    var committedPreviewSettings: RawSettings?
+
+    struct ComparisonReferenceKey: Equatable {
+        let sourceRevision: UUID
+        let file: PhotoSourceFile?
+        let identity: PhotoIdentity?
+        let kind: ImageSourceKind?
+        let processing: ProcessingIdentity
+        let geometry: GeometrySettings
+        let lens: LensCorrectionSettings
+        let longEdge: Int
+    }
+    var comparisonReferenceKey: ComparisonReferenceKey?
+    var basePreviewLens = LensCorrectionSettings()
+    @Published var histogram: Sony2FujiProcessor.RGBHistogram? = nil
+    @Published var baseHistogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var availableLUTs: [LUTOption] = []
     @Published var isLoadingLUTs = false
     @Published var isImportingLooks = false
@@ -79,7 +95,6 @@ final class RawEditorViewModel: ObservableObject {
     let previewMaxDimension: CGFloat = 1280
     let interactivePreviewMaxDimension: CGFloat = 720
     let histogramDelay: TimeInterval = 0.25
-    let histogramBins = 128
     var lutMap: [String: LUTReference] = [:]
     var didStartLUTLoad = false
     var rawLUTID: String?

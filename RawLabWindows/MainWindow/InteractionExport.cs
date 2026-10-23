@@ -15,37 +15,46 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
-    private void CompareClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);
+    private void CompareClicked(object sender,RoutedEventArgs e)
+    {if(compare)SetComparisonMode(false,false);else SetComparisonMode(true,view.PreferredMode==ComparisonMode.Wipe);}
     private void ExportMenuClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);
     private void CompareOffClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(false,false);
     private void CompareSideClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,false);
     private void CompareSwipeClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,true);
     internal void SetComparisonMode(bool enabled,bool sliding)
     {
-        if(transform.Active && !ResolveTransformDraft()){RefreshComparisonSelection();return;}
-        var changed=compare!=enabled;
-        compare=enabled;swipe=enabled && sliding;
-        RefreshComparisonLayout();
-        RefreshComparisonToolTip();
-        RefreshControls();
-        if(changed)Schedule();
+        if(transform.Active || file==null || exporting){RefreshComparisonSelection();return;}
+        CancelViewingInput();
+        if(enabled)view.Select(sliding ? ComparisonMode.Wipe : ComparisonMode.SideBySide);else view.SetEnabled(false);
+        RefreshComparisonLayout();RefreshComparisonToolTip();RefreshControls();RefreshViewingFrames();
+        if(view.NeedsReference && !ReferenceCurrent)Schedule();
     }
     private void RefreshComparisonSelection()
     {
-        Grid.SetColumnSpan(NeutralLabel,swipe ? 2 : 1);
-        FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+
         CompareOff.IsChecked=MenuCompareOff.IsChecked=!compare;
         CompareSide.IsChecked=MenuCompareSide.IsChecked=compare && !swipe;
         CompareSwipe.IsChecked=MenuCompareSwipe.IsChecked=swipe;
         CompareButton.Tag=compare ? "selected" : null;
-        AutomationProperties.SetItemStatus(CompareButton,!compare ? "off" : swipe ? "swipe" : "side");
+        AutomationProperties.SetItemStatus(CompareButton,Loc.Text(!compare ? "关闭对比" : swipe ? "分割线" : "并排"));
+        CompareButton.ToolTip=Loc.Text(compare ? "关闭对比" : "开启对比");AutomationProperties.SetName(CompareButton,(string)CompareButton.ToolTip);
+        BeforeViewMenu.IsChecked=view.HoldingBefore;
+        BeforeViewMenu.Header=Loc.Text(view.HoldingBefore ? "返回调整后" : "查看调整前");
+        BeforeViewMenu.IsEnabled=file!=null && !transform.Active && !compare && !exporting;
+        CompareModeButton.IsEnabled=CompareButton.IsEnabled;
+        CompareOff.IsEnabled=CompareSide.IsEnabled=CompareSwipe.IsEnabled=MenuCompareOff.IsEnabled=MenuCompareSide.IsEnabled=MenuCompareSwipe.IsEnabled=file!=null && !transform.Active && !exporting;
     }
     private void RefreshComparisonLayout()
     {
         var sideBySide=file!=null && compare && !swipe;
+        var vertical=sideBySide && PhotoArea.ActualHeight>PhotoArea.ActualWidth;
         NeutralCanvas.Visibility=sideBySide ? Visibility.Visible : Visibility.Collapsed;
-        NeutralColumn.Width=sideBySide ? new(1,GridUnitType.Star) : new(0);
-        ResultCanvas.ComparisonEnabled=file!=null && swipe;
+        NeutralColumn.Width=sideBySide && !vertical ? new(1,GridUnitType.Star) : new(0);
+        NeutralRow.Height=vertical ? new(1,GridUnitType.Star) : new(0);
+        Grid.SetRow(NeutralCanvas,vertical ? 0 : 1);Grid.SetRow(ResultCanvas,1);
+        Grid.SetColumn(NeutralCanvas,vertical ? 1 : 0);
+        ResultCanvas.ComparisonEnabled=file!=null && swipe && ReferenceCurrent;
+        RefreshPhotoLabels();
     }
     private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
     private void RefreshCopyLabels()
@@ -110,17 +119,22 @@ public partial class MainWindow
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置
     private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.Placement=PlacementMode.Bottom;menu.IsOpen=true;} }
-    private void FitClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Fit();}
-    private void ActualClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Actual();}
-    private void ZoomInClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Magnify(1.25);}
-    private void ZoomOutClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Magnify(.8);}
+    private void FitClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Fit();}
+    private void ActualClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Actual();}
+    private void ZoomInClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(1.25);}
+    private void ZoomOutClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(.8);}
     private void KeyPressed(object sender,KeyEventArgs e)
     {
+        var viewingKey=ViewingKey(e);
+        var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
+        if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
+        if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
+        if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
         else if(e.Key is Key.Add or Key.OemPlus)ZoomInClicked(sender,e); else if(e.Key is Key.Subtract or Key.OemMinus)ZoomOutClicked(sender,e);
-        else if(e.Key==Key.I)InfoClicked(sender,e);
+        else if(viewingKey==Key.I)InfoClicked(sender,e);
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Jpeg);
     private void ExportPngClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Png);
@@ -206,7 +220,7 @@ public partial class MainWindow
         Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
-        CancelParameterInputs();
+        CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
         previewResize.Stop();

@@ -69,6 +69,26 @@ class ClassificationTests(unittest.TestCase):
 
 
 class SelectionTests(unittest.TestCase):
+    def test_manual_platform_and_group_are_explicit(self):
+        for platform in ("all", *selection.PLATFORMS):
+            for checks in selection.CHECK_GROUPS:
+                event = {"inputs": {"platform": platform, "checks": checks}}
+                result = selection.select("workflow_dispatch", event, "s", unavailable, unavailable)
+                chosen = set() if checks == "contracts" else EVERY if platform == "all" else {platform}
+                self.assertEqual(result[:3], (chosen, checks == "full", False))
+                config = selection.configuration("workflow_dispatch", event)
+                self.assertEqual(config["mode"], "manual")
+                self.assertEqual(config["contracts"], checks == "contracts" or (platform == "all" and checks == "full"))
+        for inputs in ({"platform": "typo"}, {"checks": "ui"}, {"checks": ""}):
+            with self.assertRaises(ValueError):
+                selection.configuration("workflow_dispatch", {"inputs": inputs})
+
+    def test_ordinary_events_are_models_and_release_prs_are_full(self):
+        for event_name, event in (("pull_request", pull()), ("push", {})):
+            self.assertEqual(selection.configuration(event_name, event)["checks"], "models")
+        for base, head in (("main", "release/1.0"), ("development", "hotfix/crash"), ("release/1.0", "fix/x")):
+            self.assertEqual(selection.configuration("pull_request", pull(base, head))["checks"], "full")
+
     def test_pull_requests_select_changed_platforms_and_reuse_caches(self):
         files = {"HEAD^1": ["RawLab/RawLab/App.swift", "docs/process/ci.md"]}
         platforms, cold, draft, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
@@ -102,34 +122,41 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(selection.select("push", {}, "s", files, last)[0], EVERY)
         self.assertEqual(selection.select("pull_request", pull(), "s", broken, unavailable)[0], EVERY)
 
-    def test_nightly_runs_cold_once_per_commit(self):
-        self.assertEqual(selection.select("schedule", {}, "s", unavailable, {"schedule": "old"}.get)[:2], (EVERY, True))
-        self.assertEqual(selection.select("schedule", {}, "s", unavailable, {"schedule": "s"}.get)[:2], (set(), True))
-        def offline(_):
-            raise OSError("API unavailable")
-        self.assertEqual(selection.select("schedule", {}, "s", unavailable, offline)[:2], (EVERY, True))
-        self.assertEqual(selection.select("workflow_dispatch", {}, "s", unavailable, unavailable)[:2], (EVERY, True))
+    def test_no_scheduled_full_run_and_manual_defaults_to_models(self):
+        with self.assertRaises(ValueError):
+            selection.select("schedule", {}, "s", unavailable, unavailable)
+        self.assertEqual(selection.select("workflow_dispatch", {}, "s", unavailable, unavailable)[:2], (EVERY, False))
+
+    def test_mac_matrix_runs_models_once_and_builds_once_per_architecture(self):
+        self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("models")], [("arm64", "all")])
+        self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("build")], [("arm64", "all"), ("x86_64", "build")])
+        for checks in ("native", "full"):
+            self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix(checks)],
+                [("arm64", "all"), ("x86_64", "core"), ("x86_64", "agent"), ("x86_64", "render")])
 
 
 class WindowsSchedulingTests(unittest.TestCase):
-    def test_only_warm_pull_requests_use_standard_hosted_windows(self):
+    def test_windows_models_and_warm_prs_use_hosted_windows(self):
         dedicated = ["self-hosted", "windows", "x64", "rawlab-windows"]
         for event, cold, want in (
             ("pull_request", False, "windows-2022"),
             ("pull_request", True, dedicated),
             ("push", False, dedicated),
-            ("schedule", True, dedicated),
+            ("workflow_dispatch", False, dedicated),
             ("workflow_dispatch", True, dedicated),
         ):
             with self.subTest(event=event, cold=cold):
                 self.assertEqual(selection.windows_runner(event, cold), want)
+                self.assertEqual(selection.windows_runner(event, cold, "models"), "windows-2022")
 
     def test_selection_cli_emits_a_json_runner_for_the_workflow(self):
         for event_name, event, want in (
             ("pull_request", pull(), "windows-2022"),
             ("pull_request", pull("main", "release/0.9.0"),
              ["self-hosted", "windows", "x64", "rawlab-windows"]),
-            ("workflow_dispatch", {}, ["self-hosted", "windows", "x64", "rawlab-windows"]),
+            ("workflow_dispatch", {}, "windows-2022"),
+            ("workflow_dispatch", {"inputs": {"platform": "windows", "checks": "full"}},
+             ["self-hosted", "windows", "x64", "rawlab-windows"]),
         ):
             with self.subTest(event=event_name, payload=event), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -145,11 +172,17 @@ class WindowsSchedulingTests(unittest.TestCase):
                 values = dict(line.split("=", 1) for line in output.read_text().splitlines())
                 self.assertIn("windows_runner", values)
                 self.assertEqual(json.loads(values["windows_runner"]), want)
+                self.assertEqual(values["mode"], "manual" if event_name == "workflow_dispatch" else "automatic")
+                config = selection.configuration(event_name, event)
+                self.assertEqual(values["checks"], config["checks"])
+                self.assertEqual(values["build"], "false" if config["checks"] == "models" else "true")
+                self.assertEqual(values["models"], "true")
 
 
 class VerifyTests(unittest.TestCase):
     def needs(self, selected, results, changes="success", contracts="success"):
         outputs = {platform: "true" if platform in selected else "false" for platform in selection.PLATFORMS}
+        outputs.update(mode="automatic", scope="affected", checks="models", contracts="true", models="true", build="false", native="false", cold="false")
         return {"changes": {"result": changes, "outputs": outputs}, "contracts": {"result": contracts},
                 **{platform: {"result": result} for platform, result in results.items()}}
 
@@ -170,6 +203,38 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(selection.verify(self.needs(set(), skipped, changes="failure")))
         self.assertTrue(selection.verify(self.needs(set(), skipped, contracts="failure")))
         self.assertTrue(selection.verify({}))
+
+    def test_manual_verification_requires_exact_selected_results(self):
+        results = dict.fromkeys(selection.PLATFORMS, "skipped") | {"windows": "success"}
+        needs = self.needs({"windows"}, results, contracts="skipped")
+        needs["changes"]["outputs"].update(mode="manual", scope="windows", checks="full", contracts="false", build="true", native="true", cold="true")
+        self.assertEqual(selection.verify(needs), [])
+        for field, value in (("windows", "false"), ("ios", "true"), ("mode", "automatic"), ("mode", "unknown"), ("checks", "ui"), ("build", "false"), ("native", "false")):
+            changed = json.loads(json.dumps(needs))
+            changed["changes"]["outputs"][field] = value
+            self.assertTrue(selection.verify(changed))
+        for result in ("failure", "cancelled", "skipped"):
+            needs["windows"]["result"] = result
+            self.assertTrue(selection.verify(needs))
+
+    def test_manual_all_full_requires_contracts_cold_and_every_platform(self):
+        needs = self.needs(EVERY, dict.fromkeys(selection.PLATFORMS, "success"))
+        needs["changes"]["outputs"].update(mode="manual", scope="all", checks="full", build="true", native="true", cold="true")
+        self.assertEqual(selection.verify(needs), [])
+        for field, value in (("contracts", "false"), ("cold", "false"), ("windows", "false")):
+            changed = json.loads(json.dumps(needs))
+            changed["changes"]["outputs"][field] = value
+            if field in ("contracts", "windows"):
+                changed[field]["result"] = "skipped"
+            self.assertTrue(selection.verify(changed))
+
+    def test_contracts_only_cannot_select_a_platform(self):
+        needs = self.needs(set(), dict.fromkeys(selection.PLATFORMS, "skipped"))
+        needs["changes"]["outputs"].update(mode="manual", scope="all", checks="contracts", models="false")
+        self.assertEqual(selection.verify(needs), [])
+        needs["changes"]["outputs"]["windows"] = "true"
+        needs["windows"]["result"] = "success"
+        self.assertTrue(selection.verify(needs))
 
 
 if __name__ == "__main__":

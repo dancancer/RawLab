@@ -99,8 +99,8 @@ internal static class UiDetailChecks
         var settings=(Adjustments)typeof(MainWindow).GetField("settings",PrivateInstance)!.GetValue(window)!;
         var lut=typeof(MainWindow).GetField("lut",PrivateInstance)!;
         settings.ApplyMasterRecipe(recipe);lut.SetValue(window,recipe.LutPath);Refresh(window);
-        check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text(recipe.Name),
-            $"Active look and comparison label show the recipe name in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
+        check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text("调整后"),
+            $"Active look names the recipe while comparison identifies the adjusted image in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
         settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
     }
@@ -188,9 +188,12 @@ internal static class UiDetailChecks
     // 工具栏下拉菜单贴着按钮弹出；键盘打开时不跟着鼠标跑到别处
     private static void MenuPlacement(MainWindow window,Action<bool,string> check)
     {
+        Click(window.CompareButton);
+        check(!window.CompareButton.ContextMenu.IsOpen,"Comparison toggle does not open the mode menu");
         foreach(var button in Descendants(Toolbar(window)).OfType<Button>().Where(button=>button.ContextMenu!=null))
         {
-            Click(button);
+            // 对比主按钮负责开关，旁边的箭头打开同一个菜单。
+            Click(button==window.CompareButton ? window.CompareModeButton : button);
             var menu=button.ContextMenu!;
             check(menu.IsOpen && menu.Placement==PlacementMode.Bottom && ReferenceEquals(menu.PlacementTarget,button),
                 $"Toolbar menu opens under its button, not at the pointer: {AutomationProperties.GetName(button)} ({menu.Placement})");

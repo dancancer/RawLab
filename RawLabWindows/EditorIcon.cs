@@ -38,7 +38,7 @@ public sealed class EditorIcon : FrameworkElement
         ["Photo"]=Geometry.Parse("M3,4 H21 V20 H3 Z M3,17 L9,11 14,16 17,13 21,17 M15,7 A1.5,1.5 0 1 1 14.99,7")
         ,["Folder"]=Geometry.Parse("M3,6 H10 L12,8 H21 V20 H3 Z M3,6 V4 H9 L11,6")
         ,["Library"]=Geometry.Parse("M3,4 H21 V20 H3 Z M9,4 V20 M5,8 H7 M5,12 H7")
-        ,["Compare"]=Geometry.Parse("M12,2 V22 M9,5 H3 V19 H9 M15,5 H21 V19 H15 M5,12 H8 M16,12 H19")
+        ,["Compare"]=Geometry.Parse("M3,4 H21 V20 H3 Z M12,4 V20")
         ,["Zoom"]=Geometry.Parse("M10,3 A7,7 0 1 1 9.99,3 M15,15 L21,21 M7,10 H13 M10,7 V13")
         ,["Clipping"]=Geometry.Parse("M12,3 L22,21 H2 Z M12,9 V14 M12,17 V18")
         ,["Adjust"]=Geometry.Parse("M3,6 H8 M12,6 H21 M3,12 H14 M18,12 H21 M3,18 H6 M10,18 H21 M8,3 V9 H12 V3 Z M14,9 V15 H18 V9 Z M6,15 V21 H10 V15 Z")

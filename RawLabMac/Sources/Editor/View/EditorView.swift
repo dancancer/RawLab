@@ -6,13 +6,14 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
-    @State private var compare = false
+    @State private var viewing = MacViewingState()
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clipping = false
     @State private var histogramExpanded = true
     @State private var showFiles = true
     @State private var selectedParameter: AdjustmentParameter? = .exposure
     @State private var viewport = PhotoViewport()
-    @State private var pan = CGSize.zero
     @State private var dropTarget = false
     @State private var resetVersion = 0
     @State private var adjustmentPanel = AdjustmentPanelLayout()
@@ -23,7 +24,6 @@ struct EditorView: View {
     private struct GeometryViewState {
         let file: URL?
         let viewport: PhotoViewport
-        let pan: CGSize
         let fullResolution: Bool
         let panel: AdjustmentPanelLayout
     }
@@ -43,10 +43,17 @@ struct EditorView: View {
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
                     .overlay(alignment: .topTrailing) {
                         if model.geometryDraft == nil {
-                            FloatingHistogram(frame: model.result, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                            FloatingHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
+                                before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded).padding(12)
                         }
                     }
                     .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 6) {
+                        Button { infoMode = infoMode.next } label: { Image(systemName: "info.circle") }
+                            .buttonStyle(.plain).frame(width: 28, height: 28)
+                            .background(.black.opacity(0.6), in: Circle())
+                            .accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
+                            .accessibilityIdentifier("photo.information")
                         if infoMode != .hidden, let photoInformation {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(photoInformation.lines(for: infoMode).enumerated()), id: \.offset) { index, line in
@@ -58,6 +65,22 @@ struct EditorView: View {
                                 .frame(maxWidth: min(380, max(130, geometry.size.width - (showFiles ? 300 : 0) - 300)), alignment: .leading)
                                 .padding(12).allowsHitTesting(false)
                                 .accessibilityElement(children: .combine)
+                        }
+                        }.padding(8)
+                    }
+                    .overlay(alignment: .top) {
+                        if model.busy {
+                            if reduceMotion { Rectangle().fill(.yellow).frame(height: 2) }
+                            else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
+                        }
+                    }
+                    .accessibilityValue(model.busy ? L10n.text("正在显影…") : model.previewOutdated ? L10n.text("预览未更新") : L10n.text("预览已更新"))
+                    .overlay(alignment: .bottom) {
+                        if model.previewOutdated {
+                            HStack(spacing: 8) {
+                                Label(L10n.text("预览未更新"), systemImage: "exclamationmark.triangle")
+                                Button(L10n.text("重试"), action: model.schedule)
+                            }.font(.callout).padding(8).background(.black.opacity(0.7)).padding(8)
                         }
                     }
                     .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3) } }
@@ -84,15 +107,15 @@ struct EditorView: View {
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
-        .onChange(of: model.file) { _, _ in
-            compare = false
+        .onChange(of: model.sourceRevision) { _, _ in
+            viewing.sourceChanged()
             fit()
         }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
-        .onChange(of: model.settings.geometrySettings) { _, _ in pan = .zero }
-        .task(id: model.file) {
+        .onChange(of: model.settings.geometrySettings) { _, _ in viewport.focus = CGPoint(x: 0.5, y: 0.5) }
+        .task(id: model.sourceRevision) {
             photoInformation = nil
             guard let file = model.file else { return }
             let info = await Task.detached(priority: .utility) { PhotoInformation.read(file) }.value
@@ -101,6 +124,8 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
+        .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
+            onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
@@ -199,9 +224,30 @@ struct EditorView: View {
 
     @ViewBuilder private var workspace: some View {
         if let result = model.result {
-            HStack(spacing: 1) {
-                if compare, model.canComparePreview, let base = model.neutral { imagePane(base, title: L10n.text("中性显影"), showMask: false) }
-                imagePane(result, title: model.selectedMasterRecipe?.title ?? model.selectedFilm?.name ?? L10n.text("调整后"), showMask: clipping && model.geometryDraft == nil)
+            GeometryReader { area in
+                let comparing = viewing.enabled && model.canComparePreview && model.neutral != nil
+                let horizontal = MacViewingState.horizontalPanes(in: area.size)
+                let paired = comparing && viewing.preferredMode == .sideBySide
+                let pane = paired ? CGSize(width: horizontal ? (area.size.width - 1) / 2 : area.size.width,
+                                           height: horizontal ? area.size.height : (area.size.height - 1) / 2) : area.size
+                let demand = viewport.previewLongEdge(canvas: pane, displayScale: displayScale,
+                    source: CGSize(width: result.nativeWidth ?? result.image.width, height: result.nativeHeight ?? result.image.height),
+                    margin: viewing.margins ? 12 : 0)
+                Group {
+                    if paired, let before = model.neutral {
+                        if horizontal {
+                            HStack(spacing: 1) { imagePane(before, title: L10n.text("调整前"), showMask: false); imagePane(result, title: L10n.text("调整后"), showMask: clipping) }
+                        } else {
+                            VStack(spacing: 1) { imagePane(before, title: L10n.text("调整前"), showMask: false); imagePane(result, title: L10n.text("调整后"), showMask: clipping) }
+                        }
+                    } else if comparing, viewing.preferredMode == .wipe {
+                        imagePane(result, title: L10n.text("调整前"), showMask: false, wipe: true)
+                    } else {
+                        imagePane(viewing.holdingBefore ? model.neutral ?? result : result,
+                            title: viewing.holdingBefore ? L10n.text("调整前") : L10n.text("调整后"),
+                            showMask: clipping && !viewing.holdingBefore && model.geometryDraft == nil)
+                    }
+                }.onChange(of: demand, initial: true) { _, value in model.updatePreviewLongEdge(value) }
             }
         } else {
             VStack(spacing: 16) {
@@ -261,26 +307,33 @@ struct EditorView: View {
                 .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
         }
         ToolbarItemGroup {
-            Button { compare.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(compare) }
+            Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
-                .accessibilityValue(compare ? L10n.text("已开启") : L10n.text("已关闭")).disabled(model.result == nil || !model.canComparePreview)
-            Button {
-                if NSApp.currentEvent?.type == .keyDown, NSApp.keyWindow?.firstResponder is NSTextView { return }
-                infoMode = infoMode.next
-            } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
+                .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
+                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview)
+            Menu {
+                Button(L10n.text("并排")) { viewing.select(.sideBySide) }
+                Button(L10n.text("分割线")) { viewing.select(.wipe) }
+                Button(L10n.text("关闭对比")) { viewing.close() }
+            } label: { Image(systemName: "chevron.down") }
+                .accessibilityLabel(L10n.text("对比方式")).accessibilityIdentifier("compare.mode")
+                .disabled(model.result == nil || !model.canComparePreview)
+            Button { infoMode = infoMode.next } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
                 .help(L10n.text("照片信息")).accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
-                .keyboardShortcut("i", modifiers: []).disabled(model.file == nil)
+                .disabled(model.file == nil)
             Menu {
                 Button(L10n.text("适合窗口"), action: fit).keyboardShortcut("0")
                 Button(L10n.text("实际像素 · 100%")) {
-                    viewport.actualPixels(); pan = .zero
+                    viewport.actualPixels(); viewport.focus = CGPoint(x: 0.5, y: 0.5)
                     if !model.fullResolution { model.fullResolution = true }
                 }.keyboardShortcut("1")
                 Divider()
                 Button(L10n.text("放大")) { zoom(1.25) }
                 Button(L10n.text("缩小")) { zoom(1 / 1.25) }
+                Divider()
+                Toggle(L10n.text("照片四周留白"), isOn: $viewing.margins)
             } label: { Image(systemName: "magnifyingglass") }
-                .help(L10n.text("缩放")).accessibilityLabel(L10n.text("缩放")).disabled(model.result == nil || model.geometryDraft != nil)
+                .help(L10n.text("缩放与显示")).accessibilityLabel(L10n.text("缩放与显示")).disabled(model.result == nil || model.geometryDraft != nil)
             Button {
                 if adjustmentPanel.collapsed { adjustmentPanel.collapsed = false }
                 else { collapsePanel() }
@@ -292,12 +345,12 @@ struct EditorView: View {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
                 ForEach(ExportFormat.allCases) { format in
                     Button(format.title + "…") { model.export(format: format) }
-                        .disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                        .disabled(model.result == nil || model.busy || model.previewOutdated || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                 }
                 Divider()
                 Button(L10n.text("使用当前调整批量导出…")) {
                     if model.prepareBatch() { openWindow(id: "batch-export") }
-                }.disabled(model.result == nil || model.busy || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                }.disabled(model.result == nil || model.busy || model.previewOutdated || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
                 if model.batch != nil {
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }
                 }
@@ -355,34 +408,39 @@ struct EditorView: View {
     }
 
     private func fit() {
-        viewport.fit(); pan = .zero
+        viewing.holdingBefore = false; viewport.fit()
         if model.fullResolution { model.fullResolution = false }
     }
     private func zoom(_ multiplier: CGFloat) {
-        viewport.zoom(by: multiplier)
+        viewing.holdingBefore = false; viewport.zoom(by: multiplier)
     }
     private func toggleActualPixels() {
+        viewing.holdingBefore = false
         viewport.toggleActualPixels()
-        pan = .zero
+        viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool) -> some View {
-        PhotoCanvas(frame: frame, viewport: viewport, sourceWidth: model.result?.nativeWidth ?? model.neutral?.image.width ?? frame.image.width,
-                    pan: $pan, clipping: showMask, sourceHeight: model.result?.nativeHeight ?? model.neutral?.image.height,
-                    onPreviewSizeChange: model.updatePreviewLongEdge,
+    private var canHoldBefore: Bool { model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+
+    private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
+        PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
+                    clipping: showMask, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
+                    split: wipe ? $viewing.split : nil,
+                    comparisonLabel: (viewing.enabled && model.canComparePreview) || viewing.holdingBefore ? title : nil,
+                    canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
+                        if model.geometryDraft == nil { toggleActualPixels() }
+                    }, sourceHeight: model.result?.nativeHeight,
                     cropSettings: model.geometryDraftPreviewReady ? model.geometryDraft?.geometry : nil,
                     pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,
                     cropAspectRatio: model.cropAspectRatio, cropGrid: model.cropGridEnabled,
                     onCropChange: model.geometryCropInputEnabled ? { geometry in model.updateGeometryDraft { $0 = geometry } } : nil,
                     onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil)
-            .simultaneousGesture(TapGesture(count: 2).onEnded { if model.geometryDraft == nil { toggleActualPixels() } })
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(title)
-            .overlay(alignment: .bottomLeading) {
-                if compare && model.canComparePreview {
-                    Text(title).font(.system(size: 10, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
-                        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 4)).padding(10)
-                        .allowsHitTesting(false)
+            .accessibilityElement(children: .contain).accessibilityLabel(title)
+            .accessibilityActions {
+                if canHoldBefore {
+                    Button(L10n.text(viewing.holdingBefore ? "返回调整后" : "查看调整前")) {
+                        viewing.hold(!viewing.holdingBefore, allowed: canHoldBefore)
+                    }
                 }
             }
     }
@@ -394,14 +452,15 @@ struct EditorView: View {
 
     private func geometryEditingChanged(_ editing: Bool) {
         if editing {
-            geometryViewState = GeometryViewState(file: model.file, viewport: viewport, pan: pan,
+            viewing.holdingBefore = false
+            geometryViewState = GeometryViewState(file: model.file, viewport: viewport,
                 fullResolution: model.fullResolution, panel: adjustmentPanel)
             adjustmentPanel.collapsed = false
             fit()
         } else if let previous = geometryViewState {
             geometryViewState = nil
             if previous.file == model.file {
-                viewport = previous.viewport; pan = previous.pan
+                viewport = previous.viewport
                 if model.fullResolution != previous.fullResolution { model.fullResolution = previous.fullResolution }
             } else { fit() }
         }
@@ -417,11 +476,13 @@ private extension View {
     }
 }
 
-private struct FloatingHistogram: View {
+struct FloatingHistogram: View {
     let frame: RenderedImage?
+    var before = false
     @Environment(\.locale) private var localizationLocale
     @Binding var clipping: Bool
     @Binding var expanded: Bool
+    private var source: String { L10n.text(before ? "调整前" : "调整后") }
     var body: some View {
         VStack(spacing: 10) {
         let _ = localizationLocale
@@ -429,20 +490,34 @@ private struct FloatingHistogram: View {
                 Button { expanded.toggle() } label: {
                     Image(systemName: "chart.bar.xaxis").font(.system(size: 11, weight: .medium))
                 }.buttonStyle(.plain).help(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
-                    .accessibilityLabel(L10n.text("直方图"))
-                    .accessibilityValue(expanded ? L10n.text("已展开") : L10n.text("已收起"))
+                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityValue(source + " · " + (expanded ? L10n.text("已展开") : L10n.text("已收起")))
+                    .accessibilityIdentifier("histogram.toggle")
                 if expanded {
                     Spacer()
                     Toggle(isOn: $clipping) { Image(systemName: "exclamationmark.triangle") }
                         .toggleStyle(.button).buttonStyle(.borderless).tint(.yellow)
-                        .help(L10n.text("显示输出高光与黑位裁切")).accessibilityLabel(L10n.text("显示裁切提示")).disabled(frame == nil)
+                        .help(L10n.text("显示输出高光与黑位裁切")).accessibilityLabel(L10n.text("显示裁切提示")).disabled(frame?.clipping == nil)
                 }
                 Button { expanded.toggle() } label: { Image(systemName: expanded ? "chevron.up" : "chevron.down") }
                     .font(.system(size: 10)).buttonStyle(.plain)
                     .accessibilityLabel(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
             }
             if expanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.text("RGB 直方图")).font(.system(size: 12, weight: .semibold))
+                    Text(source).font(.system(size: 11))
+                }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityIdentifier("histogram.source")
                 HistogramView(bins: frame?.histogram ?? []).frame(height: 68)
+                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityIdentifier("histogram.plot")
+                if frame?.histogram.isEmpty != false {
+                    Text(L10n.text("统计不可用")).font(.system(size: 11))
+                        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("histogram.unavailable")
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.format("高光 %@", String(describing: percent(frame?.highlights))))
                         .fixedSize(horizontal: false, vertical: true)

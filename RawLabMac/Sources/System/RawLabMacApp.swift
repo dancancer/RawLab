@@ -27,7 +27,7 @@ struct RawLabMacApp: App {
                 matchedSettings.exposureMode = .preview
                 let matched = try engine.render(input, settings: matchedSettings, lut: film.url, edge: 1200)!
                 let restored = try engine.render(input, settings: sceneSettings, lut: film.url, edge: 1200)!
-                guard restored.histogram == rendered.histogram,
+                guard (restored.image.dataProvider!.data! as Data) == (rendered.image.dataProvider!.data! as Data),
                       restored.baselineEV == rendered.baselineEV,
                       abs(matched.baselineEV-rendered.baselineEV) > 0.01 else {
                     throw RenderError.failed("Exposure mode cache isolation failed")
@@ -35,7 +35,7 @@ struct RawLabMacApp: App {
                 _ = try engine.render(input, settings: sceneSettings, lut: nil, edge: nil, output: output.appendingPathComponent("neutral.jpg"))
                 _ = try engine.render(input, settings: sceneSettings, lut: film.url, edge: nil, output: output.appendingPathComponent("PROVIA.png"))
                 _ = try engine.render(input, settings: sceneSettings, lut: film.url, edge: nil, output: output.appendingPathComponent("PROVIA.jpg"))
-                guard neutral.histogram != rendered.histogram, rendered.image.width > 0 else {
+                guard (neutral.image.dataProvider!.data! as Data) != (rendered.image.dataProvider!.data! as Data), rendered.image.width > 0 else {
                     throw RenderError.failed("Film transform produced no change")
                 }
                 let png = try Data(contentsOf: output.appendingPathComponent("PROVIA.png"))
@@ -44,7 +44,8 @@ struct RawLabMacApp: App {
                     "height": rendered.image.height, "film": film.name, "filmCount": Film.bundled().count,
                     "baselineEV": rendered.baselineEV, "metadataEV": rendered.metadataEV,
                     "previewMatchEV": matched.baselineEV, "exposureMode": sceneSettings.exposureMode.rawValue,
-                    "highlights": rendered.highlights, "shadows": rendered.shadows, "pngBits": png[24]]
+                    "highlights": rendered.highlights.map { $0 as Any } ?? NSNull(),
+                    "shadows": rendered.shadows.map { $0 as Any } ?? NSNull(), "pngBits": png[24]]
                 try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted,.sortedKeys])
                     .write(to: output.appendingPathComponent("result.json"))
                 print("PASS: \(input.lastPathComponent) -> \(output.path)")

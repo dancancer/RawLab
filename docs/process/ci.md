@@ -1,69 +1,140 @@
-# Continuous Verification
+# Verification SOP
 
-The [workflow](../../.github/workflows/ci.yml) verifies pull requests targeting
-`development`, `release/**` or `main`, pushes to `development`, a nightly cold build
-of `development` and manual runs. `main` only receives release and hotfix PRs, which
-already run every platform from source, so it has no separate push run. Release
-branches are verified through PRs rather than duplicate push runs. It does not
-run on tags, publish packages, create releases, deploy, notarize or use signing
-credentials. A workflow run is not release authorization.
+This is the project procedure for local checks, automatic CI and requested
+verification. [Development rules](../../AGENTS.md) and
+[integration rules](integration-workflow.md) use this procedure; workflow changes
+must update it together with the executable policy tests.
 
-## Required Checks
+The [workflow](../../.github/workflows/ci.yml) verifies PRs targeting `development`,
+`release/**` or `main`, pushes to `development`, and explicitly requested manual
+runs. There is no scheduled full cold build. It does not run on tags, publish,
+deploy, sign, notarize or create releases. Verification is not release authorization.
 
-| Check | Runner | Coverage |
+## Verification Levels
+
+| Event or request | Automatic coverage |
+| --- | --- |
+| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; no product/native dependency build |
+| Draft PR | Contracts only; platform checks and aggregate result stay skipped |
+| Release or hotfix PR | Every platform, complete non-UI coverage and cold native dependencies |
+| Manual run | Exactly the requested platform and check group; a separately named result |
+
+A release/hotfix PR means base `main` or `release/**`, or source `release/*` or
+`hotfix/*`. Full verification is reserved for these important gates or an explicit
+manual `full` request. UI changes must pass affected local UI checks before commit;
+release acceptance also requires the applicable local UI/device matrix.
+
+The manual **Run workflow** form has two selectors:
+
+- `platform`: `all`, `macos`, `windows`, `android`, `ios`.
+- `checks`: `contracts`, `models` (default), `build`, `native`, `full`.
+
+| Group | What runs |
+| --- | --- |
+| `contracts` | Shared static, localization, LUT, protocol and CI-policy checks; platform selector is ignored |
+| `models` | Standalone platform model tests without building the product/native dependencies |
+| `build` | Complete product/framework/package build and package checks; UI test targets compile but do not run |
+| `native` | Required product build plus native/render/CLI/cache integration suites; independent models are omitted |
+| `full` | Models + build + native, with cold native dependencies; `platform=all` also runs contracts |
+
+For example, choose `windows` + `models` for an edit-state regression, `macos` +
+`native` for native render/CLI parity, or `all` + `full` for a pre-release run.
+A build prerequisite is retained when a selected test needs its native artifacts;
+this is not reuse of an unverified product binary.
+
+## Execution Procedure
+
+1. Before commit, identify the affected behavior and run its local regressions.
+   UI changes require the affected local UI tests to pass. Record source version,
+   commands, results and unverified platforms in the PR; retain logs and screenshots
+   in the task evidence directory outside tracked source.
+2. For an ordinary PR or `development` push, let the automatic contracts and
+   affected-platform models run. Do not add a full build, native suite or scheduled
+   full run merely because a commit was pushed.
+3. When a product build or specialized regression is needed, open **Actions →
+   Hosted CI → Run workflow**, select the intended branch, then choose `platform`
+   and `checks` from the tables above. Verify the resulting selection summary and
+   checkout SHA before treating the run as evidence. `contracts` is shared and
+   ignores the platform selector; use `all` + `full` for complete non-UI coverage.
+4. Before release or hotfix acceptance, require the automatic full gate for the
+   release/hotfix PR, plus the applicable local UI/device matrix. A requested
+   `all` + `full` run may provide earlier validation, but does not replace required
+   PR checks or grant release authorization.
+5. Before merge, check the current source/base, required automatic result and any
+   requested specialized results. A failed, cancelled or unfinished check is not a
+   pass. A manual partial result does not satisfy the automatic aggregate gate.
+6. After a change, rerun only checks whose source, configuration or integration
+   assumptions changed. Documentation-only updates require content, link and diff
+   checks; preserve earlier native/UI evidence with its actual tested SHA and
+   explain why it still applies, without labeling it as CI on the new head.
+
+## Checks and Evidence
+
+| Check | Runner | Model route / heavier route |
 | --- | --- | --- |
-| Select affected platforms | Ubuntu 24.04 | Chooses the platform checks and cold/warm dependency mode for this event |
-| Contracts and CI policy | Ubuntu 24.04 | Workflow boundary guards, platform selection rules, single-preview source contracts, whitespace |
-| macOS build and parity (arm64, all) | Dedicated Apple Silicon Mac; deployment target 14.0 | Default app/bundle and full-feature native build; CPU-safe CTest; real RAW/raster GUI-Agent-batch parity; edit model, photo-copy/localization and SDK-free analytics lifecycle |
-| macOS build and parity (x86_64, core / agent / render) | Three parallel hosted macOS 26 Intel jobs; deployment target 14.0 | Each builds the default app/bundle. `core`: build/photo-copy/picker checks, DCP suites and CPU-safe CTest. `agent`: Agent recipe render parity. `render`: straighten, raster render and real CLI/MCP parity |
-| Windows build and parity | Hosted Windows Server 2022 for ordinary PRs; dedicated Windows 11 x64 KVM for integration and cold builds; VS 2022 on both | Default native and self-contained .NET 8 package; selected CPU-safe CTest/schema; managed editing/localization/denoise/profile; RAW/raster Agent and default-comparison integration |
-| Android build and JVM tests | Dedicated Ubuntu 24.04 KVM / JDK 17 | JVM tests, lint, debug app and instrumentation test APK compilation, arm64-v8a/x86_64 native libraries and 16 KB alignment |
-| iOS framework and unsigned app | Apple Silicon runner pool / Xcode | Existing full-feature device arm64 and simulator arm64/x86_64 framework; resource/license/runtime-dependency verification; unsigned simulator app and UI-test compilation |
-| CI result | Ubuntu 24.04 | Fails unless every selected check succeeded and every unselected check was skipped |
+| Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
+| Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
+| macOS | Dedicated arm64 Mac; hosted Intel for heavier groups | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
+| Windows | Hosted Server 2022 for models; dedicated Windows 11 for explicit builds and cold gates | Five managed model projects and runner checks / self-contained package, CTest, DCP and RAW/raster CLI parity |
+| Android | Dedicated Ubuntu 24.04 / JDK 17 | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
+| iOS | Apple Silicon / Xcode | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
+| CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
+| Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
 
-Architecture-independent Swift model suites (batch export, edit model,
-presentation, control groups, usage/RUM and localization) run on arm64 only.
-Native rendering, DCP, CTest, picker bridge and bundle checks run on both
-architectures.
+**CI result** must succeed on the current PR head/test merge for its automatic
+scope. An ordinary model-only result is not evidence of a product build or native
+regression run. Release/hotfix acceptance requires the full result. A missing,
+cancelled or stale-head run is not a pass. After merge, inspect the exact
+`development` push SHA. Record event, source head, checked-out SHA and base; a PR
+can test GitHub's synthetic merge. A later source/base change invalidates the
+previous integration result. This policy does not alter branch protection or
+grant permission to bypass it.
 
-**CI result** must **succeed on the current PR head/test merge**, together with
-every platform check it selected. A missing, cancelled or stale-head run is not a
-pass; a platform check skipped by selection is accepted only through CI result.
-Draft PRs run selection and contracts only and leave CI result skipped; marking
-the PR ready for review starts the full selected run. After merge, also inspect the
-push run for the exact `development` merge SHA. Logs print the checked-out SHA;
-PR checks may test GitHub's synthetic merge commit rather than the source head.
-Use the run's event, source head, checkout SHA and base together when recording
-evidence. A later source/base change invalidates the earlier integration result.
-This is the merge acceptance policy; this task does not change repository branch
-protection settings or grant permission to bypass them.
+When the user explicitly requests only a scoped follow-up after a push, `[skip ci]`
+avoids the automatic PR run. Dispatch the chosen platform/group on that new head
+and verify its logged checkout SHA. The automatic required check remains pending;
+do not combine older platform successes into a new-head result or rename the
+manual result to satisfy it.
 
 ## Platform Selection
 
-[`affected_platforms.py`](../../scripts/ci/affected_platforms.py) owns the path
-rules and its tests run in contracts. Preview a branch locally with
-`git diff --name-only origin/development... | python3 scripts/ci/affected_platforms.py classify`.
+[`affected_platforms.py`](../../scripts/ci/affected_platforms.py) owns selection.
+Preview paths with `git diff --name-only origin/development... | python3 scripts/ci/affected_platforms.py classify`.
 
-- `RawLab/`, `RawLabMac/`, `RawLabWindows/` and `RawLabAndroid/` select only their
-  own client. `RawLabMac/Resources/` (artwork, recipes, licenses) selects every
-  client because all of them package it; `RawLabMac/tests/DCPTestFixtures.swift`
-  also selects iOS. A contracts test fails when another client starts reading a
-  Mac file without such a rule.
-- `docs/` (except the packaged `docs/reference/licensing.md`), `reviews/`,
-  `.impeccable/`, `AGENTS.md`/`CLAUDE.md` anywhere and the root README, CHANGELOG,
-  DESIGN, PRODUCT and `.gitignore` select no platform.
-- Everything else, including `lutools/`, `Shared/`, `scripts/`, `.github/`,
-  `LICENSE*`, `experiments/` and any new path, selects every platform.
+- Client directories select their own platform. `RawLabMac/Resources/` is packaged
+  by every client; `RawLabMac/tests/DCPTestFixtures.swift` also selects iOS.
+- `docs/` except packaged licensing, `reviews/`, `.impeccable/`, AGENTS/CLAUDE files
+  and root README/CHANGELOG/DESIGN/PRODUCT/.gitignore select no platform.
+- Shared core/resources, CI/tooling, licensing and unknown paths select all platforms.
 
-A PR compares its test merge with the base it merges into. A push compares with
-the commit of the last successful `development` push run, not the previous commit:
-a cancelled run never verified its changes, and an unchanged platform remains
-covered by the run that last verified the same files. If that history is
-unavailable, every platform runs. Release and hotfix PRs (base `main` or
-`release/**`, or head `release/*` or `hotfix/*`), the nightly run and manual runs
-always select every platform. The nightly run is skipped when `development` already
-passed a nightly cold build at the same commit. Selection does not detect runner or
-toolchain drift; the nightly cold build does.
+PRs compare the test merge against its base. Pushes compare with the last
+successful `development` push run, so a cancelled run cannot conceal unverified
+changes. Missing history selects all platforms at the event's level: ordinary
+changes still run models; release/hotfix PRs run everything cold. Manual selection
+is explicit and does not infer its scope from the branch diff.
+
+## Local and Targeted Entry Points
+
+Run affected UI tests locally before committing UI changes. Record source version,
+commands, results and limits in the PR; keep logs/screenshots outside tracked source.
+CI never repeats runtime UI checks. UI-test target compilation is not a UI-test pass.
+
+- Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
+  C++ core or simulator is required.
+- Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
+  rendering DLL, RAW fixture or self-contained app build is required.
+- Android models: `./gradlew :app:testDebugUnitTest`; the task graph excludes native
+  compilation and APK assembly. Instrumentation remains a separate local entry.
+- Mac UI checks remain independent scripts: `horizontal-picker-native.sh`,
+  `parameter-value.sh`, `mac-straighten-preview.sh`, `mac-canvas-input.sh`.
+  `presentation.sh --models-only` skips canvas UI but still needs the native core,
+  so it belongs to the heavier group, not the standalone model route.
+- Windows `RawLabWindows/tests/run-v08.ps1 -Only ...` selects individual local UI
+  or native suites. Examples include `ui-details`, `transform-ui`, `editor-shell`,
+  `editor-review`, `tool-groups`, `localization-ui`, `profile-isolation` and
+  `comparison-default`. Its required test-host builds remain explicit.
+- iOS UI and Android connected-device tests run locally for affected work; the
+  full applicable UI/device matrix belongs to release acceptance.
 
 ## Boundaries
 
@@ -89,17 +160,17 @@ toolchain drift; the nightly cold build does.
   and toolchains can change; logs identify the actual environment.
 - Mac dependencies include source-built dynamic GLib/Lensfun rather than a
   higher-minimum Homebrew bottle. App/bundled-dylib architecture and minimum OS
-  are checked by the existing bundle gate. The 14.0-target picker model/native
-  bridge regressions run on both architectures, not on an OS 14 host.
+  are checked by the existing bundle gate. The 14.0-target picker model checks
+  run in the arm64 model route; native picker UI checks run locally.
 
 ## Safety and Results
 
 Actions are pinned to full commit SHAs. Workflow permission is `contents: read`;
 only the selection job adds `actions: read` to look up earlier runs. Checkout
 credentials are not persisted, and no `pull_request_target` is used. The workflow
-has bounded jobs and cancels obsolete runs for the same PR/ref; nightly and manual
+has bounded jobs and cancels obsolete runs for the same PR/ref; manual
 runs use their own concurrency groups so a push neither cancels nor is cancelled
-by a cold build.
+by a manual verification.
 
 The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
 workflow runs when a same-repository PR closes. With `actions: write` and no
@@ -138,7 +209,7 @@ them onto this runner; do not treat it as an untrusted-code sandbox.
 Only one job runs in this runner workspace at a time. Checkout retains its
 default clean behavior, so product output and previous test results cannot
 make another job pass. Native dependencies still use the exact-key restore/save
-policy below; a persistent VM is not permission to bypass a cold push build.
+policy below; a persistent VM is not permission to bypass an explicitly selected cold build.
 The Android job caps Gradle workers at eight. Native tools can use their own
 limits: AGP invokes Ninja directly, while Lensfun's builder retains four jobs;
 the guest's CPU and memory allocation is the overall resource boundary.
@@ -153,18 +224,19 @@ build-only runner.
 
 ## Windows Runner Scheduling
 
-Ordinary non-draft PRs targeting `development` use the standard hosted
-`windows-2022` runner. They can run concurrently without occupying the dedicated
-integration runner. `development` pushes, release/hotfix PRs, nightly cold builds
-and manual runs select `[self-hosted, windows, x64, rawlab-windows]` in the dedicated
+Model checks, including ordinary non-draft PRs targeting `development`, use the
+standard hosted `windows-2022` runner. They can run concurrently without occupying the dedicated
+integration runner. Release/hotfix PRs and manual build/native/full runs select `[self-hosted, windows, x64, rawlab-windows]` in the dedicated
 Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and the
 Windows SDK. Drafts still skip all platform jobs. This is event-based routing,
 not a busy-runner probe or an automatic fallback when the dedicated runner is
 offline. Hosted jobs remain subject to GitHub's account concurrency limits.
 
-Both routes run the same complete build, CPU-safe CTest/schema, Python DCP parity
-and selected WPF/managed suites, and retain the same result/artifact gate. A PR's
-Windows Server result does not replace the exact-merge Windows 11 push check.
+The selected group determines coverage on either runner. Model runs do not build
+the app or native core; build/native/full groups retain the complete product build
+and their requested non-UI suites. Manual runs have a separate result name. A PR's
+Windows Server model result does not replace a requested Windows 11 build/native
+run or the automatic check on the resulting `development` push SHA.
 Neither route establishes physical GPU or interactive-desktop acceptance.
 
 The first Windows setup step uses `runner.environment` to select paths and limits.
@@ -223,27 +295,26 @@ regressions; do not skip required checks or remove the runner environment setup.
 ## Local Apple Runners
 
 macOS arm64 and iOS both select `[self-hosted, macOS, ARM64, rawlab-apple]`.
-Each Mac runs one runner, so the two Apple jobs can execute concurrently without
+Each Mac runs one runner, so Apple jobs can execute concurrently without
 sharing memory or build directories. When the developer laptop is offline, the
 always-on Mac can execute both jobs sequentially instead of waiting indefinitely
 for a role-specific runner. Either host must have both complete toolchains.
-Their initial build parallelism is six. The three Intel matrix
+Their initial build parallelism is six. Heavier Intel matrix
 entries remain on `macos-26-intel` with four workers each; neither cross-compilation
 nor Rosetta substitutes for its native x86_64 runtime checks.
 
 The Intel `agent` shard isolates Agent recipe rendering from the remaining
 `render` checks. Every Intel shard still builds the complete app and executes
 its assigned suites; arm64 `all` executes every group once. Only Intel `core`
-saves their shared dependency key, while the arm64 job saves its own key.
+saves their shared dependency key, while the arm64 job saves its own key. The build-only Intel row also saves its key.
 An additional shard uses another hosted macOS execution slot, so concurrent
 PRs may still queue at the account's macOS concurrency limit.
 
 Both Mac architectures (the Intel `core` shard) run the existing CPU-safe CTest selection with at most
 two test processes. This limit is separate from build parallelism because RAW
-rendering tests may also use internal worker threads. The default Swift app and
-full-source straighten harness use whole-module optimization with compiler
-threads bounded by `JOBS`; they retain `-O`, all sources and runtime checks,
-not `-Ounchecked`. No app or test executable is cached. Each Mac regression
+rendering tests may also use internal worker threads. The default Swift app uses
+whole-module optimization with compiler threads bounded by `JOBS`; it retains
+`-O` and all sources. The full-source straighten UI harness runs locally. No app or test executable is cached. Each Mac regression
 stage records elapsed seconds and its exit code in `build/ci/macos-timings.log`; command failures
 still fail the job rather than being hidden by the timing wrapper.
 
@@ -311,16 +382,16 @@ step, parallelism, policy tests and actionlint declarations. Keep every platform
 
 ## Native Dependency Caches
 
-Ordinary PR and `development` push checks restore third-party native dependencies
-using an exact cache key. **Cold builds never restore native caches**: the nightly
-run, manual runs and release/hotfix PRs build all dependencies from source. They
+Model-only checks do not configure or restore native caches. Explicit warm build
+and native groups use an exact dependency key. **Cold builds never restore native
+caches**: manual full runs and release/hotfix PRs build dependencies from source. They
 look up the exact key without downloading its contents and skip saving when that
 accessible cache already exists. Any miss builds from source and saves only after
 the full job succeeds; of the three Intel shards, only `core` saves their shared key.
 Cache lookup/restore failures leave builds enabled and suppress the cache save.
 A cache miss or cache-service outage is not permission to skip a build. Keys hash
-every dependency input and toolchain, so a push restore is as exact as a PR
-restore; the nightly cold build still proves that `development` builds from source.
+every dependency input and toolchain. Cold release/hotfix and explicit full runs
+prove the selected source builds without restored native outputs.
 
 This deliberately uses separate restore/save actions. GitHub makes base/default
 branch caches available to PRs, while a cache created under a PR merge ref cannot
@@ -339,7 +410,7 @@ steps, build environment/defaults and cache-helper changes still invalidate thei
 consumers. Mac tool identity includes the relevant Homebrew build tools and m4,
 not unrelated installed applications; CMake, Python, Xcode and SDK identities
 remain explicit. This reduces false misses without caching product outputs or
-changing the cold-push policy.
+weakening the cold release/full gate.
 
 | Platform | Cached | Always rebuilt |
 | --- | --- | --- |
@@ -396,7 +467,9 @@ reported in the PR, not mixed into this same-source comparison.
 
 ## Results
 
-Only `build/ci/*.log`, `*.json` and `*.xml` are uploaded, retained for seven days.
+Verification logs and metadata under `build/ci/` are retained for seven days.
+The allowlist includes top-level `*.log`, `*.json` and `*.xml`, plus the explicit
+Windows model/process/runner subdirectories and runner `*.jsonl` call traces.
 Mac artifacts are named `macos-<arch>-<suite>-results`.
 Do not widen this allowlist to photos, RAW inputs, screenshots, user profiles,
 app bundles, native binaries, APKs or entire build directories. Build packages

@@ -212,11 +212,11 @@ struct PreviewPerformanceTests {
                 let processed = DispatchTime.now().uptimeNanoseconds
                 let image = processor.makeUIImage(from: result.buffer, orientation: result.orientation)
                 let imaged = DispatchTime.now().uptimeNanoseconds
-                let histogram = processor.computeHistogram(from: result.buffer, bins: 256)
+                let histogram = processor.computeRGBHistogram(from: result.buffer)
                 let ended = DispatchTime.now().uptimeNanoseconds
                 let after = residentBytes(), thermalAfter = ProcessInfo.processInfo.thermalState.rawValue
                 let beat = heartbeat.snapshot()
-                guard image != nil, histogram.count == 256, max(result.buffer.width, result.buffer.height) <= 1280 else {
+                guard image != nil, histogram?.counts.count == 768, max(result.buffer.width, result.buffer.height) <= 1280 else {
                     throw Failure.message("\(mode)/\(label): invalid preview/image/histogram")
                 }
                 let filename = "\(mode).\(label).rgba"
