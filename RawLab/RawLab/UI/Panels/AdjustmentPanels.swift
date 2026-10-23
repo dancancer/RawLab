@@ -5,8 +5,9 @@ extension ContentView {
     var valuePanel: some View {
         if geometrySelected {
             IOSGeometryControls(settings: geometryDraftBinding, onEditingChanged: setSliderEditing,
-                                    canvasSize: geometrySourceCanvasSize,
-                                    aspectPreset: $geometryAspectPreset)
+                                    canvasSize: geometryEditingCanvasSize, aspectPreset: $geometryAspectPreset,
+                                    lockedRatio: $geometryLockedRatio, aspectSwapped: $geometryAspectSwapped,
+                                    showsGrid: $geometryGrid, perspective: geometryPerspective)
             .padding(.horizontal, 16)
             .disabled(!viewModel.hasImage || editingLocked)
         } else if lensSelected {
@@ -53,21 +54,25 @@ extension ContentView {
         return buffer.nativeSize ?? CGSize(width: buffer.width, height: buffer.height)
     }
 
+    var geometryEditingCanvasSize: CGSize {
+        viewModel.nativeImageSize ?? currentPreviewImage?.size ?? geometrySourceCanvasSize
+    }
+
     var geometryDraftAspectRatio: Double? {
-        let source = geometrySourceCanvasSize
-        let geometry = geometryDraft ?? settings.geometry
-        let oriented = geometry.quarterTurns % 2 == 0 ? source : CGSize(width: source.height, height: source.width)
-        return geometryAspectPreset.ratio(for: oriented)
+        if let geometryLockedRatio { return geometryAspectSwapped ? 1 / geometryLockedRatio : geometryLockedRatio }
+        return geometryAspectPreset.ratio(for: geometryEditingCanvasSize, swapped: geometryAspectSwapped)
     }
 
     var editorDraftActions: some View {
         HStack(spacing: 12) {
-            Button(L10n.text("取消"), action: cancelEditorDraft)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            Button(action: cancelEditorDraft) {
+                Text(L10n.text("取消")).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("editor.draft.cancel")
-            Button(L10n.text("应用"), action: applyEditorDraft)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            Button(action: applyEditorDraft) {
+                Text(L10n.text("应用")).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.borderedProminent)
                 .foregroundStyle(.black)
                 .disabled(!isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider)

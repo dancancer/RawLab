@@ -2418,6 +2418,18 @@
     "统计不可用": {
       "source": "统计不可用",
       "formats": []
+    },
+    "位置与尺寸": {
+      "formats": [],
+      "source": "位置与尺寸"
+    },
+    "照片处理设置": {
+      "formats": [],
+      "source": "照片处理设置"
+    },
+    "锁定当前比例": {
+      "formats": [],
+      "source": "锁定当前比例"
     }
   },
   "overrides": {},
@@ -2734,14 +2746,6 @@
       "ja": "目盛りを左右にドラッグして傾きを補正。方向キーで 0.1° ずつ調整します。",
       "zh-Hans": "左右拖动刻度尺拉直；方向键每次调整 0.1°"
     },
-    "已停用": {
-      "de": "Deaktiviert",
-      "en": "Disabled",
-      "es": "Desactivado",
-      "fr": "Désactivé",
-      "ja": "無効",
-      "zh-Hans": "已停用"
-    },
     "已关闭": {
       "de": "Aus",
       "en": "Off",
@@ -2765,14 +2769,6 @@
       "fr": "Profil identifié · Correction désactivée",
       "ja": "プロファイル一致 · 補正はオフ",
       "zh-Hans": "已匹配配置 · 校正尚未开启"
-    },
-    "已启用": {
-      "de": "Aktiviert",
-      "en": "Enabled",
-      "es": "Activado",
-      "fr": "Activé",
-      "ja": "有効",
-      "zh-Hans": "已启用"
     },
     "已导出：{0}": {
       "de": "Exportiert: {0}",

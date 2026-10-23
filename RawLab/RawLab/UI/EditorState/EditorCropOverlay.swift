@@ -46,6 +46,7 @@ struct EditorCropOverlay: View {
     let isEnabled: Bool
     let sourceRevision: UUID
     let onEditingChanged: (Bool) -> Void
+    var showsGrid = true
     @State private var dragSession = CropDragSession()
     @GestureState private var gestureActive = false
 
@@ -67,6 +68,17 @@ struct EditorCropOverlay: View {
                     .frame(width: frame.width, height: frame.height)
                     .position(x: frame.midX, y: frame.midY)
                     .allowsHitTesting(false)
+                if showsGrid {
+                    Path { path in
+                        for index in 1...2 {
+                            let fraction = CGFloat(index) / 3
+                            path.move(to: CGPoint(x: frame.minX + frame.width * fraction, y: frame.minY))
+                            path.addLine(to: CGPoint(x: frame.minX + frame.width * fraction, y: frame.maxY))
+                            path.move(to: CGPoint(x: frame.minX, y: frame.minY + frame.height * fraction))
+                            path.addLine(to: CGPoint(x: frame.maxX, y: frame.minY + frame.height * fraction))
+                        }
+                    }.stroke(.white.opacity(0.65), lineWidth: 0.7).allowsHitTesting(false)
+                }
                 if frame.width >= 88 && frame.height >= 88 {
                     Color.clear.contentShape(Rectangle())
                         .frame(width: frame.width - 44, height: frame.height - 44)

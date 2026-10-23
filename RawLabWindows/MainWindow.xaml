@@ -146,72 +146,86 @@
         <GridSplitter x:Name="AdjustmentSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="{DynamicResource Outline}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" KeyboardIncrement="8" AutomationProperties.Name="{DynamicResource '调整栏'}"/>
         <Border x:Name="AdjustmentPanel" Grid.Row="2" Background="{DynamicResource Surface}" Padding="14,5,14,8">
           <Grid>
-            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <ScrollViewer x:Name="GroupsScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Groups" Orientation="Horizontal" HorizontalAlignment="Center"/></ScrollViewer>
-            <DockPanel x:Name="DockHeader" Grid.Row="1" LastChildFill="True">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <DockPanel x:Name="DockHeader" LastChildFill="True" MinHeight="36">
               <Button Content="{DynamicResource '收起'}" Click="DockToggle" PreviewMouseDown="ParameterNavigationPressed" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}"/>
               <Button x:Name="ResetAllButton" Click="ResetMenuClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '重置调整'}" AutomationProperties.Name="{DynamicResource '重置调整'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
-              <ScrollViewer x:Name="EditorContextScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="ActiveFilm" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,16,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
-              <ComboBox x:Name="ProcessingVersion" MinWidth="130" Margin="0,0,8,0" SelectedIndex="1" SelectionChanged="ProcessingVersionChanged" VerticalAlignment="Center" ToolTip="{DynamicResource '处理版本'}" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/></ComboBox>
-              <TextBlock Text="{DynamicResource '曝光基准'}" VerticalAlignment="Center" Margin="5,0,8,0"/>
-              <ComboBox x:Name="ExposureMode" MinWidth="130" SelectedIndex="0" SelectionChanged="ExposureModeChanged" VerticalAlignment="Center" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
-              <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="12,0"/>
-              <Button Content="{DynamicResource '拍摄时白平衡'}" x:Name="AsShotButton" Click="AsShotClicked" Padding="8,3" Style="{StaticResource QuietButton}"/></StackPanel></ScrollViewer>
+              <Button x:Name="ProcessingSettingsButton" Click="ProcessingSettingsClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '照片处理设置'}" AutomationProperties.Name="{DynamicResource '照片处理设置'}" AutomationProperties.AutomationId="processing.settings"><local:EditorIcon Kind="Processing" Width="18" Height="18"/></Button>
+              <ScrollViewer x:Name="GroupsScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Groups" Orientation="Horizontal" HorizontalAlignment="Left"/></ScrollViewer>
             </DockPanel>
-            <ScrollViewer x:Name="ToolsScroller" Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Tools" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Popup x:Name="ProcessingPopup" PlacementTarget="{Binding ElementName=ProcessingSettingsButton}" Placement="Top" StaysOpen="False" AllowsTransparency="True">
+              <Border Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" Padding="16" CornerRadius="6" Width="330">
+                <ScrollViewer x:Name="EditorContextScroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" MaxHeight="380">
+                  <StackPanel>
+                    <TextBlock Text="{DynamicResource '照片处理设置'}" FontWeight="SemiBold" Margin="0,0,0,12" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ActiveFilm" Foreground="{DynamicResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
+                    <TextBlock Text="{DynamicResource '处理版本'}" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ProcessingVersion" SelectedIndex="1" SelectionChanged="ProcessingVersionChanged" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/></ComboBox>
+                    <TextBlock Text="{DynamicResource '曝光基准'}" Margin="0,10,0,4"/>
+                    <ComboBox x:Name="ExposureMode" SelectedIndex="0" SelectionChanged="ExposureModeChanged" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
+                    <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" Foreground="{DynamicResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                    <Button Content="{DynamicResource '拍摄时白平衡'}" x:Name="AsShotButton" Click="AsShotClicked" Padding="8,3" Margin="0,10,0,0" Style="{StaticResource QuietButton}"/>
+                  </StackPanel>
+                </ScrollViewer>
+              </Border>
+            </Popup>
+            <ScrollViewer x:Name="ToolsScroller" Grid.Row="1" MinHeight="32" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Tools" Orientation="Horizontal" HorizontalAlignment="Left">
               <Button x:Name="FilmCategory" Click="FilmCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '选择胶片模拟'}" AutomationProperties.Name="{DynamicResource '胶片'}">
-                <StackPanel>
-                  <Grid Width="40" Height="40"><local:AdjustmentRing x:Name="FilmCategoryRing"/><local:EditorIcon Kind="Film" Width="20" Height="20"/></Grid>
-                  <TextBlock Text="{DynamicResource '胶片'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="FilmCategoryRing"/><local:EditorIcon Kind="Film" Width="16" Height="16"/></Grid>
+                  <TextBlock Text="{DynamicResource '胶片'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
               </Button>
               <Button x:Name="MasterRecipeCategory" Click="MasterRecipeCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '选择大师配方'}" AutomationProperties.Name="{DynamicResource '大师配方'}">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="MasterRecipeCategoryRing"/><local:EditorIcon Kind="Photo" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '大师配方'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="MasterRecipeCategoryRing"/><local:EditorIcon Kind="Photo" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '大师配方'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="DenoiseCategory" Click="DenoiseCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '降噪'}" AutomationProperties.Name="{DynamicResource '降噪'}">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="DenoiseCategoryRing"/><local:EditorIcon Kind="Denoise" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '降噪'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="DenoiseCategoryRing"/><local:EditorIcon Kind="Denoise" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '降噪'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="LensCategory" Click="LensCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '镜头匹配'}" AutomationProperties.Name="{DynamicResource '镜头'}">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="LensCategoryRing"/><local:EditorIcon Kind="Lens" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '镜头'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="LensCategoryRing"/><local:EditorIcon Kind="Lens" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '镜头'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="GeometryCategory" Click="GeometryCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '裁切、旋转、翻转和拉直'}" AutomationProperties.Name="{DynamicResource '几何'}">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '几何'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '裁切'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+              </Button>
+              <Button x:Name="PerspectiveCategory" Click="PerspectiveCategoryClicked" Style="{StaticResource ToolButton}" AutomationProperties.Name="{DynamicResource '透视'}" AutomationProperties.AutomationId="Perspective">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><local:EditorIcon Kind="Perspective" Width="18" Height="18"/><TextBlock Text="{DynamicResource '透视'}" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="HslCategoryRing"/><local:EditorIcon Kind="Hsl" Width="20" Height="20"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="HslCategoryRing"/><local:EditorIcon Kind="Hsl" Width="16" Height="16"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="WhiteBalanceCategory" Click="WhiteBalanceCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '白平衡'}" AutomationProperties.Name="{DynamicResource '白平衡'}" AutomationProperties.AutomationId="WhiteBalance">
-                <StackPanel><Grid Width="40" Height="40"><local:AdjustmentRing x:Name="WhiteBalanceCategoryRing"/><local:EditorIcon Kind="Temperature" Width="20" Height="20"/></Grid><TextBlock Text="{DynamicResource '白平衡'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap" MaxWidth="62" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="WhiteBalanceCategoryRing"/><local:EditorIcon Kind="Temperature" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '白平衡'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
             </StackPanel></ScrollViewer>
-            <ScrollViewer x:Name="ParameterPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center" Margin="0,5">
+            <ScrollViewer x:Name="ParameterPanel" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center" Margin="0,5">
               <local:ParameterRow x:Name="OrdinaryParameter"/>
               <WrapPanel HorizontalAlignment="Center">
               <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动调整曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Auto" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
               </WrapPanel>
             </StackPanel></ScrollViewer>
-            <ScrollViewer x:Name="FilmPanel" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
+            <ScrollViewer x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <Button x:Name="FilmScrollLeft" Click="FilmScrollLeftClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
               <ScrollViewer x:Name="FilmScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" VerticalContentAlignment="Center" ScrollChanged="FilmScrollChanged"><StackPanel x:Name="FilmStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
               <Button x:Name="FilmScrollRight" Grid.Column="2" Click="FilmScrollRightClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="-90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
             </Grid></ScrollViewer>
-            <ScrollViewer x:Name="MasterRecipePanel" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
+            <ScrollViewer x:Name="MasterRecipePanel" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <Button x:Name="RecipeScrollLeft" Click="RecipeScrollLeftClicked" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
               <ScrollViewer x:Name="RecipeScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" ScrollChanged="RecipeScrollChanged"><StackPanel x:Name="RecipeStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
               <Button x:Name="RecipeScrollRight" Grid.Column="2" Click="RecipeScrollRightClicked" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="-90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
             </Grid></ScrollViewer>
-            <ScrollViewer x:Name="DenoiseSurface" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:DenoisePanel x:Name="DenoiseEditor" VerticalAlignment="Center"/></ScrollViewer>
-            <ScrollViewer x:Name="LensSurface" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:LensPanel x:Name="LensEditor" VerticalAlignment="Center"/></ScrollViewer>
-            <ScrollViewer x:Name="GeometrySurface" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
-            <ScrollViewer x:Name="HslSurface" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
-            <ScrollViewer x:Name="WhiteBalanceSurface" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:WhiteBalancePanel x:Name="WhiteBalanceEditor"/></ScrollViewer>
-            <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+            <ScrollViewer x:Name="DenoiseSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:DenoisePanel x:Name="DenoiseEditor" VerticalAlignment="Center"/></ScrollViewer>
+            <ScrollViewer x:Name="LensSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:LensPanel x:Name="LensEditor" VerticalAlignment="Center"/></ScrollViewer>
+            <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
+            <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
+            <ScrollViewer x:Name="WhiteBalanceSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:WhiteBalancePanel x:Name="WhiteBalanceEditor"/></ScrollViewer>
+            <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <local:PhotoEffectsPanel x:Name="PhotoEffectsEditor" VerticalAlignment="Center"/>
             </ScrollViewer>
-            <DockPanel x:Name="DraftActions" Grid.Row="4" Visibility="Collapsed" Margin="0,4,0,0">
+            <DockPanel x:Name="DraftActions" Grid.Row="3" Visibility="Collapsed" Margin="0,4,0,0">
               <WrapPanel DockPanel.Dock="Right"><Button Content="{DynamicResource '取消'}" Click="CancelDraftClicked"/><Button x:Name="ApplyDraftButton" Content="{DynamicResource '应用'}" Click="ApplyDraftClicked"/></WrapPanel>
               <TextBlock Text="{DynamicResource '草稿尚未应用'}" VerticalAlignment="Center" Foreground="{DynamicResource Indicator}" TextWrapping="Wrap"/>
             </DockPanel>

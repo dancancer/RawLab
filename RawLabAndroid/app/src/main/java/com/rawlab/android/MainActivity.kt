@@ -156,7 +156,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onPreviewSizeChange = model::updatePreviewSize,
             onBeginDraft = model::beginDraft, onDraftEdit = model::changeDraft,
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
-            onGeometryRatio = model::chooseGeometryRatio)
+            onGeometryRatio = model::chooseGeometryRatio, onGeometryLock = model::toggleGeometryLock,
+            onGeometrySwap = model::swapGeometryRatio, onGeometryGrid = model::toggleGeometryGrid)
         }
         }
     }

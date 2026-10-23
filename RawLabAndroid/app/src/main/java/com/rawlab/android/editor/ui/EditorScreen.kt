@@ -74,6 +74,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
     onApplyDraft: () -> Boolean = { false }, onDiscardDraft: () -> Unit = {},
     onGeometryRatio: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
+    onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onFilmSelected: (UsageFilmKind) -> Unit = {},
     onPrepareReset: (EditorResetScope) -> EditorResetPreparation = {
         EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
@@ -261,7 +262,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         AdjustmentDock(state, modifier, tool, selectTool, expanded, { leave { expanded = !expanded } },
             compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
-            onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, side, !pendingAll, compact)
+            onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, side, !pendingAll, compact,
+            onGeometryLock, onGeometrySwap, onGeometryGrid)
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }
@@ -309,21 +311,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val density = LocalDensity.current
-            val textMeasurer = rememberTextMeasurer()
-            val groupStyle = MaterialTheme.typography.labelMedium
-            val titles = EditorAdjustmentGroup.entries.map { stringResource(groupTitle(it)) }
-            val slotWidth = (320.dp - 16.dp) / 6
-            val labelsFit = slotWidth >= 48.dp && titles.all { title ->
-                val measurement = textMeasurer.measure(AnnotatedString(title), groupStyle,
-                    constraints = Constraints(maxWidth = with(density) { (slotWidth - 8.dp).roundToPx() }))
-                measurement.lineCount <= 2
-            }
-            val wide = editorUsesSideDock(maxWidth.value, maxHeight.value, density.fontScale,
-                if (labelsFit) 320f else Float.POSITIVE_INFINITY)
+            val wide = editorUsesSideDock(maxWidth.value, maxHeight.value, density.fontScale)
             // 顶部进度区与底部分隔线不属于照片/面板可分配高度。
             val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
             val dockHeight = dockLayout.height.dp
-            val sideDockWidth = 320.dp
+            val sideDockWidth = 336.dp
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {

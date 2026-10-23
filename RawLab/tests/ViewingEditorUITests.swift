@@ -44,9 +44,122 @@ final class ViewingEditorUITests: XCTestCase {
         let json = XCTAttachment(data: data, uniformTypeIdentifier: "public.json"); json.name = name + "-receipt"; json.lifetime = .keepAlways; add(json)
     }
     func selectGeometry(_ app: XCUIApplication) {
+        for _ in 0..<10 {
+            if app.frame.insetBy(dx: -1, dy: -1).contains(app.buttons["editor.group.geometry"].frame) { break }
+            app.scrollViews["editor.groups"].swipeLeft()
+        }
         app.buttons["editor.group.geometry"].tap()
         if !app.buttons["tool.geometry"].isSelected { app.buttons["tool.geometry"].tap() }
         wait(app) { $0["ready"] as? Bool == true && $0["draftActive"] as? Bool == true }
+    }
+    func revealCompactControl(_ element: XCUIElement, in app: XCUIApplication) {
+        let panel = app.scrollViews["editor.panel"]
+        for _ in 0..<12 {
+            let frame = element.exists ? element.frame : .zero
+            let bounds = panel.frame
+            if element.exists && element.isHittable && bounds.insetBy(dx: -1, dy: -1).contains(frame) { return }
+            let up = frame.isEmpty || frame.midY > bounds.midY
+            let distance = frame.isEmpty ? bounds.height * 0.6 : abs(frame.midY - bounds.midY)
+            if bounds.height < 120 && distance > bounds.height * 2 {
+                if up { panel.swipeUp(velocity: .fast) } else { panel.swipeDown(velocity: .fast) }
+                continue
+            }
+            let amount = min(0.6, max(0.08, distance / max(1, bounds.height)))
+            let startY: CGFloat = up ? 0.82 : 0.18
+            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: startY))
+                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset:
+                    CGVector(dx: 0.12, dy: startY + (up ? -amount : amount))),
+                    withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
+        capture(app, "compact-unreachable-" + element.identifier)
+        XCTFail("Control remains reachable: \(element.identifier), frame=\(element.frame), panel=\(panel.frame)\n\(app.debugDescription)")
+    }
+    func testCompactGermanLargeLandscapeControls() {
+        let app = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        wait(app) { $0["ready"] as? Bool == true }
+        selectGeometry(app)
+        let dimensions = app.buttons["geometry.dimensions"]
+        revealCompactControl(dimensions, in: app); dimensions.tap()
+        let width = app.buttons["geometry.cropWidth.value"]
+        revealCompactControl(width, in: app)
+        XCTAssertTrue(app.scrollViews["editor.panel"].frame.insetBy(dx: -1, dy: -1)
+            .contains(app.staticTexts["geometry.cropWidth.title"].frame),
+            "The complete large-text crop label and value are visible together")
+        capture(app, "compact-german-large-landscape-numbers")
+        width.tap()
+        XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].waitForExistence(timeout: 5))
+        app.buttons["adjustment.wheel.cancel"].tap()
+        app.buttons["editor.draft.cancel"].tap()
+        wait(app) { $0["draftActive"] as? Bool == false && $0["ready"] as? Bool == true }
+    }
+    func testCompactCropPrecisionAndResponsiveNavigation() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.color"].tap()
+        app.buttons["tool.hsl"].tap()
+        for channel in 0..<8 {
+            let button = app.buttons["hsl.channel.\(channel)"]
+            if !button.isHittable { app.scrollViews["editor.panel"].swipeLeft() }
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+            button.tap()
+            wait(app) { $0["hslChannel"] as? Int == channel }
+        }
+        capture(app, "compact-hsl-portrait")
+        selectGeometry(app)
+        let corner = app.descendants(matching: .any).matching(identifier: "geometry.crop.bottomRight").firstMatch
+        let origin = corner.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        origin.press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: -23, dy: -17)))
+        wait(app) { $0["ready"] as? Bool == true && $0["draftChanged"] as? Bool == true }
+        let original = receipt(app)["draftCrop"] as! Double
+        let dimensions = app.descendants(matching: .any).matching(identifier: "geometry.dimensions").firstMatch
+        revealCompactControl(dimensions, in: app); dimensions.tap()
+        let width = app.buttons["geometry.cropWidth.value"]
+        revealCompactControl(width, in: app); width.tap()
+        XCTAssertTrue(app.buttons["adjustment.wheel.apply"].waitForExistence(timeout: 5))
+        app.buttons["adjustment.wheel.apply"].tap()
+        wait(app) { $0["ready"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["draftCrop"] as! Double, original,
+                       "Opening and confirming the rounded crop wheel preserves its full precision")
+        revealCompactControl(width, in: app); width.tap()
+        let picker = app.descendants(matching: .any).matching(identifier: "adjustment.wheel").firstMatch
+        let wheel = picker.pickerWheels.firstMatch
+        XCTAssertTrue(wheel.waitForExistence(timeout: 5))
+        let current = wheel.value as? String ?? ""
+        let text = "50.01"
+        let target = current.contains(picker.label + ",") ? picker.label + ", " + text + " %"
+            : current.contains(" %") ? text + " %" : text
+        wheel.adjust(toPickerWheelValue: target)
+        app.buttons["adjustment.wheel.apply"].tap()
+        wait(app) { abs(($0["draftCrop"] as? Double ?? 0) - 0.5001) < 1e-10 && $0["ready"] as? Bool == true }
+        capture(app, "compact-crop-exact-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        wait(app) { $0["ready"] as? Bool == true }
+        for id in ["editor.draft.cancel", "editor.draft.apply"] {
+            let button = app.buttons[id]
+            XCTAssertTrue(button.isHittable && app.frame.contains(button.frame), "Fixed action remains visible in landscape")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+        }
+        capture(app, "compact-crop-landscape")
+        app.buttons["editor.draft.apply"].tap()
+        wait(app) { $0["draftActive"] as? Bool == false && $0["ready"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["crop"] as! Double, 0.5001, accuracy: 1e-10)
+        capture(app, "compact-crop-applied")
+        app.terminate()
+        XCUIDevice.shared.orientation = .portrait
+        let german = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
+        selectGeometry(german)
+        for id in ["editor.draft.cancel", "editor.draft.apply"] {
+            let button = german.buttons[id]
+            XCTAssertTrue(button.exists && german.frame.contains(button.frame), "Large German text retains fixed draft actions")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+        }
+        capture(german, "compact-german-large-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        wait(german) { $0["ready"] as? Bool == true }
+        capture(german, "compact-german-large-landscape")
+        XCTAssertTrue(german.buttons["editor.draft.cancel"].isHittable)
+        german.buttons["editor.draft.cancel"].tap()
+        wait(german) { $0["draftActive"] as? Bool == false && $0["ready"] as? Bool == true }
     }
     func histogramPlot(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "editor.histogram.plot").firstMatch

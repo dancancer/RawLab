@@ -433,6 +433,20 @@ try
         "Strict UI parser accepts exact boundaries and rejects empty or infinite values");
     Check(new NumericRange(-4,4,.01,FixedDecimals:2).Format(.005)=="0.005", "Old off-grid exposure is displayed without F2 quantization");
     var inputSession=new NumericInputSession();
+    var cropRange=new NumericRange(0,100,.01,.1,.01,CompactPercent:true);
+    var cropInput=new NumericInputSession();var cropOriginal=33.33333333333333;
+    cropInput.Bind("crop-source","width",cropRange,cropOriginal);
+    Check(cropInput.Text=="33.33" && cropInput.Commit()==null && cropInput.Original==cropOriginal,
+        "Crop display has two decimals without changing its original on unchanged confirmation");
+    cropInput.Edit("33.33");
+    Check(cropInput.Commit()==null && cropInput.Original==cropOriginal,
+        "Retyping the visible crop value preserves the full-precision original");
+    cropInput.Edit("33.34");Check(cropInput.Commit()==33.34,"Crop accepts an explicit hundredth-percent edit");
+    cropInput.Edit("33.345");Check(cropInput.Commit()==null && cropInput.Error==NumericInputError.Grid && cropInput.Text=="33.345",
+        "Crop rejects excess decimals and retains the invalid draft");
+    cropInput.Edit("101");Check(cropInput.Commit()==null && cropInput.Error==NumericInputError.Range,"Crop rejects out-of-range input");
+    Loc.Initialize("de");Check(cropRange.Format(cropOriginal)=="33,33" && cropRange.Parse("33,33",cropOriginal)==cropOriginal,
+        "Crop rounded display and unchanged input share the current numeric locale");Loc.Initialize("en");
     inputSession.Bind("source-a","exposure",strictRange,.05);inputSession.Edit("12.3");
     inputSession.Bind("source-b","exposure",strictRange,.05);
     Check(!inputSession.Dirty && inputSession.Text=="0.05" && inputSession.Commit()==null,

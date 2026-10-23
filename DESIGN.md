@@ -25,6 +25,8 @@ components:
     rounded: "{rounded.ios-overlay}"
 ---
 
+Compact adjustment navigation, native slider rendering and crop precision follow [compact controls](docs/design/editor-workspace/compact-controls.md); these rules supersede the older vertical tool-caption layouts below.
+
 # RawLab Desktop Design
 
 ## Overview

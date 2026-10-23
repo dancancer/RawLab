@@ -35,6 +35,7 @@ struct AdjustmentControl: View {
     let identifier: String
     let directionColors: [Color]
     let directionHint: String
+    let compactNumber: Bool
     let onEditingChanged: (Bool) -> Void
     @State private var showingWheel = false
     @State private var wheelOriginal = 0.0
@@ -52,15 +53,17 @@ struct AdjustmentControl: View {
          defaultValue: Double, unit: String = "", formatter: @escaping (Double) -> String,
          reciprocal: Bool = false, displayScale: Double = 1, identifier: String,
          directionColors: [Color] = [], directionHint: String = "",
+         compactNumber: Bool = false,
          onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
         self.title = title; _value = value; self.range = range; self.step = step
         self.defaultValue = defaultValue; self.unit = unit; self.formatter = formatter
         self.reciprocal = reciprocal; self.displayScale = displayScale; self.identifier = identifier
         self.directionColors = directionColors; self.directionHint = directionHint
+        self.compactNumber = compactNumber
         self.onEditingChanged = onEditingChanged
     }
 
-    private var scale: AdjustmentScale { AdjustmentScale(range: range, step: step, reciprocal: reciprocal) }
+    private var scale: AdjustmentScale { AdjustmentScale(range: range, step: step, reciprocal: reciprocal, compactDecimals: compactNumber ? 2 : nil) }
     private var validDefault: Double? { scale.contains(defaultValue) ? defaultValue : nil }
     private var modified: Bool { validDefault.map { value != $0 } ?? false }
     private func number(_ value: Double) -> String {
@@ -74,7 +77,14 @@ struct AdjustmentControl: View {
 
     var body: some View {
         Group {
-            if dynamicTypeSize.isAccessibilitySize {
+            if compactNumber {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) { titleLabel; Spacer(minLength: 0); valueAndUnit }
+                    VStack(alignment: .leading, spacing: 0) { titleLabel; valueAndUnit.frame(maxWidth: .infinity, alignment: .trailing) }
+                }
+                .padding(.horizontal, 8)
+                .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
+            } else if dynamicTypeSize.isAccessibilitySize {
                 VStack(spacing: 4) {
                     HStack(spacing: 8) { titleLabel; Spacer(minLength: 8); valueAndUnit }
                     ruler.frame(height: 76)

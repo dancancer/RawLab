@@ -12,6 +12,7 @@ import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.editor.controls.AdjustmentHapticGate
 import com.rawlab.android.editor.controls.AdjustmentScale
 import com.rawlab.android.editor.controls.editorUsesSideDock
+import com.rawlab.android.editor.controls.formatCropPercent
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
@@ -20,6 +21,45 @@ import com.rawlab.android.geometry.moveCrop
 import com.rawlab.android.geometry.withAspect
 
 class AdjustmentInteractionTest {
+    @Test fun cropDisplayAndUnchangedInputPreserveTheExactOriginal() {
+        val original = 33.333332f
+        val scale = AdjustmentScale(0f..100f, .01f, 100f, compactPercent = true)
+        assertEquals("33.33", formatCropPercent(original, Locale.US))
+        assertEquals(original, scale.parse("33.33", Locale.US, original)!!, 0f)
+        assertEquals(original, scale.parse("33,33", Locale.GERMAN, original)!!, 0f)
+        assertEquals(33.34f, scale.parse("33.34", Locale.US, original)!!, 0f)
+        listOf("33.345", "100.01", "-0.01", "NaN").forEach { assertNull(scale.parse(it, Locale.US, original)) }
+        assertEquals("100", formatCropPercent(100f, Locale.US))
+    }
+
+    @Test fun lockingCurrentCropKeepsItsPrecisionAndHasOneRatioAuthority() {
+        val source = EditSettings(geometry = GeometrySettings(cropX = .1f, cropY = .1f, cropWidth = .7123456f, cropHeight = .6123456f))
+        val free = AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, source, canvasAspect = 1.5f)
+        val locked = free.toggleGeometryLock()
+        assertEquals(source.geometry, locked.value.geometry)
+        assertEquals(source.geometry.cropWidth * 1.5f / source.geometry.cropHeight, locked.geometryAspect!!, 0f)
+        val swapped = locked.swapGeometryRatio()
+        assertEquals(1f / locked.geometryAspect!!, swapped.geometryAspect!!, .000001f)
+        assertNull(locked.toggleGeometryLock().geometryAspect)
+        assertNull(locked.selectGeometryRatio(com.rawlab.android.geometry.GeometryRatio.SQUARE, false).geometryLockedRatio)
+    }
+
+    @Test fun originalCropRatioFollowsQuarterTurnsWithinTheSameDraft() {
+        val original = AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, EditSettings(), 1.5f, 1.5f)
+            .selectGeometryRatio(com.rawlab.android.geometry.GeometryRatio.ORIGINAL, false)
+        val rotated = original.update(original.value.copy(geometry = original.value.geometry.rotated(true)))
+            .acceptGeometryCanvas(2f / 3f)
+        assertEquals(2f / 3f, rotated.geometryAspect!!, .000001f)
+        assertEquals(rotated.geometryAspect!!,
+            rotated.value.geometry.cropWidth * rotated.geometryCanvasAspect / rotated.value.geometry.cropHeight, .000001f)
+        val restored = rotated.update(rotated.value.copy(geometry = rotated.value.geometry.rotated(false)))
+            .acceptGeometryCanvas(1.5f)
+        assertEquals(1.5f, restored.geometryAspect!!, .000001f)
+        val locked = original.toggleGeometryLock().toggleGeometryLock()
+        val lockedRotated = locked.update(locked.value.copy(geometry = locked.value.geometry.rotated(true)))
+        assertEquals(locked.geometryAspect, lockedRotated.geometryAspect)
+    }
+
     @Test fun exactDraftAcceptsLocaleDecimalWithoutAllowingTrailingGarbage() {
         val scale = AdjustmentScale(-4f..4f, .05f, 0f)
         assertEquals(.5f, scale.parse("0,5", Locale.GERMAN)!!, 0f)
@@ -99,10 +139,9 @@ class AdjustmentInteractionTest {
         assertTrue(square.cropY + square.cropHeight <= 1.000001f)
     }
 
-    @Test fun sideDockFallsBackWhenFontOrSixLabelsCannotFit() {
+    @Test fun sideDockFallsBackForLargeTextAndScrollsLongNavigationLabels() {
         assertFalse(editorUsesSideDock(1280f, 800f, fontScale = 1.3f))
-        assertFalse(editorUsesSideDock(1280f, 800f, requiredGroupWidth = 321f))
-        assertTrue(editorUsesSideDock(1280f, 800f, requiredGroupWidth = 320f))
+        assertTrue(editorUsesSideDock(1280f, 800f))
     }
 
     @Test fun portraitTabletNeverUsesLandscapeInspector() {

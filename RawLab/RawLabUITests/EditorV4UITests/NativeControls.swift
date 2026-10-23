@@ -18,7 +18,7 @@ extension EditorV4UITests {
         launchEnglish(app)
         try importFirstVisiblePhoto(in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.35, accuracy: 0.0001)
-        try selectTool("geometry", in: app)
+        try selectTool("perspective", in: app)
         XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 12, accuracy: 0.0001)
         XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled, "Restored RAW geometry starts as an unchanged draft")
         app.buttons["editor.draft.cancel"].tap()
@@ -698,7 +698,7 @@ extension EditorV4UITests {
         try setValue("51", title: "Horizontal Perspective", control: "geometry.perspectiveHorizontal", in: app)
         applyDraft(in: app)
         XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
-        try selectTool("geometry", in: app)
+        try selectTool("perspective", in: app)
         XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 51, accuracy: 0.0001,
                        "Perspective must retain the legal integer value across draft application")
 
@@ -715,11 +715,12 @@ extension EditorV4UITests {
         XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
         try selectTool("geometry", in: app)
         XCTAssertEqual(try number(straighten), 3.4, accuracy: 0.0001, "Discarding the draft restores the committed geometry")
+        try selectTool("perspective", in: app)
         XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 51, accuracy: 0.0001)
         capture("v4-geometry-committed", in: app)
     }
 
-    func testCropWidthWheelUnlocksAspectForCornerDragAndRotationPreservesDraft() throws {
+    func testCropWidthWheelKeepsAspectForCornerDragAndRotationPreservesDraft() throws {
         let app = try launchImportedEditor()
         try selectTool("geometry", in: app)
         if app.buttons["geometry.reset"].isEnabled {
@@ -733,7 +734,8 @@ extension EditorV4UITests {
         let square = app.buttons["1:1"]
         XCTAssertTrue(square.waitForExistence(timeout: 5), app.debugDescription)
         square.tap()
-        XCTAssertTrue(aspect.label.contains("1:1"), aspect.debugDescription)
+        XCTAssertEqual(aspect.value as? String, "1:1", aspect.debugDescription)
+        try expandCropDimensions(in: app)
         let width = app.buttons["geometry.cropWidth.value"]
         let height = app.buttons["geometry.cropHeight.value"]
         let squareWidth = try number(width)
@@ -742,8 +744,8 @@ extension EditorV4UITests {
         let narrowedWidth = max(1, (squareWidth * 0.75 * 10).rounded() / 10)
         try setValue(String(format: "%.1f", narrowedWidth), title: "Crop Width", unit: "%", control: "geometry.cropWidth", in: app)
         XCTAssertEqual(try number(width), narrowedWidth, accuracy: 0.1)
-        XCTAssertEqual(try number(height), squareHeight, accuracy: 0.1)
-        XCTAssertFalse(aspect.label.contains("1:1"), "A numeric crop edit must release the selected aspect ratio")
+        XCTAssertEqual(try number(height), narrowedWidth / squareRatio, accuracy: 0.02)
+        XCTAssertEqual(aspect.value as? String, "1:1", "Numeric width changes preserve the selected physical aspect ratio")
 
         let corner = app.descendants(matching: .any)["geometry.crop.bottomRight"]
         XCTAssertTrue(corner.waitForExistence(timeout: 5), app.debugDescription)
@@ -757,12 +759,12 @@ extension EditorV4UITests {
         let draggedWidth = try number(width)
         let draggedHeight = try number(height)
         XCTAssertLessThan(draggedWidth, narrowedWidth)
-        XCTAssertEqual(draggedHeight, squareHeight, accuracy: 0.1, "A free horizontal corner drag must not resize crop height")
-        XCTAssertGreaterThan(abs(draggedWidth / draggedHeight - squareRatio), squareRatio * 0.05,
-                             "The corner must not snap the crop back to the previous 1:1 ratio")
+        XCTAssertLessThan(draggedHeight, squareHeight)
+        XCTAssertEqual(draggedWidth / draggedHeight, squareRatio, accuracy: 0.002,
+                       "Corner dragging retains the same locked physical aspect ratio")
         let cropIDs = ["cropX", "cropY", "cropWidth", "cropHeight"]
         let portraitValues = try cropIDs.map { try number(app.buttons["geometry.\($0).value"]) }
-        capture("v4-free-crop-draft-portrait", in: app)
+        capture("v4-locked-crop-draft-portrait", in: app)
 
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
@@ -772,9 +774,9 @@ extension EditorV4UITests {
             XCTAssertEqual(try number(app.buttons["geometry.\(id).value"]), portraitValues[index], accuracy: 0.1,
                            "Rotation must preserve the active crop draft")
         }
-        XCTAssertFalse(aspect.label.contains("1:1"))
+        XCTAssertEqual(aspect.value as? String, "1:1")
         XCTAssertTrue(corner.waitForExistence(timeout: 5))
-        capture("v4-free-crop-draft-landscape", in: app)
+        capture("v4-locked-crop-draft-landscape", in: app)
         XCUIDevice.shared.orientation = .portrait
         waitUntil { app.frame.height > app.frame.width }
         for (index, id) in cropIDs.enumerated() {
@@ -783,6 +785,7 @@ extension EditorV4UITests {
         app.buttons["editor.draft.cancel"].tap()
         XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
         try selectTool("geometry", in: app)
+        try expandCropDimensions(in: app)
         XCTAssertEqual(try number(width), 100, accuracy: 0.1)
         XCTAssertEqual(try number(height), 100, accuracy: 0.1)
     }

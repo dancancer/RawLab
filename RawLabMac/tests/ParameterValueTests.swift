@@ -152,6 +152,32 @@ struct ParameterValueTests {
         check(box.value == 1.23 && box.writes == 1 && field.stringValue == "+1.23", "Escape cancels a legal uncommitted value")
     }
 
+    static func cropPrecisionChecks() {
+        let original = 33.33333333333333
+        let (box, field, coordinator) = fixture(original, precision: .cropPercent, range: 0...100,
+                                               invalidInputPolicy: .retain)
+        check(field.stringValue == "33.33", "Crop display uses at most two decimals")
+        blur(field, coordinator: coordinator)
+        check(box.value == original && box.writes == 0, "Focusing and leaving crop preserves its exact original")
+        change("33.33", field: field, coordinator: coordinator)
+        blur(field, coordinator: coordinator)
+        check(box.value == original && box.writes == 0, "Unchanged visible crop text does not quantize its original")
+        change("33.34", field: field, coordinator: coordinator)
+        blur(field, coordinator: coordinator)
+        check(box.value == 33.34 && box.writes == 1, "Explicit crop input accepts one hundredth percent")
+        for invalid in ["33.345", "101", "-0.01"] {
+            change(invalid, field: field, coordinator: coordinator)
+            blur(field, coordinator: coordinator)
+            check(box.value == 33.34 && field.invalid && field.stringValue == invalid,
+                  "Crop invalid draft stays visible without clamping: \(invalid)")
+        }
+        check(ParameterPrecision.cropPercent.text(100) == "100", "Crop omits unnecessary decimal zeros")
+        check(ParameterPrecision.cropPercent.stepped(33.33, direction: 1, fine: false, in: 0...100) == 33.43,
+              "Crop ordinary step is one tenth percent")
+        check(ParameterPrecision.cropPercent.stepped(33.33, direction: 1, fine: true, in: 0...100) == 33.34,
+              "Crop fine step is one hundredth percent")
+    }
+
     static func main() {
         _ = NSApplication.shared
         if let focus = ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_FOCUS"] {
@@ -160,6 +186,7 @@ struct ParameterValueTests {
             case "line-wheel": discreteLineWheelChecks()
             case "cell-layout": valueFieldLayoutChecks()
             case "strict-input": strictInputChecks()
+            case "crop-precision": cropPrecisionChecks()
             case "row-layout": rowLayoutChecks()
             case "validation-race": validationRaceChecks()
             case "text-no-preview": textNoPreviewChecks()
@@ -168,6 +195,7 @@ struct ParameterValueTests {
             return
         }
         strictInputChecks()
+        cropPrecisionChecks()
         cancellationAndFillChecks()
         validationRaceChecks()
         textNoPreviewChecks()

@@ -20,6 +20,7 @@ struct PhotoCanvas: View {
     var cropGrid = true
     var onCropChange: ((GeometrySettings) -> Void)? = nil
     var onCropEditingChanged: ((Bool) -> Void)? = nil
+    var prepareCropInteraction: (GeometrySettings) -> Bool = { _ in true }
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGPoint?
 
@@ -70,7 +71,8 @@ struct PhotoCanvas: View {
                     MacCropOverlay(settings: cropSettings, imageBounds: imageBounds, canvasSize: straighten.safeCanvas,
                         previewIdentity: ObjectIdentifier(frame.image), aspectRatio: cropAspectRatio, showsGrid: cropGrid,
                         imageOutline: straighten.outline(in: sourceBounds),
-                        onChange: onCropChange, onEditingChanged: onCropEditingChanged)
+                        onChange: onCropChange, onEditingChanged: onCropEditingChanged,
+                        prepareInteraction: prepareCropInteraction)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)

@@ -2713,6 +2713,42 @@
       "file": "editor_strings.xml",
       "types": [],
       "formats": []
+    },
+    "geometry_lock_current_aspect": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锁定当前比例",
+      "types": []
+    },
+    "geometry_position_size": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "位置与尺寸",
+      "types": []
+    },
+    "photo_processing_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片处理设置",
+      "types": []
+    },
+    "geometry_crop_tool": {
+      "source": "裁切",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "geometry_perspective_tool": {
+      "source": "透视",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "geometry_grid": {
+      "source": "三分网格",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {
