@@ -152,7 +152,7 @@ public static class EditorAdjustmentRules
             EditorAdjustmentGroup.Color => value with { CameraWhiteBalance = true, Hsl = new(),
                 AsShotTemperature = defaults.AsShotTemperature, AsShotTint = defaults.AsShotTint },
             EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects },
-            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise },
+            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false },
             EditorAdjustmentGroup.Geometry => value with { Geometry = defaults.Geometry, Lens = defaults.Lens },
             _ => value
         };
@@ -171,7 +171,7 @@ public static class EditorAdjustmentRules
                 foreach (var spec in PhotoEffectSpec.All.Where(spec => spec.IsVignette == (tool == EditorAdjustmentTool.Vignette)))
                     effects = SetEffectDefault(effects, spec.Id);
                 return value with { Effects = effects };
-            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise };
+            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false };
             case EditorAdjustmentTool.Geometry: return value with { Geometry = defaults.Geometry };
             case EditorAdjustmentTool.Lens: return value with { Lens = defaults.Lens };
             default:
@@ -245,6 +245,6 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
     }
 }

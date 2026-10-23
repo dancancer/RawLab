@@ -3,6 +3,16 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="720">
  <StackPanel Margin="4">
+  <StackPanel x:Name="AISurface" Visibility="Collapsed" Margin="0,0,0,12">
+   <WrapPanel>
+    <CheckBox x:Name="AIEnabledBox" Content="{DynamicResource 'AI 降噪（实验）'}" Checked="AIEnabledChanged" Unchecked="AIEnabledChanged" AutomationProperties.Name="{DynamicResource 'AI 降噪（实验）'}" VerticalAlignment="Center"/>
+    <Button x:Name="AICancel" Content="{DynamicResource '取消'}" Click="AICancelClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
+    <Button x:Name="AIRetry" Content="{DynamicResource '重试'}" Click="AIRetryClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
+   </WrapPanel>
+   <ProgressBar x:Name="AIProgress" Minimum="0" Maximum="1" Height="4" Margin="0,8,0,0" Visibility="Collapsed" AutomationProperties.Name="{DynamicResource 'AI 降噪进度'}"/>
+   <TextBlock x:Name="AIStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
+  </StackPanel>
+  <StackPanel x:Name="OrdinaryDenoise">
   <WrapPanel Margin="0,0,0,8">
    <CheckBox x:Name="EnabledBox" Content="{DynamicResource '降噪'}" VerticalAlignment="Center" Checked="EnabledChanged" Unchecked="EnabledChanged" AutomationProperties.Name="{DynamicResource '降噪'}"/>
    <ComboBox x:Name="PresetBox" MinWidth="140" MaxWidth="280" SelectionChanged="PresetChanged" AutomationProperties.Name="{DynamicResource '降噪预设'}" Margin="12,0">
@@ -15,5 +25,6 @@
    <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding IsExpanded, ElementName=Details}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
   </TextBlock>
   <Expander x:Name="Details" Header="{DynamicResource '精细调整'}" IsExpanded="True"><StackPanel x:Name="Parameters"/></Expander>
+  </StackPanel>
  </StackPanel>
 </UserControl>

@@ -1,5 +1,12 @@
 # Third-party components
 
+- Optional experimental AI denoise: DualDn by OpenImagingLab
+  (https://github.com/OpenImagingLab/DualDn), CC BY-NC 4.0, OpenImagingLab 2024. The exported package
+  carries the upstream license and model/checkpoint provenance. ONNX Runtime
+  DirectML 1.23.0 is MIT-licensed; DirectML 1.15.4 is distributed under Microsoft's
+  package license. AI-enabled builds include their original notices under
+  `Licenses/DualDn`; standard builds do not bundle these components or weights.
+
 - Lens correction: Lensfun 0.3.4 (LGPL-3.0-or-later), GLib 2.84.4
   (LGPL-2.1-or-later), PCRE2 10.44 (BSD), proxy-libintl (LGPL-2.0-or-later)
   and upstream bundled TRE. Statically linked into sony2fuji.dll.

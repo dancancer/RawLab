@@ -225,6 +225,7 @@ void completeEdits() {
              R"(,"effects":{"grain_size":101})", R"(,"effects":{"vignette_roundness":-101})",
              R"(,"effects":{"grain_amount":1e999})", R"(,"effects":{"vignette_amount":null})",
              R"(,"denoise":{"raw_level":3})", R"(,"denoise":{"raw_level":1.0})", R"(,"denoise":{"chroma_mode":-1})",
+             R"(,"denoise":{"ai":{"enabled":true}})",
              R"(,"denoise":{"wavelet":{"enabled":1}})", R"(,"denoise":{"wavelet":{"luma":101}})",
              R"(,"denoise":{"wavelet":{"coarse":-1}})", R"(,"lens_correction":{"tca":0})",
              R"(,"lens_correction":{"profile_id":""})", R"(,"tone":{"contrast":1,"contrast":2})"})

@@ -261,6 +261,26 @@ struct EditorView: View {
                 if model.busy {
                     ProgressView().controlSize(.regular)
                     Text(model.file?.lastPathComponent ?? L10n.text("照片")).font(.headline).lineLimit(1)
+                } else if model.aiState.isRunning {
+                    ProgressView().controlSize(.regular)
+                    Text(model.aiState.progressTitle).font(.headline)
+                    Button(L10n.text("取消"), action: model.cancelAIDenoise)
+                        .accessibilityIdentifier("editor.ai.cancel")
+                } else if model.file != nil && aiNeedsRetry {
+                    Image(systemName: model.aiState == .cancelled ? "xmark.circle" : "exclamationmark.triangle")
+                        .font(.system(size: 30)).foregroundStyle(.secondary)
+                    Text(L10n.text(model.aiState == .cancelled ? "AI 降噪已取消。" : "AI 降噪失败")).font(.headline)
+                    if case .failed(let message) = model.aiState {
+                        Text(message).font(.callout).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center).textSelection(.enabled).frame(maxWidth: 420)
+                    }
+                    HStack {
+                        Button(L10n.text("重试"), action: model.requestAIDenoise)
+                            .disabled(!model.canStartAI)
+                            .accessibilityIdentifier("editor.ai.retry")
+                        Button(L10n.text("关闭 AI 降噪")) { model.setAIEnabled(false) }
+                            .accessibilityIdentifier("editor.ai.disable")
+                    }
                 } else if let error = model.error {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.yellow)
                     Text(L10n.text("操作失败")).font(.headline)
@@ -276,6 +296,13 @@ struct EditorView: View {
                         .accessibilityIdentifier("editor.empty.openRAW")
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var aiNeedsRetry: Bool {
+        switch model.aiState {
+        case .cancelled, .failed: return true
+        default: return false
         }
     }
 
@@ -362,12 +389,12 @@ struct EditorView: View {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
                 ForEach(ExportFormat.allCases) { format in
                     Button(format.title + "…") { model.export(format: format) }
-                        .disabled(model.result == nil || model.busy || model.previewOutdated || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                        .disabled(!model.canExport)
                 }
                 Divider()
                 Button(L10n.text("使用当前调整批量导出…")) {
                     if model.prepareBatch() { openWindow(id: "batch-export") }
-                }.disabled(model.result == nil || model.busy || model.previewOutdated || model.exporting || model.lookLibraryBusy || model.missingFilm || model.missingMasterRecipe || model.geometryDraft != nil)
+                }.disabled(!model.canExport)
                 if model.batch != nil {
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }
                 }

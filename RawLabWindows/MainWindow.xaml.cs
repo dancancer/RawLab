@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity);
     private readonly Library library=new();
     private LookLibrary? lookLibrary;
     private Exception? lookLibraryLoadError;
@@ -78,10 +78,15 @@ public partial class MainWindow : Window
     public MainWindow() : this(new UsageAnalytics()) { }
     public MainWindow(UsageAnalytics usageAnalytics) : this(usageAnalytics,null) { }
     internal MainWindow(string lookLibraryDirectory) : this(new UsageAnalytics(),lookLibraryDirectory) { }
-    private MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory)
+    internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null)
     {
         this.usageAnalytics = usageAnalytics;
+        this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
+            using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend);
+            worker.PrepareAI(identity.Source.Path,snapshot,progress);
+        });
         InitializeComponent();
+        InitializeAI();
         if (!LookLibrary.TryLoad(lookLibraryDirectory, out lookLibrary, out lookLibraryLoadError))
             lookLibrary = null;
         AutomationProperties.SetAutomationId(this,"MainWindow");

@@ -51,6 +51,13 @@ extension EditorModel {
     }
     func schedule(forceExact: Bool) {
         guard let file else { return }
+        synchronizeAI()
+        if settings.aiDenoiseEnabled && (aiState.isRunning || aiRequiresExplicitRetry) {
+            scheduler.invalidatePending()
+            previewOutdated = true
+            refreshBusy()
+            return
+        }
         if !settings.isDenoiseEnabled { cancelViewportResize() }
         guard !missingFilm, !missingMasterRecipe else {
             previewOutdated = true
@@ -151,6 +158,7 @@ extension EditorModel {
                 if completion == .publishExact || scheduler.latest?.id == request.id {
                     self.previewOutdated = true
                     self.error = failure.localizedDescription
+                    self.handleAIFailure(failure)
                 }
             } else if let neutral, let result {
                 let previousCanvas = geometryCanvasSize
@@ -158,6 +166,10 @@ extension EditorModel {
                 self.neutral = neutral
                 self.result = result
                 if completion == .publishExact { previewOutdated = false }
+                if request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
+                    self.aiState = .ready
+                    self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: request.value.settings)
+                }
                 if let draft = geometryDraft,
                    request.value.settings.geometrySettings == draft.previewGeometry,
                    request.value.settings.lensSettings == draft.lens {

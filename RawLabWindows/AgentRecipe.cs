@@ -7,6 +7,7 @@ internal sealed partial class RenderEngine
 {
     public string AgentRecipe(string path,Adjustments settings,string? look,string output,int? longEdge=null)
     {
+        if(settings.AIDenoiseEnabled)throw new NotSupportedException("Agent recipe v5 cannot represent AI denoise. Turn off AI denoise before copying the recipe.");
         var state=PrepareRecipe(path,settings);
         var raster=LibraryEntry.IsRaster(path);
         var request=state.Request(path,look,0,output,longEdge);

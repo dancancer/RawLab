@@ -1,0 +1,2 @@
+# 许可完整性测试使用上游原始字节，包括换行和空白。
+lutools/tests/fixtures/restormer-v1-LICENSE.txt -text -whitespace

@@ -16,6 +16,12 @@ enum MacAdjustmentTransfer {
     static func capture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                         context: MacAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
+        if snapshot.settings.aiDenoiseEnabled {
+            switch scope {
+            case .all, .modified: throw AdjustmentTransferError.incompatible("ai.copy_scope")
+            case .custom: break
+            }
+        }
         try snapshot.settings.validateResetValues()
         guard snapshot.masterRecipeID == snapshot.settings.masterRecipeID else {
             throw AdjustmentTransferError.invalidPayload("recipe identity")
@@ -43,6 +49,9 @@ enum MacAdjustmentTransfer {
                         context: MacAdjustmentTransferContext) throws -> PhotoEditState {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
         try payload.validate()
+        if target.settings.aiDenoiseEnabled && !payload.fields.isDisjoint(with: Field.denoiseFields) {
+            throw AdjustmentTransferError.incompatible("ai.target_denoise")
+        }
         try target.settings.validateResetValues()
         guard target.masterRecipeID == target.settings.masterRecipeID else {
             throw AdjustmentTransferError.invalidPayload("target recipe identity")

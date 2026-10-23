@@ -6,6 +6,11 @@ A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and
 
 ## 功能预览 / Preview
 
+可选实验构建提供原照片内的 DualDn AI 降噪，默认构建关闭。适用 RAW、模型准备、
+后台处理、缓存和已知限制见 [DualDn 构建与使用说明](../lutools/tools/dualdn/README.md)。
+Optional experimental builds provide inline DualDn AI denoising. See the linked guide for
+supported RAW inputs, model packaging, background processing and validation limits.
+
 单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、
 降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 浮点 RGB 写入 DNG 1.4。
 支持原尺寸及长边限制，不导出低分辨率预览。调整固化在像素中，不是可逐项撤销的

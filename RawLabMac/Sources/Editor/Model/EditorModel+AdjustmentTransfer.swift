@@ -8,6 +8,7 @@ enum AdjustmentSheetKind: String, Identifiable {
 extension EditorModel {
     func requestAdjustmentSheet(_ kind: AdjustmentSheetKind) {
         guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending,
+              kind == .history || !aiState.isRunning,
               kind == .history || file != nil else { return }
         guard ParameterValueField.resolvePendingInputs() else { return }
         if scheduler.interacting { setInteracting(false) }
@@ -33,6 +34,7 @@ extension EditorModel {
     }
 
     @discardableResult func copyAdjustments(scope: AdjustmentTransferScope) throws -> AdjustmentTransferPayload {
+        guard !aiState.isRunning else { throw RenderError.failed(L10n.text("当前照片的设置尚不可用。")) }
         guard let file, geometryDraft == nil else { throw AdjustmentTransferError.draftRequiresPreflight }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { throw AdjustmentTransferError.draftRequiresPreflight }
@@ -70,7 +72,7 @@ extension EditorModel {
                         guard let self else { return false }
                         guard path != excludingSource else { return false }
                         if self.file?.resolvingSymlinksInPath().standardizedFileURL.path != path { return path != activePath }
-                        return self.editRevision == revision && !self.dirty && self.geometryDraft == nil
+                        return self.editRevision == revision && !self.dirty && self.geometryDraft == nil && !self.aiState.isRunning
                     }
                     return Thread.isMainThread ? check() : DispatchQueue.main.sync(execute: check)
                 }, resolveMetadata: { state in

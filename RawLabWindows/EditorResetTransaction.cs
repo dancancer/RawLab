@@ -34,10 +34,12 @@ public sealed class EditorResetTransaction
     public string? Reason { get; }
     public IReadOnlyList<string> MaterializedFields { get; }
     public bool TargetsDraft => context.Draft!=null;
+    public EditorResetScope Scope { get; }
     public SavedEdit? Candidate => candidate is {} value ? value with{Settings=value.Settings.Copy()} : null;
 
-    private EditorResetTransaction(EditorEditSource source, EditorResetContext context, EditorResetCandidate prepared)
+    private EditorResetTransaction(EditorEditSource source, EditorResetContext context, EditorResetCandidate prepared,EditorResetScope scope)
     {
+        Scope=scope;
         this.source=source;this.context=context;Status=prepared.Status;RequiresConfirmation=prepared.RequiresConfirmation;Reason=prepared.Reason;MaterializedFields=prepared.MaterializedFields ?? Array.Empty<string>();
         candidate=prepared.Candidate is {} value ? value with{Settings=value.Settings.Copy()} : null;
     }
@@ -50,13 +52,13 @@ public sealed class EditorResetTransaction
             scope.Kind==EditorResetKind.Tool && scope.Tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens;
         if (scope.Kind==EditorResetKind.Tool && geometry && context.Draft is {} currentDraft &&
             (scope.Tool==EditorAdjustmentTool.Geometry) != (currentDraft.Tool==TransformTool.Geometry))
-            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Geometry reset requires a matching active draft."));
+            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Geometry reset requires a matching active draft."),scope);
         if(context.Draft!=null && !geometry)
-            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Resolve the active draft before preparing this reset."));
+            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Resolve the active draft before preparing this reset."),scope);
         if(geometry && context.Draft==null)
-            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Geometry reset requires an active draft."));
+            return new(source,context,new(EditorResetStatus.Blocked,Reason:"Geometry reset requires an active draft."),scope);
         var projected=context.Draft is {} draft ? committed with{Settings=committed.Settings.Copy() with{Geometry=draft.Geometry,Lens=draft.Lens}} : committed;
-        return new(source,context,EditorAdjustmentRules.PrepareReset(scope,projected));
+        return new(source,context,EditorAdjustmentRules.PrepareReset(scope,projected),scope);
     }
 
     public bool Matches(string file, long openRevision, long editRevision, SavedEdit current, EditorResetContext context) =>

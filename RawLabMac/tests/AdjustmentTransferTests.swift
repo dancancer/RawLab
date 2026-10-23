@@ -27,6 +27,7 @@ struct AdjustmentTransferTests {
     }
 
     static func main() throws {
+        try aiDenoiseBoundary()
         try postRGBCompatibility()
         try scopesAndFreeze()
         try recipeConversions()
@@ -36,6 +37,27 @@ struct AdjustmentTransferTests {
         try independentRequestFields()
         try serialization()
         try sharedFixtures()
+    }
+
+    static func aiDenoiseBoundary() throws {
+        var source = Adjustments(); source.aiDenoiseEnabled = true; source.exposure = 0.5
+        rejects("All scope cannot silently omit active AI denoising") {
+            _ = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+        }
+        rejects("Modified scope cannot silently omit active AI denoising") {
+            _ = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        }
+        let exposure = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(source), context: raw)
+        var target = Adjustments(); target.aiDenoiseEnabled = true
+        let result = try MacAdjustmentTransfer.prepare(payload: exposure, target: state(target), context: raw)
+        check(result.settings.aiDenoiseEnabled && result.settings.exposure == 0.5,
+              "Explicit ordinary fields preserve unselected target AI state")
+        let denoise = try MacAdjustmentTransfer.capture(scope: .custom([.chromaDenoise]), snapshot: state(), context: raw)
+        rejects("Ordinary denoise cannot be reported as applied while target AI overrides it") {
+            _ = try MacAdjustmentTransfer.prepare(payload: denoise, target: state(target), context: raw)
+        }
+        check(try MacAdjustmentTransfer.prepare(payload: denoise, target: state(), context: raw) == state(),
+              "Existing AI-off denoise behavior remains unchanged")
     }
 
     static func postRGBCompatibility() throws {

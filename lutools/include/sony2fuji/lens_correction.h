@@ -44,7 +44,9 @@ public:
     ~LensCorrectionDatabase();
     std::vector<LensProfile> profiles(const LensMetadata& metadata) const;
     LensCorrectionReport inspect(const LensMetadata& metadata, const LensCorrectionOptions& options) const;
+    const std::string& cacheIdentity() const { return cacheIdentity_; }
 private:
+    std::string cacheIdentity_;
     LensCorrectionDatabase();
     struct Impl;
     std::unique_ptr<Impl> impl_;

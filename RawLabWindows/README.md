@@ -49,6 +49,44 @@ Release 包默认带阿里云 RUM PC SDK 0.4.4（`alibabacloud_rum.dll`），使
 Debug 构建不带 SDK。
 未签名，不自动安装、不修改系统文件关联。第三方许可证与说明随程序复制。
 
+### 实验性 AI 降噪
+
+AI 降噪与 Mac 共用 float32 模型、640 分块、颜色桥接和缓存协议。普通 Bayer 使用
+DualDn，噪声参数来自匹配标定或当前 RAW 的通用估计；X-Trans、线性/Stage3 DNG 及
+不能可靠进入 DualDn 的输入使用 Restormer RGB 路径。支持范围依赖原生全尺寸解码，
+预算上限为 128 MP，不等于所有机型均完成画质认证。
+普通构建不包含模型，也不显示实验入口。使用
+[模型导出工具](../lutools/tools/dualdn/README.md)生成基础 ONNX 包后构建：
+
+```powershell
+./RawLabWindows/build.ps1 -SelfContained -DualDnModel 'C:/Models/DualDn'
+# 已准备好固定版本运行库时，可避免重新下载：
+./RawLabWindows/build.ps1 -SelfContained -DualDnModel 'C:/Models/DualDn' -OnnxRuntimeRoot 'C:/SDK/onnxruntime-directml'
+```
+
+脚本校验模型与运行库，随包复制模型、运行库及许可证。Windows 使用 ONNX Runtime
+DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependencies.ps1`。
+模型源目录可以包含 Apple Core ML 资源；Windows 打包时移除相应 manifest 字段，
+只交付 ONNX 图。可加 `-NoRumSdk` 构建离线测试包。
+
+在“降噪”面板开启 AI 后，首次准备在后台执行，可取消或重试。成功后才保存启用状态，
+预览与导出使用同一份全尺寸结果；曝光和外观调整复用缓存，白平衡改变重算 RGB 阶段，
+镜头校正改变重算通用 RGB 路径。
+普通降噪参数会保留，关闭 AI 后恢复。缓存位于 `%LOCALAPPDATA%/RawLab/Cache/DualDn`。
+批量导出保留 AI 启用状态与请求后端；目标照片必须已有对应结果，缺失时明确失败，
+不会自动跳过 AI。Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。
+
+设置中的 CPU 使用 ONNX CPU；Auto 优先使用硬件 DirectML，失败时整阶段回退 CPU；
+Force 要求 RAW/RGB 网络使用 DirectML，软件适配器和不可用硬件会报错。
+官方 ISP 始终使用 CPU。DirectML 要求可用的 D3D12 硬件和驱动；普通显影的 D3D11
+后端与 AI 推理后端分别记录。算法边界见[接入契约](../docs/architecture/dualdn-inline-denoise.md)。
+
+带模型构建的 `-Test` 会加入 DirectML 数值检查及 AI 窗口生命周期检查。
+完整照片验证需要另行使用受支持样片运行 `dualdn_probe`，再执行测试程序的
+`--ai-denoise <model> <raw> <cache> <CPU|DirectML>`；它检查缓存复用、实际后端、
+普通降噪旁路、自动曝光、预览与导出一致性和白平衡失效。界面六语布局可单独运行
+`--ai-panel <output>`。硬件检查通过范围以实际设备和日志为准。
+
 ### 从 Mac 远程编译
 
 已准备好的 Windows x64 OpenSSH 编译机可直接构建当前工作区，不需要先提交或切换到 Windows 真机：

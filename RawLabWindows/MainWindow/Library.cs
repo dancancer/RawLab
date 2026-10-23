@@ -171,7 +171,7 @@ public partial class MainWindow
         RemoveRootMenu.IsEnabled=isRoot; RefreshRootMenu.IsEnabled=isRoot;
         ApplyTreeEntryMenu.IsEnabled=CanApplyCurrentSettings;
     }
-    private bool CanApplyCurrentSettings => file != null && result != null && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && LookAvailable;
+    private bool CanApplyCurrentSettings => file != null && result != null && !AIBlocksOutput && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && LookAvailable;
     private void PhotoContextMenuOpened(object sender, RoutedEventArgs e)
     {
         if(sender is not ContextMenu menu) return;
@@ -261,7 +261,7 @@ public partial class MainWindow
         var entry=ResolveContextEntry(sender);
         if (entry == null || string.IsNullOrEmpty(entry.Path)) return;
         if (file == null) { SetStatus(() => Loc.Text("请先打开一张照片作为调整来源。"),true); return; }
-        if (exporting || scheduler.Busy || previewResize.IsEnabled || !exactReady || result == null || transform.Active)
+        if (AIBlocksOutput || exporting || scheduler.Busy || previewResize.IsEnabled || !exactReady || result == null || transform.Active)
         {
             SetStatus(() => Loc.Text("精确显影完成后才能应用当前设置。"),true); return;
         }

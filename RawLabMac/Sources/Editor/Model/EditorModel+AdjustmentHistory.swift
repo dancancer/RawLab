@@ -120,7 +120,10 @@ extension EditorModel {
         case .draftRequiresPreflight: return L10n.text("请先应用或放弃未完成的输入和几何草稿。")
         case .missingLook: return L10n.text("目标所需的外观不可用，请先导入外观。")
         case .unrepresentable: return L10n.text("目标无法保留未选参数，请调整复制范围。")
-        case .incompatible: return L10n.text("所选调整与目标不兼容，请调整范围或跳过目标。")
+        case .incompatible(let field):
+            if field == "ai.copy_scope" { return L10n.text("AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。") }
+            if field == "ai.target_denoise" { return L10n.text("目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。") }
+            return L10n.text("所选调整与目标不兼容，请调整范围或跳过目标。")
         case .unsupportedVersion, .invalidPayload: return L10n.text("调整内容无法读取，请重新复制。")
         case nil: return error?.localizedDescription ?? L10n.text("操作未完成，请重试。")
         }

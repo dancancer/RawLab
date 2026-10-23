@@ -18,6 +18,7 @@ cmake-build-*/
 !cmake/download-archive.cmake
 !cmake/tiff-dependencies.cmake
 !cmake/denoise-dependencies.cmake
+!cmake/ai-denoise.cmake
 !CMakeLists.txt
 !cmake/patch-libraw.cmake
 
