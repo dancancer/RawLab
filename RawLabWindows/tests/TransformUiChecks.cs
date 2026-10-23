@@ -183,6 +183,7 @@ internal static class TransformUiChecks
                 !Get<bool>(window,"editDirty") && !Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled &&
                 new EditStore(Path.Combine(directory,"edits")).Find(photo)!.Settings.Geometry?.CropWidth==.63,
                 leaveFailure ?? "Retry in the retained leave dialog durably applies once and executes the original photo destination once");
+            Console.WriteLine("WAIT exact preview after applying draft and leaving photo");
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(Get<long>(window,"openRevision")==leaveOpenRevision+1,"Completed leave does not replay its original photo navigation");
             window.OpenFile(photo);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
@@ -199,7 +200,21 @@ internal static class TransformUiChecks
                 EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,$"raw-{size.Width}.png"));
             }
         }
-        finally{if(Get<TransformDraft>(window,"transform").Active)Invoke(window,"CancelTransformDraft");Set(window,"editStore",store);window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();}
+        catch(Exception error)
+        {
+            // 清理也可能等待 native worker，先落下原始异常和状态，避免被关闭等待掩盖。
+            var scheduler=Get<object>(window,"scheduler");
+            object? Scheduler(string property)=>scheduler.GetType().GetProperty(property)!.GetValue(scheduler);
+            Console.Error.WriteLine($"Transform UI failed: {error}\nfile={Get<string>(window,"file")}; openRevision={Get<long>(window,"openRevision")}; exactReady={Get<bool>(window,"exactReady")}; schedulerBusy={Scheduler("Busy")}; schedulerRevision={Scheduler("Revision")}; schedulerActive={Scheduler("Active")}; draftReady={Get<bool>(window,"transformPreviewReady")}; resizePending={Get<DispatcherTimer>(window,"previewResize").IsEnabled}; exportEnabled={window.ExportPng.IsEnabled}; renderFailed={Get<bool>(window,"renderFailed")}; status={window.Status.Text}");
+            throw;
+        }
+        finally
+        {
+            Console.WriteLine("CLEANUP transform UI: cancel draft, save, close window");
+            if(Get<TransformDraft>(window,"transform").Active)Invoke(window,"CancelTransformDraft");
+            Set(window,"editStore",store);window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();
+            Console.WriteLine("CLEANUP transform UI completed");
+        }
     }
     private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
     private static void Set(object owner,string name,object value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);

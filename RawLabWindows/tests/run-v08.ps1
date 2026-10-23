@@ -3,8 +3,10 @@ param([Parameter(Mandatory=$true)][string]$RawPath,
       [Parameter(Mandatory=$true)][string]$NativeArtifacts,
       [string]$DotNet='dotnet',
       [string]$DenoiseRaw='',
-      [string]$Only='')
+      [string]$Only='',
+      [ValidateRange(1,86400)][int]$CheckTimeoutSeconds=600)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'CheckProcess.ps1')
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $results=Join-Path $repo 'build/windows-v08-results'
 if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng'}
@@ -13,27 +15,23 @@ $summary=@()
 $selected=@()
 $names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
+function Record-CheckResult([string]$Name,$Result) {
+    $script:summary+=@{name=$Name;exitCode=$Result.exitCode;log=($Name+'.log');timedOut=$Result.timedOut;durationSeconds=$Result.durationSeconds;pid=$Result.pid}
+    ConvertTo-Json -InputObject @($script:summary) -Depth 4 | Set-Content (Join-Path $results 'summary.json') -Encoding utf8
+}
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
     if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
     $log=Join-Path $results ($Name+'.log')
-    $preference=$ErrorActionPreference
-    Push-Location $repo
-    try {
-        $ErrorActionPreference='Continue'
-        $global:LASTEXITCODE=$null
-        & $DotNet @Arguments 2>&1 | ForEach-Object {"$_"} | Out-File -FilePath $log -Encoding utf8 -Width 4096 -ErrorAction Stop
-        $code=if($null -eq $LASTEXITCODE){1}else{[int]$LASTEXITCODE}
-    }
-    finally {$ErrorActionPreference=$preference;Pop-Location}
-    $script:summary+=@{name=$Name;exitCode=$code;log=$log}
-    Write-Host "$Name exit=$code log=$log"
-    if($Name -like 'build*' -and $code -ne 0){throw 'Managed WPF build failed.'}
+    $result=Invoke-CheckProcess -Name $Name -Executable $DotNet -Arguments $Arguments -Directory $repo -Log $log -TimeoutSeconds $CheckTimeoutSeconds
+    Record-CheckResult $Name $result
+    if($Name -like 'build*' -and $result.exitCode -ne 0){throw 'Managed WPF build failed.'}
 }
 function Resolve-Target([string]$Project){
-    $global:LASTEXITCODE=$null
-    $value=@(& $DotNet msbuild $Project -getProperty:TargetDir -p:Configuration=Release)
-    if($null -eq $LASTEXITCODE -or $LASTEXITCODE -ne 0){throw "Cannot resolve test output: $Project"}
-    $path=($value -join [Environment]::NewLine).Trim()
+    $name='target-'+[IO.Path]::GetFileNameWithoutExtension($Project)
+    $result=Invoke-CheckProcess -Name $name -Executable $DotNet -Arguments @('msbuild',$Project,'-getProperty:TargetDir','-p:Configuration=Release') -Directory $repo -Log (Join-Path $results ($name+'.log')) -TimeoutSeconds $CheckTimeoutSeconds -CaptureOutput
+    Record-CheckResult $name $result
+    if($result.exitCode -ne 0){throw "Cannot resolve test output: $Project (exit=$($result.exitCode), timeout=$($result.timedOut))"}
+    $path=($result.stdout -join [Environment]::NewLine).Trim()
     if(!$path){throw "Empty test output: $Project"}
     return $path
 }

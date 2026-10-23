@@ -167,8 +167,8 @@ internal static partial class EditorReviewChecks
                     check(window.Status.Text==batch.Job.Error,"Synchronous journal failure reaches the main-window error state: "+foreground);
                     if(foreground)
                     {
-                        check(!window.AdjustmentPanel.IsEnabled && !window.ExportPng.IsEnabled && window.BusyIndicator.Visibility==Visibility.Visible,
-                            "Cancelled owner close retains the foreground busy gate");
+                        check(!window.AdjustmentPanel.IsEnabled && !window.ExportPng.IsEnabled && window.BusyIndicator.Visibility==Visibility.Collapsed,
+                            "Cancelled owner close retains the foreground gate without claiming an active preview");
                         held.Release();InteractionChecks.PumpUntil(()=>import!.IsCompleted);import!.GetAwaiter().GetResult();
                     }
                     InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);

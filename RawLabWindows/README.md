@@ -268,10 +268,16 @@ VM 和 125 真实主机的原生通过结果、独立 PID/LUID 显存采样及�
 `run-v08.ps1 -Only` 接受逗号分隔的套件名，忽略首尾空格、大小写和重复项。省略或空字符串运行全部套件；
 非空但仅含空格/逗号的值、未知名称或未实际运行的选择项都会失败。构建始终执行。
 每次执行先清空旧 summary，提前失败也留下本轮非零结果，不会沿用上次 PASS。
+每个构建、输出目录查询和子测试默认最多运行 600 秒，可用 `-CheckTimeoutSeconds` 调整。
+stdout/stderr 实时写入终端和各自的检查日志；每个检查结束立即更新 summary，记录 PID、耗时和超时状态。
+超时终止该检查的进程树，以退出码 124 记录失败。非构建子测试失败后继续收集后续独立结果；
+构建或输出目录查询失败则停止，因为后续测试无法使用有效产物。summary 中的日志名相对于所在目录。
+UI 测试在本地交互桌面通过后再提交，CI 只运行该入口中的模型和原生/CLI 套件。
 可单独验证真实 PowerShell 入口（使用私有外部命令替身，不执行产品渲染）：
 
 ```powershell
 ./RawLabWindows/tests/RunnerSelectionChecks.ps1 -Output 'build/windows-runner-selection'
+./RawLabWindows/tests/CheckProcessChecks.ps1 -Output 'build/windows-process-checks'
 ```
 
 `--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的
