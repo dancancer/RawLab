@@ -116,7 +116,7 @@ payload 或 native record 的编辑参数部分。六组是 UI/reset 归属；�
 | `light.black_point` / `light.white_point` | proposed | 方案候选 core `[-1,1]`，不改 LibRaw sensor black/white；当前 request v2/C ABI 没有该配置。 |
 | `color.vibrance` | proposed | 方案候选 core `[-1,1]`；当前 photo effects/HSL v1 不包含该字段。 |
 | `color.grading.shadows/midtones/highlights` | proposed | 方案候选 hue/saturation；当前无 `color_grading_config`。 |
-| `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v4 只有 scalar `s_curve`。 |
+| `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v4/v5 均只有 scalar `s_curve`。 |
 | `effects.clarity` / `effects.dehaze` | proposed | 方案候选 core `[-1,1]`；当前无 atmosphere config，算法数值合同和质量集未冻结。 |
 
 来源：[总技术方案 2.1](technical-design.md#21-agent-v5-与-additive-c-abi)。在真实核心、parser/serializer、能力查询、native adapter、保存、Agent 和回归全部接通前，能力响应不得宣告这些字段；旧 schema 和旧像素行为必须保持。

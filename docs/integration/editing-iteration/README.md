@@ -62,7 +62,7 @@ flowchart TD
     Q --> A[清晰度与去朦胧 ITER-10]
     UI --> H[HSL probe 与目标调整 ITER-07]
     P --> H
-    CLI[现有 CLI v4] --> MCP[MCP ITER-01]
+    CLI[现有 CLI v1～v5] --> MCP[MCP ITER-01]
     Release[可信发行身份与 feed] --> Update[桌面更新 ITER-11]
 ```
 
