@@ -1,4 +1,9 @@
-# Continuous Verification
+# Verification SOP
+
+This is the project procedure for local checks, automatic CI and requested
+verification. [Development rules](../../AGENTS.md) and
+[integration rules](integration-workflow.md) use this procedure; workflow changes
+must update it together with the executable policy tests.
 
 The [workflow](../../.github/workflows/ci.yml) verifies PRs targeting `development`,
 `release/**` or `main`, pushes to `development`, and explicitly requested manual
@@ -36,6 +41,32 @@ For example, choose `windows` + `models` for an edit-state regression, `macos` +
 `native` for native render/CLI parity, or `all` + `full` for a pre-release run.
 A build prerequisite is retained when a selected test needs its native artifacts;
 this is not reuse of an unverified product binary.
+
+## Execution Procedure
+
+1. Before commit, identify the affected behavior and run its local regressions.
+   UI changes require the affected local UI tests to pass. Record source version,
+   commands, results and unverified platforms in the PR; retain logs and screenshots
+   in the task evidence directory outside tracked source.
+2. For an ordinary PR or `development` push, let the automatic contracts and
+   affected-platform models run. Do not add a full build, native suite or scheduled
+   full run merely because a commit was pushed.
+3. When a product build or specialized regression is needed, open **Actions →
+   Hosted CI → Run workflow**, select the intended branch, then choose `platform`
+   and `checks` from the tables above. Verify the resulting selection summary and
+   checkout SHA before treating the run as evidence. `contracts` is shared and
+   ignores the platform selector; use `all` + `full` for complete non-UI coverage.
+4. Before release or hotfix acceptance, require the automatic full gate for the
+   release/hotfix PR, plus the applicable local UI/device matrix. A requested
+   `all` + `full` run may provide earlier validation, but does not replace required
+   PR checks or grant release authorization.
+5. Before merge, check the current source/base, required automatic result and any
+   requested specialized results. A failed, cancelled or unfinished check is not a
+   pass. A manual partial result does not satisfy the automatic aggregate gate.
+6. After a change, rerun only checks whose source, configuration or integration
+   assumptions changed. Documentation-only updates require content, link and diff
+   checks; preserve earlier native/UI evidence with its actual tested SHA and
+   explain why it still applies, without labeling it as CI on the new head.
 
 ## Checks and Evidence
 
@@ -130,7 +161,7 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 - Mac dependencies include source-built dynamic GLib/Lensfun rather than a
   higher-minimum Homebrew bottle. App/bundled-dylib architecture and minimum OS
   are checked by the existing bundle gate. The 14.0-target picker model checks
-  run on both architectures; native picker UI checks run locally.
+  run in the arm64 model route; native picker UI checks run locally.
 
 ## Safety and Results
 
@@ -204,7 +235,8 @@ offline. Hosted jobs remain subject to GitHub's account concurrency limits.
 The selected group determines coverage on either runner. Model runs do not build
 the app or native core; build/native/full groups retain the complete product build
 and their requested non-UI suites. Manual runs have a separate result name. A PR's
-Windows Server result does not replace the exact-merge Windows 11 push check.
+Windows Server model result does not replace a requested Windows 11 build/native
+run or the automatic check on the resulting `development` push SHA.
 Neither route establishes physical GPU or interactive-desktop acceptance.
 
 The first Windows setup step uses `runner.environment` to select paths and limits.

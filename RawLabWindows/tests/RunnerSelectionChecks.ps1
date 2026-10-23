@@ -88,3 +88,5 @@ try{
     Write-Output "PASS $checks runner selection checks; fixtures: $root"
 }
 finally{foreach($key in $saved.Keys){[Environment]::SetEnvironmentVariable($key,$saved[$key])}}
+# 失败探针会留下非零 LASTEXITCODE；只有全部断言通过才向 CI 返回成功。
+exit 0
