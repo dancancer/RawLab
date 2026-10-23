@@ -71,6 +71,21 @@ final class RawEditorViewModel: ObservableObject {
     var editRecordMetadata: EditorRecordMetadata?
     var persistedEditorSettings: PersistedEditorSettings?
     var failedDraftSource: EditorEditSource?
+    var loadedEditRecord: VersionedPhotoEdit?
+    var adjustmentSession: IOSAdjustmentTransferSession?
+    var adjustmentInteraction: IOSAdjustmentInteraction?
+    var adjustmentSourceValidator: (() throws -> Void)?
+    var hasAdjustmentDraft = false
+    @Published var adjustmentInteractionRejected = false
+    @Published var adjustmentReloadRequired = false
+    @Published var adjustmentHistoryRevision = UUID()
+    @Published var adjustmentRestoredSettings: RawSettings?
+    @Published var adjustmentHistoryResults: [IOSAdjustmentTransferOutcome] = []
+    var adjustmentHistoryRequest: IOSAdjustmentHistoryRequest?
+    let adjustmentQueue = DispatchQueue(label: "com.rawlab.adjustment-transfer", qos: .userInitiated)
+    @Published var adjustmentPreparing = false
+    var adjustmentPreparationID = UUID()
+    var adjustmentClipboardSourceName: String?
     var editNoticeID = UUID()
     var basePreviewGeometry = GeometrySettings()
     var basePreviewProcessing = ProcessingIdentity.current
@@ -111,7 +126,11 @@ final class RawEditorViewModel: ObservableObject {
         self.resultDelivery = resultDelivery
         self.exportQueue = exportQueue
         self.importQueue = importQueue
-        do { self.editPersistence = try editPersistence ?? EditPersistence.appStore() }
+        do {
+            let store = try editPersistence ?? EditPersistence.appStore()
+            self.editPersistence = store
+            adjustmentSession = IOSAdjustmentTransferSession(store: store)
+        }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }
 

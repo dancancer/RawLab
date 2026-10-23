@@ -105,6 +105,7 @@ extension ContentView {
             viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
                                            includeHistogram: false, quality: .interactive)
         } else {
+            _ = viewModel.saveCurrentSettings(newSettings)
             viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
         }
     }
@@ -225,11 +226,27 @@ extension ContentView {
             return
         }
         let wasEditing = isAdjustingSlider
+        if !isEditorDraftActive {
+            if editing && !wasEditing {
+                guard viewModel.beginAdjustmentInteraction(settings: settings) else { return }
+            } else if !editing && (wasEditing || viewModel.adjustmentInteractionRejected) {
+                _ = viewModel.endAdjustmentInteraction(settings: settings)
+            }
+        }
         isAdjustingSlider = editing
         updateRulerFocus(editing: editing, wasEditing: wasEditing)
         if !editing {
             viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
         }
+    }
+
+    func cancelSliderInteraction() {
+        if let original = viewModel.cancelAdjustmentInteraction() {
+            settings = original
+            viewModel.updatePreview(settings: original, includeHistogram: true, quality: .final)
+        }
+        isAdjustingSlider = false
+        cancelRulerFocus()
     }
 
     func photoImportButton(isEnabled: Bool) -> some View {

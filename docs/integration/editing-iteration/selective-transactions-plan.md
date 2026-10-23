@@ -110,7 +110,8 @@ session 的 prepare/apply/retry、undoPhoto/undoTransaction/redoPhoto/redoTransa
   整批。历史冲突/目标失败独立于当前照片的 autosave error，成功回执不覆盖之后的脏编辑。
 - iOS 使用 core multiplier 和独立运行时 WB 校准，不能直接复用 Mac native DTO。它没有
   Mac 的 recipe settings version 或 FBDD 存储字段；旧 HSL 和降噪差异必须由真实 adapter
-  映射/明确阻挡。iOS 旧 `noiseReduction` 是 post-RGB request 值，不能冒充 raw FBDD；其
-  非零记录的完整复制仍需补充逻辑字段与向量后再冻结四端格式。
+  映射/明确阻挡。iOS 旧 `noiseReduction` 是 post-RGB request 值，不能冒充 raw FBDD；已补充独立的
+  `detail.denoise.post_rgb` 字段与 Mac/iOS 模型向量；Mac 非零请求明确阻挡。iOS 原生
+  接入仍在验证，Android/Windows 继续按实际端能力接入后才冻结四端格式。
 - Android/Windows 仍需 native adapter、条件保存与会话历史、原生操作入口及对应验证；
   当前 Mac 模型测试不能代替它们。

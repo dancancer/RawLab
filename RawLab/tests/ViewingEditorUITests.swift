@@ -4,10 +4,229 @@ import CoreFoundation
 final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
-    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil) -> XCUIApplication {
+
+    private func openAdjustmentAction(_ id: String, app: XCUIApplication) {
+        app.buttons["editor.privacy"].tap()
+        let labels = ["adjustment.history.undo": "Undo", "adjustment.history.redo": "Redo",
+                      "adjustment.copy.open": "Copy Adjustments", "adjustment.paste.open": "Paste Adjustments",
+                      "adjustment.history.open": "Session History"]
+        let action = app.buttons[id].exists ? app.buttons[id] : app.buttons[labels[id] ?? id]
+        XCTAssertTrue(action.waitForExistence(timeout: 5), app.debugDescription)
+        action.tap()
+    }
+
+    private func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
+        for _ in 0..<8 {
+            if element.exists && element.isHittable { return }
+            app.swipeUp(velocity: .slow)
+        }
+        XCTFail("Unreachable form control: \(element.identifier)\n\(app.debugDescription)")
+    }
+
+    private func toggleField(_ element: XCUIElement) {
+        let previous = element.value as? String
+        let nativeSwitch = element.switches.firstMatch
+        if nativeSwitch.exists { nativeSwitch.tap() } else { element.tap() }
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in element.value as? String != previous }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
+    }
+
+    private func setExposure(_ value: String, app: XCUIApplication) {
+        app.buttons["adjustment.value"].tap()
+        let wheel = app.pickerWheels.firstMatch
+        XCTAssertTrue(wheel.waitForExistence(timeout: 5))
+        wheel.adjust(toPickerWheelValue: "Exposure, \(value) EV")
+        app.buttons["adjustment.wheel.apply"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false }
+    }
+
+    func testAdjustmentGestureHistoryAndFrozenPaste() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.light"].tap()
+        let ruler = app.descendants(matching: .any).matching(identifier: "adjustment.ruler").firstMatch
+        XCTAssertTrue(ruler.waitForExistence(timeout: 5))
+        let original = receipt(app)["exposure"] as! Double
+        let before = (receipt(app)["saves"] as! [[String: Any]]).count
+        let start = ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)),
+                    withVelocity: .slow, thenHoldForDuration: 0.8)
+        wait(app) { $0["ready"] as? Bool == true && $0["historyCount"] as? Int == 1 }
+        let dragged = receipt(app)["exposure"] as! Double
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "a ruler drag must not summon the text keyboard")
+        XCTAssertNotEqual(dragged, original)
+        XCTAssertEqual((receipt(app)["saves"] as! [[String: Any]]).count, before + 1,
+                       "a real long native drag creates one successful save")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == original }
+        openAdjustmentAction("adjustment.history.redo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == dragged }
+        setExposure("+0.75", app: app)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 2)
+        openAdjustmentAction("adjustment.copy.open", app: app)
+        XCTAssertTrue(app.buttons["adjustment.copy.clear"].waitForExistence(timeout: 5))
+        app.buttons["adjustment.copy.clear"].tap()
+        app.descendants(matching: .any).matching(identifier: "adjustment.group.light").firstMatch.tap()
+        let exposureField = app.switches["adjustment.field.light.exposure"]
+        XCTAssertTrue(exposureField.waitForExistence(timeout: 5)); toggleField(exposureField)
+        let colorGroup = app.descendants(matching: .any).matching(identifier: "adjustment.group.color").firstMatch
+        revealFormControl(colorGroup, app: app); colorGroup.tap()
+        let hueGroup = app.descendants(matching: .any).matching(identifier: "adjustment.axis.hue").firstMatch
+        revealFormControl(hueGroup, app: app); hueGroup.tap()
+        let red = app.switches["adjustment.field.color.hsl.hue.red"]
+        revealFormControl(red, app: app); toggleField(red)
+        let copy = app.buttons["adjustment.copy.confirm"]
+        revealFormControl(copy, app: app)
+        XCTAssertTrue(copy.isEnabled, app.debugDescription)
+        capture(app, "adjustment-selected-copy-fields")
+        copy.tap()
+        wait(app) { $0["ready"] as? Bool == true }
+        guard let clipboard = receipt(app)["clipboard"] as? [String: Any] else {
+            capture(app, "adjustment-copy-failed")
+            XCTFail("Copy did not produce a payload. \(receipt(app))\n\(app.debugDescription)")
+            return
+        }
+        let values = clipboard["values"] as! [String: Any]
+        XCTAssertEqual(Set(values.keys), ["light.exposure", "color.hsl.hue.red"])
+        XCTAssertEqual(values["light.exposure"] as? Double, 0.75)
+        let historyAfterCopy = receipt(app)["historyCount"] as! Int
+        XCTAssertEqual(historyAfterCopy, 2, "copy and range selection never create edit history")
+        setExposure("+0.90", app: app)
+        openAdjustmentAction("adjustment.paste.open", app: app)
+        app.buttons["adjustment.paste.preflight"].tap()
+        let apply = app.buttons["adjustment.paste.apply"]
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in apply.isEnabled }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 30), .completed)
+        revealFormControl(apply, app: app); apply.tap()
+        app.buttons["adjustment.transfer.close"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == 0.75 }
+        XCTAssertEqual(receipt(app)["crop"] as? Double, 0.8, "unselected crop survives a custom paste")
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, historyAfterCopy + 2)
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && abs(($0["exposure"] as? Double ?? -99) - 0.9) < 1e-9 }
+        openAdjustmentAction("adjustment.history.redo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == 0.75 }
+        capture(app, "adjustment-native-gesture-custom-copy-paste-history")
+    }
+
+    private func copyExposure(_ app: XCUIApplication) {
+        openAdjustmentAction("adjustment.copy.open", app: app)
+        XCTAssertTrue(app.buttons["adjustment.copy.clear"].waitForExistence(timeout: 5))
+        app.buttons["adjustment.copy.clear"].tap()
+        app.descendants(matching: .any).matching(identifier: "adjustment.group.light").firstMatch.tap()
+        toggleField(app.switches["adjustment.field.light.exposure"])
+        let copy = app.buttons["adjustment.copy.confirm"]
+        revealFormControl(copy, app: app); copy.tap()
+        wait(app) { $0["ready"] as? Bool == true }
+    }
+
+    func testAdjustmentFileTargetsPartialRetryAndHistory() {
+        let app = launch(language: "en", adjustmentFixtures: true)
+        app.buttons["editor.group.light"].tap()
+        copyExposure(app)
+        setExposure("+0.90", app: app)
+        openAdjustmentAction("adjustment.paste.open", app: app)
+        app.buttons["adjustment.paste.chooseFiles"].tap()
+        let appFolder = app.cells["RawLab, Container"]
+        let local = app.cells["DOC.sidebar.item.On My iPhone"]
+        if !appFolder.waitForExistence(timeout: 3) && !local.exists {
+            let browse = app.buttons["Browse"]
+            if browse.exists { browse.tap() }
+        }
+        if local.exists { local.tap() }
+        if appFolder.waitForExistence(timeout: 5) { appFolder.tap() }
+        let fixture = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "ITER03-target-B")).firstMatch
+        XCTAssertTrue(fixture.waitForExistence(timeout: 10), app.debugDescription)
+        fixture.tap()
+        if app.buttons["Open"].waitForExistence(timeout: 3) { app.buttons["Open"].tap() }
+        XCTAssertTrue(app.buttons["adjustment.paste.preflight"].waitForExistence(timeout: 10))
+        app.buttons["adjustment.paste.preflight"].tap()
+        let apply = app.buttons["adjustment.paste.apply"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in apply.isEnabled }, object: nil)], timeout: 30), .completed)
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.iter03.fail-target" as CFString), nil, nil, true)
+        wait(app) { ($0["failingTarget"] as? String ?? "").hasPrefix("content:") }
+        revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 && $0["targetStoredExposure"] as? Double == -0.2 }
+        let undo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "adjustment.transaction.undo.")).firstMatch
+        revealFormControl(undo, app: app); undo.tap()
+        wait(app) { abs(($0["sourceStoredExposure"] as? Double ?? -99) - 0.9) < 1e-9 }
+        let revisionAfterUndo = receipt(app)["sourceStoredRevision"] as! String
+        revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["targetStoredExposure"] as? Double == 0.5 }
+        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, revisionAfterUndo,
+                       "retrying B does not replay the cached successful A receipt after A was undone")
+        XCTAssertEqual(receipt(app)["sourceStoredExposure"] as! Double, 0.9, accuracy: 1e-9)
+        XCTAssertEqual(receipt(app)["targetStoredCrop"] as? Double, 0.6)
+        capture(app, "adjustment-multiple-target-partial-failure-undo-retry")
+        revealFormControl(undo, app: app); undo.tap()
+        wait(app) { $0["targetStoredExposure"] as? Double == -0.2 && abs(($0["sourceStoredExposure"] as? Double ?? -99) - 0.9) < 1e-9 }
+        let redo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "adjustment.transaction.redo.")).firstMatch
+        revealFormControl(redo, app: app); redo.tap()
+        wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 && $0["targetStoredExposure"] as? Double == 0.5 }
+        capture(app, "adjustment-multiple-target-redo")
+    }
+
+    func testAdjustmentConflictReloadAndDraftCopyGuard() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.light"].tap()
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.iter03.external-edit" as CFString), nil, nil, true)
+        wait(app) { $0["sourceStoredExposure"] as? Double == 1.3 }
+        setExposure("+0.75", app: app)
+        wait(app) { ($0["saveState"] as? String ?? "").contains("failed") }
+        XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 1.3)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
+        let retry = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "not saved")).firstMatch
+        XCTAssertTrue(retry.waitForExistence(timeout: 5)); retry.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        app.alerts.buttons["Reload Saved Adjustments"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == 1.3 }
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0, "reload is navigation, not an editing transaction")
+        selectGeometry(app)
+        let corner = app.descendants(matching: .any).matching(identifier: "geometry.crop.bottomRight").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        corner.press(forDuration: 0.05, thenDragTo: corner.withOffset(CGVector(dx: -16, dy: -12)))
+        wait(app) { $0["ready"] as? Bool == true && $0["draftChanged"] as? Bool == true }
+        openAdjustmentAction("adjustment.copy.open", app: app)
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        app.alerts.buttons["Keep Editing"].tap()
+        XCTAssertTrue(receipt(app)["draftChanged"] as! Bool)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
+        openAdjustmentAction("adjustment.copy.open", app: app)
+        app.alerts.buttons["Apply"].tap()
+        XCTAssertTrue(app.buttons["adjustment.copy.clear"].waitForExistence(timeout: 10))
+        app.buttons["adjustment.transfer.close"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["draftActive"] as? Bool == false }
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
+        XCTAssertLessThan(receipt(app)["crop"] as! Double, 0.8)
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["crop"] as? Double == 0.8 }
+        capture(app, "adjustment-conflict-reload-draft-copy-guard")
+    }
+
+    func testAdjustmentCopyGermanLargeText() {
+        let app = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
+        app.buttons["editor.privacy"].tap()
+        let copyAction = app.buttons["Anpassungen kopieren"]
+        XCTAssertTrue(copyAction.waitForExistence(timeout: 5)); copyAction.tap()
+        let clear = app.buttons["adjustment.copy.clear"]
+        revealFormControl(clear, app: app); clear.tap()
+        let light = app.descendants(matching: .any).matching(identifier: "adjustment.group.light").firstMatch
+        revealFormControl(light, app: app); light.tap()
+        let exposure = app.switches["adjustment.field.light.exposure"]
+        revealFormControl(exposure, app: app)
+        XCTAssertGreaterThanOrEqual(exposure.frame.height, 44)
+        toggleField(exposure)
+        capture(app, "adjustment-copy-german-large-field-selection")
+        let copy = app.buttons["adjustment.copy.confirm"]
+        revealFormControl(copy, app: app)
+        XCTAssertGreaterThanOrEqual(copy.frame.height, 44)
+        XCTAssertTrue(copy.isEnabled); copy.tap()
+        wait(app) { $0["clipboard"] is [String: Any] }
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
+    }
+    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.viewing-editor")
         let language = requestedLanguage ?? ProcessInfo.processInfo.environment["S3_VIEWING_LANGUAGE"] ?? "en"
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-RawLab.language", language]
+        if adjustmentFixtures { app.launchArguments.append("-RawLab.adjustmentTransferUI") }
         if let category = textCategory ?? ProcessInfo.processInfo.environment["S3_VIEWING_TEXT"], !category.isEmpty {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
         }

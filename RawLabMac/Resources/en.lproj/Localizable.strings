@@ -152,6 +152,7 @@
 "大小" = "Size";
 "大师配方" = "Master Recipe";
 "大师配方外观文件不可用。" = "The master recipe look file is unavailable.";
+"完成" = "Done";
 "实际像素 · 100%" = "Actual pixels · 100%";
 "宽度" = "Width";
 "对比" = "Comparison";
@@ -266,7 +267,7 @@
 "按每张照片" = "Per Photo";
 "搜索镜头" = "Search Lenses";
 "撤销" = "Undo";
-"撤销 %@ 张" = "Undo %@ Photos";
+"撤销 %@ 张" = "Undo photos: %@";
 "操作失败" = "Operation failed";
 "操作未完成，请重试。" = "The operation is incomplete. Try again.";
 "收起%@组" = "Collapse %@ group";
@@ -324,6 +325,7 @@
 "日系青空 · 高调日光" = "Japanese blue sky · high-key daylight";
 "旧版 FBDD" = "Legacy FBDD";
 "旧版色度降噪" = "Legacy Chroma Noise Reduction";
+"旧版降噪" = "Legacy noise reduction";
 "旧版：%@" = "Legacy: %@";
 "明度" = "Lightness";
 "明度：从暗到亮。" = "Lightness: from dark to light.";
@@ -442,7 +444,7 @@
 "白平衡模式" = "White balance mode";
 "目标所需的外观不可用，请先导入外观。" = "The required look is unavailable. Import it first.";
 "目标无法保留未选参数，请调整复制范围。" = "The target cannot preserve unselected settings. Change the copy scope.";
-"目标：%@ 张照片" = "Targets: %@ photos";
+"目标：%@ 张照片" = "Target photos: %@";
 "直方图" = "Histogram";
 "移除" = "Remove";
 "移除 %@" = "Remove %@";
@@ -568,7 +570,7 @@
 "透视" = "Perspective";
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Redo";
-"重做 %@ 张" = "Redo %@ Photos";
+"重做 %@ 张" = "Redo photos: %@";
 "重名文件" = "Duplicate Filenames";
 "重命名…" = "Rename…";
 "重命名外观" = "Rename Look";

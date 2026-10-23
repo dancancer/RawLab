@@ -152,6 +152,7 @@
 "大小" = "Tamaño";
 "大师配方" = "Receta maestra";
 "大师配方外观文件不可用。" = "El archivo de look de la receta maestra no está disponible.";
+"完成" = "Listo";
 "实际像素 · 100%" = "Píxeles reales · 100%";
 "宽度" = "Anchura";
 "对比" = "Comparación";
@@ -266,7 +267,7 @@
 "按每张照片" = "Por foto";
 "搜索镜头" = "Buscar lentes";
 "撤销" = "Deshacer";
-"撤销 %@ 张" = "Deshacer en %@ fotos";
+"撤销 %@ 张" = "Deshacer fotos: %@";
 "操作失败" = "Operación fallida";
 "操作未完成，请重试。" = "La operación no se ha completado. Inténtalo de nuevo.";
 "收起%@组" = "Contraer el grupo %@";
@@ -324,6 +325,7 @@
 "日系青空 · 高调日光" = "Cielo azul japonés · luz diurna en clave alta";
 "旧版 FBDD" = "FBDD heredado";
 "旧版色度降噪" = "Reducción de ruido cromático heredada";
+"旧版降噪" = "Reducción de ruido anterior";
 "旧版：%@" = "Heredado: %@";
 "明度" = "Luminosidad";
 "明度：从暗到亮。" = "Luminosidad: de oscuro a claro.";
@@ -442,7 +444,7 @@
 "白平衡模式" = "Modo de balance de blancos";
 "目标所需的外观不可用，请先导入外观。" = "El aspecto necesario no está disponible. Impórtalo primero.";
 "目标无法保留未选参数，请调整复制范围。" = "No se pueden conservar los ajustes no seleccionados. Cambia el alcance de la copia.";
-"目标：%@ 张照片" = "Destinos: %@ fotos";
+"目标：%@ 张照片" = "Fotos de destino: %@";
 "直方图" = "Histograma";
 "移除" = "Quitar";
 "移除 %@" = "Eliminar %@";
@@ -568,7 +570,7 @@
 "透视" = "Perspectiva";
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Rehacer";
-"重做 %@ 张" = "Rehacer en %@ fotos";
+"重做 %@ 张" = "Rehacer fotos: %@";
 "重名文件" = "Nombres de archivo duplicados";
 "重命名…" = "Cambiar nombre…";
 "重命名外观" = "Cambiar nombre del look";

@@ -7,6 +7,9 @@ final class ViewingEditorProbe {
     static let shared = ViewingEditorProbe()
     var started = false
     var failNextSave = false
+    var failIdentity: String?
+    var transferTarget: PhotoIdentity?
+    var externalEdit: (() -> Void)?
     var resizing = false
     var saves: [[String: Any]] = []
     var previews: [[String: Any]] = []
@@ -65,10 +68,12 @@ final class ViewingEditorProbe {
                          "settings": settingsText(request.settings),
                          "quality": String(describing: request.quality), "edge": request.longEdge, "resize": resizing])
     }
-    func recordSave(_ state: PhotoEditState) throws {
-        saves.append(["exposure": state.settings.exposure, "crop": state.settings.geometry.cropWidth,
-                      "settings": settingsText(state.settings), "failed": failNextSave])
-        if failNextSave { failNextSave = false; throw CocoaError(.fileWriteNoPermission) }
+    func recordSave(_ state: PhotoEditState?, identity: PhotoIdentity) throws {
+        let failed = failNextSave || failIdentity == identity.key
+        saves.append(["identity": identity.key, "exposure": state?.settings.exposure as Any? ?? NSNull(),
+                      "crop": state?.settings.geometry.cropWidth as Any? ?? NSNull(),
+                      "settings": state.map { settingsText($0.settings) } ?? "null", "failed": failed])
+        if failed { failNextSave = false; failIdentity = nil; throw CocoaError(.fileWriteNoPermission) }
     }
     func snapshot(window: UIWindow?) -> [String: Any] {
         var value = readEditor?() ?? [:]
@@ -141,6 +146,12 @@ extension ContentView {
         CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
             Task { @MainActor in ViewingEditorProbe.shared.clearStatistics?() }
         }, "com.rawlab.s4.clear-statistics" as CFString, nil, .deliverImmediately)
+        CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
+            Task { @MainActor in ViewingEditorProbe.shared.failIdentity = ViewingEditorProbe.shared.transferTarget?.key }
+        }, "com.rawlab.iter03.fail-target" as CFString, nil, .deliverImmediately)
+        CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
+            Task { @MainActor in ViewingEditorProbe.shared.externalEdit?() }
+        }, "com.rawlab.iter03.external-edit" as CFString, nil, .deliverImmediately)
         probe.clearReference = { viewModel.basePreviewImage = nil; viewModel.baseHistogram = nil }
         probe.clearStatistics = { viewModel.histogram = nil; viewModel.baseHistogram = nil }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("viewing-editor-\(UUID().uuidString)")
@@ -160,7 +171,25 @@ extension ContentView {
         initial.exposure = 0.5
         initial.geometry.cropWidth = 0.8
         try! store.save(identity, state: PhotoEditState(settings: initial))
+        if ProcessInfo.processInfo.arguments.contains("-RawLab.adjustmentTransferUI") {
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let targetURL = documents.appendingPathComponent("ITER03-target-B.png")
+            let targetImage = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 300), format: format).image { context in
+                UIColor.systemBlue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 400, height: 300))
+            }
+            try! targetImage.pngData()!.write(to: targetURL)
+            let targetID = try! PhotoIdentity.fallback(for: targetURL)
+            probe.transferTarget = targetID
+            var targetSettings = RawSettings.default; targetSettings.exposure = -0.2; targetSettings.geometry.cropWidth = 0.6
+            try! store.save(targetID, state: PhotoEditState(settings: targetSettings))
+        }
+        probe.externalEdit = {
+            var external = store.state(for: identity)!.settings
+            external.exposure = 1.3
+            try! store.save(identity, state: PhotoEditState(settings: external))
+        }
         viewModel.editPersistence = store
+        viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: store)
         viewModel.importImage(from: .raster(url), identity: identity, onSettingsRestored: { settings = $0 })
         probe.readEditor = {
             ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
@@ -173,6 +202,23 @@ extension ContentView {
              "pendingPhoto": pendingPhotoImport, "pendingFile": pendingFileImport,
              "photoPicker": showingPhotoImporter, "filePicker": showingFileImporter,
              "saveState": String(describing: viewModel.editSaveState),
+             "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,
+             "sourceStoredExposure": store.state(for: identity)?.settings.exposure as Any? ?? NSNull(),
+             "sourceStoredRevision": (try? store.versionedState(for: identity).revision) ?? "",
+             "targetStoredExposure": probe.transferTarget.flatMap { store.state(for: $0)?.settings.exposure } as Any? ?? NSNull(),
+             "targetStoredCrop": probe.transferTarget.flatMap { store.state(for: $0)?.settings.geometry.cropWidth } as Any? ?? NSNull(),
+             "targetStoredRevision": probe.transferTarget.flatMap { try? store.versionedState(for: $0).revision } ?? "",
+             "failingTarget": probe.failIdentity ?? "",
+             "gestureActive": viewModel.adjustmentInteraction != nil,
+             "pendingSettings": viewModel.pendingSettings != nil, "modelDraftActive": viewModel.hasAdjustmentDraft,
+             "failedDraftSave": viewModel.hasFailedDraftSave,
+             "history": (viewModel.adjustmentSession?.transactions ?? []).map { transaction in
+                 ["id": transaction.id.uuidString, "action": String(describing: transaction.action),
+                  "parts": transaction.parts.map { ["identity": $0.identity.key, "state": String(describing: $0.state)] }] as [String: Any]
+             },
+             "clipboard": viewModel.adjustmentSession?.clipboard.map { payload in
+                 (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(payload))) ?? NSNull()
+             } ?? NSNull(),
              "previewOnly": photoViewing.previewOnly, "hold": photoViewing.holdingBefore,
              "compare": photoViewing.enabled, "mode": String(describing: photoViewing.preferredMode),
              "margin": photoViewing.photoMargin, "split": photoViewing.split,

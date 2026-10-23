@@ -27,6 +27,7 @@ struct AdjustmentTransferTests {
     }
 
     static func main() throws {
+        try postRGBCompatibility()
         try scopesAndFreeze()
         try recipeConversions()
         try whiteBalanceAndCompatibility()
@@ -35,6 +36,28 @@ struct AdjustmentTransferTests {
         try independentRequestFields()
         try serialization()
         try sharedFixtures()
+    }
+
+    static func postRGBCompatibility() throws {
+        let key = "detail.denoise.post_rgb"
+        let source = AdjustmentTransferSource(identifier: "ios-photo", isRaw: true, processingVersion: 2, recipe: nil)
+        let zero = try AdjustmentTransferPayload(source: source, values: [key: .number(0)])
+        let before = state()
+        check(try MacAdjustmentTransfer.prepare(payload: zero, target: before, context: raw) == before,
+            "Post-RGB zero is representable without changing Mac denoise")
+        let legacy = try AdjustmentTransferPayload(source: source, values: [key: .number(0.25)])
+        rejects("Post-RGB denoise never maps to Mac RAW FBDD") {
+            _ = try MacAdjustmentTransfer.prepare(payload: legacy, target: before, context: raw)
+        }
+        let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: before, context: raw)
+        check(all.values[key] == .number(0), "Mac all scope explicitly captures supported post-RGB zero")
+        rejects("Out-of-range post-RGB requests are rejected") {
+            _ = try AdjustmentTransferPayload(source: source, values: [key: .number(1.1)])
+        }
+        rejects("Raster cannot claim an active post-RGB request") {
+            _ = try AdjustmentTransferPayload(source: .init(identifier: "png", isRaw: false, processingVersion: 2, recipe: nil),
+                values: [key: .number(0.25)])
+        }
     }
 
     static func scopesAndFreeze() throws {

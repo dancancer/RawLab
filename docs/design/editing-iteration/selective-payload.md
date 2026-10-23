@@ -1,12 +1,13 @@
 # 选择性调整 payload v1
 
-本文件记录 ITER-03 的逻辑交换格式与 Mac 首个 adapter 的边界。实现为
+本文件记录 ITER-03 的逻辑交换格式与 Mac、iOS adapter 的边界。共享 Swift 实现为
 `Shared/AdjustmentTransfer.swift`；跨端解码与有效值向量位于
 `Shared/fixtures/adjustment-transfer-v1.json`。其他端接入时消费同一向量，不能直接复制
 Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 
-Mac 已实现 adapter、真实本机存储事务、编辑入口和普通手势历史；其余三端与联合验收仍按
-[实施计划](../../integration/editing-iteration/selective-transactions-plan.md)推进。
+Mac 与 iOS 已实现 adapter、真实本机存储事务、编辑入口和普通手势历史。iOS 沿用相同
+字段与失败语义，原生验证见 [iOS 接入计划](../../integration/editing-iteration/ios-selective-transactions-plan.md)；
+Android、Windows 与四端联合验收仍待完成。
 
 ## 编码与范围
 
@@ -62,6 +63,7 @@ Mac 已实现 adapter、真实本机存储事务、编辑入口和普通手势�
 | `color.white_balance.temperature_kelvin` | 固定 Kelvin `[2000,50000]`，或 null 表示 camera 请求；null 不是来源推算温度。 |
 | `color.white_balance.tint` | 固定/相对 tint `[-150,150]`，或 null 表示 camera 请求；存在 recipe 上下文时数值是相对目标 as-shot 的逻辑偏移。 |
 | `detail.denoise.raw_level` | `0/1/2`；raster 必须为 0。 |
+| `detail.denoise.post_rgb` | `[0,1]`；iOS 旧 `noiseReduction` 请求，与 FBDD 独立。raster 必须为 0；Mac 只支持 0，非零 blocked。旧 payload 缺字段表示未选。 |
 | `detail.denoise.chroma_mode` | null 或 `0/1/2`；null 保留旧算法的缺字段语义。 |
 | `detail.denoise.wavelet` | null 或完整 `{enabled,luma,chroma,coarse,preset}` 对象；三个量为 `[0,100]`，preset 为 `detail/clean/custom`。启用状态和辅助值按原生 wavelet 对象一起选择；null 表示旧算法路径。 |
 | `geometry.crop.x/y/width/height` | 四个独立归一化数值；正宽高，合并后再次校验矩形在画布内，不能静默移动未选坐标。 |

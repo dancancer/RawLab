@@ -32,6 +32,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case vignetteHighlights = "effects.vignette.highlights", grainAmount = "effects.grain.amount"
     case grainSize = "effects.grain.size", grainRoughness = "effects.grain.roughness"
     case sharpening = "detail.sharpening", rawDenoise = "detail.denoise.raw_level"
+    case postRGBDenoise = "detail.denoise.post_rgb"
     case chromaDenoise = "detail.denoise.chroma_mode", waveletDenoise = "detail.denoise.wavelet"
     case cropX = "geometry.crop.x", cropY = "geometry.crop.y"
     case cropWidth = "geometry.crop.width", cropHeight = "geometry.crop.height", quarterTurns = "geometry.quarter_turns"
@@ -45,7 +46,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     static var common: Set<Self> { Set(allCases.filter { $0.group != "geometry" }) }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
-    static let denoiseFields: Set<Self> = [.rawDenoise, .chromaDenoise, .waveletDenoise]
+    static let denoiseFields: Set<Self> = [.rawDenoise, .postRGBDenoise, .chromaDenoise, .waveletDenoise]
     static var recipeDependencies: Set<Self> {
         Set([.look, .strength, .exposure, .contrast, .highlights, .shadows, .saturation]).union(whiteBalanceFields)
             .union(allCases.filter { $0.hslLocation != nil })
@@ -66,6 +67,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
         case .quarterTurns: return 0...3
         case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1
+        case .postRGBDenoise: return 0...1
         case .straighten: return -45...45
         default: return nil
         }
@@ -198,6 +200,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         if !source.isRaw {
             guard self[.exposureMode] == nil || self[.exposureMode] == .string("sensor"),
                   self[.rawDenoise] == nil || self[.rawDenoise] == .number(0),
+                  self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0),
                   self[.lensDistortion] != .boolean(true), self[.lensTCA] != .boolean(true) else {
                 throw AdjustmentTransferError.invalidPayload("raster request")
             }

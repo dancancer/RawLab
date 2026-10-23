@@ -1953,6 +1953,281 @@
     "锁定当前比例": {
       "formats": [],
       "source": "锁定当前比例"
+    },
+    "RAW 降噪": {
+      "formats": [],
+      "source": "RAW 降噪"
+    },
+    "仅已修改": {
+      "formats": [],
+      "source": "仅已修改"
+    },
+    "以下目标尚未完成本次历史操作，请检查原因后重试。": {
+      "formats": [],
+      "source": "以下目标尚未完成本次历史操作，请检查原因后重试。"
+    },
+    "保存失败": {
+      "formats": [],
+      "source": "保存失败"
+    },
+    "全部": {
+      "formats": [],
+      "source": "全部"
+    },
+    "几何与镜头仅在“全部”或显式选择时包含。": {
+      "formats": [],
+      "source": "几何与镜头仅在“全部”或显式选择时包含。"
+    },
+    "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。": {
+      "formats": [],
+      "source": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。"
+    },
+    "垂直位置": {
+      "formats": [],
+      "source": "垂直位置"
+    },
+    "复制范围": {
+      "formats": [],
+      "source": "复制范围"
+    },
+    "复制调整": {
+      "formats": [],
+      "source": "复制调整"
+    },
+    "宽度": {
+      "formats": [],
+      "source": "宽度"
+    },
+    "尚未复制调整。请先从一张照片复制所需范围。": {
+      "formats": [],
+      "source": "尚未复制调整。请先从一张照片复制所需范围。"
+    },
+    "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@",
+        "%@",
+        "%@",
+        "%@"
+      ],
+      "source": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张"
+    },
+    "已撤销": {
+      "formats": [],
+      "source": "已撤销"
+    },
+    "已撤销 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已撤销 {0} 张 · 未完成 {1} 张"
+    },
+    "已跳过": {
+      "formats": [],
+      "source": "已跳过"
+    },
+    "已选 %@ 项": {
+      "formats": [
+        "%@"
+      ],
+      "source": "已选 {0} 项"
+    },
+    "已重做 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已重做 {0} 张 · 未完成 {1} 张"
+    },
+    "应用并保存": {
+      "formats": [],
+      "source": "应用并保存"
+    },
+    "待处理": {
+      "formats": [],
+      "source": "待处理"
+    },
+    "所选调整与目标不兼容，请调整范围或跳过目标。": {
+      "formats": [],
+      "source": "所选调整与目标不兼容，请调整范围或跳过目标。"
+    },
+    "撤销": {
+      "formats": [],
+      "source": "撤销"
+    },
+    "撤销 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "撤销 {0} 张"
+    },
+    "操作未完成，请重试。": {
+      "formats": [],
+      "source": "操作未完成，请重试。"
+    },
+    "旋转": {
+      "formats": [],
+      "source": "旋转"
+    },
+    "旧版降噪": {
+      "formats": [],
+      "source": "旧版降噪"
+    },
+    "暂无编辑历史。": {
+      "formats": [],
+      "source": "暂无编辑历史。"
+    },
+    "曝光模式": {
+      "formats": [],
+      "source": "曝光模式"
+    },
+    "未变化": {
+      "formats": [],
+      "source": "未变化"
+    },
+    "本次会话历史": {
+      "formats": [],
+      "source": "本次会话历史"
+    },
+    "来源：%@ · %@ 项调整": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "来源：{0} · {1} 项调整"
+    },
+    "查看调整范围": {
+      "formats": [],
+      "source": "查看调整范围"
+    },
+    "检查目标": {
+      "formats": [],
+      "source": "检查目标"
+    },
+    "正在检查目标…": {
+      "formats": [],
+      "source": "正在检查目标…"
+    },
+    "水平位置": {
+      "formats": [],
+      "source": "水平位置"
+    },
+    "没有可处理目标，请重新选择照片。": {
+      "formats": [],
+      "source": "没有可处理目标，请重新选择照片。"
+    },
+    "没有可复制的调整，请选择其他范围。": {
+      "formats": [],
+      "source": "没有可复制的调整，请选择其他范围。"
+    },
+    "清空选择": {
+      "formats": [],
+      "source": "清空选择"
+    },
+    "照片或调整已变化，请重新检查目标。": {
+      "formats": [],
+      "source": "照片或调整已变化，请重新检查目标。"
+    },
+    "畸变校正": {
+      "formats": [],
+      "source": "畸变校正"
+    },
+    "白平衡模式": {
+      "formats": [],
+      "source": "白平衡模式"
+    },
+    "目标所需的外观不可用，请先导入外观。": {
+      "formats": [],
+      "source": "目标所需的外观不可用，请先导入外观。"
+    },
+    "目标无法保留未选参数，请调整复制范围。": {
+      "formats": [],
+      "source": "目标无法保留未选参数，请调整复制范围。"
+    },
+    "目标：%@ 张照片": {
+      "formats": [
+        "%@"
+      ],
+      "source": "目标：{0} 张照片"
+    },
+    "移除": {
+      "formats": [],
+      "source": "移除"
+    },
+    "粘贴调整": {
+      "formats": [],
+      "source": "粘贴调整"
+    },
+    "自动裁切": {
+      "formats": [],
+      "source": "自动裁切"
+    },
+    "色度降噪": {
+      "formats": [],
+      "source": "色度降噪"
+    },
+    "请先应用或放弃未完成的输入和几何草稿。": {
+      "formats": [],
+      "source": "请先应用或放弃未完成的输入和几何草稿。"
+    },
+    "调整内容无法读取，请重新复制。": {
+      "formats": [],
+      "source": "调整内容无法读取，请重新复制。"
+    },
+    "调整已变化": {
+      "formats": [],
+      "source": "调整已变化"
+    },
+    "调整照片": {
+      "formats": [],
+      "source": "调整照片"
+    },
+    "跳过": {
+      "formats": [],
+      "source": "跳过"
+    },
+    "跳过以上目标后重试": {
+      "formats": [],
+      "source": "跳过以上目标后重试"
+    },
+    "选择此组": {
+      "formats": [],
+      "source": "选择此组"
+    },
+    "选择照片…": {
+      "formats": [],
+      "source": "选择照片…"
+    },
+    "重做": {
+      "formats": [],
+      "source": "重做"
+    },
+    "重做 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重做 {0} 张"
+    },
+    "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
+      "formats": [],
+      "source": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
+    },
+    "重新载入已保存调整": {
+      "formats": [],
+      "source": "重新载入已保存调整"
+    },
+    "重试未完成项": {
+      "formats": [],
+      "source": "重试未完成项"
+    },
+    "降噪参数": {
+      "formats": [],
+      "source": "降噪参数"
+    },
+    "高度": {
+      "formats": [],
+      "source": "高度"
     }
   },
   "overrides": {
@@ -2168,14 +2443,6 @@
       "fr": "Look indisponible",
       "ja": "ルックを利用できません",
       "zh-Hans": "外观不可用"
-    },
-    "完成": {
-      "de": "Fertig",
-      "en": "Done",
-      "es": "Listo",
-      "fr": "Terminé",
-      "ja": "完了",
-      "zh-Hans": "完成"
     },
     "导入照片": {
       "de": "Foto importieren",
@@ -2616,6 +2883,22 @@
       "fr": "Par défaut",
       "ja": "デフォルト",
       "zh-Hans": "默认"
+    },
+    "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
+      "de": "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.",
+      "en": "Reloading discards unsaved adjustments and reads the current saved record for this photo.",
+      "es": "Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto.",
+      "fr": "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.",
+      "ja": "読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。",
+      "zh-Hans": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
+    },
+    "重新载入已保存调整": {
+      "de": "Gespeicherte Anpassungen neu laden",
+      "en": "Reload Saved Adjustments",
+      "es": "Recargar ajustes guardados",
+      "fr": "Recharger les réglages enregistrés",
+      "ja": "保存済みの調整を読み直す",
+      "zh-Hans": "重新载入已保存调整"
     }
   }
 }

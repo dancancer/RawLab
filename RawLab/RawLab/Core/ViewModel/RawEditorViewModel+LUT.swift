@@ -41,6 +41,7 @@ extension RawEditorViewModel {
                         self.lutMap = bundled.map
                         self.statusMessage = reason.localizedDescription
                     }
+                    self.includeIndependentRecipeLook(self.currentPreviewSettings)
                     self.isLoadingLUTs = false
                 }
             }
@@ -70,7 +71,16 @@ extension RawEditorViewModel {
         guard let lutID = settings.lutID else {
             return nil
         }
+        if lutID.hasPrefix("recipe-lut:") { return MasterRecipe.recipe(for: String(lutID.dropFirst("recipe-lut:".count)))?.lutURL() }
         return lutMap[lutID]?.sourceURL
+    }
+
+    func includeIndependentRecipeLook(_ settings: RawSettings) {
+        guard let id = settings.lutID, id.hasPrefix("recipe-lut:"),
+              let recipe = MasterRecipe.recipe(for: String(id.dropFirst("recipe-lut:".count))),
+              let url = recipe.lutURL(), FileManager.default.isReadableFile(atPath: url.path),
+              !availableLUTs.contains(where: { $0.id == id }) else { return }
+        availableLUTs.append(.init(id: id, name: L10n.text(recipe.name)))
     }
 
     func isLookAvailable(for settings: RawSettings) -> Bool {

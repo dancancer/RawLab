@@ -152,6 +152,7 @@
 "大小" = "Größe";
 "大师配方" = "Master-Rezept";
 "大师配方外观文件不可用。" = "Die Look-Datei des Master-Rezepts ist nicht verfügbar.";
+"完成" = "Fertig";
 "实际像素 · 100%" = "Tatsächliche Pixel · 100 %";
 "宽度" = "Breite";
 "对比" = "Vergleich";
@@ -266,7 +267,7 @@
 "按每张照片" = "Pro Foto";
 "搜索镜头" = "Objektive suchen";
 "撤销" = "Rückgängig";
-"撤销 %@ 张" = "%@ Fotos rückgängig machen";
+"撤销 %@ 张" = "Fotos rückgängig machen: %@";
 "操作失败" = "Der Vorgang ist fehlgeschlagen";
 "操作未完成，请重试。" = "Der Vorgang ist nicht abgeschlossen. Versuchen Sie es erneut.";
 "收起%@组" = "Gruppe „%@“ zuklappen";
@@ -324,6 +325,7 @@
 "日系青空 · 高调日光" = "Japanischer blauer Himmel · High-Key-Tageslicht";
 "旧版 FBDD" = "Älteres FBDD";
 "旧版色度降噪" = "Ältere Chroma-Rauschreduzierung";
+"旧版降噪" = "Frühere Rauschreduzierung";
 "旧版：%@" = "Älteres Verfahren: %@";
 "明度" = "Helligkeit";
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
@@ -442,7 +444,7 @@
 "白平衡模式" = "Weißabgleichmodus";
 "目标所需的外观不可用，请先导入外观。" = "Der benötigte Look ist nicht verfügbar. Importieren Sie ihn zuerst.";
 "目标无法保留未选参数，请调整复制范围。" = "Nicht ausgewählte Einstellungen können nicht erhalten bleiben. Ändern Sie den Kopierumfang.";
-"目标：%@ 张照片" = "Ziele: %@ Fotos";
+"目标：%@ 张照片" = "Zielfotos: %@";
 "直方图" = "Histogramm";
 "移除" = "Entfernen";
 "移除 %@" = "%@ entfernen";
@@ -568,7 +570,7 @@
 "透视" = "Perspektive";
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Wiederholen";
-"重做 %@ 张" = "%@ Fotos wiederholen";
+"重做 %@ 张" = "Fotos wiederherstellen: %@";
 "重名文件" = "Doppelte Dateinamen";
 "重命名…" = "Umbenennen…";
 "重命名外观" = "Look umbenennen";

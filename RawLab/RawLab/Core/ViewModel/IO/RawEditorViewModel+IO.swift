@@ -122,6 +122,9 @@ extension RawEditorViewModel {
         onImported: (() -> Void)? = nil,
         onSettingsRestored: ((RawSettings) -> Void)? = nil
     ) -> UUID {
+        cancelQueuedSettingsSave()
+        adjustmentInteraction = nil
+        adjustmentInteractionRejected = false
         statusMessage = nil
         isBusy = true
         let importRevision = UUID()
@@ -147,7 +150,8 @@ extension RawEditorViewModel {
 
                 do {
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
-                    let record = resolvedIdentity.flatMap { self.editPersistence?.state(for: $0) }
+                    let versioned = try resolvedIdentity.flatMap { try self.editPersistence?.versionedState(for: $0) }
+                    let record = versioned?.state
                     let restoredSettings = record?.settings ?? .default
                     let missingLook = !self.isLookAvailable(for: restoredSettings)
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
@@ -197,7 +201,7 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.retainEditMetadata(record ?? PhotoEditState(settings: restoredSettings))
+                                self.acceptImportedEditRecord(versioned, settings: restoredSettings)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
@@ -251,7 +255,7 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.retainEditMetadata(record ?? PhotoEditState(settings: restoredSettings))
+                                self.acceptImportedEditRecord(versioned, settings: restoredSettings)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
@@ -279,6 +283,11 @@ extension RawEditorViewModel {
                         self.sourceFile = nil
                         self.sourceKind = nil
                         self.sourceIdentity = nil
+                        self.loadedEditRecord = nil
+                        self.adjustmentSourceValidator = nil
+                        self.adjustmentInteraction = nil
+                        self.adjustmentInteractionRejected = false
+                        self.adjustmentRestoredSettings = nil
                         self.editRecordMetadata = nil
                         self.persistedEditorSettings = nil
                         self.failedDraftSource = nil
@@ -307,5 +316,11 @@ extension RawEditorViewModel {
         invalidatePreviewRequests()
         sourceRevision = UUID()
         isBusy = false
+        if var metadata = editRecordMetadata, let source = editorEditSource,
+           metadata.source.file == source.file, metadata.source.identity == source.identity {
+            // 取消的是尚未发布的新导入；当前照片及其完整 metadata 仍归旧记录所有。
+            metadata.source = source
+            editRecordMetadata = metadata
+        }
     }
 }

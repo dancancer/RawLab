@@ -15,7 +15,7 @@ extension AdjustmentTransferField {
             .vignetteAmount: "暗角", .vignetteMidpoint: "中点", .vignetteRoundness: "圆度",
             .vignetteFeather: "羽化", .vignetteHighlights: "高光保护", .grainAmount: "颗粒",
             .grainSize: "大小", .grainRoughness: "粗糙度", .sharpening: "锐化",
-            .rawDenoise: "RAW 降噪", .chromaDenoise: "色度降噪", .waveletDenoise: "降噪参数",
+            .rawDenoise: "RAW 降噪", .postRGBDenoise: "旧版降噪", .chromaDenoise: "色度降噪", .waveletDenoise: "降噪参数",
             .cropX: "水平位置", .cropY: "垂直位置", .cropWidth: "宽度", .cropHeight: "高度",
             .quarterTurns: "旋转", .flipHorizontal: "水平翻转", .flipVertical: "垂直翻转",
             .straighten: "拉直", .perspectiveHorizontal: "水平透视", .perspectiveVertical: "垂直透视",

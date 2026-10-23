@@ -76,6 +76,7 @@ extension ContentView {
     }
 
     func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
+        cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
         let leavingDraft = geometrySelected || lensSelected
@@ -135,6 +136,11 @@ extension ContentView {
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
+        if pendingAdjustmentAction != nil {
+            activateEditorTool(.adjustment(.exposure))
+            continueAdjustmentAction()
+            return
+        }
         if pendingFileImport || pendingPhotoImport {
             activateEditorTool(.adjustment(.exposure))
             continueEditorImport()
@@ -159,11 +165,14 @@ extension ContentView {
     }
 
     func retryEditorSave() {
+        if viewModel.adjustmentReloadRequired { adjustmentReloadPresented = true; return }
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || pendingAdjustmentAction != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
         } else if pendingFileImport || pendingPhotoImport {
             continueEditorImport()
+        } else if pendingAdjustmentAction != nil {
+            continueAdjustmentAction()
         } else { viewModel.retrySave(settings: settings) }
     }
 
@@ -234,6 +243,7 @@ extension ContentView {
     }
 
     func completeAdjustmentExpansion(_ expanded: Bool) {
+        if !expanded { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
         } else if isEditorDraftActive {
@@ -248,6 +258,7 @@ extension ContentView {
     }
 
     func cancelDraftNavigation() {
+        pendingAdjustmentAction = nil
         pendingFileImport = false
         pendingPhotoImport = false
         pendingToolSelection = nil

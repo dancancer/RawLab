@@ -39,8 +39,8 @@ transforms = {
         "        lastPreviewRequest = request",
         "        MainActor.assumeIsolated { GeometrySourceProbe.shared.recordPreview(settings, request: request, source: self.sourceRevision) }\n        lastPreviewRequest = request"),
     "RawLab/RawLab/Core/Persistence/EditPersistence.swift": (
-        "        updated[identity.key] = state",
-        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.saveAttempts.append(state); GeometrySourceProbe.shared.saveReceipts.append([\"identity\": identity.key, \"state\": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))]) }\n        updated[identity.key] = state")
+        "        store.records[identity.key] = state",
+        "        MainActor.assumeIsolated { if let state { GeometrySourceProbe.shared.saveAttempts.append(state); GeometrySourceProbe.shared.saveReceipts.append([\"identity\": identity.key, \"state\": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))]) } }\n        store.records[identity.key] = state")
 }
 diffs = []
 for name, (before, after) in transforms.items():

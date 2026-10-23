@@ -17,7 +17,9 @@ case "${1:-}" in
             RawLabMac/tests/localization.sh)
         ;;
     ios)
-        suites=(RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh)
+        suites=(RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
+            RawLab/tests/adjustment-transfer.sh RawLab/tests/adjustment-persistence.sh
+            RawLab/tests/adjustment-transfer-session.sh)
         ;;
     *) echo "Usage: $0 macos|ios" >&2; exit 2 ;;
 esac

@@ -81,6 +81,7 @@ extension MacAdjustmentTransfer {
             "coarse": .number($0.coarse), "preset": .string($0.preset.rawValue)
         ]) } ?? .null
         result[Field.rawDenoise.rawValue] = .number(isRaw ? settings.rawNoiseReduction : 0)
+        result[Field.postRGBDenoise.rawValue] = .number(0)
         result[Field.chromaDenoise.rawValue] = settings.chromaNoiseReduction.map(Value.number) ?? .null
         result[Field.waveletDenoise.rawValue] = wavelet
         let geometry = settings.geometrySettings
@@ -98,6 +99,9 @@ extension MacAdjustmentTransfer {
 
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments,
                              context: MacAdjustmentTransferContext) throws {
+        if let value = payload[.postRGBDenoise]?.number, value != 0 {
+            throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue)
+        }
         if let raw = payload[.rawDenoise]?.number {
             guard raw == 0 || (context.isRaw && settings.supportsRawNoiseReduction) else {
                 throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue)
