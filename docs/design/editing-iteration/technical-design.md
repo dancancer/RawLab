@@ -1,6 +1,6 @@
 # 本次迭代总技术方案：第一阶段收尾与第二阶段全量
 
-状态：待评审，尚未实施。范围基线：2026-10-21，`13efd9c342f15029c47e302c467423cb45fc4f60`。
+状态：分批实施中，尚未完成整轮验收。原范围基线：2026-10-21，`13efd9c342f15029c47e302c467423cb45fc4f60`。2026-10-23 已核对 `development@57e4cf77`：MCP 和工作区相关实现已合入，ITER-03～11 继续按[剩余交付计划](../../integration/editing-iteration/remaining-delivery-plan.md)实施；以下原实现依据保留历史来源，新算法仍须经过各自数值和质量准入。
 
 [迭代总需求 ITER-01～11 / IT-01～16](requirements.md) 是本方案的范围依据。[r4 工作区技术方案](../editor-workspace/technical-design.md) 仅负责 ITER-02，不再作为本轮所有功能的总方案。本文件中的参数、算法与模块名是拟采用设计；不表示已经写入核心或通过验收。
 
@@ -8,7 +8,7 @@
 
 | 范围                | 当前实现依据                                                                                                                                                                                                                                                                                                                                                                | 本轮动作                                                         |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 第一阶段 Agent/JSON | [CLI commands](../../../lutools/src/cli/agent_commands.cpp)、[recipe parser](../../../lutools/src/cli/edit_recipe.cpp)、[EditRecipe](../../../lutools/include/sony2fuji/edit_recipe.h) 已有 v1～v4、五类命令、完整现有参数；[Mac AgentRecipe](../../../RawLabMac/Sources/Rendering/AgentRecipe.swift) / [Windows AgentRecipe](../../../RawLabWindows/AgentRecipe.cs) 已接通 | 不重做。增加 MCP 薄层，并使第二阶段新字段继续贯通 Agent          |
+| 第一阶段 Agent/JSON | [CLI commands](../../../lutools/src/cli/agent_commands.cpp)、[recipe parser](../../../lutools/src/cli/edit_recipe.cpp)、[EditRecipe](../../../lutools/include/sony2fuji/edit_recipe.h) 已有 v1～v5、五类命令、完整现有参数与 processing identity；[Mac AgentRecipe](../../../RawLabMac/Sources/Rendering/AgentRecipe.swift) / [Windows AgentRecipe](../../../RawLabWindows/AgentRecipe.cs) 已接通 | 不重做。保持已合入 MCP 薄层，并使第二阶段新字段继续贯通 Agent          |
 | 几何/透视/镜头      | 已有配置、处理、保存、预览/最终输出与可选 Lensfun 能力                                                                                                                                                                                                                                                                                                                      | 保持契约，接入新 UI/范围复制/逐张快照，定向回归                  |
 | HSL/效果/降噪       | [C ABI](../../../lutools/include/sony2fuji/ffi/sony2fuji_c.h) 有 HSL、暗角/颗粒、传统降噪 setter                                                                                                                                                                                                                                                                            | HSL 加目标调整；新增调色用独立配置，不塞入旧结构                 |
 | 编辑记忆/完整应用   | 四端已有每照片保存，桌面有 full apply                                                                                                                                                                                                                                                                                                                                       | 加按项合并、部分失败、历史与预设，不用 full apply 冒充选择性粘贴 |
@@ -28,8 +28,8 @@ flowchart TD
     UI --> H[HSL 取色 / 目标调整 ITER-07]
     T --> Q[多点曲线 ITER-09]
     Q --> A[清晰度 / 去朦胧 ITER-10]
-    CLI[现有 CLI / v4] --> M[MCP 薄层 ITER-01]
-    T --> V[新增配置 / Agent schema v5]
+    CLI[现有 CLI / v1～v5] --> M[MCP 薄层 ITER-01]
+    T --> V[新增配置 / 新 Agent schema 拟 v6]
     G --> V
     Q --> V
     A --> V
@@ -45,7 +45,7 @@ flowchart TD
 | ------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
 | 本端照片记录        | 恢复该照片的完整编辑及兼容上下文 | 原生模型 + 新增 optional/identity 扩展；保留自动模式、配方版本与照片身份        |
 | 选择性调整 payload  | 剪贴板/用户预设/批量同步         | 稳定字段 ID、选中集合、逻辑值/模式/外观引用及来源上下文；不冻结相机自动派生结果 |
-| Agent render recipe | CLI/MCP/处理验收                 | 解析到目标后的最终 core 参数；当前 v4 已是最终值，不能直接拿它充当跨照片剪贴板  |
+| Agent render recipe | CLI/MCP/处理验收                 | 解析到目标后的最终 core 参数；当前 v4/v5 均是最终值，不能直接拿它充当跨照片剪贴板  |
 
 新增 payload 使用独立 `payload_version=1`、`scope_version=1`，与 Agent 的 `schema_version`、batch journal 版本及 native record 版本分开。字段目录规定 ID、类型、单位、合法范围、默认解析器、所属组、RAW-only 条件和对配方强度的解释；例：`tone.exposure` 是 EV，HSL 是原 [-100,100] 轴值，WB 是模式及固定 Kelvin/tint，自动镜头仅保存请求配置。
 
@@ -53,7 +53,11 @@ scope 默认包含通用调整字段，`geometry`/`lens` 默认排除；只有�
 
 “仅已修改”继续按照片有效默认和存储逻辑值判断，包含配方注入值；不借操作历史或乘强度后的 0 值隐藏改动。未来新增字段先登记目录，再接 UI、scope、snapshot、preset、history、recipe 和导出，不允许各路径漏字段。
 
-### 2.1 Agent v5 与 additive C ABI
+<a id="21-agent-v5-与-additive-c-abi"></a>
+
+### 2.1 新调色 schema 与 additive C ABI
+
+版本勘误：现有 v5 已用于 [processing identity](../../../lutools/docs/edit-json.md#v5-processing-identity)，不是空闲的新调色版本。新字段拟采用 v6，实施时再次核对版本占用；旧 v1～v5 parser/serializer 与未知字段拒绝保持。schema、processing、payload 和 binary request 版本彼此独立。
 
 当前 request v2、HSL config v1、photo-effects config v1 均保留字段顺序、大小和数值意义。拟新增独立 `version/struct_size` 配置与 setter：
 
@@ -66,7 +70,7 @@ scope 默认包含通用调整字段，`geometry`/`lens` 默认排除；只有�
 
 setter 先校验全部值，非有限、越界、错误版本或曲线无效时保留旧 session 状态；新 session 使用 identity，复用 session 时每次请求显式配置或清零，防止上一张照片泄漏。
 
-拟新增 Edit JSON v5/schema 文件，v1～v4 的未知字段拒绝、旧序列化与像素行为保持。v5 扩展：`tone.black_point/white_point`、`color.vibrance`、`color_grading`、`tone.curve`、`effects.clarity/dehaze`。`s_curve` 与 active custom curve 互斥；v5 明确输出 identity 默认。能力查询只有真实接通时才宣告 v5 和各新配置，不能先把未实现字段 advertise 成支持。
+拟新增 Edit JSON v6/schema 文件，v1～v5 的未知字段拒绝、旧序列化与像素行为保持。新版本扩展：`tone.black_point/white_point`、`color.vibrance`、`color_grading`、`tone.curve`、`effects.clarity/dehaze`，保留显式 processing identity。`s_curve` 与 active custom curve 互斥；新版本明确输出 identity 默认。能力查询只有真实接通时才宣告新版本和各新配置，不能先把未实现字段 advertise 成支持。
 
 [EditRecipe](../../../lutools/include/sony2fuji/edit_recipe.h)、parser/serializer、[agent_commands](../../../lutools/src/cli/agent_commands.cpp)、Mac/Windows AgentRecipe 与所有 native 预览/导出配置必须同批接线。新参数默认不跟随旧 master-recipe strength 自动二次缩放；旧 recipe 的原有缩放保留，新建用户预设保存其选中值，Agent 在目标解析后只接收一次最终值。
 
@@ -93,11 +97,11 @@ setter 先校验全部值，非有限、越界、错误版本或曲线无效时�
 
 用 subprocess 参数数组执行固定 CLI，不启用 shell。先按原配方目录解析并校验 input/look/output 的真实路径和允许根目录，再将绝对路径写入任务私有配方，避免暂存位置改变相对路径语义。CLI 输出先写目标同文件系统内的私有暂存文件，成功后原子发布，已有目标默认拒绝覆盖；失败/取消只清自己的未发布输出。stdout 只保留 SDK 协议，CLI stdout 被捕获解析，日志写 stderr。运行中每任务单独句柄，不终止其他任务。
 
-先服务现有 v4，v5 能力随核心实际发布透传；服务启动或握手成功不代表处理成功。测试覆盖握手、tools/list、五类真实调用、未知字段、路径/Unicode、取消、子进程失败、协议输出隔离、CLI/MCP 像素等价。首批不做移动端常驻 Agent/MCP，也不额外新增 generic image-info C API。
+首批服务 v4，当前已接通含 processing identity 的 v5；未来新 schema 能力须在 adapter 与核心都实现后透传。服务启动或握手成功不代表处理成功。测试覆盖握手、tools/list、五类真实调用、未知字段、路径/Unicode、取消、子进程失败、协议输出隔离、CLI/MCP 像素等价。首批不做移动端常驻 Agent/MCP，也不额外新增 generic image-info C API。
 
 ### 3.1 版本协商与可交付配置
 
-server 启动先执行 capabilities，校验既有 JSON envelope 的 `protocol_version=1`、五类命令及 `recipe_versions`。首批 adapter 支持 v1～v4，至少要求 CLI 支持 v4；缺命令、未知协议或不可解析结果时拒绝进入 ready，并给出更换 CLI 路径/版本的诊断。应用版本字符串不是协议版本，不要求二者数字相等。CLI 增加 v5 时，只有 adapter 也支持 v5 才开放该输入；双方取支持版本交集，不能降低 schema 后丢掉字段。CLI 可选后端和图片类型按实际 capabilities 暴露，不将没有构建的功能列为可用。运行中不切换已协商的 CLI；配置更换需重启 server。
+server 启动先执行 capabilities，校验既有 JSON envelope 的 `protocol_version=1`、五类命令及 `recipe_versions`。当前 adapter 支持 v1～v5，至少要求 CLI 支持 v4；缺命令、未知协议或不可解析结果时拒绝进入 ready，并给出更换 CLI 路径/版本的诊断。应用版本字符串不是协议版本，不要求二者数字相等。CLI 增加新 schema 时，只有 adapter 也支持该版本才开放输入；双方取支持版本交集，不能降低 schema 后丢掉字段。CLI 可选后端和图片类型按实际 capabilities 暴露，不将没有构建的功能列为可用。运行中不切换已协商的 CLI；配置更换需重启 server。
 
 ITER-01 必须同时交付 `tools/mcp/README.md`、锁定依赖、macOS/Windows 本地 stdio 客户端配置示例和独立 smoke test。说明包含 Python/CLI 安装、绝对路径及带空格目录、允许读写根、超时、兼容表和错误排查；示例只供用户选择导入，不自动写其全局客户端设置。smoke test 用临时目录与受控小素材依次调用五类工具，核对 recipe 标准化和预览/导出文件，随后直接 CLI 对照；再覆盖一个不匹配协议/版本和一个越界路径拒绝。文档/配置样例能实际复现 smoke test 才满足 IT-01，不能只交付 server 进程。
 
@@ -111,7 +115,7 @@ ITER-01 必须同时交付 `tools/mcp/README.md`、锁定依赖、macOS/Windows 
 
 ### 5.1 Capture / Prepare / Commit
 
-各端新增小型 adapter，复用本端快照和稳定身份：`capture(scope, source)` → 独立深拷贝 payload；`prepare(payload, target)` → candidate/不兼容摘要；`commit(candidate, expectedRevision)` → applied/blocked/failed。不直接复用 v4 render recipe，也不通过逐个 UI setter 产生大量保存/历史。
+各端新增小型 adapter，复用本端快照和稳定身份：`capture(scope, source)` → 独立深拷贝 payload；`prepare(payload, target)` → candidate/不兼容摘要；`commit(candidate, expectedRevision)` → applied/blocked/failed。不直接复用 Agent render recipe（包括当前 v5），也不通过逐个 UI setter 产生大量保存/历史。
 
 capture 冻结选中字段，自动 WB/曝光/镜头保存模式，固定值保持单位与语义；外观保存稳定引用。配方整体强度不是自动相机派生值，需附来源解释上下文。prepare 对目标解析自动项、合并选中字段，并比较所有未选组的有效参数；配方上下文会改变未选项时，先按工作区的无损独立化规则保护它们，无法表示则 blocked，不静默 clamp。
 
@@ -210,7 +214,7 @@ RAW/raster decode → 线性降噪 → WB/曝光 → 中性显示/LUT/强度混�
 
 custom 主 RGB 曲线采用 2～33 点、x 严格递增、y 非递减、坐标 [0,1]、固定端点 (0,0)/(1,1)。采用形状保持的分段三次 Hermite（PCHIP）斜率限制，避免过冲；这是数学策略，应用内用 C++ 实现，不引入 SciPy 运行时。[PCHIP 官方算法说明](https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.PchipInterpolator.html)
 
-旧 `s_curve` 的分段线性公式保持独立 legacy 模式，不把旧标量自动转换为 PCHIP。切到 custom 时明确确认：从 identity 开始编辑；不能声称三点近似转换保留旧像素。custom 点按同一策略生成查表/系数供 CPU/GPU 使用，identity 点列精确旁路。v5 同时给出非零旧 scalar 和 active custom 时拒绝，不设置隐含优先级。
+旧 `s_curve` 的分段线性公式保持独立 legacy 模式，不把旧标量自动转换为 PCHIP。切到 custom 时明确确认：从 identity 开始编辑；不能声称三点近似转换保留旧像素。custom 点按同一策略生成查表/系数供 CPU/GPU 使用，identity 点列精确旁路。新调色 schema 同时给出非零旧 scalar 和 active custom 时拒绝，不设置隐含优先级。
 
 ### 8.5 清晰度与去朦胧
 
@@ -227,7 +231,7 @@ CPU 为所有新阶段 reference。点运算逐项接 Metal/D3D11/GLES；尚未�
 
 ### 8.7 算法冻结状态与准入
 
-ITER-05/06/10 当前均为**未实施、数值合同待冻结**。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 的点数、合法性与 PCHIP 策略已明确，但仍未实现/验证。
+ITER-05/06/10 当前均为**未交付、完整数值合同待冻结**。ITER-05 已开始[黑白场内部 CPU 参考](../../../lutools/docs/tone-endpoints-reference.md)，尚未接 session、Agent 或原生 UI，不等于完整参数链或质量验收。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 的点数、合法性与 PCHIP 策略已明确，但仍未实现/验证。
 
 核心 owner 在对应算法 PR 先提交同一份版本化数值合同和 CPU 参考向量：黑白场的亮度系数/限幅规则，鲜艳度的彩度定义/肤色权重/负向公式，颜色分级的传递函数/三分区权重/色域处理，以及 Clarity/Dehaze 的半径/边界采样/空气光/transmission 下限/增益和噪声保护。合同连同 fixture ID、来源许可、哈希、参数和期望输出写入共享核心契约与测试资产；默认参数、常量或公式变化不得只在某端修改。先 CPU 参考评估，再冻结算法版本，最后接各端及可用 GPU。
 
@@ -292,9 +296,9 @@ ITER-05/06/10 当前均为**未实施、数值合同待冻结**。上文选定�
 | 批次 | 交付内容                                                            | 依赖与验收                                                                            |
 | ---- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | I0   | 字段目录/兼容策略、迭代总账、缺失新功能稿与公共 owner               | 先冻结 scope/身份/版本；各新算法另须通过 8.7 数值合同与质量集准入，不要求重写四端模型 |
-| I1   | ITER-02 工作区；ITER-01 先接已有 v4，含版本协商/配置文档/smoke test | 工作区 AC-01～21、IT-01/02；MCP 与 UI 可并行                                          |
+| I1   | ITER-02 工作区；ITER-01 已接 v1～v5，含版本协商/配置文档/smoke test | 工作区 AC-01～21、IT-01/02；MCP 与 UI 可并行                                          |
 | I2   | ITER-03 复制/范围/粘贴/历史                                         | IT-03/04；事务稳定后才让预设和同步复用                                                |
-| I3   | ITER-04 用户预设；ITER-05 黑白场/鲜艳度                             | 两条线并行，IT-05/06/15；新字段贯通 schema v5 与 native bridges                       |
+| I3   | ITER-04 用户预设；ITER-05 黑白场/鲜艳度                             | 两条线并行，IT-05/06/15；新字段贯通新调色 schema 与 native bridges                   |
 | I4   | ITER-06 颜色分级、ITER-07 HSL 目标调整；ITER-08 批量同步/逐张微调   | IT-07～10；批量依赖 I2，不强制等新算法全部完成                                        |
 | I5   | ITER-09 多点曲线、ITER-10 清晰度/去朦胧                             | IT-11/12/15；质量、旧曲线和空间尺度验证                                               |
 | IU   | ITER-11 可信发行链→种子版→真实升级                                  | 独立并行；IT-13/14；签名/发布条件不足时明确该项未完成，不删出迭代                     |

@@ -4,6 +4,12 @@
 用户已于 2026-10-21 要求启动开发，由本协调任务负责拆分、调度、复核和阶段集成。
 不预设发布版本或日期；签名、发布、部署和后续 PR 合并按各自授权执行。
 
+2026-10-23 当前协调基线：`origin/development@57e4cf7787ac0fdf74dcf40224fc16406d981994`，
+已包含 [#131](https://github.com/dancancer/RawLab/pull/131) 的 S3/S4 与 MCP 补充。
+下文“本地交付/未 push”段落保留对应批次当时的证据，不表示这些提交仍未合入。
+剩余九项由[剩余交付计划](remaining-delivery-plan.md)接续，当前启动黑白场 CPU 参考，
+并核对 I2 payload/配方转换合同。用户确认 ITER-11 发行条件尚未齐备，先做本地开发与验证。
+
 - 初始开发基线：`development@12cda1c67ddd1c58095831ff12a112fc1356da78`，已合入设计 PR [#105](https://github.com/dancancer/RawLab/pull/105)。
 - 范围依据：[总需求](../../design/editing-iteration/requirements.md)、[总技术方案](../../design/editing-iteration/technical-design.md)。
 - 工作区依据：[ITER-02 子需求](../../design/editor-workspace/requirements.md)、[技术子方案](../../design/editor-workspace/technical-design.md)、[r9 资产](../../design/editor-workspace/README.md)。
@@ -27,17 +33,17 @@
 | 批次 | 迭代项与交付 | 前置 | 当前状态 | 验收 |
 | --- | --- | --- | --- | --- |
 | I0 | 字段目录、身份/版本、兼容策略、共享文件 owner | 当前源码与需求核对 | 来源目录已复核；payload 编码/逐端 adapter 待冻结 | 来源/版本矩阵复核；payload 与 adapter 合同另设冻结门槛 |
-| I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 基础功能已集成；Mac/Windows 当前 CLI 本地对照与 Windows native 生命周期通过，补充实现 `b5d226d` 已本地集成，随阶段汇总 PR 交付 | IT-01，真实 CLI/MCP 输出对照 |
-| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1/S2a/S2b 已集成，相关原生验证、独立复评和最终源联合 CI 完成，边界见对应批次；S3 四端实现、独立复评及约定原生增量已完成；S3/S4 本地交付见第六、七批索引，通过阶段汇总 PR 交付，尚未合入 `development` | AC-01～21、IT-02/16 |
-| I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 排队 | IT-03/04/15 |
+| I1-MCP | ITER-01，本地 stdio 五工具，当前 v1～v5 | CLI 协商、路径和子进程生命周期 | 已集成，含 #131 中 `b5d226d` 的 Mac/Windows 本地对照与 Windows native 生命周期补充；Windows Hosted CI 接入缺口仍保留 | IT-01，真实 CLI/MCP 输出对照 |
+| I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1～S4 代码已集成，S3/S4 由 #131 合入；各批原生证据分别保留，真机/读屏/GPU 与完整联合验收未关闭 | AC-01～21、IT-02/16 |
+| I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 接入核对：payload/配方转换合同先行，尚无原生复制粘贴交付 | IT-03/04/15 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 排队 | IT-05/15 |
-| I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-06/15 |
+| I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 黑白场内部 CPU 参考 `1c6fa7f` 已本地实现并通过数值/核心检查及独立复核；鲜艳度、质量合同和参数链未完成 | IT-06/15 |
 | I4-G | ITER-06，三分区颜色分级 | I3-T 的新配置/数据链，单独质量准入 | 数值合同待冻结 | IT-07/15 |
 | I4-H | ITER-07，HSL 真实像素 probe、坐标与目标手势 | I1-UI + 核心 probe 合同；提交接 I2 | 排队 | IT-08/15 |
 | I4-B | ITER-08，集合、同步、单张微调、逐张冻结导出 | I2；不等待全部新算法 | 排队 | IT-09/10/15 |
 | I5-Q | ITER-09，多点 PCHIP，保留 legacy S 曲线 | I3-T 的新参数配置、快照/Agent/导出接线 | 排队；合法性策略已明确 | IT-11/15 |
 | I5-A | ITER-10，清晰度与去朦胧 | I5-Q 的配置/Agent 接口；各自数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-12/15 |
-| IU | ITER-11，可信发行链、种子版、真实升级与恢复 | 两端发行身份、安装形态、可信 feed；真实发布另行授权 | 前置待核对 | IT-13/14 |
+| IU | ITER-11，可信发行链、种子版、真实升级与恢复 | 两端发行身份、安装形态、可信 feed；真实发布另行授权 | 用户确认发行条件尚未齐备；先本地开发/验证，真实升级待前置 | IT-13/14 |
 | IF | 同一集成源联合验收及发布源冻结 | 上述全部交付及逐端证据 | 未开始 | IT-01～16 + AC-01～21 |
 
 I0 的来源目录退出条件是字段来源、单位/默认、格式版本事实和未决项均可追溯，并通过独立复核；它不等待整轮功能完成。payload 编码及逐端 adapter 的冻结是 I2 的单独前置，需以 recipe-active/未选字段向量证明唯一转换。IT-15/16 是 IF 的最终跨功能门槛，不作为来源目录的循环前置。
@@ -56,7 +62,7 @@ flowchart TD
     Q --> A[清晰度与去朦胧 ITER-10]
     UI --> H[HSL probe 与目标调整 ITER-07]
     P --> H
-    CLI[现有 CLI v4] --> MCP[MCP ITER-01]
+    CLI[现有 CLI v1～v5] --> MCP[MCP ITER-01]
     Release[可信发行身份与 feed] --> Update[桌面更新 ITER-11]
 ```
 
@@ -65,6 +71,10 @@ flowchart TD
 ## 共享文件与当前 owner
 
 owner 是当前阶段的唯一写入责任。未分派项由协调者保留写入权；子任务不得自行修改其他 owner 文件。
+
+下表保留前批 owner 与交付边界。当前剩余工作的 owner 及与活跃 Mac 调整区任务的避让，
+以[剩余计划的当前派发](remaining-delivery-plan.md#当前派发与文件-owner)为准；
+历史 owner 名称不授予新代理并发修改同一文件的权限。
 
 | 范围 | 当前 owner | 可写边界 | 交接规则 |
 | --- | --- | --- | --- |

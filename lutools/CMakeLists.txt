@@ -161,6 +161,7 @@ set(CORE_SOURCES
     src/core/photo_effects.cpp
     src/core/photo_geometry.cpp
     src/core/photo_color.cpp
+    src/core/photo_tone_endpoints.cpp
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
@@ -330,6 +331,9 @@ if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY
 endif()
 
 if(BUILD_TESTING AND NOT IOS)
+    add_executable(photo_tone_endpoints_tests tests/photo_tone_endpoints_tests.cpp src/core/photo_tone_endpoints.cpp)
+    target_include_directories(photo_tone_endpoints_tests PRIVATE include src)
+    add_test(NAME photo_tone_endpoints COMMAND photo_tone_endpoints_tests)
     add_executable(hsl_boundary_tests tests/hsl_boundary_tests.cpp src/core/photo_color.cpp src/core/color_converter.cpp)
     add_test(NAME hsl_boundary COMMAND hsl_boundary_tests)
     foreach(contract default off fast)

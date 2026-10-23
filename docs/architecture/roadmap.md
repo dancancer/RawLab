@@ -42,7 +42,9 @@
 
 ### 当前收尾范围
 
-2026-10-21 的代码核对基线为 `13efd9c3`：当前 Edit JSON v4、CLI/C API 与 Mac/Windows AgentRecipe 已覆盖完整现有调整、HSL、效果、降噪、镜头、几何和透视，另有预览/最终输出一致性测试。上述 2026-10-15 的完整参数缺口已被后续实现补齐，不再重复列为待开发。当前真实未实现项是 MCP 薄适配层，本次纳入 ITER-01；移动端常驻 Agent/MCP 不属于现有桌面 CLI 的交付边界。第二阶段新增参数必须继续接通 Agent，不得只改 UI。
+2026-10-23 的代码核对基线为 `57e4cf77`（已合入 #131）：CLI/C API 与 Mac/Windows AgentRecipe 已覆盖完整现有调整、HSL、效果、降噪、镜头、几何和透视；Edit JSON v5 增加 processing identity，保留旧版本。MCP 薄适配层的五工具与 Mac/Windows 本地验证也已实现并合入。上述 2026-10-15 的完整参数缺口和 MCP 实现缺口不再重复列为待开发，设备与同源联合验收边界见[总账](../integration/editing-iteration/README.md)。移动端常驻 Agent/MCP 不属于现有桌面 CLI 的交付边界。
+
+当前剩余功能是 ITER-03～11，按[剩余交付计划](../integration/editing-iteration/remaining-delivery-plan.md)推进。第二阶段新增参数必须接通 Agent，不得只改 UI；已有 v5 不包含这些新调色字段，后续需使用新的 schema 版本。
 
 ## 第二阶段 调色工具、分组操作与调整复用
 
