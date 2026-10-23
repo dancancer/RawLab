@@ -66,6 +66,28 @@ RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits pe
 
 Look import does not execute Python/OCIO or modify the source. CUBE, RLOOK, and supported DCP files pass shared native validation; DCP is compiled to a managed RLOOK on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
 
+## 选择性调整与会话历史 / Selective adjustments and session history
+
+编辑页右上角“更多”提供复制调整、粘贴调整、撤销、重做及本次会话历史。复制可选
+全部、仅已修改或自定义范围，HSL 可逐轴、逐色域选择。默认范围不含几何与镜头；
+几何草稿需先应用或放弃。粘贴先冻结来源，再通过系统文件选择器添加目标并逐张预检；
+不兼容目标需明确跳过，保存失败可重试，已成功目标不会再次写入。
+
+The editor's top-right menu provides Copy Adjustments, Paste Adjustments, Undo, Redo and Session
+History. Copy supports All, Modified and explicit field selection, including individual HSL axes
+and channels. The default selection excludes geometry and lens requests. Resolve a geometry
+draft before transferring adjustments, then choose targets with the system document picker and
+review compatibility. Retrying incomplete targets preserves earlier successful saves.
+
+普通编辑与粘贴使用同一套逐照片历史，完成滑尺拖动只记一次，取消恢复起点。历史可按
+单张或整次粘贴撤销/重做，仅保留在当前会话；已保存参数可在重开照片后恢复。遇到外部
+记录变化时先明确确认重新载入，避免覆盖未保存修改。原始照片始终不写回。
+
+Ordinary edits and paste share per-photo history. A completed ruler drag creates one entry;
+cancellation restores its starting value. Undo/redo works per photo or across a paste transaction.
+History lasts for the current session, while saved adjustments survive reopening. External record
+changes require an explicit reload decision. Original photo data is never rewritten.
+
 ## 构建 / Build
 
 Requirements: JDK 17 or 21, Android SDK 35, build-tools 35.0.0,

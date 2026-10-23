@@ -2883,22 +2883,6 @@
       "fr": "Par défaut",
       "ja": "デフォルト",
       "zh-Hans": "默认"
-    },
-    "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
-      "de": "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.",
-      "en": "Reloading discards unsaved adjustments and reads the current saved record for this photo.",
-      "es": "Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto.",
-      "fr": "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.",
-      "ja": "読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。",
-      "zh-Hans": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
-    },
-    "重新载入已保存调整": {
-      "de": "Gespeicherte Anpassungen neu laden",
-      "en": "Reload Saved Adjustments",
-      "es": "Recargar ajustes guardados",
-      "fr": "Recharger les réglages enregistrés",
-      "ja": "保存済みの調整を読み直す",
-      "zh-Hans": "重新载入已保存调整"
     }
   }
 }

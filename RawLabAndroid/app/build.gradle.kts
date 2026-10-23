@@ -174,6 +174,8 @@ dependencies {
     // Keep ActivityScenario helpers in the debug app instead of launching another package.
     debugImplementation("androidx.test:core:1.6.1")
     testImplementation("junit:junit:4.13.2")
+    // JVM 合同测试使用真实 JSON parser；设备端继续使用 Android 的 org.json。
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")

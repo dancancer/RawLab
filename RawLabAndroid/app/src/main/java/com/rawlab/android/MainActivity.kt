@@ -37,6 +37,8 @@ import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.editor.ui.AdjustmentSheet
+import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.format.ExportSizeChoice
@@ -84,6 +86,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(updates) { updates.check(manual = false) }
+    var adjustmentSheet by remember { mutableStateOf<AdjustmentSheet?>(null) }
+    fun history(undo: Boolean) {
+        val results = if (undo) model.undoAdjustment() else model.redoAdjustment()
+        if (results.any { it.status in setOf(com.rawlab.android.adjustments.AdjustmentStatus.BLOCKED,
+                com.rawlab.android.adjustments.AdjustmentStatus.CONFLICT, com.rawlab.android.adjustments.AdjustmentStatus.FAILED) })
+            adjustmentSheet = AdjustmentSheet.HISTORY
+    }
     var album by rememberSaveable { mutableStateOf(false) }
     val batch by model.batch.collectAsStateWithLifecycle()
     val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
@@ -140,6 +149,14 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onEdit = model::edit, onRetry = model::retry,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = model::retrySave,
+            adjustmentReloadRequired = model.adjustmentReloadRequired, onReloadAdjustments = model::reloadSavedAdjustments,
+            onCancelAdjustment = model::cancelAdjustmentInteraction,
+            canUndoAdjustment = model.canUndoAdjustment, canRedoAdjustment = model.canRedoAdjustment,
+            canPasteAdjustment = model.adjustmentClipboard != null,
+            onCopyAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.COPY },
+            onPasteAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.PASTE },
+            onAdjustmentHistory = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.HISTORY },
+            onUndoAdjustment = { history(true) }, onRedoAdjustment = { history(false) },
             onAutoExposure = model::autoExposure,
             onFilmSelected = { usage.record(UsageEvent.FilmSelected(it)) },
             onExport = {
@@ -160,6 +177,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onGeometrySwap = model::swapGeometryRatio, onGeometryGrid = model::toggleGeometryGrid)
         }
         }
+    }
+    adjustmentSheet?.let { kind ->
+        AdjustmentTransferSheet(model, kind) { adjustmentSheet = null }
     }
     if (exportDialog) ModalBottomSheet(
         onDismissRequest = { exportDialog = false; model.cancelExport() },

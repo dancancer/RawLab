@@ -2,11 +2,16 @@ package com.rawlab.android.settings
 
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Base64
 import java.util.Properties
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import com.rawlab.android.geometry.GeometrySettings
 
 /** Stable source identity. A picker URI is preferred; content:<digest> is used only when no URI exists. */
@@ -15,38 +20,82 @@ value class PhotoIdentity(val value: String) {
     init { require(value.isNotBlank()) }
 }
 
-class EditStore(private val directory: File) {
+data class VersionedPhotoEdit(val identity: PhotoIdentity, val settings: EditSettings?, val revision: String?)
+class EditPersistenceConflict : IOException("Photo adjustments changed after they were read")
+
+class EditStore(private val directory: File,
+    private val replaceFile: (File, File) -> Unit = ::replaceEditFileAtomically,
+) {
     private val file = File(directory, "edits.properties")
-    private val records = linkedMapOf<PhotoIdentity, EditSettings>()
+    private val processLock = locks.getOrPut(directory.canonicalPath) { ReentrantLock() }
+    @Volatile private var lastReadableRecords: Map<PhotoIdentity, EditSettings> = emptyMap()
+    private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>, val revisions: Map<PhotoIdentity, String>) {
+        fun record(identity: PhotoIdentity) = VersionedPhotoEdit(identity, records[identity], revisions[identity])
+    }
 
     init {
         if (directory.exists() && !directory.isDirectory) throw IOException("Edit store path is not a directory")
-        if (!directory.exists() && !directory.mkdirs()) throw IOException("Cannot create edit store")
-        load()
+        if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) throw IOException("Cannot create edit store")
+        withStoreLock { read() }
     }
 
-    @Synchronized fun load(identity: PhotoIdentity): EditSettings? = records[identity]
+    // 旧 UI 查询在存储暂不可读时保留最后可读值；提交和导入必须使用严格的 versionedState。
+    fun load(identity: PhotoIdentity): EditSettings? = try { versionedState(identity).settings }
+        catch (_: Exception) { lastReadableRecords[identity] }
 
-    @Synchronized
-    fun save(identity: PhotoIdentity, settings: EditSettings) {
-        val updated = records.toMutableMap().apply { put(identity, settings) }
+    fun versionedState(identity: PhotoIdentity): VersionedPhotoEdit = withStoreLock { read().record(identity) }
+
+    fun compareAndSave(expected: VersionedPhotoEdit, settings: EditSettings?): VersionedPhotoEdit = withStoreLock {
+        val current = read()
+        if (current.record(expected.identity) != expected) throw EditPersistenceConflict()
+        commit(current, expected.identity, settings)
+    }
+
+    fun save(identity: PhotoIdentity, settings: EditSettings) = withStoreLock {
+        commit(read(), identity, settings)
+        Unit
+    }
+
+    fun reset(identity: PhotoIdentity) = withStoreLock {
+        commit(read(), identity, null)
+        Unit
+    }
+
+    private fun <T> withStoreLock(action: () -> T): T = processLock.withLock {
+        if (!directory.isDirectory) throw IOException("Edit store path is not a directory")
+        RandomAccessFile(File(directory, ".edits.lock"), "rw").use { lockFile ->
+            lockFile.channel.lock().use { action() }
+        }
+    }
+
+    private fun commit(current: Snapshot, identity: PhotoIdentity, settings: EditSettings?): VersionedPhotoEdit {
+        if (current.records[identity] == settings) return current.record(identity)
+        val records = current.records.toMutableMap()
+        if (settings == null) records.remove(identity) else records[identity] = settings
+        val revisions = current.revisions + (identity to UUID.randomUUID().toString())
+        val updated = Snapshot(records, revisions)
         write(updated)
-        records[identity] = settings
+        lastReadableRecords = records.toMap()
+        return updated.record(identity)
     }
 
-    @Synchronized
-    fun reset(identity: PhotoIdentity) {
-        write(records.filterKeys { it != identity })
-        records.remove(identity)
-    }
-
-    private fun load() {
-        if (!file.isFile) return
+    private fun read(): Snapshot {
+        if (file.exists() && !file.isFile) throw IOException("Edit record path is not a file")
+        if (!file.exists()) return Snapshot(emptyMap(), emptyMap()).also { lastReadableRecords = it.records }
         val properties = Properties()
         file.inputStream().use(properties::load)
+        require(properties.getProperty("format.version") in setOf(null, "1")) { "Unsupported edit store version" }
+        val records = linkedMapOf<PhotoIdentity, EditSettings>()
+        val revisions = linkedMapOf<PhotoIdentity, String>()
+        properties.stringPropertyNames().filter { it.startsWith("revision.") }.forEach { key ->
+            val identity = decodeIdentity(key.removePrefix("revision."))
+            val revision = properties.getProperty(key)
+            require(revision.isNotBlank()) { "Missing record revision" }
+            revisions[identity] = revision
+        }
         properties.stringPropertyNames().filter { it.startsWith("record.") && it.endsWith(".values") }.forEach { key ->
             val encoded = key.removePrefix("record.").removeSuffix(".values")
-            val identity = PhotoIdentity(String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8))
+            val identity = decodeIdentity(encoded)
             val storedFilm = properties.getProperty("record.${encoded}.film", "neutral")
             val film = runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
                 .getOrDefault(storedFilm)
@@ -56,13 +105,22 @@ class EditStore(private val directory: File) {
                 geometry = GeometrySettings.decode(properties.getProperty("record.$encoded.geometry")),
                 processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))
         }
+        lastReadableRecords = records.toMap()
+        return Snapshot(records, revisions)
     }
 
-    private fun write(updated: Map<PhotoIdentity, EditSettings>) {
+    private fun encodeIdentity(identity: PhotoIdentity) = Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(identity.value.toByteArray(StandardCharsets.UTF_8))
+    private fun decodeIdentity(encoded: String) = PhotoIdentity(String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8))
+
+    private fun write(updated: Snapshot) {
         val properties = Properties()
-        updated.forEach { (identity, settings) ->
-            val encoded = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(identity.value.toByteArray(StandardCharsets.UTF_8))
+        properties.setProperty("format.version", "1")
+        updated.revisions.forEach { (identity, revision) ->
+            properties.setProperty("revision.${encodeIdentity(identity)}", revision)
+        }
+        updated.records.forEach { (identity, settings) ->
+            val encoded = encodeIdentity(identity)
             properties.setProperty("record.$encoded.values", encode(settings))
             settings.recipeID?.let { properties.setProperty("record.$encoded.recipe", it) }
             properties.setProperty("record.$encoded.lens", settings.lens.encode())
@@ -74,7 +132,7 @@ class EditStore(private val directory: File) {
         val temporary = File(directory, "edits-${System.nanoTime()}.tmp")
         try {
             temporary.outputStream().use { properties.store(it, null) }
-            moveAtomically(temporary, file)
+            replaceFile(temporary, file)
         } catch (error: Throwable) {
             temporary.delete()
             throw if (error is IOException) error else IOException("Cannot save edit store", error)
@@ -118,11 +176,16 @@ class EditStore(private val directory: File) {
         return value.toInt()
     }
 
-    private fun moveAtomically(from: File, to: File) {
-        try {
-            Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-            Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+    companion object {
+        // JVM 内先串行，再取文件锁；否则同进程的不同 FileChannel 会直接抛 overlapping lock。
+        private val locks = ConcurrentHashMap<String, ReentrantLock>()
+    }
+}
+
+private fun replaceEditFileAtomically(from: File, to: File) {
+    try {
+        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
     }
 }

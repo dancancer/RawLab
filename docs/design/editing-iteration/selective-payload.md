@@ -1,13 +1,13 @@
 # 选择性调整 payload v1
 
-本文件记录 ITER-03 的逻辑交换格式与 Mac、iOS adapter 的边界。共享 Swift 实现为
+本文件记录 ITER-03 的逻辑交换格式与 Mac、iOS、Android adapter 的边界。共享 Swift 实现为
 `Shared/AdjustmentTransfer.swift`；跨端解码与有效值向量位于
 `Shared/fixtures/adjustment-transfer-v1.json`。其他端接入时消费同一向量，不能直接复制
 Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 
-Mac 与 iOS 已实现 adapter、真实本机存储事务、编辑入口和普通手势历史。iOS 沿用相同
-字段与失败语义，原生验证见 [iOS 接入计划](../../integration/editing-iteration/ios-selective-transactions-plan.md)；
-Android、Windows 与四端联合验收仍待完成。
+Mac、iOS 与 Android 已实现 adapter、真实本机存储事务、编辑入口和普通手势历史。
+接入边界见 [iOS 接入计划](../../integration/editing-iteration/ios-selective-transactions-plan.md)与
+[Android 接入计划](../../integration/editing-iteration/android-selective-transactions-plan.md)；Windows 与四端联合验收仍待完成。
 
 ## 编码与范围
 
@@ -69,7 +69,7 @@ Android、Windows 与四端联合验收仍待完成。
 | `color.white_balance.temperature_kelvin` | 固定 Kelvin `[2000,50000]`，或 null 表示 camera 请求；null 不是来源推算温度。 |
 | `color.white_balance.tint` | 固定/相对 tint `[-150,150]`，或 null 表示 camera 请求；存在 recipe 上下文时数值是相对目标 as-shot 的逻辑偏移。 |
 | `detail.denoise.raw_level` | `0/1/2`；raster 必须为 0。 |
-| `detail.denoise.post_rgb` | `[0,1]`；iOS 旧 `noiseReduction` 请求，与 FBDD 独立。raster 必须为 0；Mac 只支持 0，非零 blocked。旧 payload 缺字段表示未选。 |
+| `detail.denoise.post_rgb` | `[0,1]`；iOS 旧 `noiseReduction` 请求，与 FBDD 独立。raster 必须为 0；Mac、Android 只支持 0，非零 blocked。旧 payload 缺字段表示未选。 |
 | `detail.denoise.chroma_mode` | null 或 `0/1/2`；null 保留旧算法的缺字段语义。 |
 | `detail.denoise.wavelet` | null 或完整 `{enabled,luma,chroma,coarse,preset}` 对象；三个量为 `[0,100]`，preset 为 `detail/clean/custom`。启用状态和辅助值按原生 wavelet 对象一起选择；null 表示旧算法路径。 |
 | `geometry.crop.x/y/width/height` | 四个独立归一化数值；正宽高，合并后再次校验矩形在画布内，不能静默移动未选坐标。 |
@@ -111,6 +111,11 @@ Mac 原生预检按需要通过当前 core 解析目标 RAW 的 WB/降噪能力�
 解析只补充候选所需的目标 metadata；条件保存仍比较原 registry 的完整记录与 revision。
 检查目标本身不保存，关闭预检也不延续异步提交。
 
+Android adapter 按 JNI 的实际 Float request 校验等价性：contrast/saturation 的偏移转为
+逻辑 multiplier，highlights 翻转方向；反算配方参数时保护未选字段，不能用容差或新的
+clamp 掩盖不可表示的请求。Android 不支持非零 RAW FBDD 或 post-RGB 降噪；缺省 chroma
+和 wavelet 只在其实际 native 请求等价时转换。本端白平衡沿用 native 舍入及目标校准。
+
 ## 保存、重试和历史
 
 每次操作有独立 ID、冻结 payload/目标/候选。全部目标先 prepare，存在阻挡时默认不写；
@@ -130,3 +135,11 @@ clipboard/history，已保存的 native records 继续供重启恢复。
 历史，也不能扩展成整批撤销。批量冲突只标记实际被拒绝的目标，其他等待项不进入 skip
 集合。界面显示历史操作错误，不把它写成当前照片未保存；同一操作的缓存成功回执也不能
 覆盖随后发生的未保存编辑或几何草稿。
+
+Android 的 Properties registry 增加可选格式标记与逐照片 revision，旧记录读取不重写。
+事务读取始终读取磁盘，写入在目录锁和文件锁内比较完整回执；删除也保留 tombstone。
+原始 URI 与私有预览副本均纳入来源校验，不能用未变化的副本掩盖原始文件替换。
+可用时使用文件描述符的 inode、大小和纳秒修改时间；缺少稳定文件元数据时校验内容摘要。
+关闭或过期的预检释放未提交目标副本，成功历史所需资源保留到会话结束或来源重绑定。
+新成功回执若在界面接收前已被外部写入替换，当前照片进入明确的重新载入流程；之前
+成功项的缓存回执只保留结果，不接管随后撤销或编辑过的界面。
