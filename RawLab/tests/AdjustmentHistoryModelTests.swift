@@ -154,5 +154,19 @@ struct AdjustmentHistoryModelTests {
         let saved = try store.versionedState(for: goodID)
         _ = model.applyAdjustmentPaste(operation, skipping: [badID.key])
         try check(try store.versionedState(for: goodID) == saved, "successful target is not rewritten on retry")
+        let lens = try AdjustmentTransferPayload(source: .init(identifier: "raw-source", isRaw: true, processingVersion: 2, recipe: nil),
+            values: ["geometry.lens.profile_id": .string("fixture-profile")])
+        var pendingLens: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(lens, photos: [.init(identity: goodID, displayName: "valid", file: .externallyManaged(png), isRaw: false)]) { pendingLens = $0 }
+        let lensDeadline = Date().addingTimeInterval(30)
+        while pendingLens == nil && Date() < lensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        guard let lensResult = pendingLens else { throw NSError(domain: "lens preflight timed out", code: 1) }
+        let lensOperation = try lensResult.get()
+        try check(lensOperation.targets.first?.error != nil, "actual raster target blocks an inactive explicit lens profile")
+        let lensOutcome = model.applyAdjustmentPaste(lensOperation, skipping: [])
+        let afterLens = try store.versionedState(for: goodID)
+        try check(lensOutcome.first?.status == .blocked && afterLens == saved,
+                  "blocked inactive lens request preserves the raster receipt")
+
     }
 }

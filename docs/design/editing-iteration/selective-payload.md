@@ -74,6 +74,9 @@ Android、Windows 与四端联合验收仍待完成。
 
 表中的斜线是多个独立字段的缩写，不是实际 JSON 键。wavelet 明确是完整算法请求对象；
 raw 与 chroma 不因选择 wavelet 而被偷偷改写，其有效路径仍由本端既有算法选择规则决定。
+普通图片目标只接受默认的 lens 请求：distortion/tca 为 false、auto_crop 为 true、profile_id
+为 null。即使畸变/TCA 未启用，显式 profile 或非默认 auto_crop 也必须报告不兼容，不能
+通过 raster 的有效值投影把选中请求丢弃后报告未变化。
 
 WB 的模式、Kelvin 和 tint 可独立选择。只选固定 Kelvin/tint 时，目标必须具有可表达
 该值的模式；不能为了成功而重置未选的 WB 值。比如固定 Kelvin 粘到 camera 模式而未选

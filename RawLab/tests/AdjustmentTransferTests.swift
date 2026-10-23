@@ -166,6 +166,15 @@ import Foundation
         rejects("Fractional effect cannot be silently rounded by the iOS model") {
             _ = try IOSAdjustmentTransfer.prepare(payload: payload(["effects.grain.amount": .number(2.5)]), target: state(), context: raw)
         }
+        var rasterContext = raw; rasterContext.isRaw = false
+        for request: [String: AdjustmentTransferValue] in [
+            ["geometry.lens.profile_id": .string("fixture-profile")],
+            ["geometry.lens.auto_crop": .boolean(false)]
+        ] {
+            rejects("Raster rejects selected inactive lens request instead of dropping it") {
+                _ = try IOSAdjustmentTransfer.prepare(payload: payload(request), target: state(), context: rasterContext)
+            }
+        }
         let lens = try payload(["geometry.lens.distortion": .boolean(true)])
         rejects("Enabled lens correction requires actual target calibration") {
             _ = try IOSAdjustmentTransfer.prepare(payload: lens, target: state(), context: raw)

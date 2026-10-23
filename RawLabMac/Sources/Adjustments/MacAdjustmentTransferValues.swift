@@ -126,6 +126,13 @@ extension MacAdjustmentTransfer {
             if geometry != settings.geometrySettings { settings.geometry = geometry.isIdentity ? nil : geometry }
         }
         if !payload.fields.isDisjoint(with: Field.lensFields) {
+            if !context.isRaw {
+                let neutral: [Field: Value] = [.lensDistortion: .boolean(false), .lensTCA: .boolean(false),
+                    .lensAutoCrop: .boolean(true), .lensProfile: .null]
+                guard neutral.allSatisfy({ payload[$0.key] == nil || payload[$0.key] == $0.value }) else {
+                    throw AdjustmentTransferError.incompatible("geometry.lens")
+                }
+            }
             var lens = settings.lensSettings
             if let value = payload[.lensDistortion]?.boolean { lens.distortion = value }
             if let value = payload[.lensTCA]?.boolean { lens.tca = value }

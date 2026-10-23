@@ -290,6 +290,17 @@ struct AdjustmentTransferTests {
         rejects("Independently valid crop X is blocked when merged rectangle would exceed canvas") {
             _ = try MacAdjustmentTransfer.prepare(payload: cropX, target: state(target), context: raw)
         }
+        var rasterContext = raw; rasterContext.isRaw = false
+        for request: [String: AdjustmentTransferValue] in [
+            ["geometry.lens.profile_id": .string("fixture-profile")],
+            ["geometry.lens.auto_crop": .boolean(false)]
+        ] {
+            let unsupported = try AdjustmentTransferPayload(source: .init(identifier: "source", isRaw: true,
+                processingVersion: 2, recipe: nil), values: request)
+            rejects("Raster rejects selected inactive lens request instead of dropping it") {
+                _ = try MacAdjustmentTransfer.prepare(payload: unsupported, target: state(), context: rasterContext)
+            }
+        }
         source = Adjustments(); source.lensCorrection = LensCorrectionSettings(distortion: true)
         target.lensCorrection = LensCorrectionSettings(tca: true, autoCrop: false, mode: .manual, profileID: "target-profile")
         let distortion = try MacAdjustmentTransfer.capture(scope: .custom([.lensDistortion]), snapshot: state(source), context: raw)
