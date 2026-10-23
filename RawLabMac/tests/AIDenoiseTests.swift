@@ -120,6 +120,25 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         wait("Committed AI becomes ready after draft cancellation") { lensEditor.aiState == .ready }
         lensEditor.debounceTimer?.cancel(); lensEditor.debounceTimer = nil; lensEditor.resetAITask()
 
+        if CommandLine.arguments.count == 1 {
+            let retryEditor = EditorModel(lookDirectory: root.appendingPathComponent("retry-looks"),
+                editDirectory: root.appendingPathComponent("retry-edits"), batchDirectory: root.appendingPathComponent("retry-batch"))
+            retryEditor.debounceTimer?.cancel(); retryEditor.debounceTimer = nil; retryEditor.file = first
+            retryEditor.updatingMetadata = true; retryEditor.settings.aiDenoiseEnabled = true; retryEditor.updatingMetadata = false
+            retryEditor.aiIdentity = try EditorModel.AIWorkIdentity(first, settings: retryEditor.settings)
+            retryEditor.aiState = .ready; retryEditor.schedule(forceExact: true)
+            let obsolete = retryEditor.scheduler.startNext()!
+            retryEditor.aiState = .failed("Invalid model")
+            let retryRelease = DispatchSemaphore(value: 0)
+            retryEditor.prepareAIOperation = { _, _, _ in _ = retryRelease.wait(timeout: .now()+8) }
+            retryEditor.requestAIDenoise()
+            check(retryEditor.scheduler.finish(obsolete) == .discard,
+                  "Explicit AI retry invalidates an older in-flight render completion")
+            retryEditor.cancelAIDenoise(); retryRelease.signal()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            check(retryEditor.aiState == .cancelled, "Obsolete render completion cannot replace cancelled retry state")
+        }
+
         guard CommandLine.arguments.count == 4 || CommandLine.arguments.count == 5 else { return }
         let model = URL(fileURLWithPath: CommandLine.arguments[1])
         let raw = URL(fileURLWithPath: CommandLine.arguments[2])
@@ -166,22 +185,63 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
             let copiedModel = root.appendingPathComponent("model")
             try FileManager.default.copyItem(at: model, to: copiedModel)
             let validationEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: copiedModel, aiCacheDirectory: cache, aiBackend: backend)
-            _ = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128)
+            let readyFrame = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128)!
             let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: copiedModel.appendingPathComponent("manifest.json"))) as! [String: Any]
             let native = sceneRGB ? (manifest["blind_rgb"] as! [String: Any])["coreml"] as! [String: Any] :
                 (manifest["coreml"] as! [String: Any])["raw"] as! [String: Any]
             let file = (native["files"] as! [[String: Any]])[0]["path"] as! String
             let resource = copiedModel.appendingPathComponent(native["directory"] as! String).appendingPathComponent(file)
             let modified = try FileManager.default.attributesOfItem(atPath: resource.path)[.modificationDate]!
-            var bytes = try Data(contentsOf: resource); bytes[0] ^= 1
+            let originalBytes = try Data(contentsOf: resource)
+            var bytes = originalBytes; bytes[0] ^= 1
             try bytes.write(to: resource)
             try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: resource.path)
             do {
                 _ = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128)
                 fatalError("Mutated native model reused a validated package")
-            } catch RenderError.failed {
+            } catch RenderError.aiFailed {
                 print("PASS: Native resource change invalidates loaded package despite preserved size and modification time")
             }
+            let failureEditor = EditorModel(lookDirectory: root.appendingPathComponent("failure-looks"),
+                editDirectory: root.appendingPathComponent("failure-edits"), batchDirectory: root.appendingPathComponent("failure-batch"))
+            failureEditor.debounceTimer?.cancel(); failureEditor.debounceTimer = nil
+            failureEditor.updatingMetadata = true; failureEditor.settings = settings; failureEditor.updatingMetadata = false
+            failureEditor.file = raw; failureEditor.engine = validationEngine; failureEditor.result = readyFrame
+            failureEditor.aiIdentity = try EditorModel.AIWorkIdentity(raw, settings: settings); failureEditor.aiState = .ready
+            var retryCount = 0
+            failureEditor.prepareAIOperation = { input, snapshot, progress in
+                DispatchQueue.main.async { retryCount += 1 }
+                try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: copiedModel,
+                    aiCacheDirectory: cache, aiBackend: backend).prepareAI(input, settings: snapshot, progress: progress)
+            }
+            failureEditor.schedule(forceExact: true); failureEditor.launchNextRender()
+            wait("Corrupt model reaches the real editor render completion") { failureEditor.error != nil && !failureEditor.workerActive }
+            guard case .failed(let message) = failureEditor.aiState else { fatalError("Corrupt model left AI ready instead of failed") }
+            check(message.contains("Invalid AI model package"), "AI failure retains the native model diagnostic")
+            check(failureEditor.settings.aiDenoiseEnabled && !failureEditor.canExport,
+                  "Model failure retains requested AI while blocking stale export")
+            failureEditor.settings.exposure += 0.5
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            check(retryCount == 0 && !failureEditor.aiState.isRunning, "Ordinary edits do not retry a failed model")
+            failureEditor.settings.whiteBalanceMode = .custom; failureEditor.settings.temperature = 4500
+            RunLoop.main.run(until: Date().addingTimeInterval(1))
+            check(retryCount == 0 && !failureEditor.aiState.isRunning,
+                  "White-balance identity changes do not automatically retry a failed model")
+            check(!failureEditor.scheduler.hasPending, "Model failure does not queue another unready preview")
+            failureEditor.settings = settings
+            try originalBytes.write(to: resource)
+            failureEditor.requestAIDenoise()
+            wait("Explicit retry accepts the repaired model") { retryCount == 1 && failureEditor.aiState == .ready }
+            failureEditor.launchNextRender()
+            wait("Repaired AI publishes a current preview and restores export") { failureEditor.canExport && !failureEditor.workerActive }
+            do {
+                _ = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128,
+                    output: root.appendingPathComponent("missing-directory/output.png"))
+                fatalError("Output into a missing directory unexpectedly succeeded")
+            } catch RenderError.outputIO, RenderError.failed {
+                print("PASS: Ordinary output failure is not misclassified as an AI model failure")
+            }
+            failureEditor.resetAITask()
         }
         settings.whiteBalanceMode = .custom; settings.temperature = 4500
         do {

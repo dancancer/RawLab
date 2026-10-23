@@ -21,6 +21,23 @@ int main(int argc, char** argv) {
         const auto raw = root / "source.raw";
         { std::ofstream(raw) << "immutable RAW fixture"; }
         const auto key = rawCacheKey(raw.string(), std::string(64, 'a'), 0);
+        // 固定旧版身份，证明升级估计器后不能再读取之前误估噪声生成的三个缓存。
+        const auto legacyIdentity = std::string("{\"backend\":0,\"decoder\":\"rawlab-bayer-v2\",\"model\":\"")+
+            std::string(64,'a')+"\",\"noise\":\"rawlab-bayer-noise-v2:haar-mad-v1:sony-ilce-7cm2-20261022-bce08d93bc36\","+
+            "\"protocol\":\"rawlab-dualdn-v1\",\"source\":\""+sourceIdentityKey(raw.string())+"\"}";
+        const auto legacyKey = sha256Bytes(legacyIdentity.data(),legacyIdentity.size());
+        DenoiseCache legacyCache((root/"legacy-cache").string());
+        const std::vector<float> oldRaw{.18f}, oldRGB{.01f,.02f,.03f};
+        const auto oldPayload = sha256Bytes(oldRaw.data(),oldRaw.size()*sizeof(float));
+        RAWProcessOptions legacyOptions;
+        legacyCache.store(legacyKey,CacheKind::Raw,1,1,oldRaw.data(),oldRaw.size());
+        legacyCache.store(rgbCacheKey(legacyKey,legacyOptions),CacheKind::RGB,1,1,oldRGB.data(),oldRGB.size(),oldPayload);
+        legacyCache.store(sceneRGBCacheKey(legacyKey,legacyOptions),CacheKind::SceneRGB,1,1,oldRGB.data(),oldRGB.size());
+        require(!legacyCache.load(key,CacheKind::Raw,1,1),"previous noise protocol RAW cache was reused");
+        require(!legacyCache.load(rgbCacheKey(key,legacyOptions),CacheKind::RGB,1,1,oldPayload),
+                "previous noise protocol RGB cache was reused");
+        require(!legacyCache.load(sceneRGBCacheKey(key,legacyOptions),CacheKind::SceneRGB,0,0),
+                "previous noise protocol scene cache was reused");
         const auto originalStamp = std::filesystem::last_write_time(raw);
         const auto replacement = root / "replacement.raw";
         { std::ofstream(replacement) << "immutable RAW fixture"; }

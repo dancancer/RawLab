@@ -17,7 +17,7 @@ class NoiseEstimateUnavailable : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
-inline constexpr const char* noiseProtocol = "rawlab-bayer-noise-v2:haar-mad-v1:sony-ilce-7cm2-20261022-bce08d93bc36";
+inline constexpr const char* noiseProtocol = "rawlab-bayer-noise-v3:haar-mad-v2:sony-ilce-7cm2-20261022-bce08d93bc36";
 // 字符串接口只查询原有标定；source 接口对其他有效 Bayer 估计当前图像的归一化方差。
 NoiseParameters selectNoiseProfile(const std::string& cameraModel, float iso);
 NoiseParameters selectNoiseProfile(const RAWBayerSource& source);

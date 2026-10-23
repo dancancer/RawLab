@@ -4,12 +4,14 @@ enum RenderError: LocalizedError {
     case failed(String)
     case outputIO
     case aiNotReady(String)
+    case aiFailed(String)
     case aiCancelled
 
     var errorDescription: String? {
         switch self {
         case .failed(let text): return text
         case .aiNotReady(let text): return text
+        case .aiFailed(let text): return text
         case .aiCancelled: return L10n.text("AI 降噪已取消。")
         case .outputIO: return L10n.text("无法写入成片，请检查输出位置和剩余空间。")
         }

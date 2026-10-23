@@ -22,6 +22,24 @@ float sigma(const std::vector<float>& values) {
     return quantile(std::move(deviations), .5f) / .67448975f;
 }
 
+bool hasSpatialStructure(const std::vector<float>& detail) {
+    // 单个间隔可能落在周期信号的相关零点；保留二维邻域并检查多个间隔。
+    constexpr std::array<std::array<int,2>,4> directions{{{1,0},{0,1},{1,1},{1,-1}}};
+    for (const auto& direction : directions) for (int lag = 1; lag <= 4; ++lag) {
+        const int dx = direction[0]*lag, dy = direction[1]*lag;
+        double a = 0, b = 0, aa = 0, bb = 0, ab = 0;
+        int count = 0;
+        for (int y = std::max(0,-dy); y < std::min(16,16-dy); ++y)
+            for (int x = 0; x < 16-dx; ++x) {
+                const double first = detail[y*16+x], second = detail[(y+dy)*16+x+dx];
+                a += first; b += second; aa += first*first; bb += second*second; ab += first*second; ++count;
+            }
+        const double energy = std::max(0.,aa-a*a/count)*std::max(0.,bb-b*b/count);
+        if (energy > 0 && std::abs(ab-a*b/count) > .3*std::sqrt(energy)) return true;
+    }
+    return false;
+}
+
 std::vector<Sample> sampleNoise(const RAWBayerSource& source) {
     std::vector<Sample> result;
     const int columns = std::min(32, source.width / 64), rows = std::min(24, source.height / 64);
@@ -55,13 +73,7 @@ std::vector<Sample> sampleNoise(const RAWBayerSource& source) {
                 coarse.push_back((means[y * 16 + x] - means[y * 16 + x + 1] -
                     means[(y + 1) * 16 + x] + means[(y + 1) * 16 + x + 1]) * .5f);
             if (sigma(coarse) > spread * .9f) continue;
-            double correlation = 0, energy = 0;
-            const float center = quantile(detail, .5f);
-            for (size_t i = 1; i < detail.size(); ++i) {
-                correlation += (detail[i] - center) * (detail[i - 1] - center);
-                energy += (detail[i] - center) * (detail[i] - center);
-            }
-            if (energy > 0 && std::abs(correlation / energy) > .3) continue;
+            if (hasSpatialStructure(detail)) continue;
             result.push_back({std::accumulate(means.begin(), means.end(), 0.) / means.size(),
                               double(spread) * spread, phase});
         }
@@ -114,11 +126,11 @@ NoiseParameters estimateRawNoise(const RAWBayerSource& source) {
         std::vector<float> variances;
         for (const auto& sample : samples) variances.push_back(float(sample.variance));
         result.k = 1e-10f; result.b = quantile(variances, .5f);
-        result.calibrationID = "estimated-constant-variance-v1";
+        result.calibrationID = "estimated-constant-variance-v2";
     } else {
         const auto [k, b] = fit(samples);
         result.k = static_cast<float>(std::max(k, 1e-10)); result.b = static_cast<float>(b);
-        result.calibrationID = "estimated-haar-mad-v1";
+        result.calibrationID = "estimated-haar-mad-v2";
     }
     std::array<std::vector<float>, 4> phaseRatios;
     std::vector<float> errors;

@@ -215,7 +215,7 @@ final class RenderEngine {
 
     private func configureAI(enabled: Bool) throws {
         if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
-            throw RenderError.failed(L10n.text("此构建未安装 AI 降噪模型。"))
+            throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
         }
         var config = sony2fuji_ai_denoise_config()
         config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION
@@ -238,7 +238,7 @@ final class RenderEngine {
         if status == SONY2FUJI_STATUS_AI_NOT_READY {
             return .aiNotReady(L10n.text("请先完成此照片的 AI 降噪，再预览或导出。") + "\n" + message)
         }
-        return .failed(L10n.format("AI 降噪失败：%@", message))
+        return .aiFailed(L10n.format("AI 降噪失败：%@", message))
     }
 
     func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {
@@ -407,7 +407,10 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {
-            if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
+            if status == SONY2FUJI_STATUS_AI_NOT_READY ||
+                (settings.aiDenoiseEnabled && sony2fuji_session_get_ai_error(session).pointee != 0) {
+                throw aiError(status)
+            }
             throw RenderError.processing(status, input: url, look: lut, output: output)
         }
         if let output {

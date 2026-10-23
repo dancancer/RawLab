@@ -150,6 +150,7 @@ final class EditorModel: ObservableObject {
     var aiPreparation: AIPreparation?
     var aiDebounce: DispatchWorkItem?
     var aiManuallyRequested = false
+    var aiRequiresExplicitRetry = false
     // 全窗口串行化，避免多个整图推理同时争用内存。
     static let aiQueue = DispatchQueue(label: "rawlab.ai.prepare", qos: .utility)
     var prepareAIOperation: (URL, Adjustments, AIPreparation) throws -> Void = {
@@ -253,6 +254,7 @@ extension EditorModel {
         aiDebounce?.cancel(); aiDebounce = nil
         aiPreparation?.cancel(); aiPreparation = nil
         aiIdentity = nil; aiManuallyRequested = false; aiState = .idle
+        aiRequiresExplicitRetry = false
     }
 
     func setAIEnabled(_ enabled: Bool) {
@@ -270,7 +272,12 @@ extension EditorModel {
 
     func requestAIDenoise() {
         aiManuallyRequested = !settings.aiDenoiseEnabled
+        aiRequiresExplicitRetry = false
         aiIdentity = nil
+        // 旧预览不能在重试或取消后覆盖新的 AI 状态。
+        scheduler.invalidatePending()
+        previewOutdated = true
+        refreshBusy()
         synchronizeAI(delay: 0)
     }
 
@@ -279,7 +286,7 @@ extension EditorModel {
             if aiIdentity != nil || aiPreparation != nil || aiDebounce != nil { resetAITask() }
             return
         }
-        guard let file else { return }
+        guard !aiRequiresExplicitRetry, let file else { return }
         do {
             let snapshot = geometryPreviewSettings
             let identity = try AIWorkIdentity(file, settings: snapshot)
@@ -321,6 +328,9 @@ extension EditorModel {
                             self.schedule()
                         case .failure(let failure):
                             self.aiState = progress.isCancelled ? .cancelled : .failed(failure.localizedDescription)
+                            if !progress.isCancelled, case RenderError.aiFailed = failure {
+                                self.aiRequiresExplicitRetry = true
+                            }
                         }
                     }
                 }

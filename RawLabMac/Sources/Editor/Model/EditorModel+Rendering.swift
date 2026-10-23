@@ -51,7 +51,7 @@ extension EditorModel {
     func schedule(forceExact: Bool) {
         guard let file else { return }
         synchronizeAI()
-        if settings.aiDenoiseEnabled && aiState.isRunning {
+        if settings.aiDenoiseEnabled && (aiState.isRunning || aiRequiresExplicitRetry) {
             scheduler.invalidatePending()
             previewOutdated = true
             refreshBusy()
@@ -159,6 +159,9 @@ extension EditorModel {
                     self.error = failure.localizedDescription
                     if case RenderError.aiNotReady = failure, self.settings.aiDenoiseEnabled {
                         self.aiResultUnavailable()
+                    } else if case RenderError.aiFailed(let message) = failure, self.settings.aiDenoiseEnabled {
+                        self.aiRequiresExplicitRetry = true
+                        self.aiState = .failed(message)
                     }
                 }
             } else if let neutral, let result {

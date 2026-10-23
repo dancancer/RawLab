@@ -62,6 +62,28 @@ int main() {
             try { selectNoiseProfile(source); } catch (const NoiseEstimateUnavailable&) { return true; }
             return false;
         };
+        for (const auto& pattern : patterns) for (float white : {4095.f,16383.f}) {
+            for (const auto& periods : {std::array<int,2>{5,3}, {3,5}, {7,9}, {9,7}}) {
+                for (float randomSigma : {0.f,.002f}) {
+                    auto periodic = noisy(pattern,white,true);
+                    std::mt19937 random(20261024);
+                    std::normal_distribution<float> gaussian;
+                    for (int y = 0; y < periodic.height; ++y) for (int x = 0; x < periodic.width; ++x) {
+                        const int phase = pattern[(y%2)*2+x%2];
+                        const double signal = .18+.08*std::sin(2*3.141592653589793*(double(x)/periods[0]+double(y)/periods[1]))+
+                            randomSigma*gaussian(random);
+                        periodic.pixels[size_t(y)*periodic.width+x] = uint16_t(std::round(periodic.black[phase]+
+                            signal*(white-periodic.black[phase])));
+                    }
+                    require(unknown(periodic), "periodic texture was accepted as a confident noise estimate");
+                    auto mixed = noisy(pattern,white);
+                    std::copy_n(periodic.pixels.begin(),96*mixed.width,mixed.pixels.begin());
+                    const auto estimate = selectNoiseProfile(mixed);
+                    require(std::abs(estimate.k-.0015f) < .000375f,
+                            "periodic minority prevented recovery of the actual random noise");
+                }
+            }
+        }
         auto clipped = noisy(patterns[0],16383);
         std::fill(clipped.pixels.begin(),clipped.pixels.end(),16383);
         require(unknown(clipped), "clipped RAW manufactured a noise profile");
