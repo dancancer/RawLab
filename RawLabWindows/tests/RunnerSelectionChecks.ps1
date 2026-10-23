@@ -28,7 +28,7 @@ if($args[0] -eq 'msbuild'){
 }
 exit 0
 '@)
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}
@@ -72,6 +72,18 @@ try{
     $result=Run '' ''
     $expected=@($names[0..1])+@('target-RawLabWindows.Tests','target-LocalizationUiChecks')+@($names[2..($names.Count-1)])
     Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($expected -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+2) 'Empty selection runs the complete declared suite list successfully'
+    $result=Run 'ai-panel' ''
+    Check ($result.Code -eq 0 -and 'ai-panel' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-panel') 'AI panel is selectable without an installed model'
+    $result=Run 'ai-window' ''
+    Check ($result.Code -ne 0 -and $result.Text -match 'Selected suites did not run: ai-window' -and 'ai-window' -notin $result.Rows.name) 'Explicit AI window selection cannot pass without its model'
+    $model=Join-Path $native 'AI/DualDn';New-Item -ItemType Directory -Force $model | Out-Null
+    foreach($name in @('AI/DualDn/manifest.json','onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')){[IO.File]::WriteAllText((Join-Path $native $name),'private AI test artifact')}
+    $result=Run 'ai-window' ''
+    Check ($result.Code -eq 0 -and 'ai-window' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-window') 'Installed model enables the explicitly selected AI window suite'
+    foreach($target in @('main','ui')){
+        $destination=Join-Path $env:RAWLAB_RUNNER_TARGET $target
+        Check ((Test-Path (Join-Path $destination 'AI/DualDn/manifest.json')) -and (Test-Path (Join-Path $destination 'DirectML.dll'))) "AI model and runtime reach the $target test output"
+    }
     foreach($failure in @('build','msbuild','about','log','missing-command','missing-artifacts','timeout','msbuild-timeout')){
         $result=Run 'about,profile-isolation' $failure
         Check ($result.Code -ne 0 -and $result.Text -notmatch 'PASS: Windows v08') "External failure stays nonzero: $failure"
