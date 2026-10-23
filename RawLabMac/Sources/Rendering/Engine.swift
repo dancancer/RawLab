@@ -215,7 +215,7 @@ final class RenderEngine {
 
     private func configureAI(enabled: Bool) throws {
         if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
-            throw RenderError.aiNotReady(L10n.text("此构建未安装 AI 降噪模型。"))
+            throw RenderError.failed(L10n.text("此构建未安装 AI 降噪模型。"))
         }
         var config = sony2fuji_ai_denoise_config()
         config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION
@@ -243,9 +243,10 @@ final class RenderEngine {
 
     func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {
         guard !progress.isCancelled else { throw RenderError.aiCancelled }
-        guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持已标定的 Bayer RAW。")) }
+        guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureLens(settings.lensSettings)
         try configureAI(enabled: true)
         var request = sony2fuji_request()
         request.version = SONY2FUJI_REQUEST_VERSION
@@ -328,7 +329,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
-            throw RenderError.failed(L10n.text("AI 降噪仅支持已标定的 Bayer RAW。"))
+            throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }
         try configureAI(enabled: settings.aiDenoiseEnabled)
         let key = try? RawWhiteBalanceCacheKey(url)

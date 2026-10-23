@@ -4,6 +4,7 @@
 #include "ai/model_package.h"
 #include "ai/onnx_graph.h"
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -31,6 +32,8 @@ int main(int argc, char** argv) {
         request.intent = SONY2FUJI_INTENT_FINAL; request.size_mode = SONY2FUJI_SIZE_NATIVE;
         sony2fuji_buffer buffer{};
         require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_OK && buffer.data, "AI-off render changed");
+        const auto* firstBytes = static_cast<const uint8_t*>(buffer.data);
+        const std::vector<uint8_t> original(firstBytes,firstBytes+buffer.size_bytes);
         sony2fuji_release_buffer(&buffer);
         config.enabled = 1;
         if (!sony2fuji_ai_available()) {
@@ -41,45 +44,55 @@ int main(int argc, char** argv) {
             require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED,
                     "unsupported AI auto WB misreported as cache miss");
             request.wb_mode = SONY2FUJI_WB_CAMERA;
-            require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED && !buffer.data,
-                    "uncalibrated RAW silently rendered with AI enabled");
+            require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_AI_NOT_READY && !buffer.data,
+                    "missing result was rejected by camera brand or silently rendered");
             require(sony2fuji_session_get_ai_error(session)[0], "missing AI result has no error detail");
             auto cancel = [](void*, int32_t, uint64_t, uint64_t) -> int32_t { return 0; };
             require(sony2fuji_session_prepare_ai(session, &request, cancel, nullptr) == SONY2FUJI_STATUS_CANCELLED,
                     "cancelled AI preparation did not stop");
             require(!std::filesystem::exists(argv[3]), "cancelled AI preparation wrote cache");
-            require(sony2fuji_session_prepare_ai(session, &request, nullptr, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
-                    "uncalibrated fixture silently received a camera profile");
-            require(std::string(sony2fuji_session_get_ai_error(session)).find("calibration") != std::string::npos,
-                    "unsupported result did not come from the camera calibration gate");
+            auto cancelInference = [](void*,int32_t phase,uint64_t,uint64_t) -> int32_t { return phase < 2; };
+            require(sony2fuji_session_prepare_ai(session,&request,cancelInference,nullptr) == SONY2FUJI_STATUS_CANCELLED,
+                    "uncalibrated fixture did not reach model preparation");
+            require(!std::filesystem::exists(argv[3]), "cancelled inference wrote a partial cache");
+            const auto missingModel = std::string(argv[2])+"-missing";
+            config.model_directory = missingModel.c_str();
+            require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "missing package configuration");
+            require(sony2fuji_process(session,&request,&buffer) == SONY2FUJI_STATUS_PROCESSING_ERROR && !buffer.data,
+                    "missing model was treated as a retryable cache miss");
+            config.model_directory = argv[2];
+            require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "restored model configuration");
+            const auto invalidSource = std::string(argv[3])+"-invalid.raw";
+            { std::ofstream file(std::filesystem::u8path(invalidSource),std::ios::binary); file << std::string(4096,'x'); }
+            request.input_path = invalidSource.c_str();
+            const auto invalidStatus = sony2fuji_session_prepare_ai(session,&request,nullptr,nullptr);
+            request.input_path = argv[1]; std::filesystem::remove(std::filesystem::u8path(invalidSource));
+            require(invalidStatus == SONY2FUJI_STATUS_UNSUPPORTED,"RAW decode error lost unsupported classification");
 #ifdef RAWLAB_TEST_AI
-            // 为接口回归显式构造恒等缓存；不把此合成相机声称为模型标定结果。
+            // 恒等 RGB 缓存验证 ABI 的实际颜色/曝光路径，模型本身另做 GPU 数值回归。
             using namespace sony2fuji;
             using namespace sony2fuji::ai;
-            RAWProcessor decoder; RAWBayerSource source; RAWProcessOptions options;
-            require(decoder.loadFile(argv[1]) == ErrorCode::Success && decoder.readBayerSource(options, source) == ErrorCode::Success,
+            RAWProcessor decoder; ImageData source; RAWProcessOptions options;
+            require(decoder.loadFile(argv[1]) == ErrorCode::Success && decoder.process(options, source) == ErrorCode::Success,
                     "synthetic cache source");
             const auto package = loadModelPackage(argv[2]);
             const auto runtimeIdentity = package.digest + ":" + OnnxGraph::runtimeVersion();
             const auto identity = sha256Bytes(runtimeIdentity.data(), runtimeIdentity.size());
             const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(Backend::Cpu));
-            std::vector<float> mosaic;
-            for (int y = 0; y < source.height; ++y) for (int x = 0; x < source.width; ++x) {
-                const float black = source.black[source.pattern[(y%2)*2+x%2]];
-                mosaic.push_back((source.pixels[size_t(y)*source.width+x]-black)/(source.white-black));
-            }
             DenoiseCache cache(argv[3]);
-            cache.store(rawKey, CacheKind::Raw, source.width, source.height, mosaic.data(), mosaic.size());
-            options.useCameraWhiteBalance = false; options.useTemperatureWhiteBalance = true; options.temperature = 4500;
-            const auto rgbKey = rgbCacheKey(rawKey, options);
-            std::vector<float> zero(mosaic.size()*3, 0);
-            cache.store(rgbKey, CacheKind::RGB, source.width, source.height, zero.data(), zero.size(),
-                        sha256Bytes(mosaic.data(), mosaic.size() * sizeof(float)));
-            // 即使放入结构正确的完整缓存，也不能绕过相机标定入口。
-            require(sony2fuji_session_set_raw_exposure_mode(session, SONY2FUJI_EXPOSURE_PREVIEW) == SONY2FUJI_STATUS_OK, "preview baseline");
+            const auto sceneKey = sceneRGBCacheKey(rawKey,options);
+            std::vector<float> zero(source.pixels.size()*3,0);
+            cache.store(sceneKey,CacheKind::SceneRGB,source.width,source.height,zero.data(),zero.size(),{},"test-identity");
+            require(sony2fuji_process(session,&request,&buffer) == SONY2FUJI_STATUS_OK && buffer.data,
+                    "complete generic RGB cache did not render");
+            require(buffer.size_bytes == original.size() &&
+                    std::equal(original.begin(),original.end(),static_cast<const uint8_t*>(buffer.data)),
+                    "generic RGB identity changed the original render");
+            require(std::string(sony2fuji_session_get_ai_backend(session)) == "SceneRGB=test-identity", "generic cache lost producer");
+            sony2fuji_release_buffer(&buffer);
             request.wb_mode = SONY2FUJI_WB_TEMPERATURE; request.temperature = 4500;
-            require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED && !buffer.data,
-                    "valid cache bypassed the camera calibration gate");
+            require(sony2fuji_process(session,&request,&buffer) == SONY2FUJI_STATUS_AI_NOT_READY && !buffer.data,
+                    "white balance reused an incompatible generic cache");
             sony2fuji_release_buffer(&buffer);
             std::filesystem::remove_all(argv[3]);
 #endif

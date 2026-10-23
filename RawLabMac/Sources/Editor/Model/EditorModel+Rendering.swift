@@ -50,6 +50,13 @@ extension EditorModel {
     }
     func schedule(forceExact: Bool) {
         guard let file else { return }
+        synchronizeAI()
+        if settings.aiDenoiseEnabled && aiState.isRunning {
+            scheduler.invalidatePending()
+            previewOutdated = true
+            refreshBusy()
+            return
+        }
         if !settings.isDenoiseEnabled { cancelViewportResize() }
         guard !missingFilm, !missingMasterRecipe else {
             previewOutdated = true
@@ -162,7 +169,7 @@ extension EditorModel {
                 if completion == .publishExact { previewOutdated = false }
                 if request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
                     self.aiState = .ready
-                    self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: self.settings)
+                    self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: request.value.settings)
                 }
                 if let draft = geometryDraft,
                    request.value.settings.geometrySettings == draft.previewGeometry,

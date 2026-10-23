@@ -1,5 +1,7 @@
 #include "dualdn_cache.h"
 #include "model_package.h"
+#include "noise_profile.h"
+#include "scene_rgb_adapter.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -23,11 +25,12 @@ bool validKey(const std::string& key) {
 const char* suffix(CacheKind kind) {
     if (kind == CacheKind::Raw) return ".rawcache";
     if (kind == CacheKind::RGB) return ".rgbcache";
+    if (kind == CacheKind::SceneRGB) return ".scenecache";
     throw std::invalid_argument("invalid AI cache kind");
 }
 size_t countFor(CacheKind kind, int width, int height) {
     suffix(kind);
-    if (width <= 0 || height <= 0 || uint64_t(width) * height > 100000000)
+    if (width <= 0 || height <= 0 || uint64_t(width) * height > 128000000)
         throw std::invalid_argument("invalid AI cache dimensions");
     return size_t(width) * height * (kind == CacheKind::Raw ? 1 : 3);
 }
@@ -75,8 +78,7 @@ std::string rawCacheKey(const std::string& path, const std::string& modelDigest,
     if (!validKey(modelDigest)) throw std::invalid_argument("invalid AI model digest");
     return digestJson({{"source", sourceIdentityKey(path)},
         {"model", modelDigest}, {"backend", backend}, {"protocol", "rawlab-dualdn-v1"},
-        {"decoder", "rawlab-bayer-v1"},
-        {"calibration", "sony-ilce-7cm2-20261022-bce08d93bc36"}});
+        {"decoder", "rawlab-bayer-v2"}, {"noise", noiseProtocol}});
 }
 
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {
@@ -96,6 +98,14 @@ std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& opti
     return digestJson(key);
 }
 
+std::string sceneRGBCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {
+    Json key = {{"source_wb", rgbCacheKey(rawKey,options)}, {"adapter", sceneRGBProtocol}};
+    const auto& lens = options.lensCorrection;
+    if (lens.active()) key["lens"] = {lens.distortion,lens.tca,lens.autoCrop,lens.profileID,
+        options.lensDatabase ? options.lensDatabase->cacheIdentity() : "missing"};
+    return digestJson(key);
+}
+
 DenoiseCache::DenoiseCache(std::string directory) : directory_(std::move(directory)) {
     const uint16_t endian = 1;
     if (*reinterpret_cast<const uint8_t*>(&endian) != 1 || sizeof(float) != 4)
@@ -107,15 +117,24 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
                                        const std::string& dependency, std::string* producer) const {
     if (producer) producer->clear();
     if (!validKey(key) || (!dependency.empty() && !validKey(dependency))) throw std::invalid_argument("invalid AI cache key");
-    const size_t count = countFor(kind, width, height);
+    const bool readDimensions = kind == CacheKind::SceneRGB && width == 0 && height == 0;
+    if (!readDimensions) countFor(kind, width, height);
     const auto file = std::filesystem::u8path(directory_) / (key + suffix(kind));
     try {
         std::ifstream input(file, std::ios::binary);
         if (!input) return {};
         uint32_t length = 0; input.read(reinterpret_cast<char*>(&length), sizeof(length));
-        if (!input || length == 0 || length > 4096 || std::filesystem::file_size(file) != 4 + uint64_t(length) + count * 4) return {};
+        if (!input || length == 0 || length > 4096) return {};
         std::string text(length, '\0'); input.read(text.data(), length);
-        const auto header = Json::parse(text);
+        auto header = Json::parse(text);
+        if (kind == CacheKind::SceneRGB || header.contains("header_sha256")) {
+            const auto expected = header.at("header_sha256").get<std::string>();
+            header.erase("header_sha256");
+            if (digestJson(header) != expected) return {};
+        }
+        if (readDimensions) { width = header.at("width").get<int>(); height = header.at("height").get<int>(); }
+        const size_t count = countFor(kind, width, height);
+        if (std::filesystem::file_size(file) != 4 + uint64_t(length) + count * 4) return {};
         if (header.at("format") != "rawlab-dualdn-cache-v1" || header.at("key") != key ||
             header.at("width") != width || header.at("height") != height ||
             header.at("channels") != (kind == CacheKind::Raw ? 1 : 3) ||
@@ -144,9 +163,10 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
     const auto target = root / (key + suffix(kind));
     std::random_device random;
     const auto temporary = root / (key + suffix(kind) + ".part-" + std::to_string(random()) + "-" + std::to_string(random()));
-    const Json header = {{"format", "rawlab-dualdn-cache-v1"}, {"key", key}, {"width", width}, {"height", height},
+    Json header = {{"format", "rawlab-dualdn-cache-v1"}, {"key", key}, {"width", width}, {"height", height},
         {"channels", kind == CacheKind::Raw ? 1 : 3}, {"sha256", sha256Bytes(values, count * 4)},
         {"dependency", dependency}, {"producer", producer}};
+    header["header_sha256"] = digestJson(header);
     const auto text = header.dump(); const uint32_t length = static_cast<uint32_t>(text.size());
     try {
         std::ofstream output(temporary, std::ios::binary);
@@ -175,8 +195,8 @@ void DenoiseCache::prune(uint64_t byteLimit, const std::set<std::string>& protec
     if (!std::filesystem::is_directory(root, error)) return;
     for (const auto& entry : std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied)) {
         const auto name = entry.path().filename().string();
-        if (name.size() != 73 || !validKey(name.substr(0,64)) ||
-            (name.substr(64) != ".rawcache" && name.substr(64) != ".rgbcache") ||
+        if (name.size() < 73 || !validKey(name.substr(0,64)) ||
+            (name.substr(64) != ".rawcache" && name.substr(64) != ".rgbcache" && name.substr(64) != ".scenecache") ||
             entry.is_symlink() || !entry.is_regular_file()) continue;
         const auto size = entry.file_size(); bytes += size;
         if (!protectedKeys.count(name.substr(0,64))) candidates.push_back({entry.path(), size, entry.last_write_time()});

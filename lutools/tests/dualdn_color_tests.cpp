@@ -37,6 +37,14 @@ int main() {
         RAWBayerSource source;
         source.cameraCalibration = {{{.7f,.2f,.1f}, {.15f,.75f,.1f}, {.04f,.2f,.76f}}};
         const auto matrix = officialCameraToXYZ(source);
+        source.whiteBalance = wb;
+        require(supportsDualDnBridge(source), "valid DualDn bridge rejected");
+        source.whiteBalance[3] = 1.2f;
+        require(!supportsDualDnBridge(source), "unequal green WB did not select generic RGB");
+        source.whiteBalance = wb;
+        source.cameraCalibration = {{{1,1,1},{1,1,1},{1,1,1}}};
+        require(!supportsDualDnBridge(source), "singular matrix did not select generic RGB");
+        source.cameraCalibration = {{{.7f,.2f,.1f}, {.15f,.75f,.1f}, {.04f,.2f,.76f}}};
         const auto roundtrip = ColorConverter::multiplyMatrices(source.cameraCalibration, matrix);
         for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j)
             require(std::abs(roundtrip[i][j] - identity[i][j]) < 1e-5, "camera matrix inverse parity");

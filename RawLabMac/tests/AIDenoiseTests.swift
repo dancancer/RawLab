@@ -19,6 +19,12 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         defer { try? FileManager.default.removeItem(at: root) }
         let first = root.appendingPathComponent("first.dng"), second = root.appendingPathComponent("second.dng")
         try Data([1,2,3]).write(to: first); try Data([4,5,6]).write(to: second)
+        var identitySettings = Adjustments()
+        let originalIdentity = try EditorModel.AIWorkIdentity(first, settings: identitySettings)
+        identitySettings.lensCorrection = LensCorrectionSettings(distortion: true)
+        let lensIdentity = try EditorModel.AIWorkIdentity(first, settings: identitySettings)
+        check(lensIdentity != originalIdentity,
+              "Lens correction invalidates prepared scene RGB")
         let editor = EditorModel(lookDirectory: root.appendingPathComponent("looks"),
             editDirectory: root.appendingPathComponent("edits"), batchDirectory: root.appendingPathComponent("batch"))
         // 隔离任务发布逻辑；真实 native preview/export 在下方独立验证。
@@ -70,11 +76,56 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         editor.setAIEnabled(false)
 
+        let lensEditor = EditorModel(lookDirectory: root.appendingPathComponent("lens-looks"),
+            editDirectory: root.appendingPathComponent("lens-edits"), batchDirectory: root.appendingPathComponent("lens-batch"))
+        lensEditor.debounceTimer?.cancel(); lensEditor.debounceTimer = nil; lensEditor.file = first
+        var lensStarted = 0
+        var lensSnapshots: [LensCorrectionSettings] = []
+        let lensRelease = DispatchSemaphore(value: 0)
+        lensEditor.prepareAIOperation = { _, snapshot, progress in
+            DispatchQueue.main.async { lensStarted += 1; lensSnapshots.append(snapshot.lensSettings) }
+            _ = lensRelease.wait(timeout: .now() + 8)
+            _ = progress.report(phase: 3, completed: 1, total: 1)
+        }
+        lensEditor.requestAIDenoise()
+        wait("Lens regression starts with an active AI task") { lensStarted == 1 }
+        var draft = MacGeometryDraft(geometry: GeometrySettings(), lens: LensCorrectionSettings())
+        draft.lens.distortion = true
+        lensEditor.geometryDraft = draft; lensEditor.geometryDraftPreviewReady = true
+        lensEditor.busy = false; lensEditor.previewOutdated = false
+        check(lensEditor.applyGeometryDraft(), "Lens draft commits during AI preparation")
+        lensEditor.debounceTimer?.cancel(); lensEditor.debounceTimer = nil
+        lensRelease.signal()
+        wait("Committed lens draft prepares the new AI identity") { lensStarted == 2 }
+        lensRelease.signal()
+        wait("Only the new lens identity publishes ready") { lensEditor.settings.aiDenoiseEnabled && lensEditor.aiState == .ready }
+        check(lensEditor.aiIdentity?.lens.distortion == true, "Prepared AI identity retains committed lens settings")
+        var activeDraft = MacGeometryDraft(geometry: GeometrySettings(), lens: lensEditor.settings.lensSettings)
+        activeDraft.lens.tca = true
+        lensEditor.geometryDraft = activeDraft; lensEditor.schedule(forceExact: true)
+        lensEditor.debounceTimer?.cancel(); lensEditor.debounceTimer = nil
+        wait("Active lens draft prepares its preview identity") { lensStarted == 3 }
+        check(!lensEditor.scheduler.hasPending && lensEditor.previewOutdated,
+              "Lens AI preparation waits before rendering a missing cache")
+        check(lensSnapshots.last?.tca == true && !lensEditor.settings.lensSettings.tca,
+              "AI receives draft lens settings without committing them")
+        lensEditor.geometryDraft?.geometry.straightenDegrees = 1
+        lensEditor.schedule(forceExact: true)
+        check(lensStarted == 3 && lensEditor.aiIdentity?.lens.tca == true, "Geometry-only draft reuses the same AI preparation")
+        lensEditor.cancelAIDenoise(); lensRelease.signal()
+        lensEditor.cancelGeometryDraft(); lensEditor.debounceTimer?.cancel(); lensEditor.debounceTimer = nil
+        wait("Cancelling a cancelled lens draft restores committed AI identity") { lensStarted == 4 }
+        check(lensSnapshots.last?.tca == false, "Draft cancellation prepares the committed lens snapshot")
+        lensRelease.signal()
+        wait("Committed AI becomes ready after draft cancellation") { lensEditor.aiState == .ready }
+        lensEditor.debounceTimer?.cancel(); lensEditor.debounceTimer = nil; lensEditor.resetAITask()
+
         guard CommandLine.arguments.count == 4 || CommandLine.arguments.count == 5 else { return }
         let model = URL(fileURLWithPath: CommandLine.arguments[1])
         let raw = URL(fileURLWithPath: CommandLine.arguments[2])
         let cache = URL(fileURLWithPath: CommandLine.arguments[3])
-        let backend = CommandLine.arguments.count == 5 && CommandLine.arguments[4] == "cpu" ? SONY2FUJI_AI_CPU : SONY2FUJI_AI_AUTO
+        let requested = CommandLine.arguments.count == 5 ? CommandLine.arguments[4] : "auto"
+        let backend = requested == "cpu" ? SONY2FUJI_AI_CPU : requested == "coreml" ? SONY2FUJI_AI_COREML : SONY2FUJI_AI_AUTO
         let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: model, aiCacheDirectory: cache, aiBackend: backend)
         var settings = Adjustments(); settings.aiDenoiseEnabled = true
         check(!settings.neutralSettings.aiDenoiseEnabled, "Neutral comparison excludes AI adjustments")
@@ -89,8 +140,9 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         check(phases.filter { $0.0 == 2 || $0.0 == 3 }.allSatisfy { $0.1 == 1 && $0.2 == 1 },
               "Real RAW preparation reuses complete native caches without inference")
         check(!engine.lastAIBackend.isEmpty, "Prepared cache reports its actual AI producers")
-        if backend == SONY2FUJI_AI_AUTO {
-            check(engine.lastAIBackend == "RAW=CoreML; RGB=ISP:CPU/RGB:CoreML",
+        let sceneRGB = engine.lastAIBackend.hasPrefix("SceneRGB=")
+        if backend != SONY2FUJI_AI_CPU {
+            check(engine.lastAIBackend == (sceneRGB ? "SceneRGB=CoreML" : "RAW=CoreML; RGB=ISP:CPU/RGB:CoreML"),
                   "Native cache identifies CoreML networks and CPU ISP")
         }
         let preview = try engine.render(raw, settings: settings, lut: nil, edge: 512, viewportPreview: true)!
@@ -110,15 +162,16 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         let a = pixels(exact.image), b = pixels(exported)
         check(a.count == b.count && zip(a,b).allSatisfy { abs(Int($0)-Int($1)) <= 2 },
               "Exact preview and native export use the same AI result within output quantization")
-        if backend == SONY2FUJI_AI_AUTO {
+        if backend != SONY2FUJI_AI_CPU {
             let copiedModel = root.appendingPathComponent("model")
             try FileManager.default.copyItem(at: model, to: copiedModel)
-            let validationEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: copiedModel, aiCacheDirectory: cache)
+            let validationEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: copiedModel, aiCacheDirectory: cache, aiBackend: backend)
             _ = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128)
             let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: copiedModel.appendingPathComponent("manifest.json"))) as! [String: Any]
-            let native = (manifest["coreml"] as! [String: Any])["raw"] as! [String: Any]
+            let native = sceneRGB ? (manifest["blind_rgb"] as! [String: Any])["coreml"] as! [String: Any] :
+                (manifest["coreml"] as! [String: Any])["raw"] as! [String: Any]
             let file = (native["files"] as! [[String: Any]])[0]["path"] as! String
-            let resource = copiedModel.appendingPathComponent("raw.mlmodelc").appendingPathComponent(file)
+            let resource = copiedModel.appendingPathComponent(native["directory"] as! String).appendingPathComponent(file)
             let modified = try FileManager.default.attributesOfItem(atPath: resource.path)[.modificationDate]!
             var bytes = try Data(contentsOf: resource); bytes[0] ^= 1
             try bytes.write(to: resource)
@@ -126,7 +179,7 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
             do {
                 _ = try validationEngine.render(raw, settings: settings, lut: nil, edge: 128)
                 fatalError("Mutated native model reused a validated package")
-            } catch RenderError.aiNotReady {
+            } catch RenderError.failed {
                 print("PASS: Native resource change invalidates loaded package despite preserved size and modification time")
             }
         }

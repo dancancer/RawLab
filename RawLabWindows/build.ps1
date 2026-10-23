@@ -69,7 +69,6 @@ $aiOptions = @('-DSONY2FUJI_ENABLE_AI_DENOISE=OFF','-DSONY2FUJI_ENABLE_DIRECTML=
 if ($DualDnModel) {
     $DualDnModel = (Resolve-Path -LiteralPath $DualDnModel).Path
     $modelManifest = Get-Content -LiteralPath "$DualDnModel/manifest.json" -Raw | ConvertFrom-Json
-    if ($modelManifest.coreml) { throw 'Use the base ONNX package from export.py for Windows, without Apple CoreML resources.' }
     if (!$OnnxRuntimeRoot) {
         $OnnxRuntimeRoot = & "$PSScriptRoot/build-ai-dependencies.ps1" -CacheDirectory (Join-Path (Get-SharedCache) 'onnxruntime/windows-directml-1.23.0') -Output "$repo/build/windows-ai-deps"
     }
@@ -124,6 +123,14 @@ if ($DualDnModel) {
     Invoke-Checked $probe @('--validate',$DualDnModel)
     New-Item -ItemType Directory -Force $aiDestination | Out-Null
     foreach ($name in @('manifest.json','raw.onnx','isp.onnx','rgb.onnx','DualDn-LICENSE.txt')) { Copy-Item -LiteralPath "$DualDnModel/$name" $aiDestination -Force }
+    foreach ($name in @('blind_rgb.onnx','Restormer-LICENSE.txt')) {
+        if (Test-Path -LiteralPath "$DualDnModel/$name") { Copy-Item -LiteralPath "$DualDnModel/$name" $aiDestination -Force }
+    }
+    # Windows ships ONNX/DirectML only; omit unbundled Apple resources from the manifest.
+    $aiManifest = Get-Content -LiteralPath "$aiDestination/manifest.json" -Raw | ConvertFrom-Json
+    $aiManifest.PSObject.Properties.Remove('coreml')
+    if ($aiManifest.PSObject.Properties.Name -contains 'blind_rgb') { $aiManifest.blind_rgb.PSObject.Properties.Remove('coreml') }
+    $aiManifest | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath "$aiDestination/manifest.json" -Encoding utf8
     Invoke-Checked $probe @('--validate',$aiDestination)
 } else {
     foreach ($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) {
@@ -150,6 +157,9 @@ if (Test-Path -LiteralPath $aiLicenses) { Remove-Item -LiteralPath $aiLicenses -
 if ($DualDnModel) {
     New-Item -ItemType Directory -Force $aiLicenses | Out-Null
     Copy-Item -LiteralPath "$DualDnModel/DualDn-LICENSE.txt" "$aiLicenses/LICENSE" -Force
+    if (Test-Path -LiteralPath "$DualDnModel/Restormer-LICENSE.txt") {
+        Copy-Item -LiteralPath "$DualDnModel/Restormer-LICENSE.txt" $aiLicenses -Force
+    }
     Copy-Item -LiteralPath "$OnnxRuntimeRoot/LICENSE" "$aiLicenses/ONNX-Runtime-LICENSE" -Force
     Copy-Item -LiteralPath "$OnnxRuntimeRoot/ThirdPartyNotices.txt" "$aiLicenses/ONNX-Runtime-ThirdPartyNotices.txt" -Force
     Copy-Item -LiteralPath "$OnnxRuntimeRoot/licenses/DirectML" $aiLicenses -Recurse -Force

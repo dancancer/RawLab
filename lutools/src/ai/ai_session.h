@@ -17,6 +17,13 @@ using JobProgress = std::function<bool(Phase, size_t, size_t)>;
 struct PrepareReport {
     bool rawCacheHit = false, rgbCacheHit = false;
     RuntimeReport raw, rgb;
+    std::string route, routeReason;
+    NoiseParameters noise;
+};
+struct PreparedDenoise {
+    RAWBayerOverride bayer;
+    Tensor scene;
+    bool isSceneRGB() const { return !scene.values.empty(); }
 };
 
 // 与渲染 session 一样由一个工作线程持有。跨 session 只共享原子完成的磁盘缓存。
@@ -26,7 +33,7 @@ public:
     std::string lastError, lastBackend;
     void configure(std::string modelDirectory, std::string cacheDirectory, Backend backend);
     std::string renderKey(const std::string& path, const RAWProcessOptions& options);
-    const RAWBayerOverride& result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource& metadata);
+    const PreparedDenoise& result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource* metadata);
     PrepareReport prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& progress);
 private:
     void ensurePackage();
@@ -34,6 +41,6 @@ private:
     std::string modelDirectory_, cacheDirectory_, stamp_, runtimeDigest_, loadedKey_;
     Backend backend_ = Backend::Cpu;
     std::optional<ModelPackage> package_;
-    RAWBayerOverride loaded_;
+    PreparedDenoise loaded_;
 };
 } // namespace sony2fuji::ai

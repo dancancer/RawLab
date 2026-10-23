@@ -75,7 +75,7 @@ struct DenoiseControls: View {
             case .cancelled: Text(L10n.text("AI 降噪已取消。"))
             case .ready: Text(L10n.text("已应用 AI 降噪；曝光和外观调整复用结果。"))
             case .idle:
-                Text(L10n.text(model.canStartAI ? "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。"))
+                Text(L10n.text(model.canStartAI ? "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。"))
             }
             if model.settings.aiDenoiseEnabled && model.aiState == .ready {
                 Text(L10n.text("AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"))

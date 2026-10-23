@@ -52,7 +52,7 @@ int main() {
         rejects<Cancelled>([&] { runTiles(input, {8, 2}, 1,
             [&](const Tensor& x) { ++calls; return x; }, [](size_t n, size_t) { return n < 2; }); });
         require(calls == 2 && input.values == copy, "cancellation did not stop at tile boundary");
-        rejects<std::runtime_error>([&] { runTiles(input, {8, 2}, 1, [](const Tensor& x) {
+        rejects<ModelContractError>([&] { runTiles(input, {8, 2}, 1, [](const Tensor& x) {
             auto bad = x; bad.values[0] = std::numeric_limits<float>::quiet_NaN(); return bad;
         }); });
         InferenceReport report;
@@ -62,6 +62,15 @@ int main() {
                 auto altered = x; for (auto& v : altered.values) v += 10; return altered; },
             [](const Tensor& x) { return x; }, report);
         require(restored.values == input.values && report.fallbackUsed && calls == 2, "fallback mixed partial output");
+        int cpuCalls = 0;
+        rejects<ModelContractError>([&] { runTilesWithFallback(input,{8,2},1,
+            [](Tensor tile) { tile.values[0] = std::numeric_limits<float>::quiet_NaN(); return tile; },
+            [&](const Tensor& tile) { ++cpuCalls; return tile; },report); });
+        require(cpuCalls == 0 && !report.fallbackUsed, "Auto hid invalid model output with CPU fallback");
+        rejects<ModelContractError>([&] { runTilesWithFallback(input,{8,2},1,
+            [](const Tensor&) { return Tensor{4,4,1,std::vector<float>(16)}; },
+            [&](const Tensor& tile) { ++cpuCalls; return tile; },report); });
+        require(cpuCalls == 0, "Auto hid wrong output shape with CPU fallback");
         rejects<Cancelled>([&] { runTilesWithFallback(input, {8, 2}, 1,
             [](const Tensor&) -> Tensor { throw Cancelled(); }, [](const Tensor& x) { return x; }, report); });
         const auto low = selectNoiseProfile("ILCE-7CM2", 100);

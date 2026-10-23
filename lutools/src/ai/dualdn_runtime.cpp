@@ -114,4 +114,30 @@ Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised
     finishReport(report, diagnostics, start);
     return output;
 }
+Tensor denoiseSceneRGB(const ImageData& source, float gain, const ModelPackage& package,
+                       Backend backend, RuntimeReport& report, const Progress& progress) {
+    report = {};
+    const auto start = Clock::now();
+    auto graph = std::make_unique<NetworkGraph>(package,GraphKind::BlindRGB,backend);
+    report.backend = graph->backend(); report.fallbackReason = graph->fallbackReason();
+    auto run = [&] {
+        return sceneRGBCorrection(source,gain,[&](const Tensor& tile) {
+            return Tensor{tile.width,tile.height,3,graph->run({tile.values})};
+        },progress);
+    };
+    Tensor result;
+    try { result = run(); }
+    catch (const Cancelled&) { throw; }
+    catch (const std::runtime_error& error) {
+        if (backend != Backend::Auto || report.backend == "CPU") throw;
+        report.fallbackReason = error.what();
+        graph.reset();
+        graph = std::make_unique<NetworkGraph>(package,GraphKind::BlindRGB,Backend::Cpu);
+        report.backend = graph->backend();
+        // 失败的部分结果已销毁，CPU 重新处理整张图，不能拼接不同后端的输出。
+        result = run();
+    }
+    report.seconds = std::chrono::duration<double>(Clock::now()-start).count();
+    return result;
+}
 } // namespace sony2fuji::ai

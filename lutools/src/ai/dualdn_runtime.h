@@ -3,6 +3,7 @@
 #include "model_package.h"
 #include "noise_profile.h"
 #include "network_graph.h"
+#include "scene_rgb_adapter.h"
 #include "sony2fuji/raw_processor.h"
 
 namespace sony2fuji::ai {
@@ -18,4 +19,6 @@ RAWBayerOverride denoiseRaw(const RAWBayerSource& source, const ModelPackage& pa
 Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised,
                    const ModelPackage& package, const NoiseParameters& noise, Backend backend,
                    RGBOutput output, RuntimeReport& report, const Progress& progress = {});
+Tensor denoiseSceneRGB(const ImageData& source, float gain, const ModelPackage& package,
+                       Backend backend, RuntimeReport& report, const Progress& progress = {});
 } // namespace sony2fuji::ai

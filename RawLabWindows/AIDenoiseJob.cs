@@ -1,6 +1,6 @@
 namespace RawLab.Windows;
 
-internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend)
+internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend,LensSettings Lens)
 {
     internal static AIDenoiseIdentity Read(string path,Adjustments settings,int backend)
     {
@@ -8,7 +8,7 @@ internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdent
         // 相机 WB 由原片确定；配方身份只记录用户偏移，不随首帧解析出的 AsShot 改变。
         var temperature=settings.CameraWhiteBalance ? 0 : request.Temperature;
         var tint=settings.MasterRecipeID==null ? request.Tint : (float)(settings[Parameter.Tint]*settings[Parameter.Strength]/100);
-        return new(OriginalIdentity.Read(path),settings.Processing,request.WbMode,temperature,tint,backend);
+        return new(OriginalIdentity.Read(path),settings.Processing,request.WbMode,temperature,tint,backend,settings.Lens);
     }
 }
 internal enum AIDenoiseStatus { Idle,Running,Ready,Failed,Cancelled }

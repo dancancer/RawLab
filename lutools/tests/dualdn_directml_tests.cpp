@@ -27,12 +27,13 @@ int main(int argc, char** argv) {
         bool hardware = false;
         try { const auto device = findDirectMLAdapter(); hardware = true; std::cout << device.identity << '\n'; }
         catch (const std::runtime_error& error) { std::cout << "NO HARDWARE: " << error.what() << '\n'; }
-        for (const auto kind : {GraphKind::Raw, GraphKind::RGB}) {
+        for (const auto kind : {GraphKind::Raw, GraphKind::RGB, GraphKind::BlindRGB}) {
+            if (kind == GraphKind::BlindRGB && package.blindRGBPath.empty()) continue;
             bool rejected = false;
             try {
                 NetworkGraph force(package, kind, Backend::DirectML);
                 require(hardware && force.backend() == "DirectML", "forced DirectML disguised a CPU/software backend");
-                const std::string name = kind == GraphKind::Raw ? "raw" : "rgb";
+                const std::string name = kind == GraphKind::Raw ? "raw" : kind == GraphKind::RGB ? "rgb" : "blind_rgb";
                 std::vector<std::vector<float>> inputs;
                 for (const auto& input : graphSignature(kind, package.tileSize).inputNames)
                     inputs.push_back(read(std::filesystem::u8path(argv[1]) / (name + "-" + input + ".f32")));

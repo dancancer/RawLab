@@ -15,7 +15,7 @@
 "4:3" = "4:3";
 "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "KI-Entrauschen ist aktiv. Die üblichen Einstellungen bleiben erhalten. Änderungen am Weißabgleich erfordern eine erneute Verarbeitung.";
 "AI 降噪" = "KI-Entrauschen";
-"AI 降噪仅支持已标定的 Bayer RAW。" = "KI-Entrauschen unterstützt nur kalibrierte Bayer-RAW-Dateien.";
+"AI 降噪仅支持 RAW 照片。" = "KI-Entrauschen unterstützt nur RAW-Fotos.";
 "AI 降噪失败" = "KI-Entrauschen fehlgeschlagen";
 "AI 降噪失败：%@" = "KI-Entrauschen fehlgeschlagen: %@";
 "AI 降噪已取消。" = "KI-Entrauschen abgebrochen.";
@@ -66,7 +66,6 @@
 "仅包含此目录中的 RAW，不包含子目录。" = "Nur RAWs aus diesem Ordner, ohne Unterordner.";
 "仅包含此目录中的照片，不包含子目录。" = "Nur Fotos in diesem Ordner werden einbezogen, keine Unterordner.";
 "仅在暗角强度为负值时可用。" = "Nur bei negativer Vignettenstärke verfügbar.";
-"仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。" = "Unterstützt verlustfreies A7C II RAW in voller Größe bei ISO 100–12800. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.";
 "仅用于本次导出，保留各照片原有调整" = "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten";
 "从侧栏移除此目录" = "Ordner aus der Seitenleiste entfernen";
 "从列表移除" = "Aus Liste entfernen";
@@ -248,6 +247,7 @@
 "按每张照片" = "Pro Foto";
 "搜索镜头" = "Objektive suchen";
 "操作失败" = "Der Vorgang ist fehlgeschlagen";
+"支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Unterstützt verschiedene RAW-Formate. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.";
 "收起%@组" = "Gruppe „%@“ zuklappen";
 "收起暗角参数" = "Vignetteneinstellungen einklappen";
 "收起直方图" = "Histogramm ausblenden";

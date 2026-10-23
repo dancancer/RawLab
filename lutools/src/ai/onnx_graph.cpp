@@ -29,6 +29,7 @@ GraphSignature graphSignature(GraphKind kind, int size) {
     case GraphKind::Raw: return {{"packed_raw", "k", "b"}, "denoised_packed", {raw, {1}, {1}}, raw};
     case GraphKind::ISP: return {{"mosaic", "wb", "camera_to_xyz"}, "encoded_rgb", {{1, 1, size, size}, {1, 1, 1, 4}, {1, 1, 3, 3}}, rgb};
     case GraphKind::RGB: return {{"skip_rgb", "noise_rgb"}, "denoised_rgb", {rgb, rgb}, rgb};
+    case GraphKind::BlindRGB: return {{"encoded_rgb"}, "denoised_rgb", {rgb}, rgb};
     default: throw std::invalid_argument("invalid DualDn graph kind");
     }
 }
@@ -64,10 +65,13 @@ struct OnnxGraph::Impl {
             }
             session = Ort::Session(environment(), std::filesystem::u8path(path).c_str(), options);
         } catch (const Ort::Exception& error) {
+            if (error.GetOrtErrorCode() == ORT_INVALID_PROTOBUF || error.GetOrtErrorCode() == ORT_INVALID_GRAPH ||
+                error.GetOrtErrorCode() == ORT_NO_SUCHFILE)
+                throw ModelContractError(std::string("Invalid AI graph: ") + error.what());
             throw std::runtime_error(std::string("Cannot initialize ") + backend + " graph: " + error.what());
         }
         if (session.GetInputCount() != inputNames.size() || session.GetOutputCount() != 1)
-            throw std::invalid_argument("DualDn graph input/output count mismatch");
+            throw ModelContractError("DualDn graph input/output count mismatch");
         Ort::AllocatorWithDefaultOptions allocator;
         for (size_t i = 0; i <= inputNames.size(); ++i) {
             const bool output = i == inputNames.size();
@@ -78,7 +82,7 @@ struct OnnxGraph::Impl {
             if (name.get() != (output ? outputName : inputNames[i]) ||
                 tensor.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
                 tensor.GetShape() != (output ? outputShape : inputShapes[i]))
-                throw std::invalid_argument("DualDn graph tensor contract mismatch");
+                throw ModelContractError("DualDn graph tensor contract mismatch");
         }
     }
 };
@@ -116,11 +120,11 @@ std::vector<float> OnnxGraph::run(const std::vector<std::vector<float>>& inputs)
     const auto info = result[0].GetTensorTypeAndShapeInfo();
     if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
         info.GetShape() != impl_->outputShape)
-        throw std::runtime_error("DualDn output changed shape or type");
+        throw ModelContractError("DualDn output changed shape or type");
     const float* values = result[0].GetTensorData<float>();
     const size_t count = elements(impl_->outputShape);
     if (!std::all_of(values, values + count, [](float x) { return std::isfinite(x); }))
-        throw std::runtime_error("DualDn returned nonfinite pixels");
+        throw ModelContractError("DualDn returned nonfinite pixels");
     return {values, values + count};
 }
 } // namespace sony2fuji::ai

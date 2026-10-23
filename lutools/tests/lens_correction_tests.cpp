@@ -6,12 +6,29 @@
 #include <iostream>
 #include <limits>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
 
 using namespace sony2fuji;
 
 int main() {
     auto db = LensCorrectionDatabase::load(TEST_FIXTURE_DIR "/lenses.xml");
     assert(db);
+    assert(!db->cacheIdentity().empty());
+    const auto duplicate = LensCorrectionDatabase::load(TEST_FIXTURE_DIR "/lenses.xml");
+    assert(duplicate && duplicate->cacheIdentity() == db->cacheIdentity());
+    const auto changedPath = std::filesystem::temp_directory_path() / ("rawlab-lens-identity-"+
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+".xml");
+    std::ifstream original(TEST_FIXTURE_DIR "/lenses.xml");
+    std::string changedXML((std::istreambuf_iterator<char>(original)),std::istreambuf_iterator<char>());
+    const auto coefficient = changedXML.find("-0.12");
+    assert(coefficient != std::string::npos);
+    changedXML.replace(coefficient,5,"-0.15");
+    { std::ofstream changed(changedPath); changed << changedXML; }
+    const auto changed = LensCorrectionDatabase::load(changedPath.u8string());
+    std::filesystem::remove(changedPath);
+    assert(changed && changed->cacheIdentity() != db->cacheIdentity());
     LensMetadata metadata;
     metadata.cameraMake = "RawLab"; metadata.cameraModel = "Test Camera";
     metadata.lensMake = "RawLab"; metadata.lensModel = "Test 24mm f/2.8";

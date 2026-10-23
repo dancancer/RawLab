@@ -72,13 +72,21 @@ if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
     for resource in manifest.json raw.onnx isp.onnx rgb.onnx DualDn-LICENSE.txt; do
         cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
     done
-    for resource in raw.mlmodelc rgb.mlmodelc; do
+    for resource in blind_rgb.onnx Restormer-LICENSE.txt; do
+        if [ -f "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
+            cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+        fi
+    done
+    for resource in raw.mlmodelc rgb.mlmodelc blind_rgb.mlmodelc; do
         if [ -d "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
             cp -R "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
         fi
     done
     "$BUILD/dualdn_probe" --validate "$APP/Contents/Resources/AI/DualDn"
     cp "$RAWLAB_DUALDN_MODEL_DIR/DualDn-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/LICENSE"
+    if [ -f "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" ]; then
+        cp "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/"
+    fi
     cp "$RAWLAB_ONNXRUNTIME_ROOT/LICENSE" "$APP/Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE"
     cp "$RAWLAB_ONNXRUNTIME_ROOT/ThirdPartyNotices.txt" "$APP/Contents/Resources/Licenses/DualDn/ONNX-Runtime-ThirdPartyNotices.txt"
 else

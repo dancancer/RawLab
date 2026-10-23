@@ -20,10 +20,12 @@ final class EditorModel: ObservableObject {
         let source: RawWhiteBalanceCacheKey
         let processing: ProcessingIdentity
         let whiteBalance: [Float]
+        let lens: LensCorrectionSettings
         init(_ file: URL, settings: Adjustments) throws {
             source = try RawWhiteBalanceCacheKey(file)
             processing = settings.processing
             whiteBalance = settings.aiWhiteBalanceSignature
+            lens = settings.lensSettings
         }
     }
     enum ResetBlockedReason: Equatable {
@@ -279,13 +281,14 @@ extension EditorModel {
         }
         guard let file else { return }
         do {
-            let identity = try AIWorkIdentity(file, settings: settings)
+            let snapshot = geometryPreviewSettings
+            let identity = try AIWorkIdentity(file, settings: snapshot)
             guard identity != aiIdentity else { return }
             aiGeneration = UUID()
             aiDebounce?.cancel(); aiPreparation?.cancel(); aiPreparation = nil
             aiIdentity = identity
             aiState = .running(1, 0, 0)
-            let generation = aiGeneration, snapshot = settings, operation = prepareAIOperation
+            let generation = aiGeneration, operation = prepareAIOperation
             let progress = AIPreparation { [weak self] phase, done, total in
                 DispatchQueue.main.async {
                     guard let self, self.aiGeneration == generation else { return }
@@ -305,7 +308,7 @@ extension EditorModel {
                         guard let self, self.aiGeneration == generation else { return }
                         self.aiPreparation = nil
                         guard self.file == file,
-                              (try? AIWorkIdentity(file, settings: self.settings)) == identity else {
+                              (try? AIWorkIdentity(file, settings: self.geometryPreviewSettings)) == identity else {
                             self.aiManuallyRequested = false
                             self.aiState = .failed(L10n.text("照片或白平衡已变化，请重新准备 AI 降噪。"))
                             return
@@ -314,7 +317,7 @@ extension EditorModel {
                         switch outcome {
                         case .success:
                             self.aiState = .ready
-                            self.settings.aiDenoiseEnabled = true
+                            if !self.settings.aiDenoiseEnabled { self.settings.aiDenoiseEnabled = true }
                             self.schedule()
                         case .failure(let failure):
                             self.aiState = progress.isCancelled ? .cancelled : .failed(failure.localizedDescription)

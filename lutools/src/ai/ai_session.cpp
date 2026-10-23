@@ -1,4 +1,6 @@
 #include "ai_session.h"
+#include "dualdn_bridge.h"
+#include "core/photo_rendering.h"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -30,11 +32,13 @@ std::string AISession::packageStamp() const {
     std::ostringstream result;
     const auto root = std::filesystem::canonical(std::filesystem::u8path(modelDirectory_));
     result << root.u8string();
-    for (const auto* name : {"manifest.json", "raw.onnx", "isp.onnx", "rgb.onnx"}) {
+    for (const auto* name : {"manifest.json", "raw.onnx", "isp.onnx", "rgb.onnx", "DualDn-LICENSE.txt",
+                             "blind_rgb.onnx", "Restormer-LICENSE.txt"}) {
         const auto file = root / name;
+        if (!std::filesystem::exists(file)) { result << ":missing:" << name; continue; }
         result << ':' << sourceIdentityKey(file.u8string());
     }
-    for (const auto* name : {"raw.mlmodelc", "rgb.mlmodelc"}) {
+    for (const auto* name : {"raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"}) {
         const auto directory = root / name;
         if (std::filesystem::is_symlink(directory)) throw std::runtime_error("AI model directory cannot be a symlink");
         if (!std::filesystem::exists(directory)) { result << ":missing:" << name; continue; }
@@ -52,6 +56,7 @@ std::string AISession::packageStamp() const {
 }
 
 void AISession::ensurePackage() {
+    try {
     const auto stamp = packageStamp();
     if (package_ && stamp == stamp_) return;
     auto package = loadModelPackage(modelDirectory_);
@@ -59,6 +64,11 @@ void AISession::ensurePackage() {
     const auto identity = package.digest + ":" + NetworkGraph::runtimeVersion(backend_);
     runtimeDigest_ = sha256Bytes(identity.data(), identity.size());
     package_ = std::move(package); stamp_ = stamp; loadedKey_.clear(); loaded_ = {};
+    } catch (const std::bad_alloc&) { throw; }
+    catch (const std::exception& error) {
+        lastError = std::string("Invalid AI model package: ") + error.what();
+        throw std::runtime_error(lastError);
+    }
 }
 
 std::string AISession::renderKey(const std::string& path, const RAWProcessOptions& options) {
@@ -66,60 +76,106 @@ std::string AISession::renderKey(const std::string& path, const RAWProcessOption
         lastError = "AI denoising does not support automatic white balance";
         throw Unsupported(lastError);
     }
-    try {
-        ensurePackage();
-        return rgbCacheKey(rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_)), options);
-    } catch (const std::bad_alloc&) { throw; }
-    catch (const std::exception& error) { lastError = error.what(); throw NotReady(lastError); }
+    ensurePackage();
+    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
+    return rgbCacheKey(rawKey,options) + ":" + sceneRGBCacheKey(rawKey,options);
 }
 
-const RAWBayerOverride& AISession::result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource& metadata) {
-    try { selectNoiseProfile(metadata); }
-    catch (const std::invalid_argument& error) { lastError = error.what(); throw Unsupported(lastError); }
-    const int width = metadata.width, height = metadata.height;
+const PreparedDenoise& AISession::result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource* metadata) {
     const auto key = renderKey(path, options);
-    if (loadedKey_ == key && loaded_.width == width && loaded_.height == height) return loaded_;
+    if (loadedKey_ == key) return loaded_;
     const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
     DenoiseCache cache(cacheDirectory_);
     std::string rawProducer, rgbProducer;
-    auto raw = cache.load(rawKey, CacheKind::Raw, width, height, {}, &rawProducer);
+    // 只有 prepare 选择路由并发布完整结果，渲染与导出均不触发模型推理。
+    loaded_ = {}; loadedKey_.clear();
+    if (auto scene = cache.load(sceneRGBCacheKey(rawKey,options),CacheKind::SceneRGB,0,0,{},&rgbProducer)) {
+        loaded_.scene = std::move(*scene); loadedKey_ = key; lastError.clear();
+        lastBackend = "SceneRGB=" + rgbProducer;
+        return loaded_;
+    }
+    auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer) : std::optional<Tensor>{};
     // RGB 修正必须对应实际 RAW 输出；损坏后重算的结果不同则不能混用旧修正。
-    auto rgb = raw ? cache.load(key, CacheKind::RGB, width, height,
+    auto rgb = raw ? cache.load(rgbCacheKey(rawKey,options), CacheKind::RGB, metadata->width, metadata->height,
         sha256Bytes(raw->values.data(), raw->values.size() * sizeof(float)), &rgbProducer) : std::optional<Tensor>{};
     if (!raw || !rgb) {
         lastError = "AI result is missing or invalid; prepare this photo before rendering or exporting";
         throw NotReady(lastError);
     }
+    const int width = metadata->width, height = metadata->height;
     RAWBayerOverride replacement{width, height, std::move(raw->values), {}};
     const size_t pixels = size_t(width) * height;
     replacement.cameraCorrection.resize(pixels);
     for (size_t i = 0; i < pixels; ++i)
         replacement.cameraCorrection[i] = RGB(rgb->values[i], rgb->values[pixels+i], rgb->values[2*pixels+i]);
-    loaded_ = std::move(replacement); loadedKey_ = key; lastError.clear();
+    loaded_.bayer = std::move(replacement); loadedKey_ = key; lastError.clear();
     lastBackend = producers(rawProducer, rgbProducer);
     return loaded_;
 }
 
 PrepareReport AISession::prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& progress) {
     lastBackend.clear();
+    if (options.useAutoWhiteBalance) throw std::invalid_argument("AI denoising does not support automatic white balance");
     notify(progress, Phase::Loading, 0, 1);
     ensurePackage();
     const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
     const auto rgbKey = rgbCacheKey(rawKey, options);
+    const auto sceneKey = sceneRGBCacheKey(rawKey,options);
     const auto modelStamp = stamp_;
     auto validateSource = [&] {
         if (rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_)) != rawKey || packageStamp() != modelStamp)
             throw std::runtime_error("RAW or model changed during AI processing; please retry");
     };
     RAWProcessor processor;
-    if (processor.loadFile(path) != ErrorCode::Success) throw std::runtime_error("Cannot decode RAW for AI denoising");
+    const auto loadStatus = processor.loadFile(path);
+    if (loadStatus != ErrorCode::Success) throw DecodeError(loadStatus,"Cannot decode RAW for AI denoising");
     RAWBayerSource source;
-    if (processor.readBayerSource(options, source) != ErrorCode::Success)
-        throw std::invalid_argument("AI denoising requires a supported Bayer RAW and white balance");
-    const auto noise = selectNoiseProfile(source);
-    notify(progress, Phase::Loading, 1, 1);
     DenoiseCache cache(cacheDirectory_);
     PrepareReport report;
+    NoiseParameters noise;
+    bool useBayer = processor.getBayerMetadata(source);
+    report.routeReason = "non-Bayer or unsupported sensor geometry";
+    if (useBayer) {
+        const auto sourceStatus = processor.readBayerSource(options,source);
+        if (sourceStatus != ErrorCode::Success)
+            throw DecodeError(sourceStatus,"Cannot read Bayer RAW with the selected white balance");
+        useBayer = supportsDualDnBridge(source);
+        report.routeReason = "camera matrix or white balance cannot use the DualDn bridge";
+        if (useBayer) {
+            try { noise = selectNoiseProfile(source); }
+            catch (const NoiseEstimateUnavailable& error) { useBayer = false; report.routeReason = error.what(); }
+        }
+    }
+    notify(progress, Phase::Loading, 1, 1);
+    if (!useBayer) {
+        source = {};
+        report.route = "SceneRGB";
+        if (package_->blindRGBPath.empty()) throw std::runtime_error("Scene RGB AI model is not installed");
+        if (cache.load(sceneKey,CacheKind::SceneRGB,0,0,{},&report.rgb.backend)) {
+            report.rgbCacheHit = true; notify(progress,Phase::RGB,1,1);
+        } else {
+            auto decode = options;
+            decode.halfSize = false; decode.rawNoiseReduction = 0; decode.bayerOverride = nullptr;
+            decode.outputLinear = true; decode.outputAdobe = false; decode.outputAces = false;
+            decode.applyBaselineExposure = false; decode.matchEmbeddedPreviewExposure = false;
+            decode.exposure = 0; decode.brightness = 1;
+            ImageData scene;
+            const auto decodeStatus = processor.process(decode,scene);
+            if (decodeStatus != ErrorCode::Success) throw DecodeError(decodeStatus,"Cannot decode scene RGB for AI denoising");
+            const auto correction = denoiseSceneRGB(scene,std::exp2(sceneExposureEV(processor.getMetadataExposureEV())),
+                *package_,backend_,report.rgb,[&](size_t done,size_t total) { return !progress || progress(Phase::RGB,done,total); });
+            scene = {};
+            validateSource(); notify(progress,Phase::Saving,0,1);
+            cache.store(sceneKey,CacheKind::SceneRGB,correction.width,correction.height,
+                correction.values.data(),correction.values.size(),{},report.rgb.backend);
+        }
+        validateSource(); notify(progress,Phase::Saving,1,1);
+        try { cache.prune(uint64_t(8)*1024*1024*1024,{sceneKey}); }
+        catch (const std::filesystem::filesystem_error&) {}
+        loadedKey_.clear(); loaded_ = {}; lastError.clear(); lastBackend = "SceneRGB=" + report.rgb.backend;
+        return report;
+    }
+    report.route = "Bayer"; report.routeReason.clear(); report.noise = noise;
     RAWBayerOverride denoised;
     if (auto raw = cache.load(rawKey, CacheKind::Raw, source.width, source.height, {}, &report.raw.backend)) {
         denoised = {source.width, source.height, std::move(raw->values), {}};

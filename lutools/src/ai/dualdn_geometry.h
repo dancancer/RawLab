@@ -1,4 +1,5 @@
 #pragma once
+#include "ai_errors.h"
 
 #include <array>
 #include <cstdint>

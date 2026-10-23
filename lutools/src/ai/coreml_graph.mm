@@ -26,7 +26,7 @@ bool matches(NSArray<NSNumber*>* actual, const std::vector<int64_t>& expected) {
 void validate(MLFeatureDescription* feature, const std::vector<int64_t>& shape) {
     if (!feature || feature.type != MLFeatureTypeMultiArray || feature.multiArrayConstraint.dataType != MLMultiArrayDataTypeFloat32 ||
         !matches(feature.multiArrayConstraint.shape, shape))
-        throw std::runtime_error("Core ML tensor contract mismatch");
+        throw ModelContractError("Core ML tensor contract mismatch");
 }
 }
 
@@ -45,7 +45,7 @@ struct CoreMLGraph::Impl {
             if (!model) throw std::runtime_error("Cannot load native Core ML model: " + message(error));
             const auto description = model.modelDescription;
             if (description.inputDescriptionsByName.count != signature.inputNames.size() || description.outputDescriptionsByName.count != 1)
-                throw std::runtime_error("Core ML input/output count mismatch");
+                throw ModelContractError("Core ML input/output count mismatch");
             for (size_t i = 0; i < signature.inputNames.size(); ++i)
                 validate(description.inputDescriptionsByName[name(signature.inputNames[i])], signature.inputShapes[i]);
             validate(description.outputDescriptionsByName[name(signature.outputName)], signature.outputShape);
@@ -104,7 +104,7 @@ std::vector<float> CoreMLGraph::run(const std::vector<std::vector<float>>& input
         if (!result) throw std::runtime_error("Core ML inference failed: " + message(error));
         MLMultiArray* output = [result featureValueForName:name(signature.outputName)].multiArrayValue;
         if (!output || output.dataType != MLMultiArrayDataTypeFloat32 || !matches(output.shape, signature.outputShape))
-            throw std::runtime_error("Core ML output contract changed");
+            throw ModelContractError("Core ML output contract changed");
         const auto& shape = signature.outputShape;
         const float* data = static_cast<const float*>(output.dataPointer);
         std::vector<float> values(elements(shape));
@@ -113,7 +113,7 @@ std::vector<float> CoreMLGraph::run(const std::vector<std::vector<float>>& input
         for (int64_t c = 0; c < shape[1]; ++c) for (int64_t y = 0; y < shape[2]; ++y) for (int64_t x = 0; x < shape[3]; ++x)
             values[(c * shape[2] + y) * shape[3] + x] = data[c * cs + y * ys + x * xs];
         if (!std::all_of(values.begin(), values.end(), [](float value) { return std::isfinite(value); }))
-            throw std::runtime_error("Core ML returned nonfinite pixels");
+            throw ModelContractError("Core ML returned nonfinite pixels");
         return values;
     }} @catch (NSException* error) {
         throw std::runtime_error(std::string("Core ML inference exception: ") + (error.reason ?: error.name).UTF8String);

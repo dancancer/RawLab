@@ -16,7 +16,7 @@ internal sealed partial class RenderEngine
     private void ConfigureAI(bool enabled)
     {
         if(enabled && (!AIAvailable || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json"))))
-            throw new AINotReadyException(Loc.Text("此构建未安装 AI 降噪模型。"));
+            throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
         var config=new Native.AIConfig {Version=1,StructSize=(uint)Marshal.SizeOf<Native.AIConfig>(),
             Enabled=enabled ? 1 : 0,Backend=aiBackendOverride ?? AIBackendForGpuMode(gpuMode),
             ModelDirectory=aiModelDirectory,CacheDirectory=aiCacheDirectory};
@@ -34,8 +34,8 @@ internal sealed partial class RenderEngine
     internal void PrepareAI(string path,Adjustments settings,AIPreparation progress)
     {
         progress.Token.ThrowIfCancellationRequested();
-        if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持已标定的 Bayer RAW。"));
-        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);ConfigureAI(true);
+        if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
+        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetLens(settings.Lens);ConfigureAI(true);
         var request=settings.Request(path,null,0,null);
         Exception? callbackError=null;
         Native.AIProgress callback=(_,phase,done,total)=>{

@@ -59,7 +59,7 @@ public partial class DenoisePanel : UserControl
             AIDenoiseStatus.Ready when enabled=>Loc.Text("已应用 AI 降噪；曝光和外观调整复用结果。"),
             AIDenoiseStatus.Cancelled=>Loc.Text("AI 降噪已取消。"),
             AIDenoiseStatus.Failed=>state.Error ?? Loc.Text("AI 降噪失败"),
-            _=>Loc.Text(canStart ? "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。")
+            _=>Loc.Text(canStart ? "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。")
         };
         if(enabled)AIStatus.Text+="\n"+Loc.Text("普通降噪参数已保留，关闭 AI 降噪即可恢复。");
         syncing=false;

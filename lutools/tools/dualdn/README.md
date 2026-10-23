@@ -64,18 +64,24 @@ Mac 运行验收覆盖 Apple Silicon；Intel 和移动端未验证。Windows 的
 官方 AHD/ISP 保持 CPU；缺少原生模型或后端执行失败时完整重跑该阶段的 CPU 路径。
 Core ML 的 CPU/GPU 调度不代表每个算子都在 GPU 上运行。首次耗时取决于设备和后端，
 CPU 回退可能需要数十分钟；取消在分块边界生效。
-曝光、外观和裁剪复用结果，改变白平衡只重做 RGB 阶段。准备期间不能导出或复制设置。
+曝光、外观和裁剪复用结果，改变白平衡只重做 RGB 阶段；镜头校正改变时重做通用 RGB
+路径。准备期间不能导出或复制设置。
 重新打开已启用的照片会读缓存，缺失/损坏时重建；失败或取消后可以重试或关闭 AI。
 批量导出只消费已经准备好的结果，缺失结果按照片报告失败，不偷偷启动整批 AI 推理。
 
-缓存位于当前用户的 `Caches/RawLab/DualDn`，保存未白平衡 Bayer 和相机空间 RGB 修正。
+缓存位于当前用户的 `Caches/RawLab/DualDn`，DualDn 保存未白平衡 Bayer 和相机空间 RGB 修正，
+通用 RGB 路径另存已执行镜头/方向变换的线性 sRGB 修正，不混用两种坐标。
 文件包含 SHA-256 校验和实际生成后端，按文件身份、模型/运行库、处理版本和有效白平衡区分。
 原生后端身份包括系统版本；更新系统或模型会重新准备结果。
 缓存可重建；清理采用 8 GiB 的尽力限制，并保留当前正在准备的结果。
 
 ## 标定边界
 
-当前实验配置 ID 是 `sony-ilce-7cm2-20261022-bce08d93bc36`，只接受
+普通 Bayer 不再按品牌、ISO 或位深设白名单：有匹配实测配置时使用配置，其余使用
+当前 RAW 的同相位 Haar/MAD 噪声估计。估计缺乏可信样本或颜色桥接不适用时转入
+通用 RGB 模型，不套用其他机型参数。完整规则见[格式路由契约](../../../docs/architecture/raw-ai-format-routing.md)。
+
+已有实测配置 ID 是 `sony-ilce-7cm2-20261022-bce08d93bc36`，该配置只匹配
 Sony `ILCE-7CM2`、14-bit、LibRaw Sony RAW type 4、7008×4672 有效尺寸、
 四相位黑位 512、白位 16383、ISO 100–12800。
 
@@ -91,6 +97,27 @@ Sony `ILCE-7CM2`、14-bit、LibRaw Sony RAW type 4、7008×4672 有效尺寸、
 真实照片的 NR 元数据与标定拍摄可能不同，因此支持该输入格式不等于认证相同读出条件。
 RGB 分支沿用原始 noisy RAW 的噪声图，`b` 不能换成标准差。
 
+## 通用 RGB 模型
+
+X-Trans、线性/Stage3 DNG 以及不满足 DualDn 条件的 RAW 使用 Restormer real-sRGB v1.0。
+输入必须已被原生解码成全尺寸有限线性 RGB；128 MP 为安全预算，不是所有设备的容量保证。
+下面的导出器给现有 DualDn 包增加可选 `blind_rgb` 资源。缺少该资源时对应照片会报告
+模型未安装，旧包仍可处理满足 DualDn 条件的 Bayer。
+
+```bash
+python lutools/tools/dualdn/export_restormer.py \
+  --package "$DUALDN_PACKAGE" --source "$RESTORMER_SOURCE" \
+  --weights "$RESTORMER_WEIGHTS" --license "$RESTORMER_V1_LICENSE" \
+  --output "$RAW_AI_PACKAGE" --coreml
+```
+
+源码基于上游 `b19fa6e7104cb946ac8c5d6368117962ed0e751b`，权重使用
+[v1.0 real_denoising.pth](https://github.com/swz30/Restormer/releases/download/v1.0/real_denoising.pth)。
+`--license` 必须是同版本的原始 Academic Public License，不能用后来主分支的 MIT 文件替代。
+依赖与原导出器相同，另需 `einops`；Mac `--coreml` 使用 coremltools 9.0，不需要原生图时
+省略该选项。导出器拒绝覆盖现有目录，并校验源码、权重、许可及 PyTorch/ONNX/CoreML 数值。
+Mac 构建的 `RAWLAB_DUALDN_MODEL_DIR` 或 Windows 的 `-DualDnModel` 指向新包。
+
 ## 验证入口
 
 ```bash
@@ -103,11 +130,13 @@ RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 `dualdn_probe RAW MODEL_DIR NEW_OUTPUT full auto` 生成原生、RAW-only、官方参考、桥接结果
 和可由应用读取的缓存；`raw` 模式只跑 RAW 分支。可用 `--raw-result PREVIOUS_OUTPUT`
 复用经过文件身份、模型/参数与源像素核验的完整 RAW 分支结果。
+`pipeline` 模式执行与应用相同的自动路由，保存原生/AI 图像、缓存、实际模型路线、后端及
+噪声参数来源，并检查第二次准备复用缓存。`raw/full` 模式仍是 DualDn 专用研究入口。
 验证目录、RAW 和 `.f32` 都应放在一次性测试目录，不能入库。
 
 `ai-denoise.sh MODEL_DIR RAW CACHE_DIR` 还会验证 Auto 原生缓存的真实后端、缓存复用、普通降噪旁路、曝光编辑、
 原尺寸预览/PNG 导出一致性以及 WB 失效。它不把视口缩小后的结果声称为原尺寸像素参考。
-末尾追加 `cpu` 可检查 CPU 缓存。`dualdn_native_tests MODEL_DIR` 检查两个原生网络的
+末尾追加 `cpu` 或 `coreml` 可检查对应显式后端缓存。`dualdn_native_tests MODEL_DIR` 检查包内原生网络的
 固定数值门槛、输入校验、ISP CPU 路径、Auto 回退和强制 Core ML 失败语义。
 `dualdn_onnx_tests FIXTURE_DIR coreml --diagnostic MODEL_DIR` 可用独立原生包回放已冻结的真实张量。
 
@@ -118,6 +147,7 @@ RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 ## 来源与许可
 
 DualDn 的固定上游许可为 CC BY-NC 4.0（Copyright 2024 OpenImagingLab），
-ONNX Runtime 为 MIT。原文保留在实验应用的 `Licenses/DualDn`。
+Restormer v1.0 原始许可为 Academic Public License（非商业用途），ONNX Runtime 为 MIT。
+原文保留在实验应用的 `Licenses/DualDn`。
 本转换保留原始权重，没有训练或微调；变更包括拆图、固定尺寸、分块运行和 RawLab
 颜色桥接。上游模型及派生产物保留其许可，不因宿主项目许可而重新授权。

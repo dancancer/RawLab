@@ -58,6 +58,36 @@ int main(int argc, char** argv) {
             bool failed = false; try { loadModelPackage(root.string()); } catch (const std::exception&) { failed = true; }
             require(failed, "corrupt model package accepted");
         };
+        manifest["blind_rgb"] = {{"model_id", "unrecognized-rgb-model"}};
+        write(); rejects();
+        const auto blindFile = root/"blind_rgb.onnx", licenseFile = root/"Restormer-LICENSE.txt";
+        { std::ofstream out(blindFile); out << "RGB model package integrity fixture"; }
+        std::filesystem::copy_file(RESTORMER_TEST_LICENSE,licenseFile);
+        manifest["blind_rgb"] = {{"model_id","restormer-real-srgb-v1"}, {"protocol","rawlab-scene-rgb-v1"},
+            {"source_revision",restormerSourceRevision}, {"weights_sha256",restormerWeightsSHA256},
+            {"tile_size",640}, {"core",512}, {"halo",64}, {"input","encoded_rgb"}, {"output","denoised_rgb"},
+            {"file","blind_rgb.onnx"}, {"bytes",std::filesystem::file_size(blindFile)}, {"sha256",sha256File(blindFile.string())},
+            {"license_file","Restormer-LICENSE.txt"}, {"license_sha256",restormerLicenseSHA256}};
+        write();
+        require(loadModelPackage(root.string()).blindRGBPath == blindFile.string(),"valid scene RGB package rejected");
+        manifest["blind_rgb"]["sha256"] = std::string(64,'a'); write(); rejects();
+        manifest["blind_rgb"]["sha256"] = sha256File(blindFile.string());
+        manifest["blind_rgb"]["weights_sha256"] = std::string(64,'b'); write(); rejects();
+        manifest["blind_rgb"]["weights_sha256"] = restormerWeightsSHA256;
+        { std::ofstream out(licenseFile,std::ios::app); out << "changed"; }
+        write(); rejects();
+        std::filesystem::copy_file(RESTORMER_TEST_LICENSE,licenseFile,std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::create_directories(root/"blind_rgb.mlmodelc");
+        const auto nativeRGB = root/"blind_rgb.mlmodelc/model.mil";
+        { std::ofstream out(nativeRGB); out << "native RGB fixture"; }
+        manifest["blind_rgb"]["coreml"] = {{"directory","blind_rgb.mlmodelc"}, {"precision","float32"},
+            {"files",Json::array({{{"path","model.mil"}, {"bytes",std::filesystem::file_size(nativeRGB)}, {"sha256",sha256File(nativeRGB.string())}}})}};
+        write();
+        require(!loadModelPackage(root.string()).blindRGBCoreMLPath.empty(),"scene RGB native path missing");
+        manifest["blind_rgb"]["coreml"]["files"][0]["path"] = "../sample"; write(); rejects();
+        manifest["blind_rgb"]["coreml"]["files"][0]["path"] = "model.mil";
+        const auto blindManifest = manifest["blind_rgb"];
+        manifest.erase("blind_rgb");
         manifest["graphs"]["raw"]["file"] = "../sample"; write(); rejects();
         manifest["graphs"]["raw"]["file"] = "raw.onnx";
         manifest["tile_size"] = 64; write(); rejects();
@@ -77,6 +107,14 @@ int main(int argc, char** argv) {
         write();
         const auto native = loadModelPackage(root.string());
         require(!native.coreMLPaths[0].empty() && !native.coreMLPaths[1].empty(), "native models not found");
+        manifest["blind_rgb"] = blindManifest; write();
+        require(!loadModelPackage(root.string()).blindRGBCoreMLPath.empty(),"combined native model bundle rejected");
+        const auto nativeManifest = manifest["coreml"];
+        manifest.erase("coreml"); manifest["blind_rgb"].erase("coreml"); write();
+        const auto windows = loadModelPackage(root.string());
+        require(windows.coreMLPaths[0].empty() && windows.blindRGBCoreMLPath.empty() && !windows.blindRGBPath.empty(),
+                "removing Apple manifest fields broke portable RGB package");
+        manifest["coreml"] = nativeManifest;
         manifest["coreml"]["precision"] = "float16"; write(); rejects();
         manifest["coreml"]["precision"] = "float32";
         manifest["coreml"]["raw"]["files"][0]["path"] = "../sample"; write(); rejects();

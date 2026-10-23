@@ -88,6 +88,29 @@ ModelPackage loadModelPackage(const std::string& directory) {
         result.coreMLPaths[0] = nativeModelPath(root, native.at("raw"), "raw");
         result.coreMLPaths[1] = nativeModelPath(root, native.at("rgb"), "rgb");
     }
+    if (manifest.contains("blind_rgb")) {
+        const auto& graph = manifest.at("blind_rgb");
+        if (graph.at("model_id") != "restormer-real-srgb-v1" || graph.at("protocol") != "rawlab-scene-rgb-v1" ||
+            graph.at("source_revision") != restormerSourceRevision || graph.at("weights_sha256") != restormerWeightsSHA256 ||
+            graph.at("tile_size") != 640 || graph.at("core") != 512 || graph.at("halo") != 64 ||
+            graph.at("input") != "encoded_rgb" || graph.at("output") != "denoised_rgb" ||
+            graph.at("file") != "blind_rgb.onnx" || !graph.at("bytes").is_number_unsigned() ||
+            graph.at("license_file") != "Restormer-LICENSE.txt" || graph.at("license_sha256") != restormerLicenseSHA256)
+            throw std::invalid_argument("Unsupported scene RGB model protocol");
+        const auto file = root / "blind_rgb.onnx", license = root / "Restormer-LICENSE.txt";
+        const auto bytes = graph.at("bytes").get<uint64_t>();
+        if (bytes == 0 || bytes > 512 * 1024 * 1024 || std::filesystem::is_symlink(file) ||
+            !std::filesystem::is_regular_file(file) || std::filesystem::file_size(file) != bytes ||
+            sha256File(file.string()) != graph.at("sha256") || std::filesystem::is_symlink(license) ||
+            !std::filesystem::is_regular_file(license) || sha256File(license.string()) != restormerLicenseSHA256)
+            throw std::invalid_argument("Scene RGB model or license SHA-256/size mismatch");
+        result.blindRGBPath = file.string();
+        if (graph.contains("coreml")) {
+            const auto& native = graph.at("coreml");
+            if (native.at("precision") != "float32") throw std::invalid_argument("Unsupported scene RGB Core ML precision");
+            result.blindRGBCoreMLPath = nativeModelPath(root, native, "blind_rgb");
+        }
+    }
     return result;
 }
 } // namespace sony2fuji::ai

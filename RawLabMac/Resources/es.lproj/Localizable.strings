@@ -15,7 +15,7 @@
 "4:3" = "4:3";
 "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "La reducción de ruido con IA está activa. Los ajustes normales se conservan. Cambiar el balance de blancos requiere volver a procesar.";
 "AI 降噪" = "Reducción de ruido con IA";
-"AI 降噪仅支持已标定的 Bayer RAW。" = "La reducción de ruido con IA solo admite archivos Bayer RAW calibrados.";
+"AI 降噪仅支持 RAW 照片。" = "La reducción de ruido con IA solo admite fotos RAW.";
 "AI 降噪失败" = "La reducción de ruido con IA falló";
 "AI 降噪失败：%@" = "Error en la reducción de ruido con IA: %@";
 "AI 降噪已取消。" = "Reducción de ruido con IA cancelada.";
@@ -66,7 +66,6 @@
 "仅包含此目录中的 RAW，不包含子目录。" = "Solo se incluyen los RAW de esta carpeta, no los de subcarpetas.";
 "仅包含此目录中的照片，不包含子目录。" = "Solo se incluyen las fotos de esta carpeta, no las subcarpetas.";
 "仅在暗角强度为负值时可用。" = "Disponible solo cuando la intensidad de la viñeta es negativa.";
-"仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。" = "Admite RAW sin pérdida de tamaño completo de A7C II a ISO 100–12800. El tiempo inicial depende del dispositivo; los resultados se pueden reutilizar.";
 "仅用于本次导出，保留各照片原有调整" = "Solo para esta exportación; se conservan los ajustes existentes de cada foto";
 "从侧栏移除此目录" = "Quitar esta carpeta de la barra lateral";
 "从列表移除" = "Eliminar de la lista";
@@ -248,6 +247,7 @@
 "按每张照片" = "Por foto";
 "搜索镜头" = "Buscar lentes";
 "操作失败" = "Operación fallida";
+"支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Admite varios formatos RAW. El tiempo de procesamiento inicial depende del dispositivo; los resultados se pueden reutilizar.";
 "收起%@组" = "Contraer el grupo %@";
 "收起暗角参数" = "Ocultar ajustes de viñeta";
 "收起直方图" = "Contraer histograma";

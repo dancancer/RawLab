@@ -30,9 +30,17 @@ internal static class AIDenoiseRealWindowChecks
             Call("SelectTool",EditorAdjustmentTool.Denoise);
             var before=Settings().Denoise;
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=true;
+            var committedLens=Settings().Lens;
+            Call("BeginTransform",TransformTool.Lens);
+            Call("UpdateLensDraft",committedLens with{Distortion=!committedLens.Distortion});
+            Pump(()=>Settings().AIDenoiseEnabled && window.ApplyDraftButton.IsEnabled);
+            check(Settings().Lens==committedLens && job.Identity?.Lens.Distortion!=committedLens.Distortion,
+                "First AI completion prepares the draft lens without committing it");
+            check((bool)Call("ApplyTransformDraft")!,"AI-prepared lens draft applies after first enablement");
             Pump(()=>Settings().AIDenoiseEnabled && window.ExportPng.IsEnabled);
-            check(job.State.Status==AIDenoiseStatus.Ready && engine.LastAIBackend=="RAW=DirectML; RGB=ISP:CPU/RGB:DirectML",
-                "Real WPF AI toggle reuses the completed hardware result");
+            check(job.State.Status==AIDenoiseStatus.Ready && (engine.LastAIBackend=="RAW=DirectML; RGB=ISP:CPU/RGB:DirectML" ||
+                engine.LastAIBackend=="SceneRGB=DirectML"),
+                "Real WPF AI toggle and lens preview use the completed hardware result");
             check(engine.LastBackend==3,"Real WPF photo preview executes on Direct3D 11 hardware");
             var accepted=(RenderedImage)typeof(MainWindow).GetField("result",flags)!.GetValue(window)!;
             ViewComparisonChecks.CheckHistogram(accepted,check,"AI after frame");

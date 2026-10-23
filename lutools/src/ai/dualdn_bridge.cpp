@@ -21,6 +21,21 @@ Matrix xyzToRgb() {
                            {-.969266f,1.8760108f,.041556f}, {.0556434f,-.2040259f,1.0572252f}}});
 }
 
+bool stableMatrix(const Matrix& input) {
+    double m[3][3], norm = 0;
+    for (int i = 0; i < 3; ++i) {
+        double row = 0;
+        for (int j = 0; j < 3; ++j) {
+            if (!std::isfinite(input[i][j])) return false;
+            m[i][j] = input[i][j]; row += std::abs(m[i][j]);
+        }
+        norm = std::max(norm,row);
+    }
+    const double det = m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) -
+        m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+    return std::abs(det) > 1e-6*norm*norm*norm;
+}
+
 void maximumLine(const std::vector<float>& input, std::vector<float>& output,
                  size_t offset, size_t stride, int count, int radius) {
     std::deque<int> indices;
@@ -47,6 +62,24 @@ Matrix officialCameraToXYZ(const RAWBayerSource& source) {
 
 float inverseRec709(float value) {
     return value < .081f ? value / 4.5f : std::pow((value + .099f) / 1.099f, 1.f / .45f);
+}
+
+bool supportsDualDnBridge(const RAWBayerSource& source) {
+    const auto& wb = source.whiteBalance;
+    if (!std::all_of(wb.begin(),wb.end(),[](float x) { return std::isfinite(x) && x > 0; }) ||
+        std::abs(wb[1]-wb[3]) > 1e-5f*std::max(wb[1],wb[3])) return false;
+    bool calibrated = true;
+    for (const auto& row : source.cameraCalibration) for (float x : row)
+        calibrated = calibrated && x != 0 && std::isfinite(x);
+    if (!stableMatrix(calibrated ? source.cameraCalibration : source.cameraToSrgb)) return false;
+    try {
+        const auto transform = ColorConverter::multiplyMatrices(xyzToRgb(),officialCameraToXYZ(source));
+        if (!stableMatrix(transform)) return false;
+        const auto matrix = ColorConverter::invertMatrix(transform);
+        for (const auto& row : matrix) for (float x : row) if (!std::isfinite(x)) return false;
+        return true;
+    } catch (const std::invalid_argument&) { return false; }
+    catch (const std::runtime_error&) { return false; }
 }
 
 Tensor rgbCameraCorrection(const Tensor& mosaic, const Tensor& noisy, const Tensor& skip, const Tensor& result,

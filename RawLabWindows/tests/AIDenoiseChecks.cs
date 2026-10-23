@@ -18,7 +18,8 @@ internal static class AIDenoiseChecks
         engine.PrepareAI(raw,settings,progress);
         check(phases.Where(v=>v.Phase is 2 or 3).All(v=>v.Done==1 && v.Total==1),"Prepared Windows AI cache is reused");
         var rgbBackend=backend=="CPU" ? "CPU" : "ISP:CPU/RGB:"+backend;
-        check(engine.LastAIBackend==$"RAW={backend}; RGB={rgbBackend}","Windows Auto truthfully reports actual AI producers: "+engine.LastAIBackend);
+        var expected=engine.LastAIBackend.StartsWith("SceneRGB=") ? $"SceneRGB={backend}" : $"RAW={backend}; RGB={rgbBackend}";
+        check(engine.LastAIBackend==expected,"Windows Auto truthfully reports actual AI producers: "+engine.LastAIBackend);
         check(double.IsFinite(engine.AutoExposure(raw,settings)),"Auto exposure reads the selected AI backend cache");
         var a=engine.RenderPreview(raw,settings,null,512,false,false,false).Result;
         settings.Denoise=DenoiseSettings.Clean;settings.DisplayChromaDenoise=2;

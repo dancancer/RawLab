@@ -41,8 +41,21 @@ int main(int argc, char** argv) {
             NetworkGraph isp(package, GraphKind::ISP, backend);
             require(isp.backend() == "CPU" && isp.fallbackReason().empty(), "official ISP must remain on CPU");
         }
-        for (const auto kind : {GraphKind::Raw, GraphKind::RGB}) {
-            const std::string name = kind == GraphKind::Raw ? "raw" : "rgb";
+        if (!package.blindRGBPath.empty()) {
+            auto invalid = package;
+            invalid.blindRGBCoreMLPath = package.coreMLPaths[0];
+            bool rejected = false;
+            try { NetworkGraph wrongSignature(invalid,GraphKind::BlindRGB,Backend::Auto); }
+            catch (const ModelContractError&) { rejected = true; }
+            require(rejected,"Auto hid native model signature mismatch with CPU fallback");
+            rejected = false;
+            try { OnnxGraph wrongSignature(package.paths[0],GraphKind::BlindRGB,640); }
+            catch (const ModelContractError&) { rejected = true; }
+            require(rejected,"ONNX signature mismatch lost model-error classification");
+        }
+        for (const auto kind : {GraphKind::Raw, GraphKind::RGB, GraphKind::BlindRGB}) {
+            if (kind == GraphKind::BlindRGB && package.blindRGBPath.empty()) continue;
+            const std::string name = kind == GraphKind::Raw ? "raw" : kind == GraphKind::RGB ? "rgb" : "blind_rgb";
             const auto signature = graphSignature(kind, 640);
             std::vector<std::vector<float>> inputs;
             for (const auto& input : signature.inputNames)
@@ -62,7 +75,7 @@ int main(int argc, char** argv) {
             invalid = inputs; invalid[0].pop_back(); rejected = false;
             try { graph.run(invalid); } catch (const std::invalid_argument&) { rejected = true; }
             require(rejected, "native graph accepted wrong tensor size");
-            auto legacy = package; legacy.coreMLPaths = {};
+            auto legacy = package; legacy.coreMLPaths = {}; legacy.blindRGBCoreMLPath.clear();
             NetworkGraph fallback(legacy, kind, Backend::Auto);
             require(fallback.backend() == "CPU" && !fallback.fallbackReason().empty(), "Auto did not report missing native model fallback");
             compare(fallback.run(inputs), expected);

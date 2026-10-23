@@ -12,6 +12,9 @@ internal static class AIDenoiseJobChecks
             var settings=new Adjustments();var identity=AIDenoiseIdentity.Read(first,settings,2);
             settings.Set(Parameter.Exposure,1);
             Check(AIDenoiseIdentity.Read(first,settings,2)==identity,"Exposure changed AI identity");
+            settings.Lens=new(Distortion:true);
+            Check(AIDenoiseIdentity.Read(first,settings,2)!=identity,"Lens correction did not change AI identity");
+            settings.Lens=new();
             settings.Set(Parameter.Temperature,4500);
             Check(AIDenoiseIdentity.Read(first,settings,2)!=identity,"WB did not change AI identity");
             var recipeSettings=new Adjustments();recipeSettings.ApplyMasterRecipe(MasterRecipe.All.First(r=>r.TintDelta!=0));

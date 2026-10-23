@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <stdexcept>
 
 namespace sony2fuji { struct RAWBayerSource; }
 
@@ -9,9 +10,16 @@ struct NoiseParameters {
     bool interpolated = false;
     int lowerISO = 0, upperISO = 0;
     std::string calibrationID;
+    int samples = 0;
+    float signalSpan = 0, relativeError = 0;
 };
-// 配置仅适用于实验 Sony ILCE-7CM2、14-bit full-resolution lossless RAW、black=512/white=16383。
-// 解码层另行校验 RAW 模式/归一化；不能由 ISO 查表结果推断其他条件已通过。
+class NoiseEstimateUnavailable : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+inline constexpr const char* noiseProtocol = "rawlab-bayer-noise-v2:haar-mad-v1:sony-ilce-7cm2-20261022-bce08d93bc36";
+// 字符串接口只查询原有标定；source 接口对其他有效 Bayer 估计当前图像的归一化方差。
 NoiseParameters selectNoiseProfile(const std::string& cameraModel, float iso);
 NoiseParameters selectNoiseProfile(const RAWBayerSource& source);
+NoiseParameters estimateRawNoise(const RAWBayerSource& source);
 } // namespace sony2fuji::ai

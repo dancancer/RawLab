@@ -1,6 +1,7 @@
 #include "ai/dualdn_runtime.h"
 #include "ai/dualdn_bridge.h"
 #include "ai/dualdn_cache.h"
+#include "ai/ai_session.h"
 #include "core/photo_rendering.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -25,6 +26,41 @@ void saveImage(const std::filesystem::path& root, const std::string& name, Image
         throw std::runtime_error("failed to save probe PNG");
 }
 
+void probePipeline(const std::string& input, const std::string& model, const std::filesystem::path& root, Backend backend) {
+    if (!std::filesystem::create_directory(root)) throw std::runtime_error("new output directory required");
+    RAWProcessOptions options;
+    options.bayerDemosaic = BayerDemosaicMethod::VNG; options.applyBaselineExposure = false;
+    AISession session;
+    session.configure(model,(root/"cache").u8string(),backend);
+    const auto report = session.prepare(input,options,[](Phase phase,size_t done,size_t total) {
+        if (done == 0 || done == total || done % 10 == 0) std::cerr << "phase=" << int(phase) << ' ' << done << '/' << total << '\n';
+        return true;
+    });
+    RAWProcessor processor; RAWBayerSource metadata;
+    if (processor.loadFile(input) != ErrorCode::Success) throw std::runtime_error("RAW load failed");
+    const bool bayer = processor.getBayerMetadata(metadata);
+    ImageData image;
+    if (processor.process(options,image) != ErrorCode::Success) throw std::runtime_error("native render failed");
+    const int width = image.width, height = image.height;
+    saveImage(root,"native",std::move(image));
+    const auto& result = session.result(input,options,bayer ? &metadata : nullptr);
+    if (!result.isSceneRGB()) options.bayerOverride = &result.bayer;
+    if (processor.process(options,image) != ErrorCode::Success) throw std::runtime_error("AI render failed");
+    if (result.isSceneRGB()) applySceneRGBCorrection(image,result.scene,ColorSpace::sRGB,1);
+    saveImage(root,"full",std::move(image));
+    const auto second = session.prepare(input,options,{});
+    if (!second.rgbCacheHit || (report.route == "Bayer" && !second.rawCacheHit)) throw std::runtime_error("pipeline cache reuse failed");
+    const Json diagnostics = {{"camera",processor.getCameraModel()}, {"width",width}, {"height",height},
+        {"route",report.route}, {"route_reason",report.routeReason}, {"producer",session.lastBackend},
+        {"noise_profile",report.noise.calibrationID}, {"k",report.noise.k}, {"b",report.noise.b},
+        {"noise_samples",report.noise.samples}, {"noise_span",report.noise.signalSpan}, {"noise_fit_error",report.noise.relativeError},
+        {"raw_seconds",report.raw.seconds}, {"rgb_seconds",report.rgb.seconds},
+        {"raw_fallback",report.raw.fallbackReason}, {"rgb_fallback",report.rgb.fallbackReason},
+        {"raw_cache_hit",second.rawCacheHit}, {"rgb_cache_hit",second.rgbCacheHit}};
+    std::ofstream(root/"pipeline.json") << diagnostics.dump(2) << '\n';
+    std::cout << diagnostics.dump(2) << '\n';
+}
+
 int main(int argc, char** argv) {
     try {
         if (argc == 3 && std::string(argv[1]) == "--validate") {
@@ -34,11 +70,12 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (argc != 6 && argc != 8)
-            throw std::runtime_error("usage: dualdn_probe RAW MODEL_DIR NEW_OUTPUT raw|full cpu|auto|coreml|directml [EXPERIMENT_K EXPERIMENT_B | --raw-result PREVIOUS_OUTPUT]");
+            throw std::runtime_error("usage: dualdn_probe RAW MODEL_DIR NEW_OUTPUT raw|full|pipeline cpu|auto|coreml|directml [EXPERIMENT_K EXPERIMENT_B | --raw-result PREVIOUS_OUTPUT]");
         const std::string mode = argv[4], requested = argv[5];
-        if (mode != "raw" && mode != "full") throw std::invalid_argument("invalid output mode");
         const auto backend = requested == "cpu" ? Backend::Cpu : requested == "auto" ? Backend::Auto :
             requested == "coreml" ? Backend::CoreML : requested == "directml" ? Backend::DirectML : throw std::invalid_argument("invalid backend");
+        if (mode == "pipeline" && argc == 6) { probePipeline(argv[1],argv[2],std::filesystem::u8path(argv[3]),backend); return 0; }
+        if (mode != "raw" && mode != "full") throw std::invalid_argument("invalid output mode");
         const auto package = loadModelPackage(argv[2]);
         RAWProcessor processor;
         if (processor.loadFile(argv[1]) != ErrorCode::Success) throw std::runtime_error("RAW load failed");

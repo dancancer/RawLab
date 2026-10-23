@@ -825,6 +825,8 @@ sony2fuji::RAWProcessOptions rawWhiteBalanceOptions(const sony2fuji_session* ses
     options.useTemperatureWhiteBalance = request.wb_mode == SONY2FUJI_WB_TEMPERATURE;
     options.temperature = request.temperature; options.tint = request.tint;
     std::copy(std::begin(request.wb_mul), std::end(request.wb_mul), options.customWhiteBalance);
+    options.lensDatabase = session->lens_database;
+    options.lensCorrection = session->lens_correction;
     return options;
 }
 
@@ -848,6 +850,7 @@ sony2fuji_status loadRawImage(
 #endif
     const bool useAI = applyAI && aiEnabled(session);
     const int rawNoiseReduction = aiEnabled(session) ? 0 : session->raw_noise_reduction;
+    if (session->lens_correction.active()) ensureLensDatabase(session);
     auto wbOptions = rawWhiteBalanceOptions(session, request);
     std::string aiKey;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
@@ -913,10 +916,12 @@ sony2fuji_status loadRawImage(
         options.applyBaselineExposure = session->raw_exposure_mode != SONY2FUJI_EXPOSURE_SENSOR && !anchoredPreview;
         if (anchoredPreview) options.exposure = session->preview_camera_ev;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
+        const sony2fuji::ai::PreparedDenoise* prepared = nullptr;
         if (useAI) {
             sony2fuji::RAWBayerSource metadata;
-            if (!processor.getBayerMetadata(metadata)) return SONY2FUJI_STATUS_UNSUPPORTED;
-            options.bayerOverride = &session->ai->result(request.input_path, wbOptions, metadata);
+            const bool bayer = processor.getBayerMetadata(metadata);
+            prepared = &session->ai->result(request.input_path,wbOptions,bayer ? &metadata : nullptr);
+            if (!prepared->isSceneRGB()) options.bayerOverride = &prepared->bayer;
         }
 #endif
         sony2fuji::ImageData decoded;
@@ -925,6 +930,11 @@ sony2fuji_status loadRawImage(
             session->raw_processor.reset(); session->processor_key.clear();
             return mapError(result);
         }
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+        if (prepared && prepared->isSceneRGB())
+            sony2fuji::ai::applySceneRGBCorrection(decoded,prepared->scene,sony2fuji::ColorSpace::AdobeRGB,
+                std::exp2(processor.getBaselineExposureEV()+options.exposure)*options.brightness);
+#endif
         session->raw_cache = std::move(decoded);
         session->raw_lens_report = processor.getLensCorrectionReport();
 #if defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
@@ -1343,6 +1353,7 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
     const auto valid = validateRequest(&local, &buffer);
     if (valid != SONY2FUJI_STATUS_OK) return valid;
     try {
+        if (session->lens_correction.active()) ensureLensDatabase(session);
         session->ai->prepare(local.input_path, rawWhiteBalanceOptions(session, local),
             [&](sony2fuji::ai::Phase phase, size_t done, size_t total) {
                 return !progress || progress(context, static_cast<int32_t>(phase), done, total) != 0;
@@ -1350,6 +1361,8 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
         return SONY2FUJI_STATUS_OK;
     } catch (const sony2fuji::ai::Cancelled& error) {
         session->ai->lastError = error.what(); return SONY2FUJI_STATUS_CANCELLED;
+    } catch (const sony2fuji::ai::DecodeError& error) {
+        session->ai->lastError = error.what(); return mapError(error.code);
     } catch (const std::bad_alloc&) {
         session->ai->lastError = "AI denoising ran out of memory"; return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     } catch (const std::invalid_argument& error) {

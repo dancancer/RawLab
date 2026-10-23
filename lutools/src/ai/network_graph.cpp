@@ -16,14 +16,16 @@ Backend preferred(Backend requested) {
 NetworkGraph::NetworkGraph(const ModelPackage& package, GraphKind kind, Backend requested) {
     if (requested != Backend::Cpu && requested != Backend::CoreML && requested != Backend::Auto && requested != Backend::DirectML)
         throw std::invalid_argument("invalid DualDn backend");
-    const size_t index = kind == GraphKind::Raw ? 0 : kind == GraphKind::ISP ? 1 : kind == GraphKind::RGB ? 2 :
+    const size_t index = kind == GraphKind::Raw ? 0 : kind == GraphKind::ISP ? 1 : kind == GraphKind::RGB ? 2 : kind == GraphKind::BlindRGB ? 3 :
         throw std::invalid_argument("invalid DualDn graph kind");
+    const auto& onnxPath = kind == GraphKind::BlindRGB ? package.blindRGBPath : package.paths[index];
+    if (onnxPath.empty()) throw std::runtime_error("Scene RGB AI model is not installed");
     if (requested != Backend::Cpu && kind != GraphKind::ISP) {
         try {
             if (preferred(requested) == Backend::DirectML)
-                onnx_ = std::make_unique<OnnxGraph>(package.paths[index], kind, package.tileSize, Backend::DirectML);
+                onnx_ = std::make_unique<OnnxGraph>(onnxPath, kind, package.tileSize, Backend::DirectML);
             else {
-                const auto& path = package.coreMLPaths[kind == GraphKind::Raw ? 0 : 1];
+                const auto& path = kind == GraphKind::BlindRGB ? package.blindRGBCoreMLPath : package.coreMLPaths[kind == GraphKind::Raw ? 0 : 1];
                 if (path.empty()) throw std::runtime_error("Native Core ML model is not installed");
                 native_ = std::make_unique<CoreMLGraph>(path, kind, package.tileSize);
             }
@@ -33,7 +35,7 @@ NetworkGraph::NetworkGraph(const ModelPackage& package, GraphKind kind, Backend 
             fallback_ = error.what();
         }
     }
-    onnx_ = std::make_unique<OnnxGraph>(package.paths[index], kind, package.tileSize);
+    onnx_ = std::make_unique<OnnxGraph>(onnxPath, kind, package.tileSize);
 }
 std::vector<float> NetworkGraph::run(const std::vector<std::vector<float>>& inputs) {
     return native_ ? native_->run(inputs) : onnx_->run(inputs);

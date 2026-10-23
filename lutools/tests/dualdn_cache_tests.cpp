@@ -40,8 +40,14 @@ int main(int argc, char** argv) {
                 "in-place replacement with preserved size/time reused stale AI data");
         RAWProcessOptions options;
         const auto rgbKey = rgbCacheKey(key, options);
+        const auto sceneKey = sceneRGBCacheKey(key, options);
+        options.lensCorrection.distortion = true;
+        require(sceneRGBCacheKey(key, options) != sceneKey && rgbCacheKey(key, options) == rgbKey,
+                "lens settings did not isolate scene RGB cache");
+        options.lensCorrection.distortion = false;
         options.exposure = 2; options.brightness = 1.2f; options.applyBaselineExposure = false;
         require(rgbCacheKey(key, options) == rgbKey, "exposure invalidated AI cache");
+        require(sceneRGBCacheKey(key, options) == sceneKey, "exposure invalidated scene RGB cache");
         options.useTemperatureWhiteBalance = true; options.temperature = 4000;
         require(rgbCacheKey(key, options) != rgbKey, "white balance did not invalidate RGB cache");
         require(rawCacheKey(raw.string(), std::string(64, 'b'), 0) != key, "model change did not invalidate RAW cache");
@@ -69,6 +75,21 @@ int main(int argc, char** argv) {
         cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size());
         require(cache.load(key, CacheKind::Raw, 3, 2)->values == values, "corrupt cache could not be repaired");
         const auto rawPayload = sha256Bytes(values.data(), values.size() * sizeof(float));
+        cache.store(sceneKey, CacheKind::SceneRGB, 2, 1, values.data(), values.size(), {}, "CoreML");
+        const auto scene = cache.load(sceneKey, CacheKind::SceneRGB, 0, 0);
+        require(scene && scene->width == 2 && scene->height == 1 && scene->values == values,
+                "scene RGB cache lost canvas or exact values");
+        const auto sceneFile = root/"cache"/(sceneKey+".scenecache");
+        {
+            std::fstream stream(sceneFile,std::ios::in|std::ios::out|std::ios::binary);
+            uint32_t length = 0; stream.read(reinterpret_cast<char*>(&length),4);
+            std::string header(length,'\0'); stream.read(header.data(),length);
+            header.replace(header.find("\"width\":2"),9,"\"width\":1");
+            header.replace(header.find("\"height\":1"),10,"\"height\":2");
+            stream.seekp(4); stream.write(header.data(),header.size());
+        }
+        require(!cache.load(sceneKey,CacheKind::SceneRGB,0,0),"same-size scene header corruption was reused");
+        cache.store(sceneKey,CacheKind::SceneRGB,2,1,values.data(),values.size());
         cache.store(rgbKey, CacheKind::RGB, 1, 2, values.data(), values.size(), rawPayload);
         require(cache.load(rgbKey, CacheKind::RGB, 1, 2, rawPayload).has_value(), "matching RAW dependency rejected");
         auto rebuiltRaw = values; rebuiltRaw[0] += .01f;
@@ -80,6 +101,7 @@ int main(int argc, char** argv) {
                 "replacement RAW payload was silently discarded");
         { std::ofstream(root / "cache" / "keep-me.rawcache") << "not owned by the cache"; }
         cache.prune(0, {rgbKey});
+        require(!cache.load(sceneKey, CacheKind::SceneRGB, 0, 0), "scene RGB cache was never pruned");
         require(!cache.load(key, CacheKind::Raw, 3, 2) && cache.load(rgbKey, CacheKind::RGB, 1, 2, rawPayload), "pruning removed protected entry");
         require(std::filesystem::exists(raw) && std::filesystem::exists(root / "cache" / "keep-me.rawcache"), "pruning removed unrelated files");
         std::filesystem::remove_all(root);

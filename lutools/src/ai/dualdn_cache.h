@@ -5,14 +5,16 @@
 #include <set>
 
 namespace sony2fuji::ai {
-enum class CacheKind { Raw, RGB };
+enum class CacheKind { Raw, RGB, SceneRGB };
 std::string sourceIdentityKey(const std::string& path);
 std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend);
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options);
+std::string sceneRGBCacheKey(const std::string& rawKey, const RAWProcessOptions& options);
 
 class DenoiseCache {
 public:
     explicit DenoiseCache(std::string directory);
+    // SceneRGB 的 0,0 从校验后的缓存头读取旋转后画布尺寸。
     std::optional<Tensor> load(const std::string& key, CacheKind kind, int width, int height,
                                const std::string& dependency = {}, std::string* producer = nullptr) const;
     void store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,

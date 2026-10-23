@@ -3839,13 +3839,13 @@
     "ja": "AI ノイズ除去",
     "zh-Hans": "AI 降噪"
   },
-  "AI 降噪仅支持已标定的 Bayer RAW。": {
-    "de": "KI-Entrauschen unterstützt nur kalibrierte Bayer-RAW-Dateien.",
-    "en": "AI denoising only supports calibrated Bayer RAW files.",
-    "es": "La reducción de ruido con IA solo admite archivos Bayer RAW calibrados.",
-    "fr": "Le débruitage IA prend uniquement en charge les fichiers Bayer RAW étalonnés.",
-    "ja": "AI ノイズ除去はキャリブレーション済みの Bayer RAW のみ対応しています。",
-    "zh-Hans": "AI 降噪仅支持已标定的 Bayer RAW。"
+  "AI 降噪仅支持 RAW 照片。": {
+    "de": "KI-Entrauschen unterstützt nur RAW-Fotos.",
+    "en": "AI denoising only supports RAW photos.",
+    "es": "La reducción de ruido con IA solo admite fotos RAW.",
+    "fr": "Le débruitage IA prend uniquement en charge les photos RAW.",
+    "ja": "AI ノイズ除去は RAW 写真のみ対応しています。",
+    "zh-Hans": "AI 降噪仅支持 RAW 照片。"
   },
   "AI 降噪失败": {
     "de": "KI-Entrauschen fehlgeschlagen",
@@ -3879,13 +3879,13 @@
     "ja": "AI ノイズ除去（実験的）",
     "zh-Hans": "AI 降噪（实验）"
   },
-  "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。": {
-    "de": "Unterstützt verlustfreies A7C II RAW in voller Größe bei ISO 100–12800. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.",
-    "en": "Supports A7C II full-size lossless RAW at ISO 100–12800. Initial processing time depends on your device; completed results can be reused.",
-    "es": "Admite RAW sin pérdida de tamaño completo de A7C II a ISO 100–12800. El tiempo inicial depende del dispositivo; los resultados se pueden reutilizar.",
-    "fr": "Prend en charge le RAW sans perte pleine taille de l’A7C II à ISO 100–12800. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.",
-    "ja": "A7C II のフルサイズロスレス RAW（ISO 100～12800）に対応。初回の処理時間はデバイスによって異なり、完了後は結果を再利用できます。",
-    "zh-Hans": "仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。"
+  "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。": {
+    "de": "Unterstützt verschiedene RAW-Formate. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.",
+    "en": "Supports multiple RAW formats. Initial processing time depends on your device; completed results can be reused.",
+    "es": "Admite varios formatos RAW. El tiempo de procesamiento inicial depende del dispositivo; los resultados se pueden reutilizar.",
+    "fr": "Prend en charge plusieurs formats RAW. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.",
+    "ja": "複数の RAW 形式に対応。初回の処理時間はデバイスによって異なり、完了後は結果を再利用できます。",
+    "zh-Hans": "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。"
   },
   "保存": {
     "de": "Speichern",

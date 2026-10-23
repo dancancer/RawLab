@@ -15,7 +15,7 @@
 "4:3" = "4:3";
 "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "Le débruitage IA est actif. Les réglages habituels sont conservés. Modifier la balance des blancs nécessite un nouveau traitement.";
 "AI 降噪" = "Débruitage IA";
-"AI 降噪仅支持已标定的 Bayer RAW。" = "Le débruitage IA prend uniquement en charge les fichiers Bayer RAW étalonnés.";
+"AI 降噪仅支持 RAW 照片。" = "Le débruitage IA prend uniquement en charge les photos RAW.";
 "AI 降噪失败" = "Échec du débruitage IA";
 "AI 降噪失败：%@" = "Échec du débruitage IA : %@";
 "AI 降噪已取消。" = "Débruitage IA annulé.";
@@ -66,7 +66,6 @@
 "仅包含此目录中的 RAW，不包含子目录。" = "Seuls les RAW de ce dossier sont inclus, pas ceux des sous-dossiers.";
 "仅包含此目录中的照片，不包含子目录。" = "Seules les photos de ce dossier sont incluses, sans les sous-dossiers.";
 "仅在暗角强度为负值时可用。" = "Disponible uniquement lorsque l’intensité du vignettage est négative.";
-"仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。" = "Prend en charge le RAW sans perte pleine taille de l’A7C II à ISO 100–12800. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.";
 "仅用于本次导出，保留各照片原有调整" = "Pour cette exportation uniquement ; les réglages existants de chaque photo sont conservés";
 "从侧栏移除此目录" = "Retirer ce dossier de la barre latérale";
 "从列表移除" = "Supprimer de la liste";
@@ -248,6 +247,7 @@
 "按每张照片" = "Par photo";
 "搜索镜头" = "Rechercher un objectif";
 "操作失败" = "L'opération a échoué";
+"支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Prend en charge plusieurs formats RAW. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.";
 "收起%@组" = "Réduire le groupe %@";
 "收起暗角参数" = "Masquer les réglages du vignettage";
 "收起直方图" = "Réduire l'histogramme";

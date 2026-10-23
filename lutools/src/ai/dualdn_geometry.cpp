@@ -5,7 +5,7 @@
 namespace sony2fuji::ai {
 namespace {
 size_t pixelCount(int width, int height) {
-    if (width < 1 || height < 1 || uint64_t(width) * height > 100000000)
+    if (width < 1 || height < 1 || uint64_t(width) * height > 128000000)
         throw std::invalid_argument("DualDn image exceeds the supported pixel budget");
     return size_t(width) * height;
 }
@@ -20,7 +20,7 @@ void validatePackedGeometry(const PackedBayer& packed) {
 }
 
 int reflectIndex(int position, int length) {
-    if (length < 1 || length > 100000000) throw std::invalid_argument("invalid reflection extent");
+    if (length < 1 || length > 128000000) throw std::invalid_argument("invalid reflection extent");
     if (length == 1) return 0;
     const int64_t period = 2 * int64_t(length - 1);
     const int64_t folded = ((int64_t(position) % period) + period) % period;
@@ -133,9 +133,9 @@ Tensor runTiles(const Tensor& input, TileGeometry geometry, int outputChannels,
         }
         auto result = predict(tile);
         try { validateTensor(result); }
-        catch (const std::invalid_argument& error) { throw std::runtime_error(error.what()); }
+        catch (const std::invalid_argument& error) { throw ModelContractError(error.what()); }
         if (result.width != side || result.height != side || result.channels != outputChannels)
-            throw std::runtime_error("DualDn prediction changed tile geometry");
+            throw ModelContractError("DualDn prediction changed tile geometry");
         ++completed; check();
         for (int c = 0; c < outputChannels; ++c) for (int y = 0; y < core && top + y < input.height; ++y) {
             const float* row = result.values.data() + (size_t(c) * side + y + geometry.halo) * side + geometry.halo;

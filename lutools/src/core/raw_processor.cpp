@@ -492,7 +492,7 @@ private:
         const auto& data = rawProcessor_->imgdata;
         if (!bayerSource_ || sdkStage3_ || fujiRotate_ || !data.rawdata.raw_image ||
             !std::isfinite(data.sizes.pixel_aspect) || std::abs(data.sizes.pixel_aspect - 1) > .005 ||
-            width_ < 2 || height_ < 2 || uint64_t(width_) * height_ > 100000000 ||
+            width_ < 2 || height_ < 2 || uint64_t(width_) * height_ > 128000000 ||
             data.sizes.raw_pitch % sizeof(uint16_t) || data.sizes.raw_pitch / sizeof(uint16_t) < data.sizes.raw_width ||
             uint64_t(data.sizes.left_margin) + width_ > data.sizes.raw_width ||
             uint64_t(data.sizes.top_margin) + height_ > data.sizes.raw_height) return;

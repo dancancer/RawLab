@@ -6,6 +6,7 @@ public partial class MainWindow
     private readonly AIDenoiseJob aiJob;
     private bool aiManuallyRequested;
     private int RequestedAIBackend=>GpuMode.SelectedIndex switch { 1=>0,2=>3,_=>2 };
+    private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
     private bool CanStartAI=>file!=null && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable &&
         RenderEngine.HasBundledAIModel && !exporting && !transform.Active && !closing;
     private bool AIResultReady
@@ -13,7 +14,7 @@ public partial class MainWindow
         get {
             if(!settings.AIDenoiseEnabled)return true;
             try { return file!=null && aiJob.State.Status==AIDenoiseStatus.Ready &&
-                aiJob.Identity==AIDenoiseIdentity.Read(file,settings,RequestedAIBackend); }
+                aiJob.Identity==AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend); }
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { return false; }
         }
     }
@@ -46,23 +47,24 @@ public partial class MainWindow
             if(aiJob.State.Status is AIDenoiseStatus.Running or AIDenoiseStatus.Ready)aiJob.Reset();
             return;
         }
-        if(file==null || closing || aiJob.State.Status is AIDenoiseStatus.Failed or AIDenoiseStatus.Cancelled)return;
+        if(file==null || closing)return;
         try {
-            var identity=AIDenoiseIdentity.Read(file,settings,RequestedAIBackend);
+            var identity=AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend);
             if(identity!=aiJob.Identity)RequestAI(false);
         } catch(Exception error) when(error is IOException or UnauthorizedAccessException) { Report(error); }
     }
     private async void RequestAI(bool explicitRequest)
     {
-        if(file==null || closing || exporting || transform.Active)return;
+        if(file==null || closing || exporting)return;
         if(explicitRequest && !CanStartAI)return;
         try {
-            var identity=AIDenoiseIdentity.Read(file,settings,RequestedAIBackend);
+            var snapshot=AIWorkSettings;
+            var identity=AIDenoiseIdentity.Read(file,snapshot,RequestedAIBackend);
             var revision=openRevision;
             if(!explicitRequest && identity==aiJob.Identity)return;
             if(explicitRequest)aiManuallyRequested=true;
             exactReady=false;
-            var work=aiJob.StartAsync(identity,settings);RefreshControls();
+            var work=aiJob.StartAsync(identity,snapshot);RefreshControls();
             var completed=await work;
             if(closing)return;
             if(!completed && revision==openRevision && aiJob.Identity==identity &&
@@ -71,8 +73,14 @@ public partial class MainWindow
             }
             if(!completed || revision!=openRevision || file!=identity.Source.Path ||
                 aiJob.Identity!=identity || aiJob.State.Status!=AIDenoiseStatus.Ready ||
-                AIDenoiseIdentity.Read(file,settings,RequestedAIBackend)!=identity)return;
-            aiManuallyRequested=false;settings.AIDenoiseEnabled=true;MarkEdited();RefreshControls();Schedule();
+                AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend)!=identity)return;
+            aiManuallyRequested=false;
+            if(!settings.AIDenoiseEnabled) {
+                settings.AIDenoiseEnabled=true;MarkEdited();
+                // 首次开启只更新已提交的 AI 标志，草稿镜头仍等待 Apply。
+                if(transform.Active)transformSource=new(file,openRevision,editRevision,CaptureCurrentEdit(),lut);
+            }
+            RefreshControls();Schedule();
         } catch(Exception error) { if(!closing)Report(error); }
         finally { if(closing)FinishClose();else RefreshControls(); }
     }

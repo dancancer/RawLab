@@ -51,8 +51,10 @@ Debug 构建不带 SDK。
 
 ### 实验性 AI 降噪
 
-AI 降噪与 Mac 共用 DualDn 的 float32 模型、640 分块、颜色桥接和缓存协议，
-当前仅支持已标定的 Sony A7C II 全尺寸无损 Bayer RAW、ISO 100–12800。
+AI 降噪与 Mac 共用 float32 模型、640 分块、颜色桥接和缓存协议。普通 Bayer 使用
+DualDn，噪声参数来自匹配标定或当前 RAW 的通用估计；X-Trans、线性/Stage3 DNG 及
+不能可靠进入 DualDn 的输入使用 Restormer RGB 路径。支持范围依赖原生全尺寸解码，
+预算上限为 128 MP，不等于所有机型均完成画质认证。
 普通构建不包含模型，也不显示实验入口。使用
 [模型导出工具](../lutools/tools/dualdn/README.md)生成基础 ONNX 包后构建：
 
@@ -64,10 +66,12 @@ AI 降噪与 Mac 共用 DualDn 的 float32 模型、640 分块、颜色桥接和
 
 脚本校验模型与运行库，随包复制模型、运行库及许可证。Windows 使用 ONNX Runtime
 DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependencies.ps1`。
-不接受带 Apple Core ML 资源的模型包。可加 `-NoRumSdk` 构建离线测试包。
+模型源目录可以包含 Apple Core ML 资源；Windows 打包时移除相应 manifest 字段，
+只交付 ONNX 图。可加 `-NoRumSdk` 构建离线测试包。
 
 在“降噪”面板开启 AI 后，首次准备在后台执行，可取消或重试。成功后才保存启用状态，
-预览与导出使用同一份全尺寸结果；曝光和外观调整复用缓存，白平衡改变重算 RGB 阶段。
+预览与导出使用同一份全尺寸结果；曝光和外观调整复用缓存，白平衡改变重算 RGB 阶段，
+镜头校正改变重算通用 RGB 路径。
 普通降噪参数会保留，关闭 AI 后恢复。缓存位于 `%LOCALAPPDATA%/RawLab/Cache/DualDn`。
 批量导出保留 AI 启用状态与请求后端；目标照片必须已有对应结果，缺失时明确失败，
 不会自动跳过 AI。Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。

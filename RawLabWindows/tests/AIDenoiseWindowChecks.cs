@@ -16,9 +16,13 @@ internal static class AIDenoiseWindowChecks
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         using var release=new ManualResetEventSlim();
         var started=0;
-        var job=new AIDenoiseJob((identity,_,progress)=>{
+        var failDraft=false;
+        var job=new AIDenoiseJob((identity,snapshot,progress)=>{
             if(!PhotoInput.IsRaw(identity.Source.Path))throw new InvalidOperationException("Fixture: AI requires calibrated RAW");
-            Interlocked.Increment(ref started);release.Wait(TimeSpan.FromSeconds(30));progress.Token.ThrowIfCancellationRequested();
+            if(identity.Lens!=snapshot.Lens)throw new Exception("AI snapshot lost draft lens settings");
+            Interlocked.Increment(ref started);
+            if(Volatile.Read(ref failDraft) && snapshot.Lens.Distortion)throw new InvalidOperationException("Fixture: draft model failure");
+            release.Wait(TimeSpan.FromSeconds(30));progress.Token.ThrowIfCancellationRequested();
         });
         var window=new MainWindow(new UsageAnalytics(),null,job);
         TestWindowState.Isolate(window,output);window.Show();window.GpuMode.SelectedIndex=1;
@@ -54,6 +58,26 @@ internal static class AIDenoiseWindowChecks
             Begin();window.OpenFile(raw);release.Set();
             Pump(()=>job.Completion.IsCompleted && window.ExportPng.IsEnabled);
             check(!Settings().AIDenoiseEnabled,"Photo reopen rejects a stale AI completion");
+            release.Reset();Volatile.Write(ref failDraft,true);Settings().AIDenoiseEnabled=true;
+            var beforeDraft=started;
+            Call("BeginTransform",TransformTool.Lens);Pump(()=>started>beforeDraft);
+            var originalPreparation=job.Completion;
+            var transform=(TransformDraft)typeof(MainWindow).GetField("transform",flags)!.GetValue(window)!;
+            transform.Update(new GeometrySettings {StraightenDegrees=1});Call("Schedule",false);
+            check(ReferenceEquals(originalPreparation,job.Completion),"Geometry-only draft keeps the same AI task");
+            Call("UpdateLensDraft",new LensSettings(Distortion:true));release.Set();
+            Pump(()=>job.State.Status==AIDenoiseStatus.Failed);
+            check(job.Identity?.Lens.Distortion==true && !Settings().Lens.Distortion,
+                "Active lens draft prepares its own identity without committing lens settings");
+            var failedPreparation=job.Completion;Call("Schedule",false);
+            check(ReferenceEquals(failedPreparation,job.Completion),"Same failed draft identity does not retry automatically");
+            release.Reset();var beforeRestore=started;Call("CancelTransformDraft");
+            Pump(()=>started>beforeRestore && job.State.IsRunning);
+            check(job.Identity?.Lens.Distortion==false && !Settings().Lens.Distortion,
+                "Cancelling a failed lens draft restores the committed AI identity");
+            ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=false;
+            release.Set();Pump(()=>job.Completion.IsCompleted && window.ExportPng.IsEnabled);
+            Volatile.Write(ref failDraft,false);
             Directory.CreateDirectory(output);var raster=Path.Combine(output,"unsupported.png");
             var pixels=Enumerable.Repeat((byte)160,32*24*3).ToArray();
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(32,24,96,96,PixelFormats.Rgb24,null,pixels,32*3)));

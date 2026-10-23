@@ -6,10 +6,11 @@
 
 namespace sony2fuji::ai {
 NoiseParameters selectNoiseProfile(const RAWBayerSource& source) {
-    if (source.rawBits != 14 || source.sonyRawType != 4 || source.width != 7008 || source.height != 4672 ||
-        source.white != 16383 || !std::all_of(source.black.begin(), source.black.end(), [](float value) { return value == 512; }))
-        throw std::invalid_argument("DualDn calibration requires full-resolution 14-bit lossless RAW with matching black/white levels");
-    return selectNoiseProfile(source.cameraModel, source.iso);
+    if (source.cameraModel == "ILCE-7CM2" && std::isfinite(source.iso) && source.iso >= 100 && source.iso <= 12800 &&
+        source.rawBits == 14 && source.sonyRawType == 4 && source.width == 7008 && source.height == 4672 &&
+        source.white == 16383 && std::all_of(source.black.begin(), source.black.end(), [](float value) { return value == 512; }))
+        return selectNoiseProfile(source.cameraModel, source.iso);
+    return estimateRawNoise(source);
 }
 
 NoiseParameters selectNoiseProfile(const std::string& cameraModel, float iso) {

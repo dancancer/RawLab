@@ -15,7 +15,7 @@
 "4:3" = "4:3";
 "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "AI denoising is active. Standard denoise settings are retained. White balance changes require reprocessing.";
 "AI 降噪" = "AI denoise";
-"AI 降噪仅支持已标定的 Bayer RAW。" = "AI denoising only supports calibrated Bayer RAW files.";
+"AI 降噪仅支持 RAW 照片。" = "AI denoising only supports RAW photos.";
 "AI 降噪失败" = "AI denoising failed";
 "AI 降噪失败：%@" = "AI denoising failed: %@";
 "AI 降噪已取消。" = "AI denoising cancelled.";
@@ -66,7 +66,6 @@
 "仅包含此目录中的 RAW，不包含子目录。" = "Only RAW files in this folder are included, not subfolders.";
 "仅包含此目录中的照片，不包含子目录。" = "Only photos in this folder are included, not subfolders.";
 "仅在暗角强度为负值时可用。" = "Available only when vignette intensity is negative.";
-"仅支持 A7C II 全尺寸无损 RAW、ISO 100–12800。首次处理时间取决于设备，完成后可复用结果。" = "Supports A7C II full-size lossless RAW at ISO 100–12800. Initial processing time depends on your device; completed results can be reused.";
 "仅用于本次导出，保留各照片原有调整" = "For This Export Only; Each Photo’s Existing Adjustments Are Preserved";
 "从侧栏移除此目录" = "Remove Folder from Sidebar";
 "从列表移除" = "Remove from list";
@@ -248,6 +247,7 @@
 "按每张照片" = "Per Photo";
 "搜索镜头" = "Search Lenses";
 "操作失败" = "Operation failed";
+"支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Supports multiple RAW formats. Initial processing time depends on your device; completed results can be reused.";
 "收起%@组" = "Collapse %@ group";
 "收起暗角参数" = "Hide Vignette Settings";
 "收起直方图" = "Collapse histogram";
