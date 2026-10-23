@@ -4526,5 +4526,29 @@
     "fr": "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.",
     "ja": "読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。",
     "zh-Hans": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
+  },
+  "复制调整…": {
+    "de": "Anpassungen kopieren…",
+    "en": "Copy Adjustments…",
+    "es": "Copiar ajustes…",
+    "fr": "Copier les réglages…",
+    "ja": "調整をコピー…",
+    "zh-Hans": "复制调整…"
+  },
+  "本次会话历史…": {
+    "de": "Sitzungsverlauf…",
+    "en": "Session History…",
+    "es": "Historial de la sesión…",
+    "fr": "Historique de la session…",
+    "ja": "セッション履歴…",
+    "zh-Hans": "本次会话历史…"
+  },
+  "粘贴调整…": {
+    "de": "Anpassungen einfügen…",
+    "en": "Paste Adjustments…",
+    "es": "Pegar ajustes…",
+    "fr": "Coller les réglages…",
+    "ja": "調整を貼り付け…",
+    "zh-Hans": "粘贴调整…"
   }
 }

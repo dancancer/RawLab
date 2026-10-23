@@ -85,9 +85,13 @@ internal static class ViewComparisonChecks
             Capture(window,output,"failed-preview");
             check(ReferenceEquals(image,Get<BitmapSource>(window.ResultCanvas,"image")) && ReferenceEquals(accepted,Get<RenderedImage>(window,"result")) && window.RetryButton.IsVisible && !window.ExportPng.IsEnabled,"Failed latest preview keeps the last accepted pixels, marks outdated and offers retry without pretending exact");
             Set(window,"lut",null);Click(window.RetryButton);Ready(window);
-            var store=Get<EditStore>(window,"editStore");var blocked=Path.Combine(output,"blocked-save");Directory.CreateDirectory(Path.Combine(blocked,"edits.json"));Set(window,"editStore",new EditStore(blocked));Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");
+            // 前面的同路径替换场景已改变物理来源；先重新打开，再用真实修改验证 I/O 失败。
+            window.OpenFile(source);Ready(window);
+            var store=Get<EditStore>(window,"editStore");var blocked=Path.Combine(output,"blocked-save");Directory.CreateDirectory(Path.Combine(blocked,"edits.json"));Set(window,"editStore",new EditStore(blocked));
+            var changed=Get<Adjustments>(window,"settings");changed.Set(Parameter.Exposure,changed[Parameter.Exposure]+.1);Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");
             Invoke(window,"Schedule",false);Ready(window);Capture(window,output,"save-error-after-preview");
-            check(window.RetrySave.IsVisible,"Successful preview does not clear the independent unsaved-adjustment error");Set(window,"editStore",store);Invoke(window,"SaveEdits");
+            check(window.RetrySave.IsVisible && Get<bool>(window,"editDirty"),"Successful preview does not clear the independent unsaved-adjustment error");Set(window,"editStore",store);Invoke(window,"SaveEdits");
+            check(!Get<bool>(window,"editDirty") && store.Find(source)!.Settings.SameAs(changed.Capture()),"Retry durably saves the changed value after storage is restored");
             NeutralChecks(raw,output,check);
         } catch {
             try{Capture(window,output,"failure-before-close");}catch(Exception diagnostic){Console.WriteLine("Failure screenshot unavailable: "+diagnostic.Message);}

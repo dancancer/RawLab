@@ -36,14 +36,19 @@ public partial class MainWindow
     {
         var edit=(MenuItem)MainMenu.Items[1];
         if(!resetMenuInitialized) {
-            edit.SubmenuOpened+=(_,_)=>PopulateResetMenu(edit.Items);
+            edit.SubmenuOpened+=(_,_)=>PopulateEditResetMenu(edit.Items);
             resetMenuInitialized=true;
         }
-        PopulateResetMenu(edit.Items);
+        PopulateEditResetMenu(edit.Items);
     }
-    private void PopulateResetMenu(ItemCollection items)
+    private void PopulateEditResetMenu(ItemCollection items)
     {
-        items.Clear();
+        foreach(var item in items.OfType<MenuItem>().Where(item=>item.Tag is EditorResetScope).ToArray())items.Remove(item);
+        PopulateResetMenu(items,false);
+    }
+    private void PopulateResetMenu(ItemCollection items,bool clear=true)
+    {
+        if(clear)items.Clear();
         void Add(string title,EditorResetScope scope) {
             var prepared=PrepareReset(scope);
             var item=new MenuItem { Header=title,Tag=scope,

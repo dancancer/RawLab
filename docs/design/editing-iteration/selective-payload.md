@@ -1,13 +1,14 @@
 # 选择性调整 payload v1
 
-本文件记录 ITER-03 的逻辑交换格式与 Mac、iOS、Android adapter 的边界。共享 Swift 实现为
+本文件记录 ITER-03 的逻辑交换格式与 Mac、iOS、Android、Windows adapter 的边界。共享 Swift 实现为
 `Shared/AdjustmentTransfer.swift`；跨端解码与有效值向量位于
 `Shared/fixtures/adjustment-transfer-v1.json`。其他端接入时消费同一向量，不能直接复制
 Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 
-Mac、iOS 与 Android 已实现 adapter、真实本机存储事务、编辑入口和普通手势历史。
+四端已实现 adapter、真实本机存储事务、编辑入口和普通手势历史。
 接入边界见 [iOS 接入计划](../../integration/editing-iteration/ios-selective-transactions-plan.md)与
-[Android 接入计划](../../integration/editing-iteration/android-selective-transactions-plan.md)；Windows 与四端联合验收仍待完成。
+[Android 接入计划](../../integration/editing-iteration/android-selective-transactions-plan.md)及
+[Windows 接入计划](../../integration/editing-iteration/windows-selective-transactions-plan.md)。具体原生验收范围与设备边界留在 PR #134。
 
 ## 编码与范围
 
@@ -69,7 +70,7 @@ Mac、iOS 与 Android 已实现 adapter、真实本机存储事务、编辑入�
 | `color.white_balance.temperature_kelvin` | 固定 Kelvin `[2000,50000]`，或 null 表示 camera 请求；null 不是来源推算温度。 |
 | `color.white_balance.tint` | 固定/相对 tint `[-150,150]`，或 null 表示 camera 请求；存在 recipe 上下文时数值是相对目标 as-shot 的逻辑偏移。 |
 | `detail.denoise.raw_level` | `0/1/2`；raster 必须为 0。 |
-| `detail.denoise.post_rgb` | `[0,1]`；iOS 旧 `noiseReduction` 请求，与 FBDD 独立。raster 必须为 0；Mac、Android 只支持 0，非零 blocked。旧 payload 缺字段表示未选。 |
+| `detail.denoise.post_rgb` | `[0,1]`；iOS 旧 `noiseReduction` 请求，与 FBDD 独立。raster 必须为 0；Mac、Android、Windows 只支持 0，非零 blocked。旧 payload 缺字段表示未选。 |
 | `detail.denoise.chroma_mode` | null 或 `0/1/2`；null 保留旧算法的缺字段语义。 |
 | `detail.denoise.wavelet` | null 或完整 `{enabled,luma,chroma,coarse,preset}` 对象；三个量为 `[0,100]`，preset 为 `detail/clean/custom`。启用状态和辅助值按原生 wavelet 对象一起选择；null 表示旧算法路径。 |
 | `geometry.crop.x/y/width/height` | 四个独立归一化数值；正宽高，合并后再次校验矩形在画布内，不能静默移动未选坐标。 |
@@ -98,6 +99,9 @@ capture 冻结独立值；后续来源编辑、切图或源文件删除不影响
 recipe 固定贡献按来源强度物化一次；旧 HSL settings version 2 不随强度缩放，version 3
 沿现有 HSL renderer 的缩放及边界语义。目标仍有 recipe 时，adapter 反算被选值并校验
 实际 request。外观或强度改变解释上下文时，保护未选字段的原有效值；不可表示则 blocked。
+不保存旧 HSL 版本的目标端可将完整 legacy 配方反算为当前 renderer 的等效参数；保证的是
+本次转移的有效贡献。`source.settings_version` 用于解释来源，不强制改变目标原生持久化格式；
+再次复制时必须报告目标实际使用的版本，后续强度编辑遵循目标 renderer。
 
 只有 look、strength、所有耦合 scalar、WB 三项和 HSL 24 项都包含时保留完整 recipe
 身份。部分 recipe look 使用独立 `recipe_lut` 引用；Mac native ID 为 `recipe-lut:<id>`，
@@ -115,6 +119,11 @@ Android adapter 按 JNI 的实际 Float request 校验等价性：contrast/satur
 逻辑 multiplier，highlights 翻转方向；反算配方参数时保护未选字段，不能用容差或新的
 clamp 掩盖不可表示的请求。Android 不支持非零 RAW FBDD 或 post-RGB 降噪；缺省 chroma
 和 wavelet 只在其实际 native 请求等价时转换。本端白平衡沿用 native 舍入及目标校准。
+
+Windows 同样比较实际 Float request，保留可准确表达的原始逻辑小数，不将 Float 尾差
+写回用户输入。曝光受本端 `[-4,4]` EV 限制；非零 RAW FBDD/post-RGB 请求明确 blocked。
+完整 legacy HSL 配方按本端当前 renderer 反算，再次复制报告当前版本。原生预检为每个
+RAW 读取目标校准，镜头请求检查实际畸变/TCA 应用结果；任一目标失败仍保留为独立结果。
 
 ## 保存、重试和历史
 
@@ -143,3 +152,10 @@ Android 的 Properties registry 增加可选格式标记与逐照片 revision，
 关闭或过期的预检释放未提交目标副本，成功历史所需资源保留到会话结束或来源重绑定。
 新成功回执若在界面接收前已被外部写入替换，当前照片进入明确的重新载入流程；之前
 成功项的缓存回执只保留结果，不接管随后撤销或编辑过的界面。
+
+Windows registry 保持 version 1，增加可选 revisions/tombstone；排他文件锁内重新读取、
+比较身份/完整记录/revision 后原子写入。文件身份包含同一 Windows handle 返回的卷与
+文件索引，旧记录缺少索引时仍兼容读取，新操作的条件回执使用当前物理身份。普通离散
+动作和几何 Apply 保存一次；拖动结束才保存，取消恢复原态，文本自身 undo 优先。
+成功写入后若当前界面接收回执时发现外部更改，结果仍标记磁盘已保存，并保留错误与
+显式重新载入入口；重复重试不能再次接管界面或清除该错误。

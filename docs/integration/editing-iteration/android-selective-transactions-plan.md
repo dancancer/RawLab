@@ -28,7 +28,8 @@ Android 使用本端 `EditSettings`、`PhotoIdentity` 与 NativeProcessor；不�
 证明来源身份。被取消或替代的预检释放未提交副本，成功历史保留必要资源。界面接受
 新回执前再次确认当前记录；缓存成功项不覆盖后续 undo/edit。
 
-- [ ] Windows adapter、桌面事务/原生 UI 接入及四端联合验收。
+- [x] Windows adapter、桌面事务/原生 UI 接入，以及共享向量与四端对应原生工作流核验；
+  详见 [Windows 接入计划](windows-selective-transactions-plan.md)。真机、硬件 GPU 等范围仍按 PR 中的实际覆盖登记。
 
 主代理负责实现与最终验证，子代理仅做明确范围的只读定位和复核。日志、测试副本、
 构建输出及截图放本任务临时/交付目录，验证过程记录写入 PR。

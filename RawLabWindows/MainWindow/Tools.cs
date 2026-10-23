@@ -151,7 +151,11 @@ public partial class MainWindow
         foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
             foreach(var nested in ParameterRows(child))yield return nested;
     }
-    private void CancelParameterInputs(){foreach(var row in ParameterRows(AdjustmentPanel))row.CancelInput();}
+    private void CancelParameterInputs()
+    {
+        var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
+        foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
+    }
     private void ParameterNavigationPressed(object sender,MouseButtonEventArgs e)=>CancelParameterInputs();
     private SavedEdit? WorkspaceEdit()
     {
@@ -225,6 +229,7 @@ public partial class MainWindow
     private void RefreshControls()
     {
         if(!ready)return;
+        ReloadEditsButton.Visibility=adjustmentReloadRequired ? Visibility.Visible : Visibility.Collapsed;
         syncing=true;
         try
         {
@@ -356,7 +361,7 @@ public partial class MainWindow
         CompareButton.IsEnabled=CompareModeButton.IsEnabled=file!=null && !exporting && !transform.Active;
         InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
         InfoEntryButton.IsEnabled=file!=null && !exporting;
-        AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
+        AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady && !adjustmentReloadRequired;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         var busy=scheduler.Busy || previewResize.IsEnabled || exporting || aiJob.State.IsRunning;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
         BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;

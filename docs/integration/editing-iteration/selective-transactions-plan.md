@@ -94,8 +94,9 @@ session 的 prepare/apply/retry、undoPhoto/undoTransaction/redoPhoto/redoTransa
 - [x] 默认代理对合同、adapter、真实存储/history 做独立复核；主代理核实关键调用链并修复。
 - [x] Mac 菜单、复制范围、逐目标预检/结果、会话历史与普通手势接入统一提交入口。
 - [x] Mac 接入后的原生 UI 验证及交付记录完成；具体通过范围和未覆盖项见 PR #134。
-- [ ] iOS/Android/Windows 逐端适配同一字段语义与失败向量，不重新设计另一套 payload。
-- [ ] 四端联合验收；Mac 完成不代表 ITER-03 整项完成。
+- [x] iOS/Android/Windows 逐端适配同一字段语义与失败向量，不重新设计另一套 payload。
+- [x] 四端共享向量与对应原生工作流核验完成；逐端源码、模拟器/设备边界及现有基线
+  套件问题在 PR #134 分别登记，不扩大为全平台硬件或完整发布验收。
 
 ## 下一阶段接入边界
 
@@ -111,7 +112,8 @@ session 的 prepare/apply/retry、undoPhoto/undoTransaction/redoPhoto/redoTransa
 - iOS 使用 core multiplier 和独立运行时 WB 校准，不能直接复用 Mac native DTO。它没有
   Mac 的 recipe settings version 或 FBDD 存储字段；旧 HSL 和降噪差异必须由真实 adapter
   映射/明确阻挡。iOS 旧 `noiseReduction` 是 post-RGB request 值，不能冒充 raw FBDD；已补充独立的
-  `detail.denoise.post_rgb` 字段与 Mac/iOS 模型向量；Mac 非零请求明确阻挡。iOS 原生
-  接入仍在验证，Android/Windows 继续按实际端能力接入后才冻结四端格式。
-- Android/Windows 仍需 native adapter、条件保存与会话历史、原生操作入口及对应验证；
-  当前 Mac 模型测试不能代替它们。
+  `detail.denoise.post_rgb` 字段与四端模型向量；Mac、Android、Windows 的非零请求明确阻挡。
+  iOS 原生接入与实际 Files 多目标工作流已完成对应验证。
+- Android/Windows 已接入 native adapter、条件保存与会话历史和原生入口，分别执行本端
+  原生测试。Android 校验原始 URI 与临时副本身份；Windows 使用物理文件身份，并在
+  实际菜单、文本/照片快捷键、批量部分失败及重启恢复中核验同一事务合同。

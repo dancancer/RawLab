@@ -3729,14 +3729,6 @@
       "ja": "黒レベル {0}",
       "zh-Hans": "黑位 {0}"
     },
-    "复制调整…": {
-      "de": "Anpassungen kopieren…",
-      "en": "Copy Adjustments…",
-      "es": "Copiar ajustes…",
-      "fr": "Copier les réglages…",
-      "ja": "調整をコピー…",
-      "zh-Hans": "复制调整…"
-    },
     "应用有效输入、放弃输入，或返回继续编辑。": {
       "de": "Gültige Eingaben anwenden, verwerfen oder weiter bearbeiten.",
       "en": "Apply valid input, discard it, or return to editing.",
@@ -3801,14 +3793,6 @@
       "ja": "その他の編集操作",
       "zh-Hans": "更多编辑操作"
     },
-    "本次会话历史…": {
-      "de": "Sitzungsverlauf…",
-      "en": "Session History…",
-      "es": "Historial de la sesión…",
-      "fr": "Historique de la session…",
-      "ja": "セッション履歴…",
-      "zh-Hans": "本次会话历史…"
-    },
     "此照片有未应用的几何或镜头草稿。": {
       "de": "Dieses Foto hat einen nicht angewendeten Geometrie- oder Objektiventwurf.",
       "en": "This photo has an unapplied geometry or lens draft.",
@@ -3816,14 +3800,6 @@
       "fr": "Cette photo a un brouillon de géométrie ou d’objectif non appliqué.",
       "ja": "この写真には未適用のジオメトリまたはレンズの下書きがあります。",
       "zh-Hans": "此照片有未应用的几何或镜头草稿。"
-    },
-    "粘贴调整…": {
-      "de": "Anpassungen einfügen…",
-      "en": "Paste Adjustments…",
-      "es": "Pegar ajustes…",
-      "fr": "Coller les réglages…",
-      "ja": "調整を貼り付け…",
-      "zh-Hans": "粘贴调整…"
     },
     "{0} · 独立外观": {
       "en": "{0} · Independent Look",

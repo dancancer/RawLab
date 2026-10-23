@@ -129,6 +129,12 @@ public partial class MainWindow
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
+        if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
+        if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
+        if(e.Key==Key.Y && Keyboard.Modifiers==ModifierKeys.Control || e.Key==Key.Z && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift))
+            {RunPhotoHistory(false);e.Handled=true;return;}
+        if(e.Key==Key.C && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){CopyAdjustmentsClicked(sender,e);e.Handled=true;return;}
+        if(e.Key==Key.V && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){PasteAdjustmentsClicked(sender,e);e.Handled=true;return;}
         if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
         if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
