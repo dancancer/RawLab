@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D00800000000000000000005 /* IOSBatchSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000015; };
+        D00800000000000000000004 /* ContentView+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000014; };
+        D00800000000000000000003 /* RawEditorViewModel+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000013; };
+        D00800000000000000000002 /* IOSBatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000012; };
+        D00800000000000000000001 /* BatchSelectionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000011; };
         D00700000000000000000006 /* PhotoHSLTargetInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000016; };
         D00700000000000000000005 /* ContentView+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000015; };
         D00700000000000000000004 /* RawEditorViewModel+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000014; };
@@ -200,6 +205,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        D00800000000000000000015 /* IOSBatchSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelectionView.swift"; path = "RawLab/UI/Export/IOSBatchSelectionView.swift"; sourceTree = SOURCE_ROOT; };
+        D00800000000000000000014 /* ContentView+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+BatchSelection.swift"; path = "RawLab/UI/Editor/ContentView+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
+        D00800000000000000000013 /* RawEditorViewModel+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+BatchSelection.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
+        D00800000000000000000012 /* IOSBatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelection.swift"; path = "RawLab/Core/Batch/Model/IOSBatchSelection.swift"; sourceTree = SOURCE_ROOT; };
+        D00800000000000000000011 /* BatchSelectionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "BatchSelectionSession.swift"; path = "../Shared/BatchSelectionSession.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000016 /* PhotoHSLTargetInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PhotoHSLTargetInput.swift"; path = "RawLab/UI/Preview/PhotoHSLTargetInput.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000015 /* ContentView+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+HSLTarget.swift"; path = "RawLab/UI/Editor/ContentView+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000014 /* RawEditorViewModel+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+HSLTarget.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
@@ -619,6 +629,11 @@
 				D00700000000000000000014,
 				D00700000000000000000013,
 				D00700000000000000000012,
+				D00800000000000000000011,
+				D00800000000000000000012,
+				D00800000000000000000013,
+				D00800000000000000000014,
+				D00800000000000000000015,
 				D00700000000000000000011,
 				D00600000000000000000014,
 				D00600000000000000000013,
@@ -1124,6 +1139,11 @@
 				D00700000000000000000004,
 				D00700000000000000000003,
 				D00700000000000000000002,
+				D00800000000000000000001,
+				D00800000000000000000002,
+				D00800000000000000000003,
+				D00800000000000000000004,
+				D00800000000000000000005,
 				D00700000000000000000001,
 				D00600000000000000000004,
 				D00600000000000000000003,

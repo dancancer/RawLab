@@ -411,7 +411,7 @@ class WorkflowContractTests(unittest.TestCase):
                      "look-library.sh", "look-import-model.sh", "ctest --test-dir lutools/build-macos"),
             "agent": ("agent-recipe-render.sh",),
             "render": ("raster-render.sh", "test_real_cli.py"),
-            "model": ("batch-export.sh", "edit-model.sh", "adjustment-history-model.sh", "presentation.sh", "usage-model.sh", "usage-termination.sh"),
+            "model": ("batch-export.sh", "batch-selection-model.sh", "edit-model.sh", "adjustment-history-model.sh", "presentation.sh", "usage-model.sh", "usage-termination.sh"),
         }
         for group, commands in expected.items():
             text = "\n".join(groups[group])

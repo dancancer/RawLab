@@ -78,7 +78,7 @@ final class BatchExportModel: ObservableObject {
     var failedCount: Int { job.targets.filter { $0.status == .failed }.count }
     var pendingCount: Int { job.targets.filter { [.pending, .cancelled, .processing].contains($0.status) }.count }
     var uncertainCount: Int { job.targets.filter { [.publishing, .needsConfirmation].contains($0.status) }.count }
-    var canChangeTargets: Bool { isReady && !isRunning && !isPreparing && job.status == .draft }
+    var canChangeTargets: Bool { job.settingsMode == .uniformFrozen && isReady && !isRunning && !isPreparing && job.status == .draft }
     var canStart: Bool { isReady && !isRunning && !isPreparing && journalStore != nil && pendingCount + failedCount > 0 }
     var stateTitle: String {
         if isPreparing { return L10n.text("正在准备照片…") }
@@ -183,7 +183,7 @@ final class BatchExportModel: ObservableObject {
         var snapshot = job.outputFormat == .renderedDNG
             ? job.recovered()
             : job.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
-        guard !snapshot.source.settings.hasLook ||
+        guard snapshot.settingsMode == .perTargetFrozen || !snapshot.source.settings.hasLook ||
                 snapshot.source.lookURL.map({ FileManager.default.isReadableFile(atPath: $0.path) }) == true else {
             validationMessage = L10n.text("任务使用的外观文件不可用，请重新创建任务。")
             return
@@ -192,7 +192,6 @@ final class BatchExportModel: ObservableObject {
         cancellation.lock(); didCancel = false; cancellation.unlock()
         backgroundInterruption = false
         let failedIDs = failuresOnly ? Set(snapshot.targets.filter { $0.status == .failed }.map(\.id)) : nil
-        let frozenLongEdge = snapshot.longEdge
         let succeededBefore = snapshot.targets.filter { $0.status == .succeeded }.count
         queue.async { [self] in
             var attempted = Set<String>()
@@ -200,11 +199,10 @@ final class BatchExportModel: ObservableObject {
                 let result: BatchExportJob
                 if snapshot.outputFormat == .renderedDNG {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
-                        render: { target, _ in
-                            let resolvedSettings = snapshot.source.settings(for: target.sourceKind)
+                        render: { target, resolvedSettings in
                             return try self.renderDNG(target: target, settings: resolvedSettings,
-                                                      look: snapshot.source.lookURL,
-                                                      longEdge: frozenLongEdge, jobID: snapshot.id)
+                                                      look: snapshot.look(for: target),
+                                                      longEdge: snapshot.longEdge(for: target), jobID: snapshot.id)
                         },
                         write: { file, name, _, checkpoint in
                             try BatchFileWriter.write(file: file, outputName: name,
@@ -220,11 +218,10 @@ final class BatchExportModel: ObservableObject {
                         onlyIDs: failedIDs)
                 } else if let jpegWriter {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
-                        render: { target, _ in
-                            let resolvedSettings = snapshot.source.settings(for: target.sourceKind)
+                        render: { target, resolvedSettings in
                             return try self.render(target: target, settings: resolvedSettings,
-                                                   look: snapshot.source.lookURL,
-                                                   longEdge: frozenLongEdge)
+                                                   look: snapshot.look(for: target),
+                                                   longEdge: snapshot.longEdge(for: target))
                         },
                         write: jpegWriter,
                         shouldCancel: { self.isCancellationRequested },
@@ -237,11 +234,10 @@ final class BatchExportModel: ObservableObject {
                 } else {
                     try PhotoLibraryBatchWriter.authorize()
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
-                        render: { target, _ in
-                            let resolvedSettings = snapshot.source.settings(for: target.sourceKind)
+                        render: { target, resolvedSettings in
                             return try self.render(target: target, settings: resolvedSettings,
-                                                   look: snapshot.source.lookURL,
-                                                   longEdge: frozenLongEdge)
+                                                   look: snapshot.look(for: target),
+                                                   longEdge: snapshot.longEdge(for: target))
                         },
                         write: { data, name, target, checkpoint in
                             try PhotoLibraryBatchWriter.write(data: data, outputName: name,
@@ -372,21 +368,24 @@ final class BatchExportModel: ObservableObject {
 
     func preview(target: BatchTarget) async throws -> UIImage {
         guard !isRunning, !isPreparing else { throw BatchExportError.target(L10n.text("请等待当前任务完成。")) }
-        let snapshot = job.source
+        let snapshot = job
         return try await perform {
-            if snapshot.settings.hasLook && snapshot.lookURL.map({ FileManager.default.isReadableFile(atPath: $0.path) }) != true {
+            try snapshot.validate()
+            let targetSettings = try snapshot.settings(for: target)
+            let look = try snapshot.look(for: target)
+            if snapshot.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
+            if targetSettings.hasLook && look.map({ FileManager.default.isReadableFile(atPath: $0.path) }) != true {
                 throw BatchExportError.global(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))
             }
             let processor = Sony2FujiProcessor()
             let result: Sony2FujiProcessor.ProcessResult
-            let targetSettings = snapshot.settings(for: target.sourceKind)
             if target.sourceKind == .raw {
                 result = try processor.processRaw(url: target.sourceURL, settings: targetSettings,
-                                                  previewLongEdge: 1280, lutURL: snapshot.lookURL)
+                                                  previewLongEdge: 1280, lutURL: look)
             } else {
                 let raster = try processor.loadRasterBuffer(url: target.sourceURL)
                 let buffer = try processor.processBuffer(buffer: raster.buffer, settings: targetSettings,
-                                                         previewLongEdge: 1280, lutURL: snapshot.lookURL)
+                                                         previewLongEdge: 1280, lutURL: look)
                 result = Sony2FujiProcessor.ProcessResult(buffer: buffer, orientation: .up,
                                                           rawWhiteBalance: nil)
             }

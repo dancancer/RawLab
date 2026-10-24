@@ -41,7 +41,9 @@
 "Sony2Fuji output copy failed." = "Sony2Fuji Output Copy Failed.";
 "Sony2Fuji session create failed: %@" = "Sony2Fuji Session Creation Failed: %@";
 "三分网格" = "Rule of Thirds Grid";
+"上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
+"上次同步结果与历史" = "Last sync results and history";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
@@ -85,7 +87,9 @@
 "停用" = "Off";
 "允许使用统计" = "Allow usage analytics";
 "元数据匹配" = "Metadata Match";
+"先检查每张照片的草稿和已保存调整，再确认冻结任务。" = "Review each photo’s draft and saved adjustments, then confirm to freeze the task.";
 "光线" = "Light";
+"全选" = "Select all";
 "全部" = "All";
 "全部调整" = "All Adjustments";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "Hue, saturation and lightness will return to 0 for all eight colors. Other adjustments will stay unchanged.";
@@ -102,8 +106,10 @@
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
 "匹配内嵌预览" = "Match embedded preview";
 "匹配照片" = "Matches Photo";
+"单张微调" = "Fine-tune photo";
 "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。" = "History lasts for this session. Saved adjustments are restored when you reopen a photo.";
 "原始尺寸" = "Original size";
+"原始文件已被替换，请重新选择照片。" = "The original file has been replaced. Select the photo again.";
 "原始比例" = "Original Ratio";
 "去噪优先" = "Noise Reduction Priority";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
@@ -115,6 +121,8 @@
 "另存" = "Save As";
 "史诗自然 · 雾气冷青" = "Epic nature · misty cool cyan";
 "同名预设已存在，请使用其他名称。" = "A preset with this name already exists. Use another name.";
+"同步范围" = "Sync scope";
+"同步调整" = "Sync adjustments";
 "向右旋转 90°" = "Rotate right 90°";
 "向左旋转 90°" = "Rotate left 90°";
 "四分之一灵敏度" = "Quarter Sensitivity";
@@ -147,6 +155,7 @@
 "导出失败" = "Export Failed";
 "导出完成" = "Export Complete";
 "导出尺寸" = "Export Size";
+"导出尺寸无效。" = "Invalid export size.";
 "导出已中断" = "Export Interrupted";
 "导出已停止" = "Export Stopped";
 "导出已取消" = "Export Canceled";
@@ -156,6 +165,7 @@
 "导出长边像素" = "Export Long Edge (Pixels)";
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
+"将按各自调整导出 %@ 张照片。" = "Export with individual adjustments · Photos: %@";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
 "尚无用户预设" = "No User Presets Yet";
 "尚未保存，允许重新导出" = "Not Saved Yet; Allow Re-Export";
@@ -196,6 +206,8 @@
 "并排" = "Side by side";
 "应用" = "Apply";
 "应用并保存" = "Apply and Save";
+"应用草稿" = "Apply Draft";
+"应用草稿并继续" = "Apply draft and continue";
 "应用预设" = "Apply Preset";
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
@@ -217,6 +229,7 @@
 "手动" = "Manual";
 "打开系统设置" = "Open System Settings";
 "批量导出" = "Batch Export";
+"批量编辑" = "Batch editing";
 "拉直" = "Straighten";
 "拍摄参数" = "Capture Settings";
 "拍摄时设置" = "As-Shot Setting";
@@ -225,6 +238,8 @@
 "拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
 "指定长边" = "Specify long edge";
 "按每张照片" = "Per Photo";
+"按每张调整导出" = "Export with each photo’s adjustments";
+"按每张调整导出…" = "Export with each photo’s adjustments…";
 "授权核对相册中的保存结果" = "Authorize Access to Verify Saved Results in Photos";
 "搜索镜头" = "Search Lenses";
 "撤销" = "Undo";
@@ -236,6 +251,8 @@
 "放弃任务" = "Discard Task";
 "放弃修改" = "Discard Changes";
 "放弃此任务？已保存的照片会保留。" = "Discard this task? Saved photos will be kept.";
+"放弃草稿" = "Discard Draft";
+"放弃草稿并继续" = "Discard draft and continue";
 "效果" = "Effects";
 "数据与提供方" = "Data and provider";
 "文件信息" = "File Information";
@@ -292,6 +309,7 @@
 "曝光模式" = "Exposure mode";
 "更多" = "More";
 "有多个匹配镜头，请手动选择" = "Multiple Lens Matches; Choose Manually";
+"有未提交调整。" = "There are uncommitted adjustments.";
 "未匹配镜头" = "No Lens Match";
 "未匹配镜头，请手动选择" = "No Lens Match; Choose Manually";
 "未变化" = "Unchanged";
@@ -304,6 +322,9 @@
 "未调整" = "Unadjusted";
 "本次会话历史" = "Session History";
 "本次批量导出效果" = "This Batch Export Result";
+"来源有未提交调整，请先应用或放弃。" = "Apply or discard the source’s uncommitted adjustments first.";
+"来源照片不参与同步。" = "The source photo is excluded from sync.";
+"来源照片不参与同步，请选择至少一张其他照片。" = "The source photo is excluded. Select at least one other photo.";
 "来源：%@ · %@ 项调整" = "Source: %@ · %@ adjustments";
 "极简禅意 · 日系街拍" = "Minimalist Zen · Japanese street photography";
 "查看批量任务 · %@ 张" = "View Batch Task · %@";
@@ -317,6 +338,7 @@
 "核对保存结果" = "Verify Save Result";
 "格式" = "Format";
 "检查 %@ 的效果" = "Inspect %@ Result";
+"检查并查看最终调整" = "Check and review final adjustments";
 "检查目标" = "Check Photos";
 "横向色差" = "Lateral Chromatic Aberration";
 "横向色差未应用" = "Lateral Chromatic Aberration Not Applied";
@@ -342,6 +364,7 @@
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";
 "此预设库来自更新版本，请更新应用后重试。" = "This preset library was created by a newer version. Update the app and try again.";
 "此默认值不可达，请重置裁切组。" = "This default value cannot be reached. Reset the crop settings.";
+"每张照片使用确认时冻结的独立调整。" = "Each photo uses its individual adjustments frozen at confirmation.";
 "水平位置" = "Horizontal position";
 "水平翻转" = "Flip horizontal";
 "水平透视" = "Horizontal perspective";
@@ -350,6 +373,7 @@
 "油润复古 · 城市胶片" = "Rich vintage · urban film";
 "洋红" = "Magenta";
 "添加" = "Add";
+"添加照片" = "Add Photos";
 "清空选择" = "Clear Selection";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warm rich vintage urban film, clean stable shadows, warm golden highlights and a wandering story feel";
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";
@@ -379,6 +403,7 @@
 "目标照片" = "Target Photos";
 "目标调整" = "Targeted adjustment";
 "目标：%@ 张照片" = "Target photos: %@";
+"确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
 "移除 %@" = "Remove %@";
 "移除“%@”？" = "Remove \"%@\"?";
@@ -431,6 +456,7 @@
 "裁切上边" = "Crop top";
 "裁切与旋转" = "Crop and Rotate";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Crop position and size use a percentage of the canvas after rotation, flips and straightening.";
+"裁切区域" = "Crop region";
 "裁切右上角" = "Crop Top-Right Corner";
 "裁切右下角" = "Crop Bottom-Right Corner";
 "裁切宽度" = "Crop width";
@@ -444,6 +470,7 @@
 "覆盖预设？" = "Overwrite Preset?";
 "语言" = "Language";
 "请使用 %@ 的步进。" = "Use increments of %@.";
+"请先完成或结束已有批量任务，再创建新任务。" = "Finish or end the existing batch task before creating a new one.";
 "请先导入一张照片。" = "Import a Photo First.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Apply or discard unfinished input and geometry drafts first.";
 "请在调整后的照片区域取色。" = "Sample within the edited photo.";
@@ -472,6 +499,7 @@
 "跳过以上目标后重试" = "Skip Listed Photos and Retry";
 "输出" = "Output";
 "返回" = "Back";
+"返回批量集合" = "Return to batch collection";
 "返回调整后" = "Return to after";
 "进入纯预览" = "Enter immersive preview";
 "退出纯预览" = "Exit immersive preview";
@@ -479,6 +507,7 @@
 "选择" = "Select";
 "选择此组" = "Select Group";
 "选择照片…" = "Select Photos…";
+"选择照片后同步所需调整，也可进入单张微调，再返回原集合。" = "Select photos to sync adjustments, or fine-tune a photo and return to the same collection.";
 "选择镜头" = "Choose Lens";
 "选择镜头…" = "Choose Lens…";
 "选择镜头配置文件" = "Choose Lens Profile";

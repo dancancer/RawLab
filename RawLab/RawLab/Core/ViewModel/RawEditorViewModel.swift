@@ -75,6 +75,7 @@ final class RawEditorViewModel: ObservableObject {
     var persistedEditorSettings: PersistedEditorSettings?
     var failedDraftSource: EditorEditSource?
     var loadedEditRecord: VersionedPhotoEdit?
+    let batchSelection = IOSBatchSelection()
     var adjustmentSession: IOSAdjustmentTransferSession?
     var adjustmentInteraction: IOSAdjustmentInteraction?
     var adjustmentSourceValidator: (() throws -> Void)?

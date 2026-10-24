@@ -36,6 +36,7 @@ import com.rawlab.android.album.AlbumScreen
 import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.analytics.UsageEvent
 import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
+import com.rawlab.android.batch.ui.BatchSelectionScreen
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.ui.EditorScreen
@@ -104,6 +105,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             adjustmentSheet = AdjustmentSheet.HISTORY
     }
     var album by rememberSaveable { mutableStateOf(false) }
+    var collectionOpen by rememberSaveable { mutableStateOf(false) }
+    val collection by model.collection.collectAsStateWithLifecycle()
     val batch by model.batch.collectAsStateWithLifecycle()
     val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
     val owner = LocalLifecycleOwner.current
@@ -141,6 +144,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     }
     if (batch != null) {
         BatchExportScreen(model = batch!!, storage = model.storage, onBack = model::closeBatch)
+    } else if (collectionOpen) {
+        BatchSelectionScreen(model, onBack = { collectionOpen = false }, onEdit = { collectionOpen = false })
     } else if (album) {
         screenState.SaveableStateProvider("album") {
             AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
@@ -188,6 +193,12 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 if (model.beginExport()) exportDialog = true
             },
             onBatchExport = model::beginBatch,
+            collectionEditing = collection.currentID != null && collection.currentID == state.photo?.identity?.value,
+            onCollection = {
+                if (collection.currentID != null) {
+                    if (model.returnToCollection()) collectionOpen = true
+                } else { model.retainCurrentInCollection(); collectionOpen = true }
+            },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,

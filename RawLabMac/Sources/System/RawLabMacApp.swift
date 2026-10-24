@@ -107,11 +107,16 @@ struct RawLabMacApp: App {
                     Button(L10n.text("使用当前调整批量导出…")) {
                         if model.prepareBatch() { openWindow(id: "batch-export") }
                     }.disabled(!model.canExport)
+                    Button(L10n.text("批量编辑…")) { openWindow(id: "batch-selection") }
+                        .disabled(model.exporting)
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }.disabled(model.batch == nil)
                 }
             }
         Window(L10n.text("关于 RawLab"), id: "about") { AboutView(updates: updates).environment(\.locale, selectedLocale) }
             .windowResizability(.contentSize)
+        Window(L10n.text("批量编辑"), id: "batch-selection") {
+            BatchSelectionView(model: model).environment(\.locale, selectedLocale)
+        }.defaultSize(width: 1040, height: 720)
         Window(L10n.text("批量导出"), id: "batch-export") {
             if let batch = model.batch { BatchExportView(model: batch).environment(\.locale, selectedLocale) } else {
                 BatchExportEmptyView().environment(\.locale, selectedLocale)

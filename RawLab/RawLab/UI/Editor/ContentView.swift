@@ -83,6 +83,11 @@ struct ContentView: View {
     @State var showingFileImporter = false
     @State var showingLookImporter = false
     @State private var checkedBatchRecovery = false
+    @State var showingBatchSelection = false
+    @State var queuedCollectionEdit: String?
+    @State var queuedCollectionBatch: BatchExportModel?
+    @State var queuedCollectionExistingBatch = false
+    @State var pendingCollectionNavigation: IOSCollectionNavigation?
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
     @State var photoInfoMode = PhotoInfoMode.hidden
@@ -246,6 +251,9 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.isBusy) { _, busy in
+            if !busy, let current = viewModel.batchSelection.selection.current, current != viewModel.sourceIdentity?.key {
+                viewModel.batchSelection.selection.returnToCollection()
+            }
             if !busy && photoImportTask == nil {
                 isImporting = false
                 photoImportRequestID = nil
@@ -309,6 +317,16 @@ struct ContentView: View {
             default:
                 IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
             }
+        }
+        .sheet(isPresented: $showingBatchSelection, onDismiss: finishBatchSelection) {
+            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, settings: settings,
+                hasPendingBatch: batchModel != nil, resolveDraft: resolveCollectionDraft,
+                editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
+                showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },
+                created: { job, journal in
+                    queuedCollectionBatch = BatchExportModel(job: job, journalStore: journal)
+                    showingBatchSelection = false
+                })
         }
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {

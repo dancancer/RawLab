@@ -6,6 +6,42 @@ enum BatchSourceKind: String, Codable, Equatable {
     case raster
 }
 
+enum BatchSettingsMode: String, Codable {
+    case uniformFrozen = "uniform_frozen", perTargetFrozen = "per_target_frozen"
+}
+
+struct BatchFrozenSettings: Codable, Equatable {
+    var version = 1
+    var settingsVersion = 1
+    let ordinal: Int
+    let settings: RawSettings
+    let inputSHA256: String
+    var lookURL: URL?
+    let lookSHA256: String?
+    let lookName: String?
+    let outputFormat: BatchOutputFormat
+    let longEdge: Int?
+
+    func validate() throws {
+        func digest(_ value: String?) -> Bool {
+            value?.count == 64 && value!.allSatisfy { "0123456789abcdef".contains($0) }
+        }
+        guard version == 1, settingsVersion == 1, ordinal >= 0, ExportSize.isValid(longEdge), digest(inputSHA256),
+              (lookURL == nil && lookSHA256 == nil && !settings.hasLook) || (lookURL != nil && digest(lookSHA256)) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+    }
+
+    func verifyFiles(input: URL) throws {
+        guard try PhotoIdentity.fallback(for: input).contentIdentifier == inputSHA256 else {
+            throw BatchExportError.target(L10n.text("原始文件已被替换，请重新选择照片。"))
+        }
+        if let lookURL, (try? PhotoIdentity.fallback(for: lookURL).contentIdentifier) != lookSHA256 {
+            throw BatchExportError.target(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))
+        }
+    }
+}
+
 enum BatchTargetStatus: String, Codable, Equatable {
     case pending
     case processing
@@ -119,6 +155,7 @@ struct BatchTarget: Codable, Equatable, Identifiable {
     var outputName: String
     var outputAssetIdentifier: String?
     var outputFileURL: URL?
+    var frozen: BatchFrozenSettings?
 
     var id: String { identity.key }
 
@@ -142,7 +179,7 @@ struct BatchTarget: Codable, Equatable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case identity, sourceURL, displayName, sourceKind, status, errorMessage
-        case outputName, outputAssetIdentifier, outputFileURL
+        case outputName, outputAssetIdentifier, outputFileURL, frozen
     }
 
     init(from decoder: Decoder) throws {
@@ -157,10 +194,13 @@ struct BatchTarget: Codable, Equatable, Identifiable {
             ?? OutputNameAllocator.baseName(for: displayName)
         outputAssetIdentifier = try values.decodeIfPresent(String.self, forKey: .outputAssetIdentifier)
         outputFileURL = try values.decodeIfPresent(URL.self, forKey: .outputFileURL)
+        frozen = try values.decodeIfPresent(BatchFrozenSettings.self, forKey: .frozen)
     }
 }
 
 struct BatchExportJob: Codable, Equatable, Identifiable {
+    var version = 1
+    var settingsMode: BatchSettingsMode = .uniformFrozen
     let id: UUID
     var source: BatchSourceSnapshot
     var targets: [BatchTarget]
@@ -190,11 +230,14 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, source, targets, status, outputFormat, longEdge, createdAt, updatedAt, globalError
+        case version, id, source, targets, status, outputFormat, longEdge, createdAt, updatedAt, globalError
+        case settingsMode = "settings_mode"
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        settingsMode = try values.decodeIfPresent(BatchSettingsMode.self, forKey: .settingsMode) ?? .uniformFrozen
         id = try values.decode(UUID.self, forKey: .id)
         source = try values.decode(BatchSourceSnapshot.self, forKey: .source)
         targets = try values.decode([BatchTarget].self, forKey: .targets)
@@ -204,6 +247,41 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
         createdAt = try values.decode(Date.self, forKey: .createdAt)
         updatedAt = try values.decode(Date.self, forKey: .updatedAt)
         globalError = try values.decodeIfPresent(String.self, forKey: .globalError)
+        try validate()
+    }
+
+    func validate() throws {
+        guard (1...2).contains(version) else { throw CocoaError(.fileReadCorruptFile) }
+        guard settingsMode == .perTargetFrozen else {
+            guard version == 1, targets.allSatisfy({ $0.frozen == nil }) else { throw CocoaError(.fileReadCorruptFile) }
+            return
+        }
+        guard version == 2, !targets.isEmpty, Set(targets.map(\.id)).count == targets.count else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        for (index, target) in targets.enumerated() {
+            guard let frozen = target.frozen, frozen.ordinal == index,
+                  frozen.outputFormat == outputFormat, frozen.longEdge == longEdge else { throw CocoaError(.fileReadCorruptFile) }
+            try frozen.validate()
+        }
+    }
+
+    func settings(for target: BatchTarget) throws -> RawSettings {
+        guard settingsMode == .perTargetFrozen else { return source.settings(for: target.sourceKind) }
+        guard let frozen = target.frozen else { throw CocoaError(.fileReadCorruptFile) }
+        return frozen.settings
+    }
+
+    func look(for target: BatchTarget) throws -> URL? {
+        guard settingsMode == .perTargetFrozen else { return source.lookURL }
+        guard let frozen = target.frozen else { throw CocoaError(.fileReadCorruptFile) }
+        return frozen.lookURL
+    }
+
+    func longEdge(for target: BatchTarget) throws -> Int? {
+        guard settingsMode == .perTargetFrozen else { return longEdge }
+        guard let frozen = target.frozen else { throw CocoaError(.fileReadCorruptFile) }
+        return frozen.longEdge
     }
 }
 

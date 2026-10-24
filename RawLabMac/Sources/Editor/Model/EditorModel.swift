@@ -199,6 +199,9 @@ final class EditorModel: ObservableObject {
     var saveStatus: String { L10n.text(saveStatusKey) }
     @Published var saveError: String?
     @Published var batch: BatchExportModel?
+    @Published var batchSelection = BatchSelectionSession<String>()
+    @Published var batchSelectionPhotos: [String: MacCollectionPhoto] = [:]
+    @Published var collectionError: String?
     @Published var exportLongEdge: Int?
     let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
@@ -224,9 +227,11 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentHistoryRevision = 0
     @Published var adjustmentClipboard: AdjustmentTransferPayload?
     @Published var adjustmentSheet: AdjustmentSheetKind?
+    @Published var adjustmentSheetInCollection = false
     var adjustmentSheetPayload: AdjustmentTransferPayload?
     var adjustmentSheetTargets: [URL]?
     var adjustmentSheetExcludedSource: String?
+    var adjustmentSheetExcludedIdentity: String?
     var pendingAdjustmentHistory: AdjustmentHistoryRequest?
     @Published var independentRecipeLookIDs = Set<String>()
     @Published var adjustmentOutcomes: [AdjustmentTransferOutcome] = []

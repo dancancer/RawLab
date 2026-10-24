@@ -42,7 +42,8 @@ public partial class MainWindow
         if(picker.ShowDialog(this)==true)await ShowAdjustmentPreflight(payload,picker.FileNames);
     }
     internal async Task<PreparedAdjustmentTransfer?> PrepareAdjustmentTargets(AdjustmentPayload payload,IEnumerable<string> paths,
-        AdjustmentHistoryAction action=AdjustmentHistoryAction.Paste)
+        AdjustmentHistoryAction action=AdjustmentHistoryAction.Paste,OriginalIdentity? frozenSource=null,
+        IReadOnlyDictionary<string,CollectionPhoto>? collectionTargets=null)
     {
         var generation=++transferGeneration;var revision=editRevision;var opened=openRevision;var current=file;
         var session=TransferSession;var looks=AvailableTransferLooks();var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -56,6 +57,7 @@ public partial class MainWindow
                 foreach(var path in selected) {
                     if(!IsCurrent())return null;
                     try {
+                        collectionTargets?.GetValueOrDefault(path)?.Validate();
                         var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
                         var defaults=RenderEngine.PrepareInputSettings(path,new Adjustments());
                         (double Temperature,double Tint)? calibration=null;
@@ -79,7 +81,7 @@ public partial class MainWindow
                     }
                 }
                 if(!IsCurrent())return null;
-                var operation=session.Prepare(payload,targets,action);prepared=true;return operation;
+                var operation=session.Prepare(payload,targets,action,frozenSource);prepared=true;return operation;
             });
             return !closing && generation==transferGeneration && revision==editRevision && opened==openRevision && file==current ? result : null;
         }finally{if(generation==transferGeneration)transferPreparing=false;}

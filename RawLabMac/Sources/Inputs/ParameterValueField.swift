@@ -31,6 +31,8 @@ struct ParameterValueField: NSViewRepresentable {
     var invalidInputPolicy: ParameterInvalidInputPolicy = .restore
     var onValidityChange: (Bool) -> Void = { _ in }
 
+    static var hasPendingInputs: Bool { Coordinator.instances.allObjects.contains { $0.dirty } }
+
     static func cancelPendingInputs() {
         for coordinator in Coordinator.instances.allObjects { coordinator.cancel() }
         NSApp?.keyWindow?.makeFirstResponder(nil)

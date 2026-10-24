@@ -41,7 +41,9 @@
 "Sony2Fuji output copy failed." = "Kopieren der Sony2Fuji-Ausgabe fehlgeschlagen.";
 "Sony2Fuji session create failed: %@" = "Sony2Fuji-Sitzung konnte nicht erstellt werden: %@";
 "三分网格" = "Drittelraster";
+"上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
+"上次同步结果与历史" = "Ergebnisse und Verlauf der letzten Synchronisierung";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";
@@ -85,7 +87,9 @@
 "停用" = "Aus";
 "允许使用统计" = "Nutzungsanalyse erlauben";
 "元数据匹配" = "Metadatenübereinstimmung";
+"先检查每张照片的草稿和已保存调整，再确认冻结任务。" = "Prüfen Sie die Entwürfe und gespeicherten Anpassungen aller Fotos und bestätigen Sie dann die Aufgabe.";
 "光线" = "Licht";
+"全选" = "Alles auswählen";
 "全部" = "Alle";
 "全部调整" = "Alle Anpassungen";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "Farbton, Sättigung und Helligkeit aller acht Farbbereiche werden auf 0 zurückgesetzt. Andere Anpassungen bleiben unverändert.";
@@ -102,8 +106,10 @@
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Kalifornisches Sonnenlicht mit japanischem Filmlook, diffuses urbanes Gold und klarer warmer Schimmer";
 "匹配内嵌预览" = "An eingebettete Vorschau anpassen";
 "匹配照片" = "Passt zum Foto";
+"单张微调" = "Foto feinjustieren";
 "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。" = "Der Verlauf gilt für diese Sitzung. Gespeicherte Anpassungen werden beim erneuten Öffnen wiederhergestellt.";
 "原始尺寸" = "Originalgröße";
+"原始文件已被替换，请重新选择照片。" = "Die Originaldatei wurde ersetzt. Bitte wählen Sie das Foto erneut aus.";
 "原始比例" = "Originalverhältnis";
 "去噪优先" = "Rauschreduzierung priorisieren";
 "参数或输出路径无效。" = "Ungültige Parameter oder ungültiger Ausgabepfad.";
@@ -115,6 +121,8 @@
 "另存" = "Speichern unter";
 "史诗自然 · 雾气冷青" = "Epische Natur · kühles Nebelcyan";
 "同名预设已存在，请使用其他名称。" = "Eine Vorgabe mit diesem Namen ist bereits vorhanden. Verwenden Sie einen anderen Namen.";
+"同步范围" = "Synchronisierungsumfang";
+"同步调整" = "Anpassungen synchronisieren";
 "向右旋转 90°" = "90° nach rechts drehen";
 "向左旋转 90°" = "90° nach links drehen";
 "四分之一灵敏度" = "Empfindlichkeit: ¼";
@@ -147,6 +155,7 @@
 "导出失败" = "Export fehlgeschlagen";
 "导出完成" = "Export abgeschlossen";
 "导出尺寸" = "Exportgröße";
+"导出尺寸无效。" = "Ungültige Exportgröße.";
 "导出已中断" = "Export unterbrochen";
 "导出已停止" = "Export angehalten";
 "导出已取消" = "Export abgebrochen";
@@ -156,6 +165,7 @@
 "导出长边像素" = "Lange Seite beim Export (Pixel)";
 "导出长边必须为 1-65535 像素。" = "Die lange Seite muss 1-65535 Pixel betragen.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Die folgenden Werte werden in unabhängige Anpassungen umgewandelt, damit die aktuelle Wirkung anderer Gruppen erhalten bleibt: %@";
+"将按各自调整导出 %@ 张照片。" = "Mit individuellen Anpassungen exportieren · Fotos: %@";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
 "尚无用户预设" = "Noch keine eigenen Vorgaben";
 "尚未保存，允许重新导出" = "Noch nicht gespeichert; erneuten Export erlauben";
@@ -196,6 +206,8 @@
 "并排" = "Nebeneinander";
 "应用" = "Anwenden";
 "应用并保存" = "Anwenden und speichern";
+"应用草稿" = "Entwurf anwenden";
+"应用草稿并继续" = "Entwurf übernehmen und fortfahren";
 "应用预设" = "Vorgabe anwenden";
 "开启" = "Ein";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.";
@@ -217,6 +229,7 @@
 "手动" = "Manuell";
 "打开系统设置" = "Systemeinstellungen öffnen";
 "批量导出" = "Stapel-Export";
+"批量编辑" = "Stapelbearbeitung";
 "拉直" = "Begradigen";
 "拍摄参数" = "Aufnahmeparameter";
 "拍摄时设置" = "Einstellung wie aufgenommen";
@@ -225,6 +238,8 @@
 "拖动边角裁切，拖动画面内移动选区。" = "Ziehen Sie eine Ecke, um zuzuschneiden; ziehen Sie innerhalb der Auswahl, um sie zu verschieben.";
 "指定长边" = "Lange Seite festlegen";
 "按每张照片" = "Pro Foto";
+"按每张调整导出" = "Mit den Anpassungen jedes Fotos exportieren";
+"按每张调整导出…" = "Mit den Anpassungen jedes Fotos exportieren…";
 "授权核对相册中的保存结果" = "Zugriff auf Fotos erlauben, um gespeicherte Ergebnisse zu prüfen";
 "搜索镜头" = "Objektive suchen";
 "撤销" = "Rückgängig";
@@ -236,6 +251,8 @@
 "放弃任务" = "Auftrag verwerfen";
 "放弃修改" = "Änderungen verwerfen";
 "放弃此任务？已保存的照片会保留。" = "Aufgabe verwerfen? Gespeicherte Fotos bleiben erhalten.";
+"放弃草稿" = "Entwurf verwerfen";
+"放弃草稿并继续" = "Entwurf verwerfen und fortfahren";
 "效果" = "Effekte";
 "数据与提供方" = "Daten und Anbieter";
 "文件信息" = "Dateiinformationen";
@@ -292,6 +309,7 @@
 "曝光模式" = "Belichtungsmodus";
 "更多" = "Mehr";
 "有多个匹配镜头，请手动选择" = "Mehrere passende Objektive; bitte manuell auswählen";
+"有未提交调整。" = "Es gibt unbestätigte Anpassungen.";
 "未匹配镜头" = "Kein passendes Objektiv";
 "未匹配镜头，请手动选择" = "Kein passendes Objektiv; bitte manuell auswählen";
 "未变化" = "Unverändert";
@@ -304,6 +322,9 @@
 "未调整" = "Unbearbeitet";
 "本次会话历史" = "Sitzungsverlauf";
 "本次批量导出效果" = "Ergebnis dieses Stapel-Exports";
+"来源有未提交调整，请先应用或放弃。" = "Übernehmen oder verwerfen Sie zuerst die unbestätigten Anpassungen der Quelle.";
+"来源照片不参与同步。" = "Das Quellfoto ist von der Synchronisierung ausgeschlossen.";
+"来源照片不参与同步，请选择至少一张其他照片。" = "Das Quellfoto ist ausgeschlossen. Wählen Sie mindestens ein anderes Foto.";
 "来源：%@ · %@ 项调整" = "Quelle: %@ · %@ Anpassungen";
 "极简禅意 · 日系街拍" = "Minimalistisches Zen · japanische Streetfotografie";
 "查看批量任务 · %@ 张" = "Stapelauftrag anzeigen · %@";
@@ -317,6 +338,7 @@
 "核对保存结果" = "Speichervorgang prüfen";
 "格式" = "Format";
 "检查 %@ 的效果" = "Ergebnis von %@ prüfen";
+"检查并查看最终调整" = "Endgültige Anpassungen prüfen und anzeigen";
 "检查目标" = "Fotos prüfen";
 "横向色差" = "Laterale chromatische Aberration";
 "横向色差未应用" = "Laterale chromatische Aberration nicht korrigiert";
@@ -342,6 +364,7 @@
 "此镜头没有所选校正的标定数据" = "Keine Kalibrierungsdaten für die gewählten Korrekturen";
 "此预设库来自更新版本，请更新应用后重试。" = "Diese Vorgabenbibliothek stammt aus einer neueren Version. Aktualisieren Sie die App und versuchen Sie es erneut.";
 "此默认值不可达，请重置裁切组。" = "Dieser Standardwert lässt sich nicht einstellen. Setze die Zuschnitteinstellungen zurück.";
+"每张照片使用确认时冻结的独立调整。" = "Jedes Foto verwendet seine bei der Bestätigung festgeschriebenen Anpassungen.";
 "水平位置" = "Horizontale Position";
 "水平翻转" = "Horizontal spiegeln";
 "水平透视" = "Horizontale Perspektive";
@@ -350,6 +373,7 @@
 "油润复古 · 城市胶片" = "Sattes Vintage · urbaner Filmlook";
 "洋红" = "Magenta";
 "添加" = "Hinzufügen";
+"添加照片" = "Fotos hinzufügen";
 "清空选择" = "Auswahl aufheben";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warmer, satter Vintage-Stadtfilmlook, ruhige saubere Schatten, warme goldene Lichter und ein Gefühl des Umherschweifens";
 "渲染型 DNG 未生成。" = "Das entwickelte DNG wurde nicht erstellt.";
@@ -379,6 +403,7 @@
 "目标照片" = "Zielfotos";
 "目标调整" = "Zielgerichtete Anpassung";
 "目标：%@ 张照片" = "Zielfotos: %@";
+"确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
 "移除" = "Entfernen";
 "移除 %@" = "%@ entfernen";
 "移除“%@”？" = "„%@“ entfernen?";
@@ -431,6 +456,7 @@
 "裁切上边" = "Zuschnitt oben";
 "裁切与旋转" = "Zuschneiden und Drehen";
 "裁切位置和尺寸按旋转、翻转与拉直后的画布百分比设置。" = "Position und Größe des Zuschnitts beziehen sich prozentual auf die Fläche nach Drehen, Spiegeln und Begradigen.";
+"裁切区域" = "Zuschnittbereich";
 "裁切右上角" = "Obere rechte Zuschnittecke";
 "裁切右下角" = "Untere rechte Zuschnittecke";
 "裁切宽度" = "Zuschnittbreite";
@@ -444,6 +470,7 @@
 "覆盖预设？" = "Vorgabe überschreiben?";
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
+"请先完成或结束已有批量任务，再创建新任务。" = "Schließen Sie die vorhandene Stapelaufgabe ab oder beenden Sie sie, bevor Sie eine neue erstellen.";
 "请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie.";
 "请在调整后的照片区域取色。" = "Wählen Sie eine Farbe im bearbeiteten Foto.";
@@ -472,6 +499,7 @@
 "跳过以上目标后重试" = "Aufgeführte Fotos überspringen und erneut versuchen";
 "输出" = "Ausgabe";
 "返回" = "Zurück";
+"返回批量集合" = "Zur Stapelsammlung zurück";
 "返回调整后" = "Nachher anzeigen";
 "进入纯预览" = "Reine Vorschau öffnen";
 "退出纯预览" = "Reine Vorschau schließen";
@@ -479,6 +507,7 @@
 "选择" = "Auswählen";
 "选择此组" = "Gruppe auswählen";
 "选择照片…" = "Foto auswählen…";
+"选择照片后同步所需调整，也可进入单张微调，再返回原集合。" = "Wählen Sie Fotos zum Synchronisieren aus oder bearbeiten Sie ein Foto einzeln und kehren Sie zur selben Sammlung zurück.";
 "选择镜头" = "Objektiv auswählen";
 "选择镜头…" = "Objektiv auswählen…";
 "选择镜头配置文件" = "Objektivprofil auswählen";

@@ -29,8 +29,26 @@ enum BatchSettingsSummary {
             BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
                 value: String(format: "%.1f° · %.1f%%", locale: L10n.locale, settings.gradingSettings[zone].hue, settings.gradingSettings[zone].saturation))
         }
-        return tools + grading + whiteBalance(settings) + denoise(settings.denoise)
+        return tools + grading + hsl(settings.hsl) + geometry(settings.geometry) + whiteBalance(settings) + denoise(settings.denoise)
             + effects.map { row($0.key, effectValue(settings.photoEffects, $0.parameter)) } + lens(settings.lensSettings)
+    }
+
+    private static func hsl(_ settings: HSLSettings) -> [BatchSettingRow] {
+        (0..<8).flatMap { channel in
+            HSLAxis.allCases.map { axis in
+                BatchSettingRow(title: "HSL · " + L10n.text(HSLSettings.channelNames[channel]) + " · " + axis.title,
+                    value: String(format: "%+.1f", locale: L10n.locale, settings.value(axis, channel: channel)))
+            }
+        }
+    }
+
+    private static func geometry(_ value: GeometrySettings) -> [BatchSettingRow] {
+        [row("裁切区域", String(format: "%.3f, %.3f · %.3f × %.3f", locale: L10n.locale,
+              value.cropX, value.cropY, value.cropWidth, value.cropHeight)),
+         row("旋转", "\(value.quarterTurns * 90)°"), row("水平翻转", onOff(value.flipHorizontal)),
+         row("垂直翻转", onOff(value.flipVertical)), row("拉直", String(format: "%.2f°", locale: L10n.locale, value.straightenDegrees)),
+         row("水平透视", String(format: "%+.2f", locale: L10n.locale, value.perspectiveHorizontal)),
+         row("垂直透视", String(format: "%+.2f", locale: L10n.locale, value.perspectiveVertical))]
     }
 
     // ------------------------------------------------------------------------

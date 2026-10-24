@@ -33,8 +33,9 @@ internal class EditorRenderer(
     // 托管文件从解析路径到 native 读取完成期间不能被另一队列删除。
     fun perform(work: Work): WorkResult = synchronized(storage) { when (work) {
         is Work.Import -> {
-            val photo = storage.import(work.uri)
+            val photo = work.retained ?: storage.import(work.uri)
             try {
+                photo.validateOriginal?.invoke()
                 val record = restore(photo.identity)
                 val restored = record?.settings
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
@@ -47,7 +48,7 @@ internal class EditorRenderer(
                 } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
                     importing = true, restored = restored != null, importedRecord = record))
             }
-            catch (error: Throwable) { photo.file.delete(); throw error }
+            catch (error: Throwable) { if (work.retained == null) photo.file.delete(); throw error }
         }
         is Work.Preview -> {
             val edge = work.edge

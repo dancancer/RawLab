@@ -15,7 +15,7 @@ data class PreparedAdjustmentTransfer(val id: UUID, val payload: AdjustmentPaylo
         val unchanged: Boolean, val isCurrent: () -> Boolean, val validateSource: (() -> Unit)?, val error: Throwable?)
 }
 data class AdjustmentHistoryTransaction(val id: UUID, val action: Action, val fields: Set<AdjustmentField>, val parts: List<Part>) {
-    enum class Action { PASTE, EDIT, PRESET }
+    enum class Action { PASTE, EDIT, PRESET, SYNCHRONIZE }
     enum class State { APPLIED, UNDONE, REDO_INVALIDATED }
     data class Part(val id: UUID, val priorHead: UUID?, val identity: PhotoIdentity, val displayName: String,
         val before: EditSettings?, val after: EditSettings?, val state: State)
@@ -44,7 +44,8 @@ class AdjustmentTransferSession(private val store: EditStore) {
     fun prepare(payload: AdjustmentPayload, targets: List<AdjustmentTransferTarget>,
         action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE): PreparedAdjustmentTransfer {
         payload.validate()
-        val prepared = targets.distinctBy { it.identity }.map { target ->
+        val prepared = targets.distinctBy { it.identity }
+            .filterNot { action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE && it.identity.value == payload.source.identifier }.map { target ->
             try {
                 if (!target.isCurrent()) throw draftError()
                 target.validateSource?.invoke()
@@ -68,6 +69,8 @@ class AdjustmentTransferSession(private val store: EditStore) {
             val cached = outcomes[operation.id]?.get(target.id)
             if (cached?.status in setOf(AdjustmentStatus.APPLIED, AdjustmentStatus.UNCHANGED, AdjustmentStatus.SKIPPED)) return@map cached!!
             val result = when {
+                operation.action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE && target.id == operation.payload.source.identifier ->
+                    AdjustmentOutcome(target.id, AdjustmentStatus.BLOCKED, error = unresolved("synchronization source"))
                 target.id in skipping -> AdjustmentOutcome(target.id, AdjustmentStatus.SKIPPED)
                 !target.isCurrent() -> AdjustmentOutcome(target.id, AdjustmentStatus.BLOCKED, error = draftError())
                 target.original != null && target.candidate != null -> try {

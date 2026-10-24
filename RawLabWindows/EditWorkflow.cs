@@ -184,7 +184,7 @@ public partial class MainWindow
     private void ShowBatchClicked(object sender, RoutedEventArgs e)
     {
         if(CurrentBatch==null)return;
-        if(!ResolveTransformDraft())return;
+        if(CurrentBatch.Mode!=BatchJob.PerTargetFrozen && !ResolveTransformDraft())return;
         if (batchWindow != null) { batchWindow.Activate(); return; }
         if (previousBatch != null) ShowBatch(previousBatch);
     }

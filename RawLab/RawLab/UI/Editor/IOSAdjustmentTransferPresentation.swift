@@ -6,6 +6,7 @@ extension IOSAdjustmentHistoryTransaction.Action {
         case .paste: return L10n.text("粘贴调整")
         case .preset: return L10n.text("应用预设")
         case .edit: return L10n.text("调整照片")
+        case .synchronize: return L10n.text("同步调整")
         }
     }
 }

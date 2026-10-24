@@ -34,7 +34,7 @@
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同、三后端和四端实现已接通，本地模型/native/构建检查完成；新工具实际 UI 按用户要求解锁后统一验收，见[接入计划](tone-controls-plan.md)；尚未 push/提 PR | IT-06/15，未关闭 |
 | I4-G | ITER-06，三分区颜色分级 | I3-T 的新配置/数据链，单独质量准入 | 数值合同、三后端和四端数据链/色轮已接通，本地模型/native/构建检查及独立复核完成；实际 UI 待解锁后统一验收，见[接入计划](color-grading-plan.md)；尚未 push/提 PR | IT-07/15，未关闭 |
 | I4-H | ITER-07，HSL 真实像素 probe、坐标与目标手势 | I1-UI + 核心 probe 合同；提交接 I2 | CPU probe 合同和四端接入已实现，本地模型/native/构建检查及独立复核完成；实际 UI 待解锁后统一验收，见[接入计划](hsl-target-plan.md)；尚未 push/提 PR | IT-08/15，未关闭 |
-| I4-B | ITER-08，集合、同步、单张微调、逐张冻结导出 | I2；不等待全部新算法 | 排队 | IT-09/10/15 |
+| I4-B | ITER-08，集合、同步、单张微调、逐张冻结导出 | I2；不等待全部新算法 | 四端集合/同步/微调与两次确认冻结已接入，模型和可执行的原生回归通过；实际界面待解锁后统一验收，见[接入计划](batch-selection-plan.md)；尚未 push/提 PR | IT-09/10/15，未关闭 |
 | I5-Q | ITER-09，多点 PCHIP，保留 legacy S 曲线 | I3-T 的新参数配置、快照/Agent/导出接线 | 排队；合法性策略已明确 | IT-11/15 |
 | I5-A | ITER-10，清晰度与去朦胧 | I5-Q 的配置/Agent 接口；各自数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-12/15 |
 | IU | ITER-11，可信发行链、种子版、真实升级与恢复 | 两端发行身份、安装形态、可信 feed；真实发布另行授权 | 前置待核对 | IT-13/14 |
@@ -168,7 +168,7 @@ MCP 平台补充交付（2026-10-23）：`feature/editing-mcp-windows-validation
 - 第四批四端 17 工具六组导航/范围重置和第五批 S2b 输入均已集成；第六批 S3 与第七批 S4 已完成本地实现及约定回归，远端交付和保留的设备验收分别登记。
 - 三端当前保存均同步执行；第三批保留该串行实现，以可返回成功/失败的候选保存边界满足草稿事务。普通重置沿原一次编辑入口，不能与草稿 save-first 混为同一策略。
 - Android 的裁切/比例 ready 与可应用 changed 分开；reset/draft 只去除完全相同的重复保存，预览实际补入的 WB metadata 仍保存。
-- Windows [目录复制路径](https://github.com/dancancer/RawLab/blob/bff2b8602b913a08676e04ab7f1109a148f68834/RawLabWindows/MainWindow/Library.cs#L259)在异步枚举前捕获快照，恢复后尚无 source/edit guard；可能覆盖等待期间更新的当前照片记录。此源码风险登记到 I2/ITER-08，需专门回归，不混入第三批重置事务。
+- Windows 旧目录应用已复用 I2 的 capture/prepare/CAS/history，并在异步枚举与预检前后检查 source/open/edit revision；ITER-08 集合同步额外冻结稳定来源身份，在 prepare/写入时拒绝来源与重复物理目标。历史基线中的缺少 source/edit guard 不再代表当前实现。
 - 不改 r9 的 `approval` 或将整体 `implementation` 提前标为完成；首批纯模型接入也不是四端 UI 已落地。
 - Mac 的既有 raster normalization 提取到 `Adjustments.resolvedForRaster`，`Engine` 和候选 core 校验共用；不复制第二套 WB/曝光规则，不改变持久化快照。
 - MCP `validate_recipe` 保留 CLI 原始校验语义：引用文件可尚未存在、返回路径保持原表示；允许根限制仍适用。render/export 才要求实际输入和输出父目录存在。

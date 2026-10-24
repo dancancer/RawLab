@@ -6,6 +6,7 @@ struct BatchExportView: View {
     @ObservedObject var model: BatchExportModel
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var showPreview = false
+    @State private var confirmDiscard = false
 
     var body: some View {
         let _ = localizationLocale
@@ -16,7 +17,7 @@ struct BatchExportView: View {
                     Text(model.summary).foregroundStyle(.secondary).monospacedDigit()
                 }
                 Spacer()
-                if !model.job.started {
+                if !model.job.started && model.job.mode == .uniformFrozen {
                     Button(action: model.addFiles) { Label(L10n.text("添加照片"), systemImage: "plus") }
                     Button(L10n.text("全选")) { model.selectAll(true) }.disabled(model.job.items.isEmpty)
                     Button(L10n.text("全不选")) { model.selectAll(false) }.disabled(model.job.selectedCount == 0)
@@ -53,6 +54,12 @@ struct BatchExportView: View {
         .navigationTitle(L10n.text("批量导出"))
         .sheet(isPresented: $showPreview) { previewSheet }
         .onDisappear { model.cancel() }
+        .alert(L10n.text("结束此批量任务？"), isPresented: $confirmDiscard) {
+            Button(L10n.text("保留任务"), role: .cancel) {}
+            Button(L10n.text("结束任务"), role: .destructive) {
+                if model.discardTask() { dismissWindow(id: "batch-export") }
+            }
+        } message: { Text(L10n.text("已导出的文件会保留。剩余照片不再继续导出。")) }
     }
 
     private var targetList: some View {
@@ -66,7 +73,7 @@ struct BatchExportView: View {
             } else {
                 List(model.job.items) { item in
                     HStack(spacing: 12) {
-                        if !model.job.started {
+                        if !model.job.started && model.job.mode == .uniformFrozen {
                             Toggle(L10n.format("选择 %@", String(describing: item.input.lastPathComponent)), isOn: Binding(
                                 get: { item.selected }, set: { model.select(item.id, $0) }))
                                 .labelsHidden().toggleStyle(.checkbox)
@@ -89,7 +96,7 @@ struct BatchExportView: View {
                                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).help(item.input.path)
-                        if !model.job.started {
+                        if !model.job.started && model.job.mode == .uniformFrozen {
                             Button { model.remove(item.id) } label: { Image(systemName: "xmark.circle") }
                                 .buttonStyle(.plain).help(L10n.text("从列表移除")).accessibilityLabel(L10n.format("移除 %@", String(describing: item.input.lastPathComponent)))
                         } else if item.status == .succeeded, let output = item.output {
@@ -104,6 +111,17 @@ struct BatchExportView: View {
 
     private var sourceAndOutput: some View {
         VStack(alignment: .leading, spacing: 18) {
+            if model.job.mode == .perTargetFrozen {
+                Text(L10n.text("每张照片自己的最终调整")).font(.headline)
+                Text(L10n.text("任务已冻结。之后的照片编辑不会改变本次导出。")).foregroundStyle(.secondary)
+                ForEach(model.job.items) { item in
+                    if let frozen = item.frozen {
+                        DisclosureGroup(item.input.lastPathComponent + " · " + L10n.text(frozen.lookName)) {
+                            BatchSettingsSummary(settings: frozen.settings)
+                        }
+                    }
+                }
+            } else {
             Text(L10n.text("调整来源")).font(.headline)
             HStack(spacing: 12) {
                 BatchThumbnail(url: model.job.source).frame(width: 96, height: 76)
@@ -137,14 +155,15 @@ struct BatchExportView: View {
                     valueRow(L10n.text("自动裁边"), lens.autoCrop ? L10n.text("开启") : L10n.text("停用"))
                 }.padding(.top, 12)
             }
+            }
             Divider().padding(.vertical, 4)
             Text(L10n.text("输出")).font(.headline)
             Picker(L10n.text("格式"), selection: Binding(get: { model.job.format }, set: model.setFormat)) {
                 ForEach(ExportFormat.allCases) { format in Text(format.title).tag(format) }
             }.pickerStyle(.segmented).labelsHidden().id(localizationLocale.identifier)
-                .disabled(model.job.started).accessibilityIdentifier("batch.format")
+                .disabled(model.job.started || model.job.mode == .perTargetFrozen).accessibilityIdentifier("batch.format")
             ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge))
-                .disabled(model.job.started)
+                .disabled(model.job.started || model.job.mode == .perTargetFrozen)
             HStack {
                 Text(L10n.text("保存到"))
                 Spacer(minLength: 10)
@@ -152,7 +171,7 @@ struct BatchExportView: View {
                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     .help(model.job.outputDirectory?.path ?? L10n.text("选择输出文件夹"))
                 Button(action: model.chooseDirectory) { Image(systemName: "folder") }
-                    .help(L10n.text("选择输出文件夹")).accessibilityLabel(L10n.text("选择输出文件夹")).disabled(model.running)
+                    .help(L10n.text("选择输出文件夹")).accessibilityLabel(L10n.text("选择输出文件夹")).disabled(model.running || model.job.mode == .perTargetFrozen)
             }
             valueRow(L10n.text("重名文件"), L10n.text("自动添加序号"))
         }
@@ -160,7 +179,7 @@ struct BatchExportView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Text(model.job.started ? "\(model.job.format.title) · \(model.job.longEdge.map { L10n.format("长边 %@ px", String(describing: $0)) } ?? L10n.text("原始尺寸"))" :
+            Text(model.job.started || model.job.mode == .perTargetFrozen ? "\(model.job.format.title) · \(model.job.longEdge.map { L10n.format("长边 %@ px", String(describing: $0)) } ?? L10n.text("原始尺寸"))" :
                  L10n.text("仅用于本次导出，保留各照片原有调整"))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
@@ -170,6 +189,9 @@ struct BatchExportView: View {
                 Button(model.job.started ? L10n.text("关闭") : L10n.text("取消")) {
                     if model.job.started || model.discardDraft() { dismissWindow(id: "batch-export") }
                 }.disabled(model.validating)
+                if model.job.started && model.job.succeededCount != model.job.selectedCount {
+                    Button(L10n.text("结束任务…")) { confirmDiscard = true }.disabled(model.previewing)
+                }
                 if model.job.succeededCount > 0 {
                     Button { model.reveal() } label: { Image(systemName: "folder") }
                         .help(L10n.text("打开文件夹")).accessibilityLabel(L10n.text("打开文件夹"))
@@ -203,7 +225,7 @@ struct BatchExportView: View {
                 Text(model.error ?? L10n.text("无法生成预览")).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Text(L10n.format("%@ · 本次导出效果", L10n.text(model.job.lookName))).font(.caption).foregroundStyle(.secondary)
+            Text(L10n.format("%@ · 本次导出效果", L10n.text(model.job.items.first { $0.input == model.previewFile }?.frozen?.lookName ?? model.job.lookName))).font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(minWidth: 640, idealWidth: 800, minHeight: 440, idealHeight: 600)
     }
 
@@ -244,7 +266,7 @@ struct BatchExportEmptyView: View {
     }
 }
 
-private struct BatchThumbnail: View {
+struct BatchThumbnail: View {
     @Environment(\.locale) private var localizationLocale
     let url: URL
     @State private var image: NSImage?

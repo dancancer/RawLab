@@ -63,6 +63,7 @@ public sealed record OriginalIdentity(string Path, long Length, long Modified, l
         if (!file.Exists) throw new FileNotFoundException(Loc.Text("无法访问原始照片。"), path);
         return new(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks, file.CreationTimeUtc.Ticks);
     }
+    [JsonIgnore] public string StableKey => FileID ?? System.IO.Path.GetFullPath(Path).ToUpperInvariant();
     public bool SameFile(OriginalIdentity other) => StringComparer.OrdinalIgnoreCase.Equals(Path, other.Path) && SameContent(other);
     public bool SameContent(OriginalIdentity other) => Length == other.Length && Modified == other.Modified && Created == other.Created &&
         (FileID==null || other.FileID==null || FileID==other.FileID);

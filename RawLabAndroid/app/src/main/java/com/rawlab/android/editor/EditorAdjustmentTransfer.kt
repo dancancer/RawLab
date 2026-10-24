@@ -24,7 +24,8 @@ data class EditorAdjustmentTransferState(val preparing: Boolean = false, val pre
     val historyResults: List<AdjustmentOutcome> = emptyList(), val error: String? = null)
 internal data class AdjustmentPreparationWork(val generation: UUID, val payload: AdjustmentPayload, val uris: List<Uri>,
     val currentPhoto: ImportedPhoto?, val isCurrent: (String) -> Boolean,
-    val action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE)
+    val action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE,
+    val collectionPhotos: Map<String, ImportedPhoto> = emptyMap(), val validateCollection: ((String) -> Unit)? = null)
 internal data class AdjustmentPreparationResult(val generation: UUID, val operation: PreparedAdjustmentTransfer, val ownedFiles: Map<String, File>)
 
 /** 与普通渲染一样在串行资源队列执行；每个 native processor 在该目标预检结束时释放。 */
@@ -41,9 +42,10 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
             val identity = PhotoIdentity(uri.toString())
             var displayName = uri.lastPathSegment ?: identity.value
             try {
-                val photo = work.currentPhoto?.takeIf { it.identity == identity } ?: storage.import(uri).also { owned[identity.value] = it.file }
+                val photo = work.collectionPhotos[identity.value] ?: work.currentPhoto?.takeIf { it.identity == identity } ?: storage.import(uri).also { owned[identity.value] = it.file }
                 displayName = photo.name
-                val validate = EditorAdjustmentHistory.sourceValidation(photo)
+                val sourceValidator = EditorAdjustmentHistory.sourceValidation(photo)
+                val validate = { work.validateCollection?.invoke(identity.value); sourceValidator() }
                 val saved = store.versionedState(identity)
                 val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing)
                 val database = storage.lensDatabase()

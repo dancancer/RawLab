@@ -33,6 +33,7 @@ import com.rawlab.android.R
 import com.rawlab.android.album.AlbumScreen
 import com.rawlab.android.batch.BatchExportModel
 import com.rawlab.android.batch.BatchExportState
+import com.rawlab.android.batch.BatchSettingsMode
 import com.rawlab.android.batch.BatchPhase
 import com.rawlab.android.batch.BatchRow
 import com.rawlab.android.batch.BatchRowStatus
@@ -101,7 +102,9 @@ fun BatchExportScreen(
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (state.phase) {
-                BatchPhase.SELECTING -> BatchConfirmContent(state, storage, format, destination,
+                BatchPhase.SELECTING -> if (state.job.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+                    FrozenBatchContent(state, { effectTarget = it }, model::continueUnfinished, { discard = true })
+                else BatchConfirmContent(state, storage, format, destination,
                     ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize,
                     onAlbum = { album = true }, onFiles = { files.launch(arrayOf("*/*")) },
                     onDirectory = { directory.launch(null) }, onAlbumOutput = { destination = null; model.setDestination(null) }, onFormat = { format = it },
@@ -110,7 +113,7 @@ fun BatchExportScreen(
                     onStart = { model.start(format, destination, ExportSize.parse(ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize)) })
                 BatchPhase.PREPARING, BatchPhase.RUNNING -> BatchProgressContent(state, model::cancel)
                 BatchPhase.COMPLETE, BatchPhase.CANCELLED, BatchPhase.FAILED -> BatchResultContent(state,
-                    onRetry = model::retryFailed, onClose = onBack, onDirectory = { directory.launch(state.destination) },
+                    onRetry = model::retryFailed, onContinue = model::continueUnfinished, onClose = onBack, onDirectory = { directory.launch(state.destination) },
                     onConfirm = model::confirmOutput, onDiscard = { discard = true })
             }
         }
@@ -265,7 +268,7 @@ private fun BatchProgressContent(state: BatchExportState, onCancel: () -> Unit) 
 }
 
 @Composable
-private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onClose: () -> Unit,
+private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onContinue: () -> Unit, onClose: () -> Unit,
     onDirectory: () -> Unit, onConfirm: (String, Boolean) -> Unit, onDiscard: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (state.phase == BatchPhase.COMPLETE) AppStrings.text(R.string.message_export_complete) else if (state.failedCount > 0) AppStrings.text(R.string.message_some_exports_failed) else AppStrings.text(R.string.message_export_result), style = MaterialTheme.typography.titleLarge)
@@ -282,11 +285,12 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
                 }
             }
         } }
-        if (state.unfinishedCount > 0) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
-        if (state.unfinishedCount > 0) Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(6.dp))
-            Text(if (state.failedCount == state.unfinishedCount) AppStrings.text(R.string.message_retry_failed_items)
-                else AppStrings.format(R.string.message_continue_unfinished_items, state.unfinishedCount.toString()))
+        if (state.unfinishedCount > 0 && state.job.settingsMode == BatchSettingsMode.UNIFORM_FROZEN) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
+        if (state.failedCount > 0) Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+            Text(AppStrings.text(R.string.message_retry_failed_items))
+        }
+        if (state.unfinishedCount > state.failedCount) Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+            Text(AppStrings.format(R.string.message_continue_unfinished_items, state.unfinishedCount.toString()))
         }
         OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.text(R.string.message_close)) }
         if (state.phase != BatchPhase.COMPLETE) TextButton(onClick = onDiscard, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.text(R.string.message_discard_task)) }
@@ -320,7 +324,7 @@ private fun BatchRowLine(row: BatchRow) {
 }
 
 @Composable
-private fun SettingsSummary(settings: EditSettings, lookName: String) {
+internal fun SettingsSummary(settings: EditSettings, lookName: String) {
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SettingLine(AppStrings.text(R.string.message_film), lookName)
         SettingLine(AppStrings.text(R.string.grain_amount), String.format(java.util.Locale.ROOT, "%.0f%%", settings.strength * 100))
@@ -331,7 +335,14 @@ private fun SettingsSummary(settings: EditSettings, lookName: String) {
             SettingLine(title, String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.1f° · %.1f%%",
                 settings.colorGrading[zone].hue, settings.colorGrading[zone].saturation))
         }
-        SettingLine("HSL", if (settings.hsl.isIdentity) AppStrings.text(R.string.hsl_unadjusted) else AppStrings.text(R.string.hsl_adjusted))
+        val hslChannels = listOf(R.string.hsl_red, R.string.hsl_orange, R.string.hsl_yellow, R.string.hsl_green,
+            R.string.hsl_aqua, R.string.hsl_blue, R.string.hsl_purple, R.string.hsl_magenta)
+        val hslAxes = listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)
+        hslChannels.forEachIndexed { channel, title ->
+            SettingLine("HSL · ${stringResource(title)}", hslAxes.mapIndexed { axis, label ->
+                "${stringResource(label)} ${String.format(java.util.Locale.ROOT, "%+.1f", settings.hsl.value(axis, channel))}"
+            }.joinToString(" · "))
+        }
         SettingLine(AppStrings.text(R.string.message_highlights), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.highlights * 100))
         SettingLine(AppStrings.text(R.string.message_shadows), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.shadows * 100))
         SettingLine(AppStrings.text(R.string.message_contrast), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.contrast * 100))
@@ -383,7 +394,7 @@ private fun SettingLine(title: String, value: String) {
 }
 
 @Composable
-private fun BatchThumbnail(storage: PhotoStorage, uri: String?, file: java.io.File) {
+internal fun BatchThumbnail(storage: PhotoStorage, uri: String?, file: java.io.File) {
     val thumbnail by produceState<android.graphics.Bitmap?>(null, uri) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             uri?.let { storage.thumbnail(Uri.parse(it)) } ?: runCatching {
@@ -400,5 +411,25 @@ private fun BatchThumbnail(storage: PhotoStorage, uri: String?, file: java.io.Fi
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         thumbnail?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
             ?: Icon(Icons.Outlined.PhotoLibrary, null)
+    }
+}
+
+@Composable
+private fun FrozenBatchContent(state: BatchExportState, onInspect: (BatchRow) -> Unit, onStart: () -> Unit, onDiscard: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.collection_frozen), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.collection_frozen_summary, state.job.rows.size, state.job.outputFormat.name, state.job.outputLongEdge?.toString() ?: stringResource(R.string.info_original_dimensions)))
+        Text(state.job.destination ?: stringResource(R.string.save_album))
+        LazyColumn(Modifier.weight(1f)) {
+            items(state.job.rows, key = { it.id }) { row ->
+                var expanded by remember { mutableStateOf(false) }
+                TextButton(onClick = { expanded = !expanded }) { Text(row.target.displayName) }
+                if (expanded) SettingsSummary(row.target.frozen!!.settings, row.target.frozen!!.settings.film)
+                TextButton(onClick = { onInspect(row) }) { Text(AppStrings.text(R.string.message_view)) }
+            }
+        }
+        state.error?.let { Text(com.rawlab.android.editor.collectionMessage(it), color = MaterialTheme.colorScheme.error) }
+        Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.batch_export)) }
+        TextButton(onClick = onDiscard, modifier = Modifier.fillMaxWidth()) { Text(AppStrings.text(R.string.message_discard_task)) }
     }
 }

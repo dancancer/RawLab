@@ -55,7 +55,9 @@ struct BatchExportTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-batch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try checkBatchSelection(root)
         defer { try? FileManager.default.removeItem(at: root) }
+        try checkPerTargetSnapshots(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
@@ -411,4 +413,70 @@ struct BatchExportTests {
                   "DNG directory failure preserves the existing blocking file")
         }
     }
+}
+
+private func checkPerTargetSnapshots(_ root: URL) throws {
+    let sourceURL = root.appendingPathComponent("frozen-source.raw")
+    try Data("source".utf8).write(to: sourceURL)
+    let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
+        sourceFile: .externallyManaged(sourceURL), displayName: "source.raw", settings: .default)
+    let targets = try (0...2).map { index -> BatchTarget in
+        let url = root.appendingPathComponent("frozen-\(index).raw")
+        try Data("input \(index)".utf8).write(to: url)
+        return BatchTarget(identity: PhotoIdentity(resourceIdentifier: "\(index)"), sourceURL: url, displayName: "same.raw")
+    }
+    let job = BatchExportJob(source: source, targets: targets, outputFormat: .renderedDNG, longEdge: 1024)
+    var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as! [String: Any]
+    object["settings_mode"] = "per_target_frozen"
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("per-target"))
+    var rejected = false
+    do {
+        let invalid = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: object))
+        try journal.save(invalid)
+    } catch { rejected = true }
+    try BatchExportTests.require(rejected, "per-target mode cannot silently become a uniform legacy job")
+    object["version"] = 2
+    var rows = object["targets"] as! [[String: Any]]
+    for index in rows.indices {
+        var settings = RawSettings.default; settings.exposure = Double(index + 1) / 2
+        rows[index]["frozen"] = ["version": 1, "settingsVersion": 1, "ordinal": index,
+            "settings": try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)),
+            "inputSHA256": try PhotoIdentity.fallback(for: targets[index].sourceURL).contentIdentifier!,
+            "outputFormat": "dng", "longEdge": 1024]
+    }
+    object["targets"] = rows
+    let frozen = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: object))
+    var downgraded = object; downgraded.removeValue(forKey: "settings_mode")
+    var downgradeRejected = false
+    do { _ = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: downgraded)) }
+    catch { downgradeRejected = true }
+    try BatchExportTests.require(downgradeRejected, "frozen items cannot silently downgrade to uniform settings")
+    var missingSnapshots = downgraded
+    missingSnapshots["targets"] = rows.map { row -> [String: Any] in
+        var copy = row; copy.removeValue(forKey: "frozen"); return copy
+    }
+    var missingRejected = false
+    do { _ = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: missingSnapshots)) }
+    catch { missingRejected = true }
+    try BatchExportTests.require(missingRejected, "new per-target job version cannot fall back to uniform after losing its mode and snapshots")
+
+    var exposures: [Double] = []
+    _ = try BatchExportRunner.run(job: frozen, journalStore: journal, render: { _, settings in
+        exposures.append(settings.exposure)
+    }, write: { _, _, _, _ in }, shouldCancel: { exposures.count == 1 })
+    var restored = try journal.load(id: frozen.id)!
+    try BatchExportTests.require(exposures == [0.5], "cancel retains first item's distinct setting")
+    restored = try BatchExportRunner.run(job: restored, journalStore: journal, render: { target, settings in
+        exposures.append(settings.exposure)
+        if target.id == targets[1].id { throw BatchExportError.target("retry me") }
+    }, write: { _, _, _, _ in })
+    try BatchExportTests.require(exposures == [0.5, 1, 1.5], "resume preserves per-photo differences and order")
+    _ = try BatchExportRunner.retryFailed(job: restored, journalStore: journal, render: { _, settings in
+        exposures.append(settings.exposure)
+    }, write: { _, _, _, _ in })
+    try BatchExportTests.require(exposures == [0.5, 1, 1.5, 1], "failed-only retry does not repeat successful items")
+    try Data("changed".utf8).write(to: targets[0].sourceURL)
+    let changed = try BatchExportRunner.run(job: frozen, journalStore: nil, render: { _, _ in }, write: { _, _, _, _ in })
+    try BatchExportTests.require(changed.targets[0].status == .failed && changed.targets[1].status == .succeeded,
+                                "changed input fails only its frozen target")
 }

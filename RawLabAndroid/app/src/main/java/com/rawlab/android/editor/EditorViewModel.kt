@@ -76,6 +76,12 @@ class EditorViewModel @JvmOverloads constructor(
     private val batches = EditorBatches(application, storage, viewModelScope, batchProcessorFactory, usage) { error ->
         mutable.value = mutable.value.copy(error = error)
     }
+    private val collections = EditorCollections(storage, viewModelScope, File(application.filesDir, "RawLab/BatchJobs"),
+        editStore::versionedState, ::validateCollectionActive, canRelease = { photo ->
+            mutable.value.photo?.file != photo.file && !mutableAdjustmentTransfer.value.preparing &&
+                adjustmentHistory.session?.retainsSource(photo.identity) != true
+        })
+    val collection = collections.state
     val batch = batches.active
     val pendingBatch = batches.pending
     private val mutableHslTarget = MutableStateFlow(HslTargetState())
@@ -218,6 +224,7 @@ class EditorViewModel @JvmOverloads constructor(
                 is WorkResult.MissingLook -> {
                     releasePreviousPhoto(value.photo)
                     adjustmentHistory.acceptSource(value.photo, value.importedRecord)
+                    collections.opened(value.photo.identity.value)
                     adjustmentRetainedFiles.remove(value.photo.identity.value)?.delete()
                     mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(photo = value.photo,
                         edits = value.edits, preview = null, exact = false,
@@ -240,6 +247,7 @@ class EditorViewModel @JvmOverloads constructor(
                     if (request.importing) {
                         releasePreviousPhoto(request.photo)
                         adjustmentHistory.acceptSource(request.photo, request.importedRecord)
+                        collections.opened(request.photo.identity.value)
                         adjustmentRetainedFiles.remove(request.photo.identity.value)?.delete()
                     }
                     if (imported) usage.record(UsageEvent.PhotoImported)
@@ -385,7 +393,8 @@ class EditorViewModel @JvmOverloads constructor(
         previewLongEdge = 1600
         requestedPreviewLongEdge = 1600
         mutable.value = mutable.value.copy(previewResizePending = false)
-        currentRevision = submitRender(Work.Import(uri, gpuMode()))
+        val retained = collections.photo(uri.toString())
+        currentRevision = submitRender(Work.Import(uri, gpuMode(), retained))
     }
 
     fun importLook(uri: Uri?) {
@@ -664,7 +673,7 @@ class EditorViewModel @JvmOverloads constructor(
 
     private fun releasePreviousPhoto(next: ImportedPhoto) {
         val previous = mutable.value.photo ?: return
-        if (previous.file != next.file && adjustmentHistory.session?.retainsSource(previous.identity) != true) previous.file.delete()
+        if (previous.file != next.file && !collections.owns(previous.file) && adjustmentHistory.session?.retainsSource(previous.identity) != true) previous.file.delete()
     }
 
     fun cancelAdjustmentInteraction() {
@@ -805,7 +814,13 @@ class EditorViewModel @JvmOverloads constructor(
         val generation = UUID.randomUUID()
         adjustmentPreparationGeneration = generation
         mutableAdjustmentTransfer.value = EditorAdjustmentTransferState(preparing = true)
-        adjustmentPreparationRevision = adjustmentQueue.submit(AdjustmentPreparationWork(generation, payload, uris.toList(), mutable.value.photo, ::adjustmentTargetIsCurrent, action))
+        adjustmentPreparationRevision = adjustmentQueue.submit(AdjustmentPreparationWork(generation, payload, uris.toList(), mutable.value.photo, ::adjustmentTargetIsCurrent, action,
+            collectionPhotos = if (action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE) uris.mapNotNull { uri ->
+                collections.photo(uri.toString())?.let { uri.toString() to it } }.toMap() else emptyMap(),
+            validateCollection = if (action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE) { id ->
+                collection.value.photos.firstOrNull { it.id == id }?.let(collections::validate)
+                    ?: error("Photo left the collection")
+            } else null))
     }
     fun applyAdjustmentPaste(operation: PreparedAdjustmentTransfer, skipping: Set<String> = emptySet()): List<AdjustmentOutcome> {
         if (mutableAdjustmentTransfer.value.prepared?.id != operation.id) return emptyList()
@@ -819,6 +834,8 @@ class EditorViewModel @JvmOverloads constructor(
         }
         val accepted = acceptAdjustmentOutcomes(results, completed)
         mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(results = accepted)
+        if (operation.action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE)
+            collections.synchronized(operation.id, accepted.any { it.status == AdjustmentStatus.APPLIED })
         return accepted
     }
     fun closeAdjustmentOperation() {
@@ -867,6 +884,75 @@ class EditorViewModel @JvmOverloads constructor(
     }
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 
+    fun addCollectionPhotos(uris: List<Uri>) = collections.add(uris, mutable.value.photo)
+    fun retainCurrentInCollection() { mutable.value.photo?.let { collections.add(listOf(it.uri), it) } }
+    fun selectCollectionPhoto(id: String, selected: Boolean) = collections.select(id, selected)
+    fun selectCollectionAll(selected: Boolean) = collections.selectAll(selected)
+    fun removeCollectionPhoto(id: String) = collections.remove(id)
+    fun refreshCollection() = collections.refresh()
+    fun collectionDraftFailure(id: String): String? {
+        val current = mutable.value
+        val photo = current.photo?.takeIf { it.identity.value == id } ?: return null
+        if (!adjustmentTargetIsCurrent(id) || adjustmentHistory.reloadRequired) return current.saveError ?: "Apply, discard or skip this photo's draft"
+        val record = adjustmentHistory.loaded
+        return if (record == null || !AdjustmentTransfer.sameAdjustments(record.settings ?: EditSettings(), current.edits,
+                photo.inputKind == PhotoInputKind.RAW)) "Apply, discard or skip this photo's draft" else null
+    }
+    private fun validateCollectionActive(id: String) {
+        val current = mutable.value
+        val photo = current.photo?.takeIf { it.identity.value == id } ?: return
+        check(adjustmentTargetIsCurrent(id) && !adjustmentHistory.reloadRequired) {
+            current.saveError ?: "Apply, discard or skip this photo's draft"
+        }
+        adjustmentHistory.validateCommitted(photo, current.edits)
+    }
+    fun resolveCollectionDraft(apply: Boolean): Boolean {
+        if (apply) {
+            if (adjustmentHistory.interacting) edit(mutable.value.edits, false)
+            mutable.value.draft?.let { draft ->
+                if (draft.changed) return applyDraft()
+                discardDraft(); return true
+            }
+            retrySave()
+            return mutable.value.saveState != EditSaveState.FAILED
+        }
+        cancelAdjustmentInteraction()
+        return reloadSavedAdjustments()
+    }
+    fun editCollectionPhoto(id: String): Boolean {
+        val target = collection.value.photos.firstOrNull { it.id == id } ?: return false
+        if (collection.value.busy || mutable.value.draft != null || mutable.value.operation != Operation.NONE) return false
+        return try {
+            collections.validate(target)
+            if (mutable.value.photo?.identity?.value == id) { collections.opened(id); true }
+            else { importPhoto(Uri.parse(target.sourceUri)); mutable.value.operation == Operation.IMPORT }
+        } catch (error: Exception) { collections.failure(error.message); false }
+    }
+    fun returnToCollection(): Boolean {
+        if (mutable.value.draft != null || mutable.value.operation != Operation.NONE) return false
+        if (adjustmentHistory.interacting) edit(mutable.value.edits, false)
+        mutable.value.photo?.let { retrySave(); if (mutable.value.saveState == EditSaveState.FAILED) return false }
+        collections.returnToCollection(); collections.refresh(); return true
+    }
+    fun captureCollectionSynchronization(scope: AdjustmentScope): CollectionSynchronization? = try {
+        val current = mutable.value
+        val photo = current.photo ?: error("Choose a source photo first")
+        val payload = capturePresetAdjustments(scope)
+        val targets = collection.value.synchronizationTargets(photo.identity.value).map { Uri.parse(it.sourceUri) }
+        check(targets.isNotEmpty()) { "No targets remain after excluding the source photo" }
+        CollectionSynchronization(photo.identity.value, photo.name, payload, targets)
+    } catch (error: Exception) { collections.failure(error.message); null }
+    fun prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
+        completed: (com.rawlab.android.batch.CollectionExportReview?) -> Unit) =
+        collections.prepare(skipping, format, longEdge, destination, completed)
+    fun freezeCollectionExport(review: com.rawlab.android.batch.CollectionExportReview, completed: (Boolean) -> Unit) {
+        if (batch.value != null) { collections.failure("Close the current export task first"); completed(false); return }
+        collections.freeze(review) { job ->
+            if (job != null) batches.resume(job, gpuMode())
+            completed(job != null)
+        }
+    }
+
     fun beginBatch() {
         val current = mutable.value
         if (!current.canExport || batch.value != null) return
@@ -897,6 +983,7 @@ class EditorViewModel @JvmOverloads constructor(
         disposed = true
         previewResizeJob?.cancel()
         batches.dispose()
+        collections.close(::releaseStorage)
         lookQueue.close()
         queue.close()
         adjustmentQueue.close()
@@ -905,7 +992,7 @@ class EditorViewModel @JvmOverloads constructor(
     private fun releaseStorage() {
         synchronized(this) {
             releases += 1
-            if (releases == 3) storage.close()
+            if (releases == 4) storage.close()
         }
     }
 }

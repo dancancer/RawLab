@@ -5,6 +5,104 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
     if try !value() { throw Failure(message: message) }
 }
 
+private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
+    var job = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Neutral")
+    job.outputDirectory = output
+    job.items = try inputs.map { try BatchExportItem(url: $0) }
+    for index in job.items.indices { job.items[index].selected = true }
+    var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as! [String: Any]
+    object["settings_mode"] = "per_target_frozen"
+    let malformed = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: object))
+    let invalidJournal = BatchJournal(directory: root.appendingPathComponent("invalid-mode"))
+    var rejected = false
+    do { try invalidJournal.save(malformed) } catch { rejected = true }
+    try check(rejected, "per-target mode must not silently resume as a uniform legacy job")
+    object["version"] = 3
+    var items = object["items"] as! [[String: Any]]
+    for index in items.indices {
+        var settings = Adjustments(); settings.exposure = Double(index + 1) / 2
+        settings.vibrance = Double(index * 10)
+        items[index]["frozen"] = ["version": 1, "settingsVersion": 1, "ordinal": index,
+            "settings": try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)),
+            "lookName": "Photo\(index)", "outputFormat": "png", "longEdge": 1024]
+    }
+    object["items"] = items
+    var frozen = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: object))
+    let journal = BatchJournal(directory: root.appendingPathComponent("per-target-journal"))
+    try journal.save(frozen)
+    var captured: [Double] = []
+    try BatchExportRunner.run(job: &frozen, journal: journal, scope: .unfinished,
+                             shouldCancel: { captured.count == 1 }) { _, settings, _, destination in
+        captured.append(settings.exposure)
+        try check(destination.pathExtension == "png", "each item freezes its output format")
+        try Data("frozen".utf8).write(to: destination)
+    }
+    try check(captured == [0.5], "first frozen item renders independently")
+    var resumed = try journal.load()!
+    try BatchExportRunner.run(job: &resumed, journal: journal, scope: .unfinished,
+                             shouldCancel: { false }) { input, settings, _, destination in
+        captured.append(settings.exposure)
+        if input == inputs[1] { throw Failure(message: "retry me") }
+        try Data("resumed".utf8).write(to: destination)
+    }
+    try check(captured == [0.5, 1, 1.5], "resume preserves order and skips successful items")
+    resumed = try journal.load()!
+    try BatchExportRunner.run(job: &resumed, journal: journal, scope: .failed,
+                             shouldCancel: { false }) { _, settings, _, destination in
+        captured.append(settings.exposure)
+        try Data("retried".utf8).write(to: destination)
+    }
+    try check(captured == [0.5, 1, 1.5, 1] && resumed.succeededCount == 3,
+              "retry uses the same per-target snapshot without rerunning successful photos")
+    try check(resumed.items.allSatisfy { $0.output?.pathExtension == "png" }, "published items use frozen format")
+    for mode in ["uniform_frozen", ""] {
+        var downgraded = object
+        if mode.isEmpty { downgraded.removeValue(forKey: "settings_mode") } else { downgraded["settings_mode"] = mode }
+        var failed = false
+        do { try journal.save(JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: downgraded))) }
+        catch { failed = true }
+        try check(failed, "per-target snapshots cannot silently downgrade to a global snapshot")
+    }
+    var duplicate = object
+    var duplicatedRows = items
+    duplicatedRows[1]["input"] = duplicatedRows[0]["input"]
+    duplicatedRows[1]["identity"] = duplicatedRows[0]["identity"]
+    duplicatedRows[1]["resourceIdentifier"] = duplicatedRows[0]["resourceIdentifier"]
+    duplicate["items"] = duplicatedRows
+    var duplicateRejected = false
+    do { try journal.save(JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: duplicate))) }
+    catch { duplicateRejected = true }
+    try check(duplicateRejected, "frozen target identities cannot be duplicated with a new row UUID")
+    var missingLook = object
+    var missingLookRows = items
+    var missingLookSnapshot = missingLookRows[0]["frozen"] as! [String: Any]
+    var recipeSettings = Adjustments(); recipeSettings.applyMasterRecipe(.hamadaDaylightV2)
+    missingLookSnapshot["settings"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recipeSettings))
+    missingLookRows[0]["frozen"] = missingLookSnapshot; missingLook["items"] = missingLookRows
+    var lookRejected = false
+    do { try journal.save(JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: missingLook))) }
+    catch { lookRejected = true }
+    try check(lookRejected, "a recipe snapshot cannot omit its frozen look")
+    var foreign = resumed
+    foreign.items[0].resourceIdentifier = "0:0"
+    foreign.items[0].status = .waiting
+    var touched = false
+    try BatchExportRunner.run(job: &foreign, journal: journal, scope: .unfinished, shouldCancel: { false }) { _, _, _, output in
+        touched = true; try Data("unexpected".utf8).write(to: output)
+    }
+    try check(foreign.items[0].status == .failed && !touched, "per-photo export rechecks the frozen device and inode identity")
+    for invalid in ["unknown", "per_target_frozen"] {
+        var bad = object; bad["settings_mode"] = invalid
+        var rows = items; rows[0].removeValue(forKey: "frozen"); bad["items"] = rows
+        var failed = false
+        do {
+            let decoded = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: bad))
+            try journal.save(decoded)
+        } catch { failed = true }
+        try check(failed, "unknown mode and missing item snapshot are rejected")
+    }
+}
+
 @main struct BatchExportTests {
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -14,6 +112,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         for url in inputs { try Data(url.lastPathComponent.utf8).write(to: url) }
         let output = root.appendingPathComponent("output")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        try perTargetSnapshots(root: root, inputs: inputs, output: output)
         let existing = output.appendingPathComponent("one-Velvia.jpg")
         try Data("existing".utf8).write(to: existing)
         var settings = Adjustments(); settings.exposure = 0.75

@@ -32,6 +32,7 @@
     <Compile Include="../../PhotoInput.cs" Link="PhotoInput.cs" />
     <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
+    <Compile Include="../../BatchSelection.cs" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
   </ItemGroup>
 </Project>

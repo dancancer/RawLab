@@ -30,16 +30,16 @@ internal sealed class AdjustmentScopeDialog : Window
 {
     private readonly AdjustmentScopeEditor editor = new("adjustment.copy");
     internal AdjustmentScope SelectedScope => editor.SelectedScope;
-    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy)
+    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整")
     {
-        var root = AdjustmentDialogLayout.Configure(this, owner, "复制调整", "adjustment.copy");
+        var root = AdjustmentDialogLayout.Configure(this, owner, title, "adjustment.copy");
         root.Children.Add(AdjustmentDialogLayout.Text(Path.GetFileName(source)));
         Grid.SetRow(editor, 1); root.Children.Add(editor);
         var footer = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
         var error = AdjustmentDialogLayout.Text(""); error.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForeground"); footer.Children.Add(error);
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; footer.Children.Add(actions);
         var cancel = AdjustmentDialogLayout.Button("取消", "adjustment.cancel", Close); cancel.IsCancel = true; actions.Children.Add(cancel);
-        var confirm = AdjustmentDialogLayout.Button("复制调整", "adjustment.copy.confirm", () => {
+        var confirm = AdjustmentDialogLayout.Button(confirmTitle, "adjustment.copy.confirm", () => {
             error.Text = copy(SelectedScope) ?? ""; if (error.Text.Length == 0) DialogResult = true;
         });
         confirm.IsDefault = true; actions.Children.Add(confirm); Grid.SetRow(footer, 2); root.Children.Add(footer);
@@ -114,8 +114,18 @@ internal sealed class AdjustmentResultDialog : Window
         undo.Content=Loc.Text("撤销")+" · "+appliedCount;redo.Content=Loc.Text("重做")+" · "+undoneCount;
         undo.IsEnabled=appliedCount>0;redo.IsEnabled=undoneCount>0;
     }
-    private void UpdateApply()=>apply.IsEnabled=outcomes.Count>0 && !outcomes.Any(o=>o.RequiresHistoryDecision && !skipping.Contains(o.TargetID)) &&
-        (preview || outcomes.Any(o=>o.Status is AdjustmentStatus.Blocked or AdjustmentStatus.Conflict or AdjustmentStatus.Failed));
+    private void UpdateApply()
+    {
+        var remaining=outcomes.Count(outcome=>!skipping.Contains(outcome.TargetID));
+        apply.IsEnabled=remaining>0 && !outcomes.Any(outcome=>outcome.RequiresHistoryDecision && !skipping.Contains(outcome.TargetID)) &&
+            (preview || outcomes.Any(outcome=>outcome.Status is AdjustmentStatus.Blocked or AdjustmentStatus.Conflict or AdjustmentStatus.Failed));
+        if(preview) {
+            summary.Text=Loc.Format("已预检 {0} 张照片。确认后保存所选调整。",remaining);
+            if(sourceSummary!=null)summary.Text=sourceSummary+"\n"+summary.Text;
+        }
+        if(remaining==0)summary.Text+="\n"+Loc.Text("没有可应用的目标，请取消跳过或重新选择。");
+    }
+
 }
 
 internal sealed class AdjustmentHistoryDialog : Window
@@ -131,7 +141,7 @@ internal sealed class AdjustmentHistoryDialog : Window
             rows.Children.Clear();
             foreach(var transaction in transactions().Reverse()) {
                 var panel=new StackPanel{Margin=new Thickness(0,10,0,14)};rows.Children.Add(panel);
-                var title=AdjustmentDialogLayout.Text(Loc.Text(transaction.Action switch { AdjustmentHistoryAction.Paste=>"粘贴调整", AdjustmentHistoryAction.Preset=>"应用预设", _=>"调整照片" }));title.FontWeight=FontWeights.SemiBold;panel.Children.Add(title);
+                var title=AdjustmentDialogLayout.Text(Loc.Text(transaction.Action switch { AdjustmentHistoryAction.Paste=>"粘贴调整", AdjustmentHistoryAction.Preset=>"应用预设", AdjustmentHistoryAction.Synchronize=>"同步调整", _=>"调整照片" }));title.FontWeight=FontWeights.SemiBold;panel.Children.Add(title);
                 foreach(var part in transaction.Parts)panel.Children.Add(AdjustmentDialogLayout.Text(part.DisplayName+" · "+Loc.Text(part.State switch {
                     AdjustmentHistoryState.Applied=>"已保存",AdjustmentHistoryState.Undone=>"已撤销",_=>"重做已失效"})));
                 var actions=new WrapPanel();panel.Children.Add(actions);

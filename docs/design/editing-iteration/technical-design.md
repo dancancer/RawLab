@@ -176,6 +176,10 @@ undo/redo 使用 revision guard：目标当前状态仍匹配预期 after/before
 
 job/item 显式版本升级，保留 iOS/Mac/Windows 旧版本及 Android journal v3 reader。旧统一 job 不展开成读取目标当前设置的新任务。继续复用 waiting/running/publishing/succeeded/failed 与原子 journal；重启时 publishing 先核对既有输出提交标记，成功项不重复执行。取消不删除已成功输出，retry 只调度选定失败项。新旧任务各有快照回归。
 
+四端实现与格式版本见[批量编辑接入记录](../../integration/editing-iteration/batch-selection-plan.md)。
+集合与逐张冻结的模型、编译和可执行原生回归已接入；实际界面按用户要求解锁后联合验收，
+IT-09/10/15 不因构建成功提前关闭。
+
 ## 8. ITER-05/06/09/10：共享处理扩展
 
 ### 8.1 固定处理顺序

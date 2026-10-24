@@ -3701,6 +3701,244 @@
       "formats": [],
       "source": "正在取色…",
       "types": []
+    },
+    "collection_add": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "添加照片",
+      "types": []
+    },
+    "collection_apply_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用并保存草稿",
+      "types": []
+    },
+    "collection_check_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "检查同步目标",
+      "types": []
+    },
+    "collection_choose_source": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "先进入一张照片，将它作为同步来源。",
+      "types": []
+    },
+    "collection_deselect_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取消全选",
+      "types": []
+    },
+    "collection_discard_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "放弃草稿",
+      "types": []
+    },
+    "collection_draft_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请应用、放弃或跳过这张照片的草稿。",
+      "types": []
+    },
+    "collection_draft_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。",
+      "types": []
+    },
+    "collection_edit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "编辑",
+      "types": []
+    },
+    "collection_empty": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "添加照片后，可同步调整、逐张微调并导出。",
+      "types": []
+    },
+    "collection_existing_job": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请先结束或完成当前导出任务。",
+      "types": []
+    },
+    "collection_export": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "逐张导出",
+      "types": []
+    },
+    "collection_export_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "实际导出 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "collection_freeze": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "确认并冻结导出任务",
+      "types": []
+    },
+    "collection_frozen": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "逐张参数已冻结",
+      "types": []
+    },
+    "collection_frozen_summary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s",
+        "%3$s"
+      ],
+      "source": "{0} 张 · {1} · {2}",
+      "types": [
+        "d",
+        "s",
+        "s"
+      ]
+    },
+    "collection_look_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观已变化，请重新检查。",
+      "types": []
+    },
+    "collection_look_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观不可用。",
+      "types": []
+    },
+    "collection_no_export_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有可导出的照片，请取消跳过或重新选择。",
+      "types": []
+    },
+    "collection_no_sync_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "排除来源照片后没有可同步的目标。",
+      "types": []
+    },
+    "collection_output_directory": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择输出目录",
+      "types": []
+    },
+    "collection_resolve_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "处理当前照片的草稿",
+      "types": []
+    },
+    "collection_return": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "返回批量集合",
+      "types": []
+    },
+    "collection_review": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "检查并查看最终参数",
+      "types": []
+    },
+    "collection_saved_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "最终已保存参数",
+      "types": []
+    },
+    "collection_select_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全选",
+      "types": []
+    },
+    "collection_selected_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "已选择 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "collection_selection_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片选择已变化，请重新检查。",
+      "types": []
+    },
+    "collection_skip": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅本次跳过",
+      "types": []
+    },
+    "collection_source_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "原始文件已被替换，请重新选择照片。",
+      "types": []
+    },
+    "collection_source_targets": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$d"
+      ],
+      "source": "来源：{0} · 目标 {1} 张",
+      "types": [
+        "s",
+        "d"
+      ]
+    },
+    "collection_source_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片文件不可用，请重新添加。",
+      "types": []
+    },
+    "collection_storage_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法保存导出任务，请检查存储空间后重试。",
+      "types": []
+    },
+    "collection_sync": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "同步调整",
+      "types": []
+    },
+    "collection_sync_history": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "上次同步记录",
+      "types": []
+    },
+    "collection_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "批量编辑",
+      "types": []
     }
   },
   "overrides": {
@@ -4570,6 +4808,46 @@
       "fr": "Limite du grand côté (px)",
       "ja": "長辺の上限（px）",
       "zh-Hans": "长边上限（px）"
+    },
+    "{0} 张 · {1} · {2}": {
+      "de": "Fotos: {0} · {1} · {2}",
+      "en": "Photos: {0} · {1} · {2}",
+      "es": "Fotos: {0} · {1} · {2}",
+      "fr": "Photos : {0} · {1} · {2}",
+      "ja": "{0}枚 · {1} · {2}",
+      "zh-Hans": "{0} 张 · {1} · {2}"
+    },
+    "处理当前照片的草稿": {
+      "de": "Entwurf des aktuellen Fotos bearbeiten",
+      "en": "Resolve the current photo’s draft",
+      "es": "Resolver el borrador de la foto actual",
+      "fr": "Traiter le brouillon de la photo actuelle",
+      "ja": "現在の写真の下書きを処理",
+      "zh-Hans": "处理当前照片的草稿"
+    },
+    "无法保存导出任务，请检查存储空间后重试。": {
+      "de": "Die Exportaufgabe konnte nicht gespeichert werden. Prüfen Sie den Speicherplatz und versuchen Sie es erneut.",
+      "en": "Could not save the export task. Check storage space and try again.",
+      "es": "No se pudo guardar la tarea de exportación. Comprueba el espacio e inténtalo de nuevo.",
+      "fr": "Impossible d’enregistrer la tâche d’export. Vérifiez l’espace disponible et réessayez.",
+      "ja": "書き出しタスクを保存できません。空き容量を確認して再試行してください。",
+      "zh-Hans": "无法保存导出任务，请检查存储空间后重试。"
+    },
+    "照片文件不可用，请重新添加。": {
+      "de": "Die Fotodatei ist nicht verfügbar. Fügen Sie sie erneut hinzu.",
+      "en": "The photo file is unavailable. Add it again.",
+      "es": "El archivo de foto no está disponible. Añádelo de nuevo.",
+      "fr": "Le fichier photo est indisponible. Ajoutez-le à nouveau.",
+      "ja": "写真ファイルを利用できません。もう一度追加してください。",
+      "zh-Hans": "照片文件不可用，请重新添加。"
+    },
+    "选择输出目录": {
+      "de": "Ausgabeordner wählen",
+      "en": "Choose output directory",
+      "es": "Elegir directorio de salida",
+      "fr": "Choisir le dossier de sortie",
+      "ja": "出力先を選択",
+      "zh-Hans": "选择输出目录"
     }
   }
 }

@@ -286,7 +286,7 @@ extension EditorModel {
             adjustmentSheetTargets = targets
             adjustmentSheetExcludedSource = sourcePath
             pendingAdjustmentHistory = nil
-            adjustmentSheet = .paste
+            adjustmentSheetInCollection = false; adjustmentSheet = .paste
         } catch { self.error = error.localizedDescription }
     }
 
@@ -330,6 +330,7 @@ extension EditorModel {
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
     func open(_ url: URL) {
+        let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
         cancelHSLTarget()
         if file == url && result != nil, originalCache?.key.source == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }

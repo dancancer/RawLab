@@ -80,7 +80,7 @@ extension EditorModel {
         performAdjustmentHistory(request)
         if adjustmentOutcomes.contains(where: { [.failed, .blocked, .conflict].contains($0.status) }) {
             pendingAdjustmentHistory = request
-            adjustmentSheet = .history
+            adjustmentSheetInCollection = false; adjustmentSheet = .history
         }
     }
 

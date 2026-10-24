@@ -18,7 +18,9 @@ object BatchRunner {
         didUpdate: (BatchJob) -> Unit = {},
         publish: ((T, String, BatchTarget, (String) -> Unit) -> Unit)? = null,
         dispose: (T) -> Unit = {},
+        onlyIDs: Set<String>? = null,
     ): BatchJob {
+        job.validate()
         var current = job.withRows(job.rows.map { if (it.status == BatchRowStatus.PROCESSING) it.copy(status = BatchRowStatus.PENDING) else it }, null)
         fun commit(index: Int? = null) {
             if (index == null) journal?.save(current) else journal?.recordRow(current, index)
@@ -26,10 +28,11 @@ object BatchRunner {
         }
         commit()
         current.rows.indices.forEach { index ->
+            if (onlyIDs != null && current.rows[index].id !in onlyIDs) return@forEach
             if (current.rows[index].status in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION, BatchRowStatus.PUBLISHING)) return@forEach
             if (shouldCancel()) {
                 current = current.withRows(current.rows.mapIndexed { i, row ->
-                    if (i >= index && row.status in setOf(BatchRowStatus.PENDING, BatchRowStatus.PROCESSING, BatchRowStatus.FAILED, BatchRowStatus.CANCELLED)) row.copy(status = BatchRowStatus.CANCELLED) else row
+                    if (i >= index && (onlyIDs == null || row.id in onlyIDs) && row.status in setOf(BatchRowStatus.PENDING, BatchRowStatus.PROCESSING, BatchRowStatus.FAILED, BatchRowStatus.CANCELLED)) row.copy(status = BatchRowStatus.CANCELLED) else row
                 })
                 commit()
                 return current
@@ -40,7 +43,8 @@ object BatchRunner {
             commit(index)
             try {
                 val row = current.rows[index]
-                val payload = render(row.target, current.source.settingsFor(row.target.inputKind))
+                if (current.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) row.target.frozen!!.verifyFiles(row.target.sourceFile)
+                val payload = render(row.target, current.settingsFor(row.target))
                 try {
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
                     commit(index)
@@ -81,5 +85,6 @@ object BatchRunner {
         journal: BatchJournal? = null,
         dispose: (T) -> Unit = {},
     ): BatchJob = run(job.withRows(job.rows.map { if (it.status == BatchRowStatus.FAILED) it.copy(status = BatchRowStatus.PENDING, error = null) else it }),
-        render, write, shouldCancel, journal, dispose = dispose)
+        render, write, shouldCancel, journal, dispose = dispose,
+        onlyIDs = job.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet())
 }

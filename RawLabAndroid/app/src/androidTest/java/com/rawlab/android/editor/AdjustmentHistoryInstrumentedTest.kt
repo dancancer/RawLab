@@ -336,4 +336,102 @@ class AdjustmentHistoryInstrumentedTest {
         assertEquals(receipt, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
     }
 
+    @Test fun collectionSyncMicroEditDraftSkipAndFrozenNativePreview() = withModel { model, edits, sourceID ->
+        val folder = File(context.cacheDir, "collection-native-${UUID.randomUUID()}").apply { mkdirs() }
+        val target = File(folder, "source.png"); png(target)
+        val targetURI = Uri.fromFile(target); val targetID = PhotoIdentity(targetURI.toString())
+        var jobID: String? = null
+        fun waitFor(condition: () -> Boolean) {
+            val deadline = SystemClock.uptimeMillis() + 60_000
+            while (!condition() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
+            assertTrue("Collection operation timed out", condition())
+        }
+        try {
+            main { model.edit(model.state.value.edits.copy(exposure = .6f)) }
+            await(model) { it.canExport }
+            main { model.copyAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST)))
+                model.addCollectionPhotos(listOf(model.state.value.photo!!.uri, targetURI, targetURI)) }
+            waitFor { !model.collection.value.busy }
+            assertEquals(2, model.collection.value.photos.size)
+            val clipboard = model.adjustmentClipboard
+            lateinit var sync: CollectionSynchronization
+            main { sync = model.captureCollectionSynchronization(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)))!!
+                model.prepareAdjustmentPaste(sync.payload, sync.targets, com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.SYNCHRONIZE) }
+            waitFor { !model.adjustmentTransfer.value.preparing }
+            val prepared = model.adjustmentTransfer.value.prepared!!
+            assertEquals(listOf(targetID.value), prepared.targets.map { it.id })
+            main { assertEquals(AdjustmentStatus.APPLIED, model.applyAdjustmentPaste(prepared).single().status) }
+            assertEquals(clipboard, model.adjustmentClipboard)
+            assertEquals(prepared.id, model.collection.value.lastSynchronization)
+            main { model.closeAdjustmentOperation(); assertTrue(model.editCollectionPhoto(targetID.value)) }
+            await(model) { it.canExport && it.photo?.identity == targetID }
+            main { model.edit(model.state.value.edits.copy(contrast = .3f)) }
+            await(model) { it.canExport }
+            main { assertTrue(model.returnToCollection()) }
+            assertEquals(setOf(sourceID.value, targetID.value), model.collection.value.selected)
+            assertEquals(prepared.id, model.collection.value.lastSynchronization)
+            main { model.beginDraft(AdjustmentGroup.GEOMETRY) }
+            await(model) { it.draftReady }
+            var review: com.rawlab.android.batch.CollectionExportReview? = null
+            main { model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 256, null) { review = it } }
+            waitFor { !model.collection.value.busy }
+            assertFalse(review!!.ready)
+            main { model.prepareCollectionExport(setOf(targetID.value), com.rawlab.android.format.ExportFormat.JPEG, 256, null) { review = it } }
+            waitFor { !model.collection.value.busy }
+            assertTrue(review!!.ready); assertEquals(listOf(sourceID.value), review!!.rows.map { it.target.id })
+            assertNotNull(model.state.value.draft); assertEquals(2, model.collection.value.selected.size)
+            main { assertTrue(model.resolveCollectionDraft(false)) }
+            await(model) { it.canExport }
+            main { model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 256, null) { review = it } }
+            waitFor { !model.collection.value.busy }
+            assertTrue(review!!.ready)
+            main { model.freezeCollectionExport(review!!) { assertTrue(it) } }
+            waitFor { !model.collection.value.busy && model.batch.value?.state?.value?.phase == com.rawlab.android.batch.BatchPhase.SELECTING }
+            val batch = model.batch.value!!; val job = batch.state.value.job; jobID = job.id
+            val frozenTarget = job.rows.first { it.id == targetID.value }.target
+            assertEquals(.3f, frozenTarget.frozen!!.settings.contrast)
+            main { model.edit(model.state.value.edits.copy(exposure = 1.6f)) }
+            await(model) { it.canExport }
+            val frozen = kotlinx.coroutines.runBlocking { batch.preview(frozenTarget) }
+            val later = com.rawlab.android.engine.NativeProcessor(com.rawlab.android.engine.NativeProcessor.CPU, model.storage.lensDatabase()).use {
+                it.preview(model.state.value.photo!!.file, null, model.state.value.edits, 1280, true,
+                    com.rawlab.android.format.PhotoInputKind.RASTER).bitmap()
+            }
+            assertFalse("Frozen pixels retain the pre-edit settings", frozen.sameAs(later))
+            frozen.recycle(); later.recycle()
+            assertEquals(.6f, frozenTarget.frozen!!.settings.exposure)
+            assertEquals(prepared.id, model.collection.value.lastSynchronization)
+            assertEquals(clipboard, model.adjustmentClipboard)
+            target.delete()
+            val stillAvailable = kotlinx.coroutines.runBlocking { batch.preview(frozenTarget) }; stillAvailable.recycle()
+            main { assertTrue(batch.discard()); model.closeBatch() }
+        } finally {
+            edits.reset(targetID); folder.deleteRecursively()
+            jobID?.let { com.rawlab.android.batch.journal.BatchJournal(File(context.filesDir, "RawLab/BatchJobs")).discard(it) }
+        }
+    }
+
+    @Test fun collectionRemoveAllowsExplicitReimportAndFailedUrisStayVisible() = withModel { model, _, _ ->
+        val target = File(context.cacheDir, "collection-reimport-${UUID.randomUUID()}.png"); png(target)
+        val uri = Uri.fromFile(target); val missing = Uri.fromFile(File(context.cacheDir, "absent-${UUID.randomUUID()}.png"))
+        fun waitForImport() {
+            val deadline = SystemClock.uptimeMillis() + 60_000
+            while (model.collection.value.busy && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
+            assertFalse(model.collection.value.busy)
+        }
+        try {
+            main { model.addCollectionPhotos(listOf(uri, missing)) }; waitForImport()
+            assertEquals(listOf(uri.toString(), missing.toString()), model.collection.value.photos.map { it.id })
+            assertTrue(missing.toString() in model.collection.value.failures)
+            val old = model.collection.value.photos.first().sourceFile
+            main { model.removeCollectionPhoto(uri.toString()) }
+            assertFalse(old.exists())
+            val replacement = File(target.parentFile, "replacement-${UUID.randomUUID()}.png"); png(replacement)
+            Files.move(replacement.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            main { model.addCollectionPhotos(listOf(uri)) }; waitForImport()
+            assertFalse(uri.toString() in model.collection.value.failures)
+            assertNotEquals(old, model.collection.value.photos.last().sourceFile)
+        } finally { target.delete() }
+    }
+
 }

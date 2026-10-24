@@ -57,6 +57,7 @@ import Foundation
         try preflightAndExternal(root.appendingPathComponent("preflight"))
         try historyOrder(root.appendingPathComponent("lineage"))
         try saveFailure(root.appendingPathComponent("failures"))
+        try synchronization(root.appendingPathComponent("collection-sync"))
         try presetApplication(root.appendingPathComponent("presets"))
         var invalid = context; invalid.hasUncommittedDraft = true
         do { _ = try session.copy(scope: .all, snapshot: state(2), context: invalid) } catch {}
@@ -64,6 +65,46 @@ import Foundation
         let empty = try session.prepare(payload: copy, targets: [])
         try check(session.apply(empty).isEmpty, "Empty target operation reports no successes")
     }
+    static func synchronization(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        let source = PhotoIdentity(resourceIdentifier: "sync-source"), other = PhotoIdentity(resourceIdentifier: "sync-other")
+        var context = self.context; context.identifier = source.key
+        let clipboard = try session.copy(scope: .all, snapshot: state(0.5), context: context)
+        let payload = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(1.25), context: context)
+        var original = state(0).settings; original.contrast = 0.37
+        try store.save(source, state: state(0.5))
+        try store.save(other, state: PhotoEditState(settings: original))
+        let targets = [source, other, other].map {
+            IOSAdjustmentTransferTarget(identity: $0, displayName: "same.png", defaultState: state(0), context: context)
+        }
+        let operation = try session.prepare(payload: payload, targets: targets, action: .synchronize)
+        try check(operation.targets.map(\.id) == [other.key], "Synchronization excludes the selected source and deduplicates by identity, not filename")
+        let results = session.apply(operation)
+        try check(results.map(\.status) == [.applied] && store.state(for: source)?.settings.exposure == 0.5
+            && store.state(for: other)?.settings.exposure == 1.25 && store.state(for: other)?.settings.contrast == 0.37,
+            "Synchronization saves only selected fields on actual targets")
+        try check(session.clipboard == clipboard && session.transactions.first?.action == .synchronize,
+            "Synchronization retains clipboard and records its own history action")
+        let unsafe = try session.prepare(payload: payload, targets: [targets[0]], action: .paste)
+        let injected = IOSPreparedAdjustmentTransfer(id: UUID(), payload: payload, action: .synchronize, targets: unsafe.targets)
+        let rejected = session.apply(injected)
+        try check(rejected.map(\.status) == [.blocked] && store.state(for: source)?.settings.exposure == 0.5,
+            "Write-time source exclusion rejects a source reintroduced after preparation")
+        let before = try store.versionedState(for: other)
+        var micro = before.state!.settings; micro.contrast = 0.61
+        let edit = session.commitEdit(expected: before, state: PhotoEditState(settings: micro))
+        try check(edit.status == .applied && store.state(for: other)?.settings.contrast == 0.61,
+            "A collection photo can receive an independent micro-edit")
+        let secondPayload = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(1.75), context: context)
+        let second = try session.prepare(payload: secondPayload, targets: targets, action: .synchronize)
+        _ = session.apply(second)
+        try check(store.state(for: other)?.settings.exposure == 1.75 && store.state(for: other)?.settings.contrast == 0.61,
+            "A second synchronization preserves unselected micro-edits")
+        let undo = session.undoTransaction(second.id)
+        try check(undo.map(\.status) == [.applied] && store.state(for: other)?.settings.exposure == 1.25
+            && store.state(for: other)?.settings.contrast == 0.61, "Transaction history restores only the successful synchronization component")
+    }
+
     static func presetApplication(_ root: URL) throws {
         let edits = try EditPersistence(directory: root.appendingPathComponent("edits"))
         let session = IOSAdjustmentTransferSession(store: edits)

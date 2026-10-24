@@ -20,6 +20,70 @@ import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.SettingsCodec
 
 class BatchExportTest {
+    @Test fun perTargetJournalKeepsDifferencesThroughCancelResumeAndFailedOnlyRetry() {
+        val root = Files.createTempDirectory("rawlab-frozen-targets").toFile()
+        try {
+            val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"), EditSettings(exposure = -2f))
+            val targets = (0..2).map { index ->
+                val input = File(root, "$index.raw").also { it.writeText("input $index") }
+                BatchTarget(PhotoIdentity("$index"), input, "same.raw", frozen = BatchFrozenSettings(
+                    ordinal = index, settings = EditSettings(exposure = (index + 1) / 2f),
+                    inputSHA256 = BatchFrozenSettings.checksum(input), outputFormat = ExportFormat.PNG, longEdge = 1024))
+            }
+            val job = BatchJob(source, targets, outputFormat = ExportFormat.PNG, outputLongEdge = 1024,
+                settingsMode = BatchSettingsMode.PER_TARGET_FROZEN)
+            val journal = BatchJournal(root)
+            assertThrows(IllegalArgumentException::class.java) { journal.save(job.copy(settingsMode = BatchSettingsMode.UNIFORM_FROZEN)) }
+            val exposures = mutableListOf<Float>()
+            BatchRunner.run(job, render = { _, settings -> exposures += settings.exposure; Unit }, write = { _, _, _ -> },
+                shouldCancel = { exposures.size == 1 }, journal = journal)
+            val restored = journal.load(job.id)!!
+            assertEquals(BatchSettingsMode.PER_TARGET_FROZEN, restored.settingsMode)
+            assertEquals(listOf(.5f), exposures)
+            assertEquals(3, restored.rows.map { it.outputName }.distinct().size)
+            val failed = BatchRunner.run(restored, render = { target, settings ->
+                exposures += settings.exposure
+                if (target.id == "1") error("Retry me")
+            }, write = { _, _, _ -> }, journal = journal)
+            assertEquals(listOf(.5f, 1f, 1.5f), exposures)
+            // 一个取消项不能混入“只重试失败”调度。
+            val retry = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.CANCELLED) else it })
+            val pending = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.PENDING) else it })
+            val cancelledRetry = BatchRunner.retryFailed(pending, render = { _, _ -> Unit }, write = { _, _, _ -> }, shouldCancel = { true })
+            assertEquals(BatchRowStatus.PENDING, cancelledRetry.rows[2].status)
+            val done = BatchRunner.retryFailed(retry, render = { _, settings -> exposures += settings.exposure },
+                write = { _, _, _ -> }, journal = journal)
+            assertEquals(listOf(.5f, 1f, 1.5f, 1f), exposures)
+            assertEquals(BatchRowStatus.CANCELLED, done.rows[2].status)
+            assertThrows(IllegalArgumentException::class.java) { journal.save(job.copy(outputLongEdge = 2048)) }
+            assertThrows(IllegalArgumentException::class.java) {
+                journal.save(job.withRows(job.rows.mapIndexed { index, row ->
+                    if (index == 1) row.copy(target = row.target.copy(frozen = null)) else row
+                }))
+            }
+            targets[0].sourceFile.writeText("changed")
+            val changed = BatchRunner.run(job, render = { _, _ -> Unit }, write = { _, _, _ -> })
+            assertEquals(BatchRowStatus.FAILED, changed.rows[0].status)
+            assertEquals(BatchRowStatus.SUCCESS, changed.rows[1].status)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun legacyJournalCannotSilentlyIgnorePerTargetMode() {
+        val root = Files.createTempDirectory("rawlab-target-mode").toFile()
+        try {
+            val source = BatchSourceSnapshot(PhotoIdentity("source"), File(root, "source.raw"), EditSettings())
+            val job = BatchJob(source, listOf(BatchTarget(PhotoIdentity("target"), File(root, "target.raw"), "target.raw")))
+            val journal = BatchJournal(root)
+            journal.save(job)
+            val file = File(root, "${job.id}.properties")
+            val properties = java.util.Properties().also { file.inputStream().use(it::load) }
+            properties.setProperty("journal.version", "3")
+            properties.setProperty("settings_mode", "per_target_frozen")
+            file.outputStream().use { properties.store(it, null) }
+            assertThrows(Exception::class.java) { journal.load(job.id) }
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun lensCodecPreservesAllDevelopmentFieldsAndLegacySnapshots() {
         val lens = LensSettings(true, true, false, true, "Maker\n镜头 Model,|\nMount\n1.000000")
         val settings = EditSettings(exposureMode = 2, hsl = HslSettings().withValue(1, 0, -60f),
@@ -71,7 +135,7 @@ class BatchExportTest {
             assertTrue(dng.rows.single().outputName.endsWith(".dng"))
             journal.save(dng)
             val dngJournal = File(root, "${dng.id}.properties").readText()
-            assertTrue(dngJournal.contains("journal.version=3"))
+            assertTrue(dngJournal.contains("journal.version=4"))
             assertTrue(dngJournal.contains("output.format=dng"))
             assertEquals(ExportFormat.DNG, journal.load(dng.id)!!.outputFormat)
         } finally { root.deleteRecursively() }

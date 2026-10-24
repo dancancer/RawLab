@@ -6,6 +6,8 @@ extension ContentView {
     var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             Menu {
+                Button(L10n.text("批量编辑"), action: openBatchSelection)
+                    .disabled(editorBusy).accessibilityIdentifier("collection.open")
                 Section { adjustmentTransferMenu }.disabled(!viewModel.hasImage || editorBusy)
                 Button { photoInfoMode = photoInfoMode.next } label: {
                     Label(L10n.text("照片信息"), systemImage: "info.circle")
@@ -36,6 +38,10 @@ extension ContentView {
             // 菜单里不止隐私设置（还有"从文件导入"），读屏名称按通用的"更多"
             .accessibilityLabel(L10n.text("更多")).help(L10n.text("更多"))
             .accessibilityIdentifier("editor.privacy")
+            if viewModel.batchSelection.selection.current != nil {
+                Button { requestCollectionNavigation(.returnToCollection) } label: { Image(systemName: "square.grid.2x2") }
+                    .accessibilityLabel(L10n.text("返回批量集合")).accessibilityIdentifier("collection.return").disabled(editorBusy)
+            }
             photoImportButton(isEnabled: !editorBusy)
                 .opacity(rulerFocusOpacity)
         }

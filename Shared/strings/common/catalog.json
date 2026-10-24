@@ -4926,5 +4926,253 @@
     "fr": "Cette couleur est trop proche du gris pour sélectionner une plage.",
     "ja": "グレーに近いため、色域を選択できません。",
     "zh-Hans": "颜色接近灰色，无法选择色域。"
+  },
+  "上次同步记录": {
+    "de": "Letzter Synchronisierungsverlauf",
+    "en": "Last sync history",
+    "es": "Historial de la última sincronización",
+    "fr": "Historique de la dernière synchronisation",
+    "ja": "前回の同期履歴",
+    "zh-Hans": "上次同步记录"
+  },
+  "仅本次跳过": {
+    "de": "Nur diesmal überspringen",
+    "en": "Skip this time only",
+    "es": "Omitir solo esta vez",
+    "fr": "Ignorer cette fois uniquement",
+    "ja": "今回のみスキップ",
+    "zh-Hans": "仅本次跳过"
+  },
+  "先进入一张照片，将它作为同步来源。": {
+    "de": "Öffnen Sie ein Foto als Quelle für die Synchronisierung.",
+    "en": "Open a photo to use it as the sync source.",
+    "es": "Abre una foto para usarla como origen de sincronización.",
+    "fr": "Ouvrez une photo pour l’utiliser comme source de synchronisation.",
+    "ja": "写真を1枚開いて同期元にしてください。",
+    "zh-Hans": "先进入一张照片，将它作为同步来源。"
+  },
+  "单张微调": {
+    "de": "Foto feinjustieren",
+    "en": "Fine-tune photo",
+    "es": "Afinar foto",
+    "fr": "Affiner la photo",
+    "ja": "写真を微調整",
+    "zh-Hans": "单张微调"
+  },
+  "取消全选": {
+    "de": "Auswahl aufheben",
+    "en": "Deselect all",
+    "es": "Deseleccionar todo",
+    "fr": "Tout désélectionner",
+    "ja": "すべて選択解除",
+    "zh-Hans": "取消全选"
+  },
+  "同步调整": {
+    "de": "Anpassungen synchronisieren",
+    "en": "Sync adjustments",
+    "es": "Sincronizar ajustes",
+    "fr": "Synchroniser les réglages",
+    "ja": "調整を同期",
+    "zh-Hans": "同步调整"
+  },
+  "外观不可用。": {
+    "de": "Der Look ist nicht verfügbar.",
+    "en": "The look is unavailable.",
+    "es": "El aspecto no está disponible.",
+    "fr": "Le rendu est indisponible.",
+    "ja": "ルックを利用できません。",
+    "zh-Hans": "外观不可用。"
+  },
+  "外观已变化，请重新检查。": {
+    "de": "Der Look hat sich geändert. Prüfen Sie ihn erneut.",
+    "en": "The look changed. Review it again.",
+    "es": "El aspecto ha cambiado. Revísalo de nuevo.",
+    "fr": "Le rendu a changé. Vérifiez-le à nouveau.",
+    "ja": "ルックが変わりました。もう一度確認してください。",
+    "zh-Hans": "外观已变化，请重新检查。"
+  },
+  "实际导出 {0} 张": {
+    "de": "Fotos zum Exportieren: {0}",
+    "en": "Photos to export: {0}",
+    "es": "Fotos que exportar: {0}",
+    "fr": "Photos à exporter : {0}",
+    "ja": "書き出し対象 {0}枚",
+    "zh-Hans": "实际导出 {0} 张"
+  },
+  "已选择 {0} 张": {
+    "de": "Ausgewählte Fotos: {0}",
+    "en": "Selected photos: {0}",
+    "es": "Fotos seleccionadas: {0}",
+    "fr": "Photos sélectionnées : {0}",
+    "ja": "{0}枚を選択中",
+    "zh-Hans": "已选择 {0} 张"
+  },
+  "应用并保存草稿": {
+    "de": "Entwurf übernehmen und speichern",
+    "en": "Apply and save draft",
+    "es": "Aplicar y guardar borrador",
+    "fr": "Appliquer et enregistrer le brouillon",
+    "ja": "下書きを適用して保存",
+    "zh-Hans": "应用并保存草稿"
+  },
+  "应用草稿": {
+    "de": "Entwurf anwenden",
+    "en": "Apply Draft",
+    "es": "Aplicar borrador",
+    "fr": "Appliquer le brouillon",
+    "ja": "下書きを適用",
+    "zh-Hans": "应用草稿"
+  },
+  "批量编辑": {
+    "de": "Stapelbearbeitung",
+    "en": "Batch editing",
+    "es": "Edición por lotes",
+    "fr": "Retouche par lot",
+    "ja": "一括編集",
+    "zh-Hans": "批量编辑"
+  },
+  "排除来源照片后没有可同步的目标。": {
+    "de": "Nach Ausschluss der Quelle bleiben keine Zielfotos übrig.",
+    "en": "No target photos remain after excluding the source.",
+    "es": "No quedan fotos de destino tras excluir el origen.",
+    "fr": "Aucune photo cible après exclusion de la source.",
+    "ja": "元の写真を除くと同期対象がありません。",
+    "zh-Hans": "排除来源照片后没有可同步的目标。"
+  },
+  "放弃草稿": {
+    "de": "Entwurf verwerfen",
+    "en": "Discard Draft",
+    "es": "Descartar borrador",
+    "fr": "Abandonner le brouillon",
+    "ja": "下書きを破棄",
+    "zh-Hans": "放弃草稿"
+  },
+  "最终已保存参数": {
+    "de": "Endgültige gespeicherte Einstellungen",
+    "en": "Final saved settings",
+    "es": "Ajustes finales guardados",
+    "fr": "Réglages finaux enregistrés",
+    "ja": "保存済みの最終設定",
+    "zh-Hans": "最终已保存参数"
+  },
+  "来源：{0} · 目标 {1} 张": {
+    "de": "Quelle: {0} · Ziele: {1}",
+    "en": "Source: {0} · Targets: {1}",
+    "es": "Origen: {0} · Destinos: {1}",
+    "fr": "Source : {0} · Cibles : {1}",
+    "ja": "元の写真：{0} · 対象 {1}枚",
+    "zh-Hans": "来源：{0} · 目标 {1} 张"
+  },
+  "检查同步目标": {
+    "de": "Synchronisierungsziele prüfen",
+    "en": "Check sync targets",
+    "es": "Comprobar destinos de sincronización",
+    "fr": "Vérifier les cibles de synchronisation",
+    "ja": "同期対象を確認",
+    "zh-Hans": "检查同步目标"
+  },
+  "检查并查看最终参数": {
+    "de": "Endgültige Einstellungen prüfen und anzeigen",
+    "en": "Check and review final settings",
+    "es": "Comprobar y revisar ajustes finales",
+    "fr": "Vérifier et afficher les réglages finaux",
+    "ja": "最終設定を確認して表示",
+    "zh-Hans": "检查并查看最终参数"
+  },
+  "没有可导出的照片，请取消跳过或重新选择。": {
+    "de": "Keine Fotos zum Exportieren. Heben Sie das Überspringen auf oder wählen Sie erneut.",
+    "en": "No photos to export. Unskip photos or select again.",
+    "es": "No hay fotos que exportar. Deja de omitir fotos o vuelve a seleccionarlas.",
+    "fr": "Aucune photo à exporter. Réincluez des photos ou sélectionnez-en à nouveau.",
+    "ja": "書き出す写真がありません。スキップを解除するか選び直してください。",
+    "zh-Hans": "没有可导出的照片，请取消跳过或重新选择。"
+  },
+  "添加照片后，可同步调整、逐张微调并导出。": {
+    "de": "Fügen Sie Fotos hinzu, um Anpassungen zu synchronisieren, Fotos einzeln zu bearbeiten und zu exportieren.",
+    "en": "Add photos to sync adjustments, fine-tune individually and export.",
+    "es": "Añade fotos para sincronizar ajustes, afinarlas individualmente y exportarlas.",
+    "fr": "Ajoutez des photos pour synchroniser les réglages, les affiner individuellement et les exporter.",
+    "ja": "写真を追加すると、調整の同期、個別の微調整、書き出しができます。",
+    "zh-Hans": "添加照片后，可同步调整、逐张微调并导出。"
+  },
+  "照片选择已变化，请重新检查。": {
+    "de": "Die Fotoauswahl hat sich geändert. Prüfen Sie sie erneut.",
+    "en": "The photo selection changed. Review it again.",
+    "es": "La selección de fotos ha cambiado. Revísala de nuevo.",
+    "fr": "La sélection de photos a changé. Vérifiez-la à nouveau.",
+    "ja": "写真の選択が変わりました。もう一度確認してください。",
+    "zh-Hans": "照片选择已变化，请重新检查。"
+  },
+  "确认并冻结任务": {
+    "de": "Bestätigen und Aufgabe festschreiben",
+    "en": "Confirm and freeze task",
+    "es": "Confirmar y fijar tarea",
+    "fr": "Confirmer et figer la tâche",
+    "ja": "確認してタスクを確定",
+    "zh-Hans": "确认并冻结任务"
+  },
+  "确认并冻结导出任务": {
+    "de": "Export bestätigen und festschreiben",
+    "en": "Confirm and freeze export task",
+    "es": "Confirmar y fijar exportación",
+    "fr": "Confirmer et figer l’export",
+    "ja": "確認して書き出しタスクを確定",
+    "zh-Hans": "确认并冻结导出任务"
+  },
+  "编辑": {
+    "de": "Bearbeiten",
+    "en": "Edit",
+    "es": "Editar",
+    "fr": "Modifier",
+    "ja": "編集",
+    "zh-Hans": "编辑"
+  },
+  "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。": {
+    "de": "Übernehmen, verwerfen oder überspringen Sie jeden Entwurf. Bestätigen Sie nach der Prüfung die endgültigen Einstellungen.",
+    "en": "Apply, discard or skip each draft. After checking, confirm the final settings again.",
+    "es": "Aplica, descarta u omite cada borrador. Tras la comprobación, confirma los ajustes finales.",
+    "fr": "Appliquez, abandonnez ou ignorez chaque brouillon. Après vérification, confirmez les réglages finaux.",
+    "ja": "下書きは写真ごとに適用、破棄、スキップできます。確認後、最終設定をもう一度確認してください。",
+    "zh-Hans": "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。"
+  },
+  "请先结束或完成当前导出任务。": {
+    "de": "Schließen Sie zuerst den aktuellen Export ab oder beenden Sie ihn.",
+    "en": "Finish or end the current export task first.",
+    "es": "Primero completa o finaliza la exportación actual.",
+    "fr": "Terminez d’abord la tâche d’export actuelle.",
+    "ja": "先に現在の書き出しタスクを完了するか終了してください。",
+    "zh-Hans": "请先结束或完成当前导出任务。"
+  },
+  "请应用、放弃或跳过这张照片的草稿。": {
+    "de": "Übernehmen, verwerfen oder überspringen Sie den Entwurf dieses Fotos.",
+    "en": "Apply, discard or skip this photo’s draft.",
+    "es": "Aplica, descarta u omite el borrador de esta foto.",
+    "fr": "Appliquez, abandonnez ou ignorez le brouillon de cette photo.",
+    "ja": "この写真の下書きを適用、破棄、またはスキップしてください。",
+    "zh-Hans": "请应用、放弃或跳过这张照片的草稿。"
+  },
+  "返回批量集合": {
+    "de": "Zur Stapelsammlung zurück",
+    "en": "Return to batch collection",
+    "es": "Volver a la colección por lotes",
+    "fr": "Revenir à la collection par lot",
+    "ja": "一括編集の一覧に戻る",
+    "zh-Hans": "返回批量集合"
+  },
+  "逐张参数已冻结": {
+    "de": "Individuelle Einstellungen festgeschrieben",
+    "en": "Per-photo settings frozen",
+    "es": "Ajustes de cada foto fijados",
+    "fr": "Réglages par photo figés",
+    "ja": "各写真の設定を確定済み",
+    "zh-Hans": "逐张参数已冻结"
+  },
+  "逐张导出": {
+    "de": "Export mit individuellen Anpassungen",
+    "en": "Per-photo export",
+    "es": "Exportación por foto",
+    "fr": "Export par photo",
+    "ja": "写真ごとに書き出す",
+    "zh-Hans": "逐张导出"
   }
 }

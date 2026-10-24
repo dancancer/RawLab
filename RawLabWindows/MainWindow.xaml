@@ -9,6 +9,7 @@
         <MenuItem Header="{DynamicResource '添加目录'}" Click="AddFolderClicked"/>
         <MenuItem x:Name="MenuImportLook" Header="{DynamicResource '导入外观'}" Click="ImportClicked"/>
         <Separator/><MenuItem x:Name="MenuExport" Header="{DynamicResource '导出'}" Click="MainExportClicked" IsEnabled="False"/>
+        <MenuItem x:Name="MenuCollection" Header="{DynamicResource '批量编辑'}" Click="OpenCollectionClicked" AutomationProperties.AutomationId="collection.open"/>
         <MenuItem x:Name="MenuBatch" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/>
         <MenuItem x:Name="MenuViewBatch" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>
         <Separator/><MenuItem Header="{DynamicResource '退出'}" Click="ExitClicked"/>
@@ -63,6 +64,7 @@
           <Button x:Name="CompareModeButton" Click="CompareModeClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '对比方式'}" AutomationProperties.Name="{DynamicResource '对比方式'}"><local:EditorIcon Kind="ChevronDown" Width="14" Height="14"/></Button>
           <Button Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '缩放与显示'}" AutomationProperties.Name="{DynamicResource '缩放与显示'}"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem x:Name="ZoomPhotoMargin" Header="{DynamicResource '照片四周留白'}" IsCheckable="True" IsChecked="True" Click="PhotoMarginClicked"/><Separator/><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '实际像素 · 100%'}" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="{DynamicResource '放大'}" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
           <Button x:Name="ClippingButton" Click="ClippingClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示输出高光与黑位裁切'}" AutomationProperties.Name="{DynamicResource '显示裁切提示'}"><local:EditorIcon Kind="Clipping" Width="22" Height="22"/></Button>
+          <Button x:Name="CollectionReturn" Content="{DynamicResource '返回批量集合'}" Click="OpenCollectionClicked" Visibility="Collapsed" AutomationProperties.AutomationId="collection.return"/>
           <Button x:Name="InfoButton" Click="InfoClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '照片信息：隐藏 / 文件信息 / 拍摄参数（I）'}" AutomationProperties.Name="{DynamicResource '照片信息'}"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
           <Button x:Name="AdjustToggleButton" Click="DockToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '展开调整栏'}" AutomationProperties.Name="{DynamicResource '调整栏'}"><local:EditorIcon Kind="Adjust" Width="22" Height="22"/></Button>
         </StackPanel>

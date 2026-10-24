@@ -22,9 +22,10 @@ struct AdjustmentTransferView: View {
     @State private var historyID: UUID?
     @State private var historyUndo = true
     @State private var historyPhoto: URL?
+    @State private var focusedHistory: UUID?
     @State private var excludedSource: String?
 
-    private var title: String { L10n.text(preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : "本次会话历史") }
+    private var title: String { L10n.text(preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : kind == .synchronize ? "应用调整并保存到所选照片" : "本次会话历史") }
     private var selectedScope: AdjustmentTransferScope {
         scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)
     }
@@ -42,26 +43,27 @@ struct AdjustmentTransferView: View {
                     .accessibilityIdentifier("adjustment.transfer.close")
             }
             if kind == .copy { copyContent }
-            else if kind == .paste { pasteContent }
+            else if kind == .paste || kind == .synchronize { pasteContent }
             else { historyContent }
             if let message { Text(message).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("adjustment.transfer.message") }
         }
         .padding(24).frame(width: 600).frame(minHeight: 380, maxHeight: 680).tint(.yellow)
         .onAppear {
-            if kind == .paste {
+            if kind == .paste || kind == .synchronize {
                 payload = preset?.payload ?? model.adjustmentSheetPayload ?? model.adjustmentClipboard
                 targets = preset != nil ? model.file.map { [$0] } ?? [] : model.adjustmentSheetTargets ?? model.file.map { [$0] } ?? []
                 excludedSource = preset == nil ? model.adjustmentSheetExcludedSource : nil
             } else if kind == .history, let request = model.pendingAdjustmentHistory {
                 historyID = request.transactionID; historyUndo = request.undo; historyPhoto = request.photo
                 historyResults = model.adjustmentOutcomes
-                updateResultMessage()
+                if model.adjustmentSheetInCollection { focusedHistory = request.transactionID }
+                if !historyResults.isEmpty { updateResultMessage() }
             }
         }
         .onDisappear {
             operationGeneration = UUID(); model.adjustmentSheetPayload = nil; model.adjustmentSheetTargets = nil
-            model.adjustmentSheetExcludedSource = nil; model.pendingAdjustmentHistory = nil
+            model.adjustmentSheetExcludedSource = nil; model.adjustmentSheetExcludedIdentity = nil; model.pendingAdjustmentHistory = nil
         }
     }
 
@@ -99,8 +101,10 @@ struct AdjustmentTransferView: View {
                 HStack {
                     Text(L10n.format("目标：%@ 张照片", String(targets.count))).fontWeight(.medium)
                     Spacer()
-                    Button(L10n.text("选择照片…"), action: chooseTargets).disabled(preparing)
-                        .accessibilityIdentifier("adjustment.paste.chooseTargets")
+                    if kind != .synchronize {
+                        Button(L10n.text("选择照片…"), action: chooseTargets).disabled(preparing)
+                            .accessibilityIdentifier("adjustment.paste.chooseTargets")
+                    }
                     Button(L10n.text("检查目标"), action: prepare).disabled(preparing || targets.isEmpty)
                         .accessibilityIdentifier("adjustment.paste.preflight")
                 }
@@ -172,7 +176,13 @@ struct AdjustmentTransferView: View {
                     .disabled(outcome.map { [.applied, .unchanged, .skipped].contains($0.status) } == true)
             }
             Text(url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            if model.file?.resolvingSymlinksInPath().standardizedFileURL.path == id, model.geometryDraft != nil {
+            if kind == .synchronize, let photo = model.batchSelectionPhotos.values.first(where: { $0.url.path == id }), model.collectionHasDraft(photo.id) {
+                Text(L10n.text("此照片有尚未保存的调整。应用或放弃后，请重新检查目标。"))
+                HStack {
+                    Button(L10n.text("应用并保存")) { if model.resolveCollectionDraft(photo.id, apply: true) { invalidatePreparation() } }
+                    Button(L10n.text("放弃草稿")) { if model.resolveCollectionDraft(photo.id, apply: false) { invalidatePreparation() } }
+                }
+            } else if model.file?.resolvingSymlinksInPath().standardizedFileURL.path == id, model.geometryDraft != nil {
                 Text(L10n.text("此照片有未应用的几何或镜头草稿。")).font(.callout)
                 HStack {
                     Button(L10n.text("应用草稿")) { if model.applyGeometryDraft() { invalidatePreparation() } }
@@ -194,7 +204,7 @@ struct AdjustmentTransferView: View {
                 if let historyPhoto { Text(historyPhoto.lastPathComponent).fontWeight(.medium) }
                 conflictActions
                 if model.adjustmentSession?.transactions.isEmpty != false { Text(L10n.text("暂无编辑历史。")) }
-                ForEach((model.adjustmentSession?.transactions ?? []).reversed(), id: \.id) { transaction in
+                ForEach((model.adjustmentSession?.transactions ?? []).filter { focusedHistory == nil || $0.id == focusedHistory }.reversed(), id: \.id) { transaction in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(transaction.action.title).fontWeight(.medium)
                         Text(transaction.parts.map { URL(fileURLWithPath: $0.identity.path).lastPathComponent }.joined(separator: "、"))
@@ -282,11 +292,12 @@ struct AdjustmentTransferView: View {
         guard let payload else { return }
         invalidatePreparation()
         guard let session = try? model.requireAdjustmentSession() else { return }
-        let descriptors = model.adjustmentTransferTargets(targets, payload: payload, excludingSource: excludedSource)
+        let descriptors = model.adjustmentTransferTargets(targets, payload: payload, excludingSource: excludedSource,
+            excludingIdentity: kind == .synchronize ? model.adjustmentSheetExcludedIdentity : nil, collection: kind == .synchronize)
         preparing = true
         let generation = UUID(); operationGeneration = generation
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try session.prepare(payload: payload, targets: descriptors, action: preset == nil ? .paste : .preset) }
+            let result = Result { try session.prepare(payload: payload, targets: descriptors, action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset) }
             DispatchQueue.main.async {
                 guard generation == operationGeneration else { return }
                 preparing = false

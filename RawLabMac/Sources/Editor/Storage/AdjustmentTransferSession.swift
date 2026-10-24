@@ -4,6 +4,7 @@ struct AdjustmentTransferTarget {
     let url: URL
     let defaultState: PhotoEditState
     var context: MacAdjustmentTransferContext
+    var expectedIdentity: OriginalFileIdentity? = nil
     var isCurrent: (() -> Bool)? = nil
     var resolveMetadata: ((PhotoEditState) throws -> PhotoEditState)? = nil
 }
@@ -34,7 +35,7 @@ struct PreparedAdjustmentTransfer {
 }
 
 struct AdjustmentHistoryTransaction {
-    enum Action { case paste, preset, edit }
+    enum Action { case paste, preset, edit, synchronize }
     enum State { case applied, undone, redoInvalidated }
     struct Part {
         let id: UUID
@@ -79,6 +80,7 @@ final class AdjustmentTransferSession {
             do {
                 guard target.isCurrent?() != false else { throw AdjustmentTransferError.draftRequiresPreflight }
                 let original = try store.versionedState(for: target.url)
+                if let expected = target.expectedIdentity, original.identity != expected { throw EditPersistenceConflict.changed }
                 let stored = original.state ?? target.defaultState
                 let effective = try target.resolveMetadata?(stored) ?? stored
                 let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: effective, context: target.context)

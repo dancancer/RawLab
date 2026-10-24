@@ -134,7 +134,7 @@ struct EditorView: View {
             model.saveEdits()
         }
         .toolbar { editorToolbar }
-        .sheet(item: $model.adjustmentSheet) { kind in
+        .sheet(item: Binding(get: { model.adjustmentSheetInCollection ? nil : model.adjustmentSheet }, set: { model.adjustmentSheet = $0 })) { kind in
             if kind == .presets { AdjustmentPresetView(model: model) }
             else { AdjustmentTransferView(model: model, kind: kind) }
         }
@@ -397,6 +397,10 @@ struct EditorView: View {
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
+            Button(L10n.text(model.batchSelection.current == nil ? "批量编辑…" : "返回选片集合")) {
+                if model.batchSelection.current != nil { model.returnToBatchSelection { openWindow(id: "batch-selection") } }
+                else { openWindow(id: "batch-selection") }
+            }.accessibilityIdentifier("collection.open").disabled(model.exporting)
             Menu {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
                 ForEach(ExportFormat.allCases) { format in

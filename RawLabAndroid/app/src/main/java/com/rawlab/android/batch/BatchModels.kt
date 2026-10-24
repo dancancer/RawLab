@@ -2,6 +2,7 @@ package com.rawlab.android.batch
 
 import java.io.File
 import java.util.UUID
+import java.security.MessageDigest
 import com.rawlab.android.R
 import com.rawlab.android.engine.NativeProcessingException
 import com.rawlab.android.format.ExportFormat
@@ -26,6 +27,51 @@ internal fun asBatchOutputFailure(
     else error
 
 enum class BatchRowStatus { PENDING, PROCESSING, PUBLISHING, NEEDS_CONFIRMATION, SUCCESS, FAILED, CANCELLED }
+
+enum class BatchSettingsMode(val persisted: String) {
+    UNIFORM_FROZEN("uniform_frozen"), PER_TARGET_FROZEN("per_target_frozen");
+
+    companion object {
+        fun decode(value: String?): BatchSettingsMode = if (value == null) UNIFORM_FROZEN else
+            entries.firstOrNull { it.persisted == value } ?: throw IllegalArgumentException("Unsupported batch settings mode")
+    }
+}
+
+data class BatchFrozenSettings(
+    val version: Int = 1,
+    val settingsVersion: Int = 1,
+    val ordinal: Int,
+    val settings: EditSettings,
+    val inputSHA256: String,
+    val lookFile: File? = null,
+    val lookSHA256: String? = null,
+    val outputFormat: ExportFormat,
+    val longEdge: Int? = null,
+) {
+    fun validate() {
+        require(version == 1 && settingsVersion == 1 && ordinal >= 0 &&
+            com.rawlab.android.format.ExportSize.isValid(longEdge)) { "Unsupported frozen batch item" }
+        require(inputSHA256.matches(Regex("[0-9a-f]{64}"))) { "Missing frozen input checksum" }
+        require((lookFile == null && lookSHA256 == null) ||
+            (lookFile != null && lookSHA256?.matches(Regex("[0-9a-f]{64}")) == true)) { "Missing frozen look checksum" }
+    }
+
+    fun verifyFiles(input: File) {
+        check(checksum(input) == inputSHA256) { "Frozen input changed" }
+        if (lookFile != null) check(checksum(lookFile) == lookSHA256) { "Frozen look changed" }
+    }
+
+    companion object {
+        fun checksum(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+    }
+}
 
 data class BatchSourceSnapshot(
     val identity: PhotoIdentity,
@@ -54,6 +100,7 @@ data class BatchTarget(
     val displayName: String,
     val sourceUri: String? = null,
     val inputKind: PhotoInputKind = PhotoInputKind.RAW,
+    val frozen: BatchFrozenSettings? = null,
 ) {
     val id: String get() = identity.value
 }
@@ -78,7 +125,35 @@ data class BatchJob(
     val destination: String? = null,
     val rows: List<BatchRow> = uniqueRows(targets, outputFormat),
     val globalError: String? = null,
+    val settingsMode: BatchSettingsMode = BatchSettingsMode.UNIFORM_FROZEN,
 ) {
+    fun validate() {
+        if (settingsMode == BatchSettingsMode.UNIFORM_FROZEN) {
+            require(rows.all { it.target.frozen == null } && targets.all { it.frozen == null }) { "Frozen items require per-target mode" }
+            return
+        }
+        require(rows.isNotEmpty() && rows.map { it.id }.toSet().size == rows.size) { "Invalid per-target batch" }
+        rows.forEachIndexed { index, row ->
+            val frozen = requireNotNull(row.target.frozen) { "Missing frozen batch item" }
+            frozen.validate()
+            require(frozen.ordinal == index && frozen.outputFormat == outputFormat && frozen.longEdge == outputLongEdge) {
+                "Frozen batch order or output settings changed"
+            }
+        }
+    }
+
+    fun settingsFor(target: BatchTarget): EditSettings = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+        requireNotNull(target.frozen).settings else source.settingsFor(target.inputKind)
+
+    fun lookFor(target: BatchTarget): File? = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+        requireNotNull(target.frozen).lookFile else source.lookFile
+
+    fun formatFor(target: BatchTarget): ExportFormat = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+        requireNotNull(target.frozen).outputFormat else outputFormat
+
+    fun longEdgeFor(target: BatchTarget): Int? = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+        requireNotNull(target.frozen).longEdge else outputLongEdge
+
     companion object {
         private fun uniqueRows(targets: List<BatchTarget>, format: ExportFormat): List<BatchRow> {
             val used = mutableSetOf<String>()

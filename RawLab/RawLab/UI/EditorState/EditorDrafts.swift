@@ -136,6 +136,11 @@ extension ContentView {
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
+        if pendingCollectionNavigation != nil {
+            activateEditorTool(.adjustment(.exposure))
+            continueCollectionNavigation()
+            return
+        }
         if pendingAdjustmentAction != nil {
             activateEditorTool(.adjustment(.exposure))
             continueAdjustmentAction()
@@ -167,10 +172,12 @@ extension ContentView {
     func retryEditorSave() {
         if viewModel.adjustmentReloadRequired { adjustmentReloadPresented = true; return }
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || pendingAdjustmentAction != nil { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
         } else if pendingFileImport || pendingPhotoImport {
             continueEditorImport()
+        } else if pendingCollectionNavigation != nil {
+            continueCollectionNavigation()
         } else if pendingAdjustmentAction != nil {
             continueAdjustmentAction()
         } else { viewModel.retrySave(settings: settings) }
@@ -258,6 +265,7 @@ extension ContentView {
     }
 
     func cancelDraftNavigation() {
+        pendingCollectionNavigation = nil
         pendingAdjustmentAction = nil
         pendingFileImport = false
         pendingPhotoImport = false

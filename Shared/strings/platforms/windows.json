@@ -2842,6 +2842,175 @@
     "颜色接近灰色，无法选择色域。": {
       "formats": [],
       "source": "颜色接近灰色，无法选择色域。"
+    },
+    "上次同步记录": {
+      "formats": [],
+      "source": "上次同步记录"
+    },
+    "仅本次跳过": {
+      "formats": [],
+      "source": "仅本次跳过"
+    },
+    "使用每张照片已冻结的调整，保留逐张差异。": {
+      "formats": [],
+      "source": "使用每张照片已冻结的调整，保留逐张差异。"
+    },
+    "先进入一张照片，将它作为同步来源。": {
+      "formats": [],
+      "source": "先进入一张照片，将它作为同步来源。"
+    },
+    "取消全选": {
+      "formats": [],
+      "source": "取消全选"
+    },
+    "同步调整": {
+      "formats": [],
+      "source": "同步调整"
+    },
+    "外观不可用。": {
+      "formats": [],
+      "source": "外观不可用。"
+    },
+    "外观已变化，请重新检查。": {
+      "formats": [],
+      "source": "外观已变化，请重新检查。"
+    },
+    "实际导出 {0} 张": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "实际导出 {0} 张"
+    },
+    "导出长边像素（留空为原尺寸）": {
+      "formats": [],
+      "source": "导出长边像素（留空为原尺寸）"
+    },
+    "已选择 {0} 张": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "已选择 {0} 张"
+    },
+    "应用并保存草稿": {
+      "formats": [],
+      "source": "应用并保存草稿"
+    },
+    "批量编辑": {
+      "formats": [],
+      "source": "批量编辑"
+    },
+    "排除来源照片后没有可同步的目标。": {
+      "formats": [],
+      "source": "排除来源照片后没有可同步的目标。"
+    },
+    "放弃草稿": {
+      "formats": [],
+      "source": "放弃草稿"
+    },
+    "最终已保存参数": {
+      "formats": [],
+      "source": "最终已保存参数"
+    },
+    "来源：{0} · 目标 {1} 张": {
+      "formats": [
+        "{0}",
+        "{1}"
+      ],
+      "source": "来源：{0} · 目标 {1} 张"
+    },
+    "检查同步目标": {
+      "formats": [],
+      "source": "检查同步目标"
+    },
+    "检查并查看最终参数": {
+      "formats": [],
+      "source": "检查并查看最终参数"
+    },
+    "没有可导出的照片，请取消跳过或重新选择。": {
+      "formats": [],
+      "source": "没有可导出的照片，请取消跳过或重新选择。"
+    },
+    "没有可应用的目标，请取消跳过或重新选择。": {
+      "formats": [],
+      "source": "没有可应用的目标，请取消跳过或重新选择。"
+    },
+    "添加照片后，可同步调整、逐张微调并导出。": {
+      "formats": [],
+      "source": "添加照片后，可同步调整、逐张微调并导出。"
+    },
+    "照片或调整已变化，请重新检查。": {
+      "formats": [],
+      "source": "照片或调整已变化，请重新检查。"
+    },
+    "照片选择已变化，请重新检查。": {
+      "formats": [],
+      "source": "照片选择已变化，请重新检查。"
+    },
+    "目标：{0} 张照片": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "目标：{0} 张照片"
+    },
+    "确认并冻结导出任务": {
+      "formats": [],
+      "source": "确认并冻结导出任务"
+    },
+    "结束导出任务": {
+      "formats": [],
+      "source": "结束导出任务"
+    },
+    "结束此任务并保留已导出的照片？": {
+      "formats": [],
+      "source": "结束此任务并保留已导出的照片？"
+    },
+    "编辑": {
+      "formats": [],
+      "source": "编辑"
+    },
+    "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。": {
+      "formats": [],
+      "source": "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。"
+    },
+    "草稿未保存，请重试。": {
+      "formats": [],
+      "source": "草稿未保存，请重试。"
+    },
+    "请先关闭 AI 降噪，再创建逐张导出任务。": {
+      "formats": [],
+      "source": "请先关闭 AI 降噪，再创建逐张导出任务。"
+    },
+    "请先关闭当前任务窗口。": {
+      "formats": [],
+      "source": "请先关闭当前任务窗口。"
+    },
+    "请先结束或完成当前导出任务。": {
+      "formats": [],
+      "source": "请先结束或完成当前导出任务。"
+    },
+    "请应用、放弃或跳过这张照片的草稿。": {
+      "formats": [],
+      "source": "请应用、放弃或跳过这张照片的草稿。"
+    },
+    "请等待当前操作完成。": {
+      "formats": [],
+      "source": "请等待当前操作完成。"
+    },
+    "请选择输出文件夹。": {
+      "formats": [],
+      "source": "请选择输出文件夹。"
+    },
+    "返回批量集合": {
+      "formats": [],
+      "source": "返回批量集合"
+    },
+    "逐张参数已冻结": {
+      "formats": [],
+      "source": "逐张参数已冻结"
+    },
+    "逐张导出": {
+      "formats": [],
+      "source": "逐张导出"
     }
   },
   "overrides": {
@@ -4234,6 +4403,94 @@
       "fr": "Portée par défaut",
       "ja": "標準範囲",
       "zh-Hans": "默认范围"
+    },
+    "使用每张照片已冻结的调整，保留逐张差异。": {
+      "de": "Die festgeschriebenen Anpassungen jedes Fotos bewahren die individuellen Unterschiede.",
+      "en": "Use each photo’s frozen adjustments, preserving individual differences.",
+      "es": "Usa los ajustes fijados de cada foto y conserva sus diferencias individuales.",
+      "fr": "Utilise les réglages figés de chaque photo en conservant leurs différences.",
+      "ja": "各写真の確定済みの調整を使い、写真ごとの差を保持します。",
+      "zh-Hans": "使用每张照片已冻结的调整，保留逐张差异。"
+    },
+    "导出长边像素（留空为原尺寸）": {
+      "de": "Lange Exportkante in Pixeln (leer für Originalgröße)",
+      "en": "Export long edge in pixels (leave blank for original size)",
+      "es": "Lado largo en píxeles (en blanco para tamaño original)",
+      "fr": "Grand côté en pixels (vide pour la taille d’origine)",
+      "ja": "書き出しの長辺ピクセル数（空欄で元のサイズ）",
+      "zh-Hans": "导出长边像素（留空为原尺寸）"
+    },
+    "没有可应用的目标，请取消跳过或重新选择。": {
+      "de": "Keine Zielfotos zum Anwenden. Heben Sie das Überspringen auf oder wählen Sie erneut.",
+      "en": "No target photos to apply to. Unskip photos or select again.",
+      "es": "No hay fotos de destino donde aplicar. Deja de omitir fotos o vuelve a seleccionarlas.",
+      "fr": "Aucune photo cible pour l’application. Réincluez des photos ou sélectionnez-en à nouveau.",
+      "ja": "適用できる対象がありません。スキップを解除するか選び直してください。",
+      "zh-Hans": "没有可应用的目标，请取消跳过或重新选择。"
+    },
+    "照片或调整已变化，请重新检查。": {
+      "de": "Das Foto oder seine Anpassungen haben sich geändert. Prüfen Sie sie erneut.",
+      "en": "The photo or adjustments changed. Review them again.",
+      "es": "La foto o los ajustes han cambiado. Revísalos de nuevo.",
+      "fr": "La photo ou les réglages ont changé. Vérifiez-les à nouveau.",
+      "ja": "写真または調整が変わりました。もう一度確認してください。",
+      "zh-Hans": "照片或调整已变化，请重新检查。"
+    },
+    "结束导出任务": {
+      "de": "Exportaufgabe beenden",
+      "en": "End export task",
+      "es": "Finalizar exportación",
+      "fr": "Terminer la tâche d’export",
+      "ja": "書き出しタスクを終了",
+      "zh-Hans": "结束导出任务"
+    },
+    "结束此任务并保留已导出的照片？": {
+      "de": "Diese Aufgabe beenden und exportierte Fotos behalten?",
+      "en": "End this task and keep exported photos?",
+      "es": "¿Finalizar esta tarea y conservar las fotos exportadas?",
+      "fr": "Terminer cette tâche et conserver les photos exportées ?",
+      "ja": "書き出し済みの写真を保持して、このタスクを終了しますか？",
+      "zh-Hans": "结束此任务并保留已导出的照片？"
+    },
+    "草稿未保存，请重试。": {
+      "de": "Der Entwurf wurde nicht gespeichert. Versuchen Sie es erneut.",
+      "en": "The draft was not saved. Try again.",
+      "es": "No se ha guardado el borrador. Inténtalo de nuevo.",
+      "fr": "Le brouillon n’a pas été enregistré. Réessayez.",
+      "ja": "下書きを保存できませんでした。再試行してください。",
+      "zh-Hans": "草稿未保存，请重试。"
+    },
+    "请先关闭 AI 降噪，再创建逐张导出任务。": {
+      "de": "Deaktivieren Sie die KI-Entrauschung, bevor Sie einen Export mit individuellen Anpassungen erstellen.",
+      "en": "Turn off AI denoise before creating a per-photo export task.",
+      "es": "Desactiva la reducción de ruido con IA antes de crear una exportación con ajustes individuales.",
+      "fr": "Désactivez la réduction du bruit par IA avant de créer un export avec réglages individuels.",
+      "ja": "個別調整の書き出しタスクを作成する前に、AIノイズ除去をオフにしてください。",
+      "zh-Hans": "请先关闭 AI 降噪，再创建逐张导出任务。"
+    },
+    "请先关闭当前任务窗口。": {
+      "de": "Schließen Sie zuerst das aktuelle Aufgabenfenster.",
+      "en": "Close the current task window first.",
+      "es": "Primero cierra la ventana de la tarea actual.",
+      "fr": "Fermez d’abord la fenêtre de la tâche actuelle.",
+      "ja": "先に現在のタスクウィンドウを閉じてください。",
+      "zh-Hans": "请先关闭当前任务窗口。"
+    },
+    "请等待当前操作完成。": {
+      "de": "Warten Sie, bis der aktuelle Vorgang abgeschlossen ist.",
+      "en": "Wait for the current operation to finish.",
+      "es": "Espera a que termine la operación actual.",
+      "fr": "Attendez la fin de l’opération en cours.",
+      "ja": "現在の操作が完了するまでお待ちください。",
+      "zh-Hans": "请等待当前操作完成。"
+    },
+    "请选择输出文件夹。": {
+      "de": "Wählen Sie einen Ausgabeordner.",
+      "en": "Choose an output folder.",
+      "es": "Elige una carpeta de salida.",
+      "fr": "Choisissez un dossier de sortie.",
+      "ja": "出力先フォルダーを選択してください。",
+      "zh-Hans": "请选择输出文件夹。"
     }
   }
 }

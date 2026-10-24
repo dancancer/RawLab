@@ -81,6 +81,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     hslTarget: HslTargetActions = HslTargetActions(),
     onAutoExposure: () -> Unit = {},
     onBatchExport: () -> Unit = {},
+    onCollection: () -> Unit = {}, collectionEditing: Boolean = false,
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
@@ -355,6 +356,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         modifier = Modifier.testTag("adjustment-menu-history"), leadingIcon = { Icon(Icons.Outlined.History, null) },
                         onClick = { menu = false; leave(onAdjustmentHistory) })
                     HorizontalDivider()
+                    DropdownMenuItem(text = { Text(if (collectionEditing) stringResource(R.string.collection_return) else stringResource(R.string.collection_title)) },
+                        enabled = state.operation == Operation.NONE, modifier = Modifier.testTag("collection-menu"),
+                        leadingIcon = { Icon(Icons.Outlined.Collections, null) }, onClick = {
+                            menu = false
+                            if (collectionEditing) leave(onCollection) else { onCancelAdjustment(); onCollection() }
+                        })
                     DropdownMenuItem(text = { Text(stringResource(R.string.batch_export)) }, enabled = state.canExport,
                         leadingIcon = { Icon(Icons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) }, enabled = state.preview != null,

@@ -50,7 +50,7 @@ internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
 
 
 internal sealed interface Work {
-    data class Import(val uri: Uri, val gpuMode: Int) : Work
+    data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
         val edge: Int = 1600, val draft: Boolean = false, val importedRecord: VersionedPhotoEdit? = null) : Work

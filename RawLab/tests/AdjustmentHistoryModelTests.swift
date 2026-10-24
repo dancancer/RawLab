@@ -93,7 +93,76 @@ struct AdjustmentHistoryModelTests {
         try preflight(model, store: store, directory: directory)
         try cancelledImportMetadata(directory: directory)
         try presetCapture(directory: directory)
+        try collection(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
+    }
+
+    private static func collection(directory: URL) throws {
+        let store = try EditPersistence(directory: directory.appendingPathComponent("collection-edits"))
+        let model = RawEditorViewModel(editPersistence: store)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30), format: format).image { context in
+            UIColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+        }
+        let file = directory.appendingPathComponent("collection-native.png")
+        try image.pngData()!.write(to: file)
+        let a = PhotoIdentity(resourceIdentifier: "native-collection-source")
+        let b = PhotoIdentity(resourceIdentifier: "native-collection-target")
+        model.sourceFile = .externallyManaged(file); model.sourceIdentity = a; model.sourceKind = .raster
+        model.sourceDisplayName = "same.png"; model.hasImage = true
+        model.acceptImportedEditRecord(try store.versionedState(for: a), settings: .default)
+        var settings = RawSettings.default; settings.exposure = 0.75
+        model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "collection source saves before synchronization capture")
+        model.batchSelection.append(model.currentAdjustmentPhoto!)
+        model.batchSelection.append(.init(identity: b, displayName: "same.png", file: .externallyManaged(file), isRaw: false))
+        try model.copyAdjustments(scope: .custom([.contrast]), settings: settings)
+        let clipboard = model.adjustmentSession?.clipboard
+        model.hasAdjustmentDraft = true
+        var blocked = false
+        do { _ = try model.captureCollectionSynchronization(scope: .custom([.exposure]), settings: settings) } catch { blocked = true }
+        try check(blocked, "native collection source draft blocks capture")
+        model.hasAdjustmentDraft = false
+        let sync = try model.captureCollectionSynchronization(scope: .custom([.exposure]), settings: settings)
+        try check(sync.photos.map(\.id) == [b.key] && model.adjustmentSession?.clipboard == clipboard,
+                  "native collection capture excludes source and preserves clipboard")
+        var prepared: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(sync.payload, photos: sync.photos, action: .synchronize) { prepared = $0 }
+        let deadline = Date().addingTimeInterval(30)
+        while prepared == nil && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        guard let prepared else { throw NSError(domain: "collection preparation timed out", code: 1) }
+        let operation = try prepared.get()
+        let results = model.applyAdjustmentPaste(operation, skipping: [])
+        try check(results.map(\.status) == [.applied] && model.batchSelection.selection.lastSynchronization == operation.id,
+                  "native synchronization saves target and retains its transaction entry")
+        model.sourceIdentity = b; model.sourceRevision = UUID()
+        model.acceptImportedEditRecord(try store.versionedState(for: b), settings: settings)
+        _ = model.batchSelection.selection.beginEditing(b.key)
+        settings.contrast = 0.4; model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "native micro-edit commits only the current collection photo")
+        model.batchSelection.selection.returnToCollection()
+        try check(model.batchSelection.selection.returnPosition == b.key && model.batchSelection.selection.selected == Set([a.key, b.key])
+            && model.batchSelection.selection.lastSynchronization == operation.id, "micro-edit return preserves collection and synchronization history")
+        model.hasAdjustmentDraft = true
+        let draft = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+            validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
+        try check(!draft.ready && draft.rows.first { $0.id == b.key }?.error != nil, "native export preflight inspects the active editor draft")
+        let skipped = model.batchSelection.prepareExport(store: store, skipping: [b.key], format: .jpeg, longEdge: nil,
+            validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
+        try check(skipped.ready && model.hasAdjustmentDraft && model.batchSelection.selection.selected.contains(b.key),
+                  "native export Skip preserves the active draft and selection")
+        model.hasAdjustmentDraft = false
+        let review = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+            validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
+        let journal = try BatchJournalStore(directory: directory.appendingPathComponent("collection-jobs"))
+        let job = try model.batchSelection.freeze(review, store: store, journal: journal, validateActive: model.validateCollectionActive)
+        settings.exposure = -0.5; model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "editor remains independently editable after freezing")
+        let batch = BatchExportModel(job: job, journalStore: journal)
+        let bytes = try job.targets.map { try batch.render(target: $0, settings: job.settings(for: $0), look: job.look(for: $0), longEdge: nil) }
+        try check(bytes[0] != bytes[1] && job.targets[1].frozen?.settings.exposure == 0.75,
+                  "native JPEG rendering retains per-photo contrast and ignores later editor exposure")
     }
 
     private static func presetCapture(directory: URL) throws {
