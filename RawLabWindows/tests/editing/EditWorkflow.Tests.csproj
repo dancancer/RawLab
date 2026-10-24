@@ -21,6 +21,7 @@
     <Compile Include="../../HslSettings.cs" Link="HslSettings.cs" />
     <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
     <Compile Include="../../ToneControlsSettings.cs" />
+    <Compile Include="../../ColorGradingSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs" Link="PhotoEffectsSettings.cs" />
     <Compile Include="../../Native.cs" Link="Native.cs" />
     <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />

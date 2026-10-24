@@ -71,7 +71,8 @@ public enum AdjustmentField
     LensProfile,
     BlackPoint,
     WhitePoint,
-    Vibrance
+    Vibrance,
+    GradingShadows, GradingMidtones, GradingHighlights
 }
 
 public static class AdjustmentFields
@@ -143,10 +144,15 @@ public static class AdjustmentFields
         "geometry.lens.profile_id",
         "tone.black_point",
         "tone.white_point",
-        "color.vibrance"
+        "color.vibrance",
+        "color.grading.shadows", "color.grading.midtones", "color.grading.highlights"
     ];
     public static string ID(this AdjustmentField field) => ids[(int)field];
     public static string Group(this AdjustmentField field) => field is AdjustmentField.BlackPoint or AdjustmentField.WhitePoint ? "light" : field.ID().Split('.')[0];
+    public static ColorGradingZone? GradingZone(this AdjustmentField field) => field switch {
+        AdjustmentField.GradingShadows => ColorGradingZone.Shadows, AdjustmentField.GradingMidtones => ColorGradingZone.Midtones,
+        AdjustmentField.GradingHighlights => ColorGradingZone.Highlights, _ => null
+    };
     public static int? HslIndex(this AdjustmentField field) => field is >= AdjustmentField.HslHueRed and <= AdjustmentField.HslLightnessMagenta
         ? (int)field - (int)AdjustmentField.HslHueRed : null;
     public static AdjustmentField Parse(string id) => Array.IndexOf(ids, id) is var index && index >= 0
@@ -267,6 +273,11 @@ public sealed class AdjustmentPayload
     }
     private static bool Valid(AdjustmentField field, JsonElement value)
     {
+        if (field.GradingZone() != null) {
+            if (!ObjectKeys(value, "hue", "saturation")) return false;
+            return Number(value.GetProperty("hue")) is {} hue && Number(value.GetProperty("saturation")) is {} saturation
+                && new ColorGradingWheel(hue, saturation).IsValid;
+        }
         var number=Number(value);
         if (field.Range() is {} range) return number is {} n && double.IsFinite(n) && n>=range.Min && n<=range.Max &&
             (field!=AdjustmentField.QuarterTurns || n==Math.Round(n)) && (field is not (AdjustmentField.CropWidth or AdjustmentField.CropHeight) || n>0);

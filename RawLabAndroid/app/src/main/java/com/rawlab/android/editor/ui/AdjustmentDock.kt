@@ -54,6 +54,8 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.ColorGradingZone
+import com.rawlab.android.editor.controls.ColorGradingControls
 import com.rawlab.android.settings.Film
 import com.rawlab.android.ui.EditorSheetSystemBars
 import com.rawlab.android.ui.ToolIcon
@@ -76,7 +78,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     selectGroup: (EditorAdjustmentGroup) -> Unit, channel: Int, onChannelChange: (Int) -> Unit,
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
-    onPresets: () -> Unit = {}) {
+    onPresets: () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
+    onGradingZoneChange: (ColorGradingZone) -> Unit = {}) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -105,7 +108,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun dockActions() {
         Box {
             ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.controlsEnabled && navigationEnabled) { reset = true }
-            if (reset) EditorResetMenu(state, tool, channel, onDismiss = { reset = false }) { reset = false; onResetScope(it) }
+            if (reset) EditorResetMenu(state, tool, channel, gradingZone, onDismiss = { reset = false }) { reset = false; onResetScope(it) }
         }
         Box {
             ToolIcon(Icons.Outlined.MoreHoriz, R.string.more, navigationEnabled) { more = true }
@@ -267,6 +270,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             }
             13 -> PhotoEffectsControls(edits.effects, vignette = false, enabled = state.controlsEnabled, onReset = { onResetScope(EditorResetScope.Tool(13)) }) { value, dragging ->
                 onEdit(edits.copy(effects = value), dragging)
+            }
+            21 -> ColorGradingControls(edits.colorGrading, state.controlsEnabled, gradingZone, onGradingZoneChange) { value, dragging ->
+                onEdit(edits.copy(colorGrading = value), dragging)
             }
             14 -> HslControls(edits.hsl, state.controlsEnabled, channel, onChannelChange,
                 { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }

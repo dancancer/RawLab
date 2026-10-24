@@ -9,7 +9,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     case blackPoint, whitePoint, vibrance
     case toneCurve
     case saturation
-    case hsl
+    case hsl, colorGrading
     case temperature
     case tint
     case noiseReduction
@@ -40,6 +40,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return L10n.text("S 曲线")
         case .saturation:
             return L10n.text("饱和度")
+        case .colorGrading: return L10n.text("颜色分级")
         case .hsl: return "HSL"
         case .temperature:
             return L10n.text("白平衡")
@@ -75,6 +76,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return "waveform.path.ecg"
         case .saturation:
             return "drop"
+        case .colorGrading: return "paintpalette"
         case .hsl: return "slider.horizontal.3"
         case .temperature:
             return "thermometer"
@@ -107,6 +109,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return -100...100
         case .saturation:
             return -100...100
+        case .colorGrading: return 0...100
         case .hsl: return -100...100
         case .temperature:
             return RawSettings.temperatureRange
@@ -147,7 +150,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return 1
         case .vignette, .grain:
             return 1
-        case .hsl: return 1
+        case .hsl, .colorGrading: return 1
         }
     }
 
@@ -170,6 +173,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return settings.toneCurve * 100
         case .saturation:
             return (settings.saturation - 1) * 100
+        case .colorGrading: return settings.gradingSettings.progress * 100
         case .hsl: return settings.hsl.progress * 100
         case .temperature:
             return settings.temperature
@@ -205,6 +209,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             settings.toneCurve = value / 100
         case .saturation:
             settings.saturation = 1 + value / 100
+        case .colorGrading:
+            if value == 0 { settings.colorGrading = nil }
         case .hsl:
             if value == 0 { settings.hsl.reset() }
         case .temperature:
@@ -274,6 +280,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return String(format: "%.0f", value)
         case .vignette, .grain:
             return String(format: "%+.0f", value)
+        case .colorGrading: return L10n.text("颜色分级")
         case .hsl: return "HSL"
         }
     }

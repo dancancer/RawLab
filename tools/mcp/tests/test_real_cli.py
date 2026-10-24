@@ -29,6 +29,11 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
             async with Client(params) as client:
                 for case, (version, extra) in enumerate(((1, {}), (2, {}), (2, {
                     "tone": {"black_point": .4, "white_point": -.3}, "color": {"vibrance": .6},
+                }), (2, {
+                    "color_grading": {"shadows": {"hue": 220, "saturation": 75},
+                                      "midtones": {"hue": 110, "saturation": 0},
+                                      "highlights": {"hue": 35.25, "saturation": 16.5}},
+                    "tone": {"black_point": .25}, "color": {"vibrance": .5},
                 }))):
                     identity = {"family": "rawlab", "version": version, "quality": "standard"}
                     document = {
@@ -42,7 +47,11 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(validated.structured_content["result"]["processing"], identity)
                     for group, values in extra.items():
                         for field, value in values.items():
-                            self.assertAlmostEqual(validated.structured_content["result"]["edits"][group][field], value, places=6)
+                            actual = validated.structured_content["result"]["edits"][group][field]
+                            if isinstance(value, dict):
+                                self.assertEqual(actual, value)
+                            else:
+                                self.assertAlmostEqual(actual, value, places=6)
                     preview = root / f"mcp-preview-{case}.png"
                     rendered = await client.call_tool("render_preview", {
                         "recipe_path": str(recipe), "output_path": str(preview), "long_edge": 1280,

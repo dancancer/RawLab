@@ -15,7 +15,7 @@ internal sealed partial class RenderEngine : IDisposable
     private int gpuMode;
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
-    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,int DisplayChromaDenoise,
+    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,ColorGradingSettings ColorGrading,int DisplayChromaDenoise,
         int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
@@ -47,7 +47,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.ToneControls);
+        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetGrading(settings.ColorGrading);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -72,7 +72,7 @@ internal sealed partial class RenderEngine : IDisposable
             session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
         }
         sourceStamp=(rawStamp,lutStamp);
-        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.DisplayChromaDenoise,
+        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.ColorGrading,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
@@ -105,7 +105,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.ToneControls);
+        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetGrading(settings.ColorGrading);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -167,6 +167,11 @@ internal sealed partial class RenderEngine : IDisposable
     }
     internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
         (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
+    private void SetGrading(ColorGradingSettings value)
+    {
+        var config = value.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_color_grading(session, ref config));
+    }
     private void SetTone(ToneControlsSettings value)
     {
         var config = value.NativeConfig();

@@ -75,6 +75,26 @@ void hslAxis(const Json& object, const char* key, float* destination) {
 }
 
 void completeEdits(const Json& edits, EditRecipe& parsed) {
+    if (edits.contains("color_grading")) {
+        const auto& grading=edits.at("color_grading");
+        fields(grading,"edits.color_grading",{"shadows","midtones","highlights"});
+        auto readWheel=[&](const char* zone,float& hue,float& saturation) {
+            if (!grading.contains(zone)) return;
+            const auto path=std::string("edits.color_grading.")+zone;
+            const auto& wheel=grading.at(zone);
+            fields(wheel,path,{"hue","saturation"});
+            required(wheel,"hue",path);required(wheel,"saturation",path);
+            hue=number(wheel,"hue",0,0,360,path);
+            if (wheel.at("hue").get<double>()>=360) throw std::invalid_argument(path+".hue is out of range");
+            // 合法 double 在 float 环回点舍入为 360 时，保持等价的 canonical 0。
+            if (hue==360) hue=0;
+            saturation=number(wheel,"saturation",0,0,100,path);
+        };
+        auto& config=parsed.colorGrading;
+        readWheel("shadows",config.shadows_hue,config.shadows_saturation);
+        readWheel("midtones",config.midtones_hue,config.midtones_saturation);
+        readWheel("highlights",config.highlights_hue,config.highlights_saturation);
+    }
     if (edits.contains("tone")) {
         const auto& tone = edits.at("tone");
         if (parsed.schemaVersion >= 5)
@@ -210,7 +230,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
         else if (version < 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
         else if (version == 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
-        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "color", "detail", "hsl", "effects", "denoise", "lens_correction"});
+        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "color", "color_grading", "detail", "hsl", "effects", "denoise", "lens_correction"});
         if (version >= 4) completeEdits(edits, parsed);
         const auto& exposure = required(edits, "exposure", "edits");
         fields(exposure, "edits.exposure", {"mode", "ev", "brightness"});
@@ -336,6 +356,19 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             throw std::invalid_argument("Tone controls must be finite and within [-1,1]");
     if (recipe.schemaVersion < 5 && (controls.black_point != 0 || controls.white_point != 0 || controls.vibrance != 0))
         throw std::invalid_argument("Tone controls require schema_version 5");
+    const auto& grading=recipe.colorGrading;
+    if (grading.version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION || grading.struct_size!=sizeof(grading))
+        throw std::invalid_argument("Invalid color grading configuration");
+    bool storedGrading=false;
+    for (const auto wheel : {std::pair{grading.shadows_hue,grading.shadows_saturation},
+             std::pair{grading.midtones_hue,grading.midtones_saturation},std::pair{grading.highlights_hue,grading.highlights_saturation}}) {
+        if (!std::isfinite(wheel.first) || wheel.first<0 || wheel.first>=360 ||
+            !std::isfinite(wheel.second) || wheel.second<0 || wheel.second>100)
+            throw std::invalid_argument("Color grading hue/saturation is out of range");
+        storedGrading=storedGrading || wheel.first!=0 || wheel.second!=0;
+    }
+    if (recipe.schemaVersion<5 && storedGrading)
+        throw std::invalid_argument("Color grading requires schema_version 5");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
         case SONY2FUJI_WB_CAMERA: wbMode = "camera"; break;
@@ -381,6 +414,10 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
         if (controls.white_point != 0) edits["tone"]["white_point"] = controls.white_point;
         if (controls.vibrance != 0) edits["color"]["vibrance"] = controls.vibrance;
+        if (storedGrading) edits["color_grading"]={
+            {"shadows",{{"hue",grading.shadows_hue},{"saturation",grading.shadows_saturation}}},
+            {"midtones",{{"hue",grading.midtones_hue},{"saturation",grading.midtones_saturation}}},
+            {"highlights",{{"hue",grading.highlights_hue},{"saturation",grading.highlights_saturation}}}};
         edits["detail"] = {{"sharpening", recipe.sharpening}};
         edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
         const auto& fx = recipe.effects;

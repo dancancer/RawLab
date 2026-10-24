@@ -280,7 +280,12 @@ extension ContentView {
                     .accessibilityIdentifier("editor.fine")
             }
         Menu {
-            if currentEditorTool == .adjustment(.hsl) {
+            if currentEditorTool == .adjustment(.colorGrading) {
+                Button(L10n.text("重置当前分区")) { requestEditorReset(.gradingZone(gradingZone)) }
+                    .disabled(!resetModified(.gradingZone(gradingZone)))
+                Button(L10n.text("重置颜色分级")) { requestEditorReset(.allGrading) }
+                    .disabled(!resetModified(.allGrading))
+            } else if currentEditorTool == .adjustment(.hsl) {
                 Button(L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[hslChannel]))) {
                     requestEditorReset(.hslChannel(hslChannel))
                 }.disabled(!resetModified(.hslChannel(hslChannel)))
@@ -333,14 +338,17 @@ extension ContentView {
         let source = viewModel.sourceRevision
         let tool = currentEditorTool
         let channel = hslChannel
+        let grading = gradingZone
         let perspective = geometryPerspective
-        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(perspective)", isCurrent: {
+        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective)", isCurrent: {
             viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
+                (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
                 (tool != .geometry || geometryPerspective == perspective)
         }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
             if viewModel.sourceRevision == source && currentEditorTool == tool &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
+                (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
                 (tool != .geometry || geometryPerspective == perspective) {
                 cancelSliderInteraction()
             }

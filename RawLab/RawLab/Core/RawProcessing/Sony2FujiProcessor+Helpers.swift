@@ -49,6 +49,14 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func configureGrading(_ session: OpaquePointer, settings: ColorGradingSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数"))
+        }
+    }
+
     func configureTone(_ session: OpaquePointer, settings: ToneControlsSettings) throws {
         guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数")) }
         var config = settings.nativeConfig
@@ -61,6 +69,7 @@ extension Sony2FujiProcessor {
                           viewportPreview: Bool = false) throws {
         try configureProcessing(session, identity: settings.processing)
         try configureTone(session, settings: settings.toneSettings)
+        try configureGrading(session, settings: settings.gradingSettings)
         try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))

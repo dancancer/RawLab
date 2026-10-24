@@ -81,6 +81,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
+        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         val frame = checkNotNull(nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
@@ -110,6 +112,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
+        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         val backend = intArrayOf(-1)
         nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, lut?.path, output.path, effective.strength,
@@ -135,6 +139,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
+        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
             effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version)
@@ -190,6 +196,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
+    private external fun nativeSetColorGrading(handle: Long, shadowsHue: Float, shadowsSaturation: Float,
+        midtonesHue: Float, midtonesSaturation: Float, highlightsHue: Float, highlightsSaturation: Float)
     private external fun nativeSetToneControls(handle: Long, blackPoint: Float, whitePoint: Float, vibrance: Float)
     private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
         cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,

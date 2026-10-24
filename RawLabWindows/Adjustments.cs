@@ -63,6 +63,7 @@ public sealed class Adjustments
     public DenoiseSettings Denoise { get; set; } = new();
     public bool AIDenoiseEnabled { get; set; }
     public PhotoEffectsSettings Effects { get; set; } = new();
+    public ColorGradingSettings ColorGrading { get; set; } = new();
     public ToneControlsSettings ToneControls { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
     public LensSettings Lens { get; set; } = new();
@@ -106,7 +107,8 @@ public sealed class Adjustments
     public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
         Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
-        ToneControls = ToneControls.IsIdentity ? null : ToneControls
+        ToneControls = ToneControls.IsIdentity ? null : ToneControls,
+        ColorGrading = ColorGrading.IsDefault ? null : ColorGrading
     };
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
@@ -117,6 +119,8 @@ public sealed class Adjustments
         var effects = snapshot.Effects ?? new PhotoEffectsSettings();
         var geometry = snapshot.Geometry ?? new GeometrySettings();
         var tone = snapshot.ToneControls ?? new ToneControlsSettings();
+        var grading = snapshot.ColorGrading ?? new ColorGradingSettings();
+        _ = grading.NativeConfig();
         _ = tone.NativeConfig();
         _ = denoise.NativeConfig();
         _ = effects.NativeConfig();
@@ -129,6 +133,7 @@ public sealed class Adjustments
             AIDenoiseEnabled = snapshot.AIDenoiseEnabled,
             Effects = effects,
             ToneControls = tone,
+            ColorGrading = grading,
             Hsl = snapshot.Hsl ?? new HslSettings(),
             MasterRecipeID = snapshot.MasterRecipeID,
             Lens = snapshot.Lens ?? new(),
@@ -192,14 +197,14 @@ public sealed class Adjustments
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 1; ResetWhiteBalance(); }
-        if (group == "色彩") { Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
+        if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
         if (group == "明暗") ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 };
         if (group == "细节") { AIDenoiseEnabled = false; Denoise = new(); DisplayChromaDenoise = 0; }
         if (group == "效果") Effects = new();
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
+    public void ResetAll() { ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))

@@ -7,6 +7,14 @@ import java.nio.file.Files
 import java.util.Properties
 
 class StructuredSettingsCodecTest {
+    @Test fun gradingPendingHueSurvivesStructuredSettings() {
+        val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v2:"))
+        val grading = org.json.JSONObject("""{"shadows":{"hue":231.25,"saturation":0},"midtones":{"hue":0,"saturation":0},"highlights":{"hue":0,"saturation":0}}""")
+        json.getJSONObject("settings").put("colorGrading", grading)
+        val restored = SettingsCodec.decode("v2:$json")
+        val result = org.json.JSONObject(SettingsCodec.encode(restored).removePrefix("v2:"))
+        assertEquals(231.25, result.getJSONObject("settings").getJSONObject("colorGrading").getJSONObject("shadows").getDouble("hue"), 0.0)
+    }
     @Test fun batchSettingsWritesExplicitV2AndRoundTripsDelimitedNames() {
         val settings = EditSettings(film = "look|,\n特殊", recipeID = "recipe|name")
         val encoded = SettingsCodec.encode(settings)

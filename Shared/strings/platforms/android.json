@@ -3601,6 +3601,42 @@
       "source": "无效的黑白场或鲜艳度参数",
       "file": "editor_strings.xml",
       "types": []
+    },
+    "color_grading": {
+      "formats": [],
+      "source": "颜色分级",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_midtones": {
+      "formats": [],
+      "source": "中间调",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_color_grading": {
+      "formats": [],
+      "source": "无效的颜色分级参数",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_reset_zone": {
+      "formats": [],
+      "source": "重置当前分区",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_reset_all": {
+      "formats": [],
+      "source": "重置颜色分级",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_reset_message": {
+      "formats": [],
+      "source": "恢复阴影、中间调和高光的颜色分级默认值？",
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {

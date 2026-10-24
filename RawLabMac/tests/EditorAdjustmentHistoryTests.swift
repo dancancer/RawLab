@@ -26,19 +26,24 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.adjustmentSession!.transactions.isEmpty, "opening and resolving metadata create no history")
         model.setInteracting(true)
         model.settings.exposure = 0.2
+        model.settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
         RunLoop.main.run(until: Date().addingTimeInterval(0.55))
         model.settings.exposure = 0.6
+        model.settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
         try check(model.adjustmentSession!.transactions.isEmpty, "a long slider gesture does not save intermediate history")
         model.setInteracting(false)
         try check(model.adjustmentSession!.transactions.count == 1 && !model.dirty, "gesture end saves exactly one history item")
         try rendered(model)
         model.undoAdjustment(); try rendered(model)
-        try check(model.settings.exposure == 0 && model.canRedoAdjustment, "undo restores the pre-gesture state")
+        try check(model.settings.exposure == 0 && model.settings.gradingSettings.isDefault && model.canRedoAdjustment, "undo restores the pre-gesture state")
         model.redoAdjustment(); try rendered(model)
-        try check(model.settings.exposure == 0.6, "redo restores the saved gesture")
+        try check(model.settings.exposure == 0.6 && model.settings.gradingSettings.shadows.hue == 231.25
+            && model.settings.gradingSettings.midtones.saturation == 32.375, "redo restores the saved gesture including pending hue")
         model.setInteracting(true); model.settings.exposure = 1.2
+        model.settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
         model.cancelAdjustmentInteraction(); try rendered(model)
-        try check(model.settings.exposure == 0.6 && model.adjustmentSession!.transactions.count == 1,
+        try check(model.settings.exposure == 0.6 && model.settings.gradingSettings.shadows == ColorGradingWheel(hue: 231.25, saturation: 0)
+            && model.adjustmentSession!.transactions.count == 1,
             "cancelled gesture restores its entry snapshot without history")
         model.settings.contrast = 15; try check(model.saveEdits(), "ordinary change saves")
         try check(model.applyCurrentSettings(to: [first, first]) == 0,

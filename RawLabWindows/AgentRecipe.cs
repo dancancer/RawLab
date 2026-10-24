@@ -53,9 +53,19 @@ internal sealed partial class RenderEngine
         };
         var options=new JsonSerializerOptions{WriteIndented=true};
         var json=JsonSerializer.Serialize(document,options);
-        if(toneControls.Vibrance==0)return json;
+        _ = state.ColorGrading.NativeConfig();
+        if(toneControls.Vibrance==0 && state.ColorGrading.IsDefault)return json;
         var result=System.Text.Json.Nodes.JsonNode.Parse(json)!;
-        result["edits"]!["color"]=new System.Text.Json.Nodes.JsonObject { ["vibrance"]=toneControls.Vibrance };
+        if(toneControls.Vibrance!=0) result["edits"]!["color"]=new System.Text.Json.Nodes.JsonObject { ["vibrance"]=toneControls.Vibrance };
+        if (!state.ColorGrading.IsDefault) {
+            var grading = new System.Text.Json.Nodes.JsonObject();
+            foreach (var zone in Enum.GetValues<ColorGradingZone>()) {
+                var wheel = state.ColorGrading[zone];
+                grading[zone.ToString().ToLowerInvariant()] = new System.Text.Json.Nodes.JsonObject {
+                    ["hue"] = wheel.NativeHue, ["saturation"] = (float)wheel.Saturation };
+            }
+            result["edits"]!["color_grading"] = grading;
+        }
         return result.ToJsonString(options);
     }
 }

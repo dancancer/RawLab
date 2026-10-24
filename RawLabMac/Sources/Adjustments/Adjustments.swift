@@ -1,6 +1,11 @@
 import Foundation
 
 struct Adjustments: Equatable, Codable {
+    var colorGrading: ColorGradingSettings?
+    var gradingSettings: ColorGradingSettings {
+        get { colorGrading ?? ColorGradingSettings() }
+        set { colorGrading = newValue.isDefault ? nil : newValue }
+    }
     var toneControls: ToneControlsSettings?
     var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
     var blackPoint: Double {
@@ -260,7 +265,7 @@ struct Adjustments: Equatable, Codable {
         }
         if group == .film { clearMasterRecipe() }
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
-        if group == .color { hsl = nil }
+        if group == .color { hsl = nil; colorGrading = nil }
         if group == .detail { aiDenoiseEnabled = false }
         if group == .effects { photoEffects = nil }
         if group == .lens { lensCorrection = nil }
@@ -270,7 +275,7 @@ struct Adjustments: Equatable, Codable {
     func isDefault(_ group: AdjustmentGroup) -> Bool {
         group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
             && (group != .input || exposureMode == .preview)
-            && (group != .color || hslSettings.isIdentity)
+            && (group != .color || hslSettings.isIdentity && gradingSettings.isDefault)
             && (group != .detail || !isDenoiseEnabled)
             && (group != .effects || effectSettings == PhotoEffectsSettings())
             && (group != .film || masterRecipeID == nil)
@@ -358,7 +363,7 @@ struct Adjustments: Equatable, Codable {
         guard PhotoEffectParameter.allCases.allSatisfy({
             let value = effectSettings[keyPath: $0.keyPath]
             return value.isFinite && $0.range.contains(value)
-        }), hslSettings.isValid, geometrySettings.isValid else {
+        }), hslSettings.isValid, geometrySettings.isValid, gradingSettings.isValid else {
             throw EditorResetBlockedReason.invalidSnapshot("effects/hsl/geometry")
         }
         if let camera = asShotWhiteBalance {
@@ -441,6 +446,7 @@ enum EditorAdjustmentRules {
             case .strength: return settings.strength != 1
             case .exposure: return settings.exposure != 0 || (context.isRaw && settings.exposureMode != context.defaultExposureMode)
             case .whiteBalance: return (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) || (settings.masterRecipe != nil && settings.tint != 0)
+            case .colorGrading: return !settings.gradingSettings.isDefault
             case .hsl: return !settings.hslSettings.isIdentity
             case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
             case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
@@ -451,6 +457,8 @@ enum EditorAdjustmentRules {
             }
         case .all:
             return EditorAdjustmentGroup.allCases.contains { isModified(scope: .group($0), snapshot: snapshot, context: context) }
+        case .allGrading: return !settings.gradingSettings.isDefault
+        case .gradingZone(let zone): return !settings.gradingSettings[zone].isDefault
         case .hslAll: return !settings.hslSettings.isIdentity
         case .hslColor(let channel):
             guard (0..<8).contains(channel), settings.hslSettings.isValid else { return true }
@@ -463,7 +471,7 @@ enum EditorAdjustmentRules {
                 settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0 ||
                 settings.blackPoint != 0 || settings.whitePoint != 0
         case .group(.color):
-            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity ||
+            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault ||
                 (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
                 (settings.masterRecipe != nil && settings.tint != 0)
         case .group(.effects): return settings.effectSettings != PhotoEffectsSettings()
@@ -495,6 +503,7 @@ enum EditorAdjustmentRules {
                     result.filmID = context.neutralFilmID
                 case .exposure: result.settings.exposure = 0; result.settings.exposureMode = context.defaultExposureMode
                 case .whiteBalance: result.settings.resetWhiteBalance()
+                case .colorGrading: result.settings.colorGrading = nil
                 case .hsl: result.settings.hsl = nil
                 case .vignette: result.settings.resetEffect(.vignetteAmount)
                 case .grain: result.settings.resetEffect(.grainAmount)
@@ -524,7 +533,7 @@ enum EditorAdjustmentRules {
                 result.settings.highlights = 0; result.settings.shadows = 0; result.settings.toneCurve = 0
                 result.settings.blackPoint = 0; result.settings.whitePoint = 0
             case .group(.color):
-                result.settings.saturation = 0; result.settings.vibrance = 0
+                result.settings.saturation = 0; result.settings.vibrance = 0; result.settings.colorGrading = nil
                 result.settings.resetWhiteBalance()
                 result.settings.hsl = nil
             case .group(.effects): result.settings.photoEffects = nil
@@ -533,6 +542,8 @@ enum EditorAdjustmentRules {
                 result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
                 result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
             case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
+            case .allGrading: result.settings.colorGrading = nil
+            case .gradingZone(let zone): result.settings.gradingSettings[zone] = ColorGradingWheel()
             case .hslAll: result.settings.hsl = nil
             case .hslColor(let channel):
                 var hsl = result.settings.hslSettings
@@ -555,6 +566,8 @@ extension Adjustments {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         processing = values.contains(.processing) ?
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
+        colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
+        if colorGrading?.isDefault == true { colorGrading = nil }
         toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
         guard toneSettings.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")

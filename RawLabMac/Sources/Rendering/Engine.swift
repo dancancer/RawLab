@@ -207,6 +207,14 @@ final class RenderEngine {
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
     var lastAIBackend: String { String(cString: sony2fuji_session_get_ai_backend(session)) }
 
+    private func configureGrading(_ settings: ColorGradingSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的颜色分级参数"))
+        }
+    }
+
     private func configureTone(_ settings: ToneControlsSettings) throws {
         guard settings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
         var config = settings.nativeConfig
@@ -255,6 +263,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureTone(settings.toneSettings)
+        try configureGrading(settings.gradingSettings)
         try configureLens(settings.lensSettings)
         try configureAI(enabled: true)
         var request = sony2fuji_request()
@@ -280,6 +289,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureTone(settings.toneSettings)
+        try configureGrading(settings.gradingSettings)
         try configureAI(enabled: settings.aiDenoiseEnabled)
         try configureLens(settings.lensSettings)
         try configureGeometry(settings.geometrySettings)
@@ -339,6 +349,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureTone(settings.toneSettings)
+        try configureGrading(settings.gradingSettings)
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }

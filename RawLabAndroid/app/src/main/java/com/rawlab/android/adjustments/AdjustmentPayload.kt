@@ -1,6 +1,7 @@
 package com.rawlab.android.adjustments
 
 import org.json.JSONObject
+import com.rawlab.android.settings.ColorGradingWheel
 
 enum class AdjustmentFailure { INVALID_PAYLOAD, UNSUPPORTED_VERSION, EMPTY_SCOPE, DRAFT, INCOMPATIBLE, MISSING_LOOK, UNREPRESENTABLE }
 class AdjustmentTransferException(val reason: AdjustmentFailure, val field: String = "") : Exception("$reason: $field")
@@ -122,6 +123,11 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         }
 
         private fun validValue(field: AdjustmentField, value: AdjustmentValue): Boolean {
+            if (field.gradingZone != null) {
+                val wheel = value.objectValue ?: return false
+                if (wheel.keys != setOf("hue", "saturation")) return false
+                return ColorGradingWheel.valid(wheel["hue"]?.number ?: return false, wheel["saturation"]?.number ?: return false)
+            }
             field.scalarRange?.let { range ->
                 val number = value.number ?: return false
                 return number.isFinite() && number in range &&

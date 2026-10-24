@@ -4,6 +4,7 @@
 #include "gpu/photo_gpu.h"
 #include "hsl_gpu_boundary.h"
 #include "tone_gpu_boundary.h"
+#include "grading_gpu_boundary.h"
 #ifdef SONY2FUJI_ENABLE_D3D11
 #include "gpu/d3d11_photo.h"
 #endif
@@ -249,6 +250,17 @@ int main() {
             input.width,input.height,output,{}, {},0,false,{},controls);
 #endif
     }), "Tone controls preserve CPU float reference including gamut/zero boundaries");
+    check(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
+        const sony2fuji::ColorGradingOptions& grading,sony2fuji::ImageData& output) {
+#ifdef SONY2FUJI_ENABLE_D3D11
+        sony2fuji::D3D11PhotoRenderer renderer;
+        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,0,output,{},0,false,{}, {},grading);
+#else
+        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,output,{}, {},0,false,{}, {},grading);
+#endif
+    }),"Color grading matches CPU float reference across regions and gamut boundaries");
 
     const auto lutPath = makePhotoLUT();
     const auto lutUtf8 = lutPath.u8string();
@@ -444,6 +456,11 @@ int main() {
     sony2fuji_tone_controls_config tone{1,sizeof(tone),.6f,-.4f,.8f};
     for (auto* target : {session,forced}) sony2fuji_session_set_tone_controls(target,&tone);
     compareForcedCase(session,forced,hslRequest,"Tone controls with LUT, HSL, chroma, detail, effects and resize");
+    sony2fuji_color_grading_config grading{1,sizeof(grading),220,75,110,35,35,60};
+    for (auto* target : {session,forced})check(sony2fuji_session_set_color_grading(target,&grading)==SONY2FUJI_STATUS_OK,"grading combination setter");
+    compareForcedCase(session,forced,hslRequest,"Grading with tone, LUT, HSL, chroma, detail, effects and resize");
+    grading={1,sizeof(grading),0,0,0,0,0,0};
+    for (auto* target : {session,forced})sony2fuji_session_set_color_grading(target,&grading);
     tone.black_point=tone.white_point=tone.vibrance=0;
     for (auto* target : {session,forced}) sony2fuji_session_set_tone_controls(target,&tone);
     hsl = {SONY2FUJI_HSL_CONFIG_VERSION, sizeof(hsl), {}, {}, {}};

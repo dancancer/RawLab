@@ -51,6 +51,7 @@
 "中性直出" = "Neutral Straight Out of Camera";
 "中断发生在写入照片图库时，请核对后选择，避免重复生成。" = "The interruption occurred while writing to Photos. Verify before choosing to avoid duplicate exports.";
 "中点" = "Midpoint";
+"中间调" = "Midtones";
 "临时选择" = "Temporary Selection";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.";
 "乡村秋日 · 古典油画" = "Countryside autumn · classical oil painting";
@@ -203,6 +204,7 @@
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
+"恢复阴影、中间调和高光的颜色分级默认值？" = "Restore default color grading for shadows, midtones, and highlights?";
 "恢复默认" = "Restore Default";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
 "我的预设" = "My Presets";
@@ -243,6 +245,7 @@
 "无效的暗角或颗粒参数" = "Invalid vignette or grain settings";
 "无效的曝光基准" = "Invalid exposure reference";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
+"无效的颜色分级参数" = "Invalid color grading values";
 "无效的黑白场或鲜艳度参数" = "Invalid black point, white point, or vibrance values";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Unable to Save Photos. Allow RawLab to Add Photos in System Settings.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Unable to save the photo. Allow adding photos in system settings.";
@@ -495,6 +498,7 @@
 "重置全部调整…" = "Reset all adjustments…";
 "重置全部调整？" = "Reset all adjustments?";
 "重置分割线" = "Reset split";
+"重置当前分区" = "Reset current range";
 "重置当前颜色" = "Reset Current Color";
 "重置当前颜色（%@）" = "Reset current color (%@)";
 "重置所有调整并返回中性" = "Reset All Adjustments and Return to Neutral";
@@ -502,6 +506,7 @@
 "重置调整" = "Reset Adjustments";
 "重置镜头校正" = "Reset Lens Correction";
 "重置降噪" = "Reset Noise Reduction";
+"重置颜色分级" = "Reset color grading";
 "重试" = "Try again";
 "重试失败的 %@ 张" = "Retry Failed Photos (%@)";
 "重试未完成项" = "Retry Incomplete";
@@ -540,6 +545,7 @@
 "颗粒强度" = "Grain Intensity";
 "颗粒粗糙度" = "Grain Roughness";
 "颜色" = "Color";
+"颜色分级" = "Color grading";
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";

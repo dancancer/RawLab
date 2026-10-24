@@ -2,6 +2,7 @@
 #include "gpu/gles_photo.h"
 #include "hsl_gpu_boundary.h"
 #include "tone_gpu_boundary.h"
+#include "grading_gpu_boundary.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -75,6 +76,12 @@ int main(int argc, char** argv) {
         return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
             input.width,input.height,0,output,{},0,false,{},controls);
     }), "Tone endpoints/vibrance match CPU float reference");
+    require(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
+        const sony2fuji::ColorGradingOptions& grading,sony2fuji::ImageData& output) {
+        sony2fuji::GlesPhotoRenderer renderer;
+        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,0,output,{},0,false,{}, {},grading);
+    }),"Color grading matches CPU float reference across regions and gamut boundaries");
     Session forced(SONY2FUJI_GPU_FORCE);
     Session cpu(SONY2FUJI_GPU_OFF), automatic(SONY2FUJI_GPU_AUTO);
     std::vector<uint8_t> pixels(53 * 41 * 3);
@@ -201,6 +208,10 @@ int main(int argc, char** argv) {
     for (Session* session : {&cpu,&forced,&automatic})
         require(sony2fuji_session_set_tone_controls(session->value,&tone)==SONY2FUJI_STATUS_OK,"tone controls setter");
     compare(render(cpu,request,false),render(forced,request,true),"Black/white/vibrance with HSL/LUT FINAL");
+    sony2fuji_color_grading_config grading{1,sizeof(grading),220,75,110,35,35,60};
+    for (Session* session : {&cpu,&forced,&automatic})
+        require(sony2fuji_session_set_color_grading(session->value,&grading)==SONY2FUJI_STATUS_OK,"grading setter");
+    compare(render(cpu,request,false),render(forced,request,true),"Grading with black/white/vibrance and HSL/LUT FINAL");
     auto hslPreview = request;
     hslPreview.intent = SONY2FUJI_INTENT_PREVIEW;
     compare(render(cpu, hslPreview, false), render(automatic, hslPreview, true), "HSL tone/LUT Auto preview");

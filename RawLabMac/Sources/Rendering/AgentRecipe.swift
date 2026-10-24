@@ -75,6 +75,14 @@ extension RenderEngine {
             edits["color"] = ["vibrance": toneConfig.vibrance]
             document["edits"] = edits
         }
+        guard state.gradingSettings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
+        if !state.gradingSettings.isDefault, var edits = document["edits"] as? [String: Any] {
+            edits["color_grading"] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
+                let wheel = state.gradingSettings[zone]
+                return (zone.rawValue, ["hue": wheel.nativeHue, "saturation": Float(wheel.saturation)])
+            })
+            document["edits"] = edits
+        }
         return try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
     }
 }

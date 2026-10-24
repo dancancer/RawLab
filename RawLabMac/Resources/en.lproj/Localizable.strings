@@ -60,6 +60,7 @@
 "中性显影与调整后对比" = "Compare Neutral Development and Edits";
 "中性直出" = "Neutral Straight Out of Camera";
 "中点" = "Midpoint";
+"中间调" = "Midtones";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.";
 "乡村秋日 · 古典油画" = "Countryside autumn · classical oil painting";
 "交互预览… %@ × %@ · sRGB" = "Interactive preview… %@ × %@ · sRGB";
@@ -265,6 +266,7 @@
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
+"恢复阴影、中间调和高光的颜色分级默认值？" = "Restore default color grading for shadows, midtones, and highlights?";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
 "我的预设" = "My Presets";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "These adjustments are incompatible with this photo. Change the scope or skip it.";
@@ -321,6 +323,7 @@
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的透视参数" = "Invalid perspective settings";
 "无效的预览模式" = "Invalid preview mode";
+"无效的颜色分级参数" = "Invalid color grading values";
 "无效的黑白场或鲜艳度参数" = "Invalid black point, white point, or vibrance values";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法写入输出目录，请检查访问权限和剩余空间。" = "Unable to write to the output folder. Check access permissions and free space.";
@@ -633,12 +636,14 @@
 "重置全部调整？" = "Reset all adjustments?";
 "重置几何编辑" = "Reset geometry edits";
 "重置分割线" = "Reset split";
+"重置当前分区" = "Reset current range";
 "重置当前颜色" = "Reset Current Color";
 "重置当前颜色（%@）" = "Reset current color (%@)";
 "重置本工具" = "Reset This Tool";
 "重置调整" = "Reset Adjustments";
 "重置镜头校正" = "Reset Lens Correction";
 "重置降噪" = "Reset Noise Reduction";
+"重置颜色分级" = "Reset color grading";
 "重试" = "Try again";
 "重试失败的 %@ 张" = "Retry Failed Photos (%@)";
 "重试未完成项" = "Retry Incomplete";
@@ -680,6 +685,7 @@
 "颗粒" = "Grain";
 "颗粒强度" = "Grain Intensity";
 "颜色" = "Color";
+"颜色分级" = "Color grading";
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";

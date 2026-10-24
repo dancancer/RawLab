@@ -8,6 +8,16 @@ import org.junit.Test
 import java.util.Locale
 
 class ParameterInputContractTest {
+    @Test fun gradingBoundsAreCheckedBeforeFloatRounding() {
+        val hue = AdjustmentScale(0f..360f, .1f, 0f)
+        val saturation = AdjustmentScale(0f..100f, .1f, 0f)
+        assertNull(hue.parse("360.0000001", current = 0f))
+        assertNull(saturation.parse("100.0000001", current = 0f))
+        assertNull(hue.parse("12.1000001", current = 12.1f))
+        assertEquals(360f, hue.parse("360", current = 0f)!!, 0f)
+        assertEquals(12.1f, hue.parse("12.10", current = 12.1f)!!, 0f)
+    }
+
     @Test fun legalOffGridValuesAreDisplayedWithoutRoundingToTheNewInteractionGrid() {
         assertEquals("0.5", formatAdjustment(.5f, 1f))
         assertEquals("12.34", formatAdjustment(12.34f, 1f))

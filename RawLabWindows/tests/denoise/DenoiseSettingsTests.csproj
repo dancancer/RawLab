@@ -9,6 +9,7 @@
     <Compile Include="Program.cs"/><Compile Include="../../Adjustments.cs"/><Compile Include="../../MasterRecipe.cs"/>
     <Compile Include="../../HslSettings.cs"/><Compile Include="../../GeometrySettings.cs"/>
     <Compile Include="../../DenoiseSettings.cs"/><Compile Include="../../ToneControlsSettings.cs" />
+    <Compile Include="../../ColorGradingSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs"/><Compile Include="../../Native.cs"/><Compile Include="../../ExportSize.cs"/>
     <Compile Include="../../ExportFormat.cs"/>
     <Compile Include="../../EditPersistence.cs"/>

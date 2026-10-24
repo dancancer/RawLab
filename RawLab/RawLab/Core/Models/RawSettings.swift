@@ -250,6 +250,11 @@ struct RawSettings: Codable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
 
+    var colorGrading: ColorGradingSettings?
+    var gradingSettings: ColorGradingSettings {
+        get { colorGrading ?? ColorGradingSettings() }
+        set { colorGrading = newValue.isDefault ? nil : newValue }
+    }
     var toneControls: ToneControlsSettings?
     var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
     var blackPoint: Double {
@@ -329,7 +334,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry, processing, toneControls
+        case masterRecipeID, lensCorrection, geometry, processing, toneControls, colorGrading
     }
 
     var clampedLUTStrength: Float {
@@ -396,6 +401,8 @@ struct RawSettings: Codable, Equatable {
         guard geometry.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
         }
+        colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
+        if colorGrading?.isDefault == true { colorGrading = nil }
         toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
         guard toneControls?.isValid ?? true else {
             throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")

@@ -244,6 +244,18 @@ typedef struct sony2fuji_tone_controls_config {
     float vibrance;    // -1..1, default 0. Independent of legacy saturation.
 } sony2fuji_tone_controls_config;
 
+#define SONY2FUJI_COLOR_GRADING_CONFIG_VERSION 1u
+typedef struct sony2fuji_color_grading_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float shadows_hue;         // [0,360), degrees; zero saturation retains dormant hue.
+    float shadows_saturation;  // 0..100, default 0.
+    float midtones_hue;
+    float midtones_saturation;
+    float highlights_hue;
+    float highlights_saturation;
+} sony2fuji_color_grading_config;
+
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
     uint32_t version;
@@ -473,6 +485,13 @@ sony2fuji_status sony2fuji_session_set_hsl(
 // set the complete configuration, including zero for an unadjusted next photo.
 sony2fuji_status sony2fuji_session_set_tone_controls(
     sony2fuji_session* session, const sony2fuji_tone_controls_config* config
+);
+
+// Display-linear grading after HSL, before chroma denoise. All saturation zero
+// bypasses exactly. Invalid values retain prior state. Set all zones on each
+// request, including identity when reusing a session for an ungraded photo.
+sony2fuji_status sony2fuji_session_set_color_grading(
+    sony2fuji_session* session, const sony2fuji_color_grading_config* config
 );
 
 // Additive API; request v2 is unchanged. Identity is an exact bypass.

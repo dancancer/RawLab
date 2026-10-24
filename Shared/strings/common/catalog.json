@@ -4790,5 +4790,53 @@
     "fr": "Valeurs de point noir, de point blanc ou de vibrance non valides",
     "ja": "黒レベル、白レベル、自然な彩度の値が無効です",
     "zh-Hans": "无效的黑白场或鲜艳度参数"
+  },
+  "颜色分级": {
+    "de": "Color-Grading",
+    "en": "Color grading",
+    "es": "Gradación de color",
+    "fr": "Étalonnage des couleurs",
+    "ja": "カラーグレーディング",
+    "zh-Hans": "颜色分级"
+  },
+  "中间调": {
+    "de": "Mitteltöne",
+    "en": "Midtones",
+    "es": "Medios tonos",
+    "fr": "Tons moyens",
+    "ja": "中間調",
+    "zh-Hans": "中间调"
+  },
+  "无效的颜色分级参数": {
+    "de": "Ungültige Color-Grading-Werte",
+    "en": "Invalid color grading values",
+    "es": "Valores de gradación de color no válidos",
+    "fr": "Valeurs d’étalonnage des couleurs non valides",
+    "ja": "カラーグレーディングの値が無効です",
+    "zh-Hans": "无效的颜色分级参数"
+  },
+  "重置当前分区": {
+    "de": "Aktuellen Tonwertbereich zurücksetzen",
+    "en": "Reset current range",
+    "es": "Restablecer el rango actual",
+    "fr": "Réinitialiser la plage actuelle",
+    "ja": "現在の階調範囲をリセット",
+    "zh-Hans": "重置当前分区"
+  },
+  "重置颜色分级": {
+    "de": "Color-Grading zurücksetzen",
+    "en": "Reset color grading",
+    "es": "Restablecer la gradación de color",
+    "fr": "Réinitialiser l’étalonnage des couleurs",
+    "ja": "カラーグレーディングをリセット",
+    "zh-Hans": "重置颜色分级"
+  },
+  "恢复阴影、中间调和高光的颜色分级默认值？": {
+    "de": "Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?",
+    "en": "Restore default color grading for shadows, midtones, and highlights?",
+    "es": "¿Restaurar la gradación de color predeterminada de sombras, medios tonos y luces?",
+    "fr": "Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?",
+    "ja": "シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？",
+    "zh-Hans": "恢复阴影、中间调和高光的颜色分级默认值？"
   }
 }

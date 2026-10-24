@@ -51,6 +51,7 @@
 "中性直出" = "Salida directa neutra";
 "中断发生在写入照片图库时，请核对后选择，避免重复生成。" = "La escritura en Fotos se interrumpió. Verifica el resultado antes de continuar para evitar duplicados.";
 "中点" = "Punto medio";
+"中间调" = "Medios tonos";
 "临时选择" = "Selección provisional";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Para contar los dispositivos activos, la aplicación guarda en este dispositivo un identificador de instalación generado al azar. No contiene información personal y se elimina al desactivar el análisis.";
 "乡村秋日 · 古典油画" = "Otoño rural · óleo clásico";
@@ -203,6 +204,7 @@
 "当前配方不可用，无法安全重置外观。" = "La receta actual no está disponible, por lo que su aspecto no se puede restablecer de forma segura.";
 "待处理" = "Requiere atención";
 "恢复当前照片的全部调整，不改写原始照片。" = "Restablece todos los ajustes de la foto actual. La foto original no se modificará.";
+"恢复阴影、中间调和高光的颜色分级默认值？" = "¿Restaurar la gradación de color predeterminada de sombras, medios tonos y luces?";
 "恢复默认" = "Restablecer valor predeterminado";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Correctas %@ · Fallidas %@ · No procesadas %@";
 "我的预设" = "Mis ajustes preestablecidos";
@@ -243,6 +245,7 @@
 "无效的暗角或颗粒参数" = "Parámetro de viñeteado o grano no válido";
 "无效的曝光基准" = "Punto de referencia de exposición no válido";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
+"无效的颜色分级参数" = "Valores de gradación de color no válidos";
 "无效的黑白场或鲜艳度参数" = "Valores de punto negro, punto blanco o intensidad no válidos";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "No se pueden guardar las fotos. Permite que RawLab añada fotos en Ajustes del sistema.";
 "无法保存照片，请在系统设置中允许添加照片。" = "No se pudo guardar la foto. Permite añadir fotos en los ajustes del sistema.";
@@ -495,6 +498,7 @@
 "重置全部调整…" = "Restablecer todos los ajustes…";
 "重置全部调整？" = "¿Restablecer todos los ajustes?";
 "重置分割线" = "Restablecer división";
+"重置当前分区" = "Restablecer el rango actual";
 "重置当前颜色" = "Restablecer color actual";
 "重置当前颜色（%@）" = "Restablecer el color actual (%@)";
 "重置所有调整并返回中性" = "Restablecer todos los ajustes y volver al estado neutro";
@@ -502,6 +506,7 @@
 "重置调整" = "Restablecer ajustes";
 "重置镜头校正" = "Restablecer corrección de lente";
 "重置降噪" = "Restablecer la reducción de ruido";
+"重置颜色分级" = "Restablecer la gradación de color";
 "重试" = "Reintentar";
 "重试失败的 %@ 张" = "Reintentar las fotos fallidas (%@)";
 "重试未完成项" = "Reintentar pendientes";
@@ -540,6 +545,7 @@
 "颗粒强度" = "Intensidad del grano";
 "颗粒粗糙度" = "Rugosidad del grano";
 "颜色" = "Color";
+"颜色分级" = "Gradación de color";
 "饱和度" = "Saturación";
 "饱和度：从灰色到彩色。" = "Saturación: de gris a color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Noche urbana de neón en Seúl, base cian fría contra altas luces rosa-púrpura y reflejos de calles mojadas";

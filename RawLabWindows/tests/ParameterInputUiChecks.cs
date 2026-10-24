@@ -73,6 +73,7 @@ internal static class ParameterInputUiChecks
             reset.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));row.ContextMenu.IsOpen=false;
             check(changes.Last()==0,"Semantic reset uses the same effective default");
         } finally {host.Close();}
+        ColorGradingUiChecks.Run(output,check);
     }
     private static void PressKey(TextBox number,Key key)=>number.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(number),Environment.TickCount,key){RoutedEvent=Keyboard.PreviewKeyDownEvent});
     internal static void Snapshot(Window window,FrameworkElement element,string path)

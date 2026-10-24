@@ -54,6 +54,10 @@ internal static class AdjustmentTransferValues
         Put(F.WhiteBalanceMode,!context.IsRaw ? "none" : camera ? "camera" : "temperature");
         Put(F.Temperature,camera ? (double?)null : s.Values[(int)Parameter.Temperature]);
         Put(F.Tint,s.MasterRecipeID!=null || !camera ? s.Values[(int)Parameter.Tint] : (double?)null);
+        foreach (var field in AdjustmentFields.All) if (field.GradingZone() is {} zone) {
+            var wheel = (s.ColorGrading ?? new())[zone];
+            Put(field, new { hue = wheel.Hue, saturation = wheel.Saturation });
+        }
         var effects=s.Effects ?? new();
         foreach(var field in AdjustmentFields.All.Where(f=>f.Group()=="effects")) Put(field,effects[(PhotoEffectParameter)((int)field-(int)F.VignetteAmount)]);
         Put(F.RawDenoise,0);Put(F.PostRGBDenoise,0);Put(F.ChromaDenoise,s.DisplayChromaDenoise);
@@ -69,6 +73,10 @@ internal static class AdjustmentTransferValues
     }
     internal static AdjustmentSnapshot ApplyObjects(AdjustmentPayload p,AdjustmentSnapshot s,AdjustmentTransferContext context)
     {
+        foreach (var field in p.Fields) if (field.GradingZone() is {} zone && p[field] is {} wheel) {
+            s = s with { ColorGrading = (s.ColorGrading ?? new()).With(zone,
+                new ColorGradingWheel(wheel.GetProperty("hue").GetDouble(), wheel.GetProperty("saturation").GetDouble())) };
+        }
         double N(F f,double fallback)=>Number(p[f]) ?? fallback;
         bool B(F f,bool fallback)=>Boolean(p[f]) ?? fallback;
         foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})

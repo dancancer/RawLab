@@ -330,7 +330,7 @@ schema. `--print-recipe` still validates without opening the RAW and preserves
 recipe-relative paths. The CLI capabilities response must advertise v4 only
 when the v4 parser and serializer are available.
 
-## v5: Processing Identity and Additive Tone Controls
+## v5: Processing Identity and Additive Color Controls
 
 [Schema v5](edit-json-v5.schema.json) retains all v4 input, edit and output
 groups, and requires one additional root object:
@@ -361,6 +361,23 @@ normalized form; zero-valued additive keys are omitted during normalization.
 Schemas 1–4 reject the new fields, and serialization refuses to discard nonzero
 controls into an older schema. CLI capabilities advertises their algorithm
 version, minimum recipe version, stable field names and range in `tone_controls`.
+
+Schema 5 also accepts an optional `edits.color_grading` object with
+`shadows`, `midtones` and `highlights`. Each present zone must contain both
+`hue` (degrees in `[0,360)`) and `saturation` (`[0,100]`). Missing zones default
+to `{ "hue": 0, "saturation": 0 }`. These values are independent of legacy
+recipe strength. A valid JSON hue just below 360 may round to 360 in float;
+that rounded value is stored as equivalent canonical 0.
+
+Normalization emits all three zones when any hue or saturation is nonzero,
+including dormant hue with zero saturation. An entirely default configuration
+omits `color_grading`, preserving the previous normalized form. Schemas 1–4
+reject the field; serialization never silently discards grading into an older
+schema. Native processing uses the independent 32-byte color-grading config
+v1, after HSL and before chroma denoising. See the
+[grading numerical contract](color-grading-v1.md) for the candidate formulas,
+quality admission and exact zero-saturation bypass. CLI capabilities reports
+the actual config version, minimum recipe version, zone names and ranges.
 
 The macOS and Windows Agent adapters emit schema 5 and preserve the photo's
 selected identity, including old records restored as version 1. Ordinary

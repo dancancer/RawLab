@@ -39,6 +39,7 @@ static class Program
             if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
             if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
             if(args.Length==4 && args[0]=="--tone-render") { ToneControlsRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} tone render checks");return 0; }
+            if(args.Length==4 && args[0]=="--grading-render") { ColorGradingRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} grading render checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length==5 && args[0]=="--ai-real-window") { AIDenoiseRealWindowChecks.Run(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} real AI window checks");return 0; }
@@ -216,7 +217,6 @@ static class Program
             }
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
-            if(args.Length==4 && args[0]=="--tone-render") { ToneControlsRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} tone render checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             var app=TestWindowState.CreateApplication();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());

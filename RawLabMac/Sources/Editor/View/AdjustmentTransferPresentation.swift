@@ -15,6 +15,7 @@ extension AdjustmentTransferField {
         L10n.text(["looks": "外观", "light": "光线", "color": "颜色", "effects": "效果", "detail": "细节", "geometry": "几何与镜头"][group] ?? group)
     }
     var displayTitle: String {
+        if let zone = gradingZone { return L10n.text("颜色分级") + " · " + zone.title }
         if let location = hslLocation {
             return L10n.text(HSLSettings.channelNames[location.channel]) + " · " + HSLAxis(rawValue: location.axis)!.title
         }

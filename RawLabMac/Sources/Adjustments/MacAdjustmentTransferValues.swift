@@ -77,6 +77,12 @@ extension MacAdjustmentTransfer {
                 result[field.rawValue] = .number(settings.hslSettings.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
             }
         }
+        for field in Field.allCases {
+            if let zone = field.gradingZone {
+                let wheel = settings.gradingSettings[zone]
+                result[field.rawValue] = .object(["hue": .number(wheel.hue), "saturation": .number(wheel.saturation)])
+            }
+        }
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.effectSettings[keyPath: key]) }
         let wavelet: Value = settings.waveletNoiseReduction.map { .object([
             "enabled": .boolean($0.enabled), "luma": .number($0.luma), "chroma": .number($0.chroma),
@@ -101,6 +107,11 @@ extension MacAdjustmentTransfer {
 
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments,
                              context: MacAdjustmentTransferContext) throws {
+        for field in payload.fields {
+            if let zone = field.gradingZone, let wheel = payload[field]?.object {
+                settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         if let value = payload[.postRGBDenoise]?.number, value != 0 {
             throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue)
         }

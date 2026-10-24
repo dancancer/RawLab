@@ -13,6 +13,7 @@
     <string name="all_tools">"すべてのツール"</string>
     <string name="batch_confirmation_count">"%1$d 件の出力は確認が必要です"</string>
     <string name="black_point">"黒レベル"</string>
+    <string name="color_grading">"カラーグレーディング"</string>
     <string name="dcp_automatic_black">"DCP には自動ブラックレベル処理が必要ですが、この変換はまだ対応していません。準備ツールでブラックレベルの方針を明示的に選択してください。"</string>
     <string name="dcp_invalid_calibration">"DCP に一意で有効な D65 ColorMatrix/ForwardMatrix がないため、変換できません。"</string>
     <string name="dcp_invalid_exposure">"DCP の露出オフセットが無効です。-16～+16 EV の有限値が必要です。"</string>
@@ -98,7 +99,12 @@
     <string name="geometry_move_up">"上へ移動"</string>
     <string name="geometry_perspective_tool">"パース補正"</string>
     <string name="geometry_position_size">"位置とサイズ"</string>
+    <string name="grading_midtones">"中間調"</string>
+    <string name="grading_reset_all">"カラーグレーディングをリセット"</string>
+    <string name="grading_reset_message">"シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？"</string>
+    <string name="grading_reset_zone">"現在の階調範囲をリセット"</string>
     <string name="info_unavailable">"利用不可"</string>
+    <string name="invalid_color_grading">"カラーグレーディングの値が無効です"</string>
     <string name="invalid_tone_controls">"黒レベル、白レベル、自然な彩度の値が無効です"</string>
     <string name="jpeg_description">"sRGB · 品質 95 · 撮影メタデータ"</string>
     <string name="look_invalid_file">"ルックファイルが壊れているか互換性がありません。互換性のある CUBE または RLOOK ファイルが必要です。"</string>

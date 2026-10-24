@@ -86,6 +86,38 @@ class EditRecipeSchema(unittest.TestCase):
         del document["edits"]["color"]
         self.reject(document, "edits.tone.black_point")
 
+    def test_v5_color_grading(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document.update(schema_version=5, processing={"family": "rawlab", "version": 2, "quality": "standard"})
+        document["edits"]["color_grading"] = {
+            "shadows": {"hue": 220, "saturation": 75},
+            "midtones": {"hue": 110, "saturation": 0},
+            "highlights": {"hue": 35.25, "saturation": 16.5},
+        }
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["edits"]["color_grading"], document["edits"]["color_grading"])
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        for zone in ("shadows", "midtones", "highlights"):
+            for field, bad_values in (("hue", (-.000001, 360, True, "0", None)),
+                                      ("saturation", (-.000001, 100.000001, True, "0", None))):
+                for value in bad_values:
+                    invalid = copy.deepcopy(document)
+                    invalid["edits"]["color_grading"][zone][field] = value
+                    self.reject(invalid, f"edits.color_grading.{zone}.{field}")
+                    if jsonschema:
+                        self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+                missing = copy.deepcopy(document)
+                del missing["edits"]["color_grading"][zone][field]
+                self.reject(missing, f"edits.color_grading.{zone}.{field}")
+                if jsonschema:
+                    self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(missing))
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.color_grading")
+
     def test_processing_identity(self):
         schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
         document = self.full()

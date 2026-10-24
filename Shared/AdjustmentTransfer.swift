@@ -15,6 +15,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case exposure = "light.exposure", exposureMode = "light.exposure_mode"
     case contrast = "light.contrast", highlights = "light.highlights", shadows = "light.shadows", sCurve = "light.s_curve"
     case blackPoint = "tone.black_point", whitePoint = "tone.white_point", vibrance = "color.vibrance"
+    case gradingShadows = "color.grading.shadows", gradingMidtones = "color.grading.midtones", gradingHighlights = "color.grading.highlights"
     case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
     case tint = "color.white_balance.tint", saturation = "color.saturation"
     case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
@@ -44,6 +45,14 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
     var group: String { self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0]) }
+    var gradingZone: ColorGradingZone? {
+        switch self {
+        case .gradingShadows: return .shadows
+        case .gradingMidtones: return .midtones
+        case .gradingHighlights: return .highlights
+        default: return nil
+        }
+    }
     static var common: Set<Self> { Set(allCases.filter { $0.group != "geometry" }) }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
@@ -226,6 +235,11 @@ struct AdjustmentTransferPayload: Codable, Equatable {
     }
 
     private static func valid(_ value: AdjustmentTransferValue, for field: AdjustmentTransferField) -> Bool {
+        if field.gradingZone != nil {
+            guard let wheel = value.object, Set(wheel.keys) == ["hue", "saturation"],
+                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else { return false }
+            return ColorGradingWheel(hue: hue, saturation: saturation).isValid
+        }
         if let range = field.scalarRange {
             guard let number = value.number, number.isFinite, range.contains(number) else { return false }
             if field == .quarterTurns { return number.rounded() == number }

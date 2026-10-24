@@ -487,6 +487,21 @@
               "default": 0
             }
           }
+        },
+        "color_grading": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "shadows": {
+              "$ref": "#/$defs/gradingWheel"
+            },
+            "midtones": {
+              "$ref": "#/$defs/gradingWheel"
+            },
+            "highlights": {
+              "$ref": "#/$defs/gradingWheel"
+            }
+          }
         }
       }
     },
@@ -687,5 +702,29 @@
         }
       }
     }
-  ]
+  ],
+  "$defs": {
+    "gradingWheel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hue",
+        "saturation"
+      ],
+      "properties": {
+        "hue": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 360,
+          "default": 0
+        },
+        "saturation": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0
+        }
+      }
+    }
+  }
 }

@@ -13,6 +13,7 @@
     <string name="all_tools">"Alle Werkzeuge"</string>
     <string name="batch_confirmation_count">"%1$d Ausgaben müssen überprüft werden"</string>
     <string name="black_point">"Schwarzpunkt"</string>
+    <string name="color_grading">"Color-Grading"</string>
     <string name="dcp_automatic_black">"Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie."</string>
     <string name="dcp_invalid_calibration">"Dem DCP fehlt eine eindeutige, gültige D65 ColorMatrix/ForwardMatrix; die Konvertierung ist nicht möglich."</string>
     <string name="dcp_invalid_exposure">"Der DCP-Belichtungsversatz ist ungültig; erforderlich ist ein endlicher Wert von -16 bis +16 EV."</string>
@@ -98,7 +99,12 @@
     <string name="geometry_move_up">"Zuschnitt nach oben"</string>
     <string name="geometry_perspective_tool">"Perspektive"</string>
     <string name="geometry_position_size">"Position und Größe"</string>
+    <string name="grading_midtones">"Mitteltöne"</string>
+    <string name="grading_reset_all">"Color-Grading zurücksetzen"</string>
+    <string name="grading_reset_message">"Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?"</string>
+    <string name="grading_reset_zone">"Aktuellen Tonwertbereich zurücksetzen"</string>
     <string name="info_unavailable">"Nicht verfügbar"</string>
+    <string name="invalid_color_grading">"Ungültige Color-Grading-Werte"</string>
     <string name="invalid_tone_controls">"Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik"</string>
     <string name="jpeg_description">"sRGB · Qualität 95 · Aufnahmemetadaten"</string>
     <string name="look_invalid_file">"Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich."</string>

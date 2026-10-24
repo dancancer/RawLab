@@ -113,6 +113,10 @@ class AgentCommands(unittest.TestCase):
                     "version": 1, "recipe_min_version": 5, "range": [-1, 1],
                     "fields": ["tone.black_point", "tone.white_point", "color.vibrance"],
                 })
+                self.assertEqual(result["result"]["color_grading"], {
+                    "version": 1, "recipe_min_version": 5, "zones": ["shadows", "midtones", "highlights"],
+                    "hue_degrees": {"minimum": 0, "exclusive_maximum": 360}, "saturation_range": [0, 100],
+                })
                 if sys.platform in ("darwin", "win32"):
                     self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                 if sys.platform == "win32":

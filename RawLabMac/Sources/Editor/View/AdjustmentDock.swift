@@ -93,7 +93,14 @@ struct AdjustmentDock: View {
     }
 
     @ViewBuilder private var editorContent: some View {
-        if navigation.tool == .hsl {
+        if navigation.tool == .colorGrading {
+            let source = model.sourceRevision
+            MacColorGradingControls(settings: Binding(get: { model.settings.gradingSettings }, set: { model.settings.gradingSettings = $0 }),
+                zone: $model.adjustmentNavigation.selectedGradingZone, source: String(describing: source),
+                isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .colorGrading && model.adjustmentNavigation.expandedGroup != nil },
+                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                .padding(.horizontal, 16).disabled(model.result == nil)
+        } else if navigation.tool == .hsl {
             MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
                 channel: $model.adjustmentNavigation.selectedHSLChannel,
                 onEditingChanged: model.setInteracting)

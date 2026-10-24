@@ -59,8 +59,8 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false,
     defaultValue: Float = 0f, resetEnabled: Boolean = enabled, showReset: Boolean = true,
     trackColors: List<Color>? = null, axisDescription: String? = null,
-    compactNumber: Boolean = false, modifier: Modifier = Modifier) {
-    val step = when (label) {
+    compactNumber: Boolean = false, modifier: Modifier = Modifier, stepOverride: Float? = null) {
+    val step = stepOverride ?: when (label) {
         R.string.exposure -> .05f
         R.string.temperature -> 10f
         R.string.geometry_straighten -> .1f
@@ -175,7 +175,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                             input = if (draft.startsWith("-")) draft.removePrefix("-") else "-" + draft.removePrefix("+")
                         }
                     }) else null,
-                    supportingText = { if (parsed == null) Text(if (raw != null && raw.isFinite() && raw in range)
+                    supportingText = { if (parsed == null) Text(if (raw != null && raw.isFinite() && raw in range.start.toDouble()..range.endInclusive.toDouble())
                         stringResource(R.string.editor_numeric_step_error, formatAdjustment(step, step, locale))
                         else stringResource(R.string.invalid_value)) })
             }

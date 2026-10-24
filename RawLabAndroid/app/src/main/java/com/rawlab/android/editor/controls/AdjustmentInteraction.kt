@@ -28,8 +28,9 @@ internal data class AdjustmentScale(
     fun parse(text: String, locale: Locale = Locale.ROOT, current: Float? = null): Float? {
         val parsed = parseAdjustmentNumber(text, locale)
         if (compactPercent && current != null && parsed == parseAdjustmentNumber(formatCropPercent(current, locale), locale)) return current
-        return parsed?.takeIf { it.isFinite() && it in range }
-            ?.takeIf { it == current || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
+        return parsed?.takeIf { it.isFinite() && it in range.start.toDouble()..range.endInclusive.toDouble() }
+            ?.takeIf { it == current?.toString()?.toDouble() || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
+            ?.toFloat()
     }
 
     fun fraction(value: Float): Float {
@@ -75,10 +76,10 @@ internal fun editorDockLayout(availableHeight: Float, fontScale: Float, sideDock
     } else regular.coerceAtMost(maximum), compact)
 }
 
-internal fun parseAdjustmentNumber(text: String, locale: Locale): Float? {
+internal fun parseAdjustmentNumber(text: String, locale: Locale): Double? {
     val input = text.trim()
     val position = ParsePosition(0)
     val localized = NumberFormat.getNumberInstance(locale).apply { isGroupingUsed = false }.parse(input, position)
-        ?.takeIf { position.index == input.length }?.toFloat()
-    return input.toFloatOrNull() ?: localized
+        ?.takeIf { position.index == input.length }?.toDouble()
+    return input.toDoubleOrNull() ?: localized
 }

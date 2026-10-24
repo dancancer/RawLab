@@ -45,6 +45,7 @@ data class EditSettings(
     val blackPoint: Float = 0f,
     val whitePoint: Float = 0f,
     val vibrance: Float = 0f,
+    val colorGrading: ColorGradingSettings = ColorGradingSettings(),
 ) {
     init {
         require(listOf(blackPoint, whitePoint, vibrance).all { it.isFinite() && it in -100f..100f })

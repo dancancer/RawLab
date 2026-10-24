@@ -9,6 +9,7 @@
 #include "core/photo_effects.h"
 #include "core/photo_color.h"
 #include "core/photo_tone_controls.h"
+#include "core/photo_color_grading.h"
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
 #include "gpu/image_stats.h"
@@ -52,6 +53,7 @@ struct sony2fuji_session {
     sony2fuji::PhotoEffectsOptions photo_effects;
     sony2fuji::HslOptions hsl;
     sony2fuji::ToneControlsOptions tone_controls;
+    sony2fuji::ColorGradingOptions color_grading;
     sony2fuji::GeometryOptions geometry;
     uint32_t geometry_width = 0, geometry_height = 0;
     sony2fuji::WaveletRenderCache wavelet_cache;
@@ -1467,6 +1469,21 @@ sony2fuji_status sony2fuji_session_set_tone_controls(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status sony2fuji_session_set_color_grading(
+    sony2fuji_session* session, const sony2fuji_color_grading_config* config
+) {
+    static_assert(sizeof(sony2fuji_color_grading_config)==32,"Color grading C ABI layout");
+    if (!session || !config || config->version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION ||
+        config->struct_size!=sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji::ColorGradingOptions options;
+    options.wheels={sony2fuji::ColorGradingWheel{config->shadows_hue,config->shadows_saturation},
+        sony2fuji::ColorGradingWheel{config->midtones_hue,config->midtones_saturation},
+        sony2fuji::ColorGradingWheel{config->highlights_hue,config->highlights_saturation}};
+    if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    session->color_grading=options;
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status sony2fuji_session_set_geometry(
     sony2fuji_session* session, const sony2fuji_geometry_config* config
 ) {
@@ -1610,6 +1627,7 @@ static sony2fuji_status processImpl(
     const bool effectsActive = session->photo_effects.active();
     const bool hslActive = session->hsl.active();
     const bool toneControlsActive = session->tone_controls.active();
+    const bool colorGradingActive = session->color_grading.active();
     const bool geometryActive = session->geometry.active();
     if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -1618,7 +1636,7 @@ static sony2fuji_status processImpl(
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool cpuOnlyStages = false;
 #else
-    const bool cpuOnlyStages = toneControlsActive || hslActive || effectsActive || waveletActive || chromaMode != 0;
+    const bool cpuOnlyStages = colorGradingActive || toneControlsActive || hslActive || effectsActive || waveletActive || chromaMode != 0;
 #endif
     const bool fastWavelet = !geometryActive && waveletActive && !effectsActive && chromaMode == 0 && session->interactive_preview &&
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
@@ -1785,7 +1803,7 @@ static sony2fuji_status processImpl(
         const auto& source = local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (sony2fuji::renderPhotoMetal(source, toCoreColorSpace(color_space), local, lut, wb, width, height, rendered,
-                dcp, session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls)) {
+                dcp, session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls, session->color_grading)) {
             session->last_backend = SONY2FUJI_BACKEND_METAL;
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
@@ -1810,7 +1828,7 @@ static sony2fuji_status processImpl(
         sony2fuji::ImageData rendered;
         if (session->gles_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
                 width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
-                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls)) {
+                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls, session->color_grading)) {
             session->last_backend = SONY2FUJI_BACKEND_GLES;
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
@@ -1831,7 +1849,7 @@ static sony2fuji_status processImpl(
         sony2fuji::ImageData rendered;
         if (session->d3d_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
                 width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
-                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls)) {
+                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls, session->color_grading)) {
             session->last_backend = SONY2FUJI_BACKEND_D3D11;
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
@@ -1854,7 +1872,7 @@ static sony2fuji_status processImpl(
     for (auto& pixel : image.pixels) applyExposureAndWhiteBalance(pixel, exposure, wb);
 
     auto lookConfig = session->gpu_config;
-    if (gpuPipeline || hslActive || toneControlsActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (gpuPipeline || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
@@ -1862,6 +1880,7 @@ static sony2fuji_status processImpl(
     applyToneAdjustments(image, local);
     sony2fuji::applyVibrance(image, session->tone_controls);
     sony2fuji::applyHsl(image, session->hsl);
+    sony2fuji::applyColorGrading(image, session->color_grading);
     const auto chromaResult = sony2fuji::applyChromaDenoiseWorking(image, chromaMode);
     if (chromaResult != sony2fuji::ErrorCode::Success) return mapError(chromaResult);
     applyDetailAdjustments(image, local);

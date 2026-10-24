@@ -46,6 +46,7 @@ internal static class AdjustmentTransferPresentation
     };
     internal static string Title(F field)
     {
+        if(field.GradingZone() is {} zone)return Loc.Text("颜色分级")+" · "+Loc.Text(new[]{"阴影","中间调","高光"}[(int)zone]);
         if(field.HslIndex() is {} index)return Loc.Text(new[]{"红","橙","黄","绿","青","蓝","紫","洋红"}[index%8])+" · "+Loc.Text(new[]{"色相","饱和度","明度"}[index/8]);
         return Loc.Text(labels[field]);
     }

@@ -34,6 +34,7 @@ public sealed class EditorIcon : FrameworkElement
         ["Sharpening"]=Geometry.Parse("M12,3 L22,21 H2 Z"),
         ["BlackPoint"]=Geometry.Parse("M12,4 A8,8 0 1 1 11.99,4 M6,15 H18 M8,18 H16"),
         ["WhitePoint"]=Geometry.Parse("M12,4 A8,8 0 1 1 11.99,4 M8,6 H16 M6,9 H18"),
+        ["ColorGrading"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,3 V12 L20,16 M12,12 L4,16 M12,8 A4,4 0 1 1 11.99,8"),
         ["Vibrance"]=Geometry.Parse("M11,3 C8,8 4,11 4,15 A7,7 0 0 0 18,15 C18,11 14,7 11,3 M19,3 V9 M16,6 H22"),
         ["Neutral"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,3 V21"),
         ["Add"]=Geometry.Parse("M12,4 V20 M4,12 H20"),

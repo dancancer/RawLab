@@ -32,7 +32,7 @@
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 四端实现、对应原生工作流和独立复核完成，随 draft [#134](https://github.com/dancancer/RawLab/pull/134) 待集成；实际验证与未覆盖项见 PR 和[接入计划](selective-transactions-plan.md) | IT-03/04；IT-15 仍属于跨功能联合门槛 |
 | I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 四端实现、共享格式复核和功能原生验证完成；用户要求解锁后统一补验 Mac 大字号，当前保留为本地依赖检查点；依赖 draft #134，见[预设接入计划](user-presets-plan.md)；尚未 push/提 PR | IT-05/15 |
 | I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同、三后端和四端实现已接通，本地模型/native/构建检查完成；新工具实际 UI 按用户要求解锁后统一验收，见[接入计划](tone-controls-plan.md)；尚未 push/提 PR | IT-06/15，未关闭 |
-| I4-G | ITER-06，三分区颜色分级 | I3-T 的新配置/数据链，单独质量准入 | 数值合同待冻结 | IT-07/15 |
+| I4-G | ITER-06，三分区颜色分级 | I3-T 的新配置/数据链，单独质量准入 | 数值合同、三后端和四端数据链/色轮已接通，本地模型/native/构建检查及独立复核完成；实际 UI 待解锁后统一验收，见[接入计划](color-grading-plan.md)；尚未 push/提 PR | IT-07/15，未关闭 |
 | I4-H | ITER-07，HSL 真实像素 probe、坐标与目标手势 | I1-UI + 核心 probe 合同；提交接 I2 | 排队 | IT-08/15 |
 | I4-B | ITER-08，集合、同步、单张微调、逐张冻结导出 | I2；不等待全部新算法 | 排队 | IT-09/10/15 |
 | I5-Q | ITER-09，多点 PCHIP，保留 legacy S 曲线 | I3-T 的新参数配置、快照/Agent/导出接线 | 排队；合法性策略已明确 | IT-11/15 |

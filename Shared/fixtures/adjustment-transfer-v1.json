@@ -648,6 +648,462 @@
           "color.vibrance": 100.01
         }
       }
+    },
+    {
+      "id": "grading-shadows-default",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-pending-hue",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 231.25,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-max",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 359.5,
+            "saturation": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-hue360",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 360,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-negative-hue",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": -0.01,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-sat-over",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 100.01
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-missing-sat",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 120
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-extra-axis",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 120,
+            "saturation": 20,
+            "lightness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-default",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-pending-hue",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 231.25,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-max",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 359.5,
+            "saturation": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-hue360",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 360,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-negative-hue",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": -0.01,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-sat-over",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 100.01
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-missing-sat",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 120
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-extra-axis",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 120,
+            "saturation": 20,
+            "lightness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-default",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-pending-hue",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 231.25,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-max",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 359.5,
+            "saturation": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-hue360",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 360,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-negative-hue",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": -0.01,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-sat-over",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 100.01
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-missing-sat",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 120
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-extra-axis",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 120,
+            "saturation": 20,
+            "lightness": 0
+          }
+        }
+      }
     }
   ]
 }

@@ -5,6 +5,7 @@ import com.rawlab.android.adjustments.*
 import com.rawlab.android.i18n.AppStrings
 
 internal val AdjustmentField.title: String get() {
+    gradingZone?.let { return AppStrings.text(R.string.color_grading) + " · " + AppStrings.text(gradingZoneTitle(it)) }
     hslLocation?.let { (axis, channel) ->
         return AppStrings.text(listOf(R.string.transfer_channel_0,R.string.transfer_channel_1,R.string.transfer_channel_2,R.string.transfer_channel_3,R.string.transfer_channel_4,R.string.transfer_channel_5,R.string.transfer_channel_6,R.string.transfer_channel_7)[channel]) + " · " +
             AppStrings.text(listOf(R.string.transfer_axis_0,R.string.transfer_axis_1,R.string.transfer_axis_2)[axis])

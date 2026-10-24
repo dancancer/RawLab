@@ -16,6 +16,10 @@ internal object StructuredSettingsCodec {
             .put("customWb", s.customWb).put("temperature", s.temperature).put("tint", s.tint)
             .put("recipeID", s.recipeID ?: JSONObject.NULL).put("displayChromaDenoise", s.displayChromaDenoise)
             .put("hsl", JSONArray(s.hsl.packed().toList()))
+            .put("colorGrading", JSONObject().also { grading ->
+                ColorGradingZone.entries.forEach { zone -> grading.put(zone.id,
+                    JSONObject().put("hue", s.colorGrading[zone].hue).put("saturation", s.colorGrading[zone].saturation)) }
+            })
             .put("tone", JSONObject().put("blackPoint", s.blackPoint).put("whitePoint", s.whitePoint).put("vibrance", s.vibrance))
             .put("denoise", JSONObject().put("enabled", s.denoise.enabled).put("luma", s.denoise.luma)
                 .put("chroma", s.denoise.chroma).put("coarse", s.denoise.coarse))
@@ -41,7 +45,7 @@ internal object StructuredSettingsCodec {
         validateStrictJSON(json, setOf("version", "exposureMode", "displayChromaDenoise", "quarterTurns"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysExactly("film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
         val tone = s.getJSONObject("tone").keysExactly("blackPoint", "whitePoint", "vibrance")
@@ -60,6 +64,7 @@ internal object StructuredSettingsCodec {
             sharpening = s.number("sharpening", 0.0..2.0), customWb = s.boolean("customWb"), temperature = s.number("temperature", 2000.0..50000.0),
             tint = s.number("tint", -150.0..150.0), recipeID = s.nullableString("recipeID"), displayChromaDenoise = s.integer("displayChromaDenoise"),
             blackPoint = tone.number("blackPoint", -100.0..100.0), whitePoint = tone.number("whitePoint", -100.0..100.0), vibrance = tone.number("vibrance", -100.0..100.0),
+            colorGrading = if (s.has("colorGrading")) grading(s.getJSONObject("colorGrading")) else ColorGradingSettings(),
             hsl = HslSettings((0 until hsl.length()).map { number(hsl.get(it), -100.0..100.0) }),
             denoise = DenoiseSettings(denoise.boolean("enabled"), denoise.number("luma", 0.0..100.0), denoise.number("chroma", 0.0..100.0), denoise.number("coarse", 0.0..100.0)),
             effects = PhotoEffectsSettings(effects.number("vignetteAmount", -100.0..100.0), effects.number("vignetteMidpoint", 0.0..100.0),
@@ -74,6 +79,19 @@ internal object StructuredSettingsCodec {
             processing = ProcessingIdentity(processing.string("family"), processing.integer("version"), processing.string("quality")))
     }
 
+    private fun grading(json: JSONObject): ColorGradingSettings {
+        json.keysExactly("shadows", "midtones", "highlights")
+        return ColorGradingZone.entries.fold(ColorGradingSettings()) { result, zone ->
+            val wheel = json.getJSONObject(zone.id).keysExactly("hue", "saturation")
+            val hue = wheel.get("hue"); val saturation = wheel.get("saturation")
+            require(hue is Number && saturation is Number)
+            result.with(zone, ColorGradingWheel.fromNumbers(hue.toDouble(), saturation.toDouble()))
+        }
+    }
+    private fun JSONObject.keysWithOptional(optional: Set<String>, vararg required: String): JSONObject = apply {
+        val actual = keys().asSequence().toSet()
+        require(actual.containsAll(required.toSet()) && (required.toSet() + optional).containsAll(actual)) { "Unknown or missing settings field" }
+    }
     private fun JSONObject.keysExactly(vararg expected: String): JSONObject = apply {
         require(keys().asSequence().toSet() == expected.toSet()) { "Unknown or missing settings field" }
     }

@@ -56,6 +56,7 @@ struct ContentView: View {
     @State var pendingToolSelection: EditorToolSelection?
     @State var selectedGroup = EditorAdjustmentGroup.looks
     @State var hslChannel = 0
+    @State var gradingZone: ColorGradingZone = .shadows
     @State var adjustmentFine = false
     @State var pendingAdjustmentExpansion: Bool?
     @State var collapsedEditorTool: EditorToolSelection?
@@ -206,6 +207,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
+            gradingZone = .shadows
             photoViewing.sourceChanged()
             photoComparisonControlBounds = .zero
             photoViewport = PhotoViewport()
@@ -275,6 +277,7 @@ struct ContentView: View {
             if isAdjustingSlider { cancelSliderInteraction() }
             cancelRulerFocus()
         }
+        .onChange(of: gradingZone) { _, _ in cancelSliderInteraction() }
         .onChange(of: hslChannel) { _, _ in cancelSliderInteraction() }
         .onChange(of: adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {

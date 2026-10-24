@@ -98,6 +98,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var menu by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
     var channel by rememberSaveable { mutableIntStateOf(0) }
+    var gradingZone by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(com.rawlab.android.settings.ColorGradingZone.SHADOWS) }
     var pendingAll by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
     var prepareAllWhenReady by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
     var preparedReset by remember { mutableStateOf<PreparedEditorReset?>(null) }
@@ -294,7 +295,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
-            onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { onCancelAdjustment(); onPresets() })
+            onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { onCancelAdjustment(); onPresets() }, gradingZone = gradingZone,
+            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it })
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }

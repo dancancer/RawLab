@@ -52,6 +52,12 @@ extension IOSAdjustmentTransfer {
                 result[field.rawValue] = .number(settings.hsl.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
             }
         }
+        for field in Field.allCases {
+            if let zone = field.gradingZone {
+                let wheel = settings.gradingSettings[zone]
+                result[field.rawValue] = .object(["hue": .number(wheel.hue), "saturation": .number(wheel.saturation)])
+            }
+        }
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.photoEffects[keyPath: key]) }
         result[Field.rawDenoise.rawValue] = .number(0)
         result[Field.postRGBDenoise.rawValue] = .number(context.isRaw ? settings.noiseReduction : 0)
@@ -73,6 +79,11 @@ extension IOSAdjustmentTransfer {
     }
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
                              context: IOSAdjustmentTransferContext) throws {
+        for field in payload.fields {
+            if let zone = field.gradingZone, let wheel = payload[field]?.object {
+                settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue) }
         if let post = payload[.postRGBDenoise]?.number {
             guard context.isRaw || post == 0 else { throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue) }

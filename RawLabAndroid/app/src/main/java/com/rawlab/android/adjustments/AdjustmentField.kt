@@ -1,5 +1,7 @@
 package com.rawlab.android.adjustments
 
+import com.rawlab.android.settings.ColorGradingZone
+
 /** 跨端逻辑字段；与 Shared/AdjustmentTransfer.swift 及同一 JSON 向量保持一致。 */
 enum class AdjustmentField(val id: String) {
     LOOK("looks.reference"),
@@ -13,6 +15,7 @@ enum class AdjustmentField(val id: String) {
     BLACK_POINT("tone.black_point"),
     WHITE_POINT("tone.white_point"),
     VIBRANCE("color.vibrance"),
+    GRADING_SHADOWS("color.grading.shadows"), GRADING_MIDTONES("color.grading.midtones"), GRADING_HIGHLIGHTS("color.grading.highlights"),
     WHITE_BALANCE_MODE("color.white_balance.mode"),
     TEMPERATURE("color.white_balance.temperature_kelvin"),
     TINT("color.white_balance.tint"),
@@ -70,6 +73,10 @@ enum class AdjustmentField(val id: String) {
     LENS_PROFILE("geometry.lens.profile_id");
 
     val group get() = if (this == BLACK_POINT || this == WHITE_POINT) "light" else id.substringBefore('.')
+    val gradingZone: ColorGradingZone? get() = when (this) {
+        GRADING_SHADOWS -> ColorGradingZone.SHADOWS; GRADING_MIDTONES -> ColorGradingZone.MIDTONES
+        GRADING_HIGHLIGHTS -> ColorGradingZone.HIGHLIGHTS; else -> null
+    }
     val hslLocation: Pair<Int, Int>? get() {
         val parts = id.split('.')
         if (parts.size != 4 || parts[1] != "hsl") return null

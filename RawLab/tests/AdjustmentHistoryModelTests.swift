@@ -31,6 +31,8 @@ struct AdjustmentHistoryModelTests {
         try check(model.beginAdjustmentInteraction(settings: settings), "gesture begins with an accepted storage revision")
         for step in 1...30 {
             settings.exposure = Double(step) / 100
+            settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
+            settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: Double(step))
             model.queueSettingsSave(settings)
         }
         try check(model.editSaveWork == nil && store.state(for: identity) == nil,
@@ -45,10 +47,11 @@ struct AdjustmentHistoryModelTests {
         try check(try store.versionedState(for: identity) == revision, "unchanged echo preserves timestamp and revision")
         try check(model.beginAdjustmentInteraction(settings: settings), "second gesture begins")
         settings.exposure = 0.9
+        settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
         model.queueSettingsSave(settings)
         guard let restored = model.cancelAdjustmentInteraction() else { throw NSError(domain: "missing cancel snapshot", code: 1) }
         settings = restored
-        try check(settings.exposure == 0.3 && model.pendingSettings == nil && model.consumePersistedEditorSettings(settings),
+        try check(settings.exposure == 0.3 && settings.gradingSettings.shadows == ColorGradingWheel(hue: 231.25, saturation: 0) && model.pendingSettings == nil && model.consumePersistedEditorSettings(settings),
                   "cancel restores the exact gesture start and consumes the observer echo")
         try check(try store.versionedState(for: identity) == revision, "cancel does not write or record history")
         let undo = model.performAdjustmentHistory(undo: true)

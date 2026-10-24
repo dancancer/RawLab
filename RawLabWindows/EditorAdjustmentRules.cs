@@ -1,9 +1,9 @@
 namespace RawLab.Windows;
 
 public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry }
-public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance }
-public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool }
-public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film);
+public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading }
+public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool, GradingZone, AllGrading }
+public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film, ColorGradingZone Zone = ColorGradingZone.Shadows);
 public enum EditorResetStatus { Ready, NoChange, Invalid, Blocked }
 public sealed record EditorResetCandidate(EditorResetStatus Status, SavedEdit? Candidate = null,
     bool RequiresConfirmation = false, string? Reason = null, IReadOnlyList<string>? MaterializedFields = null);
@@ -14,7 +14,7 @@ public static class EditorAdjustmentRules
     private static readonly IReadOnlyList<EditorAdjustmentTool>[] GroupTools = [
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Film, EditorAdjustmentTool.MasterRecipe, EditorAdjustmentTool.Strength }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Exposure, EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.BlackPoint, EditorAdjustmentTool.WhitePoint, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
-        Array.AsReadOnly(new[] { EditorAdjustmentTool.WhiteBalance, EditorAdjustmentTool.Saturation, EditorAdjustmentTool.Vibrance, EditorAdjustmentTool.Hsl }),
+        Array.AsReadOnly(new[] { EditorAdjustmentTool.WhiteBalance, EditorAdjustmentTool.Saturation, EditorAdjustmentTool.Vibrance, EditorAdjustmentTool.Hsl, EditorAdjustmentTool.ColorGrading }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Vignette, EditorAdjustmentTool.Grain }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Denoise, EditorAdjustmentTool.Sharpening }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Geometry, EditorAdjustmentTool.Lens })
@@ -42,6 +42,7 @@ public static class EditorAdjustmentRules
     };
     public static string Title(EditorAdjustmentTool tool) => tool switch {
         EditorAdjustmentTool.Film => "胶片", EditorAdjustmentTool.MasterRecipe => "大师配方",
+        EditorAdjustmentTool.ColorGrading => "颜色分级",
         EditorAdjustmentTool.WhiteBalance => "白平衡", EditorAdjustmentTool.Hsl => "HSL",
         EditorAdjustmentTool.Vignette => "暗角", EditorAdjustmentTool.Grain => "颗粒",
         EditorAdjustmentTool.Denoise => "降噪", EditorAdjustmentTool.Geometry => "几何",
@@ -86,6 +87,8 @@ public static class EditorAdjustmentRules
         var look = edit.Look;
         var detached = false;
         if (scope.Kind == EditorResetKind.All) { candidate = defaults.Settings.Copy(); look = null; }
+        else if (scope.Kind == EditorResetKind.AllGrading) candidate = candidate with { ColorGrading = null };
+        else if (scope.Kind == EditorResetKind.GradingZone) candidate = candidate with { ColorGrading = (candidate.ColorGrading ?? new()).With(scope.Zone, new()) };
         else if (scope.Kind == EditorResetKind.AllHsl) candidate = candidate with { Hsl = new() };
         else if (scope.Kind == EditorResetKind.HslChannel) {
             var hsl = candidate.Hsl ?? new();
@@ -137,8 +140,8 @@ public static class EditorAdjustmentRules
             if (source.CameraWhiteBalance != candidate.CameraWhiteBalance) materialized.Add("白平衡");
         }
         return new(EditorResetStatus.Ready, result,
-            scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.Group ||
-            scope.Kind == EditorResetKind.Tool && scope.Tool == EditorAdjustmentTool.Hsl || materialized.Count > 0,
+            scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.AllGrading or EditorResetKind.Group ||
+            scope.Kind == EditorResetKind.Tool && scope.Tool is (EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading) || materialized.Count > 0,
             detached ? "Recipe values and white balance are materialized as independent adjustments." : null, materialized);
     }
     private static readonly Parameter[] ScaledParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.Saturation];
@@ -162,7 +165,7 @@ public static class EditorAdjustmentRules
         return group switch {
             EditorAdjustmentGroup.Light => value with { ExposureMode = defaults.ExposureMode,
                 ToneControls = (value.ToneControls ?? new()) with { BlackPoint = 0, WhitePoint = 0 } },
-            EditorAdjustmentGroup.Color => value with { CameraWhiteBalance = true, Hsl = new(),
+            EditorAdjustmentGroup.Color => value with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null,
                 ToneControls = (value.ToneControls ?? new()) with { Vibrance = 0 },
                 AsShotTemperature = defaults.AsShotTemperature, AsShotTint = defaults.AsShotTint },
             EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects },
@@ -180,6 +183,7 @@ public static class EditorAdjustmentRules
                 value.Values[(int)Parameter.Temperature] = defaults.Values[(int)Parameter.Temperature];
                 value.Values[(int)Parameter.Tint] = value.MasterRecipeID != null ? 0 : defaults.Values[(int)Parameter.Tint];
                 return value with { CameraWhiteBalance = defaults.CameraWhiteBalance };
+            case EditorAdjustmentTool.ColorGrading: return value with { ColorGrading = null };
             case EditorAdjustmentTool.Hsl: return value with { Hsl = new() };
             case EditorAdjustmentTool.Vignette:
             case EditorAdjustmentTool.Grain:
@@ -221,6 +225,8 @@ public static class EditorAdjustmentRules
             value = value with { Settings = comparable };
         }
         if (scope.Kind == EditorResetKind.All) return value.Look == null && value.Settings.SameAs(defaults.Settings);
+        if (scope.Kind == EditorResetKind.AllGrading) return (value.Settings.ColorGrading ?? new()).IsDefault;
+        if (scope.Kind == EditorResetKind.GradingZone) return (value.Settings.ColorGrading ?? new())[scope.Zone].IsDefault;
         if (scope.Kind == EditorResetKind.AllHsl) return (value.Settings.Hsl ?? new()).IsIdentity;
         if (scope.Kind == EditorResetKind.HslChannel) return Enumerable.Range(0, 3).All(axis => (value.Settings.Hsl ?? new()).Value(axis, scope.Channel) == 0);
         if (scope.Kind == EditorResetKind.Tool) {
@@ -236,7 +242,7 @@ public static class EditorAdjustmentRules
     }
     private static void Validate(EditorResetScope scope, SavedEdit edit)
     {
-        if (!Enum.IsDefined(scope.Kind) || !Enum.IsDefined(scope.Group) || !Enum.IsDefined(scope.Tool) || scope.Kind == EditorResetKind.HslChannel && scope.Channel is < 0 or > 7)
+        if (!Enum.IsDefined(scope.Zone) || !Enum.IsDefined(scope.Kind) || !Enum.IsDefined(scope.Group) || !Enum.IsDefined(scope.Tool) || scope.Kind == EditorResetKind.HslChannel && scope.Channel is < 0 or > 7)
             throw new ArgumentOutOfRangeException(nameof(scope));
         if (string.IsNullOrWhiteSpace(edit.Identity.Path) || !PhotoInput.IsRaw(edit.Identity.Path) && !PhotoInput.IsRaster(edit.Identity.Path))
             throw new System.IO.InvalidDataException("Unsupported photo identity.");
@@ -261,6 +267,6 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.ToneControls == b.ToneControls && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.ToneControls == b.ToneControls && a.ColorGrading == b.ColorGrading && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
     }
 }

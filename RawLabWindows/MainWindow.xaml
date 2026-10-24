@@ -201,6 +201,9 @@
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="HslCategoryRing"/><local:EditorIcon Kind="Hsl" Width="16" Height="16"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
+              <Button x:Name="GradingCategory" Click="GradingCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '颜色分级'}" AutomationProperties.Name="{DynamicResource '颜色分级'}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="GradingCategoryRing"/><local:EditorIcon Kind="ColorGrading" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '颜色分级'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+              </Button>
               <Button x:Name="WhiteBalanceCategory" Click="WhiteBalanceCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '白平衡'}" AutomationProperties.Name="{DynamicResource '白平衡'}" AutomationProperties.AutomationId="WhiteBalance">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="WhiteBalanceCategoryRing"/><local:EditorIcon Kind="Temperature" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '白平衡'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
@@ -228,6 +231,7 @@
             <ScrollViewer x:Name="LensSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:LensPanel x:Name="LensEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
+            <ScrollViewer x:Name="GradingSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:ColorGradingPanel x:Name="GradingEditor"/></ScrollViewer>
             <ScrollViewer x:Name="WhiteBalanceSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:WhiteBalancePanel x:Name="WhiteBalanceEditor"/></ScrollViewer>
             <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <local:PhotoEffectsPanel x:Name="PhotoEffectsEditor" VerticalAlignment="Center"/>

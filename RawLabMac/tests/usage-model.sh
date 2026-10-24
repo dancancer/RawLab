@@ -23,7 +23,7 @@ swiftc "${TRANSFER_SOURCES[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/Shared/UsageAnalytics.swift" "$ROOT/Shared/ExportMetadata.swift" \
   "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" \
-  "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" \
+  "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/ColorGradingNative.swift" \
   "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Looks/Film.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
   "$ROOT/RawLabMac/Sources/Rendering/AgentRecipe.swift" \
   "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/RawLabMac/Sources/Lens/MacStraightenPreview.swift" \

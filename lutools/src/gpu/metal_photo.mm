@@ -1,5 +1,6 @@
 #include "gpu/photo_gpu.h"
 #include "gpu/photo_tone_shader.h"
+#include "gpu/photo_color_grading_shader.h"
 #include "gpu/metal_dcp_shader.h"
 #include "gpu/metal_effects_shader.h"
 #include "core/photo_lut.h"
@@ -66,9 +67,11 @@ struct PhotoParams {
     float hslHue[8], hslSaturation[8], hslLightness[8];
     uint32_t srcRowOffset, dstRowOffset, srcRows, dstRows;
     float blackPoint, whitePoint, vibrance;
+    float colorGrading[9];
 };
-static_assert(sizeof(PhotoParams) == 316, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 352, "Photo Metal parameter layout");
 static_assert(offsetof(PhotoParams, hslHue) == 192, "HSL Metal options offset");
+static_assert(offsetof(PhotoParams, colorGrading) == 316, "Grading Metal options offset");
 
 struct PhotoEffectsParams {
     uint32_t width, height;
@@ -122,7 +125,7 @@ CachedDcp gDcpCache;
 static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-)metal") + sony2fuji::toneControlsShader("float3") + R"metal(
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -155,6 +158,7 @@ struct Params {
     float hslHue[8], hslSaturation[8], hslLightness[8];
     uint srcRowOffset, dstRowOffset, srcRows, dstRows;
     float blackPoint, whitePoint, vibrance;
+    float colorGrading[9];
 };
 
 inline float3 lerp3(float3 a, float3 b, float t) {
@@ -467,6 +471,12 @@ inline float3 applyHsl(float3 pixel, constant Params& params) {
     return rgb + (lightness - chroma * 0.5f) + residual;
 }
 
+float3 applyGrading(float3 pixel, constant Params& params) {
+    return cgApply(pixel,float3(params.colorGrading[0],params.colorGrading[1],params.colorGrading[2]),
+        float3(params.colorGrading[3],params.colorGrading[4],params.colorGrading[5]),
+        float3(params.colorGrading[6],params.colorGrading[7],params.colorGrading[8]));
+}
+
 kernel void toneAdjustments(
     constant Params& params [[buffer(0)]],
     device const packed_float3* source [[buffer(1)]],
@@ -478,7 +488,7 @@ kernel void toneAdjustments(
     }
     float3 pixel = tcBlackWhite(float3(source[gid]), params.blackPoint, params.whitePoint);
     if (params.toneEnabled == 0u) {
-        destination[gid] = packed_float3(applyHsl(tcVibrance(pixel, params.vibrance), params));
+        destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
         return;
     }
     float highlights = clamp(params.highlights, -1.0f, 1.0f);
@@ -514,7 +524,7 @@ kernel void toneAdjustments(
             luminance + (pixel.b - luminance) * saturation
         );
     }
-    destination[gid] = packed_float3(applyHsl(tcVibrance(pixel, params.vibrance), params));
+    destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
 }
 
 kernel void noiseReduction(
@@ -785,7 +795,8 @@ PhotoParams makeParams(
     const CachedLUT* cachedLUT,
     float lutStrength,
     const sony2fuji::HslOptions& hsl = {},
-    const sony2fuji::ToneControlsOptions& toneControls = {}
+    const sony2fuji::ToneControlsOptions& toneControls = {},
+    const sony2fuji::ColorGradingOptions& colorGrading = {}
 ) {
     PhotoParams params{};
     params.srcWidth = srcWidth;
@@ -829,6 +840,10 @@ PhotoParams makeParams(
     params.hslEnabled = hsl.active();
     params.blackPoint = toneControls.blackPoint; params.whitePoint = toneControls.whitePoint;
     params.vibrance = toneControls.vibrance;
+    const auto grading=sony2fuji::colorGradingCoefficients(colorGrading);
+    for (size_t zone=0;zone<3;++zone) {
+        params.colorGrading[zone*3]=grading[zone].r;params.colorGrading[zone*3+1]=grading[zone].g;params.colorGrading[zone*3+2]=grading[zone].b;
+    }
     std::copy(hsl.hue.begin(), hsl.hue.end(), params.hslHue);
     std::copy(hsl.saturation.begin(), hsl.saturation.end(), params.hslSaturation);
     std::copy(hsl.lightness.begin(), hsl.lightness.end(), params.hslLightness);
@@ -921,7 +936,8 @@ bool renderPhotoMetalImpl(
     int chromaDenoise,
     bool preserveSourceResolution,
     const sony2fuji::HslOptions& hsl,
-    const sony2fuji::ToneControlsOptions& toneControls
+    const sony2fuji::ToneControlsOptions& toneControls,
+    const sony2fuji::ColorGradingOptions& colorGrading
 ) {
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
@@ -932,7 +948,7 @@ bool renderPhotoMetalImpl(
         !std::isfinite(request.tone_curve) || !std::isfinite(request.noise_reduction) ||
         !std::isfinite(request.sharpening) || !std::isfinite(request.lut_strength) ||
         !std::isfinite(relativeWB.r) || !std::isfinite(relativeWB.g) ||
-        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || !toneControls.valid() || chromaDenoise < 0 || chromaDenoise > 2) {
+        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || chromaDenoise < 0 || chromaDenoise > 2) {
         return false;
     }
     size_t inputCount = 0;
@@ -1079,7 +1095,7 @@ bool renderPhotoMetalImpl(
                     current = a; next = b;
                 }
                 const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
-                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl, toneControls);
+                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl, toneControls, colorGrading);
                 auto constants = makeParamsBuffer(context.device, params);
                 if (!constants) return false;
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
@@ -1164,7 +1180,8 @@ bool renderPhotoMetal(
     int chromaDenoise,
     bool preserveSourceResolution,
     const HslOptions& hsl,
-    const ToneControlsOptions& toneControls
+    const ToneControlsOptions& toneControls,
+    const ColorGradingOptions& colorGrading
 ) {
     bool result = false;
     @try {
@@ -1172,7 +1189,7 @@ bool renderPhotoMetal(
             try {
                 result = renderPhotoMetalImpl(
                     input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls
+                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls, colorGrading
                 );
             } catch (...) {
                 result = false;
@@ -1204,7 +1221,8 @@ bool renderPhotoMetal(
     int,
     bool,
     const HslOptions&,
-    const ToneControlsOptions&
+    const ToneControlsOptions&,
+    const ColorGradingOptions&
 ) {
     return false;
 }

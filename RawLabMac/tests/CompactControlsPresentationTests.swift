@@ -273,6 +273,18 @@ struct CompactControlsPresentationTests {
                 .frame(width: 650, height: 220, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "hsl-workspace-650", language: language, size: NSSize(width: 650, height: 220),
                 expectedFields: 3, output: output))
+            var grading = ColorGradingSettings()
+            grading.shadows = ColorGradingWheel(hue: 231.25, saturation: 0)
+            grading.midtones = ColorGradingWheel(hue: 110.125, saturation: 32.375)
+            for (name, width, textSize) in [("grading-wide", 650.0, DynamicTypeSize.large),
+                                           ("grading-narrow-large", 360.0, DynamicTypeSize.accessibility3)] {
+                snapshots.append(try await snapshot(ScrollView {
+                    MacColorGradingControls(settings: .constant(grading), zone: .constant(.shadows),
+                        source: "grading-fixture", isCurrent: { true }, onEditingChanged: { _ in }, onCancelled: {})
+                        .padding(16)
+                }.background(Color(nsColor: .windowBackgroundColor)), name: name, language: language,
+                    size: NSSize(width: width, height: 340), expectedFields: 2, output: output, textSize: textSize))
+            }
             snapshots.append(try await snapshot(PhotoEffectsControls(model: model, tool: .grainAmount).padding(.vertical, 12)
                 .frame(width: 650, height: 200, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "grain-workspace-650", language: language, size: NSSize(width: 650, height: 200),

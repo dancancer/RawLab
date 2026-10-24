@@ -1,11 +1,12 @@
 #pragma once
 #include "photo_tone_shader.h"
+#include "photo_color_grading_shader.h"
 
 namespace sony2fuji {
 inline const std::string kPhotoComputeShader = std::string(R"glsl(#version 310 es
 precision highp float;
 precision highp int;
-)glsl") + toneControlsShader("vec3") + R"glsl(
+)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + R"glsl(
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
@@ -32,6 +33,7 @@ uniform vec4 tone; // contrast, saturation, highlights, shadows
 uniform float curve;
 uniform bool hslActive;
 uniform vec3 toneControls;
+uniform vec3 colorGrading[3];
 uniform vec4 hslHue[2];
 uniform vec4 hslSaturation[2];
 uniform vec4 hslLightness[2];
@@ -148,7 +150,7 @@ vec3 evaluate(vec3 inputColor) {
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         pixel = vec3(luminance) + (pixel - luminance) * tone.y;
     }
-    return applyHsl(tcVibrance(pixel, toneControls.z));
+    return cgApply(applyHsl(tcVibrance(pixel, toneControls.z)),colorGrading[0],colorGrading[1],colorGrading[2]);
 }
 void main() {
     uint i = gl_GlobalInvocationID.x;

@@ -162,6 +162,7 @@ set(CORE_SOURCES
     src/core/photo_geometry.cpp
     src/core/photo_color.cpp
     src/core/photo_tone_controls.cpp
+    src/core/photo_color_grading.cpp
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
@@ -715,6 +716,21 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_include_directories(tone_recipe_tests PRIVATE third_party)
     target_link_libraries(tone_recipe_tests rawlab_edit_protocol)
     add_test(NAME tone_recipe COMMAND tone_recipe_tests)
+    add_executable(color_grading_tests tests/color_grading_tests.cpp src/core/photo_color_grading.cpp)
+    target_include_directories(color_grading_tests PRIVATE third_party)
+    target_compile_definitions(color_grading_tests PRIVATE
+        SONY2FUJI_GRADING_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/color-grading-v1-reference.json")
+    add_test(NAME color_grading COMMAND color_grading_tests)
+    add_executable(color_grading_api_tests tests/color_grading_api_tests.cpp)
+    target_link_libraries(color_grading_api_tests sony2fuji_core)
+    add_test(NAME color_grading_api COMMAND color_grading_api_tests)
+    if(SONY2FUJI_TEST_RAW AND EXISTS "${SONY2FUJI_TEST_RAW}")
+        add_test(NAME color_grading_raw COMMAND color_grading_api_tests "${SONY2FUJI_TEST_RAW}")
+    endif()
+    add_executable(color_grading_recipe_tests tests/color_grading_recipe_tests.cpp)
+    target_include_directories(color_grading_recipe_tests PRIVATE third_party)
+    target_link_libraries(color_grading_recipe_tests rawlab_edit_protocol)
+    add_test(NAME color_grading_recipe COMMAND color_grading_recipe_tests)
     add_executable(photo_color_tests tests/photo_color_tests.cpp)
     target_link_libraries(photo_color_tests sony2fuji_core)
     if(MSVC)

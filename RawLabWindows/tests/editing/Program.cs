@@ -3,6 +3,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 ToneControlsChecks.Run();
+ColorGradingChecks.Run();
+var pendingGrading = JsonSerializer.SerializeToNode(new Adjustments().Capture())!;
+pendingGrading["ColorGrading"] = JsonNode.Parse("""{"Shadows":{"Hue":231.25,"Saturation":0},"Midtones":{"Hue":0,"Saturation":0},"Highlights":{"Hue":0,"Saturation":0}}""");
+var gradingRestored = pendingGrading.Deserialize<AdjustmentSnapshot>()!.Restore();
+if (JsonSerializer.SerializeToNode(gradingRestored.Capture())!["ColorGrading"] == null)
+    throw new Exception("Pending grading hue must survive snapshot restore");
 AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
@@ -197,6 +203,7 @@ try
     mixedState.Effects = new(0, 21, 11, 70, 33, 0, 66, 80);
     mixedState.Denoise = new(false, 13, 40, 27); mixedState.DisplayChromaDenoise = 2;
     mixedState.Geometry = new(PerspectiveHorizontal: .2); mixedState.Lens = new(true, true, false, true, "fixture");
+    mixedState.ColorGrading = new() { Shadows = new(231.25, 0), Midtones = new(110.125, 32.375) };
     var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
     Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.DefaultTool).SequenceEqual(new[] {
         EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Vignette,
@@ -213,6 +220,7 @@ try
                 Check(EditorAdjustmentRules.PrepareReset(Tool(tool),edit).Status==EditorResetStatus.NoChange,"Recipe reset without identity does not clear film or strength");continue;
             case EditorAdjustmentTool.WhiteBalance:
                 expected.Values[2]=5200;expected.Values[3]=8;expected=expected with{CameraWhiteBalance=true};break;
+            case EditorAdjustmentTool.ColorGrading:expected=expected with{ColorGrading=null};break;
             case EditorAdjustmentTool.Hsl:expected=expected with{Hsl=new()};break;
             case EditorAdjustmentTool.Vignette:expected=expected with{Effects=new(GrainAmount:0,GrainSize:66,GrainRoughness:80)};break;
             case EditorAdjustmentTool.Grain:expected=expected with{Effects=new(0,21,11,70,33)};break;
@@ -229,7 +237,7 @@ try
         var prepared=EditorAdjustmentRules.PrepareReset(Tool(tool),edit);
         Check(prepared.Status==EditorResetStatus.Ready && prepared.Candidate!.Look==ownedLook && prepared.Candidate.Settings.SameAs(expected),
             "Current tool owns only its complete field set: "+tool);
-        Check(prepared.RequiresConfirmation==(tool==EditorAdjustmentTool.Hsl),"Only all-HSL tool requires ordinary confirmation: "+tool);
+        Check(prepared.RequiresConfirmation==(tool is EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading),"Whole color tools require ordinary confirmation: "+tool);
         Check(edit.Settings.SameAs(frozen),"Preparing/cancelling tool reset never mutates source: "+tool);
         Check(EditorAdjustmentRules.PrepareReset(Tool(tool),prepared.Candidate!).Status==EditorResetStatus.NoChange,"Repeated tool reset is NoChange: "+tool);
     }
@@ -294,7 +302,7 @@ try
         }
         if (group == EditorAdjustmentGroup.Color) {
             expected.Values[2] = 5200; expected.Values[3] = 8; expected.Values[8] = 0;
-            expected = expected with { CameraWhiteBalance = true, Hsl = new() };
+            expected = expected with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null };
         }
         if (group == EditorAdjustmentGroup.Effects) expected = expected with { Effects = new() };
         if (group == EditorAdjustmentGroup.Detail) { expected.Values[9] = 0; expected = expected with { Denoise = new(), DisplayChromaDenoise = 0 }; }

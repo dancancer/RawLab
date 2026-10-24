@@ -16,7 +16,7 @@ for name in MacNeutralReference Engine RenderError Film Adjustments AdjustmentTy
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in Localization GeometrySettings HSLSettings HSLNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary; do
+for name in Localization GeometrySettings HSLSettings HSLNative ToneControlsSettings ToneControlsNative ColorGradingSettings ColorGradingNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(

@@ -266,7 +266,7 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
         switch self {
         case .looks: return [.film, .recipe, .strength]
         case .light: return [.exposure, .highlights, .shadows, .blackPoint, .whitePoint, .contrast, .toneCurve]
-        case .color: return [.whiteBalance, .saturation, .vibrance, .hsl]
+        case .color: return [.whiteBalance, .saturation, .vibrance, .hsl, .colorGrading]
         case .effects: return [.vignette, .grain]
         case .detail: return [.denoise, .sharpening]
         case .geometry: return [.geometry, .lens]
@@ -277,7 +277,7 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
 
 enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
     case film, recipe, strength, exposure, highlights, shadows, blackPoint, whitePoint, vibrance, contrast, toneCurve
-    case whiteBalance, saturation, hsl, vignette, grain, denoise, sharpening, geometry, lens
+    case whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
     var id: String { rawValue }
     var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
     var parameter: AdjustmentParameter? {
@@ -305,6 +305,7 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .film: return L10n.text("胶片")
         case .recipe: return L10n.text("大师配方")
         case .whiteBalance: return L10n.text("白平衡")
+        case .colorGrading: return L10n.text("颜色分级")
         case .hsl: return "HSL"
         case .geometry: return L10n.text("几何")
         case .lens: return L10n.text("镜头")
@@ -315,6 +316,7 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         switch self {
         case .film: return "film"
         case .recipe: return "photo.stack"
+        case .colorGrading: return "paintpalette"
         case .hsl: return "slider.horizontal.3"
         case .geometry: return "crop.rotate"
         case .lens: return "viewfinder"
@@ -328,6 +330,7 @@ struct EditorAdjustmentNavigation: Equatable {
     var expandedGroup: EditorAdjustmentGroup? = .looks
     var tool: EditorAdjustmentTool = .film
     var selectedHSLChannel = 0
+    var selectedGradingZone: ColorGradingZone = .shadows
     mutating func selectGroup(_ group: EditorAdjustmentGroup) {
         if expandedGroup == group { expandedGroup = nil }
         else { expandedGroup = group; tool = group.defaultTool }
@@ -340,6 +343,7 @@ enum EditorResetScope: Equatable {
     case group(EditorAdjustmentGroup)
     case hslColor(Int)
     case hslAll
+    case gradingZone(ColorGradingZone), allGrading
     case all
     var usesGeometryDraft: Bool {
         switch self {

@@ -106,6 +106,7 @@ extension EditorModel {
     }
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
+        if adjustmentNavigation.tool == .colorGrading { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
         let action = { [weak self] in
@@ -146,7 +147,7 @@ extension EditorModel {
         case .prepared(let prepared):
             let needsConfirmation: Bool
             switch scope {
-            case .all, .group, .hslAll, .tool(.hsl): needsConfirmation = true
+            case .all, .group, .hslAll, .allGrading, .tool(.hsl), .tool(.colorGrading): needsConfirmation = true
             case .tool(.film), .tool(.recipe): needsConfirmation = !resetConversions(prepared).isEmpty
             default: needsConfirmation = false
             }
@@ -334,6 +335,7 @@ extension EditorModel {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
             return
         }
+        if adjustmentNavigation.tool == .colorGrading { cancelAdjustmentInteraction() }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
         let restoredRecord: VersionedPhotoEdit

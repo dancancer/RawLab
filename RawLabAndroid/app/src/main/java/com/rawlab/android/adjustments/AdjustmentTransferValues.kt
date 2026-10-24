@@ -47,6 +47,10 @@ internal object AdjustmentTransferValues {
         fun number(field: AdjustmentField, value: Number) { values[field] = AdjustmentValue.Number(value.toDouble()) }
         fun boolean(field: AdjustmentField, value: Boolean) { values[field] = AdjustmentValue.Boolean(value) }
         for (field in scalars + AdjustmentField.entries.filter { it.hslLocation != null }) number(field, logical(s, field))
+        for (field in AdjustmentField.entries) field.gradingZone?.let { zone ->
+            values[field] = AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(s.colorGrading[zone].hue.toDouble()),
+                "saturation" to AdjustmentValue.Number(s.colorGrading[zone].saturation.toDouble())))
+        }
         val kind: String; val id: String?
         when {
             s.recipeID != null -> { kind = "recipe"; id = s.recipeID }
@@ -97,6 +101,11 @@ internal object AdjustmentTransferValues {
             if (payload[field]?.number?.let { it != 0.0 } == true) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, field.id)
         }
         var result = original
+        for (field in payload.fields) field.gradingZone?.let { zone ->
+            val wheel = payload[field]!!.objectValue!!
+            result = result.copy(colorGrading = result.colorGrading.with(zone,
+                ColorGradingWheel.fromNumbers(wheel["hue"]!!.number!!, wheel["saturation"]!!.number!!)))
+        }
         payload[AdjustmentField.CHROMA_DENOISE]?.let { result = result.copy(displayChromaDenoise = it.number?.toInt() ?: 0) }
         payload[AdjustmentField.WAVELET_DENOISE]?.let { value ->
             val wavelet = value.objectValue

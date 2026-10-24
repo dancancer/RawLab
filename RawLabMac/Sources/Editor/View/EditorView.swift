@@ -122,8 +122,14 @@ struct EditorView: View {
             let info = await Task.detached(priority: .utility) { PhotoInformation.read(file) }.value
             if !Task.isCancelled && model.file == file { photoInformation = info }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
+            model.saveEdits()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
+            model.saveEdits()
+        }
         .toolbar { editorToolbar }
         .sheet(item: $model.adjustmentSheet) { kind in
             if kind == .presets { AdjustmentPresetView(model: model) }
@@ -410,7 +416,10 @@ struct EditorView: View {
     private var resetMenu: some View {
         Menu {
             let tool = model.adjustmentNavigation.tool
-            if tool == .hsl {
+            if tool == .colorGrading {
+                resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
+                resetButton(.allGrading, title: L10n.text("重置颜色分级"))
+            } else if tool == .hsl {
                 resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),
                     title: L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[model.adjustmentNavigation.selectedHSLChannel])))
                 resetButton(.hslAll, title: L10n.text("重置全部 HSL…"))
@@ -434,6 +443,7 @@ struct EditorView: View {
         switch model.resetConfirmationScope {
         case .all: return L10n.text("重置全部调整？")
         case .group(let group): return L10n.format("重置%@组？", group.title)
+        case .allGrading, .tool(.colorGrading): return L10n.text("重置颜色分级")
         case .hslAll, .tool(.hsl): return L10n.text("重置全部 HSL？")
         default: return L10n.text("重置调整")
         }
@@ -443,6 +453,7 @@ struct EditorView: View {
         var message: String
         switch model.resetConfirmationScope {
         case .all: message = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
+        case .allGrading, .tool(.colorGrading): message = L10n.text("恢复阴影、中间调和高光的颜色分级默认值？")
         case .hslAll, .tool(.hsl): message = L10n.text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。")
         case .group(let group): message = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)
         default: message = ""

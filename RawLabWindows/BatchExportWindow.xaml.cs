@@ -62,6 +62,10 @@ public partial class BatchExportWindow : Window
         AllSettings.Text = string.Join("\n", ParameterSpec.All.Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
         AllSettings.Text += "\n" + string.Join("\n", ToneControlSpec.All.Select(spec =>
             Row(spec.Title, state.ToneControls[spec.Id].ToString("+0.#;-0.#;0", CultureInfo.GetCultureInfo(Loc.Language)) + "%")));
+        AllSettings.Text += "\n" + string.Join("\n", Enum.GetValues<ColorGradingZone>().Select(zone =>
+            Loc.Text("颜色分级") + " · " + Loc.Text(ColorGradingPanel.ZoneKeys[(int)zone]) + "  " +
+            state.ColorGrading[zone].Hue.ToString("0.0", CultureInfo.GetCultureInfo(Loc.Language)) + "° · " +
+            state.ColorGrading[zone].Saturation.ToString("0.0", CultureInfo.GetCultureInfo(Loc.Language)) + "%"));
         AllSettings.Text += $"\nHSL  {(state.Hsl.IsIdentity ? Loc.Text("未调整") : Loc.Text("已调整"))}";
         // 降噪与镜头逐行沿用编辑器里的名称；关着的开关写"停用"
         AllSettings.Text += "\n" + string.Join("\n", new[] {

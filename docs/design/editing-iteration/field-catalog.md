@@ -125,14 +125,29 @@ batch settings 使用各自 `v2:` JSON，仍读取全部已有 CSV/pipe 长度�
 实现、模型及 native 验证已接通，实际四端新工具 UI 待解锁后统一验收，见
 [接入计划](../../integration/editing-iteration/tone-controls-plan.md)。这不是 IT-06/15 验收通过声明。
 
-### 3.3 尚未支持的候选新字段
+### 3.3 ITER-06 颜色分级扩展
+
+三个交换字段 `color.grading.shadows`、`color.grading.midtones`、`color.grading.highlights`
+均属于 `color`，common 默认包含。每项是完整 `{hue,saturation}` 对象，hue 范围 `[0,360)`、
+saturation 范围 `[0,100]`；UI 的合法端点 360 归一到 0。缺少交换字段表示未选择，保持目标；
+旧存储缺整个 grading 扩展才按全零读取。三组不受旧 recipe strength 缩放。
+
+所有 saturation 为零是渲染 identity，但非零 hue 仍是已修改的存储值，需要经过复制、预设、
+历史和 batch 冻结。单区 reset 清该区两个值，整工具/color group reset 清六值。
+additive `sony2fuji_color_grading_config` v1 使用 32-byte 结构，每次 preview/export 显式配置；
+request v2 保持不变。Agent v5 使用 `edits.color_grading`，旧版本不能有损降级。
+
+算法、参考向量和固定质量集以 [color grading v1](../../../lutools/docs/color-grading-v1.md) 为准。
+CPU/Metal/D3D11/GLES 已接通，四端当前实现和后补 UI 边界见
+[接入计划](../../integration/editing-iteration/color-grading-plan.md)；这不是 IT-07/15 已验收声明。
+
+### 3.4 尚未支持的候选新字段
 
 以下名称只登记未来接线位置，不表示当前 core、Agent、四端或 GPU 已支持：
 
 | 候选字段/配置 | 设计状态 | 当前边界 |
 | --- | --- | --- |
-| `color.grading.shadows/midtones/highlights` | proposed | 方案候选 hue/saturation；当前无 `color_grading_config`。 |
-| `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v4 只有 scalar `s_curve`。 |
+| `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v5 仍只有 scalar `s_curve`。 |
 | `effects.clarity` / `effects.dehaze` | proposed | 方案候选 core `[-1,1]`；当前无 atmosphere config，算法数值合同和质量集未冻结。 |
 
 来源：[总技术方案 2.1](technical-design.md#21-agent-v5-与-additive-c-abi)。在真实核心、parser/serializer、能力查询、native adapter、保存、Agent 和回归全部接通前，能力响应不得宣告这些字段；旧 schema 和旧像素行为必须保持。
@@ -191,7 +206,7 @@ batch settings 使用各自 `v2:` JSON，仍读取全部已有 CSV/pipe 长度�
 - 新配置必须有独立 `version/struct_size` 和 setter；setter 先校验全部值，错误版本、size、非有限、越界、非法曲线或不支持能力时保留旧 session 状态。新 session 从 identity 开始，复用 session 时请求必须显式设置或清零，不能泄漏上一张照片参数。
 - 当前 setter 的 `struct_size` 兼容规则存在 exact/min 差异，新增 ABI 不得自行假定旧规则：wavelet 实现接受 `>= sizeof`，effects/HSL/geometry/perspective/lens 实现要求 exact size，详见 [sony2fuji_c.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/ffi/sony2fuji_c.cpp#L1083)。
 - Agent v1～v4 的未知字段/旧版本拒绝行为保持；只有 v5 parser、serializer、CLI capability、native preview/export、Mac/Windows AgentRecipe 和实际核心全部接通，才能宣告 v5。当前能力查询仍报告 recipe versions `[1,2,3,4]`：[agent_commands.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/cli/agent_commands.cpp#L133)。
-- I0 基线时 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 均为候选；ITER-05 当前接入以 §3.2 为准，其余仍未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
+- I0 基线时 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 均为候选；ITER-05/06 当前接入分别以 §3.2/3.3 为准，其余仍未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
 
 ## 7. 未来版本、缺字段和失败处理
 

@@ -153,7 +153,7 @@ private func runCLI(_ cli: URL, recipe: URL, preview: URL? = nil, longEdge: Int?
     let output = stdout.fileHandleForReading.readDataToEndOfFile()
     let diagnostics = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     guard process.terminationStatus == 0 else {
-        throw fail("CLI failed (\(process.terminationStatus)): \(diagnostics)")
+        throw fail("CLI failed (\(process.terminationStatus)): \(diagnostics) \(String(data: output, encoding: .utf8) ?? "")")
     }
     let envelope = try JSONSerialization.jsonObject(with: output) as? [String: Any] ?? [:]
     try check((envelope["ok"] as? Bool) == true, "CLI returns a successful JSON envelope")
@@ -169,6 +169,9 @@ private func makeMixedSettings() -> Adjustments {
     settings.tint = 12
     settings.strength = 0.85
     settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
+    settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 32.375)
+    settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 0)
+    settings.gradingSettings[.highlights] = ColorGradingWheel(hue: 359.999999, saturation: 17.5)
     settings.contrast = 24.5
     settings.highlights = 31.5
     settings.shadows = -27.5

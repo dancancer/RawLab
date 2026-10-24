@@ -28,7 +28,7 @@ public partial class MainWindow
         savedTransformCompare=compare;
         transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
         view.SetEnabled(false);NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
-        choosingRecipes=choosingHsl=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
+        choosingRecipes=choosingHsl=choosingGrading=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
         choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
         if(choosingGeometry){GeometryEditor.Begin(transform.Geometry);ResultCanvas.GeometryEditing=true;}
         viewport.Fit();interacting=false;RefreshControls();Schedule();ResultCanvas.Focus();
@@ -82,7 +82,7 @@ public partial class MainWindow
     {
         ++transformGeneration;transformPreviewReady=false;exactReady=false;interacting=false;
         transformSource=null;transformSaveFailed=false;
-        choosingLens=choosingGeometry=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
+        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
         view.SetEnabled(savedTransformCompare);
         RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();

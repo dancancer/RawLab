@@ -8,6 +8,7 @@
 #include "core/photo_effects.h"
 #include "core/photo_color.h"
 #include "core/photo_tone_controls.h"
+#include "core/photo_color_grading.h"
 
 #include <cstdint>
 #include <memory>
@@ -28,7 +29,8 @@ bool renderPhotoMetal(
     int chromaDenoise = 0,
     bool preserveSourceResolution = false,
     const HslOptions& hsl = {},
-    const ToneControlsOptions& toneControls = {}
+    const ToneControlsOptions& toneControls = {},
+    const ColorGradingOptions& colorGrading = {}
 );
 
 } // namespace sony2fuji

@@ -80,7 +80,95 @@ struct AdjustmentTransferTests {
             && AdjustmentTransferField.vibrance.group == "color", "Tone controls appear in light and color copy groups")
     }
 
+    static func colorGrading() throws {
+        var source = Adjustments()
+        source.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
+        source.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
+        source.gradingSettings[.highlights] = ColorGradingWheel(hue: 359.999999, saturation: 99.5)
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
+        check(restored == source, "All grading values persist exactly, including pending hue")
+        let old = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        check(old.colorGrading == nil && old.gradingSettings.isDefault, "Old settings missing grading remain default")
+        let zeroJSON = try JSONSerialization.data(withJSONObject: ["colorGrading": ["shadows": ["hue": 0, "saturation": 0],
+            "midtones": ["hue": 0, "saturation": 0], "highlights": ["hue": 0, "saturation": 0]]])
+        check(try JSONDecoder().decode(Adjustments.self, from: zeroJSON).colorGrading == nil,
+            "Explicit all-zero grading normalizes to the same storage default")
+        check(ColorGradingWheel.inputHue(360) == 0 && ColorGradingWheel.inputHue(-1) == nil
+            && ColorGradingWheel.inputHue(361) == nil, "Only the UI hue endpoint wraps; out-of-range input is rejected")
+        let pending = ColorGradingWheel(hue: 215, saturation: 0)
+        check(pending.isIdentity && !pending.isDefault && pending.moving(toX: 0, y: 0) == pending,
+            "Wheel center preserves pending hue without affecting pixels")
+        for (x, y, expected) in [(1.0, 0.0, 0.0), (0, 1, 90), (-1, 0, 180), (0, -1, 270)] {
+            let wheel = pending.moving(toX: x, y: y)
+            check(wheel.hue == expected && wheel.saturation == 100, "Wheel coordinates follow the shared clockwise hue convention")
+        }
+        let fine = ColorGradingDrag(initial: ColorGradingWheel(hue: 0, saturation: 20), originX: 0.8, originY: 0.4, fine: true)
+        check(fine.value(x: 0.8, y: 0.4) == fine.initial && abs(fine.value(x: 1.2, y: 0.4).saturation - 30) < 1e-6,
+            "Fine drag starts at the existing handle and scales pointer movement by one quarter")
+        check(pending.moving(toX: 1, y: -Double.leastNonzeroMagnitude).hue == 0, "Internal negative angle rounding stays canonical")
+        let fields: Set<AdjustmentTransferField> = [.gradingShadows, .gradingMidtones, .gradingHighlights]
+        let captured = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(captured.fields == fields, "Modified copy includes complete grading objects and pending hue")
+        check(fields.isSubset(of: try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw).fields),
+            "Standard copy includes all three grading zones")
+        let roundTrip = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(captured))
+        check(roundTrip == captured, "Grading payload JSON round-trips exactly")
+        var target = Adjustments()
+        target.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
+        target.gradingSettings[.highlights] = ColorGradingWheel(hue: 50, saturation: 15.125)
+        let partial = try MacAdjustmentTransfer.capture(scope: .custom([.gradingMidtones]), snapshot: state(source), context: raw)
+        let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.gradingSettings.midtones == source.gradingSettings.midtones
+            && merged.settings.gradingSettings.shadows == target.gradingSettings.shadows
+            && merged.settings.gradingSettings.highlights == target.gradingSettings.highlights,
+            "Partial grading paste preserves both unselected zones")
+        let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.gradingSettings == target.gradingSettings,
+            "Old payloads do not reset grading")
+        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.strength = 0; target.strength = 0
+        let recipeCopy = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw).settings.gradingSettings == source.gradingSettings,
+            "Grading is independent of recipe strength, including zero")
+        let valid: [String: Any] = ["shadows": ["hue": 231.25, "saturation": 0],
+            "midtones": ["hue": 0, "saturation": 0], "highlights": ["hue": 0, "saturation": 0]]
+        for wheel in [["hue": -0.1, "saturation": 0], ["hue": 360, "saturation": 0], ["hue": 0, "saturation": 100.01],
+                      ["hue": 0], ["hue": 0, "saturation": 0, "lightness": 0]] {
+            var invalid = valid; invalid["shadows"] = wheel
+            rejects("Persisted grading rejects incomplete, unknown and out-of-range wheel fields") {
+                _ = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: ["colorGrading": invalid]))
+            }
+            rejects("Transfer rejects incomplete, unknown and out-of-range wheel fields") {
+                let value = AdjustmentTransferValue.object(wheel.mapValues { .number($0) })
+                _ = try AdjustmentTransferPayload(source: captured.source, values: [AdjustmentTransferField.gradingShadows.rawValue: value])
+            }
+        }
+        var incomplete = valid; incomplete.removeValue(forKey: "midtones")
+        rejects("Persisted grading requires all three zones when the object is present") {
+            _ = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: ["colorGrading": incomplete]))
+        }
+        var resetSource = Adjustments()
+        resetSource.gradingSettings = source.gradingSettings
+        let context = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let snapshot = state(resetSource)
+        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .gradingZone(.midtones), snapshot: snapshot, context: context) {
+            check(reset.settings.gradingSettings.midtones.isDefault && reset.settings.gradingSettings.shadows == source.gradingSettings.shadows
+                && reset.settings.gradingSettings.highlights == source.gradingSettings.highlights, "Zone reset preserves sibling precision")
+        } else { fatalError("Expected grading zone reset") }
+        for scope in [EditorResetScope.allGrading, .group(.color), .tool(.colorGrading)] {
+            if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+                check(reset.settings.gradingSettings.isDefault, "Tool and color-group resets clear every grading value")
+            } else { fatalError("Expected grading reset") }
+        }
+    }
+
     static func main() throws {
+        try colorGrading()
+        let pendingHue = Data(#"{"colorGrading":{"shadows":{"hue":231.25,"saturation":0},"midtones":{"hue":0,"saturation":0},"highlights":{"hue":0,"saturation":0}}}"#.utf8)
+        let gradingRestored = try JSONDecoder().decode(Adjustments.self, from: pendingHue)
+        let gradingJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(gradingRestored)) as! [String: Any]
+        check(gradingJSON["colorGrading"] != nil, "Pending grading hue survives a persisted edit even with zero saturation")
         try toneControls()
         try aiDenoiseBoundary()
         try postRGBCompatibility()

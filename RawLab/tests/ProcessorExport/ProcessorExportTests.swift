@@ -8,6 +8,7 @@ struct ProcessorExportTests {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try checkToneControls()
+        try checkColorGrading()
         try checkNativeBufferOwnership()
         checkRGBHistogram()
         try checkRasterLensDatabase(root: root, output: output)

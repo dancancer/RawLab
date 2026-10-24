@@ -206,7 +206,7 @@ RAW/raster decode → 线性降噪 → WB/曝光 → 中性显示/LUT/强度混�
 
 ### 8.3 三分区颜色分级
 
-首版采用 display-linear RGB 的亮度/对立色度向量，不新增 OKLab/ICC 依赖。三个色轮转换为零亮度色度方向，按像素亮度的平滑三分区权重混合；权重归一化，避免三块硬切。候选区间为 shadows 0.20～0.55、highlights 0.45～0.80，中间调在 0.20～0.80 平滑包络；这些是 RawLab 方案常量，需在冻结前以黑白灰梯度和真实样本验收。
+首版采用 display-linear RGB 的亮度/对立色度向量，不新增 OKLab/ICC 依赖。三个色轮转换为零亮度色度方向，按像素亮度的平滑三分区权重混合；权重归一化，避免三块硬切。v1 固定区间为 shadows 0.20～0.55、highlights 0.45～0.80，中间调在 0.20～0.80 平滑包络；传递函数、归一化权重和保持亮度的色域处理以 [color grading v1](../../../lutools/docs/color-grading-v1.md) 为准。
 
 每区 hue [0,360)、saturation [0,100]，饱和度零不染色，三组全零不改变像素。输出色域映射/有界处理在该阶段固定，CPU/GPU不能分别使用不同的混合空间。自动区间分析、全局第四轮和局部蒙版本轮不扩入。
 
@@ -234,7 +234,11 @@ CPU 为所有新阶段 reference。点运算逐项接 Metal/D3D11/GLES；尚未�
 ITER-05 的 [tone controls v1 数值合同](../../../lutools/docs/tone-controls-v1.md) 已完成 CPU
 参考、固定合成/真实质量集及三个 GPU 后端对照，四端接线和无界面验证已完成；新工具
 实际 UI 留待解锁后统一验收，IT-06/15 尚未关闭。具体范围见[接入计划](../../integration/editing-iteration/tone-controls-plan.md)。
-ITER-06/10 仍为**未实施、数值合同待冻结**。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 的点数、合法性与 PCHIP 策略已明确，但仍未实现/验证。
+ITER-06 的 [color grading v1 数值合同](../../../lutools/docs/color-grading-v1.md) 已完成 CPU
+参考、固定质量集和 Metal/D3D11/GLES 对照，四端数据链及色轮已接入，本地模型/native/构建验证完成；
+实际 UI 按用户要求解锁后统一验收，IT-07/15 尚未关闭，范围见
+[接入计划](../../integration/editing-iteration/color-grading-plan.md)。
+ITER-10 仍为**未实施、数值合同待冻结**。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 的点数、合法性与 PCHIP 策略已明确，但仍未实现/验证。
 
 核心 owner 在对应算法 PR 先提交同一份版本化数值合同和 CPU 参考向量：黑白场的亮度系数/限幅规则，鲜艳度的彩度定义/肤色权重/负向公式，颜色分级的传递函数/三分区权重/色域处理，以及 Clarity/Dehaze 的半径/边界采样/空气光/transmission 下限/增益和噪声保护。合同连同 fixture ID、来源许可、哈希、参数和期望输出写入共享核心契约与测试资产；默认参数、常量或公式变化不得只在某端修改。先 CPU 参考评估，再冻结算法版本，最后接各端及可用 GPU。
 

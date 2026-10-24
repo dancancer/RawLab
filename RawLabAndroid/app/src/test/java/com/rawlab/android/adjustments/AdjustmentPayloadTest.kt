@@ -9,7 +9,7 @@ class AdjustmentPayloadTest {
     @Test fun sharedPayloadVectorsHaveTheSameAcceptanceAndRoundTrip() {
         val fixture = JSONObject(File("../../Shared/fixtures/adjustment-transfer-v1.json").readText())
         val vectors = fixture.getJSONArray("vectors")
-        assertEquals(35, vectors.length())
+        assertEquals(59, vectors.length())
         for (index in 0 until vectors.length()) {
             val vector = vectors.getJSONObject(index)
             val json = vector.getJSONObject("payload").toString()

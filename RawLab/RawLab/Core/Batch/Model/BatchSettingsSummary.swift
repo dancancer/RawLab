@@ -25,7 +25,11 @@ enum BatchSettingsSummary {
     static func details(_ settings: RawSettings) -> [BatchSettingRow] {
         let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening]
         let tools = scalars.map { BatchSettingRow(title: $0.title, value: $0.displayValue($0.value(from: settings))) }
-        return tools + whiteBalance(settings) + denoise(settings.denoise)
+        let grading = ColorGradingZone.allCases.map { zone in
+            BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
+                value: String(format: "%.1f° · %.1f%%", locale: L10n.locale, settings.gradingSettings[zone].hue, settings.gradingSettings[zone].saturation))
+        }
+        return tools + grading + whiteBalance(settings) + denoise(settings.denoise)
             + effects.map { row($0.key, effectValue(settings.photoEffects, $0.parameter)) } + lens(settings.lensSettings)
     }
 

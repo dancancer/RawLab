@@ -13,6 +13,7 @@
     <string name="all_tools">"Tous les outils"</string>
     <string name="batch_confirmation_count">"%1$d sorties à vérifier"</string>
     <string name="black_point">"Point noir"</string>
+    <string name="color_grading">"Étalonnage des couleurs"</string>
     <string name="dcp_automatic_black">"Le DCP nécessite un traitement automatique du niveau de noir, que cette conversion ne prend pas encore en charge. Sélectionnez d’abord explicitement une stratégie de niveau de noir avec l’outil de préparation."</string>
     <string name="dcp_invalid_calibration">"Le DCP ne contient pas de ColorMatrix/ForwardMatrix D65 unique et valide ; conversion impossible."</string>
     <string name="dcp_invalid_exposure">"Le décalage d’exposition du DCP n’est pas valide ; il doit s’agir d’une valeur finie de -16 à +16 EV."</string>
@@ -98,7 +99,12 @@
     <string name="geometry_move_up">"Déplacer vers le haut"</string>
     <string name="geometry_perspective_tool">"Perspective"</string>
     <string name="geometry_position_size">"Position et dimensions"</string>
+    <string name="grading_midtones">"Tons moyens"</string>
+    <string name="grading_reset_all">"Réinitialiser l’étalonnage des couleurs"</string>
+    <string name="grading_reset_message">"Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?"</string>
+    <string name="grading_reset_zone">"Réinitialiser la plage actuelle"</string>
     <string name="info_unavailable">"Indisponible"</string>
+    <string name="invalid_color_grading">"Valeurs d’étalonnage des couleurs non valides"</string>
     <string name="invalid_tone_controls">"Valeurs de point noir, de point blanc ou de vibrance non valides"</string>
     <string name="jpeg_description">"sRGB · qualité 95 · métadonnées de prise de vue"</string>
     <string name="look_invalid_file">"Le fichier de look est endommagé ou incompatible ; un fichier CUBE ou RLOOK compatible est requis."</string>

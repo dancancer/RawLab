@@ -326,6 +326,11 @@ private fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.grain_amount), String.format(java.util.Locale.ROOT, "%.0f%%", settings.strength * 100))
         SettingLine(AppStrings.text(R.string.message_exposure), String.format(java.util.Locale.ROOT, "%+.2f EV", settings.exposure))
         SettingLine(AppStrings.text(R.string.exposure_basis), listOf(AppStrings.text(R.string.exposure_scene), AppStrings.text(R.string.exposure_preview), AppStrings.text(R.string.exposure_sensor))[settings.exposureMode])
+        com.rawlab.android.settings.ColorGradingZone.entries.forEach { zone ->
+            val title = AppStrings.text(R.string.color_grading) + " · " + AppStrings.text(com.rawlab.android.editor.ui.gradingZoneTitle(zone))
+            SettingLine(title, String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.1f° · %.1f%%",
+                settings.colorGrading[zone].hue, settings.colorGrading[zone].saturation))
+        }
         SettingLine("HSL", if (settings.hsl.isIdentity) AppStrings.text(R.string.hsl_unadjusted) else AppStrings.text(R.string.hsl_adjusted))
         SettingLine(AppStrings.text(R.string.message_highlights), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.highlights * 100))
         SettingLine(AppStrings.text(R.string.message_shadows), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.shadows * 100))

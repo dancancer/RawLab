@@ -23,7 +23,7 @@ class EditorToolGroupingTest {
     }
 
     @Test fun toolsFollowTheSixWorkspaceGroupsWithStableIds() {
-        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 12, 13, 11, 10, 17, 16), editorToolOrder)
+        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 12, 13, 11, 10, 17, 16), editorToolOrder)
     }
 
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {

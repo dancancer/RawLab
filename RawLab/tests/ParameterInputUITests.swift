@@ -2,6 +2,28 @@ import XCTest
 import UIKit
 
 final class ParameterInputUITests: XCTestCase {
+    func testGradingZoneSelectionKeepsPendingHueAndPreciseInputWrapsEndpoint() {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.parameter-inputs")
+        app.launchArguments = ["-RawLab.language", "en", "-Grading"]; app.launch()
+        let hue = app.buttons["grading.hue.value"]
+        XCTAssertTrue(hue.waitForExistence(timeout: 10))
+        app.buttons["grading.zone.midtones"].tap()
+        app.buttons["grading.zone.shadows"].tap()
+        XCTAssertEqual(app.staticTexts["fixture.writes"].label, "0")
+        XCTAssertEqual(app.staticTexts["fixture.gradingHue"].label, "231.25")
+        XCTAssertEqual(hue.value as? String, "231.25 °", "An off-grid pending hue remains readable without rounding")
+        hue.tap()
+        let picker = app.pickerWheels.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        let title = String(describing: picker.value!).components(separatedBy: ",")[0]
+        picker.adjust(toPickerWheelValue: "\(title), 360.0 °")
+        app.buttons["adjustment.wheel.apply"].tap()
+        XCTAssertEqual(app.staticTexts["fixture.gradingHue"].label, "0.0")
+        XCTAssertEqual(app.staticTexts["fixture.writes"].label, "1")
+        XCTAssertTrue(app.buttons["grading.saturation.value"].isHittable)
+    }
+
     func testCanonicalGridDigitsStayCompactAndPercentApplyDoesNotWrite() {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.parameter-inputs")
