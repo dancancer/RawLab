@@ -150,6 +150,10 @@ undo/redo 使用 revision guard：目标当前状态仍匹配预期 after/before
 
 预设 registry 与照片记录分开，复用版本化/原子写入模式，首批放各端 app-support 私有目录：`id`、`name`、时间、payload/scope version、字段集合、逻辑值/模式、外观引用。名称不是 ID；新建使用独立生成、经碰撞检查的唯一标识，不能以 registry 长度或列表位置派生。碰撞时重新生成或阻止创建，不覆盖已有项。重命名、删除其他预设、排序与恢复不改剩余 ID；删除不修改已应用照片。
 
+持久化合同使用 `registry_version=1`、`presets` 和可选 `retired_ids`；删除身份保留为 tombstone，防止旧确认在 UUID 碰撞后命中新条目。条目使用 canonical UUID，`created_at` / `updated_at` 为非负 Unix 毫秒十进制整数字面量，修改时间单调递增。名称按固定空白集合 trim 并转 NFC，按完整规范名称区分大小写检测重名；JSON 重复键、未知字段及未来版本统一拒绝。跨端读写和失败向量以 [共享 fixture](../../../Shared/fixtures/adjustment-presets-v1.json) 为准。
+
+保存只 capture 已提交且仍匹配磁盘 revision 的当前状态，不写剪贴板或照片历史。payload 来源标识固定为 `preset:<id>`，重命名不改内容。覆盖、重命名和删除在独立文件锁内 fresh-read，并比较确认时的完整条目；迟到确认不能覆盖其他实例的新修改。
+
 创建/覆盖先完整校验并原子替换；损坏 registry 保留原文件并给出恢复说明。应用完全调用第 5 节 draft preflight/prepare/commit/history，不另实现参数合并。原照片删除后仍能复用，外观缺失走统一 blocked/跳过流程，不自动替换成中性。新参数通过字段目录扩展；旧 preset 缺失新字段表示“未包含”，不是“将目标新字段归零”。
 
 ## 7. ITER-08：批量编辑与逐张导出

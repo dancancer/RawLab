@@ -21,6 +21,7 @@
         <MenuItem x:Name="PasteAdjustmentMenu" Header="{DynamicResource '粘贴调整…'}" InputGestureText="Ctrl+Shift+V" Click="PasteAdjustmentsClicked" AutomationProperties.AutomationId="adjustment.paste.open"/>
         <MenuItem x:Name="PastePhotosAdjustmentMenu" Header="{DynamicResource '粘贴到所选照片…'}" Click="PasteAdjustmentsToPhotosClicked" AutomationProperties.AutomationId="adjustment.paste.photos"/>
         <MenuItem x:Name="HistoryAdjustmentMenu" Header="{DynamicResource '本次会话历史…'}" Click="ShowAdjustmentHistoryClicked" AutomationProperties.AutomationId="adjustment.history.open"/>
+        <MenuItem x:Name="PresetsAdjustmentMenu" Header="{DynamicResource '我的预设'}" Click="ShowPresetsClicked" AutomationProperties.AutomationId="preset.library.open"/>
         <Separator/>
         <!-- 打开编辑菜单时按当前工具重建，与调整栏的重置菜单同源。 -->
       </MenuItem>
@@ -195,7 +196,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '裁切'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="PerspectiveCategory" Click="PerspectiveCategoryClicked" Style="{StaticResource ToolButton}" AutomationProperties.Name="{DynamicResource '透视'}" AutomationProperties.AutomationId="Perspective">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><local:EditorIcon Kind="Perspective" Width="18" Height="18"/><TextBlock Text="{DynamicResource '透视'}" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:EditorIcon Kind="Perspective" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '透视'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="HslCategoryRing"/><local:EditorIcon Kind="Hsl" Width="16" Height="16"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>

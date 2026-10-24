@@ -116,12 +116,15 @@ final class RawEditorViewModel: ObservableObject {
     var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
+    let presetStore: AdjustmentPresetStore
 
     init(editPersistence: EditPersistence? = nil,
+         presetStore: AdjustmentPresetStore = AdjustmentPresetStore(),
          lookImportCoordinator: LookImportCoordinator = LookImportCoordinator(),
          exportQueue: DispatchQueue = .global(qos: .userInitiated),
          importQueue: DispatchQueue = .global(qos: .userInitiated),
          resultDelivery: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.presetStore = presetStore
         self.lookImportCoordinator = lookImportCoordinator
         self.resultDelivery = resultDelivery
         self.exportQueue = exportQueue

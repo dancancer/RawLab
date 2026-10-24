@@ -15,12 +15,14 @@ SOURCES+=("$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift")
 TRANSFER_SOURCES=(
   "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/Shared/AdjustmentPresetStore.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
   "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
 )
 swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     "$ROOT/Shared/BundledLook.swift" \

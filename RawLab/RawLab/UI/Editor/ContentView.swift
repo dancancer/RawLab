@@ -47,6 +47,9 @@ struct ContentView: View {
     @State var showingProcessingContext = false
     @State var adjustmentSheet: IOSAdjustmentSheet?
     @State var pendingAdjustmentAction: IOSAdjustmentAction?
+    @State var queuedPresetAction: IOSAdjustmentAction?
+    @State var applyingPreset: AdjustmentPreset?
+    @State var returnToPresetLibrary = false
     @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
@@ -209,6 +212,10 @@ struct ContentView: View {
             pendingFileImport = false
             pendingPhotoImport = false
             pendingAdjustmentAction = nil
+            queuedPresetAction = nil
+            applyingPreset = nil
+            returnToPresetLibrary = false
+            if adjustmentSheet == .presetSave || adjustmentSheet == .presetApply { adjustmentSheet = nil }
             adjustmentFine = false
             geometryDraft = nil
             lensDraft = nil
@@ -278,8 +285,18 @@ struct ContentView: View {
 
     private func applyEditorSheets<Content: View>(to content: Content) -> some View {
         content
-        .sheet(item: $adjustmentSheet) { kind in
-            IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
+        .sheet(item: $adjustmentSheet, onDismiss: finishAdjustmentSheet) { kind in
+            switch kind {
+            case .presets, .presetSave:
+                IOSAdjustmentPresetView(model: viewModel, settings: settings, initialSave: kind == .presetSave,
+                    requestPhotoAction: queuePresetAction)
+            case .presetApply:
+                if let applyingPreset {
+                    IOSAdjustmentTransferView(model: viewModel, kind: .paste, settings: settings, preset: applyingPreset)
+                }
+            default:
+                IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
+            }
         }
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {

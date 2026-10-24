@@ -1,12 +1,19 @@
 import AppKit
 
 enum AdjustmentSheetKind: String, Identifiable {
-    case copy, paste, history
+    case copy, paste, history, presets
     var id: String { rawValue }
 }
 
 extension EditorModel {
     func requestAdjustmentSheet(_ kind: AdjustmentSheetKind) {
+        if kind == .presets {
+            guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending else { return }
+            adjustmentSheetPayload = nil; adjustmentSheetTargets = nil
+            adjustmentSheetExcludedSource = nil; pendingAdjustmentHistory = nil
+            adjustmentSheet = .presets
+            return
+        }
         guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending,
               kind == .history || !aiState.isRunning,
               kind == .history || file != nil else { return }
@@ -45,9 +52,10 @@ extension EditorModel {
     }
 
     // 主线程模型/测试入口；界面的大批量预检使用独立队列执行只读 prepare。
-    func prepareAdjustmentPaste(payload: AdjustmentTransferPayload, targets: [URL], excludingSource: String? = nil) throws -> PreparedAdjustmentTransfer {
+    func prepareAdjustmentPaste(payload: AdjustmentTransferPayload, targets: [URL], excludingSource: String? = nil,
+                                action: AdjustmentHistoryTransaction.Action = .paste) throws -> PreparedAdjustmentTransfer {
         let session = try requireAdjustmentSession()
-        return try session.prepare(payload: payload, targets: adjustmentTransferTargets(targets, payload: payload, excludingSource: excludingSource))
+        return try session.prepare(payload: payload, targets: adjustmentTransferTargets(targets, payload: payload, excludingSource: excludingSource), action: action)
     }
 
     func adjustmentTransferTargets(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil) -> [AdjustmentTransferTarget] {

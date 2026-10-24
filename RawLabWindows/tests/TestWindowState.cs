@@ -33,6 +33,7 @@ internal static class TestWindowState
         notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         Set("editStore",new EditStore(Path.Combine(root,"edits")));
+        Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
         Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));
         var library=typeof(MainWindow).GetField("library",flags)!.GetValue(window)!;
         library.GetType().GetField("settingsPath",flags)!.SetValue(library,Path.Combine(root,"folders.json"));

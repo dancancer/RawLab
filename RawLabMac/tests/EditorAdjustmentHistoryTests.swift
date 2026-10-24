@@ -88,6 +88,68 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "failed save neither overwrites storage nor creates history")
         try recipeLUTChecks(root: root, first: first, second: second)
         try historyErrorChecks(root: root, first: first)
+        try presetChecks(root: root, first: first, second: second)
+    }
+
+    static func presetChecks(root: URL, first: URL, second: URL) throws {
+        let directory = root.appendingPathComponent("preset-edits")
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("preset-looks"), editDirectory: directory,
+            batchDirectory: root.appendingPathComponent("preset-batch"), presetDirectory: root.appendingPathComponent("preset-library"))
+        model.open(first); try rendered(model)
+        model.settings.exposure = 0.7; try check(model.saveEdits(), "preset source is committed")
+        let clipboard = try model.copyAdjustments(scope: .custom([.contrast]))
+        let count = model.adjustmentSession!.transactions.count
+        let payload = try model.capturePresetAdjustments(scope: .custom([.exposure]))
+        let preset = try model.presetStore.create(name: "Native preset", payload: payload)
+        try check(model.adjustmentClipboard == clipboard && model.adjustmentSession!.clipboard == clipboard &&
+            model.adjustmentSession!.transactions.count == count, "native preset save preserves both clipboard and photo history")
+        try check(model.beginGeometryDraft(), "preset fixture enters a geometry draft")
+        try rendered(model); model.updateGeometryDraft { $0.cropWidth = 0.8 }
+        model.requestAdjustmentSheet(.presets)
+        try check(model.adjustmentSheet == .presets && model.geometryDraft != nil && !model.geometryDraftDeparturePending,
+            "opening preset management does not apply or discard a photo draft")
+        var continued = false
+        model.preparePresetAction { continued = true }
+        try check(model.geometryDraftDeparturePending && !continued, "preset save waits for the shared geometry decision")
+        model.resolveGeometryDraftDeparture(.stay)
+        try check(!continued && model.geometryDraft != nil, "Continue Editing cancels the preset action and preserves its draft")
+        model.preparePresetAction { continued = true }
+        model.resolveGeometryDraftDeparture(.discard)
+        try check(continued && model.geometryDraft == nil && model.adjustmentSession!.transactions.count == count,
+            "Discard then preset capture uses committed values without adding a geometry history item")
+        model.adjustmentSheet = nil
+        model.open(second); try rendered(model)
+        model.settings.exposure = -0.2; model.settings.saturation = 14
+        try check(model.saveEdits(), "preset target has independent committed adjustments")
+        let operation = try model.prepareAdjustmentPaste(payload: preset.payload, targets: [second], action: .preset)
+        model.applyAdjustmentPaste(operation); try rendered(model)
+        try check(model.settings.exposure == 0.7 && model.settings.saturation == 14 && !model.dirty,
+            "native preset apply adopts its conditional receipt and preserves unselected settings")
+        try check(model.adjustmentSession!.transactions.last?.action == .preset, "native preset history records its actual action")
+        model.undoAdjustment(); try rendered(model)
+        try check(model.settings.exposure == -0.2 && model.canRedoAdjustment, "native Undo restores the pre-preset photo")
+        model.redoAdjustment(); try rendered(model)
+        try check(model.settings.exposure == 0.7, "native Redo restores the same preset component")
+        let externalStore = try EditPersistence(directory: directory)
+        var externalSettings = model.settings; externalSettings.exposure = 1.8
+        try externalStore.save(second, state: model.editState(settings: externalSettings))
+        let externalReceipt = try externalStore.versionedState(for: second)
+        let beforeConflictHistory = model.adjustmentSession!.transactions.count
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected stale preset capture failure", code: 1) }
+        catch EditPersistenceConflict.changed {}
+        try check(try externalStore.versionedState(for: second) == externalReceipt && model.presetStore.list() == [preset] &&
+            model.adjustmentSession!.transactions.count == beforeConflictHistory && model.adjustmentClipboard == clipboard && model.saveError == nil,
+            "preset capture rejects an external photo revision without changing saved state, library, history, clipboard or photo-save status")
+        model.open(first); try rendered(model)
+        model.open(second); try rendered(model)
+        try check(model.settings.exposure == 1.8, "switching away and back after stale preset capture adopts the external settings")
+        model.editStore = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
+        model.settings.exposure = 1.3
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected preset source save failure", code: 1) }
+        catch AdjustmentTransferError.draftRequiresPreflight {}
+        try check(model.dirty && model.saveError != nil && model.adjustmentClipboard == clipboard,
+            "failed source persistence blocks preset capture without changing clipboard")
+        try check(model.presetStore.list() == [preset], "source save failure does not alter the preset library")
     }
 
     static func recipeLUTChecks(root: URL, first: URL, second: URL) throws {

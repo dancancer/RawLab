@@ -16,6 +16,7 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private Button? importLookButton;
+    private Button? presetLibraryButton;
 
     private void AboutClicked(object sender, RoutedEventArgs e)
     {
@@ -189,6 +190,15 @@ public partial class MainWindow
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=null;
+        var presets = new StackPanel();
+        presets.Children.Add(new EditorIcon { Kind="Photo", Width=32, Height=64 });
+        var presetCaption = new TextBlock { Text=Loc.Text("我的预设"), MinHeight=30, TextWrapping=TextWrapping.Wrap,
+            TextAlignment=TextAlignment.Center, Margin=new Thickness(0,5,0,0) };
+        presetCaption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize"); presets.Children.Add(presetCaption);
+        presetLibraryButton = new Button { Content=presets, Style=(Style)FindResource("FilmButton") };
+        AutomationProperties.SetName(presetLibraryButton,Loc.Text("我的预设"));
+        AutomationProperties.SetAutomationId(presetLibraryButton,"preset.library.open");
+        presetLibraryButton.Click+=ShowPresetsClicked; FilmStrip.Children.Add(presetLibraryButton);
         foreach(var item in FilmGrouping.Arrange(films,film=>film.Path==null,film=>film.Group))
         {
             var film=item.Value;
@@ -300,6 +310,7 @@ public partial class MainWindow
             FilmCategory.IsEnabled=!exporting;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
             if(importLookButton!=null)importLookButton.IsEnabled=!exporting;
+            if(presetLibraryButton!=null)presetLibraryButton.IsEnabled=!exporting && !transferPreparing;
             foreach(var (tool,controls) in effectToolButtons)
             {
                 var selected=choosingPhotoEffects && selectedEffect==tool;
@@ -362,7 +373,7 @@ public partial class MainWindow
         InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
         InfoEntryButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady && !adjustmentReloadRequired;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
-        var busy=scheduler.Busy || previewResize.IsEnabled || exporting || aiJob.State.IsRunning;
+        var busy=scheduler.Busy || previewResize.IsEnabled || aiJob.State.IsRunning;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
         BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;
         BusyStill.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Collapsed : Visibility.Visible;

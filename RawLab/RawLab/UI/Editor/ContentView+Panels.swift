@@ -471,9 +471,17 @@ extension ContentView {
                                     .accessibilityAddTraits(geometrySelected && geometryPerspective ? .isSelected : [])
                             }
                         }
+                        if selectedGroup == .looks {
+                            Button { adjustmentSheet = .presets } label: {
+                                AdjustmentToolLabel(title: L10n.text("我的预设"), symbol: "bookmark", selected: false,
+                                    progress: 0, width: toolWidth, height: editorToolHeight)
+                            }.disabled(editorBusy).accessibilityLabel(L10n.text("我的预设"))
+                                .accessibilityIdentifier("preset.library")
+                        }
                     }.padding(.horizontal, 12)
                 }
                 .frame(height: editorToolHeight)
+                .accessibilityIdentifier("editor.tools")
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
                     proxy.scrollTo(currentEditorTool.stableID, anchor: .center)
                 }

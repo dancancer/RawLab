@@ -87,6 +87,9 @@
 "保存" = "Save";
 "保存到" = "Save to";
 "保存失败" = "Save failed";
+"保存当前调整为预设…" = "Save Current Adjustments as Preset…";
+"保存所选调整，之后可应用到其他照片。" = "Save selected adjustments to apply them to other photos later.";
+"保存预设" = "Save Preset";
 "保留旧编辑记录的降噪算法" = "Keeps the noise reduction method from earlier edits";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "修正直线弯曲" = "Straighten Curved Lines";
@@ -117,6 +120,8 @@
 "几何编辑" = "Geometry edits";
 "分割位置" = "Split position";
 "分割线" = "Wipe";
+"删除" = "Delete";
+"删除预设？" = "Delete Preset?";
 "前往下载 %@" = "Download %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
 "匹配内嵌预览" = "Match embedded preview";
@@ -135,7 +140,9 @@
 "取消" = "Cancel";
 "取消几何和镜头编辑" = "Cancel Geometry and Lens Editing";
 "取消导出" = "Cancel Export";
+"另存" = "Save As";
 "史诗自然 · 雾气冷青" = "Epic nature · misty cool cyan";
+"同名预设已存在，请使用其他名称。" = "A preset with this name already exists. Use another name.";
 "向右旋转 90°" = "Rotate right 90°";
 "向右滚动%@" = "Scroll %@ to the right";
 "向左旋转 90°" = "Rotate left 90°";
@@ -188,6 +195,7 @@
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "This replaces the target photos’ local adjustments without modifying the original RAW.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "The target photos’ local adjustment records will be replaced. Original files will not be modified.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
+"尚无用户预设" = "No User Presets Yet";
 "尚未复制调整。请先从一张照片复制所需范围。" = "No adjustments copied yet. Copy the desired settings from a photo first.";
 "尚未检查更新" = "Not checked for updates yet";
 "尚未选择 RAW" = "No RAW Photos Selected";
@@ -243,6 +251,7 @@
 "应用有效输入、放弃输入，或返回继续编辑。" = "Apply valid input, discard it, or return to editing.";
 "应用草稿" = "Apply Draft";
 "应用输入" = "Apply Input";
+"应用预设" = "Apply Preset";
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
 "开启对比" = "Turn on comparison";
@@ -257,6 +266,7 @@
 "待处理" = "Needs attention";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
+"我的预设" = "My Presets";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "These adjustments are incompatible with this photo. Change the scope or skip it.";
 "所选镜头不可用" = "Selected Lens Unavailable";
 "手动" = "Manual";
@@ -297,6 +307,7 @@
 "文件夹" = "Folders";
 "文件树" = "File tree";
 "新建任务" = "Create new task";
+"新预设" = "New Preset";
 "旋转" = "Rotation";
 "无 RAW 照片" = "No RAW photos";
 "无效或不可用的色度降噪模式" = "Invalid or unavailable chroma noise reduction mode";
@@ -313,6 +324,7 @@
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法写入输出目录，请检查访问权限和剩余空间。" = "Unable to write to the output folder. Check access permissions and free space.";
 "无法创建处理会话" = "Unable to create processing session";
+"无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法恢复调整：%@" = "Unable to restore adjustments: %@";
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
@@ -421,6 +433,7 @@
 "此目录没有照片。" = "This folder contains no photos.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";
+"此预设库来自更新版本，请更新应用后重试。" = "This preset library was created by a newer version. Update the app and try again.";
 "水平位置" = "Horizontal position";
 "水平翻转" = "Flip horizontal";
 "水平透视" = "Horizontal perspective";
@@ -474,6 +487,7 @@
 "童话油画 · 梦幻微光" = "Fairy-tale oil painting · dreamy glow";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Fairy-tale picture-book oil painting, deep quiet shadows, enveloping warm-gold light and diffuse glow";
 "等待导出" = "Waiting to Export";
+"管理预设：%@" = "Manage preset: %@";
 "粗糙度" = "Roughness";
 "粗色斑抑制" = "Coarse Artifact Suppression";
 "粘贴调整" = "Paste Adjustments";
@@ -540,6 +554,8 @@
 "裁切选区" = "Crop Selection";
 "裁切高度" = "Crop height";
 "裁边 %@%%" = "Crop %@%%";
+"覆盖" = "Overwrite";
+"覆盖预设？" = "Overwrite Preset?";
 "语言" = "Language";
 "请使用 %@ 的步进。" = "Use increments of %@.";
 "请先完成此照片的 AI 降噪，再预览或导出。" = "Complete AI denoising for this photo before previewing or exporting.";
@@ -549,8 +565,10 @@
 "请至少选择一张 RAW 照片。" = "Please select at least one RAW photo.";
 "请至少选择一张照片。" = "Please select at least one photo.";
 "请输入 0 至 100 的有效数字" = "Please enter a valid number from 0 to 100";
+"请输入不同的预设名称。" = "Enter a different preset name.";
 "请输入有效数字" = "Please enter a valid number";
 "请输入范围内的有效数字" = "Please enter a valid number within the range";
+"请输入预设名称。" = "Enter a preset name.";
 "调整亮度、色彩和粗色斑降噪" = "Adjust luma, chroma and coarse artifact noise reduction";
 "调整内容无法读取，请重新复制。" = "The adjustments cannot be read. Copy them again.";
 "调整前" = "Before";
@@ -564,6 +582,7 @@
 "调整栏" = "Adjustment Panel";
 "调整栏高度" = "Adjustment Panel Height";
 "调整照片" = "Photo Adjustment";
+"调整范围" = "Adjustment Scope";
 "调整裁切边角" = "Adjust crop corner";
 "赛博朋克 · 极致反差" = "Cyberpunk · extreme contrast";
 "跟随系统" = "Follow system";
@@ -593,9 +612,12 @@
 "重做" = "Redo";
 "重做 %@ 张" = "Redo photos: %@";
 "重名文件" = "Duplicate Filenames";
+"重命名" = "Rename";
 "重命名…" = "Rename…";
 "重命名外观" = "Rename Look";
+"重命名预设" = "Rename Preset";
 "重新读取目录" = "Reload Folder";
+"重新载入" = "Reload";
 "重置" = "Reset";
 "重置 HSL" = "Reset HSL";
 "重置%@" = "Reset %@";
@@ -649,6 +671,10 @@
 "预览已更新" = "Preview updated";
 "预览未更新" = "Preview not updated";
 "预设" = "Preset";
+"预设名称" = "Preset Name";
+"预设已变化，请重新载入列表后重试。" = "The preset has changed. Reload the list and try again.";
+"预设库无法读取，原文件保持不变。请从备份恢复后重试。" = "The preset library cannot be read. The original file is unchanged. Restore a backup and try again.";
+"预设操作未完成：%@" = "Preset operation failed: %@";
 "颗粒" = "Grain";
 "颗粒强度" = "Grain Intensity";
 "颜色" = "Color";

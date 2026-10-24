@@ -5,9 +5,10 @@ namespace RawLab.Windows;
 public sealed record AdjustmentTransferTarget(string Path,SavedEdit DefaultEdit,AdjustmentTransferContext Context,Func<bool>? IsCurrent=null);
 public enum AdjustmentStatus { Applied, Unchanged, Skipped, Blocked, Conflict, Failed }
 public sealed record AdjustmentOutcome(string TargetID,AdjustmentStatus Status,VersionedPhotoEdit? Saved=null,Exception? Error=null,bool RequiresHistoryDecision=false);
-public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets);
+public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets,
+    AdjustmentHistoryAction Action = AdjustmentHistoryAction.Paste);
 public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,VersionedPhotoEdit? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error);
-public enum AdjustmentHistoryAction { Paste, Edit }
+public enum AdjustmentHistoryAction { Paste, Edit, Preset }
 public enum AdjustmentHistoryState { Applied, Undone, RedoInvalidated }
 public sealed record AdjustmentHistoryPart(Guid ID,Guid? PriorHead,OriginalIdentity Identity,string DisplayName,SavedEdit? Before,SavedEdit? After,AdjustmentHistoryState State);
 public sealed record AdjustmentHistoryTransaction(Guid ID,AdjustmentHistoryAction Action,IReadOnlySet<AdjustmentField> Fields,IReadOnlyList<AdjustmentHistoryPart> Parts);
@@ -24,7 +25,8 @@ public sealed class AdjustmentTransferSession(EditStore store)
     public AdjustmentPayload? Clipboard {get;private set;}
     public AdjustmentPayload Copy(AdjustmentScope scope,SavedEdit source,AdjustmentTransferContext context)
     {var payload=AdjustmentTransfer.Capture(scope,source,context);Clipboard=payload;return payload;}
-    public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets)
+    public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets,
+        AdjustmentHistoryAction action = AdjustmentHistoryAction.Paste)
     {
         payload.Validate();
         var prepared=new List<PreparedAdjustmentTarget>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -38,7 +40,7 @@ public sealed class AdjustmentTransferSession(EditStore store)
                 prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null));
             }catch(Exception error) {prepared.Add(new(id,Path.GetFileName(id),null,null,false,target.IsCurrent,error));}
         }
-        return new(Guid.NewGuid(),payload,prepared.AsReadOnly());
+        return new(Guid.NewGuid(),payload,prepared.AsReadOnly(),action);
     }
     public IReadOnlyList<AdjustmentOutcome> Apply(PreparedAdjustmentTransfer operation,IReadOnlySet<string>? skipping=null)
     {
@@ -58,7 +60,7 @@ public sealed class AdjustmentTransferSession(EditStore store)
                     if(target.Unchanged)result=new(target.ID,AdjustmentStatus.Unchanged,original);
                     else {
                         var saved=store.CompareAndSave(original,candidate);
-                        Record(operation.ID,AdjustmentHistoryAction.Paste,operation.Payload.Fields,target.DisplayName,original,saved);
+                        Record(operation.ID,operation.Action,operation.Payload.Fields,target.DisplayName,original,saved);
                         result=new(target.ID,AdjustmentStatus.Applied,saved);
                     }
                 }catch(EditPersistenceConflict error){result=new(target.ID,AdjustmentStatus.Conflict,Error:error);}

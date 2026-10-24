@@ -75,8 +75,11 @@
 "保存失败" = "Save failed";
 "保存失败，请重试。" = "Save Failed. Try Again.";
 "保存当前照片" = "Save Current Photo";
+"保存当前调整为预设…" = "Save Current Adjustments as Preset…";
+"保存所选调整，之后可应用到其他照片。" = "Save selected adjustments to apply them to other photos later.";
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "An interruption occurred while saving. Check Photos before generating again.";
 "保存结果待确认" = "Save Result Needs Confirmation";
+"保存预设" = "Save Preset";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "停用" = "Off";
 "允许使用统计" = "Allow usage analytics";
@@ -93,6 +96,8 @@
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometry and lens settings are included only with All or an explicit selection.";
 "分割位置" = "Split position";
 "分割线" = "Wipe";
+"删除" = "Delete";
+"删除预设？" = "Delete Preset?";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
 "匹配内嵌预览" = "Match embedded preview";
 "匹配照片" = "Matches Photo";
@@ -104,7 +109,9 @@
 "双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取消" = "Cancel";
 "取消导出" = "Cancel Export";
+"另存" = "Save As";
 "史诗自然 · 雾气冷青" = "Epic nature · misty cool cyan";
+"同名预设已存在，请使用其他名称。" = "A preset with this name already exists. Use another name.";
 "向右旋转 90°" = "Rotate right 90°";
 "向左旋转 90°" = "Rotate left 90°";
 "四分之一灵敏度" = "Quarter Sensitivity";
@@ -146,6 +153,7 @@
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
+"尚无用户预设" = "No User Presets Yet";
 "尚未保存，允许重新导出" = "Not Saved Yet; Allow Re-Export";
 "尚未复制调整。请先从一张照片复制所需范围。" = "No adjustments copied yet. Copy the desired settings from a photo first.";
 "尚未选择 RAW" = "No RAW Photos Selected";
@@ -184,6 +192,7 @@
 "并排" = "Side by side";
 "应用" = "Apply";
 "应用并保存" = "Apply and Save";
+"应用预设" = "Apply Preset";
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
 "开启对比" = "Turn on comparison";
@@ -196,6 +205,7 @@
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
 "恢复默认" = "Restore Default";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
+"我的预设" = "My Presets";
 "所选外观不可用，请重新选择外观。" = "Selected Look Unavailable; Choose Another Look.";
 "所选照片：%@" = "Selected Photo: %@";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "These adjustments are incompatible with this photo. Change the scope or skip it.";
@@ -224,6 +234,7 @@
 "效果" = "Effects";
 "数据与提供方" = "Data and provider";
 "文件信息" = "File Information";
+"新预设" = "New Preset";
 "旋转" = "Rotation";
 "无效或不可用的镜头校正设置" = "Invalid or Unavailable Lens Correction Settings";
 "无效或不可用的降噪参数" = "Invalid or unavailable noise reduction settings";
@@ -235,6 +246,7 @@
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Unable to Save Photos. Allow RawLab to Add Photos in System Settings.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Unable to save the photo. Allow adding photos in system settings.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
+"无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
@@ -319,6 +331,7 @@
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";
+"此预设库来自更新版本，请更新应用后重试。" = "This preset library was created by a newer version. Update the app and try again.";
 "此默认值不可达，请重置裁切组。" = "This default value cannot be reached. Reset the crop settings.";
 "水平位置" = "Horizontal position";
 "水平翻转" = "Flip horizontal";
@@ -363,6 +376,7 @@
 "童话油画 · 梦幻微光" = "Fairy-tale oil painting · dreamy glow";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Fairy-tale picture-book oil painting, deep quiet shadows, enveloping warm-gold light and diffuse glow";
 "等待导出" = "Waiting to Export";
+"管理预设：%@" = "Manage preset: %@";
 "粗糙度" = "Roughness";
 "粗色斑抑制" = "Coarse Artifact Suppression";
 "粘贴调整" = "Paste Adjustments";
@@ -415,6 +429,8 @@
 "裁切选区" = "Crop Selection";
 "裁切高度" = "Crop height";
 "裁边 %@%%" = "Crop %@%%";
+"覆盖" = "Overwrite";
+"覆盖预设？" = "Overwrite Preset?";
 "语言" = "Language";
 "请使用 %@ 的步进。" = "Use increments of %@.";
 "请先导入一张照片。" = "Import a Photo First.";
@@ -422,6 +438,8 @@
 "请等待当前任务完成。" = "Wait for the Current Task to Finish.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请输入 1–65535 之间的像素数" = "Enter a pixel count from 1 to 65,535";
+"请输入不同的预设名称。" = "Enter a different preset name.";
+"请输入预设名称。" = "Enter a preset name.";
 "调整" = "Adjustments";
 "调整内容无法读取，请重新复制。" = "The adjustments cannot be read. Copy them again.";
 "调整前" = "Before";
@@ -431,6 +449,7 @@
 "调整未保存 · 重试" = "Adjustments not saved · Try again";
 "调整来源" = "Adjustment Source";
 "调整照片" = "Photo Adjustment";
+"调整范围" = "Adjustment Scope";
 "调整裁切边角" = "Adjust crop corner";
 "调整触觉反馈" = "Adjustment Haptics";
 "调整记录已恢复，请重新选择照片载入。" = "Adjustment Record Restored. Select the Photo Again to Load It.";
@@ -456,7 +475,10 @@
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Redo";
 "重做 %@ 张" = "Redo photos: %@";
+"重命名" = "Rename";
 "重命名外观" = "Rename Look";
+"重命名预设" = "Rename Preset";
+"重新载入" = "Reload";
 "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Reloading discards unsaved adjustments and reads the current saved record for this photo.";
 "重新载入已保存调整" = "Reload Saved Adjustments";
 "重置" = "Reset";
@@ -507,6 +529,10 @@
 "预览已更新" = "Preview updated";
 "预览未更新" = "Preview not updated";
 "预设" = "Preset";
+"预设名称" = "Preset Name";
+"预设已变化，请重新载入列表后重试。" = "The preset has changed. Reload the list and try again.";
+"预设库无法读取，原文件保持不变。请从备份恢复后重试。" = "The preset library cannot be read. The original file is unchanged. Restore a backup and try again.";
+"预设操作未完成：%@" = "Preset operation failed: %@";
 "颗粒" = "Grain";
 "颗粒大小" = "Grain Size";
 "颗粒强度" = "Grain Intensity";

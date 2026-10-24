@@ -1,5 +1,15 @@
 import Foundation
 
+extension IOSAdjustmentHistoryTransaction.Action {
+    var title: String {
+        switch self {
+        case .paste: return L10n.text("粘贴调整")
+        case .preset: return L10n.text("应用预设")
+        case .edit: return L10n.text("调整照片")
+        }
+    }
+}
+
 extension AdjustmentTransferField {
     static func groupTitle(_ group: String) -> String {
         L10n.text(["looks": "外观", "light": "光线", "color": "颜色", "effects": "效果", "detail": "细节", "geometry": "几何与镜头"][group] ?? group)

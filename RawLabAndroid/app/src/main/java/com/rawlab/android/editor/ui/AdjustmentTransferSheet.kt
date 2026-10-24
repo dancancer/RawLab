@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rawlab.android.R
 import com.rawlab.android.adjustments.*
+import com.rawlab.android.presets.AdjustmentPreset
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.adjustmentErrorMessage
 import com.rawlab.android.ui.EditorSheetSystemBars
@@ -31,12 +32,12 @@ private val unfinished = setOf(AdjustmentStatus.BLOCKED, AdjustmentStatus.FAILED
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentSheet, onClose: () -> Unit) {
+internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentSheet, preset: AdjustmentPreset? = null, onClose: () -> Unit) {
     val editor by model.state.collectAsStateWithLifecycle()
     val transfer by model.adjustmentTransfer.collectAsStateWithLifecycle()
     // 打开时冻结剪贴板和目标；异步 picker / 预检不能重新读取后来复制的内容。
-    val payload = remember { model.adjustmentClipboard }
-    val sourceName = remember { model.adjustmentClipboardSourceName.orEmpty() }
+    val payload = remember { preset?.payload ?: model.adjustmentClipboard }
+    val sourceName = remember { preset?.name ?: model.adjustmentClipboardSourceName.orEmpty() }
     var targets by remember { mutableStateOf(listOfNotNull(editor.photo?.uri)) }
     var skipped by remember { mutableStateOf(emptySet<String>()) }
     fun changeTargets(next: List<Uri>) {
@@ -57,7 +58,7 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(when (kind) {
                     AdjustmentSheet.COPY -> R.string.transfer_copy
-                    AdjustmentSheet.PASTE -> R.string.transfer_paste
+                    AdjustmentSheet.PASTE -> if (preset == null) R.string.transfer_paste else R.string.preset_apply
                     AdjustmentSheet.HISTORY -> R.string.transfer_history
                 }), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = onClose, modifier = Modifier.testTag("adjustment-transfer-close")) {
@@ -79,7 +80,7 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                         Text(stringResource(R.string.transfer_targets, targets.size.toString()))
                         TextButton(onClick = { files.launch(arrayOf("*/*")) }, enabled = !busy,
                             modifier = Modifier.testTag("adjustment-paste-files")) { Text(stringResource(R.string.transfer_choose_files)) }
-                        Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets) },
+                        Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },
                             enabled = !busy && targets.isNotEmpty(), modifier = Modifier.testTag("adjustment-paste-preflight")) {
                             Text(stringResource(R.string.transfer_preflight))
                         }
@@ -131,8 +132,11 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                         for (transaction in model.adjustmentTransactions.asReversed()) {
                             OutlinedCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(stringResource(if (transaction.action == AdjustmentHistoryTransaction.Action.PASTE)
-                                        R.string.transfer_paste else R.string.transfer_edit), style = MaterialTheme.typography.titleMedium)
+                                    Text(stringResource(when (transaction.action) {
+                                        AdjustmentHistoryTransaction.Action.PASTE -> R.string.transfer_paste
+                                        AdjustmentHistoryTransaction.Action.PRESET -> R.string.preset_apply
+                                        AdjustmentHistoryTransaction.Action.EDIT -> R.string.transfer_edit
+                                    }), style = MaterialTheme.typography.titleMedium)
                                     Text(transaction.parts.joinToString(" · ") { it.displayName })
                                     TransactionButtons(model, transaction, busy)
                                 }
@@ -148,9 +152,15 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
 
 @Composable
 private fun CopyAdjustmentContent(source: String, onCopy: (AdjustmentScope) -> Unit) {
+    Text(source, style = MaterialTheme.typography.titleMedium)
+    AdjustmentScopeEditor(stringResource(R.string.transfer_copy), "adjustment-copy-confirm", onConfirm = onCopy)
+}
+
+@Composable
+internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, enabled: Boolean = true,
+    onConfirm: (AdjustmentScope) -> Unit) {
     var scope by remember { mutableIntStateOf(2) }
     var fields by remember { mutableStateOf<Set<AdjustmentField>>(AdjustmentField.COMMON) }
-    Text(source, style = MaterialTheme.typography.titleMedium)
     Text(stringResource(R.string.transfer_scope))
     listOf(R.string.transfer_all, R.string.transfer_modified, R.string.transfer_custom).forEachIndexed { index, title ->
         Row(Modifier.fillMaxWidth().clickable { scope = index }.testTag("adjustment-copy-scope-$index"),
@@ -180,8 +190,8 @@ private fun CopyAdjustmentContent(source: String, onCopy: (AdjustmentScope) -> U
             }
         }
     }
-    Button(onClick = { onCopy(when (scope) { 0 -> AdjustmentScope.All; 1 -> AdjustmentScope.Modified; else -> AdjustmentScope.Custom(fields) }) },
-        enabled = scope != 2 || fields.isNotEmpty(), modifier = Modifier.testTag("adjustment-copy-confirm")) { Text(stringResource(R.string.transfer_copy)) }
+    Button(onClick = { onConfirm(when (scope) { 0 -> AdjustmentScope.All; 1 -> AdjustmentScope.Modified; else -> AdjustmentScope.Custom(fields) }) },
+        enabled = enabled && (scope != 2 || fields.isNotEmpty()), modifier = Modifier.heightIn(min = 48.dp).testTag(confirmTag)) { Text(confirmTitle) }
 }
 
 @Composable

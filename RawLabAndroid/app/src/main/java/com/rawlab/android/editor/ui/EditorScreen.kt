@@ -71,6 +71,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onCancelAdjustment: () -> Unit = {},
     canUndoAdjustment: Boolean = false, canRedoAdjustment: Boolean = false, canPasteAdjustment: Boolean = false,
     onCopyAdjustments: () -> Unit = {}, onPasteAdjustments: () -> Unit = {}, onAdjustmentHistory: () -> Unit = {},
+    onPresets: () -> Unit = {}, presetAction: AdjustmentPresetAction? = null,
+    onPresetActionConsumed: () -> Unit = {}, onPresetActionReady: (AdjustmentPresetAction) -> Unit = {},
     onUndoAdjustment: () -> Unit = {}, onRedoAdjustment: () -> Unit = {},
     onAutoExposure: () -> Unit = {},
     onBatchExport: () -> Unit = {},
@@ -121,6 +123,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         pendingLeave = null
         if (destination != null) destination() else tool = 2
         return true
+    }
+    LaunchedEffect(presetAction) {
+        presetAction?.let { action ->
+            onPresetActionConsumed()
+            leave { onPresetActionReady(action) }
+        }
     }
     var confirmReload by remember { mutableStateOf(false) }
     val retrySave = { if (adjustmentReloadRequired) confirmReload = true else if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
@@ -286,7 +294,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
-            onGeometryLock, onGeometrySwap, onGeometryGrid)
+            onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { onCancelAdjustment(); onPresets() })
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }
@@ -308,6 +316,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.open_file)) }, enabled = state.operation == Operation.NONE,
                         leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
                     HorizontalDivider()
+                    DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
+                        modifier = Modifier.testTag("preset-menu"), onClick = { menu = false; onCancelAdjustment(); onPresets() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_copy)) }, enabled = state.controlsEnabled,
                         modifier = Modifier.testTag("adjustment-menu-copy"), leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                         onClick = { menu = false; leave(onCopyAdjustments) })

@@ -26,7 +26,16 @@ struct AdjustmentDock: View {
                     MacGeometryWorkspace(model: model)
                 } else {
                     HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
-                        HStack(spacing: 6) { ForEach(group.tools) { toolButton($0) } }
+                        HStack(spacing: 6) {
+                            ForEach(group.tools) { toolButton($0) }
+                            if group == .looks {
+                                Button { model.requestAdjustmentSheet(.presets) } label: {
+                                    Label(L10n.text("我的预设"), systemImage: "bookmark")
+                                        .font(.system(size: 12)).padding(.horizontal, 10).frame(height: 28)
+                                }.buttonStyle(.plain).disabled(model.exporting || model.lookLibraryBusy)
+                                    .accessibilityIdentifier("preset.library")
+                            }
+                        }
                             .scrollTargetLayout().padding(.horizontal, 12)
                     }.frame(height: 32).fixedSize(horizontal: false, vertical: true)
                     GeometryReader { editor in

@@ -32,11 +32,12 @@ struct IOSPreparedAdjustmentTransfer {
     }
     let id: UUID
     let payload: AdjustmentTransferPayload
+    let action: IOSAdjustmentHistoryTransaction.Action
     let targets: [Target]
 }
 
 struct IOSAdjustmentHistoryTransaction {
-    enum Action { case paste, edit }
+    enum Action { case paste, preset, edit }
     enum State { case applied, undone, redoInvalidated }
     struct Part {
         let id: UUID
@@ -76,7 +77,8 @@ final class IOSAdjustmentTransferSession {
         return captured
     }
 
-    func prepare(payload: AdjustmentTransferPayload, targets: [IOSAdjustmentTransferTarget]) throws -> IOSPreparedAdjustmentTransfer {
+    func prepare(payload: AdjustmentTransferPayload, targets: [IOSAdjustmentTransferTarget],
+                 action: IOSAdjustmentHistoryTransaction.Action = .paste) throws -> IOSPreparedAdjustmentTransfer {
         try payload.validate()
         var seen = Set<String>(), prepared = [IOSPreparedAdjustmentTransfer.Target]()
         for target in targets {
@@ -95,7 +97,7 @@ final class IOSAdjustmentTransferSession {
                     isCurrent: target.isCurrent, validateSource: target.validateSource, error: error))
             }
         }
-        return .init(id: UUID(), payload: payload, targets: prepared)
+        return .init(id: UUID(), payload: payload, action: action, targets: prepared)
     }
 
     func apply(_ operation: IOSPreparedAdjustmentTransfer, skipping: Set<String> = []) -> [IOSAdjustmentTransferOutcome] {
@@ -114,7 +116,7 @@ final class IOSAdjustmentTransferSession {
                     if target.unchanged { result = outcome(target.id, .unchanged, saved: original) }
                     else {
                         let saved = try store.compareAndSave(expected: original, state: candidate.withUpdatedAt(Date()))
-                        record(id: operation.id, action: .paste, fields: operation.payload.fields, displayName: target.displayName,
+                        record(id: operation.id, action: operation.action, fields: operation.payload.fields, displayName: target.displayName,
                             before: original, after: saved, validateSource: target.validateSource)
                         result = outcome(target.id, .applied, saved: saved)
                     }

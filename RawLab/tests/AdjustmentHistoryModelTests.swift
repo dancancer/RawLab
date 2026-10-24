@@ -89,7 +89,72 @@ struct AdjustmentHistoryModelTests {
                   "native editor captures exactly the requested exposure and HSL fields")
         try preflight(model, store: store, directory: directory)
         try cancelledImportMetadata(directory: directory)
+        try presetCapture(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
+    }
+
+    private static func presetCapture(directory: URL) throws {
+        var rejectWrite = false
+        let store = try EditPersistence(directory: directory.appendingPathComponent("preset-edits"), writeData: { data, url in
+            if rejectWrite { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        let library = AdjustmentPresetStore(directory: directory.appendingPathComponent("preset-library"))
+        let model = RawEditorViewModel(editPersistence: store, presetStore: library)
+        let source = directory.appendingPathComponent("preset-source.png")
+        try Data([1, 2, 3]).write(to: source)
+        let identity = PhotoIdentity(resourceIdentifier: "preset-capture")
+        model.sourceFile = .externallyManaged(source); model.sourceIdentity = identity
+        model.sourceKind = .raster; model.hasImage = true
+        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        var settings = RawSettings.default; settings.exposure = 0.75
+        model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "preset source edit commits before capture")
+        try model.copyAdjustments(scope: .custom([.contrast]), settings: settings)
+        let clipboard = model.adjustmentSession?.clipboard
+        let revision = try store.versionedState(for: identity)
+        let historyCount = model.adjustmentSession?.transactions.count
+        let captured = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings)
+        _ = try library.create(name: "Native iOS", payload: captured)
+        try check(captured.fields == [.exposure] && captured[.exposure]?.number == 0.75,
+                  "preset capture uses the exact selected committed values")
+        try check(try model.adjustmentSession?.clipboard == clipboard && model.adjustmentSession?.transactions.count == historyCount
+                  && store.versionedState(for: identity) == revision,
+                  "preset capture and library save leave clipboard, photo receipt and history unchanged")
+        model.hasAdjustmentDraft = true
+        var rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .all, settings: settings) } catch { rejected = true }
+        try check(rejected, "unresolved geometry draft prevents preset capture")
+        model.hasAdjustmentDraft = false
+        settings.exposure = 1.0; model.queueSettingsSave(settings); rejectWrite = true
+        try check(!model.saveCurrentSettings(settings), "preset capture fixture retains failed pending edits")
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .all, settings: settings) } catch { rejected = true }
+        try check(rejected && model.adjustmentSession?.clipboard == clipboard,
+                  "failed pending photo save prevents preset capture without changing clipboard")
+        rejectWrite = false
+        try check(model.saveCurrentSettings(settings), "preset source can recover through the existing save retry")
+        let historyBeforeExternal = model.adjustmentSession?.transactions.map(\.id)
+        var external = settings; external.exposure = 1.4
+        try store.save(identity, state: PhotoEditState(settings: external))
+        let externalReceipt = try store.versionedState(for: identity)
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings) } catch { rejected = true }
+        try check(try rejected && store.versionedState(for: identity) == externalReceipt && library.list().count == 1 &&
+                  model.adjustmentSession?.clipboard == clipboard && model.adjustmentSession?.transactions.map(\.id) == historyBeforeExternal,
+                  "external photo revision blocks preset capture without changing library or history")
+        try check(model.adjustmentReloadRequired, "stale preset capture offers explicit saved-adjustment reload")
+        model.acceptImportedEditRecord(externalReceipt, settings: external)
+        settings = external
+        var uncommitted = settings; uncommitted.exposure = 1.8
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: uncommitted) } catch { rejected = true }
+        try check(rejected, "pure preset capture rejects values outside the committed snapshot")
+        try Data([4, 5, 6, 7]).write(to: source)
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings) } catch { rejected = true }
+        try check(try rejected && library.list().count == 1 && model.adjustmentSession?.clipboard == clipboard,
+                  "changed source identity blocks capture and preserves the existing library")
     }
 
     private static func cancelledImportMetadata(directory: URL) throws {

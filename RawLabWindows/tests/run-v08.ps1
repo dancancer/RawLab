@@ -13,7 +13,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','adjustment-presets','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 function Record-CheckResult([string]$Name,$Result) {
     $script:summary+=@{name=$Name;exitCode=$Result.exitCode;log=($Name+'.log');timedOut=$Result.timedOut;durationSeconds=$Result.durationSeconds;pid=$Result.pid}
@@ -77,7 +77,7 @@ if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
 }
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
 Invoke-Check 'ui-details' @($runner,'--ui-details',"$results/ui-details")
-foreach($name in @('geometry','transform-ui','adjustment-history','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
+foreach($name in @('geometry','transform-ui','adjustment-history','adjustment-presets','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
     $arguments=@($runner,('--'+$name),$repo,$RawPath)
     if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
     Invoke-Check $name $arguments

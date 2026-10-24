@@ -9,12 +9,14 @@ OUT="$(mktemp -d /tmp/rawlab-denoise-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 TRANSFER_SOURCES=(
   "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/Shared/AdjustmentPresetStore.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
   "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
 )
 swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     "$ROOT/Shared/BundledLook.swift" \

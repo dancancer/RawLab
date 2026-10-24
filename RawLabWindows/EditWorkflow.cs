@@ -22,7 +22,11 @@ public partial class MainWindow
     {
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
         editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible && !adjustmentReloadRequired) {SaveState.Text = "";saveNoticeKey=null;} };
-        Deactivated += (_, _) => {CancelParameterInputs();CancelEditGesture();SaveEdits();};
+        Deactivated += (_, _) => {
+            // 浏览预设不结束参数输入；其他窗口失活仍按原规则取消半输入。
+            if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
+            CancelEditGesture();SaveEdits();
+        };
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
         try { previousBatch = batchJournal.Load(); }

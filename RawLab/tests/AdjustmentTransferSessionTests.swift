@@ -57,11 +57,50 @@ import Foundation
         try preflightAndExternal(root.appendingPathComponent("preflight"))
         try historyOrder(root.appendingPathComponent("lineage"))
         try saveFailure(root.appendingPathComponent("failures"))
+        try presetApplication(root.appendingPathComponent("presets"))
         var invalid = context; invalid.hasUncommittedDraft = true
         do { _ = try session.copy(scope: .all, snapshot: state(2), context: invalid) } catch {}
         try check(session.clipboard == copy, "Failed copy preserves the frozen clipboard")
         let empty = try session.prepare(payload: copy, targets: [])
         try check(session.apply(empty).isEmpty, "Empty target operation reports no successes")
+    }
+    static func presetApplication(_ root: URL) throws {
+        let edits = try EditPersistence(directory: root.appendingPathComponent("edits"))
+        let session = IOSAdjustmentTransferSession(store: edits)
+        let library = AdjustmentPresetStore(directory: root.appendingPathComponent("library"))
+        let clipboard = try session.copy(scope: .custom([.exposure]), snapshot: state(0.5), context: context)
+        let source = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(1.25), context: context)
+        let saved = try library.create(name: "iOS preset", payload: source)
+        try check(session.clipboard == clipboard && session.transactions.isEmpty,
+            "Preset save leaves clipboard and photo history unchanged")
+        let reloaded = try AdjustmentPresetStore(directory: library.directory).list().first!
+        var beforeSettings = state(-0.5).settings; beforeSettings.saturation = 1.2
+        let before = PhotoEditState(settings: beforeSettings)
+        let identity = PhotoIdentity(resourceIdentifier: "preset-target")
+        try edits.save(identity, state: before)
+        let direct = try IOSAdjustmentTransfer.prepare(payload: source, target: before, context: context)
+        let candidate = try IOSAdjustmentTransfer.prepare(payload: reloaded.payload, target: before, context: context)
+        try check(candidate.settings == direct.settings, "Preset and clipboard resolve identical native settings")
+        let targets = [IOSAdjustmentTransferTarget(identity: identity, displayName: "Preset target",
+            defaultState: state(0), context: context)]
+        let operation = try session.prepare(payload: reloaded.payload, targets: targets, action: .preset)
+        try check(session.apply(operation).first?.status == .applied && edits.state(for: identity)?.settings.exposure == 1.25,
+            "Persisted preset applies through the existing conditional-save path")
+        try check(edits.state(for: identity)?.settings.saturation == 1.2 && session.clipboard == clipboard,
+            "Preset application preserves unselected fields and the frozen clipboard")
+        try check(session.transactions.count == 1 && session.transactions[0].action == .preset,
+            "Preset application records its own action in the shared photo history")
+        try library.delete(saved)
+        try check(edits.state(for: identity)?.settings.exposure == 1.25,
+            "Deleting a preset does not change an already-applied photo")
+        try check(session.undoPhoto(identity).first?.status == .applied && edits.state(for: identity)?.hasSameAdjustments(as: before) == true,
+            "Preset undo restores the full prior photo state")
+        let unchanged = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: before, context: context)
+        let noChange = try session.prepare(payload: unchanged, targets: targets, action: .preset)
+        try check(session.apply(noChange).first?.status == .unchanged && session.canRedoPhoto(identity),
+            "No-change preset application preserves the redo branch")
+        try check(session.redoPhoto(identity).first?.status == .applied && edits.state(for: identity)?.settings.exposure == 1.25,
+            "Preset redo restores the saved result after the preset itself was deleted")
     }
     static func preflightAndExternal(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)

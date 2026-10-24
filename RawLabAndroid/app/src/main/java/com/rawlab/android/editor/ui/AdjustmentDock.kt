@@ -75,7 +75,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onFilmSelected: (UsageFilmKind) -> Unit, onGeometryRatio: (GeometryRatio, Boolean) -> Unit,
     selectGroup: (EditorAdjustmentGroup) -> Unit, channel: Int, onChannelChange: (Int) -> Unit,
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
-    onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {}) {
+    onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
+    onPresets: () -> Unit = {}) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -147,6 +148,13 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             if (scrollTools) toolRow()
         when (tool) {
             0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                item(key = "user-presets") {
+                    Column(Modifier.width(88.dp).testTag("preset-dock"), horizontalAlignment = Alignment.CenterHorizontally) {
+                        ToolIcon(Icons.Outlined.Bookmarks, R.string.preset_library, state.operation == Operation.NONE, onPresets)
+                        Text(stringResource(R.string.preset_library), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 item(key = "import-look") {
                     Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         ToolIcon(Icons.Outlined.Add, R.string.import_look, state.operation == Operation.NONE, onImportLook)

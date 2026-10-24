@@ -38,6 +38,7 @@ import com.rawlab.android.geometry.uncropped
 import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.adjustments.*
+import com.rawlab.android.presets.AdjustmentPresetStore
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.EditPersistenceConflict
 import com.rawlab.android.settings.LookChoice
@@ -50,6 +51,7 @@ class EditorViewModel @JvmOverloads constructor(
     private val batchProcessorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
 ) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
+    val presetStore = AdjustmentPresetStore(File(application.filesDir, "presets"))
     private val usage = UsageAnalyticsRegistry.get(application)
     private val editStore = EditorEditStore(File(application.filesDir, "edits"), editStoreFactory)
     private val adjustmentHistory = EditorAdjustmentHistory(editStore)
@@ -684,12 +686,29 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
 
-    fun prepareAdjustmentPaste(payload: AdjustmentPayload, uris: List<Uri>) {
+    fun capturePresetAdjustments(scope: AdjustmentScope): AdjustmentPayload {
+        val current = mutable.value
+        val photo = current.photo ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        if (!adjustmentTargetIsCurrent(photo.identity.value) || adjustmentHistory.session == null)
+            throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        try { adjustmentHistory.validateCommitted(photo, current.edits) }
+        catch (error: Exception) {
+            mutable.value = current.copy(saveState = EditSaveState.FAILED, saveError = adjustmentErrorMessage(error))
+            throw error
+        }
+        return AdjustmentTransfer.capture(scope, current.edits,
+            AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
+                builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
+                cameraTint = current.preview?.tint))
+    }
+
+    fun prepareAdjustmentPaste(payload: AdjustmentPayload, uris: List<Uri>,
+        action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE) {
         closeAdjustmentOperation()
         val generation = UUID.randomUUID()
         adjustmentPreparationGeneration = generation
         mutableAdjustmentTransfer.value = EditorAdjustmentTransferState(preparing = true)
-        adjustmentPreparationRevision = adjustmentQueue.submit(AdjustmentPreparationWork(generation, payload, uris.toList(), mutable.value.photo, ::adjustmentTargetIsCurrent))
+        adjustmentPreparationRevision = adjustmentQueue.submit(AdjustmentPreparationWork(generation, payload, uris.toList(), mutable.value.photo, ::adjustmentTargetIsCurrent, action))
     }
     fun applyAdjustmentPaste(operation: PreparedAdjustmentTransfer, skipping: Set<String> = emptySet()): List<AdjustmentOutcome> {
         if (mutableAdjustmentTransfer.value.prepared?.id != operation.id) return emptyList()

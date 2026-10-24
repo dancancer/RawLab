@@ -220,6 +220,7 @@ final class EditorModel: ObservableObject {
     @Published var independentRecipeLookIDs = Set<String>()
     @Published var adjustmentOutcomes: [AdjustmentTransferOutcome] = []
     var lastAdjustmentTransaction: UUID?
+    var presetStore: AdjustmentPresetStore
     let editDirectory: URL
     let batchJournal: BatchJournal
     var saveWork: DispatchWorkItem?
@@ -244,9 +245,11 @@ final class EditorModel: ObservableObject {
     init(lookDirectory: URL = LookLibrary.defaultDirectory,
          editDirectory: URL = EditPersistence.defaultDirectory,
          batchDirectory: URL = BatchJournal.defaultDirectory,
+         presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.onUsage = onUsage
         self.editDirectory = editDirectory
+        presetStore = AdjustmentPresetStore(directory: presetDirectory)
         batchJournal = BatchJournal(directory: batchDirectory)
         do {
             let library = try LookLibrary(directory: lookDirectory)

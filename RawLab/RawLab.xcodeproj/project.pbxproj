@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */; };
+		909DE06A520C0C51F1C0B936 /* IOSAdjustmentPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */; };
+		14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */; };
+		7259547D00CAB296D381D32C /* AdjustmentPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */; };
 		2F797D8C193C1A085B1D5258 /* ContentView+AdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9CCDE92A83F42EA3761179 /* ContentView+AdjustmentTransfer.swift */; };
 		288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCB040D1B1FA68911E790E9 /* IOSAdjustmentTransferView.swift */; };
 		B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */; };
@@ -184,6 +188,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentScopeEditor.swift"; path = "RawLab/UI/Editor/IOSAdjustmentScopeEditor.swift"; sourceTree = SOURCE_ROOT; };
+		8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentPresetView.swift"; path = "RawLab/UI/Editor/IOSAdjustmentPresetView.swift"; sourceTree = SOURCE_ROOT; };
+		FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentPresets.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentPresets.swift"; sourceTree = SOURCE_ROOT; };
+		956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AdjustmentPresetStore.swift"; path = "../Shared/AdjustmentPresetStore.swift"; sourceTree = SOURCE_ROOT; };
 		5A9CCDE92A83F42EA3761179 /* ContentView+AdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+AdjustmentTransfer.swift"; path = "RawLab/UI/Editor/ContentView+AdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
 		4DCB040D1B1FA68911E790E9 /* IOSAdjustmentTransferView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferView.swift"; path = "RawLab/UI/Editor/IOSAdjustmentTransferView.swift"; sourceTree = SOURCE_ROOT; };
 		1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferPresentation.swift"; path = "RawLab/UI/Editor/IOSAdjustmentTransferPresentation.swift"; sourceTree = SOURCE_ROOT; };
@@ -649,6 +657,10 @@
 			isa = PBXGroup;
 			children = (
 				4F8BB9466E8CAD133844D3A8 /* AdjustmentTransfer.swift */,
+				D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */,
+				8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */,
+				FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */,
+				956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */,
 				A8CACE000000000000000002 /* CachedPhotoFile.swift */,
 				A8CACE000000000000000004 /* ContentView+AutoExposure.swift */,
 				AB2100000000000000000002 /* Localization.swift */,
@@ -1050,6 +1062,10 @@
 				5B805538A93E3A876472B198 /* IOSAdjustmentTransferValues.swift in Sources */,
 				EBB461C838403C5D4A5E6168 /* IOSAdjustmentTransfer.swift in Sources */,
 				E204508795BC931CB03A6448 /* AdjustmentTransfer.swift in Sources */,
+				9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */,
+				909DE06A520C0C51F1C0B936 /* IOSAdjustmentPresetView.swift in Sources */,
+				14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */,
+				7259547D00CAB296D381D32C /* AdjustmentPresetStore.swift in Sources */,
 				A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */,
 				A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */,
 				D01100000000000000000003,

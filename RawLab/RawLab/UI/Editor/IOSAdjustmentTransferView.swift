@@ -1,13 +1,14 @@
 import PhotosUI
 import SwiftUI
 
-enum IOSAdjustmentSheet: String, Identifiable { case copy, paste, history; var id: String { rawValue } }
-enum IOSAdjustmentAction { case copy, paste, history, undo, redo }
+enum IOSAdjustmentSheet: String, Identifiable { case copy, paste, history, presets, presetSave, presetApply; var id: String { rawValue } }
+enum IOSAdjustmentAction: Equatable { case copy, paste, history, undo, redo, presetSave, presetApply(AdjustmentPreset) }
 
 struct IOSAdjustmentTransferView: View {
     @ObservedObject var model: RawEditorViewModel
     let kind: IOSAdjustmentSheet
     let settings: RawSettings
+    var preset: AdjustmentPreset?
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "custom"
     @State private var fields = AdjustmentTransferField.common
@@ -24,7 +25,7 @@ struct IOSAdjustmentTransferView: View {
     @State private var pasteResults: [IOSAdjustmentTransferOutcome] = []
     @State private var message: String?
 
-    private var title: String { L10n.text(kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : "本次会话历史") }
+    private var title: String { L10n.text(preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : "本次会话历史") }
     private var busy: Bool { loading || model.adjustmentPreparing }
     private var ready: Bool {
         !busy && prepared?.targets.contains { !skipped.contains($0.id) } == true &&
@@ -62,8 +63,8 @@ struct IOSAdjustmentTransferView: View {
         .tint(.yellow)
         .onAppear {
             if kind == .paste {
-                payload = model.adjustmentSession?.clipboard
-                sourceName = model.adjustmentClipboardSourceName ?? payload?.source.identifier ?? ""
+                payload = preset?.payload ?? model.adjustmentSession?.clipboard
+                sourceName = preset?.name ?? model.adjustmentClipboardSourceName ?? payload?.source.identifier ?? ""
                 photos = model.currentAdjustmentPhoto.map { [$0] } ?? []
             }
         }
@@ -76,41 +77,7 @@ struct IOSAdjustmentTransferView: View {
     }
 
     @ViewBuilder private var copyContent: some View {
-        Section {
-            Text(model.sourceDisplayName ?? "").font(.headline)
-            Picker(L10n.text("复制范围"), selection: $scope) {
-                Text(L10n.text("全部")).tag("all")
-                Text(L10n.text("仅已修改")).tag("modified")
-                Text(L10n.text("自定义")).tag("custom")
-            }.accessibilityIdentifier("adjustment.copy.scope")
-            Text(L10n.text("几何与镜头仅在“全部”或显式选择时包含。")).font(.footnote).foregroundStyle(.secondary)
-        }
-        if scope == "custom" {
-            Section {
-                Text(L10n.format("已选 %@ 项", String(fields.count)))
-                Button(L10n.text("清空选择")) { fields.removeAll() }.accessibilityIdentifier("adjustment.copy.clear")
-                ForEach(["looks", "light", "color", "effects", "detail", "geometry"], id: \.self) { group in
-                    DisclosureGroup {
-                        let members = AdjustmentTransferField.allCases.filter { $0.group == group }
-                        Toggle(L10n.text("选择此组"), isOn: groupBinding(members))
-                        ForEach(members.filter { $0.hslLocation == nil }, id: \.rawValue) { fieldToggle($0) }
-                        if group == "color" {
-                            ForEach(HSLAxis.allCases) { axis in
-                                DisclosureGroup {
-                                    let channelFields = members.filter { $0.hslLocation?.axis == axis.rawValue }
-                                    Toggle(L10n.text("选择此组"), isOn: groupBinding(channelFields))
-                                    ForEach(channelFields, id: \.rawValue) { fieldToggle($0) }
-                                } label: {
-                                    Text("HSL · \(axis.title)").accessibilityIdentifier("adjustment.axis.\(axis.rawValue)")
-                                }
-                            }
-                        }
-                    } label: {
-                        Text(AdjustmentTransferField.groupTitle(group)).accessibilityIdentifier("adjustment.group.\(group)")
-                    }
-                }
-            }
-        }
+        IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, sourceName: model.sourceDisplayName ?? "")
         Section {
             Button(L10n.text("复制调整")) {
                 do {
@@ -120,15 +87,6 @@ struct IOSAdjustmentTransferView: View {
                 } catch { message = model.adjustmentErrorMessage(error) }
             }.disabled(scope == "custom" && fields.isEmpty).accessibilityIdentifier("adjustment.copy.confirm")
         }
-    }
-
-    private func fieldToggle(_ field: AdjustmentTransferField) -> some View {
-        Toggle(field.displayTitle, isOn: groupBinding([field])).accessibilityIdentifier("adjustment.field.\(field.rawValue)")
-    }
-    private func groupBinding(_ members: [AdjustmentTransferField]) -> Binding<Bool> {
-        Binding(get: { Set(members).isSubset(of: fields) }, set: {
-            if $0 { fields.formUnion(members) } else { fields.subtract(members) }
-        })
     }
 
     @ViewBuilder private var pasteContent: some View {
@@ -204,7 +162,7 @@ struct IOSAdjustmentTransferView: View {
         historyRecovery
         if model.adjustmentSession?.transactions.isEmpty != false { Section { Text(L10n.text("暂无编辑历史。")) } }
         ForEach((model.adjustmentSession?.transactions ?? []).reversed(), id: \.id) { transaction in
-            Section(L10n.text(transaction.action == .paste ? "粘贴调整" : "调整照片")) {
+            Section(transaction.action.title) {
                 Text(transaction.parts.map(\.displayName).joined(separator: "、"))
                 transactionButtons(transaction)
             }
@@ -270,7 +228,7 @@ struct IOSAdjustmentTransferView: View {
     private func prepare() {
         guard let payload else { return }
         invalidatePreparation()
-        model.prepareAdjustmentPaste(payload, photos: photos) { result in
+        model.prepareAdjustmentPaste(payload, photos: photos, action: preset == nil ? .paste : .preset) { result in
             switch result {
             case .success(let operation): prepared = operation
             case .failure(let error): message = model.adjustmentErrorMessage(error)

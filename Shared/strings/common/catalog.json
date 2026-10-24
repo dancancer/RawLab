@@ -4550,5 +4550,213 @@
     "fr": "Coller les réglages…",
     "ja": "調整を貼り付け…",
     "zh-Hans": "粘贴调整…"
+  },
+  "保存当前调整为预设…": {
+    "de": "Aktuelle Anpassungen als Vorgabe speichern…",
+    "en": "Save Current Adjustments as Preset…",
+    "es": "Guardar ajustes actuales como preajuste…",
+    "fr": "Enregistrer les réglages actuels comme préréglage…",
+    "ja": "現在の調整をプリセットとして保存…",
+    "zh-Hans": "保存当前调整为预设…"
+  },
+  "保存所选调整，之后可应用到其他照片。": {
+    "de": "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.",
+    "en": "Save selected adjustments to apply them to other photos later.",
+    "es": "Guarda los ajustes seleccionados para aplicarlos después a otras fotos.",
+    "fr": "Enregistrez les réglages sélectionnés pour les appliquer ensuite à d’autres photos.",
+    "ja": "選択した調整を保存すると、後で他の写真に適用できます。",
+    "zh-Hans": "保存所选调整，之后可应用到其他照片。"
+  },
+  "保存预设": {
+    "de": "Vorgabe speichern",
+    "en": "Save Preset",
+    "es": "Guardar ajuste preestablecido",
+    "fr": "Enregistrer le préréglage",
+    "ja": "プリセットを保存",
+    "zh-Hans": "保存预设"
+  },
+  "删除预设？": {
+    "de": "Vorgabe löschen?",
+    "en": "Delete Preset?",
+    "es": "¿Eliminar el ajuste?",
+    "fr": "Supprimer le préréglage ?",
+    "ja": "プリセットを削除しますか？",
+    "zh-Hans": "删除预设？"
+  },
+  "另存": {
+    "de": "Speichern unter",
+    "en": "Save As",
+    "es": "Guardar como",
+    "fr": "Enregistrer sous",
+    "ja": "別名で保存",
+    "zh-Hans": "另存"
+  },
+  "同名预设已存在，请使用其他名称。": {
+    "de": "Eine Vorgabe mit diesem Namen ist bereits vorhanden. Verwenden Sie einen anderen Namen.",
+    "en": "A preset with this name already exists. Use another name.",
+    "es": "Ya existe un ajuste con este nombre. Usa otro nombre.",
+    "fr": "Un préréglage porte déjà ce nom. Utilisez un autre nom.",
+    "ja": "同じ名前のプリセットが存在します。別の名前を使用してください。",
+    "zh-Hans": "同名预设已存在，请使用其他名称。"
+  },
+  "尚无用户预设": {
+    "de": "Noch keine eigenen Vorgaben",
+    "en": "No User Presets Yet",
+    "es": "Aún no hay ajustes propios",
+    "fr": "Aucun préréglage personnel",
+    "ja": "ユーザープリセットはまだありません",
+    "zh-Hans": "尚无用户预设"
+  },
+  "应用预设": {
+    "de": "Vorgabe anwenden",
+    "en": "Apply Preset",
+    "es": "Aplicar ajuste preestablecido",
+    "fr": "Appliquer le préréglage",
+    "ja": "プリセットを適用",
+    "zh-Hans": "应用预设"
+  },
+  "我的预设": {
+    "de": "Meine Vorgaben",
+    "en": "My Presets",
+    "es": "Mis ajustes preestablecidos",
+    "fr": "Mes préréglages",
+    "ja": "マイプリセット",
+    "zh-Hans": "我的预设"
+  },
+  "新预设": {
+    "de": "Neue Vorgabe",
+    "en": "New Preset",
+    "es": "Nuevo ajuste preestablecido",
+    "fr": "Nouveau préréglage",
+    "ja": "新しいプリセット",
+    "zh-Hans": "新预设"
+  },
+  "无法创建新的预设标识，请重试。": {
+    "de": "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.",
+    "en": "Could not create a new preset identifier. Try again.",
+    "es": "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.",
+    "fr": "Impossible de créer un nouvel identifiant de préréglage. Réessayez.",
+    "ja": "新しいプリセット識別子を作成できませんでした。再試行してください。",
+    "zh-Hans": "无法创建新的预设标识，请重试。"
+  },
+  "此预设库来自更新版本，请更新应用后重试。": {
+    "de": "Diese Vorgabenbibliothek stammt aus einer neueren Version. Aktualisieren Sie die App und versuchen Sie es erneut.",
+    "en": "This preset library was created by a newer version. Update the app and try again.",
+    "es": "Esta biblioteca de ajustes procede de una versión más reciente. Actualiza la aplicación e inténtalo de nuevo.",
+    "fr": "Cette bibliothèque de préréglages provient d’une version plus récente. Mettez l’application à jour, puis réessayez.",
+    "ja": "このプリセットライブラリは新しいバージョンで作成されています。アプリを更新して再試行してください。",
+    "zh-Hans": "此预设库来自更新版本，请更新应用后重试。"
+  },
+  "管理预设：{0}": {
+    "de": "Vorgabe verwalten: {0}",
+    "en": "Manage preset: {0}",
+    "es": "Administrar ajuste: {0}",
+    "fr": "Gérer le préréglage : {0}",
+    "ja": "プリセットを管理：{0}",
+    "zh-Hans": "管理预设：{0}"
+  },
+  "覆盖": {
+    "de": "Überschreiben",
+    "en": "Overwrite",
+    "es": "Sobrescribir",
+    "fr": "Remplacer",
+    "ja": "上書き",
+    "zh-Hans": "覆盖"
+  },
+  "覆盖预设？": {
+    "de": "Vorgabe überschreiben?",
+    "en": "Overwrite Preset?",
+    "es": "¿Sobrescribir el ajuste?",
+    "fr": "Remplacer le préréglage ?",
+    "ja": "プリセットを上書きしますか？",
+    "zh-Hans": "覆盖预设？"
+  },
+  "请输入不同的预设名称。": {
+    "de": "Geben Sie einen anderen Namen für die Vorgabe ein.",
+    "en": "Enter a different preset name.",
+    "es": "Introduce otro nombre para el ajuste.",
+    "fr": "Saisissez un autre nom pour le préréglage.",
+    "ja": "別のプリセット名を入力してください。",
+    "zh-Hans": "请输入不同的预设名称。"
+  },
+  "请输入预设名称。": {
+    "de": "Geben Sie einen Namen für die Vorgabe ein.",
+    "en": "Enter a preset name.",
+    "es": "Introduce un nombre para el ajuste.",
+    "fr": "Saisissez un nom pour le préréglage.",
+    "ja": "プリセット名を入力してください。",
+    "zh-Hans": "请输入预设名称。"
+  },
+  "调整范围": {
+    "de": "Anpassungsumfang",
+    "en": "Adjustment Scope",
+    "es": "Alcance de los ajustes",
+    "fr": "Réglages à inclure",
+    "ja": "調整範囲",
+    "zh-Hans": "调整范围"
+  },
+  "重命名预设": {
+    "de": "Vorgabe umbenennen",
+    "en": "Rename Preset",
+    "es": "Renombrar ajuste preestablecido",
+    "fr": "Renommer le préréglage",
+    "ja": "プリセット名を変更",
+    "zh-Hans": "重命名预设"
+  },
+  "预设名称": {
+    "de": "Name der Vorgabe",
+    "en": "Preset Name",
+    "es": "Nombre del ajuste",
+    "fr": "Nom du préréglage",
+    "ja": "プリセット名",
+    "zh-Hans": "预设名称"
+  },
+  "预设已变化，请重新载入列表后重试。": {
+    "de": "Die Vorgabe wurde geändert. Laden Sie die Liste neu und versuchen Sie es erneut.",
+    "en": "The preset has changed. Reload the list and try again.",
+    "es": "El ajuste ha cambiado. Recarga la lista e inténtalo de nuevo.",
+    "fr": "Le préréglage a changé. Rechargez la liste, puis réessayez.",
+    "ja": "プリセットが変更されています。一覧を再読み込みしてから再試行してください。",
+    "zh-Hans": "预设已变化，请重新载入列表后重试。"
+  },
+  "预设库无法读取，原文件保持不变。请从备份恢复后重试。": {
+    "de": "Die Vorgabenbibliothek kann nicht gelesen werden. Die Originaldatei bleibt unverändert. Stellen Sie eine Sicherung wieder her und versuchen Sie es erneut.",
+    "en": "The preset library cannot be read. The original file is unchanged. Restore a backup and try again.",
+    "es": "No se puede leer la biblioteca de ajustes. El archivo original no ha cambiado. Restaura una copia de seguridad y vuelve a intentarlo.",
+    "fr": "La bibliothèque de préréglages est illisible. Le fichier original est conservé. Restaurez une sauvegarde, puis réessayez.",
+    "ja": "プリセットライブラリを読み込めません。元のファイルは変更されていません。バックアップから復元して再試行してください。",
+    "zh-Hans": "预设库无法读取，原文件保持不变。请从备份恢复后重试。"
+  },
+  "预设操作未完成：{0}": {
+    "de": "Vorgabenaktion fehlgeschlagen: {0}",
+    "en": "Preset operation failed: {0}",
+    "es": "No se completó la operación del ajuste: {0}",
+    "fr": "Échec de l’opération sur le préréglage : {0}",
+    "ja": "プリセットの操作を完了できませんでした：{0}",
+    "zh-Hans": "预设操作未完成：{0}"
+  },
+  "删除": {
+    "de": "Löschen",
+    "en": "Delete",
+    "es": "Eliminar",
+    "fr": "Supprimer",
+    "ja": "削除",
+    "zh-Hans": "删除"
+  },
+  "重命名": {
+    "de": "Umbenennen",
+    "en": "Rename",
+    "es": "Renombrar",
+    "fr": "Renommer",
+    "ja": "名前を変更",
+    "zh-Hans": "重命名"
+  },
+  "重新载入": {
+    "de": "Neu laden",
+    "en": "Reload",
+    "es": "Recargar",
+    "fr": "Recharger",
+    "ja": "再読み込み",
+    "zh-Hans": "重新载入"
   }
 }

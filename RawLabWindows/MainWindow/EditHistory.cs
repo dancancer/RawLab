@@ -73,7 +73,11 @@ public partial class MainWindow
     private bool PrepareAdjustmentCommand()
     {
         if(file==null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)return false;
-        CancelParameterInputs();CancelEditGesture();
+        foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
+            if(row.Commit())continue;
+            row.Number.Focus();return false;
+        }
+        if(editGesture!=null)return false;
         return ResolveTransformDraft() && SaveEdits();
     }
     private bool HistoryTargetIsCurrent(string path)=>!StringComparer.OrdinalIgnoreCase.Equals(path,file) ||

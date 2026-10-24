@@ -23,7 +23,8 @@ data class EditorAdjustmentTransferState(val preparing: Boolean = false, val pre
     val results: List<AdjustmentOutcome> = emptyList(), val historyRequest: EditorAdjustmentHistoryRequest? = null,
     val historyResults: List<AdjustmentOutcome> = emptyList(), val error: String? = null)
 internal data class AdjustmentPreparationWork(val generation: UUID, val payload: AdjustmentPayload, val uris: List<Uri>,
-    val currentPhoto: ImportedPhoto?, val isCurrent: (String) -> Boolean)
+    val currentPhoto: ImportedPhoto?, val isCurrent: (String) -> Boolean,
+    val action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE)
 internal data class AdjustmentPreparationResult(val generation: UUID, val operation: PreparedAdjustmentTransfer, val ownedFiles: Map<String, File>)
 
 /** 与普通渲染一样在串行资源队列执行；每个 native processor 在该目标预检结束时释放。 */
@@ -66,7 +67,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     isCurrent = { work.isCurrent(identity.value) }, validateSource = { throw error })
             }
         }
-        try { AdjustmentPreparationResult(work.generation, session.prepare(work.payload, targets), owned.toMap()) }
+        try { AdjustmentPreparationResult(work.generation, session.prepare(work.payload, targets, work.action), owned.toMap()) }
         catch (error: Throwable) { owned.values.forEach(File::delete); throw error }
     }
 }

@@ -63,6 +63,7 @@ val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
     from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
+    from(repo.resolve("Shared/fixtures/adjustment-presets-v1.json"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
     if (testRaster.isPresent) from(testRaster.get()) { rename { "sample.jpg" } }
     if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }

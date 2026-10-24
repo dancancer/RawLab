@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 
 AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
+AdjustmentPresetChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];

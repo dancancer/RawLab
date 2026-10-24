@@ -87,6 +87,9 @@
 "保存" = "Speichern";
 "保存到" = "Speichern unter";
 "保存失败" = "Speichern fehlgeschlagen";
+"保存当前调整为预设…" = "Aktuelle Anpassungen als Vorgabe speichern…";
+"保存所选调整，之后可应用到其他照片。" = "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.";
+"保存预设" = "Vorgabe speichern";
 "保留旧编辑记录的降噪算法" = "Behält die Rauschreduzierung früherer Bearbeitungen bei";
 "保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "修正直线弯曲" = "Gekrümmte Linien begradigen";
@@ -117,6 +120,8 @@
 "几何编辑" = "Geometrie bearbeiten";
 "分割位置" = "Position der Trennlinie";
 "分割线" = "Trennlinie";
+"删除" = "Löschen";
+"删除预设？" = "Vorgabe löschen?";
 "前往下载 %@" = "%@ herunterladen";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Kalifornisches Sonnenlicht mit japanischem Filmlook, diffuses urbanes Gold und klarer warmer Schimmer";
 "匹配内嵌预览" = "An eingebettete Vorschau anpassen";
@@ -135,7 +140,9 @@
 "取消" = "Abbrechen";
 "取消几何和镜头编辑" = "Geometrie- und Objektivbearbeitung abbrechen";
 "取消导出" = "Export abbrechen";
+"另存" = "Speichern unter";
 "史诗自然 · 雾气冷青" = "Epische Natur · kühles Nebelcyan";
+"同名预设已存在，请使用其他名称。" = "Eine Vorgabe mit diesem Namen ist bereits vorhanden. Verwenden Sie einen anderen Namen.";
 "向右旋转 90°" = "90° nach rechts drehen";
 "向右滚动%@" = "%@ nach rechts scrollen";
 "向左旋转 90°" = "90° nach links drehen";
@@ -188,6 +195,7 @@
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Ersetzt die lokalen Anpassungen der Zielfotos, ohne die ursprüngliche RAW-Datei zu ändern.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "Die lokalen Anpassungsdatensätze der Zielfotos werden ersetzt. Originaldateien werden nicht geändert.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
+"尚无用户预设" = "Noch keine eigenen Vorgaben";
 "尚未复制调整。请先从一张照片复制所需范围。" = "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.";
 "尚未检查更新" = "Noch nicht nach Updates gesucht";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
@@ -243,6 +251,7 @@
 "应用有效输入、放弃输入，或返回继续编辑。" = "Gültige Eingaben anwenden, verwerfen oder weiter bearbeiten.";
 "应用草稿" = "Entwurf anwenden";
 "应用输入" = "Eingabe anwenden";
+"应用预设" = "Vorgabe anwenden";
 "开启" = "Ein";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.";
 "开启对比" = "Vergleich einschalten";
@@ -257,6 +266,7 @@
 "待处理" = "Aktion erforderlich";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
+"我的预设" = "Meine Vorgaben";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.";
 "所选镜头不可用" = "Gewähltes Objektiv nicht verfügbar";
 "手动" = "Manuell";
@@ -297,6 +307,7 @@
 "文件夹" = "Ordner";
 "文件树" = "Dateibaum";
 "新建任务" = "Neue Aufgabe erstellen";
+"新预设" = "Neue Vorgabe";
 "旋转" = "Drehung";
 "无 RAW 照片" = "Keine RAW-Fotos";
 "无效或不可用的色度降噪模式" = "Ungültiger oder nicht verfügbarer Modus zur Reduzierung des Chroma-Rauschens";
@@ -313,6 +324,7 @@
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
 "无法写入输出目录，请检查访问权限和剩余空间。" = "In den Ausgabeordner kann nicht geschrieben werden. Bitte überprüfen Sie die Zugriffsrechte und den freien Speicherplatz.";
 "无法创建处理会话" = "Verarbeitungssitzung konnte nicht erstellt werden";
+"无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
 "无法恢复调整：%@" = "Anpassungen können nicht wiederhergestellt werden: %@";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
@@ -421,6 +433,7 @@
 "此目录没有照片。" = "Dieser Ordner enthält keine Fotos.";
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
 "此镜头没有所选校正的标定数据" = "Keine Kalibrierungsdaten für die gewählten Korrekturen";
+"此预设库来自更新版本，请更新应用后重试。" = "Diese Vorgabenbibliothek stammt aus einer neueren Version. Aktualisieren Sie die App und versuchen Sie es erneut.";
 "水平位置" = "Horizontale Position";
 "水平翻转" = "Horizontal spiegeln";
 "水平透视" = "Horizontale Perspektive";
@@ -474,6 +487,7 @@
 "童话油画 · 梦幻微光" = "Märchenhaftes Ölgemälde · verträumtes Leuchten";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Ölgemälde wie ein Märchenbilderbuch, tiefe ruhige Schatten, umhüllendes Warmgold und diffuses Leuchten";
 "等待导出" = "Warten auf Export";
+"管理预设：%@" = "Vorgabe verwalten: %@";
 "粗糙度" = "Rauheit";
 "粗色斑抑制" = "Grobe Artefaktunterdrückung";
 "粘贴调整" = "Anpassungen einfügen";
@@ -540,6 +554,8 @@
 "裁切选区" = "Zuschnittauswahl";
 "裁切高度" = "Zuschnitthöhe";
 "裁边 %@%%" = "Beschnitt %@%%";
+"覆盖" = "Überschreiben";
+"覆盖预设？" = "Vorgabe überschreiben?";
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
 "请先完成此照片的 AI 降噪，再预览或导出。" = "Schließe die KI-Entrauschung dieses Fotos vor Vorschau oder Export ab.";
@@ -549,8 +565,10 @@
 "请至少选择一张 RAW 照片。" = "Bitte wählen Sie mindestens ein RAW-Foto aus.";
 "请至少选择一张照片。" = "Bitte wählen Sie mindestens ein Foto aus.";
 "请输入 0 至 100 的有效数字" = "Bitte geben Sie eine gültige Zahl zwischen 0 und 100 ein";
+"请输入不同的预设名称。" = "Geben Sie einen anderen Namen für die Vorgabe ein.";
 "请输入有效数字" = "Bitte geben Sie eine gültige Zahl ein";
 "请输入范围内的有效数字" = "Bitte geben Sie eine gültige Zahl innerhalb des Bereichs ein";
+"请输入预设名称。" = "Geben Sie einen Namen für die Vorgabe ein.";
 "调整亮度、色彩和粗色斑降噪" = "Luminanz-, Farb- und Farbfleck-Rauschreduzierung einstellen";
 "调整内容无法读取，请重新复制。" = "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.";
 "调整前" = "Vorher";
@@ -564,6 +582,7 @@
 "调整栏" = "Anpassungsbereich";
 "调整栏高度" = "Höhe des Anpassungsbereichs";
 "调整照片" = "Fotoanpassung";
+"调整范围" = "Anpassungsumfang";
 "调整裁切边角" = "Zuschnittecke anpassen";
 "赛博朋克 · 极致反差" = "Cyberpunk · extremer Kontrast";
 "跟随系统" = "Systemsprache verwenden";
@@ -593,9 +612,12 @@
 "重做" = "Wiederholen";
 "重做 %@ 张" = "Fotos wiederherstellen: %@";
 "重名文件" = "Doppelte Dateinamen";
+"重命名" = "Umbenennen";
 "重命名…" = "Umbenennen…";
 "重命名外观" = "Look umbenennen";
+"重命名预设" = "Vorgabe umbenennen";
 "重新读取目录" = "Ordner neu einlesen";
+"重新载入" = "Neu laden";
 "重置" = "Zurücksetzen";
 "重置 HSL" = "HSL zurücksetzen";
 "重置%@" = "%@ zurücksetzen";
@@ -649,6 +671,10 @@
 "预览已更新" = "Vorschau aktualisiert";
 "预览未更新" = "Vorschau nicht aktualisiert";
 "预设" = "Voreinstellung";
+"预设名称" = "Name der Vorgabe";
+"预设已变化，请重新载入列表后重试。" = "Die Vorgabe wurde geändert. Laden Sie die Liste neu und versuchen Sie es erneut.";
+"预设库无法读取，原文件保持不变。请从备份恢复后重试。" = "Die Vorgabenbibliothek kann nicht gelesen werden. Die Originaldatei bleibt unverändert. Stellen Sie eine Sicherung wieder her und versuchen Sie es erneut.";
+"预设操作未完成：%@" = "Vorgabenaktion fehlgeschlagen: %@";
 "颗粒" = "Körnung";
 "颗粒强度" = "Kornstärke";
 "颜色" = "Farbe";

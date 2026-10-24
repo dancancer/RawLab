@@ -235,4 +235,67 @@ class AdjustmentHistoryInstrumentedTest {
             }
         } finally { second.delete(); EditStore(File(context.filesDir, "edits")).reset(secondID) }
     }
+
+    @Test fun presetCaptureKeepsClipboardPhotoRevisionAndHistoryUnchanged() = withModel(raw = true) { model, edits, identity ->
+        main { model.edit(model.state.value.edits.copy(exposure = 1.25f, contrast = .2f)) }
+        await(model) { it.canExport }
+        main { model.copyAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST))) }
+        val clipboard = model.adjustmentClipboard
+        val receipt = edits.versionedState(identity)
+        val history = model.adjustmentTransactions
+        lateinit var preset: com.rawlab.android.presets.AdjustmentPreset
+        main { preset = model.presetStore.create("Native-${UUID.randomUUID()}",
+            model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)))) }
+        try {
+            assertEquals(setOf(AdjustmentField.EXPOSURE), preset.payload.fields)
+            assertEquals(clipboard, model.adjustmentClipboard)
+            assertEquals(receipt, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
+            main { model.edit(model.state.value.edits.copy(exposure = .3f)) }
+            await(model) { it.canExport }
+            main { model.prepareAdjustmentPaste(preset.payload, listOf(model.state.value.photo!!.uri),
+                com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.PRESET) }
+            val deadline = SystemClock.uptimeMillis() + 60_000
+            while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
+            val prepared = requireNotNull(model.adjustmentTransfer.value.prepared)
+            main { assertEquals(AdjustmentStatus.APPLIED, model.applyAdjustmentPaste(prepared).single().status) }
+            await(model) { it.canExport && it.edits.exposure == 1.25f }
+            assertEquals(.2f, edits.load(identity)!!.contrast)
+            assertEquals(com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.PRESET, model.adjustmentTransactions.last().action)
+            main { model.undoAdjustment() }; await(model) { it.canExport && it.edits.exposure == .3f }
+            main { model.redoAdjustment() }; await(model) { it.canExport && it.edits.exposure == 1.25f }
+            assertEquals(clipboard, model.adjustmentClipboard)
+        } finally { model.presetStore.delete(preset) }
+    }
+
+    @Test fun presetCaptureRejectsDraftAndFailedPhotoSave() {
+        var failWrite = false
+        withModel(storeFactory = { directory -> EditStore(directory) { from, to ->
+            if (failWrite) throw IOException("preset photo persistence failure")
+            Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        } }) { model, _, _ ->
+            main { model.beginDraft(AdjustmentGroup.GEOMETRY) }
+            await(model) { it.draftReady }
+            main { assertTrue(runCatching { model.capturePresetAdjustments(AdjustmentScope.All) }.isFailure); model.discardDraft() }
+            await(model) { it.canExport }
+            failWrite = true
+            main { model.edit(model.state.value.edits.copy(exposure = .7f)) }
+            await(model) { it.saveState == EditSaveState.FAILED && !it.rendering }
+            main { assertTrue(runCatching { model.capturePresetAdjustments(AdjustmentScope.All) }.isFailure) }
+            assertNull(model.adjustmentClipboard)
+        }
+    }
+
+
+    @Test fun presetCaptureRejectsExternallyChangedCommittedRecord() = withModel { model, edits, identity ->
+        main { model.edit(model.state.value.edits.copy(exposure = .4f)) }
+        await(model) { it.canExport }
+        val history = model.adjustmentTransactions
+        edits.save(identity, model.state.value.edits.copy(exposure = 1.6f))
+        val receipt = edits.versionedState(identity)
+        main { assertTrue("Stale committed snapshot cannot be captured", runCatching {
+            model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)))
+        }.isFailure) }
+        assertEquals(receipt, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
+    }
+
 }

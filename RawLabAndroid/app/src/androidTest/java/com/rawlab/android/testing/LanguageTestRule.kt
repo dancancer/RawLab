@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import com.rawlab.android.i18n.AppStrings
 
-class LanguageTestRule : TestWatcher() {
+class LanguageTestRule(private val language: String = "zh-Hans") : TestWatcher() {
     private var previous = "system"
     private var previousLocales: LocaleList? = null
     private var configuration: Configuration? = null
@@ -24,9 +24,9 @@ class LanguageTestRule : TestWatcher() {
         previous = AppStrings.preference(context)
         if (Build.VERSION.SDK_INT >= 33) previousLocales = context.getSystemService(LocaleManager::class.java).applicationLocales
         configuration = Configuration(context.resources.configuration)
-        AppStrings.setPreference(context, "zh-Hans")
+        AppStrings.setPreference(context, language)
         val chinese = Configuration(context.resources.configuration)
-        chinese.setLocales(LocaleList(Locale.forLanguageTag("zh-Hans")))
+        chinese.setLocales(LocaleList(Locale.forLanguageTag(language)))
         @Suppress("DEPRECATION")
         context.resources.updateConfiguration(chinese, context.resources.displayMetrics)
     }

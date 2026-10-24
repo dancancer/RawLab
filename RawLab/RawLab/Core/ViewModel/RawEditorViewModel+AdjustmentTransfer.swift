@@ -41,6 +41,7 @@ extension RawEditorViewModel {
     }
 
     func prepareAdjustmentPaste(_ payload: AdjustmentTransferPayload, photos: [IOSAdjustmentPhoto],
+                                action: IOSAdjustmentHistoryTransaction.Action = .paste,
                                 completion: @escaping (Result<IOSPreparedAdjustmentTransfer, Error>) -> Void) {
         guard let session = adjustmentSession else { completion(.failure(EditPersistenceError.corruptStore)); return }
         let generation = UUID()
@@ -93,7 +94,7 @@ extension RawEditorViewModel {
                     defaultState: PhotoEditState(settings: .default), context: context,
                     isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
             }
-            let result = Result { try session.prepare(payload: payload, targets: targets) }
+            let result = Result { try session.prepare(payload: payload, targets: targets, action: action) }
             self.resultDelivery {
                 guard self.adjustmentPreparationID == generation else { return }
                 self.adjustmentPreparing = false

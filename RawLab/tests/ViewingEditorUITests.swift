@@ -5,17 +5,18 @@ final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
 
-    private func openAdjustmentAction(_ id: String, app: XCUIApplication) {
+    func openAdjustmentAction(_ id: String, app: XCUIApplication) {
         app.buttons["editor.privacy"].tap()
         let labels = ["adjustment.history.undo": "Undo", "adjustment.history.redo": "Redo",
                       "adjustment.copy.open": "Copy Adjustments", "adjustment.paste.open": "Paste Adjustments",
-                      "adjustment.history.open": "Session History"]
-        let action = app.buttons[id].exists ? app.buttons[id] : app.buttons[labels[id] ?? id]
+                      "adjustment.history.open": "Session History", "preset.library.open": "My Presets"]
+        let identified = app.buttons.matching(identifier: id).firstMatch
+        let action = identified.exists ? identified : app.collectionViews.buttons.matching(identifier: labels[id] ?? id).firstMatch
         XCTAssertTrue(action.waitForExistence(timeout: 5), app.debugDescription)
         action.tap()
     }
 
-    private func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
+    func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<8 {
             if element.exists && element.isHittable { return }
             app.swipeUp(velocity: .slow)
@@ -23,7 +24,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTFail("Unreachable form control: \(element.identifier)\n\(app.debugDescription)")
     }
 
-    private func toggleField(_ element: XCUIElement) {
+    func toggleField(_ element: XCUIElement) {
         let previous = element.value as? String
         let nativeSwitch = element.switches.firstMatch
         if nativeSwitch.exists { nativeSwitch.tap() } else { element.tap() }
@@ -31,7 +32,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
     }
 
-    private func setExposure(_ value: String, app: XCUIApplication) {
+    func setExposure(_ value: String, app: XCUIApplication) {
         app.buttons["adjustment.value"].tap()
         let wheel = app.pickerWheels.firstMatch
         XCTAssertTrue(wheel.waitForExistence(timeout: 5))
@@ -222,11 +223,13 @@ final class ViewingEditorUITests: XCTestCase {
         wait(app) { $0["clipboard"] is [String: Any] }
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
     }
-    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false) -> XCUIApplication {
+    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false,
+                presetFixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.viewing-editor")
         let language = requestedLanguage ?? ProcessInfo.processInfo.environment["S3_VIEWING_LANGUAGE"] ?? "en"
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-RawLab.language", language]
         if adjustmentFixtures { app.launchArguments.append("-RawLab.adjustmentTransferUI") }
+        if presetFixtures { app.launchArguments.append("-RawLab.presetUI") }
         if let category = textCategory ?? ProcessInfo.processInfo.environment["S3_VIEWING_TEXT"], !category.isEmpty {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
         }

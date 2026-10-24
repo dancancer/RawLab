@@ -31,7 +31,7 @@ internal static class UiPanelChecks
             var kinds=UiDetailChecks.Descendants(panel).OfType<Button>()
                 .Where(button=>!UiDetailChecks.Descendants(panel).OfType<ParameterRow>().Any(row=>row.ResetButton==button))
                 .Select(button=>UiDetailChecks.Descendants(button).OfType<EditorIcon>().FirstOrDefault()?.Kind).OfType<string>().ToList();
-            check(kinds.Count==4 && kinds.Distinct().Count()==kinds.Count,"Geometry actions use different icons: "+string.Join(", ",kinds));
+            check(kinds.SequenceEqual(new[]{"Unlock","Swap","RotateLeft","RotateRight","Reset"}),"Geometry actions use different icons: "+string.Join(", ",kinds));
             foreach(var (a,b) in kinds.SelectMany((a,i)=>kinds.Skip(i+1).Select(b=>(a,b))))
             {
                 var similarity=Similarity(a,b);

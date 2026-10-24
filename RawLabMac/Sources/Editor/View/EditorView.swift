@@ -125,12 +125,15 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
         .toolbar { editorToolbar }
-        .sheet(item: $model.adjustmentSheet) { kind in AdjustmentTransferView(model: model, kind: kind) }
+        .sheet(item: $model.adjustmentSheet) { kind in
+            if kind == .presets { AdjustmentPresetView(model: model) }
+            else { AdjustmentTransferView(model: model, kind: kind) }
+        }
         .onExitCommand { model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
-        .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
+        .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }
         .alert(resetConfirmationTitle, isPresented: Binding(get: { model.resetConfirmation != nil }, set: { if !$0 && model.resetConfirmation != nil { model.finishAdjustmentReset(confirm: false) } })) {

@@ -75,8 +75,11 @@
 "保存失败" = "Speichern fehlgeschlagen";
 "保存失败，请重试。" = "Speichern fehlgeschlagen. Versuchen Sie es erneut.";
 "保存当前照片" = "Aktuelles Foto sichern";
+"保存当前调整为预设…" = "Aktuelle Anpassungen als Vorgabe speichern…";
+"保存所选调整，之后可应用到其他照片。" = "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.";
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "Beim Speichern ist eine Unterbrechung aufgetreten. Prüfen Sie Fotos, bevor Sie erneut erzeugen.";
 "保存结果待确认" = "Speicherergebnis muss bestätigt werden";
+"保存预设" = "Vorgabe speichern";
 "保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "停用" = "Aus";
 "允许使用统计" = "Nutzungsanalyse erlauben";
@@ -93,6 +96,8 @@
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometrie und Objektiv werden nur mit „Alle“ oder bei ausdrücklicher Auswahl übernommen.";
 "分割位置" = "Position der Trennlinie";
 "分割线" = "Trennlinie";
+"删除" = "Löschen";
+"删除预设？" = "Vorgabe löschen?";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Kalifornisches Sonnenlicht mit japanischem Filmlook, diffuses urbanes Gold und klarer warmer Schimmer";
 "匹配内嵌预览" = "An eingebettete Vorschau anpassen";
 "匹配照片" = "Passt zum Foto";
@@ -104,7 +109,9 @@
 "双击名称或轨道恢复默认值。" = "Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen.";
 "取消" = "Abbrechen";
 "取消导出" = "Export abbrechen";
+"另存" = "Speichern unter";
 "史诗自然 · 雾气冷青" = "Epische Natur · kühles Nebelcyan";
+"同名预设已存在，请使用其他名称。" = "Eine Vorgabe mit diesem Namen ist bereits vorhanden. Verwenden Sie einen anderen Namen.";
 "向右旋转 90°" = "90° nach rechts drehen";
 "向左旋转 90°" = "90° nach links drehen";
 "四分之一灵敏度" = "Empfindlichkeit: ¼";
@@ -146,6 +153,7 @@
 "导出长边必须为 1-65535 像素。" = "Die lange Seite muss 1-65535 Pixel betragen.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Die folgenden Werte werden in unabhängige Anpassungen umgewandelt, damit die aktuelle Wirkung anderer Gruppen erhalten bleibt: %@";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
+"尚无用户预设" = "Noch keine eigenen Vorgaben";
 "尚未保存，允许重新导出" = "Noch nicht gespeichert; erneuten Export erlauben";
 "尚未复制调整。请先从一张照片复制所需范围。" = "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
@@ -184,6 +192,7 @@
 "并排" = "Nebeneinander";
 "应用" = "Anwenden";
 "应用并保存" = "Anwenden und speichern";
+"应用预设" = "Vorgabe anwenden";
 "开启" = "Ein";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.";
 "开启对比" = "Vergleich einschalten";
@@ -196,6 +205,7 @@
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
 "恢复默认" = "Standard wiederherstellen";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
+"我的预设" = "Meine Vorgaben";
 "所选外观不可用，请重新选择外观。" = "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.";
 "所选照片：%@" = "Ausgewähltes Foto: %@";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.";
@@ -224,6 +234,7 @@
 "效果" = "Effekte";
 "数据与提供方" = "Daten und Anbieter";
 "文件信息" = "Dateiinformationen";
+"新预设" = "Neue Vorgabe";
 "旋转" = "Drehung";
 "无效或不可用的镜头校正设置" = "Ungültige oder nicht verfügbare Objektivkorrektureinstellungen";
 "无效或不可用的降噪参数" = "Ungültiger oder nicht verfügbarer Rauschreduzierungsparameter";
@@ -235,6 +246,7 @@
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Fotos können nicht gespeichert werden. Erlauben Sie RawLab in den Systemeinstellungen, Fotos hinzuzufügen.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Das Foto konnte nicht gespeichert werden. Erlauben Sie das Hinzufügen von Fotos in den Systemeinstellungen.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
+"无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Das originale RAW konnte nicht abgerufen werden. Erlauben Sie in den Systemeinstellungen den Zugriff auf dieses Foto und versuchen Sie es erneut.";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
@@ -319,6 +331,7 @@
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
 "此镜头没有所选校正的标定数据" = "Keine Kalibrierungsdaten für die gewählten Korrekturen";
+"此预设库来自更新版本，请更新应用后重试。" = "Diese Vorgabenbibliothek stammt aus einer neueren Version. Aktualisieren Sie die App und versuchen Sie es erneut.";
 "此默认值不可达，请重置裁切组。" = "Dieser Standardwert lässt sich nicht einstellen. Setze die Zuschnitteinstellungen zurück.";
 "水平位置" = "Horizontale Position";
 "水平翻转" = "Horizontal spiegeln";
@@ -363,6 +376,7 @@
 "童话油画 · 梦幻微光" = "Märchenhaftes Ölgemälde · verträumtes Leuchten";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Ölgemälde wie ein Märchenbilderbuch, tiefe ruhige Schatten, umhüllendes Warmgold und diffuses Leuchten";
 "等待导出" = "Warten auf Export";
+"管理预设：%@" = "Vorgabe verwalten: %@";
 "粗糙度" = "Rauheit";
 "粗色斑抑制" = "Grobe Artefaktunterdrückung";
 "粘贴调整" = "Anpassungen einfügen";
@@ -415,6 +429,8 @@
 "裁切选区" = "Zuschnittauswahl";
 "裁切高度" = "Zuschnitthöhe";
 "裁边 %@%%" = "Beschnitt %@%%";
+"覆盖" = "Überschreiben";
+"覆盖预设？" = "Vorgabe überschreiben?";
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
 "请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
@@ -422,6 +438,8 @@
 "请等待当前任务完成。" = "Warten Sie, bis der aktuelle Auftrag abgeschlossen ist.";
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
 "请输入 1–65535 之间的像素数" = "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein";
+"请输入不同的预设名称。" = "Geben Sie einen anderen Namen für die Vorgabe ein.";
+"请输入预设名称。" = "Geben Sie einen Namen für die Vorgabe ein.";
 "调整" = "Anpassungen";
 "调整内容无法读取，请重新复制。" = "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.";
 "调整前" = "Vorher";
@@ -431,6 +449,7 @@
 "调整未保存 · 重试" = "Anpassungen nicht gespeichert · Erneut versuchen";
 "调整来源" = "Anpassungsquelle";
 "调整照片" = "Fotoanpassung";
+"调整范围" = "Anpassungsumfang";
 "调整裁切边角" = "Zuschnittecke anpassen";
 "调整触觉反馈" = "Haptisches Feedback bei Anpassungen";
 "调整记录已恢复，请重新选择照片载入。" = "Anpassungsdatensatz wiederhergestellt. Wählen Sie das Foto erneut aus, um es zu laden.";
@@ -456,7 +475,10 @@
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Wiederholen";
 "重做 %@ 张" = "Fotos wiederherstellen: %@";
+"重命名" = "Umbenennen";
 "重命名外观" = "Look umbenennen";
+"重命名预设" = "Vorgabe umbenennen";
+"重新载入" = "Neu laden";
 "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.";
 "重新载入已保存调整" = "Gespeicherte Anpassungen neu laden";
 "重置" = "Zurücksetzen";
@@ -507,6 +529,10 @@
 "预览已更新" = "Vorschau aktualisiert";
 "预览未更新" = "Vorschau nicht aktualisiert";
 "预设" = "Voreinstellung";
+"预设名称" = "Name der Vorgabe";
+"预设已变化，请重新载入列表后重试。" = "Die Vorgabe wurde geändert. Laden Sie die Liste neu und versuchen Sie es erneut.";
+"预设库无法读取，原文件保持不变。请从备份恢复后重试。" = "Die Vorgabenbibliothek kann nicht gelesen werden. Die Originaldatei bleibt unverändert. Stellen Sie eine Sicherung wieder her und versuchen Sie es erneut.";
+"预设操作未完成：%@" = "Vorgabenaktion fehlgeschlagen: %@";
 "颗粒" = "Körnung";
 "颗粒大小" = "Korngröße";
 "颗粒强度" = "Kornstärke";

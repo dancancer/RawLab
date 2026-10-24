@@ -3413,6 +3413,170 @@
       "formats": [],
       "source": "明度",
       "types": []
+    },
+    "preset_another_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请输入不同的预设名称。",
+      "types": []
+    },
+    "preset_apply": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用预设",
+      "types": []
+    },
+    "preset_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预设已变化，请重新载入列表后重试。",
+      "types": []
+    },
+    "preset_corrupt": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预设库无法读取，原文件保持不变。请从备份恢复后重试。",
+      "types": []
+    },
+    "preset_create": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存当前调整为预设…",
+      "types": []
+    },
+    "preset_delete_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "删除预设？",
+      "types": []
+    },
+    "preset_duplicate_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "同名预设已存在，请使用其他名称。",
+      "types": []
+    },
+    "preset_empty": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "尚无用户预设",
+      "types": []
+    },
+    "preset_empty_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存所选调整，之后可应用到其他照片。",
+      "types": []
+    },
+    "preset_enter_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请输入预设名称。",
+      "types": []
+    },
+    "preset_error": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "预设操作未完成：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "preset_future": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设库来自更新版本，请更新应用后重试。",
+      "types": []
+    },
+    "preset_identity_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法创建新的预设标识，请重试。",
+      "types": []
+    },
+    "preset_library": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "我的预设",
+      "types": []
+    },
+    "preset_manage": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "管理预设：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "preset_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预设名称",
+      "types": []
+    },
+    "preset_new_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "新预设",
+      "types": []
+    },
+    "preset_overwrite": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "覆盖",
+      "types": []
+    },
+    "preset_overwrite_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "覆盖预设？",
+      "types": []
+    },
+    "preset_rename": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重命名预设",
+      "types": []
+    },
+    "preset_save": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存预设",
+      "types": []
+    },
+    "preset_save_as": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "另存",
+      "types": []
+    },
+    "preset_scope": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整范围",
+      "types": []
+    },
+    "preset_delete": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "删除",
+      "types": []
+    },
+    "preset_rename_action": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重命名",
+      "types": []
+    },
+    "preset_reload": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新载入",
+      "types": []
     }
   },
   "overrides": {

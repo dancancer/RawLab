@@ -357,6 +357,8 @@ internal static class ComparisonDefaultChecks
     private static void UseProfile(MainWindow window, string profile)
     {
         Directory.CreateDirectory(profile);
+        typeof(MainWindow).GetField("presetStore", Private)!.SetValue(window,
+            new AdjustmentPresetStore(Path.Combine(profile, "presets")));
         typeof(MainWindow).GetField("editStore", Private)!.SetValue(window,
             new EditStore(Path.Combine(profile, "edits")));
         typeof(MainWindow).GetField("batchJournal", Private)!.SetValue(window,
