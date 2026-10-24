@@ -11,7 +11,7 @@ final class ViewingEditorUITests: XCTestCase {
         let toggle = app.buttons["hsl.target"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.tap()
         app.buttons["Lightness"].tap()
-        wait(app) { $0["hslTargetEnabled"] as? Bool == true && $0["hslTargetAxis"] as? String == "lightness" }
+        wait(app) { $0["ready"] as? Bool == true && $0["hslTargetEnabled"] as? Bool == true && $0["hslTargetAxis"] as? String == "lightness" }
         let before = receipt(app)
         let history = before["historyCount"] as! Int
         let values = before["hslValues"] as! [Double]
@@ -32,6 +32,40 @@ final class ViewingEditorUITests: XCTestCase {
         wait(app) { $0["ready"] as? Bool == true && $0["hslTargetWaiting"] as? Bool == false }
         XCTAssertEqual(receipt(app)["hslValues"] as? [Double], adjusted, "A second finger cancels target input before zoom")
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, history + 1)
+    }
+
+    func testBatchCollectionMicroEditAndFrozenExport() {
+        let app = launch(language: "en")
+        openAdjustmentAction("collection.open", app: app)
+        wait(app) { $0["collectionShowing"] as? Bool == true && ($0["collectionOrdered"] as? [String])?.count == 1 }
+        let ordered = receipt(app)["collectionOrdered"] as! [String]
+        XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
+        XCTAssertFalse(app.buttons["collection.synchronize"].isEnabled, "The only source is excluded from synchronization")
+        app.buttons["collection.edit.\(ordered[0])"].tap()
+        wait(app) { $0["collectionShowing"] as? Bool == false && $0["collectionCurrent"] as? String == ordered[0] }
+        app.buttons["editor.group.light"].tap()
+        setExposure("+0.75", app: app)
+        app.buttons["collection.return"].tap()
+        wait(app) { $0["collectionShowing"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
+        XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
+        app.buttons["collection.export"].tap()
+        let prepare = app.buttons["collection.export.preflight"]
+        revealFormControl(prepare, app: app); prepare.tap()
+        let freeze = app.buttons["collection.export.freeze"]
+        revealFormControl(freeze, app: app); freeze.tap()
+        wait(app) { $0["batchShowing"] as? Bool == true && $0["batchMode"] as? String == "per_target_frozen" }
+        XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.75])
+        capture(app, "collection-frozen-export")
+        app.buttons["Task Actions"].tap()
+        app.buttons["Discard Task"].tap()
+        app.buttons["Discard Task"].tap()
+        wait(app) { $0["batchMode"] as? String == "" }
+        openAdjustmentAction("collection.open", app: app)
+        wait(app) { $0["collectionShowing"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
+        XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
+        XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 0.75)
     }
 
     func openAdjustmentAction(_ id: String, app: XCUIApplication) {

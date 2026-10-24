@@ -6,7 +6,8 @@ extension HSLTargetSample {
         func unavailable(_ reason: HSLTargetAvailability) -> HSLTargetSample {
             HSLTargetSample(revision: revision, availability: reason, rgb: [], weights: [], preview: true)
         }
-        guard x.isFinite, y.isFinite, (0...1).contains(x), (0...1).contains(y) else { return unavailable(.outside) }
+        guard x.isFinite, y.isFinite else { return unavailable(.nonfinite) }
+        guard (0...1).contains(x), (0...1).contains(y) else { return unavailable(.outside) }
         var probe: OpaquePointer?
         guard sony2fuji_session_create_hsl_probe(session, &request, revision.source, revision.request, &probe) == SONY2FUJI_STATUS_OK,
               let probe else { return unavailable(.failed) }

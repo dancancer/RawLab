@@ -227,6 +227,7 @@ struct Sony2FujiProcessor {
             let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
+            request.input_type = inputType
             applySize(&request, width: width, height: height, previewLongEdge: previewLongEdge, exportLongEdge: nil)
             request.lut_strength = lutURL == nil ? 0 : effective.clampedLUTStrength
             return (lutURL?.path ?? "").withCString { look in

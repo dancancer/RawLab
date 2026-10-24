@@ -32,7 +32,8 @@ class BatchSelectionWorkflowTest {
         try {
             compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(uri) }
             compose.waitUntil(60_000) { model.state.value.canExport }
-            compose.onNodeWithContentDescription(AppStrings.text(R.string.more)).performClick()
+            compose.onNode(hasContentDescription(AppStrings.text(R.string.more)) and
+                !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
             compose.onNodeWithTag("collection-menu").performClick()
             compose.waitUntil(60_000) { !model.collection.value.busy && model.collection.value.photos.size == 1 }
             compose.onNodeWithTag("batch-selection-root").assertIsDisplayed()
@@ -40,7 +41,8 @@ class BatchSelectionWorkflowTest {
             compose.onNodeWithTag("collection-edit-$uri").performClick()
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .4f)) }
             compose.waitUntil(60_000) { model.state.value.canExport }
-            compose.onNodeWithContentDescription(AppStrings.text(R.string.more)).performClick()
+            compose.onNode(hasContentDescription(AppStrings.text(R.string.more)) and
+                !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
             compose.onNodeWithTag("collection-menu").performClick()
             assertEquals(setOf(uri.toString()), model.collection.value.selected)
             compose.onNodeWithTag("collection-export").performClick()

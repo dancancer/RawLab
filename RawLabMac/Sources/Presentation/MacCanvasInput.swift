@@ -63,6 +63,7 @@ struct MacCanvasInput: NSViewRepresentable {
                 if targetOrigin == nil {
                     let direction = event.keyCode == 124 || event.keyCode == 126 ? 1.0 : -1.0
                     target.key(direction * (event.modifierFlags.contains(.shift) ? 0.1 : 1))
+                    window?.makeFirstResponder(self)
                 }
                 return
             }
@@ -75,17 +76,21 @@ struct MacCanvasInput: NSViewRepresentable {
             owner?.onHold(gesture.state == .began && owner?.canHold == true && owner?.imageRect.contains(point) == true)
         }
         override func mouseDown(with event: NSEvent) {
-            window?.makeFirstResponder(self)
             owner?.onHold(false)
             if let owner, let target = owner.target {
                 let point = convert(event.locationInWindow, from: nil)
                 guard owner.imageRect.contains(point), bounds.contains(point),
                       !owner.excludedRects.contains(where: { $0.contains(point) }),
                       owner.imageRect.width > 0, owner.imageRect.height > 0 else { target.reject(); return }
-                targetOrigin = point; targetFine = event.modifierFlags.contains(.shift)
                 target.begin(CGPoint(x: (point.x-owner.imageRect.minX)/owner.imageRect.width,
                                      y: (point.y-owner.imageRect.minY)/owner.imageRect.height))
-            } else if event.clickCount == 2 { owner?.onDoubleClick() }
+                // 输入预检可能结束字段焦点，完成后再接管拖动，避免取消刚记录的起点。
+                targetOrigin = point; targetFine = event.modifierFlags.contains(.shift)
+                window?.makeFirstResponder(self)
+            } else {
+                window?.makeFirstResponder(self)
+                if event.clickCount == 2 { owner?.onDoubleClick() }
+            }
         }
         @objc private func panned(_ gesture: NSPanGestureRecognizer) {
             if gesture.state == .began || gesture.state == .changed {
@@ -103,7 +108,12 @@ struct MacCanvasInput: NSViewRepresentable {
         override func magnify(with event: NSEvent) { cancelInput(); super.magnify(with: event) }
         override func scrollWheel(with event: NSEvent) { cancelInput(); super.scrollWheel(with: event) }
         override func mouseUp(with event: NSEvent) {
-            if targetOrigin != nil { targetOrigin = nil; owner?.target?.end() }
+            if let origin = targetOrigin {
+                let point = convert(event.locationInWindow, from: nil)
+                owner?.target?.change(Double(origin.y-point.y) * (targetFine ? 0.125 : 0.5))
+                targetOrigin = nil
+                owner?.target?.end()
+            }
             owner?.onHold(false); owner?.onPanEnd()
         }
     }

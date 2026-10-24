@@ -224,7 +224,7 @@ extension ContentView {
         viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: store)
         viewModel.importImage(from: .raster(url), identity: identity, onSettingsRestored: { settings = $0 })
         probe.readEditor = {
-            ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
+            var receipt: [String: Any] = ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
              "busy": editorBusy, "rendering": viewModel.previewRendering, "resize": viewModel.previewResizePending,
              "previewFailed": viewModel.previewFailed, "source": viewModel.sourceRevision.uuidString,
              "settings": probe.settingsText(settings),
@@ -275,6 +275,16 @@ extension ContentView {
              "afterHistogram": probe.histogramInfo(viewModel.histogram),
              "beforeHistogram": probe.histogramInfo(viewModel.baseHistogram),
              "referenceSize": viewModel.basePreviewImage.map { [$0.size.width, $0.size.height] } ?? []]
+            receipt["hslTargetNotice"] = hslTargetNotice.map { String(describing: $0) } ?? ""
+            receipt["hslTargetSelection"] = hslTargetInteraction.selection.map { String(describing: $0.availability) } ?? ""
+            receipt["collectionShowing"] = showingBatchSelection
+            receipt["collectionOrdered"] = viewModel.batchSelection.selection.ordered
+            receipt["collectionSelected"] = viewModel.batchSelection.selection.selected.sorted()
+            receipt["collectionCurrent"] = viewModel.batchSelection.selection.current ?? ""
+            receipt["batchShowing"] = showingBatchExport
+            receipt["batchMode"] = batchModel?.job.settingsMode.rawValue ?? ""
+            receipt["batchFrozenExposure"] = batchModel?.job.targets.compactMap { $0.frozen?.settings.exposure } ?? []
+            return receipt
         }
     }
 }
