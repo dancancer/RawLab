@@ -94,6 +94,42 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try recipeLUTChecks(root: root, first: first, second: second)
         try historyErrorChecks(root: root, first: first)
         try presetChecks(root: root, first: first, second: second)
+        try hslTargetChecks(root: root, second: second)
+    }
+
+    static func hslTargetChecks(root: URL, second: URL) throws {
+        let photo = root.appendingPathComponent("hsl-target.png")
+        let pixels: [UInt8] = Array(repeating: [204, 102, 51], count: 8 * 6).flatMap { $0 }
+        let image = CGImage(width: 8, height: 6, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: 24,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: CGDataProvider(data: Data(pixels) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let destination = CGImageDestinationCreateWithURL(photo as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { fatalError("fixture") }
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("hsl-looks"),
+            editDirectory: root.appendingPathComponent("hsl-edits"), batchDirectory: root.appendingPathComponent("hsl-batch"))
+        model.open(photo); try rendered(model); model.selectAdjustmentTool(.hsl); model.hslTargetEnabled = true
+        func sampled() throws {
+            let deadline = Date().addingTimeInterval(30)
+            while model.hslTargetInteraction.isWaiting && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+            try check(!model.hslTargetInteraction.isWaiting, "target sampling completes")
+        }
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); model.moveHSLTarget(20); model.endHSLTarget()
+        try sampled(); try rendered(model)
+        try check(model.adjustmentSession!.transactions.count == 1 && !model.settings.hslSettings.isIdentity,
+            "release before native sample creates exactly one durable HSL edit")
+        let saved = model.settings
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); try sampled()
+        model.moveHSLTarget(50); model.cancelHSLTarget(); model.endHSLTarget(); try rendered(model)
+        try check(model.settings == saved && model.adjustmentSession!.transactions.count == 1,
+            "native target cancellation restores before without a second history item")
+        model.undoAdjustment(); try rendered(model)
+        try check(model.settings.hslSettings.isIdentity, "target undo restores all HSL channels")
+        model.redoAdjustment(); try rendered(model)
+        try check(model.settings == saved, "target redo restores frozen weighted values")
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); model.moveHSLTarget(10); model.open(second); try rendered(model)
+        try check(model.settings.hslSettings.isIdentity && !model.hslTargetInteraction.isWaiting,
+            "source switch discards a pending native target sample")
     }
 
     static func presetChecks(root: URL, first: URL, second: URL) throws {

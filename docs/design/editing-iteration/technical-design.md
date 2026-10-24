@@ -246,9 +246,11 @@ ITER-10 仍为**未实施、数值合同待冻结**。上文选定处理路线�
 
 ## 9. ITER-07：HSL 取色与目标调整
 
-复用 [photo_color](../../../lutools/src/core/photo_color.cpp) 的八色域 smoothstep 权重。拟增加 additive 采样/probe 接口，输入源/request revision 和归一化照片坐标，返回 pre-HSL 的显示颜色、H/S/L 与八通道权重；采样路径在目标点读取 tone/vibrance 完成、HSL 尚未应用的状态，避免当前 HSL 把下一次取色带偏。
+复用 [photo_color](../../../lutools/src/core/photo_color.cpp) 的八色域 smoothstep 权重。additive C ABI 通过 `sony2fuji_session_create_hsl_probe` 创建拥有独立像素的 CPU 快照，`sony2fuji_hsl_probe_sample` 查询归一化照片坐标，`sony2fuji_hsl_probe_destroy` 释放。结果包含源/request revision、尺寸、质量、可用状态、pre-HSL 显示颜色、H/S/L 与八通道权重；快照截止于 tone/vibrance 完成、HSL 尚未应用的阶段，避免当前 HSL 把下一次取色带偏。接口与数值细节见[颜色合同](../../../lutools/docs/color-contract.md)。
 
 客户端将画布点反变换为实际结果图坐标，经过 crop/rotate/perspective/lens 同一变换映射；尽量复用核心变换，不能各端猜坐标。probe 的预览/精确质量明确，不声称代理取样与全分辨率纹理完全一致；色域选择/变化方向要稳定。无彩度、越界、黑边或过期帧返回不可取样。
+
+当前快照直接复用核心几何与缩放，RAW 输入已包含镜头及方向处理；客户端只反解结果图的查看投影并排除留白、标签和参考图。核心验证 query 与快照的 revision 标签，客户端另行匹配已接受预览、源身份及编辑状态。取色和渲染在同一串行队列中进行；等待期间的最终位移会保留，取消或被新工作替换后不接纳迟到样本。
 
 手势开始冻结 before HSL、通道权重、当前轴和采样 revision，之后所有 delta 从 before 计算，结束一次提交；不在每帧新像素重新取权重造成反馈。持久化只有最终 24 个值，坐标/权重是会话状态。取消、切图、后台、草稿、多指缩放不产生历史；三轴和相邻色域均有测试。
 

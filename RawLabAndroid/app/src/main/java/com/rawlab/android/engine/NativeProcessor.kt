@@ -15,6 +15,9 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.raster.DecodedRaster
 import com.rawlab.android.raster.RasterImageDecoder
+import com.rawlab.android.settings.HslTargetRevision
+import com.rawlab.android.settings.HslTargetSample
+import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
 
@@ -75,6 +78,17 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): NativeFrame {
+        val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind))
+        val dimensions = nativeGeometrySize(handle)
+        require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
+        frame.geometryWidth = dimensions[0]
+        frame.geometryHeight = dimensions[1]
+        frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
+        return frame
+    }
+
+    private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
+        inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind)
@@ -83,7 +97,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        val frame = checkNotNull(nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
+        return nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
             effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
@@ -92,13 +106,20 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version))
-        val dimensions = nativeGeometrySize(handle)
-        require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
-        frame.geometryWidth = dimensions[0]
-        frame.geometryHeight = dimensions[1]
-        frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
-        return frame
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, null, revision?.source ?: 0, revision?.request ?: 0, probe)
+    }
+
+    @Synchronized
+    fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
+        inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float): HslTargetSample {
+        if (!x.isFinite() || !y.isFinite())
+            return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
+        if (x !in 0f..1f || y !in 0f..1f)
+            return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
+        val probe = FloatArray(13).also { it[0] = x; it[1] = y }
+        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe)
+        return HslTargetSample(revision, HslTargetAvailability.entries.getOrNull(probe[0].toInt()) ?: HslTargetAvailability.FAILED,
+            probe.slice(2..4), probe.slice(5..12), probe[1] == 1f)
     }
 
     @Synchronized
@@ -217,7 +238,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, backend: IntArray? = null): NativeFrame?
+        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, backend: IntArray? = null,
+        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null): NativeFrame?
 
     companion object {
         const val CPU = 0

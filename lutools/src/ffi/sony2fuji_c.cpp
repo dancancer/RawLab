@@ -89,6 +89,12 @@ struct sony2fuji_session {
 #endif
 };
 
+struct sony2fuji_hsl_probe {
+    sony2fuji::ImageData image;
+    uint64_t source_revision = 0, request_revision = 0;
+    sony2fuji_hsl_probe_quality quality = SONY2FUJI_HSL_PROBE_EXACT_CPU;
+};
+
 namespace sony2fuji {
 WaveletCacheDiagnostics waveletCacheDiagnostics(const sony2fuji_session* session) {
     if (!session) return {};
@@ -1080,6 +1086,18 @@ sony2fuji_status writeOutputBuffer(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status finishGeometry(sony2fuji_session* session, const sony2fuji_request& request,
+    sony2fuji::ImageData& image, uint32_t native_width, uint32_t native_height) {
+    const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
+    if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
+    uint32_t width, height;
+    const auto status = computeTargetSize(request, native_width, native_height, &width, &height);
+    if (status != SONY2FUJI_STATUS_OK) return status;
+    if (width != static_cast<uint32_t>(image.width) || height != static_cast<uint32_t>(image.height))
+        image = resizeBilinear(image, width, height);
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status finishOutput(
     sony2fuji_session* session,
     const sony2fuji_request& request,
@@ -1092,14 +1110,9 @@ sony2fuji_status finishOutput(
     if ((request.intent != SONY2FUJI_INTENT_PREVIEW || request.output_target != SONY2FUJI_TARGET_BUFFER) &&
         session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
         session->raw_cache = {};
-    const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
-    if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
-    if (session->geometry.active()) session->last_backend = SONY2FUJI_BACKEND_CPU;
-    uint32_t width, height;
-    const auto status = computeTargetSize(request, native_width, native_height, &width, &height);
+    const auto status = finishGeometry(session, request, image, native_width, native_height);
     if (status != SONY2FUJI_STATUS_OK) return status;
-    if (width != static_cast<uint32_t>(image.width) || height != static_cast<uint32_t>(image.height))
-        image = resizeBilinear(image, width, height);
+    if (session->geometry.active()) session->last_backend = SONY2FUJI_BACKEND_CPU;
     const auto written = request.output_target == SONY2FUJI_TARGET_FILE ?
         writeOutputFile(request, image) : writeOutputBuffer(request, image, out_buffer);
     if (written == SONY2FUJI_STATUS_OK) {
@@ -1593,7 +1606,8 @@ sony2fuji_status sony2fuji_session_estimate_auto_exposure(
 static sony2fuji_status processImpl(
     sony2fuji_session* session,
     const sony2fuji_request* request,
-    sony2fuji_buffer* out_buffer
+    sony2fuji_buffer* out_buffer,
+    sony2fuji::ImageData* pre_hsl = nullptr
 ) {
     if (!session) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -1682,7 +1696,7 @@ static sony2fuji_status processImpl(
             // C5 失败不会破坏工作图；Legacy 的 GPU 重试仍需要原始 RAW。
             const bool reloadableWavelet = waveletActive &&
                 session->wavelet_denoise.processingVersion != sony2fuji::ProcessingVersion::C5V2;
-            if (large && !reloadableWavelet) image = std::move(session->raw_cache);
+            if (large && !reloadableWavelet && !pre_hsl) image = std::move(session->raw_cache);
             else image = session->raw_cache;
         }
     } else {
@@ -1788,7 +1802,7 @@ static sony2fuji_status processImpl(
                 session->wavelet_cache.store(*entry, image, session->wavelet_denoise, session->gpu_config.mode);
         }
         // 小波及其重试已完成；viewport 仍需缓存 RAW 供下一次滑杆调整复用。
-        if (!viewportPreview &&
+        if (!viewportPreview && !pre_hsl &&
             session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
             session->raw_cache = {};
         color_space = SONY2FUJI_COLOR_SRGB;
@@ -1879,6 +1893,11 @@ static sony2fuji_status processImpl(
     sony2fuji::applyBlackWhite(image, session->tone_controls);
     applyToneAdjustments(image, local);
     sony2fuji::applyVibrance(image, session->tone_controls);
+    if (pre_hsl) {
+        status = finishGeometry(session, local, image, native_width, native_height);
+        if (status == SONY2FUJI_STATUS_OK) *pre_hsl = std::move(image);
+        return status;
+    }
     sony2fuji::applyHsl(image, session->hsl);
     sony2fuji::applyColorGrading(image, session->color_grading);
     const auto chromaResult = sony2fuji::applyChromaDenoiseWorking(image, chromaMode);
@@ -1905,6 +1924,90 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
+
+sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
+    const sony2fuji_request* request, uint64_t source_revision, uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe) {
+    if (out_probe) *out_probe = nullptr;
+    if (!session || !request || !out_probe || request->output_target != SONY2FUJI_TARGET_BUFFER)
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    // 分析明确使用 CPU；临时策略和已发布渲染的元信息不能泄漏到后续调用。
+    struct Restore {
+        sony2fuji_session& session;
+        sony2fuji::GpuConfig gpu;
+        sony2fuji_render_backend backend;
+        uint32_t width, height;
+        ~Restore() {
+            session.gpu_config = gpu; session.last_backend = backend;
+            session.geometry_width = width; session.geometry_height = height;
+        }
+    } restore{*session, session->gpu_config, session->last_backend,
+        session->geometry_width, session->geometry_height};
+    session->gpu_config.mode = sony2fuji::GpuMode::Off;
+    try {
+        auto probe = std::make_unique<sony2fuji_hsl_probe>();
+        sony2fuji_buffer unused{};
+        const auto status = processImpl(session, request, &unused, &probe->image);
+        if (status != SONY2FUJI_STATUS_OK) return status;
+        probe->source_revision = source_revision; probe->request_revision = request_revision;
+        probe->quality = request->intent == SONY2FUJI_INTENT_PREVIEW ?
+            SONY2FUJI_HSL_PROBE_PREVIEW_CPU : SONY2FUJI_HSL_PROBE_EXACT_CPU;
+        *out_probe = probe.release();
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    } catch (const sony2fuji::ai::NotReady&) {
+        return SONY2FUJI_STATUS_AI_NOT_READY;
+    } catch (const sony2fuji::ai::Unsupported&) {
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+#endif
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_hsl_probe_sample(const sony2fuji_hsl_probe* probe,
+    const sony2fuji_hsl_probe_query* query, sony2fuji_hsl_probe_result* result) {
+    if (result) *result = {};
+    if (!probe || !query || !result || query->version != SONY2FUJI_HSL_PROBE_VERSION ||
+        query->struct_size != sizeof(*query)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    result->version = SONY2FUJI_HSL_PROBE_VERSION; result->struct_size = sizeof(*result);
+    result->source_revision = probe->source_revision; result->request_revision = probe->request_revision;
+    result->width = probe->image.width; result->height = probe->image.height; result->quality = probe->quality;
+    if (query->source_revision != probe->source_revision || query->request_revision != probe->request_revision) {
+        result->availability = SONY2FUJI_HSL_PROBE_STALE; return SONY2FUJI_STATUS_OK;
+    }
+    if (!std::isfinite(query->x) || !std::isfinite(query->y) || query->x < 0 || query->x > 1 ||
+        query->y < 0 || query->y > 1) {
+        result->availability = SONY2FUJI_HSL_PROBE_OUTSIDE; return SONY2FUJI_STATUS_OK;
+    }
+    const auto& image = probe->image;
+    const double x = double(query->x) * (image.width-1), y = double(query->y) * (image.height-1);
+    const int left = static_cast<int>(x), top = static_cast<int>(y);
+    const int right = std::min(left+1, image.width-1), bottom = std::min(top+1, image.height-1);
+    const float dx = static_cast<float>(x-left), dy = static_cast<float>(y-top);
+    const auto mix = [](const sony2fuji::RGB& a, const sony2fuji::RGB& b, float t) {
+        return sony2fuji::RGB(a.r+(b.r-a.r)*t, a.g+(b.g-a.g)*t, a.b+(b.b-a.b)*t);
+    };
+    const auto pixel = mix(mix(image.at(left,top),image.at(right,top),dx),
+        mix(image.at(left,bottom),image.at(right,bottom),dx),dy);
+    if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b)) {
+        result->availability = SONY2FUJI_HSL_PROBE_NONFINITE; return SONY2FUJI_STATUS_OK;
+    }
+    result->rgb[0] = pixel.r; result->rgb[1] = pixel.g; result->rgb[2] = pixel.b;
+    const auto color = sony2fuji::analyzeHslColor(pixel);
+    if (!color.valid || color.spread < 1.f/255) {
+        result->availability = SONY2FUJI_HSL_PROBE_NEAR_GRAY; return SONY2FUJI_STATUS_OK;
+    }
+    result->hsl[0] = color.hue; result->hsl[1] = std::clamp(color.saturation,0.f,1.f);
+    result->hsl[2] = color.lightness;
+    const auto weights = color.weights(); std::copy(weights.begin(), weights.end(), result->weights);
+    result->availability = SONY2FUJI_HSL_PROBE_AVAILABLE;
+    return SONY2FUJI_STATUS_OK;
+}
+
+void sony2fuji_hsl_probe_destroy(sony2fuji_hsl_probe* probe) { delete probe; }
 
 sony2fuji_status sony2fuji_compute_histogram(
     const sony2fuji_buffer* buffer,

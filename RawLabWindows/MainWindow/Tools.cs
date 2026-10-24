@@ -134,7 +134,7 @@ public partial class MainWindow
     {
         if(file==null || exporting || pendingAllReset!=null)return;
         if(expandedGroup==group) {
-            CancelParameterInputs();if(!ResolveTransformDraft())return;
+            SetHslTargetMode(false,hslTargetAxis);CancelParameterInputs();if(!ResolveTransformDraft())return;
             dockHeight=DockRow.ActualHeight;expandedGroup=null;RefreshWorkspaceNavigation();
             DockRow.MinHeight=0;DockRow.Height=GridLength.Auto;AdjustmentSplitter.Visibility=Visibility.Collapsed;SplitterRow.Height=new(0);
             return;
@@ -144,6 +144,7 @@ public partial class MainWindow
     private void SelectTool(EditorAdjustmentTool tool)
     {
         if(file==null || exporting || pendingAllReset!=null)return;
+        if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
         CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
             BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
@@ -171,7 +172,7 @@ public partial class MainWindow
     }
     private void CancelParameterInputs()
     {
-        GradingEditor.CancelInputs();
+        CancelHslTarget();GradingEditor.CancelInputs();
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }
@@ -304,7 +305,7 @@ public partial class MainWindow
             GradingCategory.Tag=choosingGrading ? "selected" : null;
             GradingCategoryRing.Selected=choosingGrading;GradingCategoryRing.Progress=settings.ColorGrading.IsDefault ? 0 : 1;GradingCategoryRing.InvalidateVisual();
             HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
-            HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);
+            HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);RefreshHslTarget();
             HslCategory.Tag=choosingHsl ? "selected" : null;
             HslCategoryRing.Selected=choosingHsl;HslCategoryRing.Progress=settings.Hsl.IsIdentity ? 0 : 1;HslCategoryRing.InvalidateVisual();
             WhiteBalanceSurface.Visibility=choosingWhiteBalance ? Visibility.Visible : Visibility.Collapsed;

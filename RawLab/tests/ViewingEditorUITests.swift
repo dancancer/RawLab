@@ -5,6 +5,35 @@ final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
 
+    func testHSLTargetPhotoDragHistoryAndPinchCancellation() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.color"].tap(); app.buttons["tool.hsl"].tap()
+        let toggle = app.buttons["hsl.target"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.tap()
+        app.buttons["Lightness"].tap()
+        wait(app) { $0["hslTargetEnabled"] as? Bool == true && $0["hslTargetAxis"] as? String == "lightness" }
+        let before = receipt(app)
+        let history = before["historyCount"] as! Int
+        let values = before["hslValues"] as! [Double]
+        let photo = app.images["editor.photo"]
+        let start = photo.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.6))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -45)),
+                    withVelocity: .slow, thenHoldForDuration: 0.3)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslTargetWaiting"] as? Bool == false && $0["historyCount"] as? Int == history + 1 }
+        let adjusted = receipt(app)["hslValues"] as! [Double]
+        XCTAssertEqual(Array(adjusted.prefix(16)), Array(values.prefix(16)), "Target only changes the selected axis")
+        XCTAssertNotEqual(adjusted, values)
+        capture(app, "hsl-target-drag")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslValues"] as? [Double] == values }
+        openAdjustmentAction("adjustment.history.redo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslValues"] as? [Double] == adjusted }
+        photo.pinch(withScale: 1.5, velocity: 1)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslTargetWaiting"] as? Bool == false }
+        XCTAssertEqual(receipt(app)["hslValues"] as? [Double], adjusted, "A second finger cancels target input before zoom")
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, history + 1)
+    }
+
     func openAdjustmentAction(_ id: String, app: XCUIApplication) {
         app.buttons["editor.privacy"].tap()
         let labels = ["adjustment.history.undo": "Undo", "adjustment.history.redo": "Redo",

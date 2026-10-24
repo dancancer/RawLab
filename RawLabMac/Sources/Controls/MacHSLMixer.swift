@@ -6,14 +6,15 @@ struct MacHSLMixer: View {
     @Binding var settings: HSLSettings
     var onEditingChanged: (Bool) -> Void = { _ in }
     @Binding var channel: Int
+    var onCancelTarget: () -> Void = {}
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var channelFontSize: CGFloat { ParameterRow.textSize(for: dynamicTypeSize, base: 11) }
     private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink]
 
     init(settings: Binding<HSLSettings>, channel: Binding<Int> = .constant(0),
-         onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
+         onEditingChanged: @escaping (Bool) -> Void = { _ in }, onCancelTarget: @escaping () -> Void = {}) {
         _settings = settings; _channel = channel
-        self.onEditingChanged = onEditingChanged
+        self.onEditingChanged = onEditingChanged; self.onCancelTarget = onCancelTarget
     }
 
     var body: some View {
@@ -36,6 +37,7 @@ struct MacHSLMixer: View {
         HStack(alignment: .top, spacing: 4) {
             ForEach(0..<8) { index in
                 Button {
+                    onCancelTarget()
                     ParameterValueField.cancelPendingInputs()
                     channel = index
                 } label: {

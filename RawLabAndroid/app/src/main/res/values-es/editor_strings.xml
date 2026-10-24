@@ -103,6 +103,16 @@
     <string name="grading_reset_all">"Restablecer la gradación de color"</string>
     <string name="grading_reset_message">"¿Restaurar la gradación de color predeterminada de sombras, medios tonos y luces?"</string>
     <string name="grading_reset_zone">"Restablecer el rango actual"</string>
+    <string name="hsl_target">"Ajuste selectivo"</string>
+    <string name="hsl_target_axis">"Eje de ajuste"</string>
+    <string name="hsl_target_failed">"No se pudo tomar la muestra. Inténtalo de nuevo."</string>
+    <string name="hsl_target_gray">"Este color es demasiado cercano al gris para seleccionar una gama."</string>
+    <string name="hsl_target_instructions">"Toma una muestra en la foto y arrastra hacia arriba o abajo"</string>
+    <string name="hsl_target_outside">"Toma una muestra dentro de la foto editada."</string>
+    <string name="hsl_target_ranges">"Gamas afectadas: %1$s"</string>
+    <string name="hsl_target_stale">"La vista previa ha cambiado. Toma otra muestra."</string>
+    <string name="hsl_target_unavailable">"No se puede tomar una muestra de este píxel."</string>
+    <string name="hsl_target_waiting">"Muestreando…"</string>
     <string name="info_unavailable">"No disponible"</string>
     <string name="invalid_color_grading">"Valores de gradación de color no válidos"</string>
     <string name="invalid_tone_controls">"Valores de punto negro, punto blanco o intensidad no válidos"</string>

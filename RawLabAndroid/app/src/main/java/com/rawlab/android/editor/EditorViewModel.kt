@@ -1,5 +1,10 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.settings.HslTargetState
+import com.rawlab.android.settings.HslTargetRevision
+import com.rawlab.android.settings.HslTargetInteraction
+import com.rawlab.android.settings.HslTargetAvailability
+
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -73,6 +78,14 @@ class EditorViewModel @JvmOverloads constructor(
     }
     val batch = batches.active
     val pendingBatch = batches.pending
+    private val mutableHslTarget = MutableStateFlow(HslTargetState())
+    val hslTarget = mutableHslTarget.asStateFlow()
+    private val hslInteraction = HslTargetInteraction()
+    private var hslHistoryActive = false
+    private var applyingHslTarget = false
+    private var acceptedHslPreview: Work.Preview? = null
+    private var acceptedHslSettings: EditSettings? = null
+    private var acceptedHslRevision: HslTargetRevision? = null
     private var currentRevision = 0L
     private var sourceRevision = 0L
     private var editRevision = 0L
@@ -124,6 +137,81 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
 
+    private fun submitRender(work: Work): Long {
+        // 新任务替换取色时，队列可能不再回调旧请求；这里同步清除等待状态。
+        if (work !is Work.HslProbe && hslInteraction.waiting) clearHslTarget()
+        return queue.submit(work)
+    }
+
+    fun setHslTargetEnabled(enabled: Boolean) {
+        cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(enabled = enabled)
+    }
+    fun setHslTargetAxis(axis: Int) {
+        require(axis in 0..2)
+        cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(axis = axis)
+    }
+    fun beginHslTarget(x: Float, y: Float, keyDelta: Float? = null) {
+        cancelHslTarget()
+        val current = mutable.value; val target = mutableHslTarget.value
+        val preview = acceptedHslPreview; val revision = acceptedHslRevision
+        if (!target.enabled || !current.controlsEnabled || current.rendering || current.previewResizePending || current.error != null || current.draft != null ||
+            preview == null || revision == null || revision.source != sourceRevision || current.edits != acceptedHslSettings ||
+            current.photo?.identity != preview.photo.identity || current.photo?.file != preview.photo.file) {
+            mutableHslTarget.value = target.copy(notice = HslTargetAvailability.STALE); return
+        }
+        val token = hslInteraction.begin(current.edits.hsl, target.axis, revision)
+        mutableHslTarget.value = target.copy(x = x, y = y, sample = null, waiting = true, notice = null)
+        if (keyDelta != null) { hslInteraction.move(keyDelta); hslInteraction.end() }
+        currentRevision = submitRender(Work.HslProbe(preview, current.edits, revision, token, target.axis, x, y))
+    }
+    private fun acceptHslTarget(value: WorkResult.HslProbe) {
+        val work = value.request
+        if (!hslInteraction.matches(work.token)) return
+        val current = mutable.value; val target = mutableHslTarget.value
+        if (!target.enabled || target.axis != work.axis || current.edits != work.before || current.draft != null ||
+            sourceRevision != work.revision.source || current.photo?.identity != work.preview.photo.identity) {
+            cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(notice = HslTargetAvailability.STALE); return
+        }
+        val next = hslInteraction.accept(value.sample, work.token, acceptedHslRevision)
+        mutableHslTarget.value = target.copy(sample = hslInteraction.selection, waiting = false,
+            notice = if (next == null) hslInteraction.selection?.availability ?: HslTargetAvailability.STALE else null)
+        if (next == null) return
+        applyingHslTarget = true
+        try { edit(current.edits.copy(hsl = next), true) } finally { applyingHslTarget = false }
+        hslHistoryActive = adjustmentHistory.interacting
+        if (!hslHistoryActive) { clearHslTarget(); mutableHslTarget.value = target.copy(notice = HslTargetAvailability.FAILED); return }
+        if (!hslInteraction.dragging) endHslTarget()
+    }
+    fun moveHslTarget(delta: Float) {
+        val next = hslInteraction.move(delta) ?: return
+        if (!hslHistoryActive) return
+        applyingHslTarget = true
+        try { edit(mutable.value.edits.copy(hsl = next), true) } finally { applyingHslTarget = false }
+    }
+    fun endHslTarget() {
+        hslInteraction.end()
+        if (hslHistoryActive) {
+            hslHistoryActive = false; applyingHslTarget = true
+            try { edit(mutable.value.edits, false) } finally { applyingHslTarget = false }
+        }
+    }
+    private fun clearHslTarget() {
+        hslInteraction.cancel(); hslHistoryActive = false
+        mutableHslTarget.value = mutableHslTarget.value.copy(x = null, y = null, sample = null, waiting = false, notice = null)
+    }
+    fun cancelHslTarget() {
+        val active = hslHistoryActive
+        clearHslTarget()
+        if (active) cancelAdjustmentInteraction()
+    }
+    fun rejectHslTarget() { cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(notice = HslTargetAvailability.OUTSIDE) }
+    fun keyHslTarget(delta: Float) {
+        val target = mutableHslTarget.value
+        if (hslInteraction.dragging || target.x == null || target.y == null) return
+        if (hslInteraction.waiting) { hslInteraction.accumulateReleased(delta); return }
+        beginHslTarget(target.x, target.y, delta)
+    }
+
     private fun accept(result: Result<WorkResult>) {
         result.fold({ value ->
             when (value) {
@@ -136,6 +224,7 @@ class EditorViewModel @JvmOverloads constructor(
                         saveState = EditSaveState.RESTORED, error = text(R.string.look_unavailable))
                     includeIndependentRecipeLook(value.edits)
                 }
+                is WorkResult.HslProbe -> acceptHslTarget(value)
                 is WorkResult.Preview -> {
                     val request = value.request
                     if (request.draft) {
@@ -179,6 +268,9 @@ class EditorViewModel @JvmOverloads constructor(
                         exact = !request.interactive, error = null,
                         saveState = if (request.restored && saved?.state == EditSaveState.SAVED) EditSaveState.RESTORED else saved?.state ?: mutable.value.saveState,
                         saveError = if (saved == null) mutable.value.saveError else saved.message)
+                    acceptedHslPreview = request
+                    acceptedHslSettings = settings
+                    acceptedHslRevision = HslTargetRevision(sourceRevision, currentRevision)
                     includeIndependentRecipeLook(settings)
                 }
                 WorkResult.Export -> {
@@ -252,7 +344,7 @@ class EditorViewModel @JvmOverloads constructor(
         mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
         editRevision += 1
         durablePreview = null
-        currentRevision = queue.submit(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
+        currentRevision = submitRender(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
     }
 
     private fun dcpFailureText(reason: DcpFailureReason): String = text(when (reason) {
@@ -293,7 +385,7 @@ class EditorViewModel @JvmOverloads constructor(
         previewLongEdge = 1600
         requestedPreviewLongEdge = 1600
         mutable.value = mutable.value.copy(previewResizePending = false)
-        currentRevision = queue.submit(Work.Import(uri, gpuMode()))
+        currentRevision = submitRender(Work.Import(uri, gpuMode()))
     }
 
     fun importLook(uri: Uri?) {
@@ -321,6 +413,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun edit(edits: EditSettings, interactive: Boolean = false) {
+        if (!applyingHslTarget) cancelHslTarget()
         val current = mutable.value
         if (!current.controlsEnabled || current.draft != null) return
         if (interactive && !adjustmentHistory.interacting) {
@@ -346,13 +439,15 @@ class EditorViewModel @JvmOverloads constructor(
         mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
             saveState = saved?.state ?: current.saveState, saveError = if (saved == null) current.saveError else saved.message,
             previewResizePending = previewResizeJob != null)
-        currentRevision = queue.submit(Work.Preview(current.photo!!, edits, interactive, gpuMode(), edge = previewLongEdge))
+        currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(), edge = previewLongEdge))
     }
 
     fun updatePreviewSize(edge: Int) {
-        val current = mutable.value
+        var current = mutable.value
         if (disposed || current.photo == null || current.draft != null || edge !in 1..1600 ||
             (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null))) return
+        cancelHslTarget()
+        current = mutable.value
         requestedPreviewLongEdge = edge
         if (!current.controlsEnabled) return
         previewResizeJob?.cancel()
@@ -411,7 +506,7 @@ class EditorViewModel @JvmOverloads constructor(
             if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
         }
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        currentRevision = queue.submit(Work.Preview(photo, edits, interactive, gpuMode(), edge = 1600, draft = true))
+        currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(), edge = 1600, draft = true))
     }
 
     fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {
@@ -457,7 +552,7 @@ class EditorViewModel @JvmOverloads constructor(
         draftRevision += 1
         mutable.value = current.copy(edits = edits, draft = null, rendering = true, exact = false,
             previewResizePending = false, error = null, saveState = saved.state, saveError = saved.message)
-        currentRevision = queue.submit(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
+        currentRevision = submitRender(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
         durablePreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision, currentRevision, edits)
         return true
     }
@@ -481,10 +576,11 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     private fun renderCommittedForNavigation() {
+        cancelHslTarget()
         val current = mutable.value
         val photo = current.photo ?: return
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        currentRevision = queue.submit(Work.Preview(photo, current.edits, false, gpuMode(), edge = previewLongEdge))
+        currentRevision = submitRender(Work.Preview(photo, current.edits, false, gpuMode(), edge = previewLongEdge))
         navigationPreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision,
             currentRevision, current.edits)
     }
@@ -497,7 +593,7 @@ class EditorViewModel @JvmOverloads constructor(
         val current = mutable.value
         if (!current.controlsEnabled || current.preview == null || current.rendering || current.draft != null) return
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        currentRevision = queue.submit(Work.AutoExposure(current.photo!!, current.edits))
+        currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.edits))
     }
     fun retrySave() {
         if (failedDraftSave && mutable.value.draft != null) { applyDraft(); return }
@@ -572,6 +668,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun cancelAdjustmentInteraction() {
+        clearHslTarget()
         val restored = adjustmentHistory.cancel(mutable.value.photo, sourceRevision) ?: return
         editRevision += 1
         mutable.value = mutable.value.copy(edits = restored)
@@ -766,7 +863,7 @@ class EditorViewModel @JvmOverloads constructor(
             return
         }
         mutable.value = current.copy(operation = Operation.EXPORT)
-        currentRevision = queue.submit(Work.Export(current.photo, current.edits, destination, format, longEdge, gpuMode()))
+        currentRevision = submitRender(Work.Export(current.photo, current.edits, destination, format, longEdge, gpuMode()))
     }
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 

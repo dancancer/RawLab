@@ -3637,6 +3637,70 @@
       "source": "恢复阴影、中间调和高光的颜色分级默认值？",
       "file": "editor_strings.xml",
       "types": []
+    },
+    "hsl_target": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "目标调整",
+      "types": []
+    },
+    "hsl_target_axis": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整轴",
+      "types": []
+    },
+    "hsl_target_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取色失败，请重试。",
+      "types": []
+    },
+    "hsl_target_gray": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颜色接近灰色，无法选择色域。",
+      "types": []
+    },
+    "hsl_target_instructions": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "在照片上取色并上下拖动",
+      "types": []
+    },
+    "hsl_target_outside": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请在调整后的照片区域取色。",
+      "types": []
+    },
+    "hsl_target_ranges": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "受影响色域：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "hsl_target_stale": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览已变化，请重新取色。",
+      "types": []
+    },
+    "hsl_target_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此像素不可取样。",
+      "types": []
+    },
+    "hsl_target_waiting": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在取色…",
+      "types": []
     }
   },
   "overrides": {

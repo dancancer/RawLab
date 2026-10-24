@@ -110,6 +110,8 @@
 "双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取消" = "Cancel";
 "取消导出" = "Cancel Export";
+"取色失败，请重试。" = "Could not sample. Try again.";
+"受影响色域：%@" = "Affected ranges: %@";
 "另存" = "Save As";
 "史诗自然 · 雾气冷青" = "Epic nature · misty cool cyan";
 "同名预设已存在，请使用其他名称。" = "A preset with this name already exists. Use another name.";
@@ -117,6 +119,7 @@
 "向左旋转 90°" = "Rotate left 90°";
 "四分之一灵敏度" = "Quarter Sensitivity";
 "圆度" = "Roundness";
+"在照片上取色并上下拖动" = "Sample the photo and drag up or down";
 "垂直位置" = "Vertical position";
 "垂直翻转" = "Flip vertical";
 "垂直透视" = "Vertical perspective";
@@ -322,6 +325,7 @@
 "正在停止…" = "Stopping…";
 "正在准备照片…" = "Preparing Photos…";
 "正在加载胶片" = "Loading Films";
+"正在取色…" = "Sampling…";
 "正在处理" = "Processing";
 "正在导入" = "Importing";
 "正在导出" = "Exporting";
@@ -331,6 +335,7 @@
 "正在生成效果预览…" = "Generating Result Preview…";
 "正在读取镜头信息…" = "Reading Lens Information…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.";
+"此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
@@ -372,6 +377,7 @@
 "目标所需的外观不可用，请先导入外观。" = "The required look is unavailable. Import it first.";
 "目标无法保留未选参数，请调整复制范围。" = "The target cannot preserve unselected settings. Change the copy scope.";
 "目标照片" = "Target Photos";
+"目标调整" = "Targeted adjustment";
 "目标：%@ 张照片" = "Target photos: %@";
 "移除" = "Remove";
 "移除 %@" = "Remove %@";
@@ -440,6 +446,7 @@
 "请使用 %@ 的步进。" = "Use increments of %@.";
 "请先导入一张照片。" = "Import a Photo First.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Apply or discard unfinished input and geometry drafts first.";
+"请在调整后的照片区域取色。" = "Sample within the edited photo.";
 "请等待当前任务完成。" = "Wait for the Current Task to Finish.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请输入 1–65535 之间的像素数" = "Enter a pixel count from 1 to 65,535";
@@ -458,6 +465,7 @@
 "调整裁切边角" = "Adjust crop corner";
 "调整触觉反馈" = "Adjustment Haptics";
 "调整记录已恢复，请重新选择照片载入。" = "Adjustment Record Restored. Select the Photo Again to Load It.";
+"调整轴" = "Adjustment axis";
 "赛博朋克 · 极致反差" = "Cyberpunk · extreme contrast";
 "跟随系统" = "Follow system";
 "跳过" = "Skip";
@@ -533,6 +541,7 @@
 "霓虹都市 · 冷青粉紫" = "Neon city · cool cyan and pink-purple";
 "青" = "Cyan";
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
+"预览已变化，请重新取色。" = "The preview changed. Sample again.";
 "预览已更新" = "Preview updated";
 "预览未更新" = "Preview not updated";
 "预设" = "Preset";
@@ -546,6 +555,7 @@
 "颗粒粗糙度" = "Grain Roughness";
 "颜色" = "Color";
 "颜色分级" = "Color grading";
+"颜色接近灰色，无法选择色域。" = "This color is too close to gray to select a range.";
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";

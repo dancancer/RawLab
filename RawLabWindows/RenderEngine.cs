@@ -103,25 +103,8 @@ internal sealed partial class RenderEngine : IDisposable
     }
     public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false)
     {
-        settings = PrepareRecipe(path, settings);
-        EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetGrading(settings.ColorGrading);
-        ConfigureAI(settings.AIDenoiseEnabled);
-        SetLens(settings.Lens);
-        SetGeometry(settings.Geometry);
-        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
-        var hsl=settings.RenderHsl.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_hsl(session,ref hsl));
-        Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0));
-        Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0));
-        var denoise=settings.Denoise.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise));
-        var effects=settings.Effects.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects));
-        Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
-        var format = output == null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
-        var request = settings.Request(path,lut,edge,output,longEdge);
-        SetInput(ref request,path);
+        (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview);
+        var format=output==null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
         Native.Buffer buffer = default, mask = default;
         try
         {
@@ -158,6 +141,44 @@ internal sealed partial class RenderEngine : IDisposable
                 calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
+    }
+    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview)
+    {
+        settings = PrepareRecipe(path, settings);
+        EnsureInput(path);
+        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetGrading(settings.ColorGrading);
+        ConfigureAI(settings.AIDenoiseEnabled);
+        SetLens(settings.Lens);
+        SetGeometry(settings.Geometry);
+        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
+        var hsl=settings.RenderHsl.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_hsl(session,ref hsl));
+        Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0));
+        Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0));
+        var denoise=settings.Denoise.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise));
+        var effects=settings.Effects.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects));
+        Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
+        var request = settings.Request(path,lut,edge,output,longEdge);
+        SetInput(ref request,path);
+        return (settings,request);
+    }
+    internal HslTargetSample SampleHsl(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
+    {
+        if(!double.IsFinite(x) || !double.IsFinite(y))return HslTargetSample.Unavailable(revision,HslTargetAvailability.Nonfinite);
+        if(x<0 || x>1 || y<0 || y>1)return HslTargetSample.Unavailable(revision,HslTargetAvailability.Outside);
+        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true);
+        var request=prepared.Item2;
+        IntPtr probe=IntPtr.Zero;
+        try {
+            Native.Check(Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe));
+            var query=new Native.HslProbeQuery {Version=1,StructSize=(uint)Marshal.SizeOf<Native.HslProbeQuery>(),SourceRevision=revision.Source,RequestRevision=revision.Request,X=(float)x,Y=(float)y};
+            Native.Check(Native.sony2fuji_hsl_probe_sample(probe,ref query,out var sample));
+            if(sample.SourceRevision!=revision.Source || sample.RequestRevision!=revision.Request)
+                return HslTargetSample.Unavailable(revision,HslTargetAvailability.Stale);
+            return new(revision,(HslTargetAvailability)sample.Availability,sample.Rgb.Select(v=>(double)v),sample.Weights.Select(v=>(double)v),sample.Quality==1);
+        } finally { if(probe!=IntPtr.Zero)Native.sony2fuji_hsl_probe_destroy(probe); }
     }
     internal static int AnalyzeStatistics(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask)
     {

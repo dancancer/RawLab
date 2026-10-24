@@ -190,6 +190,8 @@ extension EditorModel {
                 settings.resolveWhiteBalance(result.asShotWhiteBalance)
                 settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
                 updatingMetadata = false
+                hslAcceptedRequest = request
+                hslAcceptedSettings = settings
                 if completion == .publishInteractive {
                     statusState = .interactive(result.image.width, result.image.height)
                 } else {

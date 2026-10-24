@@ -35,6 +35,28 @@ import SwiftUI
         let endsBeforeDismantle = ended
         MacCanvasInput.dismantleNSView(input, coordinator: ())
         guard ended > endsBeforeDismantle else { print("FAIL: dismantle cancels both before and pan sessions"); exit(1) }
+        var samples: [CGPoint] = [], changes: [Double] = [], targetEnds = 0, targetCancels = 0, keys: [Double] = []
+        let target = HSLTargetCanvasInput(scope: "photo-a:hue", begin: { samples.append($0) }, change: { changes.append($0) },
+            end: { targetEnds += 1 }, cancel: { targetCancels += 1 }, key: { keys.append($0) }, reject: {})
+        input.configure(MacCanvasInput(imageRect: CGRect(x: -100, y: 20, width: 500, height: 200),
+            excludedRects: [CGRect(x: 0, y: 20, width: 40, height: 40)], target: target,
+            canHold: false, onHold: { _ in }, onPan: { _ in }, onPanEnd: {}, onDoubleClick: {}))
+        func pointer(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: input.convert(point, to: nil), modifierFlags: .shift,
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        }
+        let arrow = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift,
+            timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 124)!
+        input.mouseDown(with: pointer(.leftMouseDown, CGPoint(x: 10, y: 30)))
+        guard samples.isEmpty else { fatalError("Label overlay was sampled") }
+        input.mouseDown(with: pointer(.leftMouseDown, CGPoint(x: 150, y: 120)))
+        input.mouseDragged(with: pointer(.leftMouseDragged, CGPoint(x: 150, y: 80))); input.keyDown(with: arrow)
+        guard samples == [CGPoint(x: 0.5, y: 0.5)] && changes == [5] && keys.isEmpty else { fatalError("Frozen normalized sample, fine drag or pointer/key ownership failed") }
+        input.mouseUp(with: pointer(.leftMouseUp, CGPoint(x: 150, y: 80))); input.keyDown(with: arrow)
+        guard targetEnds == 1 && keys == [0.1] else { fatalError("Target release and keyboard fine step failed") }
+        input.mouseDown(with: pointer(.leftMouseDown, CGPoint(x: 150, y: 120)))
+        let previousCancels = targetCancels; input.cancelOperation(nil); input.mouseUp(with: pointer(.leftMouseUp, CGPoint(x: 150, y: 80)))
+        guard targetCancels > previousCancels && targetEnds == 1 else { fatalError("Cancelled target accepted a late mouse-up") }
         print("PASS: native cancel, subsequent pan and dismantle lifecycle")
     }
 }

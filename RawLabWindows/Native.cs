@@ -60,6 +60,24 @@ internal static partial class Native
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=8)] public float[] Lightness;
     }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct HslProbeQuery
+    {
+        public uint Version,StructSize;
+        public ulong SourceRevision,RequestRevision;
+        public float X,Y;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct HslProbeResult
+    {
+        public uint Version,StructSize;
+        public ulong SourceRevision,RequestRevision;
+        public uint Width,Height;
+        public int Availability,Quality;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=3)] public float[] Rgb;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=3)] public float[] Hsl;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=8)] public float[] Weights;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct LensConfig {
         public uint Version, StructSize;
         public int Distortion, Tca, AutoCrop;
@@ -109,6 +127,9 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_lens_report(Session session,out LensReport report);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_inspect_lens(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string input,out LensReport report,[Out] LensProfile[]? profiles,uint capacity,out uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_hsl(Session session,ref HslConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_create_hsl_probe(Session session,ref Request request,ulong sourceRevision,ulong requestRevision,out IntPtr probe);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hsl_probe_sample(IntPtr probe,ref HslProbeQuery query,out HslProbeResult result);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_hsl_probe_destroy(IntPtr probe);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_geometry(Session session,ref GeometryConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_perspective(Session session,ref PerspectiveConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_geometry_size(Session session,out uint width,out uint height);

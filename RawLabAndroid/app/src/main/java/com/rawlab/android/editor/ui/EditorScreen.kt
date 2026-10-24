@@ -1,5 +1,9 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.editor.controls.HslTargetActions
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -74,6 +78,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onPresets: () -> Unit = {}, presetAction: AdjustmentPresetAction? = null,
     onPresetActionConsumed: () -> Unit = {}, onPresetActionReady: (AdjustmentPresetAction) -> Unit = {},
     onUndoAdjustment: () -> Unit = {}, onRedoAdjustment: () -> Unit = {},
+    hslTarget: HslTargetActions = HslTargetActions(),
     onAutoExposure: () -> Unit = {},
     onBatchExport: () -> Unit = {},
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
@@ -236,6 +241,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
     val sourceKey = "${state.photo?.identity?.value}:${state.photo?.file?.absolutePath}"
     val liveSourceKey by rememberUpdatedState(sourceKey)
+    val liveTarget by rememberUpdatedState(hslTarget)
+    val targetAxis = hslTarget.state.axis
+    val targetMode = hslTarget.state.enabled && tool == 14 && expanded && state.draft == null
+    val canvasTarget = if (targetMode) hslTarget.guarded { liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis } else null
+    LaunchedEffect(tool, expanded) { if (tool != 14 || !expanded) liveTarget.enabled(false) }
+    LaunchedEffect(targetMode) { if (targetMode) view = view.cancelHold() }
+    BackHandler(targetMode) { hslTarget.enabled(false) }
     val cancelAdjustment = onCancelAdjustment
     val cancelRuler: (() -> Unit) -> Unit = { restore ->
         if (liveSourceKey == sourceKey) {
@@ -261,13 +273,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) view = view.cancelHold() }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { view = view.cancelHold(); liveTarget.cancel() } }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold() }
+        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel() }
     }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.operation) {
-        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.operation != Operation.NONE) view = view.cancelHold()
+        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel() }
     }
     BackHandler(view.purePreview) { togglePure() }
     val photoInfo by produceState<PhotoInfo?>(null, state.photo?.file?.absolutePath) {
@@ -296,11 +308,18 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { onCancelAdjustment(); onPresets() }, gradingZone = gradingZone,
-            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it })
+            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget)
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+    Scaffold(modifier = Modifier.pointerInput(targetMode) {
+        if (targetMode) awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.changes.count { it.pressed } >= 2) liveTarget.cancel()
+            }
+        }
+    }, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         if (!view.purePreview) TopAppBar(modifier = Modifier.alpha(surroundingAlpha), title = {
             Column {
                 Text("RawLab", style = MaterialTheme.typography.titleMedium)
@@ -375,7 +394,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         Column(Modifier.weight(1f)) {
                             EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
                                 Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
-                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry)
+                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget)
                         }
                         if (!view.purePreview) VerticalDivider()
                         retainedDock(Modifier.hideForPurePreview(view.purePreview).width(sideDockWidth).fillMaxHeight(), true, dockLayout.compactNavigation)
@@ -383,7 +402,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
                         Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
-                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry)
+                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget)
                     if (state.photo != null) {
                         if (!view.purePreview) HorizontalDivider()
                         retainedDock(Modifier.hideForPurePreview(view.purePreview).fillMaxWidth().height(dockHeight), false, dockLayout.compactNavigation)

@@ -72,6 +72,7 @@ public partial class MainWindow
     }
     private bool PrepareAdjustmentCommand()
     {
+        CancelHslTarget();
         if(file==null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)return false;
         foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
             if(row.Commit())continue;

@@ -110,6 +110,8 @@
 "双击名称或轨道恢复默认值。" = "Toca dos veces el nombre o la pista para restablecer el valor predeterminado.";
 "取消" = "Cancelar";
 "取消导出" = "Cancelar exportación";
+"取色失败，请重试。" = "No se pudo tomar la muestra. Inténtalo de nuevo.";
+"受影响色域：%@" = "Gamas afectadas: %@";
 "另存" = "Guardar como";
 "史诗自然 · 雾气冷青" = "Naturaleza épica · cian frío de niebla";
 "同名预设已存在，请使用其他名称。" = "Ya existe un ajuste con este nombre. Usa otro nombre.";
@@ -117,6 +119,7 @@
 "向左旋转 90°" = "Girar 90° a la izquierda";
 "四分之一灵敏度" = "Sensibilidad a un cuarto";
 "圆度" = "Redondez";
+"在照片上取色并上下拖动" = "Toma una muestra en la foto y arrastra hacia arriba o abajo";
 "垂直位置" = "Posición vertical";
 "垂直翻转" = "Voltear verticalmente";
 "垂直透视" = "Perspectiva vertical";
@@ -322,6 +325,7 @@
 "正在停止…" = "Deteniendo…";
 "正在准备照片…" = "Preparando fotos…";
 "正在加载胶片" = "Cargando películas";
+"正在取色…" = "Muestreando…";
 "正在处理" = "Procesando";
 "正在导入" = "Importando";
 "正在导出" = "Exportando";
@@ -331,6 +335,7 @@
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.";
+"此像素不可取样。" = "No se puede tomar una muestra de este píxel.";
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Solo se restablecerán los ajustes del grupo %@. Los demás grupos no cambiarán.";
 "此输入不支持镜头校正" = "Esta entrada no admite corrección de lente";
@@ -372,6 +377,7 @@
 "目标所需的外观不可用，请先导入外观。" = "El aspecto necesario no está disponible. Impórtalo primero.";
 "目标无法保留未选参数，请调整复制范围。" = "No se pueden conservar los ajustes no seleccionados. Cambia el alcance de la copia.";
 "目标照片" = "Fotos de destino";
+"目标调整" = "Ajuste selectivo";
 "目标：%@ 张照片" = "Fotos de destino: %@";
 "移除" = "Quitar";
 "移除 %@" = "Eliminar %@";
@@ -440,6 +446,7 @@
 "请使用 %@ 的步进。" = "Usa incrementos de %@.";
 "请先导入一张照片。" = "Importa primero una foto.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Aplica o descarta primero las entradas y los borradores de geometría pendientes.";
+"请在调整后的照片区域取色。" = "Toma una muestra dentro de la foto editada.";
 "请等待当前任务完成。" = "Espera a que termine la tarea actual.";
 "请等待预览完成后导出。" = "Espera a que termine la vista previa antes de exportar.";
 "请输入 1–65535 之间的像素数" = "Introduce un número de píxeles entre 1 y 65.535";
@@ -458,6 +465,7 @@
 "调整裁切边角" = "Ajustar esquina de recorte";
 "调整触觉反馈" = "Respuesta háptica al ajustar";
 "调整记录已恢复，请重新选择照片载入。" = "Registro de ajustes restaurado. Selecciona la foto de nuevo para cargarla.";
+"调整轴" = "Eje de ajuste";
 "赛博朋克 · 极致反差" = "Cyberpunk · contraste extremo";
 "跟随系统" = "Seguir el sistema";
 "跳过" = "Omitir";
@@ -533,6 +541,7 @@
 "霓虹都市 · 冷青粉紫" = "Ciudad de neón · cian frío y rosa púrpura";
 "青" = "Cian";
 "预览尚未就绪，请稍后重试。" = "La vista previa aún no está lista. Vuelve a intentarlo en breve.";
+"预览已变化，请重新取色。" = "La vista previa ha cambiado. Toma otra muestra.";
 "预览已更新" = "Vista previa actualizada";
 "预览未更新" = "Vista previa sin actualizar";
 "预设" = "Preajuste";
@@ -546,6 +555,7 @@
 "颗粒粗糙度" = "Rugosidad del grano";
 "颜色" = "Color";
 "颜色分级" = "Gradación de color";
+"颜色接近灰色，无法选择色域。" = "Este color es demasiado cercano al gris para seleccionar una gama.";
 "饱和度" = "Saturación";
 "饱和度：从灰色到彩色。" = "Saturación: de gris a color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Noche urbana de neón en Seúl, base cian fría contra altas luces rosa-púrpura y reflejos de calles mojadas";

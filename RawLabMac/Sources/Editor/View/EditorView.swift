@@ -112,6 +112,7 @@ struct EditorView: View {
             viewing.sourceChanged()
             fit()
         }
+        .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
@@ -123,10 +124,12 @@ struct EditorView: View {
             if !Task.isCancelled && model.file == file { photoInformation = info }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            model.cancelHSLTarget()
             if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            model.cancelHSLTarget()
             if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
@@ -135,7 +138,7 @@ struct EditorView: View {
             if kind == .presets { AdjustmentPresetView(model: model) }
             else { AdjustmentTransferView(model: model, kind: kind) }
         }
-        .onExitCommand { model.cancelAdjustmentInteraction() }
+        .onExitCommand { model.cancelHSLTarget(); model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
@@ -478,13 +481,25 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var canHoldBefore: Bool { model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+    private var canHoldBefore: Bool { !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+
+    private var hslTargetInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, axis = model.hslTargetAxis
+        func current() -> Bool { model.sourceRevision == source && model.hslTargetAxis == axis }
+        return HSLTargetCanvasInput(scope: "\(source)-\(axis.rawValue)",
+            begin: { if current() { model.beginHSLTarget($0) } },
+            change: { if current() { model.moveHSLTarget($0) } },
+            end: { if current() { model.endHSLTarget() } }, cancel: { if current() { model.cancelHSLTarget() } },
+            key: { if current() { model.keyHSLTarget($0) } }, reject: { if current() { model.rejectHSLTarget() } })
+    }
 
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
         PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
-                    clipping: showMask, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
+                    clipping: showMask && !model.hslTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
                     split: wipe ? $viewing.split : nil,
                     comparisonLabel: (viewing.enabled && model.canComparePreview) || viewing.holdingBefore ? title : nil,
+                    hslTarget: model.hslTargetActive && model.result?.image === frame.image ? hslTargetInput : nil,
+                    hslTargetPoint: model.hslTargetPoint,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
                     }, sourceHeight: model.result?.nativeHeight,

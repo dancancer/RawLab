@@ -4838,5 +4838,93 @@
     "fr": "Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?",
     "ja": "シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？",
     "zh-Hans": "恢复阴影、中间调和高光的颜色分级默认值？"
+  },
+  "上下拖动调整，方向键微调，Esc 取消": {
+    "de": "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen",
+    "en": "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel",
+    "es": "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar",
+    "fr": "Faites glisser vers le haut ou le bas pour régler, utilisez les flèches pour affiner et Échap pour annuler",
+    "ja": "上下にドラッグして調整、矢印キーで微調整、Esc でキャンセル",
+    "zh-Hans": "上下拖动调整，方向键微调，Esc 取消"
+  },
+  "取色失败，请重试。": {
+    "de": "Die Farbe konnte nicht erfasst werden. Versuchen Sie es erneut.",
+    "en": "Could not sample. Try again.",
+    "es": "No se pudo tomar la muestra. Inténtalo de nuevo.",
+    "fr": "Impossible de prélever la couleur. Réessayez.",
+    "ja": "色を取得できませんでした。もう一度お試しください。",
+    "zh-Hans": "取色失败，请重试。"
+  },
+  "受影响色域：{0}": {
+    "de": "Betroffene Farbbereiche: {0}",
+    "en": "Affected ranges: {0}",
+    "es": "Gamas afectadas: {0}",
+    "fr": "Plages affectées : {0}",
+    "ja": "対象の色域：{0}",
+    "zh-Hans": "受影响色域：{0}"
+  },
+  "在照片上取色并上下拖动": {
+    "de": "Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten",
+    "en": "Sample the photo and drag up or down",
+    "es": "Toma una muestra en la foto y arrastra hacia arriba o abajo",
+    "fr": "Prélevez une couleur dans la photo, puis faites glisser vers le haut ou le bas",
+    "ja": "写真の色を選び、上下にドラッグ",
+    "zh-Hans": "在照片上取色并上下拖动"
+  },
+  "正在取色…": {
+    "de": "Farbe wird erfasst…",
+    "en": "Sampling…",
+    "es": "Muestreando…",
+    "fr": "Échantillonnage…",
+    "ja": "色を取得中…",
+    "zh-Hans": "正在取色…"
+  },
+  "此像素不可取样。": {
+    "de": "Dieses Pixel kann nicht erfasst werden.",
+    "en": "This pixel cannot be sampled.",
+    "es": "No se puede tomar una muestra de este píxel.",
+    "fr": "Ce pixel ne peut pas être échantillonné.",
+    "ja": "このピクセルからは色を取得できません。",
+    "zh-Hans": "此像素不可取样。"
+  },
+  "目标调整": {
+    "de": "Zielgerichtete Anpassung",
+    "en": "Targeted adjustment",
+    "es": "Ajuste selectivo",
+    "fr": "Réglage ciblé",
+    "ja": "ターゲット調整",
+    "zh-Hans": "目标调整"
+  },
+  "请在调整后的照片区域取色。": {
+    "de": "Wählen Sie eine Farbe im bearbeiteten Foto.",
+    "en": "Sample within the edited photo.",
+    "es": "Toma una muestra dentro de la foto editada.",
+    "fr": "Prélevez une couleur dans la photo retouchée.",
+    "ja": "調整後の写真内で色を選択してください。",
+    "zh-Hans": "请在调整后的照片区域取色。"
+  },
+  "调整轴": {
+    "de": "Anpassungsachse",
+    "en": "Adjustment axis",
+    "es": "Eje de ajuste",
+    "fr": "Axe de réglage",
+    "ja": "調整軸",
+    "zh-Hans": "调整轴"
+  },
+  "预览已变化，请重新取色。": {
+    "de": "Die Vorschau hat sich geändert. Wählen Sie die Farbe erneut.",
+    "en": "The preview changed. Sample again.",
+    "es": "La vista previa ha cambiado. Toma otra muestra.",
+    "fr": "L’aperçu a changé. Prélevez à nouveau la couleur.",
+    "ja": "プレビューが変わりました。もう一度色を選択してください。",
+    "zh-Hans": "预览已变化，请重新取色。"
+  },
+  "颜色接近灰色，无法选择色域。": {
+    "de": "Diese Farbe liegt zu nahe an Grau, um einen Farbbereich auszuwählen.",
+    "en": "This color is too close to gray to select a range.",
+    "es": "Este color es demasiado cercano al gris para seleccionar una gama.",
+    "fr": "Cette couleur est trop proche du gris pour sélectionner une plage.",
+    "ja": "グレーに近いため、色域を選択できません。",
+    "zh-Hans": "颜色接近灰色，无法选择色域。"
   }
 }

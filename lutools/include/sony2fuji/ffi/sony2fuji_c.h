@@ -327,6 +327,35 @@ typedef struct sony2fuji_lens_report {
 
 typedef struct sony2fuji_session sony2fuji_session;
 
+typedef struct sony2fuji_hsl_probe sony2fuji_hsl_probe;
+#define SONY2FUJI_HSL_PROBE_VERSION 1
+typedef enum sony2fuji_hsl_probe_availability {
+    SONY2FUJI_HSL_PROBE_AVAILABLE = 0,
+    SONY2FUJI_HSL_PROBE_NEAR_GRAY = 1,
+    SONY2FUJI_HSL_PROBE_OUTSIDE = 2,
+    SONY2FUJI_HSL_PROBE_STALE = 3,
+    SONY2FUJI_HSL_PROBE_NONFINITE = 4
+} sony2fuji_hsl_probe_availability;
+typedef enum sony2fuji_hsl_probe_quality {
+    SONY2FUJI_HSL_PROBE_EXACT_CPU = 0,
+    SONY2FUJI_HSL_PROBE_PREVIEW_CPU = 1
+} sony2fuji_hsl_probe_quality;
+typedef struct sony2fuji_hsl_probe_query {
+    uint32_t version, struct_size;
+    uint64_t source_revision, request_revision;
+    float x, y;
+} sony2fuji_hsl_probe_query;
+typedef struct sony2fuji_hsl_probe_result {
+    uint32_t version, struct_size;
+    uint64_t source_revision, request_revision;
+    uint32_t width, height;
+    sony2fuji_hsl_probe_availability availability;
+    sony2fuji_hsl_probe_quality quality;
+    float rgb[3]; // Display-encoded working sRGB, possibly outside [0,1].
+    float hsl[3]; // Hue degrees [0,360), saturation/lightness [0,1].
+    float weights[8]; // Same channel order as hsl_config; available samples sum to 1.
+} sony2fuji_hsl_probe_result;
+
 typedef enum sony2fuji_ai_backend {
     SONY2FUJI_AI_CPU = 0,
     SONY2FUJI_AI_COREML = 1,
@@ -478,6 +507,24 @@ sony2fuji_status sony2fuji_session_set_photo_effects(
 sony2fuji_status sony2fuji_session_set_hsl(
     sony2fuji_session* session, const sony2fuji_hsl_config* config
 );
+
+// Immutable CPU reference after tone/vibrance, before HSL, with the same geometry
+// and requested sizing. Only BUFFER requests are accepted; this never exports.
+// PREVIEW retains the caller's proxy policy and is not exact-source/GPU parity.
+// Serialize capture with session rendering. GPU policy and last render metadata
+// are preserved. The snapshot owns its pixels and out_probe is null on failure.
+sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
+    const sony2fuji_request* request, uint64_t source_revision, uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe);
+// Coordinates [0,1] address first/last pixel centers of the geometry result.
+// Revision labels must match the snapshot. The caller must additionally match
+// them to its current displayed photo/frame before applying an asynchronous result.
+// Gray (<1/255 channel spread), outside, stale and nonfinite pixels return no weights.
+// Nonfinite query coordinates are OUTSIDE; NONFINITE describes sampled pixels.
+// Errors clear result; an OK call may still report an unavailable sample.
+sony2fuji_status sony2fuji_hsl_probe_sample(const sony2fuji_hsl_probe* probe,
+    const sony2fuji_hsl_probe_query* query, sony2fuji_hsl_probe_result* result);
+void sony2fuji_hsl_probe_destroy(sony2fuji_hsl_probe* probe);
 
 // Additive API; request v2 stays unchanged. All zero is an exact bypass.
 // Display-encoded sRGB: black/white precede legacy tone, vibrance precedes HSL.

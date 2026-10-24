@@ -241,6 +241,8 @@ extension ContentView {
     }
 
     func cancelSliderInteraction() {
+        hslTargetInteraction.cancel(); hslTargetHistoryActive = false
+        hslTargetPoint = nil; hslTargetNotice = nil
         if let original = viewModel.cancelAdjustmentInteraction() {
             settings = original
             viewModel.updatePreview(settings: original, includeHistogram: true, quality: .final)

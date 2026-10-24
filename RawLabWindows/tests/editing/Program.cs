@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 
 ToneControlsChecks.Run();
 ColorGradingChecks.Run();
+HslTargetChecks.Run();
 var pendingGrading = JsonSerializer.SerializeToNode(new Adjustments().Capture())!;
 pendingGrading["ColorGrading"] = JsonNode.Parse("""{"Shadows":{"Hue":231.25,"Saturation":0},"Midtones":{"Hue":0,"Saturation":0},"Highlights":{"Hue":0,"Saturation":0}}""");
 var gradingRestored = pendingGrading.Deserialize<AdjustmentSnapshot>()!.Restore();

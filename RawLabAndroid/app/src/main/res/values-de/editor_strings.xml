@@ -103,6 +103,16 @@
     <string name="grading_reset_all">"Color-Grading zurücksetzen"</string>
     <string name="grading_reset_message">"Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?"</string>
     <string name="grading_reset_zone">"Aktuellen Tonwertbereich zurücksetzen"</string>
+    <string name="hsl_target">"Zielgerichtete Anpassung"</string>
+    <string name="hsl_target_axis">"Anpassungsachse"</string>
+    <string name="hsl_target_failed">"Die Farbe konnte nicht erfasst werden. Versuchen Sie es erneut."</string>
+    <string name="hsl_target_gray">"Diese Farbe liegt zu nahe an Grau, um einen Farbbereich auszuwählen."</string>
+    <string name="hsl_target_instructions">"Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten"</string>
+    <string name="hsl_target_outside">"Wählen Sie eine Farbe im bearbeiteten Foto."</string>
+    <string name="hsl_target_ranges">"Betroffene Farbbereiche: %1$s"</string>
+    <string name="hsl_target_stale">"Die Vorschau hat sich geändert. Wählen Sie die Farbe erneut."</string>
+    <string name="hsl_target_unavailable">"Dieses Pixel kann nicht erfasst werden."</string>
+    <string name="hsl_target_waiting">"Farbe wird erfasst…"</string>
     <string name="info_unavailable">"Nicht verfügbar"</string>
     <string name="invalid_color_grading">"Ungültige Color-Grading-Werte"</string>
     <string name="invalid_tone_controls">"Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik"</string>

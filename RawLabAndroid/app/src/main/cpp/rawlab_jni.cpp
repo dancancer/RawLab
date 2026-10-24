@@ -441,7 +441,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
     jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
-    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jintArray backendOut) {
+    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jintArray backendOut,
+    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
@@ -496,6 +497,24 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             vignetteFeather, vignetteHighlights, grainAmount, grainSize, grainRoughness};
         check(sony2fuji_session_set_photo_effects(session, &effects));
         check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
+        if (hslProbe) {
+            if (out.chars || env->GetArrayLength(hslProbe) != 13) throw std::invalid_argument("Invalid HSL probe output");
+            float point[2]; env->GetFloatArrayRegion(hslProbe, 0, 2, point);
+            if (env->ExceptionCheck()) return nullptr;
+            sony2fuji_hsl_probe* snapshot = nullptr;
+            check(sony2fuji_session_create_hsl_probe(session, &request, static_cast<uint64_t>(sourceRevision),
+                static_cast<uint64_t>(requestRevision), &snapshot));
+            std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> owned(snapshot, sony2fuji_hsl_probe_destroy);
+            sony2fuji_hsl_probe_query query{SONY2FUJI_HSL_PROBE_VERSION, sizeof(query),
+                static_cast<uint64_t>(sourceRevision), static_cast<uint64_t>(requestRevision), point[0], point[1]};
+            sony2fuji_hsl_probe_result sample{};
+            check(sony2fuji_hsl_probe_sample(snapshot, &query, &sample));
+            float values[13]{static_cast<float>(sample.availability), static_cast<float>(sample.quality),
+                sample.rgb[0], sample.rgb[1], sample.rgb[2]};
+            std::copy(std::begin(sample.weights), std::end(sample.weights), values+5);
+            env->SetFloatArrayRegion(hslProbe, 0, 13, values);
+            return nullptr;
+        }
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
         if (backendOut) {

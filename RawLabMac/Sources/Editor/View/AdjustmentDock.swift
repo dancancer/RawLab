@@ -101,10 +101,17 @@ struct AdjustmentDock: View {
                 onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
                 .padding(.horizontal, 16).disabled(model.result == nil)
         } else if navigation.tool == .hsl {
-            MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
-                channel: $model.adjustmentNavigation.selectedHSLChannel,
-                onEditingChanged: model.setInteracting)
-                .padding(.horizontal, 16).disabled(model.result == nil)
+            VStack(spacing: 10) {
+                HSLTargetControls(enabled: $model.hslTargetEnabled, axis: $model.hslTargetAxis,
+                    sample: model.hslTargetInteraction.selection, waiting: model.hslTargetInteraction.isWaiting,
+                    notice: model.hslTargetNotice, onCancel: model.cancelHSLTarget)
+                MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
+                    channel: $model.adjustmentNavigation.selectedHSLChannel,
+                    onEditingChanged: { editing in
+                        if editing { model.cancelHSLTarget() }
+                        model.setInteracting(editing)
+                    }, onCancelTarget: model.cancelHSLTarget)
+            }.padding(.horizontal, 16).disabled(model.result == nil)
         } else if navigation.tool == .denoise {
             DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) })
                 .id(resetVersion).frame(maxWidth: 720).padding(.horizontal, 16)

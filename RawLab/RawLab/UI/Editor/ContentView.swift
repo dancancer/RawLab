@@ -56,6 +56,12 @@ struct ContentView: View {
     @State var pendingToolSelection: EditorToolSelection?
     @State var selectedGroup = EditorAdjustmentGroup.looks
     @State var hslChannel = 0
+    @State var hslTargetEnabled = false
+    @State var hslTargetAxis: HSLAxis = .hue
+    @State var hslTargetInteraction = HSLTargetInteraction()
+    @State var hslTargetPoint: CGPoint?
+    @State var hslTargetNotice: HSLTargetAvailability?
+    @State var hslTargetHistoryActive = false
     @State var gradingZone: ColorGradingZone = .shadows
     @State var adjustmentFine = false
     @State var pendingAdjustmentExpansion: Bool?
@@ -207,6 +213,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
+            cancelHSLTarget()
             gradingZone = .shadows
             photoViewing.sourceChanged()
             photoComparisonControlBounds = .zero
@@ -274,11 +281,13 @@ struct ContentView: View {
             if active { photoViewing.sourceChanged() }
         }
         .onChange(of: selectedAdjustment) { _, _ in
+            cancelHSLTarget(); hslTargetEnabled = false
             if isAdjustingSlider { cancelSliderInteraction() }
             cancelRulerFocus()
         }
         .onChange(of: gradingZone) { _, _ in cancelSliderInteraction() }
-        .onChange(of: hslChannel) { _, _ in cancelSliderInteraction() }
+        .onChange(of: hslChannel) { _, _ in cancelHSLTarget(); cancelSliderInteraction() }
+        .onChange(of: hslTargetEnabled) { _, _ in photoViewing.endTemporaryViewing() }
         .onChange(of: adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()

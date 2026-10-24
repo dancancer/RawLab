@@ -141,7 +141,18 @@ final class EditorModel: ObservableObject {
     }
     var previewLongEdge = 2000
     var renderPreviewLongEdge = 2000
-    @Published var sourceRevision = UUID()
+    @Published var hslTargetEnabled = false
+    @Published var hslTargetAxis: HSLAxis = .hue
+    @Published var hslTargetInteraction = HSLTargetInteraction()
+    @Published var hslTargetPoint: CGPoint?
+    @Published var hslTargetNotice: HSLTargetAvailability?
+    var hslTargetHistoryActive = false
+    var hslAcceptedRequest: RenderRequest<RenderWork>?
+    var hslAcceptedSettings: Adjustments?
+    var hslSourceRevision: UInt64 = 1
+    @Published var sourceRevision = UUID() { didSet {
+        hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+    } }
     @Published var file: URL?
     @Published var neutral: RenderedImage?
     @Published var result: RenderedImage?

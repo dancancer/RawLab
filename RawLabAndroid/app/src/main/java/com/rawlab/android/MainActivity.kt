@@ -1,5 +1,7 @@
 package com.rawlab.android
 
+import com.rawlab.android.editor.controls.HslTargetActions
+
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -85,6 +87,7 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
     val state by model.state.collectAsStateWithLifecycle()
+    val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
@@ -153,6 +156,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+            hslTarget = HslTargetActions(hslTarget, model::setHslTargetEnabled, model::setHslTargetAxis,
+                { x, y -> model.beginHslTarget(x, y) }, model::moveHslTarget, model::endHslTarget,
+                model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
             onEdit = model::edit, onRetry = model::retry,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = model::retrySave,

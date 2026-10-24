@@ -89,6 +89,44 @@ class AdjustmentHistoryInstrumentedTest {
         assertEquals(beforeCancel, edits.versionedState(identity)); assertEquals(1, model.adjustmentTransactions.size)
     }
 
+    @Test fun targetSampleReleaseMakesOneHistoryAndResizeCancelsPendingSample() = withModel { model, edits, identity ->
+        main {
+            model.setHslTargetEnabled(true)
+            model.beginHslTarget(.5f, .5f)
+            assertTrue(model.hslTarget.value.waiting)
+            model.moveHslTarget(20f)
+            model.endHslTarget()
+        }
+        await(model) { !model.hslTarget.value.waiting && it.canExport && !it.edits.hsl.isIdentity }
+        assertEquals(1, model.adjustmentTransactions.size)
+        val saved = edits.versionedState(identity)
+        main {
+            model.beginHslTarget(.5f, .5f)
+            model.moveHslTarget(40f)
+            model.cancelHslTarget()
+            model.endHslTarget()
+        }
+        await(model) { !it.rendering }
+        assertEquals(saved, edits.versionedState(identity))
+        main {
+            model.beginHslTarget(.5f, .5f)
+            assertTrue(model.hslTarget.value.waiting)
+            model.updatePreviewSize(64)
+            assertFalse(model.hslTarget.value.waiting)
+        }
+        await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 64 }
+        assertFalse(model.hslTarget.value.waiting)
+        assertEquals(saved, edits.versionedState(identity))
+        assertEquals(1, model.adjustmentTransactions.size)
+        main {
+            model.beginHslTarget(.5f, .5f)
+            model.retry()
+            assertFalse(model.hslTarget.value.waiting)
+        }
+        await(model) { it.canExport }
+        assertEquals(saved, edits.versionedState(identity))
+    }
+
     @Test fun externalRecordConflictNeedsExplicitReloadAndNeverOverwritesExternalEdit() = withModel { model, edits, identity ->
         main { model.edit(model.state.value.edits.copy(exposure = .5f)) }
         await(model) { it.canExport }

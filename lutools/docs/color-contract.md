@@ -718,3 +718,36 @@ Embedded JPEG decoding uses vendored [stb_image v2.30](https://github.com/nothin
 The bundled Sony ILCE-7CM2 sample has a 7008x4672 active inset within its padded RAW storage; the renderer applies LibRaw's inset crop before demosaic. iOS and macOS must not apply the original EXIF rotation a second time.
 
 Actual cross-brand accuracy requires controlled lighting, exposure/gray and color-chart measurements. Current sample smoke checks prove decoding/rendering, not calibrated Fuji JPEG equivalence. iOS/Android binaries must be rebuilt with the updated core; changing Swift source alone does not update an old xcframework.
+
+### HSL Target Sampling
+
+The additive `sony2fuji_session_create_hsl_probe` creates an immutable CPU
+reference snapshot after the complete look, black/white, legacy tone and
+vibrance stages, before HSL, grading, chroma/detail and effects. It applies the
+same geometry and requested resize as photo output; RAW orientation and lens
+processing have already happened and are not applied again by clients. Capture
+accepts buffer requests only and must run on the session's serialized worker.
+It preserves GPU policy, reported render backend/canvas and reusable large RAW
+pixels. The owned snapshot is released with `sony2fuji_hsl_probe_destroy`.
+
+`FINAL` reports `EXACT_CPU`, meaning the CPU reference at the requested output
+size. `PREVIEW` reports `PREVIEW_CPU` and inherits the caller's interactive and
+viewport approximation; it is not a full-resolution or GPU texture readback.
+The RGB values remain display-encoded working sRGB, including finite out-of-range
+residuals. H/S/L are hue degrees in `[0,360)` and saturation/lightness in `[0,1]`.
+The eight weights are the exact existing HSL smoothstep neighbors, summing to 1.
+Spread below `1/255` is too close to gray for selection and produces no weights.
+
+Queries use normalized geometry-result coordinates `[0,1]`, with endpoints at
+first/last pixel centers, and bilinear sample the snapshot before hue analysis.
+Out-of-range or nonfinite coordinates report `OUTSIDE`; nonfinite sampled RGB
+reports `NONFINITE`. Reference panes, wipe-before regions, labels, overlays and
+letterboxing must be rejected in the client canvas before submitting a query.
+
+Source/request revisions are caller-owned immutable labels. The core rejects a
+query whose labels differ from the snapshot; clients must separately compare
+asynchronous results to the current source, accepted frame and editing state.
+An old snapshot is not made current by reusing its labels. A gesture freezes its
+logical before-HSL values, axis and sample weights once, computes all deltas
+from that before-state, and commits once or rolls back without history. Only
+the resulting existing 24 HSL values persist; sampling never adds recipe fields.

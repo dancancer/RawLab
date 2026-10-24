@@ -5,6 +5,8 @@ import SwiftUI
 // retain their own input path; this view exists only outside geometry editing.
 struct MacCanvasInput: NSViewRepresentable {
     var imageRect: CGRect
+    var excludedRects: [CGRect] = []
+    var target: HSLTargetCanvasInput? = nil
     var canHold: Bool
     var onHold: (Bool) -> Void
     var onPan: (CGSize) -> Void
@@ -12,12 +14,21 @@ struct MacCanvasInput: NSViewRepresentable {
     var onDoubleClick: () -> Void
     func makeNSView(context: Context) -> InputView { InputView() }
     func updateNSView(_ view: InputView, context: Context) {
-        view.owner = self
+        view.configure(self)
     }
     static func dismantleNSView(_ view: InputView, coordinator: ()) { view.cancelInput() }
     final class InputView: NSView {
         var owner: MacCanvasInput?
         private var observers: [NSObjectProtocol] = []
+        private var targetOrigin: CGPoint?
+        private var targetFine = false
+        func configure(_ next: MacCanvasInput) {
+            if owner?.target?.scope != next.target?.scope { cancelInput() }
+            owner = next
+            for recognizer in gestureRecognizers { recognizer.isEnabled = next.target == nil }
+        }
+        override func resignFirstResponder() -> Bool { cancelInput(); return super.resignFirstResponder() }
+
         override var isFlipped: Bool { true }
         override var acceptsFirstResponder: Bool { true }
         override init(frame: NSRect) {
@@ -41,12 +52,21 @@ struct MacCanvasInput: NSViewRepresentable {
             observers.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.cancelInput() })
         }
         func cancelInput() {
+            targetOrigin = nil; owner?.target?.cancel()
             owner?.onHold(false); owner?.onPanEnd()
-            for recognizer in gestureRecognizers { recognizer.isEnabled = false; recognizer.isEnabled = true }
+            for recognizer in gestureRecognizers { recognizer.isEnabled = false; recognizer.isEnabled = owner?.target == nil }
         }
         override func cancelOperation(_ sender: Any?) { cancelInput() }
         override func keyDown(with event: NSEvent) {
-            if event.keyCode == 53 { cancelInput() } else { super.keyDown(with: event) }
+            if event.keyCode == 53 { cancelInput(); return }
+            if let target = owner?.target, [UInt16(123), 124, 125, 126].contains(event.keyCode) {
+                if targetOrigin == nil {
+                    let direction = event.keyCode == 124 || event.keyCode == 126 ? 1.0 : -1.0
+                    target.key(direction * (event.modifierFlags.contains(.shift) ? 0.1 : 1))
+                }
+                return
+            }
+            super.keyDown(with: event)
         }
         override func viewDidHide() { super.viewDidHide(); cancelInput() }
         deinit { observers.forEach(NotificationCenter.default.removeObserver) }
@@ -57,7 +77,15 @@ struct MacCanvasInput: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             window?.makeFirstResponder(self)
             owner?.onHold(false)
-            if event.clickCount == 2 { owner?.onDoubleClick() }
+            if let owner, let target = owner.target {
+                let point = convert(event.locationInWindow, from: nil)
+                guard owner.imageRect.contains(point), bounds.contains(point),
+                      !owner.excludedRects.contains(where: { $0.contains(point) }),
+                      owner.imageRect.width > 0, owner.imageRect.height > 0 else { target.reject(); return }
+                targetOrigin = point; targetFine = event.modifierFlags.contains(.shift)
+                target.begin(CGPoint(x: (point.x-owner.imageRect.minX)/owner.imageRect.width,
+                                     y: (point.y-owner.imageRect.minY)/owner.imageRect.height))
+            } else if event.clickCount == 2 { owner?.onDoubleClick() }
         }
         @objc private func panned(_ gesture: NSPanGestureRecognizer) {
             if gesture.state == .began || gesture.state == .changed {
@@ -66,7 +94,16 @@ struct MacCanvasInput: NSViewRepresentable {
                 owner?.onPan(CGSize(width: translation.x, height: translation.y))
             } else { owner?.onPanEnd() }
         }
+        override func mouseDragged(with event: NSEvent) {
+            if let origin = targetOrigin {
+                let point = convert(event.locationInWindow, from: nil)
+                owner?.target?.change(Double(origin.y-point.y) * (targetFine ? 0.125 : 0.5))
+            } else { super.mouseDragged(with: event) }
+        }
+        override func magnify(with event: NSEvent) { cancelInput(); super.magnify(with: event) }
+        override func scrollWheel(with event: NSEvent) { cancelInput(); super.scrollWheel(with: event) }
         override func mouseUp(with event: NSEvent) {
+            if targetOrigin != nil { targetOrigin = nil; owner?.target?.end() }
             owner?.onHold(false); owner?.onPanEnd()
         }
     }

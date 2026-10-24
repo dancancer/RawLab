@@ -86,7 +86,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
     public PhotoCanvas()
     {
         SetResourceReference(CanvasBrushProperty,"CanvasSurface");
-        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay,cropOverlay};
+        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay,cropOverlay,hslTargetDrawing};
         SetResourceReference(OverlayInkProperty,"OverlayInk");SetResourceReference(OverlayPaperProperty,"OverlayPaper");SetResourceReference(OverlayAccentProperty,"OverlayAccent");
         SetResourceReference(OverlayGridWidthProperty,"OverlayGridWidth");
         referenceLayer.Children.Add(referenceDrawing);editedLayer.Children.Add(editedDrawing);
@@ -97,11 +97,14 @@ public sealed partial class PhotoCanvas : FrameworkElement
         InputMethod.SetIsInputMethodEnabled(this,false);
         holdTimer.Interval=TimeSpan.FromMilliseconds(Math.Max(1,SystemParameters.MouseHoverTime.TotalMilliseconds));
         holdTimer.Tick+=(_,_)=>{holdTimer.Stop();if(drag!=null && !panning && !GeometryEditing && !ComparisonEnabled && Mouse.LeftButton==MouseButtonState.Pressed)HoldStarted?.Invoke();};
-        MouseWheel+=(_,e)=> { CancelHold();if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2);e.Handled=image!=null; };
+        MouseWheel+=(_,e)=> { CancelHslPointer();CancelHold();if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2);e.Handled=image!=null; };
         MouseLeftButtonDown+=(_,e)=> {
             Focus();var point=e.GetPosition(this);CancelHold();
             if(HandleCropDown(point)){e.Handled=true;return;}
             draggingDivider=ComparisonEnabled && VisibleImageBounds.Contains(point) && Math.Abs(point.X-DividerX)<=18;
+            if(HslTargetEnabled) {
+                if(draggingDivider)CancelHslPointer();else {BeginHslPointer(point);e.Handled=true;return;}
+            }
             if(e.ClickCount==2 && !draggingDivider && image!=null)
             {drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;}
             pressOrigin=point;panning=false;
@@ -110,6 +113,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         };
         MouseMove+=(_,e)=> {
             var next=e.GetPosition(this);
+            if(MoveHslPointer(next)){e.Handled=true;return;}
             if(HandleCropMove(next)){CancelHold();e.Handled=true;return;}
             Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : Cursors.Hand;
             if(draggingDivider){if(ImageBounds.Width>0)Divider=(next.X-ImageBounds.X)/ImageBounds.Width;return;}
@@ -118,17 +122,17 @@ public sealed partial class PhotoCanvas : FrameworkElement
             {panning=true;CancelHold();}
             if(panning){Viewport?.Move(next-point,ImageBounds.Size);drag=next;}
         };
-        MouseLeftButtonUp+=(_,_)=>EndPointer();
-        LostMouseCapture+=(_,_)=>{CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
-        LostKeyboardFocus+=(_,_)=>CancelHold();
-        TouchDown+=(_,_)=>CancelHold();
+        MouseLeftButtonUp+=(_,e)=>{if(FinishHslPointer(e.GetPosition(this)) || HslTargetEnabled && !draggingDivider)return;EndPointer();};
+        LostMouseCapture+=(_,_)=>{if(hslPointerOrigin!=null)CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
+        LostKeyboardFocus+=(_,_)=>{CancelHslPointer();CancelHold();};
+        TouchDown+=(_,_)=>{CancelHslPointer();CancelHold();};
         IsVisibleChanged+=(_,_)=>{if(!IsVisible)CancelPointer();else UpdateTransform();};
-        KeyDown+=(_,e)=> { if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        KeyDown+=(_,e)=> { if(HandleHslKey(e)){e.Handled=true;return;}if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{CancelPointer();UpdateTransform();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
     internal void CancelHold(){holdTimer.Stop();HoldEnded?.Invoke();}
-    internal void CancelPointer(){CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
+    internal void CancelPointer(){CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
     private void EndPointer(){CancelPointer();}
     protected override int VisualChildrenCount=>layers.Count;
     protected override Visual GetVisualChild(int index)=>layers[index];
@@ -147,8 +151,8 @@ public sealed partial class PhotoCanvas : FrameworkElement
             var unit=new Rect(0,0,1,1);dc.DrawImage(bitmap,unit);
             if(show && clipping!=null)dc.DrawImage(clipping,unit);
         }
-        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping);
-        Draw(editedDrawing,image,mask,ShowClipping);
+        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping && !HslTargetEnabled);
+        Draw(editedDrawing,image,mask,ShowClipping && !HslTargetEnabled);
     }
     private void UpdateTransform()
     {
@@ -157,7 +161,9 @@ public sealed partial class PhotoCanvas : FrameworkElement
         var dpi=VisualTreeHelper.GetDpi(this);
         if(image!=null)
         {
+            var oldBounds=ImageBounds;
             ImageBounds=Viewport.Project(RenderSize,size,dpi,PhotoMargin ? 16 : 0);
+            if(oldBounds!=ImageBounds)CancelHslPointer();
             var w=ImageBounds.Width;var h=ImageBounds.Height;
             // Keep image drawing commands and bitmap resources resident while panning.
             imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
@@ -165,7 +171,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         var demand=PhotoMargin ? new Size(Math.Max(1,ActualWidth-32),Math.Max(1,ActualHeight-32)) : RenderSize;
         var edge=Viewport.PreviewLongEdge(demand,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
-        DrawCrop();UpdateComparison();ImageBoundsChanged?.Invoke();
+        DrawCrop();DrawHslTarget();UpdateComparison();ImageBoundsChanged?.Invoke();
     }
     private void UpdateComparison()
     {

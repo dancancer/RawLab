@@ -47,6 +47,7 @@
 "RawLab 文件" = "Fichiers RawLab";
 "S 曲线" = "Courbe en S";
 "三分网格" = "Grille des tiers";
+"上下拖动调整，方向键微调，Esc 取消" = "Faites glisser vers le haut ou le bas pour régler, utilisez les flèches pour affiner et Échap pour annuler";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.";
 "上次批量任务尚未完成" = "La dernière exportation par lots n’est pas terminée";
 "不支持此处理版本，原有记录未被覆盖。" = "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.";
@@ -141,6 +142,8 @@
 "取消" = "Annuler";
 "取消几何和镜头编辑" = "Annuler les réglages de géométrie et d’objectif";
 "取消导出" = "Annuler l’exportation";
+"取色失败，请重试。" = "Impossible de prélever la couleur. Réessayez.";
+"受影响色域：%@" = "Plages affectées : %@";
 "另存" = "Enregistrer sous";
 "史诗自然 · 雾气冷青" = "Nature épique · cyan froid brumeux";
 "同名预设已存在，请使用其他名称。" = "Un préréglage porte déjà ce nom. Utilisez un autre nom.";
@@ -416,6 +419,7 @@
 "正在停止…" = "Arrêt…";
 "正在准备 AI 降噪" = "Préparation du débruitage IA";
 "正在准备编辑画布…" = "Préparation du canevas de retouche…";
+"正在取色…" = "Échantillonnage…";
 "正在处理 RAW 噪声" = "Traitement du bruit RAW";
 "正在处理颜色噪声" = "Traitement du bruit chromatique";
 "正在导出" = "Exportation";
@@ -428,6 +432,7 @@
 "正在读取镜头信息…" = "Lecture des informations de l’objectif…";
 "正在预览镜头校正…" = "Aperçu de la correction optique…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
+"此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
 "此构建未安装 AI 降噪模型。" = "Cette version ne contient pas le modèle de débruitage IA.";
@@ -482,6 +487,7 @@
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "Le débruitage IA est activé sur la photo cible. Désactivez-le ou désélectionnez les réglages de débruitage standard.";
 "目标所需的外观不可用，请先导入外观。" = "Le rendu requis est indisponible. Importez-le d’abord.";
 "目标无法保留未选参数，请调整复制范围。" = "Les réglages non sélectionnés ne peuvent pas être préservés. Modifiez la sélection à copier.";
+"目标调整" = "Réglage ciblé";
 "目标：%@ 张照片" = "Photos cibles : %@";
 "直方图" = "Histogramme";
 "移除" = "Supprimer";
@@ -566,6 +572,7 @@
 "请先完成此照片的 AI 降噪，再预览或导出。" = "Terminez le débruitage IA de cette photo avant de la prévisualiser ou de l’exporter.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours.";
 "请先纠正无效数值" = "Corrigez d’abord les valeurs non valides";
+"请在调整后的照片区域取色。" = "Prélevez une couleur dans la photo retouchée.";
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
 "请至少选择一张 RAW 照片。" = "Veuillez sélectionner au moins une photo RAW.";
 "请至少选择一张照片。" = "Veuillez sélectionner au moins une photo.";
@@ -589,6 +596,7 @@
 "调整照片" = "Réglage de photo";
 "调整范围" = "Réglages à inclure";
 "调整裁切边角" = "Ajuster le coin de recadrage";
+"调整轴" = "Axe de réglage";
 "赛博朋克 · 极致反差" = "Cyberpunk · contraste extrême";
 "跟随系统" = "Suivre le système";
 "跳过" = "Ignorer";
@@ -675,6 +683,7 @@
 "项目与作者" = "Projet et auteur";
 "预览" = "Aperçu";
 "预览尚未就绪，请稍后重试。" = "L’aperçu n’est pas encore prêt. Réessayez dans un instant.";
+"预览已变化，请重新取色。" = "L’aperçu a changé. Prélevez à nouveau la couleur.";
 "预览已更新" = "Aperçu actualisé";
 "预览未更新" = "Aperçu non actualisé";
 "预设" = "Préréglage";
@@ -686,6 +695,7 @@
 "颗粒强度" = "Intensité du grain";
 "颜色" = "Couleur";
 "颜色分级" = "Étalonnage des couleurs";
+"颜色接近灰色，无法选择色域。" = "Cette couleur est trop proche du gris pour sélectionner une plage.";
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation : du gris à la couleur.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Nuit urbaine néon à Séoul, base cyan froide opposée aux hautes lumières rose-violet et aux reflets de rue mouillée";

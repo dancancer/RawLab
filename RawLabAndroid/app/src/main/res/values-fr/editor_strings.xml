@@ -103,6 +103,16 @@
     <string name="grading_reset_all">"Réinitialiser l’étalonnage des couleurs"</string>
     <string name="grading_reset_message">"Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?"</string>
     <string name="grading_reset_zone">"Réinitialiser la plage actuelle"</string>
+    <string name="hsl_target">"Réglage ciblé"</string>
+    <string name="hsl_target_axis">"Axe de réglage"</string>
+    <string name="hsl_target_failed">"Impossible de prélever la couleur. Réessayez."</string>
+    <string name="hsl_target_gray">"Cette couleur est trop proche du gris pour sélectionner une plage."</string>
+    <string name="hsl_target_instructions">"Prélevez une couleur dans la photo, puis faites glisser vers le haut ou le bas"</string>
+    <string name="hsl_target_outside">"Prélevez une couleur dans la photo retouchée."</string>
+    <string name="hsl_target_ranges">"Plages affectées : %1$s"</string>
+    <string name="hsl_target_stale">"L’aperçu a changé. Prélevez à nouveau la couleur."</string>
+    <string name="hsl_target_unavailable">"Ce pixel ne peut pas être échantillonné."</string>
+    <string name="hsl_target_waiting">"Échantillonnage…"</string>
     <string name="info_unavailable">"Indisponible"</string>
     <string name="invalid_color_grading">"Valeurs d’étalonnage des couleurs non valides"</string>
     <string name="invalid_tone_controls">"Valeurs de point noir, de point blanc ou de vibrance non valides"</string>

@@ -47,6 +47,7 @@
 "RawLab 文件" = "RawLab Files";
 "S 曲线" = "S Curve";
 "三分网格" = "Rule of Thirds Grid";
+"上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次批量任务尚未完成" = "The last batch task has not been completed yet";
 "不支持此处理版本，原有记录未被覆盖。" = "This processing version is not supported. Saved edits have not been overwritten.";
@@ -141,6 +142,8 @@
 "取消" = "Cancel";
 "取消几何和镜头编辑" = "Cancel Geometry and Lens Editing";
 "取消导出" = "Cancel Export";
+"取色失败，请重试。" = "Could not sample. Try again.";
+"受影响色域：%@" = "Affected ranges: %@";
 "另存" = "Save As";
 "史诗自然 · 雾气冷青" = "Epic nature · misty cool cyan";
 "同名预设已存在，请使用其他名称。" = "A preset with this name already exists. Use another name.";
@@ -416,6 +419,7 @@
 "正在停止…" = "Stopping…";
 "正在准备 AI 降噪" = "Preparing AI denoise";
 "正在准备编辑画布…" = "Preparing Editing Canvas…";
+"正在取色…" = "Sampling…";
 "正在处理 RAW 噪声" = "Processing RAW noise";
 "正在处理颜色噪声" = "Processing color noise";
 "正在导出" = "Exporting";
@@ -428,6 +432,7 @@
 "正在读取镜头信息…" = "Reading Lens Information…";
 "正在预览镜头校正…" = "Previewing Lens Correction…";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.";
+"此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
 "此构建未安装 AI 降噪模型。" = "This build does not include the AI denoise model.";
@@ -482,6 +487,7 @@
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "AI denoising is enabled on the target. Turn it off first, or deselect the standard denoise fields.";
 "目标所需的外观不可用，请先导入外观。" = "The required look is unavailable. Import it first.";
 "目标无法保留未选参数，请调整复制范围。" = "The target cannot preserve unselected settings. Change the copy scope.";
+"目标调整" = "Targeted adjustment";
 "目标：%@ 张照片" = "Target photos: %@";
 "直方图" = "Histogram";
 "移除" = "Remove";
@@ -566,6 +572,7 @@
 "请先完成此照片的 AI 降噪，再预览或导出。" = "Complete AI denoising for this photo before previewing or exporting.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Apply or discard unfinished input and geometry drafts first.";
 "请先纠正无效数值" = "Correct Invalid Values First";
+"请在调整后的照片区域取色。" = "Sample within the edited photo.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请至少选择一张 RAW 照片。" = "Please select at least one RAW photo.";
 "请至少选择一张照片。" = "Please select at least one photo.";
@@ -589,6 +596,7 @@
 "调整照片" = "Photo Adjustment";
 "调整范围" = "Adjustment Scope";
 "调整裁切边角" = "Adjust crop corner";
+"调整轴" = "Adjustment axis";
 "赛博朋克 · 极致反差" = "Cyberpunk · extreme contrast";
 "跟随系统" = "Follow system";
 "跳过" = "Skip";
@@ -675,6 +683,7 @@
 "项目与作者" = "Project and Author";
 "预览" = "Preview";
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
+"预览已变化，请重新取色。" = "The preview changed. Sample again.";
 "预览已更新" = "Preview updated";
 "预览未更新" = "Preview not updated";
 "预设" = "Preset";
@@ -686,6 +695,7 @@
 "颗粒强度" = "Grain Intensity";
 "颜色" = "Color";
 "颜色分级" = "Color grading";
+"颜色接近灰色，无法选择色域。" = "This color is too close to gray to select a range.";
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";

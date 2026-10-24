@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D00700000000000000000006 /* PhotoHSLTargetInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000016; };
+        D00700000000000000000005 /* ContentView+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000015; };
+        D00700000000000000000004 /* RawEditorViewModel+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000014; };
+        D00700000000000000000003 /* HSLTargetControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000013; };
+        D00700000000000000000002 /* HSLTargetNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000012; };
+        D00700000000000000000001 /* HSLTargetAdjustment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000011; };
         D00600000000000000000004 /* ColorGradingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000014; };
         D00600000000000000000003 /* ColorGradingWheelControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000013; };
 		9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */; };
@@ -194,6 +200,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        D00700000000000000000016 /* PhotoHSLTargetInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PhotoHSLTargetInput.swift"; path = "RawLab/UI/Preview/PhotoHSLTargetInput.swift"; sourceTree = SOURCE_ROOT; };
+        D00700000000000000000015 /* ContentView+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+HSLTarget.swift"; path = "RawLab/UI/Editor/ContentView+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
+        D00700000000000000000014 /* RawEditorViewModel+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+HSLTarget.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
+        D00700000000000000000013 /* HSLTargetControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "HSLTargetControls.swift"; path = "../Shared/HSLTargetControls.swift"; sourceTree = SOURCE_ROOT; };
+        D00700000000000000000012 /* HSLTargetNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLTargetNative.swift; path = "../Shared/HSLTargetNative.swift"; sourceTree = SOURCE_ROOT; };
+        D00700000000000000000011 /* HSLTargetAdjustment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLTargetAdjustment.swift; path = "../Shared/HSLTargetAdjustment.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000014 /* ColorGradingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingControls.swift; path = "RawLab/UI/Panels/ColorGradingControls.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000013 /* ColorGradingWheelControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingWheelControl.swift; path = "../Shared/ColorGradingWheelControl.swift"; sourceTree = SOURCE_ROOT; };
 		D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentScopeEditor.swift"; path = "RawLab/UI/Editor/IOSAdjustmentScopeEditor.swift"; sourceTree = SOURCE_ROOT; };
@@ -602,6 +614,12 @@
 				D00300000000000000000011,
 				D00500000000000000000011,
 				D00600000000000000000011,
+				D00700000000000000000016,
+				D00700000000000000000015,
+				D00700000000000000000014,
+				D00700000000000000000013,
+				D00700000000000000000012,
+				D00700000000000000000011,
 				D00600000000000000000014,
 				D00600000000000000000013,
 				AB1900000000000000000011,
@@ -1101,6 +1119,12 @@
 				D00300000000000000000001,
 				D00500000000000000000001,
 				D00600000000000000000001,
+				D00700000000000000000006,
+				D00700000000000000000005,
+				D00700000000000000000004,
+				D00700000000000000000003,
+				D00700000000000000000002,
+				D00700000000000000000001,
 				D00600000000000000000004,
 				D00600000000000000000003,
 				D00300000000000000000002,

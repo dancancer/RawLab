@@ -18,7 +18,10 @@ final class RawEditorViewModel: ObservableObject {
     @Published var previewRendering = false
     @Published var previewResizePending = false
     @Published var previewFailed = false
-    var acceptedPreviewFrameID: UUID?
+    var hslSourceRevision: UInt64 = 1
+    var hslFrameRevision: UInt64 = 0
+    var acceptedPreviewRequest: PreviewRequest?
+    var acceptedPreviewFrameID: UUID? { didSet { if oldValue != acceptedPreviewFrameID { hslFrameRevision &+= 1 } } }
     var committedPreviewSettings: RawSettings?
 
     struct ComparisonReferenceKey: Equatable {
@@ -60,7 +63,7 @@ final class RawEditorViewModel: ObservableObject {
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
     @Published var sourceFile: PhotoSourceFile?
-    @Published var sourceRevision = UUID()
+    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil } }
     var sourceKind: ImageSourceKind?
     var sourceIdentity: PhotoIdentity?
     @Published var sourceDisplayName: String?

@@ -9,6 +9,8 @@ struct PhotoCanvas: View {
     var beforeFrame: RenderedImage? = nil
     var split: Binding<Double>? = nil
     var comparisonLabel: String? = nil
+    var hslTarget: HSLTargetCanvasInput? = nil
+    var hslTargetPoint: CGPoint? = nil
     var canHold = false
     var onHold: (Bool) -> Void = { _ in }
     var onDoubleClick: () -> Void = {}
@@ -23,6 +25,7 @@ struct PhotoCanvas: View {
     var prepareCropInteraction: (GeometrySettings) -> Bool = { _ in true }
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGPoint?
+    @State private var labelRects: [CGRect] = []
 
     var body: some View {
         GeometryReader { geometry in
@@ -85,7 +88,11 @@ struct PhotoCanvas: View {
                 .clipped().contentShape(Rectangle())
                 .overlay {
                     if onCropChange == nil {
-                        MacCanvasInput(imageRect: sourceBounds, canHold: canHold, onHold: onHold,
+                        MacCanvasInput(imageRect: sourceBounds,
+                            excludedRects: labelRects + (beforeFrame != nil && split != nil ?
+                                [CGRect(x: sourceBounds.minX, y: sourceBounds.minY,
+                                    width: sourceBounds.width * (split?.wrappedValue ?? 0) + 12, height: sourceBounds.height)] : []),
+                            target: hslTarget, canHold: canHold, onHold: onHold,
                             onPan: { translation in
                                 if dragOrigin == nil { dragOrigin = viewport.focus }
                                 viewport.moveFocus(from: dragOrigin ?? viewport.focus, translation: translation, displayed: displayedSize)
@@ -100,7 +107,7 @@ struct PhotoCanvas: View {
                         Color.clear.frame(width: 24, height: visibleImage.height).contentShape(Rectangle())
                             .position(x: x, y: visibleImage.midY)
                             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("photoCanvas"))
-                                .onChanged { split.wrappedValue = min(1, max(0, ($0.location.x - sourceBounds.minX) / max(1, sourceBounds.width))) })
+                                .onChanged { hslTarget?.cancel(); split.wrappedValue = min(1, max(0, ($0.location.x - sourceBounds.minX) / max(1, sourceBounds.width))) })
                             .focusable().onKeyPress { key in
                                 if key.key == .leftArrow { split.wrappedValue = max(0, split.wrappedValue - 0.01); return .handled }
                                 if key.key == .rightArrow { split.wrappedValue = min(1, split.wrappedValue + 0.01); return .handled }
@@ -126,14 +133,33 @@ struct PhotoCanvas: View {
                             .position(x: visibleImage.midX, y: visibleImage.midY).allowsHitTesting(false)
                     }
                 }
+                .overlay {
+                    if hslTarget != nil, let point = hslTargetPoint {
+                        Circle().stroke(.black, lineWidth: 4).overlay { Circle().stroke(.white, lineWidth: 2) }
+                            .frame(width: 18, height: 18)
+                            .position(x: sourceBounds.minX + point.x * sourceBounds.width,
+                                      y: sourceBounds.minY + point.y * sourceBounds.height)
+                            .allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
                 .coordinateSpace(name: "photoCanvas")
+                .onPreferenceChange(PhotoLabelBounds.self) { labelRects = $0 }
+                .onChange(of: viewport) { _, _ in hslTarget?.cancel() }
                 .onChange(of: previewEdge, initial: true) { _, edge in onPreviewSizeChange?(edge) }
         }
     }
     private func photoLabel(_ text: String) -> some View {
         Text(text).font(.system(size: 11, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
             .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
+            .background { GeometryReader { geometry in
+                Color.clear.preference(key: PhotoLabelBounds.self, value: [geometry.frame(in: .named("photoCanvas"))])
+            } }
     }
+}
+
+private struct PhotoLabelBounds: PreferenceKey {
+    static var defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) { value.append(contentsOf: nextValue()) }
 }
 
 struct HistogramView: View {

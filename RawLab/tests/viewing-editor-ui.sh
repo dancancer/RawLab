@@ -56,6 +56,10 @@ xcrun --sdk iphonesimulator swiftc -emit-library -module-name RawLabUITests -sdk
 codesign --force --sign - "$HARNESS" >/dev/null
 codesign --force --sign - "$TEST" >/dev/null
 codesign --force --sign - "$RUNNER" >/dev/null
+if [[ "${RAWLAB_BUILD_ONLY:-0}" == 1 ]]; then
+    echo "Built viewing editor harness without running tests: $OUT"
+    exit 0
+fi
 xcrun simctl install "$DEVICE" "$HARNESS"
 xcrun simctl uninstall "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true
 STATUS=0

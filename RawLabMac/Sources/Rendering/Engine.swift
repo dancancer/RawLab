@@ -342,7 +342,8 @@ final class RenderEngine {
         return settings
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+    private func photoRequest(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL?,
+                              interactive: Bool, exportLongEdge: Int?, viewportPreview: Bool) throws -> (Adjustments, sony2fuji_request) {
         if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
@@ -354,7 +355,6 @@ final class RenderEngine {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }
         try configureAI(enabled: settings.aiDenoiseEnabled)
-        let key = try? RawWhiteBalanceCacheKey(url)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
@@ -417,6 +417,34 @@ final class RenderEngine {
         request.output_format = output == nil ? SONY2FUJI_OUTPUT_RGBA8 :
             ExportFormat.forOutput(output!).nativeFormat
         request.jpeg_quality = 95
+        return (settings, request)
+    }
+
+    func sampleHSL(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, interactive: Bool,
+                   revision: HSLTargetRevision, point: CGPoint) throws -> HSLTargetSample {
+        let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: nil,
+            interactive: interactive, exportLongEdge: nil, viewportPreview: edge != nil)
+        var request = prepared
+        var sample: HSLTargetSample?
+        _ = try withInput(url, request: &request) { input in
+            (lut?.path ?? "").withCString { path in
+                input.lut_path = lut == nil ? nil : path
+                if let session {
+                    sample = HSLTargetSample.capture(session: session, request: &input,
+                        revision: revision, x: point.x, y: point.y)
+                }
+                return SONY2FUJI_STATUS_OK
+            }
+        }
+        guard let sample else { throw RenderError.failed(L10n.text("无法创建处理会话")) }
+        return sample
+    }
+
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+        let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
+            interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview)
+        var request = prepared
+        let key = try? RawWhiteBalanceCacheKey(url)
         var buffer = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&buffer) }
         let status = try withInput(url, request: &request) { inputRequest in

@@ -106,6 +106,7 @@ extension EditorModel {
     }
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
+        cancelHSLTarget(); hslTargetEnabled = false
         if adjustmentNavigation.tool == .colorGrading { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
@@ -121,6 +122,7 @@ extension EditorModel {
     }
 
     func requestAdjustmentReset(_ scope: EditorResetScope) {
+        cancelHSLTarget()
         ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
         if scope == .all, geometryDraft != nil {
@@ -329,6 +331,7 @@ extension EditorModel {
     }
     func open(_ url: URL) {
         guard !exporting else { return }
+        cancelHSLTarget()
         if file == url && result != nil, originalCache?.key.source == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
