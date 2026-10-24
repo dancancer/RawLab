@@ -68,7 +68,10 @@ public enum AdjustmentField
     LensDistortion,
     LensTCA,
     LensAutoCrop,
-    LensProfile
+    LensProfile,
+    BlackPoint,
+    WhitePoint,
+    Vibrance
 }
 
 public static class AdjustmentFields
@@ -137,10 +140,13 @@ public static class AdjustmentFields
         "geometry.lens.distortion",
         "geometry.lens.tca",
         "geometry.lens.auto_crop",
-        "geometry.lens.profile_id"
+        "geometry.lens.profile_id",
+        "tone.black_point",
+        "tone.white_point",
+        "color.vibrance"
     ];
     public static string ID(this AdjustmentField field) => ids[(int)field];
-    public static string Group(this AdjustmentField field) => field.ID().Split('.')[0];
+    public static string Group(this AdjustmentField field) => field is AdjustmentField.BlackPoint or AdjustmentField.WhitePoint ? "light" : field.ID().Split('.')[0];
     public static int? HslIndex(this AdjustmentField field) => field is >= AdjustmentField.HslHueRed and <= AdjustmentField.HslLightnessMagenta
         ? (int)field - (int)AdjustmentField.HslHueRed : null;
     public static AdjustmentField Parse(string id) => Array.IndexOf(ids, id) is var index && index >= 0
@@ -156,7 +162,7 @@ public static class AdjustmentFields
         AdjustmentField.Strength or AdjustmentField.Contrast or AdjustmentField.Saturation or AdjustmentField.Sharpening => (0,2),
         AdjustmentField.Exposure => (-20,20),
         AdjustmentField.Highlights or AdjustmentField.Shadows or AdjustmentField.SCurve or AdjustmentField.PerspectiveHorizontal or AdjustmentField.PerspectiveVertical => (-1,1),
-        AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness => (-100,100),
+        AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness or AdjustmentField.BlackPoint or AdjustmentField.WhitePoint or AdjustmentField.Vibrance => (-100,100),
         AdjustmentField.VignetteMidpoint or AdjustmentField.VignetteFeather or AdjustmentField.VignetteHighlights or AdjustmentField.GrainAmount or AdjustmentField.GrainSize or AdjustmentField.GrainRoughness => (0,100),
         AdjustmentField.QuarterTurns => (0,3),
         AdjustmentField.CropX or AdjustmentField.CropY or AdjustmentField.CropWidth or AdjustmentField.CropHeight or AdjustmentField.PostRGBDenoise => (0,1),

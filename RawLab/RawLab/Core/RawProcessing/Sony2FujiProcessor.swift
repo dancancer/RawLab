@@ -179,6 +179,7 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureProcessing(session, identity: settings.processing)
+            try configureTone(session, settings: settings.toneSettings)
             try configureLens(session, settings: settings.lensSettings)
             let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
             guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {

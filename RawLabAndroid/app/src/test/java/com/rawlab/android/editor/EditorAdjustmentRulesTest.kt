@@ -122,7 +122,7 @@ class EditorAdjustmentRulesTest {
 
     @Test fun sixGroupsRetainToolIdsAndTintAliasIsNotVisible() {
         assertEquals(listOf("looks", "light", "color", "effects", "detail", "geometry"), EditorAdjustmentGroup.entries.map { it.id })
-        val expected = listOf(listOf(0, 15, 1), listOf(2, 3, 4, 5, 6), listOf(8, 7, 14), listOf(12, 13), listOf(11, 10), listOf(17, 16))
+        val expected = listOf(listOf(0, 15, 1), listOf(2, 3, 4, 18, 19, 5, 6), listOf(8, 7, 20, 14), listOf(12, 13), listOf(11, 10), listOf(17, 16))
         EditorAdjustmentGroup.entries.zip(expected).forEach { (group, tools) ->
             assertEquals(tools, rules.tools(group)); tools.forEach { assertEquals(group, rules.groupFor(it)) }
         }

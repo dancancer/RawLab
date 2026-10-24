@@ -12,6 +12,7 @@
     <string name="adjustment_toggle_sign">"Cambiar signo"</string>
     <string name="all_tools">"Todas las herramientas"</string>
     <string name="batch_confirmation_count">"%1$d resultados pendientes de verificación"</string>
+    <string name="black_point">"Punto negro"</string>
     <string name="dcp_automatic_black">"El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación."</string>
     <string name="dcp_invalid_calibration">"Al DCP le falta una ColorMatrix/ForwardMatrix D65 única y válida, por lo que no se puede convertir."</string>
     <string name="dcp_invalid_exposure">"El desplazamiento de exposición del DCP no es válido; debe ser un valor finito de -16 a +16 EV."</string>
@@ -98,6 +99,7 @@
     <string name="geometry_perspective_tool">"Perspectiva"</string>
     <string name="geometry_position_size">"Posición y tamaño"</string>
     <string name="info_unavailable">"No disponible"</string>
+    <string name="invalid_tone_controls">"Valores de punto negro, punto blanco o intensidad no válidos"</string>
     <string name="jpeg_description">"sRGB · calidad 95 · metadatos de captura"</string>
     <string name="look_invalid_file">"El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible."</string>
     <string name="look_remove_body">"Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará."</string>
@@ -240,5 +242,7 @@
     <string name="transfer_undo_count">"Deshacer fotos: %1$s"</string>
     <string name="transfer_undone">"Deshecho"</string>
     <string name="transfer_unrepresentable">"No se pueden conservar los ajustes no seleccionados. Cambia el alcance de la copia."</string>
+    <string name="vibrance">"Intensidad"</string>
     <string name="vignette_highlights_unavailable">"Disponible solo cuando la intensidad de la viñeta es negativa."</string>
+    <string name="white_point">"Punto blanco"</string>
 </resources>

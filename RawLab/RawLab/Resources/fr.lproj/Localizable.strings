@@ -243,6 +243,7 @@
 "无效的暗角或颗粒参数" = "Paramètre de vignettage ou de grain invalide";
 "无效的曝光基准" = "Référence d'exposition invalide";
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
+"无效的黑白场或鲜艳度参数" = "Valeurs de point noir, de point blanc ou de vibrance non valides";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Impossible d’enregistrer les photos. Autorisez RawLab à ajouter des photos dans les réglages système.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Impossible d'enregistrer la photo. Autorisez l'ajout de photos dans les réglages système.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Impossible d’écrire la photo exportée. Vérifiez l’emplacement de sortie et l’espace disponible.";
@@ -362,6 +363,7 @@
 "畸变" = "Distorsion";
 "畸变校正" = "Correction de la distorsion";
 "畸变矫正" = "Correction de la distorsion";
+"白场" = "Point blanc";
 "白平衡" = "Balance des blancs";
 "白平衡模式" = "Mode de balance des blancs";
 "目标所需的外观不可用，请先导入外观。" = "Le rendu requis est indisponible. Importez-le d’abord.";
@@ -546,8 +548,10 @@
 "高度" = "Hauteur";
 "高级参数" = "Paramètres avancés";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "Lumière du jour claire et high-key, ciel cyan japonais, ombres mates douces et carnations pêche crémeuses";
+"鲜艳度" = "Vibrance";
 "黄" = "Jaune";
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Douce lueur du crépuscule, hautes lumières or chaud et ombres bleu cyan douces, portraits peints à l'huile à faible contraste et couleurs voisines";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Look de film haut de gamme à l'heure dorée, sujet lumineux en fort contraste, ombres profondes et contour doré des cheveux";
+"黑场" = "Point noir";
 "默认" = "Par défaut";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valeur par défaut : %@ ; plage : de %@ à %@ ; pas : %@.";

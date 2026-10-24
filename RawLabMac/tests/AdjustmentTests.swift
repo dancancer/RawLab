@@ -78,7 +78,7 @@ struct AdjustmentTests {
                   "Reset all retains per-photo camera white balance metadata")
         }
         check(!original.isFullResolution, "Bounded previews do not claim native pixel size")
-        let controls: [AdjustmentParameter]=[.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening,.vignetteAmount,.grainAmount]
+        let controls: [AdjustmentParameter]=[.blackPoint,.whitePoint,.vibrance,.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening,.vignetteAmount,.grainAmount]
         for parameter in controls {
             var changed=Adjustments()
             changed[keyPath: parameter.spec.keyPath]=parameter == .sharpening ? 100 : 60

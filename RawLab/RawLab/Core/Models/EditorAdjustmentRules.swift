@@ -38,8 +38,8 @@ enum EditorAdjustmentRules {
     private static let toolGroups: [(group: EditorAdjustmentGroup, tools: [EditorToolSelection])] = [
         (.looks, [.film, .recipe, .adjustment(.strength)]),
         (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
-                  .adjustment(.contrast), .adjustment(.toneCurve)]),
-        (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.hsl)]),
+                  .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
+        (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl)]),
         (.effects, [.adjustment(.vignette), .adjustment(.grain)]),
         (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
         (.geometry, [.geometry, .lens])
@@ -88,13 +88,13 @@ enum EditorAdjustmentRules {
             let settings = snapshot.settings
             return (context.isRaw && settings.exposureMode != context.defaultExposureMode) ||
                 settings.exposure != 0 || settings.highlights != 0 || settings.shadows != 0 ||
-                settings.contrast != 1 || settings.toneCurve != 0
+                settings.contrast != 1 || settings.toneCurve != 0 || settings.blackPoint != 0 || settings.whitePoint != 0
         }
         if case .group(.color) = scope {
             let settings = snapshot.settings
             let whiteBalance = (context.isRaw && settings.whiteBalanceMode != .camera) ||
                 (settings.masterRecipeID != nil && settings.tint != 0)
-            return whiteBalance || settings.saturation != 1 || !settings.hsl.isIdentity
+            return whiteBalance || settings.saturation != 1 || settings.vibrance != 0 || !settings.hsl.isIdentity
         }
         let reset = resetting(scope, settings: snapshot.settings, context: context)
         return reset != snapshot.settings
@@ -246,10 +246,11 @@ enum EditorAdjustmentRules {
                 result.exposure = defaults.exposure; result.exposureMode = defaults.exposureMode
                 result.highlights = defaults.highlights; result.shadows = defaults.shadows
                 result.contrast = defaults.contrast; result.toneCurve = defaults.toneCurve
+                result.blackPoint = 0; result.whitePoint = 0
             case .color:
                 result.whiteBalanceMode = defaults.whiteBalanceMode
                 result.temperature = defaults.temperature; result.tint = defaults.tint
-                result.saturation = defaults.saturation; result.hsl = defaults.hsl
+                result.saturation = defaults.saturation; result.hsl = defaults.hsl; result.vibrance = 0
             case .effects: result.photoEffects = defaults.photoEffects
             case .detail:
                 result.sharpening = defaults.sharpening; result.denoise = defaults.denoise
@@ -271,7 +272,7 @@ enum EditorAdjustmentRules {
             (settings.lutStrength, RawSettings.lutStrengthRange)
         ]
         return fields.allSatisfy { $0.0.isFinite && $0.1.contains($0.0) } &&
-            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid &&
+            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid && settings.toneSettings.isValid &&
             settings.photoEffects.isValid && PhotoEffectParameter.allCases.allSatisfy {
                 $0.range.contains(settings.photoEffects[keyPath: $0.keyPath])
             } && (0...2).contains(settings.displayChromaDenoise)

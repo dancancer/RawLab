@@ -58,6 +58,34 @@ class EditRecipeSchema(unittest.TestCase):
         self.assertIsNone(envelope["error"]["status"])
         self.assertIn(field, envelope["error"]["message"])
 
+    def test_v5_tone_controls(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document["schema_version"] = 5
+        document["processing"] = {"family": "rawlab", "version": 2, "quality": "standard"}
+        document["edits"]["tone"].update(black_point=.25, white_point=-.5)
+        document["edits"]["color"] = {"vibrance": .75}
+        normalized = self.normalize(document)
+        for group, field, expected in (("tone", "black_point", .25), ("tone", "white_point", -.5), ("color", "vibrance", .75)):
+            self.assertEqual(normalized["edits"][group][field], expected)
+            for value in (-1.01, 1.01, True, "0", None):
+                invalid = copy.deepcopy(document)
+                invalid["edits"][group][field] = value
+                self.reject(invalid, f"edits.{group}.{field}")
+                if jsonschema:
+                    self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        invalid = copy.deepcopy(document)
+        invalid["edits"]["color"]["unknown"] = 0
+        self.reject(invalid, "edits.color.unknown")
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.color")
+        del document["edits"]["color"]
+        self.reject(document, "edits.tone.black_point")
+
     def test_processing_identity(self):
         schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
         document = self.full()

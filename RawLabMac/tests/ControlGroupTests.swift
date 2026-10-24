@@ -46,7 +46,7 @@ struct ControlGroupTests {
     private static func currentTools() throws {
         check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"], "Six stable group IDs keep their order")
         check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .vignette, .denoise, .geometry], "Each group opens its declared default tool")
-        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 17 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all seventeen tools")
+        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 20 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty tools")
         var navigation = EditorAdjustmentNavigation()
         navigation.selectedHSLChannel = 6
         navigation.selectGroup(.color)

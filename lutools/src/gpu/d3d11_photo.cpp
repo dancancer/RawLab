@@ -28,8 +28,9 @@ struct alignas(16) Parameters {
     float exposureStrength[4], tone[4], detail[4], domainLow[4], domainHigh[4];
     uint32_t logTransfer[4];
     float hslHue[2][4], hslSaturation[2][4], hslLightness[2][4];
+    float toneControls[4];
 };
-static_assert(sizeof(Parameters) == 320);
+static_assert(sizeof(Parameters) == 336);
 static_assert(offsetof(Parameters, hslHue) == 224);
 static_assert(sizeof(RGB) == 12);
 struct Buffer {
@@ -73,7 +74,7 @@ struct D3D11PhotoRenderer::Impl {
         }
         if (!device) throw std::runtime_error("No Direct3D 11 hardware adapter");
         ComPtr<ID3DBlob> code, errors;
-        const auto compiled = D3DCompile(kD3DPhotoShader, std::strlen(kD3DPhotoShader), "RawLab photo shader",
+        const auto compiled = D3DCompile(kD3DPhotoShader.data(), kD3DPhotoShader.size(), "RawLab photo shader",
             nullptr, nullptr, "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &code, &errors);
         if (FAILED(compiled) && errors) {
             OutputDebugStringA(static_cast<const char*>(errors->GetBufferPointer()));
@@ -146,10 +147,10 @@ D3D11PhotoRenderer::~D3D11PhotoRenderer() = default;
 bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
     const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
-    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl) {
+    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls) {
     if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
     if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
-        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() ||
+        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() || !toneControls.valid() ||
         chromaDenoise < 0 || chromaDenoise > 2) return false;
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
     if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
@@ -169,6 +170,8 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         p.tone[2]=std::clamp(request.highlights,-1.f,1.f);p.tone[3]=std::clamp(request.shadows,-1.f,1.f);
         p.detail[0]=request.tone_curve;p.detail[1]=request.noise_reduction;p.detail[2]=request.sharpening;
         p.control[1]=hsl.active();
+        p.toneControls[0]=toneControls.blackPoint; p.toneControls[1]=toneControls.whitePoint;
+        p.toneControls[2]=toneControls.vibrance;
         for (size_t index=0;index<8;++index) {
             p.hslHue[index/4][index%4]=hsl.hue[index];
             p.hslSaturation[index/4][index%4]=hsl.saturation[index];

@@ -3577,6 +3577,30 @@
       "formats": [],
       "source": "重新载入",
       "types": []
+    },
+    "black_point": {
+      "formats": [],
+      "source": "黑场",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "white_point": {
+      "formats": [],
+      "source": "白场",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "vibrance": {
+      "formats": [],
+      "source": "鲜艳度",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_tone_controls": {
+      "formats": [],
+      "source": "无效的黑白场或鲜艳度参数",
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {

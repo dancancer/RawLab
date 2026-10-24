@@ -257,6 +257,18 @@
               "minimum": -1,
               "maximum": 1,
               "default": 0
+            },
+            "black_point": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "white_point": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
             }
           }
         },
@@ -461,6 +473,18 @@
               ],
               "minLength": 1,
               "default": null
+            }
+          }
+        },
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vibrance": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
             }
           }
         }

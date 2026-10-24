@@ -4758,5 +4758,37 @@
     "fr": "Recharger",
     "ja": "再読み込み",
     "zh-Hans": "重新载入"
+  },
+  "黑场": {
+    "de": "Schwarzpunkt",
+    "en": "Black point",
+    "es": "Punto negro",
+    "fr": "Point noir",
+    "ja": "黒レベル",
+    "zh-Hans": "黑场"
+  },
+  "白场": {
+    "de": "Weißpunkt",
+    "en": "White point",
+    "es": "Punto blanco",
+    "fr": "Point blanc",
+    "ja": "白レベル",
+    "zh-Hans": "白场"
+  },
+  "鲜艳度": {
+    "de": "Dynamik",
+    "en": "Vibrance",
+    "es": "Intensidad",
+    "fr": "Vibrance",
+    "ja": "自然な彩度",
+    "zh-Hans": "鲜艳度"
+  },
+  "无效的黑白场或鲜艳度参数": {
+    "de": "Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik",
+    "en": "Invalid black point, white point, or vibrance values",
+    "es": "Valores de punto negro, punto blanco o intensidad no válidos",
+    "fr": "Valeurs de point noir, de point blanc ou de vibrance non valides",
+    "ja": "黒レベル、白レベル、自然な彩度の値が無効です",
+    "zh-Hans": "无效的黑白场或鲜艳度参数"
   }
 }

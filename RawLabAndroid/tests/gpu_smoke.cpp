@@ -1,6 +1,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "gpu/gles_photo.h"
 #include "hsl_gpu_boundary.h"
+#include "tone_gpu_boundary.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -68,6 +69,12 @@ int main(int argc, char** argv) {
         return renderer.render(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
             input.width, input.height, 0, output, {}, 0, false, hsl);
     }), "HSL out-of-range boundary and active adjustment");
+    require(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+        const sony2fuji::ToneControlsOptions& controls, sony2fuji::ImageData& output) {
+        sony2fuji::GlesPhotoRenderer renderer;
+        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,0,output,{},0,false,{},controls);
+    }), "Tone endpoints/vibrance match CPU float reference");
     Session forced(SONY2FUJI_GPU_FORCE);
     Session cpu(SONY2FUJI_GPU_OFF), automatic(SONY2FUJI_GPU_AUTO);
     std::vector<uint8_t> pixels(53 * 41 * 3);
@@ -190,9 +197,15 @@ int main(int argc, char** argv) {
     nearGray.sharpening = 0; nearGray.exposure_ev = 4;
     compare(render(cpu, nearGray, false), render(forced, nearGray, true), "HSL near-gray lightness remains stable");
     compare(render(cpu, request, false), render(forced, request, true), "HSL tone/LUT FINAL");
+    sony2fuji_tone_controls_config tone{1,sizeof(tone),.6f,-.4f,.8f};
+    for (Session* session : {&cpu,&forced,&automatic})
+        require(sony2fuji_session_set_tone_controls(session->value,&tone)==SONY2FUJI_STATUS_OK,"tone controls setter");
+    compare(render(cpu,request,false),render(forced,request,true),"Black/white/vibrance with HSL/LUT FINAL");
     auto hslPreview = request;
     hslPreview.intent = SONY2FUJI_INTENT_PREVIEW;
     compare(render(cpu, hslPreview, false), render(automatic, hslPreview, true), "HSL tone/LUT Auto preview");
+    tone.black_point=tone.white_point=tone.vibrance=0;
+    for (Session* session : {&cpu,&forced,&automatic}) sony2fuji_session_set_tone_controls(session->value,&tone);
     std::remove(cube.c_str());
 
     sony2fuji_photo_effects_config effects{SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION, sizeof(effects),

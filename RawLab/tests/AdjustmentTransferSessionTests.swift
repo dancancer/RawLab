@@ -69,7 +69,10 @@ import Foundation
         let session = IOSAdjustmentTransferSession(store: edits)
         let library = AdjustmentPresetStore(directory: root.appendingPathComponent("library"))
         let clipboard = try session.copy(scope: .custom([.exposure]), snapshot: state(0.5), context: context)
-        let source = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(1.25), context: context)
+        var sourceSettings = state(1.25).settings
+        sourceSettings.blackPoint = -32.75; sourceSettings.whitePoint = 46.5; sourceSettings.vibrance = 21.25
+        let source = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure, .blackPoint, .whitePoint, .vibrance]),
+            snapshot: PhotoEditState(settings: sourceSettings), context: context)
         let saved = try library.create(name: "iOS preset", payload: source)
         try check(session.clipboard == clipboard && session.transactions.isEmpty,
             "Preset save leaves clipboard and photo history unchanged")
@@ -90,6 +93,8 @@ import Foundation
             "Preset application preserves unselected fields and the frozen clipboard")
         try check(session.transactions.count == 1 && session.transactions[0].action == .preset,
             "Preset application records its own action in the shared photo history")
+        try check(edits.state(for: identity)?.settings.toneSettings == sourceSettings.toneSettings,
+            "Preset application saves exact tone fields in the photo registry")
         try library.delete(saved)
         try check(edits.state(for: identity)?.settings.exposure == 1.25,
             "Deleting a preset does not change an already-applied photo")
@@ -101,6 +106,8 @@ import Foundation
             "No-change preset application preserves the redo branch")
         try check(session.redoPhoto(identity).first?.status == .applied && edits.state(for: identity)?.settings.exposure == 1.25,
             "Preset redo restores the saved result after the preset itself was deleted")
+        try check(edits.state(for: identity)?.settings.toneSettings == sourceSettings.toneSettings,
+            "Preset redo restores all tone values after deleting the source preset")
     }
     static func preflightAndExternal(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)

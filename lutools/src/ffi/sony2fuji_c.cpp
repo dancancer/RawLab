@@ -8,6 +8,7 @@
 #include "core/wavelet_cache.h"
 #include "core/photo_effects.h"
 #include "core/photo_color.h"
+#include "core/photo_tone_controls.h"
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
 #include "gpu/image_stats.h"
@@ -50,6 +51,7 @@ struct sony2fuji_session {
     sony2fuji::WaveletDenoiseOptions wavelet_denoise{false,40,46,50,sony2fuji::ProcessingVersion::Legacy};
     sony2fuji::PhotoEffectsOptions photo_effects;
     sony2fuji::HslOptions hsl;
+    sony2fuji::ToneControlsOptions tone_controls;
     sony2fuji::GeometryOptions geometry;
     uint32_t geometry_width = 0, geometry_height = 0;
     sony2fuji::WaveletRenderCache wavelet_cache;
@@ -1454,6 +1456,17 @@ sony2fuji_status sony2fuji_session_set_hsl(
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status sony2fuji_session_set_tone_controls(
+    sony2fuji_session* session, const sony2fuji_tone_controls_config* config
+) {
+    if (!session || !config || config->version != SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION ||
+        config->struct_size != sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const sony2fuji::ToneControlsOptions options{config->black_point,config->white_point,config->vibrance};
+    if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    session->tone_controls = options;
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status sony2fuji_session_set_geometry(
     sony2fuji_session* session, const sony2fuji_geometry_config* config
 ) {
@@ -1596,6 +1609,7 @@ static sony2fuji_status processImpl(
     const int chromaMode = useAI ? 0 : session->chroma_denoise;
     const bool effectsActive = session->photo_effects.active();
     const bool hslActive = session->hsl.active();
+    const bool toneControlsActive = session->tone_controls.active();
     const bool geometryActive = session->geometry.active();
     if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -1604,7 +1618,7 @@ static sony2fuji_status processImpl(
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool cpuOnlyStages = false;
 #else
-    const bool cpuOnlyStages = hslActive || effectsActive || waveletActive || chromaMode != 0;
+    const bool cpuOnlyStages = toneControlsActive || hslActive || effectsActive || waveletActive || chromaMode != 0;
 #endif
     const bool fastWavelet = !geometryActive && waveletActive && !effectsActive && chromaMode == 0 && session->interactive_preview &&
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
@@ -1771,7 +1785,7 @@ static sony2fuji_status processImpl(
         const auto& source = local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview ? session->raw_cache : image;
         sony2fuji::ImageData rendered;
         if (sony2fuji::renderPhotoMetal(source, toCoreColorSpace(color_space), local, lut, wb, width, height, rendered,
-                dcp, session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl)) {
+                dcp, session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls)) {
             session->last_backend = SONY2FUJI_BACKEND_METAL;
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
@@ -1796,7 +1810,7 @@ static sony2fuji_status processImpl(
         sony2fuji::ImageData rendered;
         if (session->gles_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
                 width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
-                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl)) {
+                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls)) {
             session->last_backend = SONY2FUJI_BACKEND_GLES;
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
@@ -1817,7 +1831,7 @@ static sony2fuji_status processImpl(
         sony2fuji::ImageData rendered;
         if (session->d3d_renderer->render(source, toCoreColorSpace(color_space), local, lut, wb,
                 width, height, raw && !waveletActive ? session->raw_revision : 0, rendered,
-                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl)) {
+                session->photo_effects, chromaMode, waveletActive || geometryActive, session->hsl, session->tone_controls)) {
             session->last_backend = SONY2FUJI_BACKEND_D3D11;
             return finishOutput(session, local, rendered, out_buffer, native_width, native_height);
         }
@@ -1840,11 +1854,13 @@ static sony2fuji_status processImpl(
     for (auto& pixel : image.pixels) applyExposureAndWhiteBalance(pixel, exposure, wb);
 
     auto lookConfig = session->gpu_config;
-    if (gpuPipeline || hslActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (gpuPipeline || hslActive || toneControlsActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
+    sony2fuji::applyBlackWhite(image, session->tone_controls);
     applyToneAdjustments(image, local);
+    sony2fuji::applyVibrance(image, session->tone_controls);
     sony2fuji::applyHsl(image, session->hsl);
     const auto chromaResult = sony2fuji::applyChromaDenoiseWorking(image, chromaMode);
     if (chromaResult != sony2fuji::ErrorCode::Success) return mapError(chromaResult);

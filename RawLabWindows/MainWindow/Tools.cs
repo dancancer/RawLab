@@ -17,6 +17,7 @@ public partial class MainWindow
 {
     private Button? importLookButton;
     private Button? presetLibraryButton;
+    private readonly Dictionary<ToneControlParameter,(Button Button,AdjustmentRing Ring)> toneToolButtons = [];
 
     private void AboutClicked(object sender, RoutedEventArgs e)
     {
@@ -30,7 +31,7 @@ public partial class MainWindow
     }
     private void BuildTools()
     {
-        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();
+        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();toneToolButtons.Clear();
         Tools.Children.Add(FilmCategory);Tools.Children.Add(MasterRecipeCategory);
         foreach(var id in new[]{Parameter.Strength,Parameter.Exposure,Parameter.Highlights,Parameter.Shadows,Parameter.Contrast,
             Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
@@ -67,6 +68,17 @@ public partial class MainWindow
             button.Click+=(_,_)=>SelectTool(tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain);
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
+        foreach(var spec in ToneControlSpec.All) {
+            var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
+            var grid=new Grid();grid.Children.Add(ring);grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=16,Height=16});
+            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
+            AutomationProperties.SetName(button,Loc.Text(spec.Title));
+            button.Click+=(_,_)=>SelectTool(EditorAdjustmentRules.ToolFor(spec.Id));
+            toneToolButtons[spec.Id]=(button,ring);
+        }
         Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);BuildWorkspaceNavigation();FitToolCaptions();
     }
     private void FilmCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Film);
@@ -84,7 +96,7 @@ public partial class MainWindow
     private EditorAdjustmentTool CurrentTool => choosingFilm ? EditorAdjustmentTool.Film : choosingRecipes ? EditorAdjustmentTool.MasterRecipe :
         choosingHsl ? EditorAdjustmentTool.Hsl : choosingWhiteBalance ? EditorAdjustmentTool.WhiteBalance : choosingDenoise ? EditorAdjustmentTool.Denoise :
         choosingGeometry ? EditorAdjustmentTool.Geometry : choosingLens ? EditorAdjustmentTool.Lens :
-        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : ToolFor(selectedParameter);
+        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : selectedToneParameter is {} tone ? EditorAdjustmentRules.ToolFor(tone) : ToolFor(selectedParameter);
     private static EditorAdjustmentTool ToolFor(Parameter parameter) => parameter switch {
         Parameter.Temperature or Parameter.Tint => EditorAdjustmentTool.WhiteBalance,
         _ => Enum.GetValues<EditorAdjustmentTool>().First(tool => (tool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.Exposure or
@@ -107,6 +119,7 @@ public partial class MainWindow
         workspaceTools[EditorAdjustmentTool.Geometry]=(GeometryCategory,GeometryCategoryRing);
         workspaceTools[EditorAdjustmentTool.Lens]=(LensCategory,LensCategoryRing);
         foreach(var (parameter,controls) in toolButtons)workspaceTools[ToolFor(parameter)]=controls;
+        foreach(var (parameter,controls) in toneToolButtons)workspaceTools[EditorAdjustmentRules.ToolFor(parameter)]=controls;
         foreach(var (tool,controls) in effectToolButtons)workspaceTools[tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain]=controls;
         foreach(var (tool,controls) in workspaceTools)AutomationProperties.SetAutomationId(controls.Button,tool.ToString());
         // 同一描述表决定工具顺序、默认工具与重置范围。
@@ -139,8 +152,9 @@ public partial class MainWindow
             choosingHsl=tool==EditorAdjustmentTool.Hsl;choosingWhiteBalance=tool==EditorAdjustmentTool.WhiteBalance;
             choosingDenoise=tool==EditorAdjustmentTool.Denoise;choosingPhotoEffects=tool is EditorAdjustmentTool.Vignette or EditorAdjustmentTool.Grain;
             choosingGeometry=choosingLens=false;
+            selectedToneParameter=EditorAdjustmentRules.ToneParameterFor(tool);
             if(choosingPhotoEffects)selectedEffect=tool==EditorAdjustmentTool.Vignette ? PhotoEffectTool.Vignette : PhotoEffectTool.Grain;
-            else if(!choosingFilm && !choosingRecipes && !choosingHsl && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
+            else if(selectedToneParameter==null && !choosingFilm && !choosingRecipes && !choosingHsl && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
         }
         var wasCollapsed=expandedGroup==null;expandedGroup=EditorAdjustmentRules.GroupFor(tool);
         if(wasCollapsed){DockRow.Height=new(dockHeight);DockRow.MinHeight=216;AdjustmentSplitter.Visibility=Visibility.Visible;SplitterRow.Height=new(6);UpdateDockMinimum();}
@@ -254,10 +268,15 @@ public partial class MainWindow
             else if(rasterPreviousGpuMode is {} previousMode)
             {rasterPreviousGpuMode=null;GpuMode.SelectedIndex=previousMode;}
             var spec=ParameterSpec.All[(int)selectedParameter];
-            OrdinaryParameter.Refresh(Loc.Text(spec.Title),NumericRange.For(spec),settings[selectedParameter],settings.Default(selectedParameter),spec.Unit,inputScope:selectedParameter);
-            AutomationProperties.SetName(ValueSlider,Loc.Text(spec.Title));
-            AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(spec.Title),spec.Unit));
-            var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);
+            var toneSpec=selectedToneParameter is {} toneParameter ? ToneControlSpec.For(toneParameter) : null;
+            var title=toneSpec?.Title ?? spec.Title;var unit=toneSpec==null ? spec.Unit : "%";
+            OrdinaryParameter.Refresh(Loc.Text(title),toneSpec==null ? NumericRange.For(spec) : new NumericRange(-100,100),
+                toneSpec==null ? settings[selectedParameter] : settings.ToneControls[toneSpec.Id],
+                toneSpec==null ? settings.Default(selectedParameter) : 0,unit,inputScope:(object?)selectedToneParameter ?? selectedParameter);
+            AutomationProperties.SetName(ValueSlider,Loc.Text(title));
+            AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(title),unit));
+            var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects &&
+                (toneSpec!=null || (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null));
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
@@ -296,7 +315,7 @@ public partial class MainWindow
             var tintProgress=tintOffset==0 ? 0 : tintOffset/(tintOffset<0 ? tintOrigin : 1-tintOrigin);
             WhiteBalanceCategoryRing.Progress=Math.Abs(temperatureProgress)>=Math.Abs(tintProgress) ? temperatureProgress : tintProgress;
             WhiteBalanceCategoryRing.InvalidateVisual();
-            AutoExposureButton.Visibility=selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
+            AutoExposureButton.Visibility=selectedToneParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
             AutoExposureButton.IsEnabled=file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
             DenoiseSurface.Visibility=DenoiseEditor.Visibility;
@@ -331,11 +350,17 @@ public partial class MainWindow
             foreach(var (id,controls) in toolButtons)
             {
                 controls.Button.IsEnabled=file!=null && !exporting;
-                var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && id==selectedParameter;
+                var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && selectedToneParameter==null && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
                 controls.Ring.Progress=offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
+            }
+            foreach(var (id,controls) in toneToolButtons) {
+                var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
+                controls.Button.IsEnabled=file!=null && !exporting;
+                controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
+                controls.Ring.Progress=settings.ToneControls[id]/100;controls.Ring.InvalidateVisual();
             }
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
             var lookTitle=LookTitle;

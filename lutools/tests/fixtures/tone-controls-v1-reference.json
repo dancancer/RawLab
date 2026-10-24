@@ -1,0 +1,280 @@
+{
+  "fixture_id": "rawlab-tone-controls-v1-reference",
+  "algorithm_version": 1,
+  "source": "Independently evaluated binary64 synthetic RGB vectors; no photograph or third-party image",
+  "license": "CC0-1.0",
+  "input_space": "display-encoded-srgb",
+  "float_absolute_tolerance": 5e-06,
+  "cases": [
+    {
+      "id": "identity-overrange",
+      "input": [
+        -0.1,
+        0.4,
+        1.2
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 0
+      },
+      "expected": [
+        -0.1,
+        0.4,
+        1.2
+      ]
+    },
+    {
+      "id": "black-origin",
+      "input": [
+        0,
+        0,
+        0
+      ],
+      "parameters": {
+        "black_point": 1,
+        "white_point": 0,
+        "vibrance": 0
+      },
+      "expected": [
+        0.2,
+        0.2,
+        0.2
+      ]
+    },
+    {
+      "id": "black-counterexample",
+      "input": [
+        0.15,
+        0.15,
+        0.15
+      ],
+      "parameters": {
+        "black_point": 1,
+        "white_point": 0,
+        "vibrance": 0
+      },
+      "expected": [
+        0.2712827988338192,
+        0.2712827988338192,
+        0.2712827988338192
+      ]
+    },
+    {
+      "id": "white-counterexample",
+      "input": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": -1,
+        "vibrance": 0
+      },
+      "expected": [
+        0.7287172011661809,
+        0.7287172011661809,
+        0.7287172011661809
+      ]
+    },
+    {
+      "id": "neutral-middle",
+      "input": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "parameters": {
+        "black_point": 1,
+        "white_point": -1,
+        "vibrance": 1
+      },
+      "expected": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    {
+      "id": "skin-mid",
+      "input": [
+        0.7,
+        0.5,
+        0.35
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        0.7139960480629641,
+        0.4973647747423484,
+        0.33489131975188663
+      ]
+    },
+    {
+      "id": "skin-dark",
+      "input": [
+        0.25,
+        0.16,
+        0.11
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        0.25687401583237424,
+        0.15856715959796744,
+        0.1039522394677414
+      ]
+    },
+    {
+      "id": "sky",
+      "input": [
+        0.35,
+        0.6,
+        0.82
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        0.31124343396787624,
+        0.606789240035693,
+        0.8668695493753718
+      ]
+    },
+    {
+      "id": "low-saturation",
+      "input": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        0.3617955555555556,
+        0.50624,
+        0.6506844444444444
+      ]
+    },
+    {
+      "id": "saturated-magenta",
+      "input": [
+        0.95,
+        0.03,
+        0.8
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        0.9506669613296399,
+        0.0297495098060942,
+        0.8005173768421052
+      ]
+    },
+    {
+      "id": "near-gray",
+      "input": [
+        0.49999,
+        0.5,
+        0.50001
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        0.4999814046876525,
+        0.5000014038876845,
+        0.5000214030877165
+      ]
+    },
+    {
+      "id": "negative-skin",
+      "input": [
+        0.7,
+        0.5,
+        0.35
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": -0.5
+      },
+      "expected": [
+        0.615845,
+        0.515845,
+        0.440845
+      ]
+    },
+    {
+      "id": "achromatic-endpoint",
+      "input": [
+        0.7,
+        0.5,
+        0.35
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": -1
+      },
+      "expected": [
+        0.53169,
+        0.53169,
+        0.53169
+      ]
+    },
+    {
+      "id": "legacy-out-of-gamut-positive",
+      "input": [
+        -0.2,
+        0.5,
+        1.2
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": 1
+      },
+      "expected": [
+        -0.2,
+        0.5,
+        1.2
+      ]
+    },
+    {
+      "id": "legacy-out-of-gamut-negative",
+      "input": [
+        -0.2,
+        0.5,
+        1.2
+      ],
+      "parameters": {
+        "black_point": 0,
+        "white_point": 0,
+        "vibrance": -0.5
+      },
+      "expected": [
+        0.10086,
+        0.45086,
+        0.80086
+      ]
+    }
+  ]
+}

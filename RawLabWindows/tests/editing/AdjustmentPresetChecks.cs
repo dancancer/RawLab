@@ -98,10 +98,10 @@ internal static class AdjustmentPresetChecks
         var source = Path.Combine(directory, "source.ARW"); var target = Path.Combine(directory, "target.ARW");
         File.WriteAllText(source, "source"); File.WriteAllText(target, "target");
         var store = new EditStore(Path.Combine(directory, "edits")); var session = new AdjustmentTransferSession(store);
-        var settings = new Adjustments(); settings.Set(Parameter.Exposure, 1.25); settings.Set(Parameter.Contrast, 20);
+        var settings = new Adjustments { ToneControls = new(-37.25,42.5,18.125) }; settings.Set(Parameter.Exposure, 1.25); settings.Set(Parameter.Contrast, 20);
         var sourceEdit = new SavedEdit(OriginalIdentity.Read(source), settings.Capture(), null);
         var clipboard = session.Copy(AdjustmentScope.Custom([AdjustmentField.Contrast]), sourceEdit, new(source, true));
-        var payload = AdjustmentTransfer.Capture(AdjustmentScope.Custom([AdjustmentField.Exposure]), sourceEdit, new(source, true));
+        var payload = AdjustmentTransfer.Capture(AdjustmentScope.Custom([AdjustmentField.Exposure, AdjustmentField.BlackPoint, AdjustmentField.WhitePoint, AdjustmentField.Vibrance]), sourceEdit, new(source, true));
         var preset = new AdjustmentPresetStore(Path.Combine(directory, "presets")).Create("Independent", payload);
         File.Delete(source);
         var baseline = new Adjustments(); baseline.Set(Parameter.Contrast, 35);
@@ -117,6 +117,7 @@ internal static class AdjustmentPresetChecks
         var unchanged = session.Prepare(Payload(0), [destination], AdjustmentHistoryAction.Preset);
         Check(session.Apply(unchanged).Single().Status == AdjustmentStatus.Unchanged && session.PhotoHistoryID(target, false) != null, "unchanged preset preserves redo");
         Check(session.RedoPhoto(target).Single().Status == AdjustmentStatus.Applied, "preset redo remains applicable");
+        Check(store.Find(target)!.Settings.Restore().ToneControls == settings.ToneControls, "preset redo restores all independent tone fields");
         var missingLook = new AdjustmentPayload(new("preset:fixture", true, 2), new Dictionary<AdjustmentField, JsonElement> {
             [AdjustmentField.Look] = AdjustmentPayload.Value(new { kind = "managed", id = "missing" }) });
         var prior = store.VersionedState(target);

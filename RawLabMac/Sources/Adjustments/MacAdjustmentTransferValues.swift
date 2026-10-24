@@ -4,7 +4,8 @@ extension MacAdjustmentTransfer {
     static let scalarKeys: [Field: WritableKeyPath<Adjustments, Double>] = [
         .strength: \.strength, .exposure: \.exposure, .contrast: \.contrast,
         .highlights: \.highlights, .shadows: \.shadows, .sCurve: \.toneCurve,
-        .saturation: \.saturation, .sharpening: \.sharpening
+        .saturation: \.saturation, .sharpening: \.sharpening,
+        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance
     ]
     static let effectKeys: [Field: WritableKeyPath<PhotoEffectsSettings, Double>] = [
         .vignetteAmount: \.vignetteAmount, .vignetteMidpoint: \.vignetteMidpoint,
@@ -43,7 +44,8 @@ extension MacAdjustmentTransfer {
         var result: [Field: Double] = [
             .strength: settings.strength, .exposure: Double(request.exposure_ev), .contrast: Double(request.contrast),
             .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(request.tone_curve),
-            .saturation: Double(request.saturation), .sharpening: Double(request.sharpening)
+            .saturation: Double(request.saturation), .sharpening: Double(request.sharpening),
+            .blackPoint: settings.blackPoint, .whitePoint: settings.whitePoint, .vibrance: settings.vibrance
         ]
         for field in Field.allCases {
             if let location = field.hslLocation {

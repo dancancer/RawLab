@@ -37,6 +37,8 @@ public sealed record AdjustmentSnapshot(
 {
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public bool AIDenoiseEnabled { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public ToneControlsSettings? ToneControls { get; init; }
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
     public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing &&
         AIDenoiseEnabled == other.AIDenoiseEnabled && MasterRecipeID == other.MasterRecipeID && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
@@ -44,7 +46,7 @@ public sealed record AdjustmentSnapshot(
         (Denoise ?? new()) == (other.Denoise ?? new()) &&
         (Effects ?? new()) == (other.Effects ?? new()) && DisplayChromaDenoise == other.DisplayChromaDenoise &&
         (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new()) &&
-        (Geometry ?? new()) == (other.Geometry ?? new());
+        (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new());
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

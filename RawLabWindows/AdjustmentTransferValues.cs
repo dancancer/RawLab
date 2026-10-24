@@ -11,15 +11,25 @@ internal static class AdjustmentTransferValues
         [F.Highlights]=Parameter.Highlights, [F.Shadows]=Parameter.Shadows, [F.SCurve]=Parameter.ToneCurve,
         [F.Saturation]=Parameter.Saturation, [F.Sharpening]=Parameter.Sharpening
     };
+    internal static readonly IReadOnlyDictionary<F, ToneControlParameter> ToneFields = new Dictionary<F, ToneControlParameter> {
+        [F.BlackPoint] = ToneControlParameter.BlackPoint, [F.WhitePoint] = ToneControlParameter.WhitePoint,
+        [F.Vibrance] = ToneControlParameter.Vibrance
+    };
+    internal static IEnumerable<F> NumericFields => Scalars.Keys.Concat(ToneFields.Keys);
     internal static readonly IReadOnlySet<F> Scaled = new HashSet<F> { F.Exposure,F.Contrast,F.Highlights,F.Shadows,F.Saturation };
     internal static double Logical(AdjustmentSnapshot s, F field)
     {
+        if (ToneFields.TryGetValue(field, out var tone)) return (s.ToneControls ?? new())[tone];
         if (field.HslIndex() is {} index) return (s.Hsl ?? new()).Values[index];
         var value = s.Values[(int)Scalars[field]];
         return field switch { F.Exposure=>value, F.Contrast or F.Saturation=>1+value/100, F.Highlights=>-value/100, _=>value/100 };
     }
     internal static AdjustmentSnapshot SetLogical(AdjustmentSnapshot s, F field, double value)
     {
+        if (ToneFields.TryGetValue(field, out var tone)) {
+            var controls = (s.ToneControls ?? new()).With(tone, value); _ = controls.NativeConfig();
+            return s with { ToneControls = controls.IsIdentity ? null : controls };
+        }
         if (field.HslIndex() is {} index) {
             var hsl=(s.Hsl ?? new()).Values; hsl[index]=value; return s with { Hsl=new(hsl) };
         }
@@ -31,7 +41,7 @@ internal static class AdjustmentTransferValues
     {
         var s=edit.Settings; var result=new Dictionary<F,JsonElement>();
         void Put<T>(F field,T value) => result[field]=Value(value);
-        foreach(var field in Scalars.Keys.Concat(AdjustmentFields.All.Where(f=>f.HslIndex()!=null))) Put(field,Logical(s,field));
+        foreach(var field in NumericFields.Concat(AdjustmentFields.All.Where(f=>f.HslIndex()!=null))) Put(field,Logical(s,field));
         string kind; string? id;
         if(s.MasterRecipeID is {} recipe) { kind="recipe";id=recipe; }
         else if(edit.Look==null) { kind="neutral";id=null; }

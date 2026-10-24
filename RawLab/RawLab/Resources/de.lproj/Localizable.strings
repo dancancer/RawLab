@@ -243,6 +243,7 @@
 "无效的暗角或颗粒参数" = "Ungültiger Vignettierungs- oder Körnungsparameter";
 "无效的曝光基准" = "Ungültige Belichtungsreferenz";
 "无效的视口预览模式" = "Ungültiger Modus für die Ausschnittvorschau";
+"无效的黑白场或鲜艳度参数" = "Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Fotos können nicht gespeichert werden. Erlauben Sie RawLab in den Systemeinstellungen, Fotos hinzuzufügen.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Das Foto konnte nicht gespeichert werden. Erlauben Sie das Hinzufügen von Fotos in den Systemeinstellungen.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
@@ -362,6 +363,7 @@
 "畸变" = "Verzeichnung";
 "畸变校正" = "Verzeichnungskorrektur";
 "畸变矫正" = "Verzeichnungskorrektur";
+"白场" = "Weißpunkt";
 "白平衡" = "Weißabgleich";
 "白平衡模式" = "Weißabgleichmodus";
 "目标所需的外观不可用，请先导入外观。" = "Der benötigte Look ist nicht verfügbar. Importieren Sie ihn zuerst.";
@@ -546,8 +548,10 @@
 "高度" = "Höhe";
 "高级参数" = "Erweiterte Parameter";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "Helles, klares Tageslicht mit japanischem Himmelcyan, weichen matten Schatten und cremigen Pfirsichtönen";
+"鲜艳度" = "Dynamik";
 "黄" = "Gelb";
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Sanftes Dämmerlicht, warmgoldene Lichter und weiche blau-cyane Schatten, kontrastarme Ölgemälde-Porträts mit benachbarten Farbtönen";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Hochwertiger Look zur goldenen Stunde, leuchtende Motive bei hohem Kontrast, tiefe Schatten und goldenes Haar-Kantenlicht";
+"黑场" = "Schwarzpunkt";
 "默认" = "Standard";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Standard: %@; Bereich: %@ bis %@; Schrittweite: %@.";

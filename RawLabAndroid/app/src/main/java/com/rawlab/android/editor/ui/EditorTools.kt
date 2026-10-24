@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -42,13 +44,13 @@ internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjus
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
     R.string.shadows, R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
-    R.string.master_recipes, R.string.info_lens, R.string.geometry)
+    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance)
 
 internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune,
     Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
     Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
     Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
-    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate)
+    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
@@ -95,6 +97,9 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
         9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)
         10 -> Triple(edits.sharpening * 100f, 0f, 0f..200f)
+        18 -> Triple(edits.blackPoint, 0f, -100f..100f)
+        19 -> Triple(edits.whitePoint, 0f, -100f..100f)
+        20 -> Triple(edits.vibrance, 0f, -100f..100f)
         else -> null
     }
     val changed = EditorAdjustmentRules.isModified(EditorResetScope.Tool(index), edits, state.resetContext())

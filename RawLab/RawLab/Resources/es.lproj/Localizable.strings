@@ -243,6 +243,7 @@
 "无效的暗角或颗粒参数" = "Parámetro de viñeteado o grano no válido";
 "无效的曝光基准" = "Punto de referencia de exposición no válido";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
+"无效的黑白场或鲜艳度参数" = "Valores de punto negro, punto blanco o intensidad no válidos";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "No se pueden guardar las fotos. Permite que RawLab añada fotos en Ajustes del sistema.";
 "无法保存照片，请在系统设置中允许添加照片。" = "No se pudo guardar la foto. Permite añadir fotos en los ajustes del sistema.";
 "无法写入成片，请检查输出位置和剩余空间。" = "No se puede escribir la foto exportada. Verifique la ubicación de salida y el espacio disponible.";
@@ -362,6 +363,7 @@
 "畸变" = "Distorsión";
 "畸变校正" = "Corrección de distorsión";
 "畸变矫正" = "Corrección de distorsión";
+"白场" = "Punto blanco";
 "白平衡" = "Balance de blancos";
 "白平衡模式" = "Modo de balance de blancos";
 "目标所需的外观不可用，请先导入外观。" = "El aspecto necesario no está disponible. Impórtalo primero.";
@@ -546,8 +548,10 @@
 "高度" = "Altura";
 "高级参数" = "Parámetros avanzados";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "Luz diurna luminosa y transparente, cielo cian japonés, sombras mate suaves y piel melocotón cremosa";
+"鲜艳度" = "Intensidad";
 "黄" = "Amarillo";
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Brillo suave del crepúsculo, altas luces doradas y sombras azul cian suaves, retratos al óleo de bajo contraste con armonía de colores adyacentes";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Look cinematográfico de hora dorada, sujetos luminosos con alto contraste, sombras profundas y contorno dorado en el cabello";
+"黑场" = "Punto negro";
 "默认" = "Predeterminado";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valor predeterminado: %@; rango: de %@ a %@; incremento: %@.";

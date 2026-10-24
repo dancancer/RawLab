@@ -22,6 +22,33 @@ import com.rawlab.android.testing.syntheticRlook
 
 @RunWith(AndroidJUnit4::class)
 class NativeProcessorTest {
+    @Test fun toneControlsReachPreviewExportAndClearTheReusedSession() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = File(context.cacheDir, "tone-controls-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val input = File(root, "pattern.png")
+        val bitmap = android.graphics.Bitmap.createBitmap(96, 64, android.graphics.Bitmap.Config.ARGB_8888)
+        for (y in 0 until 64) for (x in 0 until 96) bitmap.setPixel(x, y, android.graphics.Color.rgb(24 + x * 2, 16 + y * 3, 31 + x + y))
+        input.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val baseline = processor.preview(input, null, EditSettings(), 96, false)
+                for (settings in listOf(EditSettings(blackPoint = 60f), EditSettings(whitePoint = -60f),
+                    EditSettings(vibrance = 60f), EditSettings(blackPoint = -32.75f, whitePoint = 46.5f, vibrance = 21.25f))) {
+                    val changed = processor.preview(input, null, settings, 96, false)
+                    assertFalse("Each tone control reaches JNI and changes native pixels", baseline.pixels.contentEquals(changed.pixels))
+                    val output = File(root, "output.png")
+                    processor.export(input, null, settings, output, ExportFormat.PNG)
+                    val reference = File(root, "reference.png")
+                    NativeProcessor(NativeProcessor.CPU).use { fresh -> fresh.export(input, null, settings, reference, ExportFormat.PNG) }
+                    assertArrayEquals("FINAL tone state does not depend on preview history", reference.readBytes(), output.readBytes())
+                    assertArrayEquals("Zero tone explicitly clears the reused native session", baseline.pixels,
+                        processor.preview(input, null, EditSettings(), 96, false).pixels)
+                }
+            }
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun eachPerspectiveAxisReachesFinalExportAndForceRejectsIt() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val root = File(instrumentation.targetContext.cacheDir, "perspective-axes-${java.util.UUID.randomUUID()}").apply { mkdirs() }

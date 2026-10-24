@@ -209,6 +209,17 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensCorrection(JNIEnv* e
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneControls(JNIEnv* env, jobject, jlong id,
+    jfloat blackPoint, jfloat whitePoint, jfloat vibrance) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_tone_controls_config config{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(config),
+            blackPoint, whitePoint, vibrance};
+        check(sony2fuji_session_set_tone_controls(sessionFor(id), &config));
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
     jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
     jboolean horizontal, jboolean vertical, jfloat straighten,

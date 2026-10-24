@@ -35,7 +35,7 @@ internal sealed partial class RenderEngine
     {
         progress.Token.ThrowIfCancellationRequested();
         if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetLens(settings.Lens);ConfigureAI(true);
+        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetLens(settings.Lens);ConfigureAI(true);
         var request=settings.Request(path,null,0,null);
         Exception? callbackError=null;
         Native.AIProgress callback=(_,phase,done,total)=>{

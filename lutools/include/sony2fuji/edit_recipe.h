@@ -28,6 +28,8 @@ struct EditRecipe {
     float highlights = 0;
     float shadows = 0;
     float sCurve = 0;
+    sony2fuji_tone_controls_config toneControls{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION,
+        sizeof(sony2fuji_tone_controls_config), 0, 0, 0};
     float sharpening = 0;
     int32_t rawNoiseReduction = 0;
     int32_t chromaDenoise = 0;

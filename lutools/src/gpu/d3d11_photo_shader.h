@@ -1,6 +1,7 @@
 #pragma once
+#include "photo_tone_shader.h"
 namespace sony2fuji {
-inline constexpr const char* kD3DPhotoShader = R"hlsl(
+inline const std::string kD3DPhotoShader = toneControlsShader("float3") + R"hlsl(
 cbuffer Params : register(b0) {
     uint4 dimensions; // source width/height, destination width/height
     uint4 control; // stage, HSL active, use LUT, LUT size
@@ -13,6 +14,7 @@ cbuffer Params : register(b0) {
     float4 domainHigh;
     uint4 logTransfer; // input is F-Log, output is Log, output is F-Log, unused
     float4 hslHue[2], hslSaturation[2], hslLightness[2];
+    float4 toneControls;
 };
 StructuredBuffer<float3> source : register(t0);
 StructuredBuffer<float3> film : register(t1);
@@ -103,6 +105,7 @@ float3 evaluate(float3 inputColor) {
         if(logTransfer.y!=0)look=float3(neutral(decodeLog(look.r)),neutral(decodeLog(look.g)),neutral(decodeLog(look.b)));
         pixel=lerp(pixel,look,exposureStrength.w);
     }
+    pixel=tcBlackWhite(pixel,toneControls.x,toneControls.y);
     if(tone.z!=0 || tone.w!=0) {
         float light=dot(pixel,float3(.2126,.7152,.0722)),adjusted=light;
         if(tone.w!=0)adjusted=pow(saturate(adjusted),1-tone.w*.5);
@@ -114,7 +117,7 @@ float3 evaluate(float3 inputColor) {
         pixel=(pixel-.5)*tone.x+.5;float light=dot(pixel,float3(.2126,.7152,.0722));
         pixel=light+(pixel-light)*tone.y;
     }
-    return applyHsl(pixel);
+    return applyHsl(tcVibrance(pixel,toneControls.z));
 }
 float3 readPixel(uint2 p) { return source[p.y*dimensions.x+p.x]; }
 float3 resize(uint2 xy) {

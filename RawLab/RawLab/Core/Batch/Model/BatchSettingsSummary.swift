@@ -23,7 +23,7 @@ enum BatchSettingsSummary {
 
     // "全部调整"展开后：常驻行之外的工具，加上降噪、暗角、颗粒、镜头的各项参数
     static func details(_ settings: RawSettings) -> [BatchSettingRow] {
-        let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .saturation, .sharpening]
+        let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening]
         let tools = scalars.map { BatchSettingRow(title: $0.title, value: $0.displayValue($0.value(from: settings))) }
         return tools + whiteBalance(settings) + denoise(settings.denoise)
             + effects.map { row($0.key, effectValue(settings.photoEffects, $0.parameter)) } + lens(settings.lensSettings)

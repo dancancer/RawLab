@@ -36,7 +36,13 @@ extension RenderEngine {
         case .renderedDNG: format = "dng"
         }
         let size: [String: Any] = exportLongEdge.map { ["mode": "limit_long_edge", "long_edge": $0] } ?? ["mode": "native"]
-        let document: [String: Any] = [
+        guard state.toneSettings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        let toneConfig = state.toneSettings.nativeConfig
+        var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
+            "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
+        if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
+        if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
+        var document: [String: Any] = [
             "schema_version": 5,
             "processing": ["family": state.processing.family, "version": state.processing.version,
                            "quality": state.processing.quality],
@@ -45,9 +51,7 @@ extension RenderEngine {
                 "exposure": ["mode": exposure, "ev": request.exposure_ev, "brightness": request.brightness],
                 "white_balance": wb,
                 "look": ["path": lut?.standardizedFileURL.path as Any? ?? NSNull(), "strength": Float(state.strength)],
-                "tone": ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
-                         "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)),
-                         "s_curve": request.tone_curve],
+                "tone": tone,
                 "detail": ["sharpening": request.sharpening],
                 "hsl": ["hue": hsl.hue.map(Float.init), "saturation": hsl.saturation.map(Float.init), "lightness": hsl.lightness.map(Float.init)],
                 "effects": ["vignette_amount": fx.vignette_amount, "vignette_midpoint": fx.vignette_midpoint,
@@ -67,6 +71,10 @@ extension RenderEngine {
             ],
             "output": ["path": output.standardizedFileURL.path, "format": format, "jpeg_quality": 95, "size": size]
         ]
+        if toneConfig.vibrance != 0, var edits = document["edits"] as? [String: Any] {
+            edits["color"] = ["vibrance": toneConfig.vibrance]
+            document["edits"] = edits
+        }
         return try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
     }
 }

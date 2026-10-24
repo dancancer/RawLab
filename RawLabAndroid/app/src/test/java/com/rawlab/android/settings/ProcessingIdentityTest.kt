@@ -14,7 +14,7 @@ class ProcessingIdentityTest {
             assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
             assertEquals(identity, settings.reset().processing)
         }
-        val old = SettingsCodec.encode(EditSettings()).split('|').take(53).joinToString("|")
+        val old = legacyPipeSettings(EditSettings()).split('|').take(53).joinToString("|")
         assertEquals(ProcessingIdentity.LEGACY, SettingsCodec.decode(old).processing)
         for (invalid in listOf("rawlab,3,standard", "other,2,standard", "rawlab,2,fast", "", "rawlab,2,standard,x")) {
             assertThrows(IllegalArgumentException::class.java) { SettingsCodec.decode("$old|$invalid") }
@@ -29,7 +29,9 @@ class ProcessingIdentityTest {
             assertEquals(ProcessingIdentity.CURRENT, EditStore(directory).load(photo)?.processing)
             val file = File(directory, "edits.properties")
             val values = Properties().also { file.inputStream().use(it::load) }
-            val key = values.stringPropertyNames().single { it.endsWith(".processing") }
+            val valueKey = values.stringPropertyNames().single { it.endsWith(".values") }
+            values.setProperty(valueKey, legacyCSVSettings(EditSettings()))
+            val key = valueKey.removeSuffix(".values") + ".processing"
             values.remove(key)
             file.outputStream().use { values.store(it, null) }
             val legacy = EditStore(directory).load(photo)!!

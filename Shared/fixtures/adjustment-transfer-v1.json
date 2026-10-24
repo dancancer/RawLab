@@ -415,6 +415,239 @@
           "light.exposure": 1
         }
       }
+    },
+    {
+      "id": "tone-controls-ui-units",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": -37.25,
+          "tone.white_point": 42.5,
+          "color.vibrance": 18.125
+        }
+      },
+      "neutral_effective": {
+        "tone.black_point": -37.25,
+        "tone.white_point": 42.5,
+        "color.vibrance": 18.125
+      }
+    },
+    {
+      "id": "tone.black_point-boundary--100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": -100
+        }
+      },
+      "neutral_effective": {
+        "tone.black_point": -100
+      }
+    },
+    {
+      "id": "tone.black_point-boundary-100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": 100
+        }
+      },
+      "neutral_effective": {
+        "tone.black_point": 100
+      }
+    },
+    {
+      "id": "tone.black_point-out-of-range--100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": -100.01
+        }
+      }
+    },
+    {
+      "id": "tone.black_point-out-of-range-100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": 100.01
+        }
+      }
+    },
+    {
+      "id": "tone.white_point-boundary--100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": -100
+        }
+      },
+      "neutral_effective": {
+        "tone.white_point": -100
+      }
+    },
+    {
+      "id": "tone.white_point-boundary-100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": 100
+        }
+      },
+      "neutral_effective": {
+        "tone.white_point": 100
+      }
+    },
+    {
+      "id": "tone.white_point-out-of-range--100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": -100.01
+        }
+      }
+    },
+    {
+      "id": "tone.white_point-out-of-range-100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": 100.01
+        }
+      }
+    },
+    {
+      "id": "color.vibrance-boundary--100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": -100
+        }
+      },
+      "neutral_effective": {
+        "color.vibrance": -100
+      }
+    },
+    {
+      "id": "color.vibrance-boundary-100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": 100
+        }
+      },
+      "neutral_effective": {
+        "color.vibrance": 100
+      }
+    },
+    {
+      "id": "color.vibrance-out-of-range--100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": -100.01
+        }
+      }
+    },
+    {
+      "id": "color.vibrance-out-of-range-100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": 100.01
+        }
+      }
     }
   ]
 }

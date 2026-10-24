@@ -250,6 +250,26 @@ struct RawSettings: Codable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
 
+    var toneControls: ToneControlsSettings?
+    var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
+    var blackPoint: Double {
+        get { toneSettings.blackPoint }
+        set { setTone(\.blackPoint, to: newValue) }
+    }
+    var whitePoint: Double {
+        get { toneSettings.whitePoint }
+        set { setTone(\.whitePoint, to: newValue) }
+    }
+    var vibrance: Double {
+        get { toneSettings.vibrance }
+        set { setTone(\.vibrance, to: newValue) }
+    }
+    private mutating func setTone(_ key: WritableKeyPath<ToneControlsSettings, Double>, to value: Double) {
+        var state = toneSettings
+        state[keyPath: key] = value
+        toneControls = state.isIdentity ? nil : state
+    }
+
     var processing = ProcessingIdentity.current
     var geometry = GeometrySettings()
     var denoise = RawDenoiseSettings()
@@ -309,7 +329,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry, processing
+        case masterRecipeID, lensCorrection, geometry, processing, toneControls
     }
 
     var clampedLUTStrength: Float {
@@ -375,6 +395,10 @@ struct RawSettings: Codable, Equatable {
         geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
         guard geometry.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
+        }
+        toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
+        guard toneControls?.isValid ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")
         }
         exposureMode = RawExposureMode(rawValue: try values.decodeIfPresent(Int.self, forKey: .exposureMode) ?? 0) ?? .scene
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl) ?? HSLSettings()

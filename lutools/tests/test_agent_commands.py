@@ -109,6 +109,10 @@ class AgentCommands(unittest.TestCase):
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
                 features = result["result"]["optional_features"]
+                self.assertEqual(result["result"]["tone_controls"], {
+                    "version": 1, "recipe_min_version": 5, "range": [-1, 1],
+                    "fields": ["tone.black_point", "tone.white_point", "color.vibrance"],
+                })
                 if sys.platform in ("darwin", "win32"):
                     self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                 if sys.platform == "win32":

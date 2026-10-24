@@ -321,6 +321,7 @@
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的透视参数" = "Invalid perspective settings";
 "无效的预览模式" = "Invalid preview mode";
+"无效的黑白场或鲜艳度参数" = "Invalid black point, white point, or vibrance values";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法写入输出目录，请检查访问权限和剩余空间。" = "Unable to write to the output folder. Check access permissions and free space.";
 "无法创建处理会话" = "Unable to create processing session";
@@ -472,6 +473,7 @@
 "畸变标定不可用" = "Distortion Calibration Unavailable";
 "畸变校正" = "Distortion correction";
 "畸变矫正" = "Distortion Correction";
+"白场" = "White point";
 "白平衡" = "White Balance";
 "白平衡模式" = "White balance mode";
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "AI denoising is enabled on the target. Turn it off first, or deselect the standard denoise fields.";
@@ -686,8 +688,10 @@
 "高光保护" = "Highlight protection";
 "高度" = "Height";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "High-key clear daylight, Japanese sky cyan, soft matte shadows and creamy peach skin tones";
+"鲜艳度" = "Vibrance";
 "黄" = "Yellow";
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Soft twilight glow, warm-gold highlights and gentle blue-cyan shadows, low-contrast oil-painted portraits with adjacent-color harmony";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Golden-hour feature-film look, luminous subjects in high contrast, deep shadows and golden hair rim light";
 "黑位 %@" = "Black level %@";
+"黑场" = "Black point";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Default: %@; range: %@ to %@; increment: %@.";

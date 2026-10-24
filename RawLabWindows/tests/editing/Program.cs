@@ -2,6 +2,7 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+ToneControlsChecks.Run();
 AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
@@ -179,7 +180,7 @@ try
     SavedEdit Edit(Adjustments state, string? look = "film.cube") => new(resetIdentity, state.Capture(), look);
     EditorResetScope Group(EditorAdjustmentGroup group) => new(EditorResetKind.Group, group);
     Check(EditorAdjustmentRules.Tools(EditorAdjustmentGroup.Light).SequenceEqual(new[] { EditorAdjustmentTool.Exposure,
-        EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
+        EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.BlackPoint, EditorAdjustmentTool.WhitePoint, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
         "light tool order follows native ownership");
     foreach (var tool in Enum.GetValues<EditorAdjustmentTool>())
         Check(EditorAdjustmentRules.Tools(EditorAdjustmentRules.GroupFor(tool)).Contains(tool), "every native tool belongs to one group");
@@ -202,6 +203,7 @@ try
         EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry }), "Each group opens its frozen default tool");
     foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
         var ownedState=mixedState.Clone();
+        if(EditorAdjustmentRules.ToneParameterFor(tool) is {} toneParameter)ownedState.SetTone(toneParameter,25);
         ownedState.Set(Parameter.Strength,37);ownedState.Set(Parameter.Highlights,11);ownedState.Set(Parameter.Shadows,-14);
         ownedState.Set(Parameter.Contrast,23);ownedState.Set(Parameter.ToneCurve,-19);ownedState.Set(Parameter.Temperature,6000);ownedState.Set(Parameter.Tint,12);
         var edit=Edit(ownedState);var frozen=edit.Settings.Copy();var expected=frozen.Copy();var ownedLook=edit.Look;
@@ -217,6 +219,9 @@ try
             case EditorAdjustmentTool.Denoise:expected=expected with{Denoise=new(),DisplayChromaDenoise=0};break;
             case EditorAdjustmentTool.Geometry:expected=expected with{Geometry=new()};break;
             case EditorAdjustmentTool.Lens:expected=expected with{Lens=new()};break;
+            case EditorAdjustmentTool.BlackPoint:expected=expected with{ToneControls=expected.ToneControls! with{BlackPoint=0}};break;
+            case EditorAdjustmentTool.WhitePoint:expected=expected with{ToneControls=expected.ToneControls! with{WhitePoint=0}};break;
+            case EditorAdjustmentTool.Vibrance:expected=expected with{ToneControls=expected.ToneControls! with{Vibrance=0}};break;
             default:
                 var parameter=EditorAdjustmentRules.ParameterFor(tool);expected.Values[(int)parameter]=parameter==Parameter.Strength ? 100 : 0;
                 if(tool==EditorAdjustmentTool.Exposure)expected=expected with{ExposureMode=1};break;

@@ -168,6 +168,7 @@ private func makeMixedSettings() -> Adjustments {
     settings.temperature = 5200
     settings.tint = 12
     settings.strength = 0.85
+    settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
     settings.contrast = 24.5
     settings.highlights = 31.5
     settings.shadows = -27.5

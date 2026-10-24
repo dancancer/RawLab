@@ -321,6 +321,7 @@
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
 "无效的透视参数" = "Paramètres de perspective non valides";
 "无效的预览模式" = "Mode d'aperçu invalide";
+"无效的黑白场或鲜艳度参数" = "Valeurs de point noir, de point blanc ou de vibrance non valides";
 "无法写入成片，请检查输出位置和剩余空间。" = "Impossible d’écrire la photo exportée. Vérifiez l’emplacement de sortie et l’espace disponible.";
 "无法写入输出目录，请检查访问权限和剩余空间。" = "Impossible d’écrire dans le dossier de sortie. Vérifiez les autorisations d’accès et l’espace disponible.";
 "无法创建处理会话" = "Impossible de créer une session de traitement";
@@ -472,6 +473,7 @@
 "畸变标定不可用" = "Étalonnage de la distorsion indisponible";
 "畸变校正" = "Correction de la distorsion";
 "畸变矫正" = "Correction de la distorsion";
+"白场" = "Point blanc";
 "白平衡" = "Balance des blancs";
 "白平衡模式" = "Mode de balance des blancs";
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "Le débruitage IA est activé sur la photo cible. Désactivez-le ou désélectionnez les réglages de débruitage standard.";
@@ -686,8 +688,10 @@
 "高光保护" = "Protection des hautes lumières";
 "高度" = "Hauteur";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "Lumière du jour claire et high-key, ciel cyan japonais, ombres mates douces et carnations pêche crémeuses";
+"鲜艳度" = "Vibrance";
 "黄" = "Jaune";
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Douce lueur du crépuscule, hautes lumières or chaud et ombres bleu cyan douces, portraits peints à l'huile à faible contraste et couleurs voisines";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Look de film haut de gamme à l'heure dorée, sujet lumineux en fort contraste, ombres profondes et contour doré des cheveux";
 "黑位 %@" = "Niveau de noir %@";
+"黑场" = "Point noir";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valeur par défaut : %@ ; plage : de %@ à %@ ; pas : %@.";

@@ -22,7 +22,7 @@ internal static class AgentRecipeChecks
         File.WriteAllText(unicodeRecipe,Recipe(raw,new Adjustments(),null,Path.Combine(output,"unicode.png"),128));
         RunCli("--recipe",unicodeRecipe,"--print-recipe");
         var look=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_PROVIA_65grid_V.1.00.cube");
-        var mixed=new Adjustments{ExposureMode=2,Hsl=new HslSettings().WithValue(0,0,18).WithValue(1,4,-27).WithValue(2,7,13),
+        var mixed=new Adjustments{ExposureMode=2,ToneControls=new(-32.75,46.5,21.25),Hsl=new HslSettings().WithValue(0,0,18).WithValue(1,4,-27).WithValue(2,7,13),
             Effects=new(-28,63,19,72,34,18,31,42),Denoise=new(true,8,51,63),DisplayChromaDenoise=2,
             Geometry=new(.07,.08,.8,.76,1,true,false,3.5,.04,-.03)};
         mixed.Set(Parameter.Exposure,.35);mixed.Set(Parameter.Contrast,23.5);mixed.Set(Parameter.Saturation,-17.8);

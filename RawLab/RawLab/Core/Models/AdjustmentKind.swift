@@ -6,6 +6,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     case highlights
     case shadows
     case contrast
+    case blackPoint, whitePoint, vibrance
     case toneCurve
     case saturation
     case hsl
@@ -26,6 +27,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return L10n.text("强度")
         case .exposure:
             return L10n.text("曝光")
+        case .blackPoint: return L10n.text("黑场")
+        case .whitePoint: return L10n.text("白场")
+        case .vibrance: return L10n.text("鲜艳度")
         case .contrast:
             return L10n.text("对比度")
         case .highlights:
@@ -58,6 +62,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return "camera.aperture"
         case .exposure:
             return "plusminus.circle"
+        case .blackPoint: return "circle.fill"
+        case .whitePoint: return "circle"
+        case .vibrance: return "drop.fill"
         case .contrast:
             return "circle.lefthalf.filled"
         case .highlights:
@@ -90,7 +97,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return RawSettings.lutStrengthRange
         case .exposure:
             return -4...4
-        case .contrast:
+        case .contrast, .blackPoint, .whitePoint, .vibrance:
             return -100...100
         case .highlights:
             return -100...100
@@ -122,7 +129,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return 0.01
         case .exposure:
             return 0.05
-        case .contrast:
+        case .contrast, .blackPoint, .whitePoint, .vibrance:
             return 1
         case .highlights, .shadows:
             return 1
@@ -150,6 +157,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return settings.lutStrength
         case .exposure:
             return settings.exposure
+        case .blackPoint: return settings.blackPoint
+        case .whitePoint: return settings.whitePoint
+        case .vibrance: return settings.vibrance
         case .contrast:
             return (settings.contrast - 1) * 100
         case .highlights:
@@ -182,6 +192,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             settings.lutStrength = value
         case .exposure:
             settings.exposure = value
+        case .blackPoint: settings.blackPoint = value
+        case .whitePoint: settings.whitePoint = value
+        case .vibrance: settings.vibrance = value
         case .contrast:
             settings.contrast = 1 + value / 100
         case .highlights:
@@ -216,7 +229,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     // ------------------------------------------------------------------------
     var unit: String {
         switch self {
-        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening: return "%"
+        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance: return "%"
         case .exposure: return "EV"
         case .temperature: return "K"
         default: return ""
@@ -237,7 +250,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     // 选中工具圆圈里的数值徽标：只给单一数值的工具
     static let badgeKinds: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows,
-                                                  .contrast, .toneCurve, .saturation, .sharpening]
+                                                  .contrast, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance]
 
     func badge(for value: Double) -> String? {
         Self.badgeKinds.contains(self) ? formatted(value) : nil
@@ -249,7 +262,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return String(format: "%.0f%%", value * 100)
         case .exposure:
             return String(format: "%+.2f EV", value)
-        case .contrast, .saturation, .sharpening:
+        case .contrast, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance:
             return String(format: "%+.0f%%", value)
         case .noiseReduction:
             return String(format: "%.2f", value)

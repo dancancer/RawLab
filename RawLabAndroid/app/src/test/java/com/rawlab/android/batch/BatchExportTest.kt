@@ -1,5 +1,6 @@
 package com.rawlab.android.batch
 
+import com.rawlab.android.settings.legacyPipeSettings
 import com.rawlab.android.batch.journal.BatchJournal
 import org.junit.Assert.*
 import org.junit.Test
@@ -25,7 +26,7 @@ class BatchExportTest {
             recipeID = "recipe", displayChromaDenoise = 2,
             effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f), lens = lens,
             geometry = GeometrySettings(.2f, .1f, .8f, .75f, 3, true, true, -8.5f, -.7f, .25f))
-        val fields = SettingsCodec.encode(settings).split('|')
+        val fields = legacyPipeSettings(settings).split('|')
         assertEquals(54, fields.size)
         assertEquals(settings, SettingsCodec.decode(fields.joinToString("|")))
         for (count in listOf(12, 16, 25, 50, 51, 52)) {
@@ -169,6 +170,7 @@ class BatchExportTest {
     @Test fun settingsCodecRoundTripsEffectsAndDisplayChromaAlongsideWaveletDenoise() {
         val settings = EditSettings(
             denoise = DenoiseSettings(true, 10f, 72f, 100f),
+            blackPoint = -37.25f, whitePoint = 42.5f, vibrance = 18.125f,
             displayChromaDenoise = 1,
             effects = PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f,
                 vignetteRoundness = -30f, vignetteFeather = 70f, vignetteHighlights = 60f,

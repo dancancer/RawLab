@@ -44,8 +44,8 @@ sealed interface EditorResetResult {
 object EditorAdjustmentRules {
     private val toolGroups = mapOf(
         EditorAdjustmentGroup.LOOKS to listOf(0, 15, 1),
-        EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 5, 6),
-        EditorAdjustmentGroup.COLOR to listOf(8, 7, 14),
+        EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 18, 19, 5, 6),
+        EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14),
         EditorAdjustmentGroup.EFFECTS to listOf(12, 13),
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
@@ -144,6 +144,9 @@ object EditorAdjustmentRules {
         14 -> s.copy(hsl = d.hsl)
         16 -> s.copy(lens = d.lens)
         17 -> s.copy(geometry = d.geometry)
+        18 -> s.copy(blackPoint = d.blackPoint)
+        19 -> s.copy(whitePoint = d.whitePoint)
+        20 -> s.copy(vibrance = d.vibrance)
         else -> s
     }
 

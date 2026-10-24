@@ -207,6 +207,14 @@ final class RenderEngine {
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
     var lastAIBackend: String { String(cString: sony2fuji_session_get_ai_backend(session)) }
 
+    private func configureTone(_ settings: ToneControlsSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_controls(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数"))
+        }
+    }
+
     private func configureProcessing(_ identity: ProcessingIdentity) throws {
         guard sony2fuji_session_set_processing_version(session, identity.core) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("不支持此处理版本，原有记录未被覆盖。"))
@@ -246,6 +254,7 @@ final class RenderEngine {
         guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
         try configureLens(settings.lensSettings)
         try configureAI(enabled: true)
         var request = sony2fuji_request()
@@ -270,6 +279,7 @@ final class RenderEngine {
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
         try configureAI(enabled: settings.aiDenoiseEnabled)
         try configureLens(settings.lensSettings)
         try configureGeometry(settings.geometrySettings)
@@ -328,6 +338,7 @@ final class RenderEngine {
         }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }

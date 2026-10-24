@@ -7,30 +7,28 @@ import com.rawlab.android.geometry.GeometrySettings
 // ============================================================================
 
 internal object SettingsCodec {
-    fun encode(settings: EditSettings): String = listOf(
-        settings.film, settings.strength, settings.exposure, settings.highlights, settings.shadows,
-        settings.contrast, settings.toneCurve, settings.saturation, settings.customWb,
-        settings.temperature, settings.tint, settings.sharpening,
-        settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
-        settings.displayChromaDenoise,
-        settings.effects.vignetteAmount, settings.effects.vignetteMidpoint, settings.effects.vignetteRoundness,
-        settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
-        settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
-    ).plus(settings.exposureMode).plus(settings.hsl.packed().toList()).plus(settings.recipeID ?: "")
-        .plus(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(settings.lens.encode().toByteArray(Charsets.UTF_8)))
-        .plus(settings.geometry.encode()).plus(settings.processing.encode())
-        .joinToString("|")
+    fun encode(settings: EditSettings): String = StructuredSettingsCodec.encode(settings, "batch_settings")
 
     fun decode(value: String): EditSettings {
+        if (value.startsWith("v2:")) {
+            // 旧 film ID 也能以 v2: 开头；只有完整合法的旧记录才走此兼容分支。
+            return runCatching { decodeLegacy(value) }.getOrElse {
+                StructuredSettingsCodec.decode(value, "batch_settings")
+            }
+        }
+        return decodeLegacy(value)
+    }
+
+    private fun decodeLegacy(value: String): EditSettings {
         val fields = value.split('|')
         require(fields.size in listOf(12, 16, 25, 50, 51, 52, 53, 54))
         return EditSettings(film = fields[0], strength = fields[1].toFloat(), exposure = fields[2].toFloat(),
             highlights = fields[3].toFloat(), shadows = fields[4].toFloat(), contrast = fields[5].toFloat(),
-            toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = fields[8].toBoolean(),
+            toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = parseBoolean(fields[8]),
             temperature = fields[9].toFloat(), tint = fields[10].toFloat(), sharpening = fields[11].toFloat(),
-            denoise = if (fields.size == 16) DenoiseSettings(fields[12].toBoolean(), fields[13].toFloat(),
+            denoise = if (fields.size == 16) DenoiseSettings(parseBoolean(fields[12]), fields[13].toFloat(),
                 fields[14].toFloat(), fields[15].toFloat())
-            else if (fields.size >= 25) DenoiseSettings(fields[12].toBoolean(), fields[13].toFloat(),
+            else if (fields.size >= 25) DenoiseSettings(parseBoolean(fields[12]), fields[13].toFloat(),
                 fields[14].toFloat(), fields[15].toFloat())
             else DenoiseSettings(),
             displayChromaDenoise = if (fields.size >= 25) parseChromaMode(fields[16]) else 0,
@@ -46,6 +44,12 @@ internal object SettingsCodec {
                 vignetteHighlights = fields[21].toFloat(), grainAmount = fields[22].toFloat(),
                 grainSize = fields[23].toFloat(), grainRoughness = fields[24].toFloat(),
             ) else PhotoEffectsSettings())
+    }
+
+    private fun parseBoolean(value: String): Boolean = when (value.lowercase(java.util.Locale.ROOT)) {
+        "true" -> true
+        "false" -> false
+        else -> throw IllegalArgumentException("Invalid legacy batch boolean")
     }
 
     private fun parseChromaMode(value: String): Int {

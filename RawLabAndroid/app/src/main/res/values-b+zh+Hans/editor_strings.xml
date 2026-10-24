@@ -12,6 +12,7 @@
     <string name="adjustment_toggle_sign">"切换正负号"</string>
     <string name="all_tools">"全部工具"</string>
     <string name="batch_confirmation_count">"%1$d 项输出待核对"</string>
+    <string name="black_point">"黑场"</string>
     <string name="dcp_automatic_black">"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"</string>
     <string name="dcp_invalid_calibration">"DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"</string>
     <string name="dcp_invalid_exposure">"DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。"</string>
@@ -98,6 +99,7 @@
     <string name="geometry_perspective_tool">"透视"</string>
     <string name="geometry_position_size">"位置与尺寸"</string>
     <string name="info_unavailable">"不可用"</string>
+    <string name="invalid_tone_controls">"无效的黑白场或鲜艳度参数"</string>
     <string name="jpeg_description">"sRGB · 质量 95 · 保留拍摄元数据"</string>
     <string name="look_invalid_file">"外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。"</string>
     <string name="look_remove_body">"将移除 RawLab 保存的外观副本，原始文件不会被删除。"</string>
@@ -240,5 +242,7 @@
     <string name="transfer_undo_count">"撤销 %1$s 张"</string>
     <string name="transfer_undone">"已撤销"</string>
     <string name="transfer_unrepresentable">"目标无法保留未选参数，请调整复制范围。"</string>
+    <string name="vibrance">"鲜艳度"</string>
     <string name="vignette_highlights_unavailable">"仅在暗角强度为负值时可用。"</string>
+    <string name="white_point">"白场"</string>
 </resources>

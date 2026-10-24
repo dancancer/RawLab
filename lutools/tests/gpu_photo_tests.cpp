@@ -3,6 +3,7 @@
 #include "sony2fuji/lut_parser.h"
 #include "gpu/photo_gpu.h"
 #include "hsl_gpu_boundary.h"
+#include "tone_gpu_boundary.h"
 #ifdef SONY2FUJI_ENABLE_D3D11
 #include "gpu/d3d11_photo.h"
 #endif
@@ -237,6 +238,18 @@ int main() {
 #endif
     }), "HSL out-of-range boundary and active adjustment");
 
+    check(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+        const sony2fuji::ToneControlsOptions& controls, sony2fuji::ImageData& output) {
+#ifdef SONY2FUJI_ENABLE_D3D11
+        sony2fuji::D3D11PhotoRenderer renderer;
+        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,0,output,{},0,false,{},controls);
+#else
+        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,output,{}, {},0,false,{},controls);
+#endif
+    }), "Tone controls preserve CPU float reference including gamut/zero boundaries");
+
     const auto lutPath = makePhotoLUT();
     const auto lutUtf8 = lutPath.u8string();
     auto lut = std::shared_ptr<sony2fuji::LUT3D>(
@@ -428,6 +441,11 @@ int main() {
     }
     hslRequest.noise_reduction = .4f; hslRequest.sharpening = .7f;
     compareForcedCase(session, forced, hslRequest, "HSL before chroma/detail/effects and final resize");
+    sony2fuji_tone_controls_config tone{1,sizeof(tone),.6f,-.4f,.8f};
+    for (auto* target : {session,forced}) sony2fuji_session_set_tone_controls(target,&tone);
+    compareForcedCase(session,forced,hslRequest,"Tone controls with LUT, HSL, chroma, detail, effects and resize");
+    tone.black_point=tone.white_point=tone.vibrance=0;
+    for (auto* target : {session,forced}) sony2fuji_session_set_tone_controls(target,&tone);
     hsl = {SONY2FUJI_HSL_CONFIG_VERSION, sizeof(hsl), {}, {}, {}};
     for (auto* target : {session, forced}) {
         sony2fuji_session_set_hsl(target, &hsl);

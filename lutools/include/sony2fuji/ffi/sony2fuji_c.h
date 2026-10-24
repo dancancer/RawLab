@@ -235,6 +235,15 @@ typedef struct sony2fuji_hsl_config {
     float lightness[SONY2FUJI_HSL_CHANNELS];  // +/-0.5 display-HSL lightness.
 } sony2fuji_hsl_config;
 
+#define SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION 1u
+typedef struct sony2fuji_tone_controls_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float black_point; // -1..1, default 0. Display black endpoint, not sensor metadata.
+    float white_point; // -1..1, default 0. Display white endpoint.
+    float vibrance;    // -1..1, default 0. Independent of legacy saturation.
+} sony2fuji_tone_controls_config;
+
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
     uint32_t version;
@@ -456,6 +465,14 @@ sony2fuji_status sony2fuji_session_set_photo_effects(
 // Force requires GPU success, as with the other photo adjustments.
 sony2fuji_status sony2fuji_session_set_hsl(
     sony2fuji_session* session, const sony2fuji_hsl_config* config
+);
+
+// Additive API; request v2 stays unchanged. All zero is an exact bypass.
+// Display-encoded sRGB: black/white precede legacy tone, vibrance precedes HSL.
+// Invalid values preserve the previous state; reused sessions must explicitly
+// set the complete configuration, including zero for an unadjusted next photo.
+sony2fuji_status sony2fuji_session_set_tone_controls(
+    sony2fuji_session* session, const sony2fuji_tone_controls_config* config
 );
 
 // Additive API; request v2 is unchanged. Identity is an exact bypass.

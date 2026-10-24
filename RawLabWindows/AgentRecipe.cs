@@ -20,6 +20,13 @@ internal sealed partial class RenderEngine
         var exposure=state.ExposureMode switch{0=>"scene",1=>"preview",2=>"sensor",_=>throw new ArgumentOutOfRangeException(nameof(settings))};
         var format=ExportFormatExtensions.FromPath(output) switch{ExportFormat.Jpeg=>"jpeg",ExportFormat.Png=>"png",ExportFormat.RenderedDng=>"dng",_=>throw new ArgumentOutOfRangeException(nameof(output))};
         object size=longEdge is {} edge ? new{mode="limit_long_edge",long_edge=edge} : new{mode="native"};
+        var toneControls=state.ToneControls.NativeConfig();
+        var tone=new Dictionary<string,float> {
+            ["contrast"]=Math.Clamp(request.Contrast,0,2),["saturation"]=Math.Clamp(request.Saturation,0,2),
+            ["highlights"]=Math.Clamp(request.Highlights,-1,1),["shadows"]=Math.Clamp(request.Shadows,-1,1),["s_curve"]=Math.Clamp(request.ToneCurve,-1,1)
+        };
+        if(toneControls.BlackPoint!=0)tone["black_point"]=toneControls.BlackPoint;
+        if(toneControls.WhitePoint!=0)tone["white_point"]=toneControls.WhitePoint;
         var document=new{
             schema_version=5,
             processing=ProcessingIdentity.Require(state.Processing),
@@ -28,8 +35,7 @@ internal sealed partial class RenderEngine
                 exposure=new{mode=exposure,ev=request.ExposureEv,brightness=request.Brightness},
                 white_balance=whiteBalance,
                 look=new{path=look==null ? null : Path.GetFullPath(look),strength=(float)state[Parameter.Strength]/100},
-                tone=new{contrast=Math.Clamp(request.Contrast,0,2),saturation=Math.Clamp(request.Saturation,0,2),
-                    highlights=Math.Clamp(request.Highlights,-1,1),shadows=Math.Clamp(request.Shadows,-1,1),s_curve=Math.Clamp(request.ToneCurve,-1,1)},
+                tone,
                 detail=new{sharpening=Math.Clamp(request.Sharpening,0,2)},
                 hsl=new{hue=hsl.Hue,saturation=hsl.Saturation,lightness=hsl.Lightness},
                 effects=new{vignette_amount=effects.VignetteAmount,vignette_midpoint=effects.VignetteMidpoint,
@@ -45,6 +51,11 @@ internal sealed partial class RenderEngine
             },
             output=new{path=Path.GetFullPath(output),format,jpeg_quality=request.JpegQuality,size}
         };
-        return JsonSerializer.Serialize(document,new JsonSerializerOptions{WriteIndented=true});
+        var options=new JsonSerializerOptions{WriteIndented=true};
+        var json=JsonSerializer.Serialize(document,options);
+        if(toneControls.Vibrance==0)return json;
+        var result=System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        result["edits"]!["color"]=new System.Text.Json.Nodes.JsonObject { ["vibrance"]=toneControls.Vibrance };
+        return result.ToJsonString(options);
     }
 }

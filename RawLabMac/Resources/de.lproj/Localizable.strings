@@ -321,6 +321,7 @@
 "无效的视口预览模式" = "Ungültiger Modus für die Ausschnittvorschau";
 "无效的透视参数" = "Ungültige Perspektivwerte";
 "无效的预览模式" = "Ungültiger Vorschaumodus";
+"无效的黑白场或鲜艳度参数" = "Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik";
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
 "无法写入输出目录，请检查访问权限和剩余空间。" = "In den Ausgabeordner kann nicht geschrieben werden. Bitte überprüfen Sie die Zugriffsrechte und den freien Speicherplatz.";
 "无法创建处理会话" = "Verarbeitungssitzung konnte nicht erstellt werden";
@@ -472,6 +473,7 @@
 "畸变标定不可用" = "Verzeichnungskalibrierung nicht verfügbar";
 "畸变校正" = "Verzeichnungskorrektur";
 "畸变矫正" = "Verzeichnungskorrektur";
+"白场" = "Weißpunkt";
 "白平衡" = "Weißabgleich";
 "白平衡模式" = "Weißabgleichmodus";
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "KI-Entrauschen ist für das Zielfoto aktiviert. Deaktiviere es zuerst oder wähle die normalen Entrauschungsfelder ab.";
@@ -686,8 +688,10 @@
 "高光保护" = "Highlight-Schutz";
 "高度" = "Höhe";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "Helles, klares Tageslicht mit japanischem Himmelcyan, weichen matten Schatten und cremigen Pfirsichtönen";
+"鲜艳度" = "Dynamik";
 "黄" = "Gelb";
 "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应" = "Sanftes Dämmerlicht, warmgoldene Lichter und weiche blau-cyane Schatten, kontrastarme Ölgemälde-Porträts mit benachbarten Farbtönen";
 "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓" = "Hochwertiger Look zur goldenen Stunde, leuchtende Motive bei hohem Kontrast, tiefe Schatten und goldenes Haar-Kantenlicht";
 "黑位 %@" = "Schwarzwert %@";
+"黑场" = "Schwarzpunkt";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Standard: %@; Bereich: %@ bis %@; Schrittweite: %@.";

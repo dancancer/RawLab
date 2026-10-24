@@ -77,12 +77,21 @@ void hslAxis(const Json& object, const char* key, float* destination) {
 void completeEdits(const Json& edits, EditRecipe& parsed) {
     if (edits.contains("tone")) {
         const auto& tone = edits.at("tone");
-        fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve"});
+        if (parsed.schemaVersion >= 5)
+            fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve", "black_point", "white_point"});
+        else fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve"});
         parsed.contrast = number(tone, "contrast", 1, 0, 2, "edits.tone");
         parsed.saturation = number(tone, "saturation", 1, 0, 2, "edits.tone");
         parsed.highlights = number(tone, "highlights", 0, -1, 1, "edits.tone");
         parsed.shadows = number(tone, "shadows", 0, -1, 1, "edits.tone");
         parsed.sCurve = number(tone, "s_curve", 0, -1, 1, "edits.tone");
+        parsed.toneControls.black_point = number(tone, "black_point", 0, -1, 1, "edits.tone");
+        parsed.toneControls.white_point = number(tone, "white_point", 0, -1, 1, "edits.tone");
+    }
+    if (edits.contains("color")) {
+        const auto& color = edits.at("color");
+        fields(color, "edits.color", {"vibrance"});
+        parsed.toneControls.vibrance = number(color, "vibrance", 0, -1, 1, "edits.color");
     }
     if (edits.contains("detail")) {
         const auto& detail = edits.at("detail");
@@ -200,7 +209,8 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         const auto& edits = required(root, "edits", "recipe");
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
         else if (version < 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
-        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
+        else if (version == 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
+        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "color", "detail", "hsl", "effects", "denoise", "lens_correction"});
         if (version >= 4) completeEdits(edits, parsed);
         const auto& exposure = required(edits, "exposure", "edits");
         fields(exposure, "edits.exposure", {"mode", "ev", "brightness"});
@@ -318,6 +328,14 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         throw std::invalid_argument("Unsupported processing.version");
     if (recipe.schemaVersion < 5 && recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY)
         throw std::invalid_argument("processing.version requires schema_version 5");
+    const auto& controls = recipe.toneControls;
+    if (controls.version != SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION || controls.struct_size != sizeof(controls))
+        throw std::invalid_argument("Invalid tone controls configuration");
+    for (float value : {controls.black_point,controls.white_point,controls.vibrance})
+        if (!std::isfinite(value) || std::abs(value)>1)
+            throw std::invalid_argument("Tone controls must be finite and within [-1,1]");
+    if (recipe.schemaVersion < 5 && (controls.black_point != 0 || controls.white_point != 0 || controls.vibrance != 0))
+        throw std::invalid_argument("Tone controls require schema_version 5");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
         case SONY2FUJI_WB_CAMERA: wbMode = "camera"; break;
@@ -359,6 +377,10 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         auto& edits = document["edits"];
         edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
             {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
+        // Identity omits additive keys so existing normalized recipes stay byte-identical.
+        if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
+        if (controls.white_point != 0) edits["tone"]["white_point"] = controls.white_point;
+        if (controls.vibrance != 0) edits["color"]["vibrance"] = controls.vibrance;
         edits["detail"] = {{"sharpening", recipe.sharpening}};
         edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
         const auto& fx = recipe.effects;

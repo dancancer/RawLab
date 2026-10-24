@@ -29,7 +29,8 @@ class EditStore(private val directory: File,
     private val file = File(directory, "edits.properties")
     private val processLock = locks.getOrPut(directory.canonicalPath) { ReentrantLock() }
     @Volatile private var lastReadableRecords: Map<PhotoIdentity, EditSettings> = emptyMap()
-    private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>, val revisions: Map<PhotoIdentity, String>) {
+    private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>, val revisions: Map<PhotoIdentity, String>,
+        val properties: Properties = Properties()) {
         fun record(identity: PhotoIdentity) = VersionedPhotoEdit(identity, records[identity], revisions[identity])
     }
 
@@ -73,8 +74,8 @@ class EditStore(private val directory: File,
         val records = current.records.toMutableMap()
         if (settings == null) records.remove(identity) else records[identity] = settings
         val revisions = current.revisions + (identity to UUID.randomUUID().toString())
-        val updated = Snapshot(records, revisions)
-        write(updated)
+        val updated = Snapshot(records, revisions, current.properties)
+        write(updated, identity)
         lastReadableRecords = records.toMap()
         return updated.record(identity)
     }
@@ -85,6 +86,14 @@ class EditStore(private val directory: File,
         val properties = Properties()
         file.inputStream().use(properties::load)
         require(properties.getProperty("format.version") in setOf(null, "1")) { "Unsupported edit store version" }
+        val recordSuffixes = setOf("values", "film", "recipe", "lens", "geometry", "processing")
+        for (key in properties.stringPropertyNames().filter { it.startsWith("record.") }) {
+            val parts = key.split('.')
+            require(parts.size == 3 && parts[1].isNotEmpty() && parts[2] in recordSuffixes) { "Unknown edit record field" }
+            val values = properties.getProperty("record.${parts[1]}.values")
+            require(values != null) { "Missing edit record values" }
+            require(!values.startsWith("v2:") || parts[2] == "values") { "Conflicting structured edit fields" }
+        }
         val records = linkedMapOf<PhotoIdentity, EditSettings>()
         val revisions = linkedMapOf<PhotoIdentity, String>()
         properties.stringPropertyNames().filter { it.startsWith("revision.") }.forEach { key ->
@@ -99,35 +108,30 @@ class EditStore(private val directory: File,
             val storedFilm = properties.getProperty("record.${encoded}.film", "neutral")
             val film = runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
                 .getOrDefault(storedFilm)
-            records[identity] = decode(properties.getProperty(key), film).copy(
+            val encodedSettings = properties.getProperty(key)
+            records[identity] = if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
+            else decode(encodedSettings, film).copy(
                 recipeID = properties.getProperty("record.$encoded.recipe"),
                 lens = LensSettings.decode(properties.getProperty("record.$encoded.lens")),
                 geometry = GeometrySettings.decode(properties.getProperty("record.$encoded.geometry")),
                 processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))
         }
         lastReadableRecords = records.toMap()
-        return Snapshot(records, revisions)
+        return Snapshot(records, revisions, properties)
     }
 
     private fun encodeIdentity(identity: PhotoIdentity) = Base64.getUrlEncoder().withoutPadding()
         .encodeToString(identity.value.toByteArray(StandardCharsets.UTF_8))
     private fun decodeIdentity(encoded: String) = PhotoIdentity(String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8))
 
-    private fun write(updated: Snapshot) {
-        val properties = Properties()
+    private fun write(updated: Snapshot, identity: PhotoIdentity) {
+        val properties = Properties().apply { putAll(updated.properties) }
         properties.setProperty("format.version", "1")
-        updated.revisions.forEach { (identity, revision) ->
-            properties.setProperty("revision.${encodeIdentity(identity)}", revision)
-        }
-        updated.records.forEach { (identity, settings) ->
-            val encoded = encodeIdentity(identity)
-            properties.setProperty("record.$encoded.values", encode(settings))
-            settings.recipeID?.let { properties.setProperty("record.$encoded.recipe", it) }
-            properties.setProperty("record.$encoded.lens", settings.lens.encode())
-            properties.setProperty("record.$encoded.geometry", settings.geometry.encode())
-            properties.setProperty("record.$encoded.processing", settings.processing.encode())
-            properties.setProperty("record.$encoded.film", Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(settings.film.toByteArray(StandardCharsets.UTF_8)))
+        val encoded = encodeIdentity(identity)
+        properties.stringPropertyNames().filter { it.startsWith("record.$encoded.") }.forEach(properties::remove)
+        properties.setProperty("revision.$encoded", updated.revisions.getValue(identity))
+        updated.records[identity]?.let { settings ->
+            properties.setProperty("record.$encoded.values", StructuredSettingsCodec.encode(settings, "photo_edit"))
         }
         val temporary = File(directory, "edits-${System.nanoTime()}.tmp")
         try {
@@ -139,27 +143,16 @@ class EditStore(private val directory: File,
         }
     }
 
-    private fun encode(settings: EditSettings): String = listOf(
-        settings.strength, settings.exposure, settings.highlights, settings.shadows,
-        settings.contrast, settings.toneCurve, settings.saturation,
-        if (settings.customWb) 1f else 0f, settings.temperature, settings.tint, settings.sharpening,
-        if (settings.denoise.enabled) 1f else 0f, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
-        settings.displayChromaDenoise,
-        settings.effects.vignetteAmount, settings.effects.vignetteMidpoint, settings.effects.vignetteRoundness,
-        settings.effects.vignetteFeather, settings.effects.vignetteHighlights,
-        settings.effects.grainAmount, settings.effects.grainSize, settings.effects.grainRoughness,
-    ).plus(settings.exposureMode).plus(settings.hsl.packed().toList()).joinToString(",")
-
     private fun decode(values: String, film: String): EditSettings {
         val fields = values.split(',').map(String::toFloat)
         require(fields.size in listOf(11, 15, 24, 49))
         return EditSettings(film = film, strength = fields[0], exposure = fields[1],
             highlights = fields[2], shadows = fields[3], contrast = fields[4], toneCurve = fields[5],
-            saturation = fields[6], customWb = fields[7] != 0f, temperature = fields[8], tint = fields[9],
+            saturation = fields[6], customWb = parseBoolean(fields[7]), temperature = fields[8], tint = fields[9],
             sharpening = fields[10], denoise = if (fields.size == 15)
-                DenoiseSettings(fields[11] != 0f, fields[12], fields[13], fields[14])
+                DenoiseSettings(parseBoolean(fields[11]), fields[12], fields[13], fields[14])
             else if (fields.size >= 24)
-                DenoiseSettings(fields[11] != 0f, fields[12], fields[13], fields[14])
+                DenoiseSettings(parseBoolean(fields[11]), fields[12], fields[13], fields[14])
             else DenoiseSettings(),
             displayChromaDenoise = if (fields.size >= 24) parseChromaMode(fields[15]) else 0,
             exposureMode = if (fields.size == 49) parseChromaMode(fields[24]) else 0,
@@ -169,6 +162,11 @@ class EditStore(private val directory: File,
                 vignetteFeather = fields[19], vignetteHighlights = fields[20], grainAmount = fields[21],
                 grainSize = fields[22], grainRoughness = fields[23],
             ) else PhotoEffectsSettings())
+    }
+
+    private fun parseBoolean(value: Float): Boolean {
+        require(value == 0f || value == 1f) { "Invalid legacy edit boolean" }
+        return value == 1f
     }
 
     private fun parseChromaMode(value: Float): Int {

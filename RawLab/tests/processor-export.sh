@@ -18,7 +18,7 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
+    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
@@ -29,6 +29,10 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/processor-export"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
+if [[ "${RAWLAB_BUILD_ONLY:-0}" == 1 ]]; then
+    echo "Built processor export harness without running tests: $HARNESS"
+    exit 0
+fi
 if [[ -n "${RAWLAB_TEST_RAW:-}" ]]; then
     SIMCTL_CHILD_RAWLAB_MASTER_RECIPE_CATALOG="$ROOT/Shared/master-recipes.json" \
         SIMCTL_CHILD_RAWLAB_TEST_MASTER_RECIPES="${RAWLAB_TEST_MASTER_RECIPES:-0}" \

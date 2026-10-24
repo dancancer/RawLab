@@ -1,6 +1,26 @@
 import Foundation
 
 struct Adjustments: Equatable, Codable {
+    var toneControls: ToneControlsSettings?
+    var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
+    var blackPoint: Double {
+        get { toneSettings.blackPoint }
+        set { setTone(\.blackPoint, to: newValue) }
+    }
+    var whitePoint: Double {
+        get { toneSettings.whitePoint }
+        set { setTone(\.whitePoint, to: newValue) }
+    }
+    var vibrance: Double {
+        get { toneSettings.vibrance }
+        set { setTone(\.vibrance, to: newValue) }
+    }
+    private mutating func setTone(_ key: WritableKeyPath<ToneControlsSettings, Double>, to value: Double) {
+        var state = toneSettings
+        state[keyPath: key] = value
+        toneControls = state.isIdentity ? nil : state
+    }
+
     var processing = ProcessingIdentity.current
     var exposureMode = ExposureMode.preview
     var exposure = 0.0
@@ -323,7 +343,7 @@ struct Adjustments: Equatable, Codable {
 
     func validateResetValues() throws {
         for parameter in [AdjustmentParameter.strength, .exposure, .temperature, .tint, .contrast,
-                          .highlights, .shadows, .toneCurve, .saturation, .sharpening, .rawNoiseReduction] {
+                          .highlights, .shadows, .toneCurve, .blackPoint, .whitePoint, .vibrance, .saturation, .sharpening, .rawNoiseReduction] {
             let value = self[keyPath: parameter.spec.keyPath]
             guard value.isFinite, parameter.spec.range.contains(value) else {
                 throw EditorResetBlockedReason.invalidSnapshot(parameter.rawValue)
@@ -440,9 +460,10 @@ enum EditorAdjustmentRules {
                 settings.masterRecipeID != nil || settings.strength != 1
         case .group(.light):
             return (context.isRaw && settings.exposureMode != context.defaultExposureMode) || settings.exposure != 0 ||
-                settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0
+                settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0 ||
+                settings.blackPoint != 0 || settings.whitePoint != 0
         case .group(.color):
-            return settings.saturation != 0 || !settings.hslSettings.isIdentity ||
+            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity ||
                 (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
                 (settings.masterRecipe != nil && settings.tint != 0)
         case .group(.effects): return settings.effectSettings != PhotoEffectsSettings()
@@ -501,8 +522,9 @@ enum EditorAdjustmentRules {
                 result.settings.exposureMode = context.defaultExposureMode
                 result.settings.exposure = 0; result.settings.contrast = 0
                 result.settings.highlights = 0; result.settings.shadows = 0; result.settings.toneCurve = 0
+                result.settings.blackPoint = 0; result.settings.whitePoint = 0
             case .group(.color):
-                result.settings.saturation = 0
+                result.settings.saturation = 0; result.settings.vibrance = 0
                 result.settings.resetWhiteBalance()
                 result.settings.hsl = nil
             case .group(.effects): result.settings.photoEffects = nil
@@ -533,6 +555,10 @@ extension Adjustments {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         processing = values.contains(.processing) ?
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
+        toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
+        guard toneSettings.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")
+        }
         exposureMode = try values.decodeIfPresent(ExposureMode.self, forKey: .exposureMode) ?? .scene
         exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
         temperature = try values.decodeIfPresent(Double.self, forKey: .temperature) ?? 6500

@@ -23,6 +23,7 @@ struct BatchExportTests {
         defer { UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"]) }
         var settings = RawSettings.default
         settings.exposure = 0.5
+        settings.blackPoint = -30; settings.whitePoint = 40; settings.vibrance = 20
         settings.whiteBalanceMode = .custom
         let rows = BatchSettingsSummary.headline(settings) + BatchSettingsSummary.details(settings)
         let titles = rows.map(\.title)
@@ -30,6 +31,8 @@ struct BatchExportTests {
         check(Set(titles).count == titles.count, "batch summary lists each setting once: \(titles)")
         check(!rows.contains { $0.title == $0.value }, "batch summary values do not repeat their names")
         check(value("曝光") == "+0,50 EV", "batch exposure uses the editor name and interface number format")
+        check(value("黑场") == "-30 %" && value("白场") == "+40 %" && value("鲜艳度") == "+20 %",
+              "batch summary includes each tone value in the editor units")
         check(value("降噪") != nil && value("粗色斑抑制") != nil,
               "batch denoise rows use the editor's toggle and parameter names")
         // 目录里"关闭"是关闭按钮（Close / Schließen），关着的开关要用"停用"（Off / Aus），与 Mac 一致
@@ -59,6 +62,7 @@ struct BatchExportTests {
         try Data("source".utf8).write(to: sourceURL)
         var settings = RawSettings.default
         settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
+        settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
         settings.geometry.cropX = 0.2
         settings.geometry.cropWidth = 0.6
         settings.geometry.quarterTurns = 3
@@ -91,7 +95,7 @@ struct BatchExportTests {
         check(rawTargetSettings.geometry == rasterSettings.geometry &&
               rawTargetSettings.hsl == rasterSettings.hsl &&
               rawTargetSettings.photoEffects == rasterSettings.photoEffects &&
-              rawTargetSettings.denoise == rasterSettings.denoise,
+              rawTargetSettings.denoise == rasterSettings.denoise && rawTargetSettings.toneSettings == rasterSettings.toneSettings,
               "mixed batch keeps raster style settings frozen while resolving target camera defaults")
         check(rasterSource.settings(for: .raster) == rasterSettings,
               "raster target keeps its frozen settings without mutating the batch source")
@@ -107,6 +111,7 @@ struct BatchExportTests {
         let reopenedJob = try journal.load(id: job.id)
         let pendingJobs = try journal.pendingJobs()
         check(reopenedJob?.source.settings.geometry == settings.geometry, "journal freezes geometry settings")
+        check(reopenedJob?.source.settings.toneSettings == settings.toneSettings, "journal freezes independent tone controls")
         check(reopenedJob?.targets.count == 6, "journal round-trips the selected rows")
         check(reopenedJob?.source.settings.lensCorrection == settings.lensCorrection &&
               reopenedJob?.source.settings.lensSettings.coreProfileID.isEmpty == true,

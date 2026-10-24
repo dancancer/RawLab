@@ -330,7 +330,7 @@ schema. `--print-recipe` still validates without opening the RAW and preserves
 recipe-relative paths. The CLI capabilities response must advertise v4 only
 when the v4 parser and serializer are available.
 
-## v5: Processing Identity
+## v5: Processing Identity and Additive Tone Controls
 
 [Schema v5](edit-json-v5.schema.json) retains all v4 input, edit and output
 groups, and requires one additional root object:
@@ -350,6 +350,17 @@ Schemas 1–4 implicitly select processing version 1, continue rejecting the
 processing version 2 cannot be serialized as schema 1–4: the serializer throws
 instead of discarding its identity. A schema 5 recipe can explicitly select
 version 1 without changing any edit values.
+
+Schema 5 also accepts optional `edits.tone.black_point`,
+`edits.tone.white_point`, and `edits.color.vibrance`, each a finite number in
+`[-1,1]`, default zero. These are resolved core values, independent of legacy
+contrast/saturation and master-recipe strength. The
+[tone controls v1 contract](tone-controls-v1.md) defines their stage and numerical
+behavior. Existing v5 recipes without them remain valid and retain the same
+normalized form; zero-valued additive keys are omitted during normalization.
+Schemas 1–4 reject the new fields, and serialization refuses to discard nonzero
+controls into an older schema. CLI capabilities advertises their algorithm
+version, minimum recipe version, stable field names and range in `tone_controls`.
 
 The macOS and Windows Agent adapters emit schema 5 and preserve the photo's
 selected identity, including old records restored as version 1. Ordinary

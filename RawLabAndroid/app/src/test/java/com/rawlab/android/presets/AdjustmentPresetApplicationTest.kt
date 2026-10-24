@@ -12,10 +12,13 @@ class AdjustmentPresetApplicationTest {
         val directory = Files.createTempDirectory("preset-application").toFile()
         try {
             val source = File(directory, "source.raw").apply { writeText("source") }
-            val session = AdjustmentTransferSession(EditStore(File(directory, "edits")))
+            val store = EditStore(File(directory, "edits"))
+            val session = AdjustmentTransferSession(store)
             val context = AdjustmentTransferContext(source.absolutePath, true)
             val clipboard = session.copy(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST)), EditSettings(contrast = .2f), context)
-            val payload = AdjustmentTransfer.capture(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)), EditSettings(exposure = 1.25f), context)
+            val tone = EditSettings(exposure = 1.25f, blackPoint = -37.25f, whitePoint = 42.5f, vibrance = 18.125f)
+            val payload = AdjustmentTransfer.capture(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE,
+                AdjustmentField.BLACK_POINT, AdjustmentField.WHITE_POINT, AdjustmentField.VIBRANCE)), tone, context)
             val preset = AdjustmentPresetStore(File(directory, "presets")).create("Morning", payload)
             assertTrue(source.delete())
             val identity = PhotoIdentity("target")
@@ -32,6 +35,7 @@ class AdjustmentPresetApplicationTest {
             assertEquals(AdjustmentStatus.UNCHANGED, session.apply(session.prepare(neutral, listOf(target), AdjustmentHistoryTransaction.Action.PRESET)).single().status)
             assertTrue(session.canRedoPhoto(identity))
             assertEquals(AdjustmentStatus.APPLIED, session.redoPhoto(identity).single().status)
+            assertEquals(tone.copy(contrast = .3f), store.load(identity))
         } finally { directory.deleteRecursively() }
     }
 

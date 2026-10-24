@@ -1,4 +1,5 @@
 #include "gpu/photo_gpu.h"
+#include "gpu/photo_tone_shader.h"
 #include "gpu/metal_dcp_shader.h"
 #include "gpu/metal_effects_shader.h"
 #include "core/photo_lut.h"
@@ -64,8 +65,9 @@ struct PhotoParams {
     uint32_t hslEnabled;
     float hslHue[8], hslSaturation[8], hslLightness[8];
     uint32_t srcRowOffset, dstRowOffset, srcRows, dstRows;
+    float blackPoint, whitePoint, vibrance;
 };
-static_assert(sizeof(PhotoParams) == 304, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 316, "Photo Metal parameter layout");
 static_assert(offsetof(PhotoParams, hslHue) == 192, "HSL Metal options offset");
 
 struct PhotoEffectsParams {
@@ -117,10 +119,10 @@ struct CachedDcp {
 std::mutex gDcpCacheMutex;
 CachedDcp gDcpCache;
 
-static const char* kShaderSource = R"metal(
+static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-
+)metal") + sony2fuji::toneControlsShader("float3") + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -152,6 +154,7 @@ struct Params {
     uint hslEnabled;
     float hslHue[8], hslSaturation[8], hslLightness[8];
     uint srcRowOffset, dstRowOffset, srcRows, dstRows;
+    float blackPoint, whitePoint, vibrance;
 };
 
 inline float3 lerp3(float3 a, float3 b, float t) {
@@ -473,9 +476,9 @@ kernel void toneAdjustments(
     if (gid >= count) {
         return;
     }
-    float3 pixel = float3(source[gid]);
+    float3 pixel = tcBlackWhite(float3(source[gid]), params.blackPoint, params.whitePoint);
     if (params.toneEnabled == 0u) {
-        destination[gid] = packed_float3(applyHsl(pixel, params));
+        destination[gid] = packed_float3(applyHsl(tcVibrance(pixel, params.vibrance), params));
         return;
     }
     float highlights = clamp(params.highlights, -1.0f, 1.0f);
@@ -511,7 +514,7 @@ kernel void toneAdjustments(
             luminance + (pixel.b - luminance) * saturation
         );
     }
-    destination[gid] = packed_float3(applyHsl(pixel, params));
+    destination[gid] = packed_float3(applyHsl(tcVibrance(pixel, params.vibrance), params));
 }
 
 kernel void noiseReduction(
@@ -579,7 +582,7 @@ MetalContext& metalContext() {
             if (!context.queue) {
                 return;
             }
-            NSString* source = [NSString stringWithUTF8String:kShaderSource];
+            NSString* source = [NSString stringWithUTF8String:kShaderSource.c_str()];
             NSError* error = nil;
             id<MTLLibrary> library =
                 [context.device newLibraryWithSource:source options:nil error:&error];
@@ -781,7 +784,8 @@ PhotoParams makeParams(
     const RGB& relativeWB,
     const CachedLUT* cachedLUT,
     float lutStrength,
-    const sony2fuji::HslOptions& hsl = {}
+    const sony2fuji::HslOptions& hsl = {},
+    const sony2fuji::ToneControlsOptions& toneControls = {}
 ) {
     PhotoParams params{};
     params.srcWidth = srcWidth;
@@ -823,6 +827,8 @@ PhotoParams makeParams(
     params.noiseReduction = request.noise_reduction;
     params.sharpening = request.sharpening;
     params.hslEnabled = hsl.active();
+    params.blackPoint = toneControls.blackPoint; params.whitePoint = toneControls.whitePoint;
+    params.vibrance = toneControls.vibrance;
     std::copy(hsl.hue.begin(), hsl.hue.end(), params.hslHue);
     std::copy(hsl.saturation.begin(), hsl.saturation.end(), params.hslSaturation);
     std::copy(hsl.lightness.begin(), hsl.lightness.end(), params.hslLightness);
@@ -914,7 +920,8 @@ bool renderPhotoMetalImpl(
     const sony2fuji::PhotoEffectsOptions& effects,
     int chromaDenoise,
     bool preserveSourceResolution,
-    const sony2fuji::HslOptions& hsl
+    const sony2fuji::HslOptions& hsl,
+    const sony2fuji::ToneControlsOptions& toneControls
 ) {
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
@@ -925,7 +932,7 @@ bool renderPhotoMetalImpl(
         !std::isfinite(request.tone_curve) || !std::isfinite(request.noise_reduction) ||
         !std::isfinite(request.sharpening) || !std::isfinite(request.lut_strength) ||
         !std::isfinite(relativeWB.r) || !std::isfinite(relativeWB.g) ||
-        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || chromaDenoise < 0 || chromaDenoise > 2) {
+        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || !toneControls.valid() || chromaDenoise < 0 || chromaDenoise > 2) {
         return false;
     }
     size_t inputCount = 0;
@@ -1072,7 +1079,7 @@ bool renderPhotoMetalImpl(
                     current = a; next = b;
                 }
                 const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
-                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl);
+                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl, toneControls);
                 auto constants = makeParamsBuffer(context.device, params);
                 if (!constants) return false;
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
@@ -1156,7 +1163,8 @@ bool renderPhotoMetal(
     const PhotoEffectsOptions& effects,
     int chromaDenoise,
     bool preserveSourceResolution,
-    const HslOptions& hsl
+    const HslOptions& hsl,
+    const ToneControlsOptions& toneControls
 ) {
     bool result = false;
     @try {
@@ -1164,7 +1172,7 @@ bool renderPhotoMetal(
             try {
                 result = renderPhotoMetalImpl(
                     input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl
+                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls
                 );
             } catch (...) {
                 result = false;
@@ -1195,7 +1203,8 @@ bool renderPhotoMetal(
     const PhotoEffectsOptions&,
     int,
     bool,
-    const HslOptions&
+    const HslOptions&,
+    const ToneControlsOptions&
 ) {
     return false;
 }

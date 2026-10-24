@@ -6,5 +6,5 @@ trap 'rm -rf "$OUT"' EXIT
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 swiftc -swift-version 5 -sdk "$SDK" \
     -module-cache-path "$OUT/ModuleCache" \
-    "$ROOT/Shared/GeometrySettings.swift" "$ROOT/RawLabMac/tests/CropInteractionTests.swift" -o "$OUT/tests"
+    "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/RawLabMac/tests/CropInteractionTests.swift" -o "$OUT/tests"
 "$OUT/tests"

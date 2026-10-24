@@ -1,8 +1,8 @@
 # I0 字段目录与兼容边界
 
 状态：I0 字段来源与版本边界已复核。下文带源码链接的事实保留 I0 基线；当前 selective
-payload v1 及 Mac/iOS adapter 以 [选择性 payload 合同](selective-payload.md) 为准，
-Android/Windows adapter 和四端格式冻结仍待完成。I0 基线为
+payload v1 及四端 adapter 以 [选择性 payload 合同](selective-payload.md) 为准。
+ITER-05 的新增字段见 §3.2，其数值和接入状态与历史 I0 事实分开登记。I0 基线为
 `development@12cda1c67ddd1c58095831ff12a112fc1356da78`。带源码行号的链接固定到该提交，避免后续实现改变行号后混淆历史依据。
 
 本文只登记稳定字段语义、现有来源和格式边界，不新增通用 native DTO，不修改现有
@@ -104,14 +104,33 @@ payload 或 native record 的编辑参数部分。六组是 UI/reset 归属；�
 | `geometry.lens.auto_crop` | `geometry` | Boolean，默认 `true`。 | 仅随明确 lens scope 复制；不能因未选择 lens 把目标 lens 清空。 | [edit-json.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/docs/edit-json.md?plain=1#L305)。 |
 | `geometry.lens.profile_id` | `geometry` | nullable stable catalog ID；`null` 为自动匹配。 | 只保存请求 ID；目标是否匹配、无数据库、无标定等是 prepare 结果，不是 payload 值。 | [edit-json.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/docs/edit-json.md?plain=1#L306)；C ABI setter：[sony2fuji_c.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/ffi/sony2fuji_c.cpp#L1083)。 |
 
-### 3.2 尚未支持的候选新字段
+### 3.2 ITER-05 新增字段
+
+三个字段默认均为 0，UI、native snapshot 和 selective payload 均为 `[-100,100]`；
+仅在 C ABI/Agent 边界除以 100。它们独立于旧 master recipe strength，RAW/raster
+均适用，默认 common scope 包含；旧 payload 缺失时保留目标值。
+
+| 稳定字段 ID | group | native / Agent 映射 | reset 与缺失语义 |
+| --- | --- | --- | --- |
+| `tone.black_point` | `light` | tone controls v1 的 `black_point` / v5 `edits.tone.black_point` | light reset 清零；旧 native 缺失为 0。 |
+| `tone.white_point` | `light` | tone controls v1 的 `white_point` / v5 `edits.tone.white_point` | light reset 清零；旧 native 缺失为 0。 |
+| `color.vibrance` | `color` | tone controls v1 的 `vibrance` / v5 `edits.color.vibrance` | color reset 清零；旧 native 缺失为 0。 |
+
+`tone.*` 是已实现的稳定交换 ID，替代 I0 中尚未发布的 `light.black_point/white_point`
+候选名称。数值合同、质量向量和后端顺序以 [tone controls v1](../../../lutools/docs/tone-controls-v1.md)
+为准。Apple optional 对象、Windows nullable 扩展保持旧字段布局；Android 照片记录与
+batch settings 使用各自 `v2:` JSON，仍读取全部已有 CSV/pipe 长度。读取不迁移，
+只有明确保存才写入新格式；不改变 transfer `payload_version=1`。
+
+实现、模型及 native 验证已接通，实际四端新工具 UI 待解锁后统一验收，见
+[接入计划](../../integration/editing-iteration/tone-controls-plan.md)。这不是 IT-06/15 验收通过声明。
+
+### 3.3 尚未支持的候选新字段
 
 以下名称只登记未来接线位置，不表示当前 core、Agent、四端或 GPU 已支持：
 
 | 候选字段/配置 | 设计状态 | 当前边界 |
 | --- | --- | --- |
-| `light.black_point` / `light.white_point` | proposed | 方案候选 core `[-1,1]`，不改 LibRaw sensor black/white；当前 request v2/C ABI 没有该配置。 |
-| `color.vibrance` | proposed | 方案候选 core `[-1,1]`；当前 photo effects/HSL v1 不包含该字段。 |
 | `color.grading.shadows/midtones/highlights` | proposed | 方案候选 hue/saturation；当前无 `color_grading_config`。 |
 | `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v4 只有 scalar `s_curve`。 |
 | `effects.clarity` / `effects.dehaze` | proposed | 方案候选 core `[-1,1]`；当前无 atmosphere config，算法数值合同和质量集未冻结。 |
@@ -172,7 +191,7 @@ payload 或 native record 的编辑参数部分。六组是 UI/reset 归属；�
 - 新配置必须有独立 `version/struct_size` 和 setter；setter 先校验全部值，错误版本、size、非有限、越界、非法曲线或不支持能力时保留旧 session 状态。新 session 从 identity 开始，复用 session 时请求必须显式设置或清零，不能泄漏上一张照片参数。
 - 当前 setter 的 `struct_size` 兼容规则存在 exact/min 差异，新增 ABI 不得自行假定旧规则：wavelet 实现接受 `>= sizeof`，effects/HSL/geometry/perspective/lens 实现要求 exact size，详见 [sony2fuji_c.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/ffi/sony2fuji_c.cpp#L1083)。
 - Agent v1～v4 的未知字段/旧版本拒绝行为保持；只有 v5 parser、serializer、CLI capability、native preview/export、Mac/Windows AgentRecipe 和实际核心全部接通，才能宣告 v5。当前能力查询仍报告 recipe versions `[1,2,3,4]`：[agent_commands.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/cli/agent_commands.cpp#L133)。
-- 新算法候选 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 目前只是技术方案候选，未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
+- I0 基线时 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 均为候选；ITER-05 当前接入以 §3.2 为准，其余仍未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
 
 ## 7. 未来版本、缺字段和失败处理
 

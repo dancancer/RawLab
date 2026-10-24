@@ -17,6 +17,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         let existing = output.appendingPathComponent("one-Velvia.jpg")
         try Data("existing".utf8).write(to: existing)
         var settings = Adjustments(); settings.exposure = 0.75
+        settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
         settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
         settings.exposureMode = .sensor
         var hsl = HSLSettings()
@@ -53,6 +54,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(try Data(contentsOf: protectedURL) == protectedBytes, "unsupported batch journal remains intact")
         try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).settings.geometrySettings == frozenGeometry,
                   "batch journal round-trip preserves geometry")
+        try check(try JSONDecoder().decode(BatchExportJob.self, from: encodedJob).settings.toneSettings == settings.toneSettings,
+                  "batch journal round-trip preserves independent tone controls")
         var dngRecord = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
         dngRecord["outputFormat"] = "dng"
         dngRecord["version"] = 2

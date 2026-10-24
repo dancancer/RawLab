@@ -12,6 +12,7 @@
     <string name="adjustment_toggle_sign">"Toggle sign"</string>
     <string name="all_tools">"All tools"</string>
     <string name="batch_confirmation_count">"%1$d outputs need verification"</string>
+    <string name="black_point">"Black point"</string>
     <string name="dcp_automatic_black">"The DCP requires automatic black-level processing, which is not yet supported by this conversion. Select a black-level policy explicitly with the preparation tool first."</string>
     <string name="dcp_invalid_calibration">"The DCP lacks a unique, valid D65 ColorMatrix/ForwardMatrix and cannot be converted."</string>
     <string name="dcp_invalid_exposure">"The DCP exposure offset is invalid; it must be a finite value from -16 to +16 EV."</string>
@@ -98,6 +99,7 @@
     <string name="geometry_perspective_tool">"Perspective"</string>
     <string name="geometry_position_size">"Position and size"</string>
     <string name="info_unavailable">"Unavailable"</string>
+    <string name="invalid_tone_controls">"Invalid black point, white point, or vibrance values"</string>
     <string name="jpeg_description">"sRGB · quality 95 · capture metadata"</string>
     <string name="look_invalid_file">"The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required."</string>
     <string name="look_remove_body">"The copy of the look saved by RawLab will be removed; the original file will not be deleted."</string>
@@ -240,5 +242,7 @@
     <string name="transfer_undo_count">"Undo photos: %1$s"</string>
     <string name="transfer_undone">"Undone"</string>
     <string name="transfer_unrepresentable">"The target cannot preserve unselected settings. Change the copy scope."</string>
+    <string name="vibrance">"Vibrance"</string>
     <string name="vignette_highlights_unavailable">"Available only when vignette intensity is negative."</string>
+    <string name="white_point">"White point"</string>
 </resources>

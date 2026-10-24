@@ -285,6 +285,12 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
                 onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
             }
+            18 -> NumericControl(R.string.black_point, edits.blackPoint, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(blackPoint = value), dragging) }, { onEdit(edits.copy(blackPoint = 0f), false) })
+            19 -> NumericControl(R.string.white_point, edits.whitePoint, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(whitePoint = value), dragging) }, { onEdit(edits.copy(whitePoint = 0f), false) })
+            20 -> NumericControl(R.string.vibrance, edits.vibrance, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(vibrance = value), dragging) }, { onEdit(edits.copy(vibrance = 0f), false) })
             10 -> NumericControl(R.string.sharpening, edits.sharpening * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(sharpening = value / 100), dragging) }, { onEdit(edits.copy(sharpening = 0f), false) })
         }

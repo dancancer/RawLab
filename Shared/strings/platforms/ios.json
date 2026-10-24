@@ -2336,6 +2336,22 @@
     "重新载入": {
       "formats": [],
       "source": "重新载入"
+    },
+    "黑场": {
+      "formats": [],
+      "source": "黑场"
+    },
+    "白场": {
+      "formats": [],
+      "source": "白场"
+    },
+    "鲜艳度": {
+      "formats": [],
+      "source": "鲜艳度"
+    },
+    "无效的黑白场或鲜艳度参数": {
+      "formats": [],
+      "source": "无效的黑白场或鲜艳度参数"
     }
   },
   "overrides": {

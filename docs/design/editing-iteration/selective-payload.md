@@ -62,6 +62,7 @@ Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 | `light.exposure` | `[-20,20]` EV；目标 native 范围更窄时明确 blocked，不裁切。 |
 | `light.contrast`、`color.saturation` | `[0,2]` multiplier，默认 1；Mac 的百分比偏移只在 adapter 中换算。 |
 | `light.highlights/shadows/s_curve` | `[-1,1]`；highlights 使用 core 方向，Mac UI 正号在 adapter 中翻转。 |
+| `tone.black_point`、`tone.white_point`、`color.vibrance` | `[-100,100]`，默认 0，独立于旧 recipe strength。前两项归 light，鲜艳度归 color；common 默认包含，缺字段保留目标。仅在 native/Agent 边界除以 100。 |
 | `light.exposure_mode` | `scene/preview/sensor`；raster 来源只允许 sensor。 |
 | `detail.sharpening` | `[0,2]`。 |
 | `color.hsl.<axis>.<channel>` | 24 个独立数值，`[-100,100]`，保留小数。 |

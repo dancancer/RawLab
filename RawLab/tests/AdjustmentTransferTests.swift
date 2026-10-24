@@ -18,7 +18,63 @@ import Foundation
     static func payload(_ values: [String: AdjustmentTransferValue], recipe: AdjustmentRecipeContext? = nil) throws -> AdjustmentTransferPayload {
         try .init(source: .init(identifier: "frozen", isRaw: true, processingVersion: 2, recipe: recipe), values: values)
     }
+
+    static func toneControls() throws {
+        var source = RawSettings.default
+        source.blackPoint = -37.25; source.whitePoint = 42.5; source.vibrance = 18.125
+        let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(source))
+        check(restored == source, "Tone controls persist as one optional object")
+        let old = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
+        check(old.toneControls == nil && old.toneSettings.isIdentity, "Legacy missing tone object retains identity")
+        for invalid in [-100.1, 100.1] {
+            rejects("Persisted tone values outside the UI range are rejected") {
+                _ = try JSONDecoder().decode(RawSettings.self, from: Data("{\"toneControls\":{\"blackPoint\":\(invalid),\"whitePoint\":0,\"vibrance\":0}}".utf8))
+            }
+        }
+        let fields: Set<AdjustmentTransferField> = [.blackPoint, .whitePoint, .vibrance]
+        let modified = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(modified.fields == fields, "Modified scope includes exactly the changed tone fields")
+        let standard = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        check(fields.isSubset(of: standard.fields), "Standard copy includes all tone fields")
+        let applied = try IOSAdjustmentTransfer.prepare(payload: modified, target: state(), context: raw)
+        check(applied.settings.toneSettings == source.toneSettings, "Tone transfer keeps exact UI units")
+        var target = RawSettings.default
+        target.blackPoint = 71; target.whitePoint = -29; target.vibrance = -63
+        let partial = try IOSAdjustmentTransfer.capture(scope: .custom([.whitePoint]), snapshot: state(source), context: raw)
+        let merged = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.blackPoint == 71 && merged.settings.whitePoint == 42.5 && merged.settings.vibrance == -63,
+            "Partial tone paste preserves unselected target fields")
+        let legacy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
+        check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.toneSettings == target.toneSettings,
+            "Legacy payload omitting tone fields does not reset target tone")
+        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.lutStrength = 0
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        target.lutStrength = 0
+        let recipeCopy = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        let recipeMerged = try IOSAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw)
+        check(recipeMerged.settings.toneSettings == source.toneSettings,
+            "Tone controls remain independent of source and target recipe strength, including zero")
+        var resetSource = source; resetSource.masterRecipeID = nil
+        let snapshot = state(resetSource)
+        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
+        check(EditorAdjustmentRules.isModified(.group(.light), snapshot: snapshot, context: resetContext)
+            && EditorAdjustmentRules.isModified(.tool(.adjustment(.vibrance)), snapshot: snapshot, context: resetContext),
+            "New controls participate in group and tool modified state")
+        if case .candidate(let reset, _) = EditorAdjustmentRules.prepareReset(.group(.light), snapshot: snapshot, context: resetContext) {
+            check(reset.settings.blackPoint == 0 && reset.settings.whitePoint == 0 && reset.settings.vibrance == 18.125,
+                "Light reset clears black and white point while preserving vibrance")
+        } else { fatalError("Tone light reset must prepare a candidate") }
+        if case .candidate(let reset, _) = EditorAdjustmentRules.prepareReset(.group(.color), snapshot: snapshot, context: resetContext) {
+            check(reset.settings.vibrance == 0 && reset.settings.blackPoint == -37.25,
+                "Color reset clears vibrance and preserves black point")
+        } else { fatalError("Tone color reset must prepare a candidate") }
+        check(AdjustmentTransferField.blackPoint.group == "light" && AdjustmentTransferField.whitePoint.group == "light"
+            && AdjustmentTransferField.vibrance.group == "color", "Tone controls appear in light and color copy groups")
+    }
+
     static func main() throws {
+        try toneControls()
         try scopes()
         try recipes()
         try whiteBalance()

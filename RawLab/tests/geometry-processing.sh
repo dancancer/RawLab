@@ -33,7 +33,7 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
+    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \

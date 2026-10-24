@@ -62,7 +62,8 @@ void checkGL() {
 
 GLuint makeProgram() {
     const auto shader = glCreateShader(GL_COMPUTE_SHADER);
-    glShaderSource(shader, 1, &kPhotoComputeShader, nullptr);
+    const char* source = kPhotoComputeShader.c_str();
+    glShaderSource(shader, 1, &source, nullptr);
     glCompileShader(shader);
     GLint ok = 0;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
@@ -250,12 +251,12 @@ GlesPhotoRenderer::~GlesPhotoRenderer() = default;
 bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
     const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
-    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl) {
+    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls) {
     if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
-        !effects.valid() || !hsl.valid() || chromaDenoise < 0 || chromaDenoise > 2) return false;
+        !effects.valid() || !hsl.valid() || !toneControls.valid() || chromaDenoise < 0 || chromaDenoise > 2) return false;
     try {
         if (!impl_) { impl_ = std::make_unique<Impl>(); impl_->initialize(); }
         auto& context = *impl_;
@@ -271,6 +272,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             std::clamp(request.highlights, -1.f, 1.f), std::clamp(request.shadows, -1.f, 1.f));
         glUniform1f(context.uniform("curve"), request.tone_curve);
         glUniform1i(context.uniform("hslActive"), hsl.active());
+        glUniform3f(context.uniform("toneControls"), toneControls.blackPoint, toneControls.whitePoint, toneControls.vibrance);
         glUniform4fv(context.uniform("hslHue[0]"), 2, hsl.hue.data());
         glUniform4fv(context.uniform("hslSaturation[0]"), 2, hsl.saturation.data());
         glUniform4fv(context.uniform("hslLightness[0]"), 2, hsl.lightness.data());

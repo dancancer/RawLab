@@ -1,9 +1,11 @@
 #pragma once
+#include "photo_tone_shader.h"
 
 namespace sony2fuji {
-inline constexpr const char* kPhotoComputeShader = R"glsl(#version 310 es
+inline const std::string kPhotoComputeShader = std::string(R"glsl(#version 310 es
 precision highp float;
 precision highp int;
+)glsl") + toneControlsShader("vec3") + R"glsl(
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
@@ -29,6 +31,7 @@ uniform vec3 domainMax;
 uniform vec4 tone; // contrast, saturation, highlights, shadows
 uniform float curve;
 uniform bool hslActive;
+uniform vec3 toneControls;
 uniform vec4 hslHue[2];
 uniform vec4 hslSaturation[2];
 uniform vec4 hslLightness[2];
@@ -131,6 +134,7 @@ vec3 evaluate(vec3 inputColor) {
         if (outputIsLog) look = vec3(neutral(decodeLog(look.r)), neutral(decodeLog(look.g)), neutral(decodeLog(look.b)));
         pixel = mix(pixel, look, strength);
     }
+    pixel = tcBlackWhite(pixel, toneControls.x, toneControls.y);
     if (tone.z != 0.0 || tone.w != 0.0) {
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         float adjusted = luminance;
@@ -144,7 +148,7 @@ vec3 evaluate(vec3 inputColor) {
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         pixel = vec3(luminance) + (pixel - luminance) * tone.y;
     }
-    return applyHsl(pixel);
+    return applyHsl(tcVibrance(pixel, toneControls.z));
 }
 void main() {
     uint i = gl_GlobalInvocationID.x;

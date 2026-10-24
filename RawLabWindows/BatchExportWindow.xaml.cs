@@ -60,6 +60,8 @@ public partial class BatchExportWindow : Window
         SourceLook.Text = $"{lookName} · {job.Settings.Values[(int)Parameter.Strength]:0}%";
         SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], raster ? Loc.Text("不适用") : state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), raster ? Loc.Text("显示图像") : new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
         AllSettings.Text = string.Join("\n", ParameterSpec.All.Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
+        AllSettings.Text += "\n" + string.Join("\n", ToneControlSpec.All.Select(spec =>
+            Row(spec.Title, state.ToneControls[spec.Id].ToString("+0.#;-0.#;0", CultureInfo.GetCultureInfo(Loc.Language)) + "%")));
         AllSettings.Text += $"\nHSL  {(state.Hsl.IsIdentity ? Loc.Text("未调整") : Loc.Text("已调整"))}";
         // 降噪与镜头逐行沿用编辑器里的名称；关着的开关写"停用"
         AllSettings.Text += "\n" + string.Join("\n", new[] {

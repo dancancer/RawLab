@@ -14,6 +14,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case look = "looks.reference", strength = "looks.strength"
     case exposure = "light.exposure", exposureMode = "light.exposure_mode"
     case contrast = "light.contrast", highlights = "light.highlights", shadows = "light.shadows", sCurve = "light.s_curve"
+    case blackPoint = "tone.black_point", whitePoint = "tone.white_point", vibrance = "color.vibrance"
     case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
     case tint = "color.white_balance.tint", saturation = "color.saturation"
     case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
@@ -42,7 +43,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
-    var group: String { String(rawValue.split(separator: ".")[0]) }
+    var group: String { self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0]) }
     static var common: Set<Self> { Set(allCases.filter { $0.group != "geometry" }) }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
@@ -63,7 +64,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         case .strength, .contrast, .saturation, .sharpening: return 0...2
         case .exposure: return -20...20
         case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
-        case .vignetteAmount, .vignetteRoundness: return -100...100
+        case .vignetteAmount, .vignetteRoundness, .blackPoint, .whitePoint, .vibrance: return -100...100
         case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
         case .quarterTurns: return 0...3
         case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1

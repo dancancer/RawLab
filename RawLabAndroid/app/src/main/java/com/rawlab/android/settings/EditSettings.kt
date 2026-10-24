@@ -42,8 +42,12 @@ data class EditSettings(
     val lens: LensSettings = LensSettings(),
     val geometry: GeometrySettings = GeometrySettings(),
     val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
+    val blackPoint: Float = 0f,
+    val whitePoint: Float = 0f,
+    val vibrance: Float = 0f,
 ) {
     init {
+        require(listOf(blackPoint, whitePoint, vibrance).all { it.isFinite() && it in -100f..100f })
         require(exposureMode in 0..2)
         require(strength.isFinite() && strength in 0f..2f)
         require(exposure.isFinite() && exposure in -4f..4f)
